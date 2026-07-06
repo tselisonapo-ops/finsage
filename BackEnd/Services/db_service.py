@@ -2144,6 +2144,65 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS legal_policy_acceptances_policy_idx
             ON public.legal_policy_acceptances(policy_type, policy_version);
+        
+        -- ============================================================
+        -- GLOBAL TAX AUTHORITY MASTER TABLES
+        -- Put these in public schema
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS public.tax_authorities (
+            id SERIAL PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,        -- RSL, SARS, BURS
+            name TEXT NOT NULL,
+            country_code TEXT NOT NULL,       -- LS, ZA, BW
+            currency_code TEXT NULL,          -- LSL, ZAR, BWP
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        INSERT INTO public.tax_authorities (code, name, country_code, currency_code)
+        VALUES
+        ('RSL',  'Revenue Services Lesotho', 'LS', 'LSL'),
+        ('SARS', 'South African Revenue Service', 'ZA', 'ZAR'),
+        ('BURS', 'Botswana Unified Revenue Service', 'BW', 'BWP')
+        ON CONFLICT (code) DO UPDATE
+        SET name = EXCLUDED.name,
+            country_code = EXCLUDED.country_code,
+            currency_code = EXCLUDED.currency_code;
+
+
+        CREATE TABLE IF NOT EXISTS public.tax_allowance_rules (
+            id SERIAL PRIMARY KEY,
+            tax_authority_id INT NOT NULL REFERENCES public.tax_authorities(id),
+
+            rule_code TEXT NOT NULL,          -- MOTOR_VEHICLE, BICYCLE, COMPUTER, etc.
+            rule_name TEXT NOT NULL,
+
+            asset_category_hint TEXT NULL,    -- Vehicles, IT, Furniture, Plant, etc.
+
+            method TEXT NOT NULL DEFAULT 'WDV',
+            -- WDV | SL | IMMEDIATE | CUSTOM
+
+            rate_percent NUMERIC(8,4) NULL,
+            useful_life_years NUMERIC(8,2) NULL,
+
+            initial_allowance_percent NUMERIC(8,4) NULL,
+            annual_allowance_percent NUMERIC(8,4) NULL,
+
+            effective_from DATE NOT NULL DEFAULT DATE '1900-01-01',
+            effective_to DATE NULL,
+
+            notes TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_tax_allowance_rule
+            UNIQUE (tax_authority_id, rule_code, effective_from),
+
+            CONSTRAINT ck_tax_allowance_method
+            CHECK (method IN ('WDV','SL','IMMEDIATE','CUSTOM'))
+        );
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
 
@@ -16615,6 +16674,273 @@ class DatabaseService:
             m.company_id,
             m.asset_class,
             m.movement_type;
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_tax_profiles (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            asset_id INT NOT NULL,
+
+            tax_authority_id INT NOT NULL REFERENCES public.tax_authorities(id),
+            allowance_rule_id INT NULL REFERENCES public.tax_allowance_rules(id),
+
+            tax_start_date DATE NULL,
+            tax_cost NUMERIC(18,2) NULL,
+
+            qualifying_percent NUMERIC(5,2) NOT NULL DEFAULT 100,
+            private_use_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+
+            is_tax_depreciable BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'uq_asset_tax_profile'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT uq_asset_tax_profile
+                UNIQUE (company_id, asset_id, tax_authority_id);
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_asset_tax_profile_asset'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT fk_asset_tax_profile_asset
+                FOREIGN KEY (asset_id)
+                REFERENCES {schema}.assets(id)
+                ON DELETE CASCADE;
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_asset_tax_profile_percentages'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT ck_asset_tax_profile_percentages
+                CHECK (
+                    qualifying_percent BETWEEN 0 AND 100
+                    AND private_use_percent BETWEEN 0 AND 100
+                );
+            END IF;
+        END $$;
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_tax_runs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            tax_authority_id INT NOT NULL REFERENCES public.tax_authorities(id),
+
+            tax_year INT NOT NULL,
+            tax_year_start DATE NOT NULL,
+            tax_year_end DATE NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            calculated_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+            locked_at TIMESTAMPTZ NULL,
+
+            created_by_user_id INT NULL,
+            approved_by_user_id INT NULL,
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'uq_asset_tax_run'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_runs
+                ADD CONSTRAINT uq_asset_tax_run
+                UNIQUE (company_id, tax_authority_id, tax_year);
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_asset_tax_run_status'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_runs
+                ADD CONSTRAINT ck_asset_tax_run_status
+                CHECK (status IN ('draft','calculated','approved','locked','void'));
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_asset_tax_run_dates'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_runs
+                ADD CONSTRAINT ck_asset_tax_run_dates
+                CHECK (tax_year_end >= tax_year_start);
+            END IF;
+        END $$;
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_tax_run_lines (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL REFERENCES {schema}.asset_tax_runs(id) ON DELETE CASCADE,
+
+            company_id INT NOT NULL,
+            asset_tax_profile_id INT NOT NULL REFERENCES {schema}.asset_tax_profiles(id),
+            asset_id INT NOT NULL REFERENCES {schema}.assets(id),
+
+            tax_authority_id INT NOT NULL REFERENCES public.tax_authorities(id),
+            allowance_rule_id INT NULL REFERENCES public.tax_allowance_rules(id),
+
+            tax_year INT NOT NULL,
+
+            opening_tax_wdv NUMERIC(18,2) NOT NULL DEFAULT 0,
+            additions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            disposal_proceeds NUMERIC(18,2) NOT NULL DEFAULT 0,
+            disposal_tax_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            allowance_base NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            initial_allowance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            annual_allowance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_capital_allowance NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            closing_tax_wdv NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            book_depreciation NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accounting_carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            tax_adjustment NUMERIC(18,2) NOT NULL DEFAULT 0,
+            temporary_difference NUMERIC(18,2) NULL,
+
+            calculation_method TEXT NULL,
+            rate_percent NUMERIC(8,4) NULL,
+
+            override_reason TEXT NULL,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'uq_asset_tax_run_line'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_run_lines
+                ADD CONSTRAINT uq_asset_tax_run_line
+                UNIQUE (run_id, asset_tax_profile_id);
+            END IF;
+        END $$;
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_tax_adjustments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            asset_tax_profile_id INT NOT NULL REFERENCES {schema}.asset_tax_profiles(id),
+            asset_id INT NOT NULL REFERENCES {schema}.assets(id),
+
+            tax_authority_id INT NOT NULL REFERENCES public.tax_authorities(id),
+            tax_year INT NOT NULL,
+
+            adjustment_type TEXT NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            reason TEXT NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            created_by_user_id INT NULL,
+            approved_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            approved_at TIMESTAMPTZ NULL
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_asset_tax_adj_status'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_adjustments
+                ADD CONSTRAINT ck_asset_tax_adj_status
+                CHECK (status IN ('draft','approved','void'));
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_asset_tax_adj_type'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_adjustments
+                ADD CONSTRAINT ck_asset_tax_adj_type
+                CHECK (adjustment_type IN (
+                    'opening_wdv',
+                    'addition',
+                    'disposal',
+                    'allowance',
+                    'private_use',
+                    'other'
+                ));
+            END IF;
+        END $$;
+
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_tax_profiles_asset_idx
+        ON {schema}.asset_tax_profiles(asset_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_tax_profiles_auth_idx
+        ON {schema}.asset_tax_profiles(tax_authority_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_tax_runs_year_idx
+        ON {schema}.asset_tax_runs(company_id, tax_authority_id, tax_year);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_tax_run_lines_asset_idx
+        ON {schema}.asset_tax_run_lines(asset_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_tax_adjustments_asset_year_idx
+        ON {schema}.asset_tax_adjustments(asset_id, tax_authority_id, tax_year);
 
         -- ==================================================
         -- LOANS & FINANCING
@@ -56785,6 +57111,311 @@ class DatabaseService:
             "valuations": [dict(x) for x in (cur.fetchall() or [])]
         }
 
+    def ensure_asset_tax_profile_for_asset(self, company_id: int, asset_id: int) -> int | None:
+        schema = self.company_schema(company_id)
+        ta = self.asset_tax_authority_for_company(company_id)
+        if not ta:
+            return None
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.asset_tax_profiles (
+                company_id,
+                asset_id,
+                tax_authority_id,
+                tax_start_date,
+                tax_cost,
+                notes
+            )
+            SELECT
+                a.company_id,
+                a.id,
+                %s,
+                COALESCE(a.available_for_use_date, a.acquisition_date),
+                COALESCE(a.opening_cost, a.cost),
+                'Auto-created from asset register'
+            FROM {schema}.assets a
+            WHERE a.id = %s
+            AND a.company_id = %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.asset_tax_profiles p
+                WHERE p.company_id = a.company_id
+                    AND p.asset_id = a.id
+                    AND p.tax_authority_id = %s
+            )
+            RETURNING id
+        """, (ta["id"], asset_id, company_id, ta["id"]))
+
+        return row["id"] if row else None
+
+    def asset_tax_get_authorities(self) -> list[dict]:
+        return self.fetch_all("""
+            SELECT *
+            FROM public.tax_authorities
+            WHERE is_active = TRUE
+            ORDER BY code
+        """)
+
+
+    def asset_tax_default_authority_code(self, company_id: int) -> str:
+        company = self.get_company(company_id) or {}
+        country = str(
+            company.get("country_code")
+            or company.get("country")
+            or ""
+        ).strip().upper()
+
+        if country in ("ZA", "SOUTH AFRICA"):
+            return "SARS"
+        if country in ("BW", "BOTSWANA"):
+            return "BURS"
+        return "RSL"
+
+
+    def asset_tax_create_missing_profiles(self, company_id: int, cur=None) -> dict:
+        schema = self.company_schema(company_id)
+        tax_code = self.asset_tax_default_authority_code(company_id)
+
+        owns_cursor = cur is None
+        if owns_cursor:
+            ctx = self._conn_cursor()
+            conn, cur = ctx.__enter__()
+
+        try:
+            cur.execute("""
+                SELECT id
+                FROM public.tax_authorities
+                WHERE code = %s
+                AND is_active = TRUE
+                LIMIT 1
+            """, (tax_code,))
+            ta = cur.fetchone()
+
+            if not ta:
+                raise ValueError(f"Tax authority not found for code {tax_code}")
+
+            cur.execute(f"""
+                INSERT INTO {schema}.asset_tax_profiles (
+                    company_id,
+                    asset_id,
+                    tax_authority_id,
+                    tax_start_date,
+                    tax_cost,
+                    notes
+                )
+                SELECT
+                    a.company_id,
+                    a.id,
+                    %s,
+                    COALESCE(a.available_for_use_date, a.acquisition_date),
+                    COALESCE(a.opening_cost, a.cost),
+                    'Auto-created from asset register'
+                FROM {schema}.assets a
+                WHERE a.company_id = %s
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM {schema}.asset_tax_profiles p
+                    WHERE p.company_id = a.company_id
+                        AND p.asset_id = a.id
+                        AND p.tax_authority_id = %s
+                )
+            """, (ta["id"], company_id, ta["id"]))
+
+            created = cur.rowcount or 0
+
+            if owns_cursor:
+                conn.commit()
+
+            return {
+                "created": created,
+                "tax_authority_code": tax_code,
+                "tax_authority_id": ta["id"],
+            }
+
+        finally:
+            if owns_cursor:
+                ctx.__exit__(None, None, None)
+
+
+    def ensure_asset_tax_profile_for_asset_cur(self, cur, company_id: int, asset_id: int) -> int | None:
+        schema = self.company_schema(company_id)
+        tax_code = self.asset_tax_default_authority_code(company_id)
+
+        cur.execute("""
+            SELECT id
+            FROM public.tax_authorities
+            WHERE code = %s
+            AND is_active = TRUE
+            LIMIT 1
+        """, (tax_code,))
+        ta = cur.fetchone()
+
+        if not ta:
+            return None
+
+        cur.execute(f"""
+            INSERT INTO {schema}.asset_tax_profiles (
+                company_id,
+                asset_id,
+                tax_authority_id,
+                tax_start_date,
+                tax_cost,
+                notes
+            )
+            SELECT
+                a.company_id,
+                a.id,
+                %s,
+                COALESCE(a.available_for_use_date, a.acquisition_date),
+                COALESCE(a.opening_cost, a.cost),
+                'Auto-created from asset register'
+            FROM {schema}.assets a
+            WHERE a.company_id = %s
+            AND a.id = %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.asset_tax_profiles p
+                WHERE p.company_id = a.company_id
+                    AND p.asset_id = a.id
+                    AND p.tax_authority_id = %s
+            )
+            RETURNING id
+        """, (ta["id"], company_id, asset_id, ta["id"]))
+
+        row = cur.fetchone()
+        return int(row["id"]) if row else None
+
+
+    def asset_tax_list_profiles(self, company_id: int) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                p.id AS profile_id,
+                p.company_id,
+                p.asset_id,
+
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.asset_class_group,
+                a.category,
+                a.acquisition_date,
+                a.available_for_use_date,
+                a.cost,
+                a.opening_cost,
+                a.status AS asset_status,
+
+                p.tax_authority_id,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                p.allowance_rule_id,
+                r.rule_code,
+                r.rule_name,
+                r.method,
+                r.rate_percent,
+                r.initial_allowance_percent,
+                r.annual_allowance_percent,
+
+                p.tax_start_date,
+                p.tax_cost,
+                p.qualifying_percent,
+                p.private_use_percent,
+                p.is_tax_depreciable,
+                p.is_active,
+                p.notes,
+
+                CASE
+                    WHEN p.allowance_rule_id IS NULL THEN 'not_configured'
+                    ELSE 'configured'
+                END AS config_status
+
+            FROM {schema}.asset_tax_profiles p
+            JOIN {schema}.assets a ON a.id = p.asset_id
+            JOIN public.tax_authorities ta ON ta.id = p.tax_authority_id
+            LEFT JOIN public.tax_allowance_rules r ON r.id = p.allowance_rule_id
+            WHERE p.company_id = %s
+            ORDER BY a.asset_name, a.id
+        """, (company_id,))
+
+
+    def asset_tax_get_rules(self, tax_authority_id: int | None = None) -> list[dict]:
+        params = []
+        where = [
+            "r.is_active = TRUE",
+            "ta.is_active = TRUE",
+        ]
+
+        if tax_authority_id:
+            where.append("r.tax_authority_id = %s")
+            params.append(tax_authority_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name
+            FROM public.tax_allowance_rules r
+            JOIN public.tax_authorities ta ON ta.id = r.tax_authority_id
+            WHERE {" AND ".join(where)}
+            ORDER BY ta.code, r.rule_name, r.effective_from DESC
+        """, tuple(params))
+
+
+    def asset_tax_update_profile(self, company_id: int, profile_id: int, payload: dict) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "tax_authority_id",
+            "allowance_rule_id",
+            "tax_start_date",
+            "tax_cost",
+            "qualifying_percent",
+            "private_use_percent",
+            "is_tax_depreciable",
+            "is_active",
+            "notes",
+        }
+
+        fields = []
+        vals = []
+
+        for k, v in (payload or {}).items():
+            if k not in allowed:
+                continue
+
+            if k in {"qualifying_percent", "private_use_percent"}:
+                v = Decimal(str(v or 0))
+                if v < 0 or v > 100:
+                    raise ValueError(f"{k} must be between 0 and 100")
+
+            if k == "tax_cost" and v not in ("", None):
+                v = Decimal(str(v))
+                if v < 0:
+                    raise ValueError("tax_cost cannot be negative")
+
+            if k == "allowance_rule_id" and v in ("", 0, "0"):
+                v = None
+
+            fields.append(f"{k} = %s")
+            vals.append(v)
+
+        if not fields:
+            raise ValueError("No valid fields to update.")
+
+        fields.append("updated_at = NOW()")
+
+        vals.extend([company_id, profile_id])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.asset_tax_profiles
+            SET {", ".join(fields)}
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *
+        """, tuple(vals))
+   
     def get_fixed_assets_snapshot(self, company_id: int, *, as_of=None) -> dict:
         report = self.list_asset_register_report(
             company_id,

@@ -2466,6 +2466,27 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${cid}/revenue/contracts/${contractId}/recalc`,
   },
 
+  assetTax: {
+    profiles: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/profiles`,
+
+    backfillProfiles: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/profiles/backfill`,
+
+    updateProfile: (companyId, profileId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/profiles/${encodeURIComponent(profileId)}`,
+
+    rules: (companyId, taxAuthorityId = "") => {
+      const params = new URLSearchParams();
+      if (taxAuthorityId) params.set("tax_authority_id", String(taxAuthorityId));
+      const qs = params.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/rules${qs ? `?${qs}` : ""}`;
+    },
+
+    authorities: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-tax/authorities`,
+  },
+
   supportUser: {
     // List tickets for the logged-in user
     list: (companyId) => 
@@ -5497,7 +5518,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Trial Balance", screen: "trial", icon: "🧾", minRole: "assistant", permission: "can_view_reports" },
         { name: "General Ledger", screen: "ledger", icon: "📚", minRole: "assistant", permission: "can_view_reports" },
         { name: "VAT & Tax", screen: "vat", icon: "🧮", minRole: "assistant", permission: "can_view_reports" },
-
+        { name: "Tax Recon", screen: "tax-recon", icon: "🧾", minRole: "assistant", permission: "can_edit_tax_settings" },
         { name: "Financial Statements", screen: "reports", icon: "📈", minRole: "junior", permission: "can_prepare_financials" },
         //{ name: "Income Statement (P&L)", screen: "reports-pnl", icon: "🧮", minRole: "junior", permission: "can_prepare_financials" },
         //{ name: "Balance Sheet", screen: "reports-bs", icon: "🏛️", minRole: "junior", permission: "can_prepare_financials" },
@@ -7250,6 +7271,12 @@ const SCREEN_POLICY = {
     permissionAny: ["can_access_pos", "can_manage_pos"],
   },
 
+  "tax-recon": {
+    auth: "private",
+    minRole: "assistant",
+    permission: "can_edit_tax_settings",
+  },
+
   // Master Data
   customers: { auth: "private", minRole: "clerk" },
   vendors:   { auth: "private", minRole: "clerk" },
@@ -8632,6 +8659,9 @@ async function switchScreen(name) {
     "pos-launch",
   ].includes(name);
 
+  const isTaxRecon =
+    name === "tax-recon";
+
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -8679,7 +8709,7 @@ async function switchScreen(name) {
   else if (name === "project-budgets") base = "project-budgets";
   else if (name === "project-material-issues") base = "project-material-issues";
   else if (name === "project-profitability") base = "project-profitability";
-
+  else if (isTaxRecon) base = "tax-recon";
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
@@ -8754,6 +8784,22 @@ async function switchScreen(name) {
     });
 
     return;
+  }
+
+  if (base === "tax-recon") {
+      setScreenTitle?.("Income Tax Workspace");
+      setScreenSubtitle?.("Capital allowances, reconciliations and tax returns.");
+
+      try {
+          if (typeof ensureCompanyDataLoaded === "function") {
+              await ensureCompanyDataLoaded();
+          }
+      } catch (e) {
+          console.warn("[TaxRecon] ensureCompanyDataLoaded failed:", e);
+      }
+
+      await window.bindTaxReconScreen?.();
+      return;
   }
 
   // Lessors binder
@@ -9097,6 +9143,7 @@ async function switchScreen(name) {
     trial: "Trial Balance",
     reports: "Financial Statements",
     vat: "VAT & Tax",
+    "tax-recon": "Income Tax Workspace",
     company: "Company & Setup",
     "company-my": "Company & Setup",
     "company-update": "Company & Setup",
@@ -58553,7 +58600,334 @@ async function renderARStatements() {
   };
 }
 
+(function () {
+  let taxReconState = {
+    profiles: [],
+    authorities: [],
+    rules: [],
+    selected: null,
+    bound: false,
+  };
 
+  const $id = (id) => document.getElementById(id);
+
+  function money(v) {
+    const n = Number(v || 0);
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function date10(v) {
+    if (!v) return "";
+    return String(v).slice(0, 10);
+  }
+
+  function getCid() {
+    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+  }
+
+  async function apiJson(url, opts = {}) {
+    if (typeof api === "function") return api(url, opts);
+
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      },
+      credentials: "include",
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || `Request failed ${res.status}`);
+    }
+    return data;
+  }
+
+  async function loadTaxReconData() {
+    const cid = getCid();
+    if (!cid) throw new Error("No active company selected.");
+
+    const [profilesRes, authoritiesRes] = await Promise.all([
+      apiJson(ENDPOINTS.assetTax.profiles(cid)),
+      apiJson(ENDPOINTS.assetTax.authorities(cid)),
+    ]);
+
+    taxReconState.profiles = profilesRes.items || [];
+    taxReconState.authorities = authoritiesRes.items || [];
+
+    const firstAuthorityId =
+      taxReconState.profiles[0]?.tax_authority_id ||
+      taxReconState.authorities[0]?.id ||
+      "";
+
+    const rulesRes = await apiJson(ENDPOINTS.assetTax.rules(cid, firstAuthorityId));
+    taxReconState.rules = rulesRes.items || [];
+
+    renderTaxRecon();
+  }
+
+  function filteredProfiles() {
+    const q = ($id("taxReconSearch")?.value || "").trim().toLowerCase();
+    const status = ($id("taxReconStatusFilter")?.value || "").trim();
+
+    return taxReconState.profiles.filter((p) => {
+      const hay = [
+        p.asset_code,
+        p.asset_name,
+        p.asset_class,
+        p.asset_class_group,
+        p.rule_name,
+        p.tax_authority_code,
+      ].join(" ").toLowerCase();
+
+      if (q && !hay.includes(q)) return false;
+      if (status && p.config_status !== status) return false;
+
+      return true;
+    });
+  }
+
+  function renderSummary(rows) {
+    const total = taxReconState.profiles.length;
+    const configured = taxReconState.profiles.filter((p) => p.config_status === "configured").length;
+    const missing = total - configured;
+
+    const auth =
+      taxReconState.profiles[0]?.tax_authority_code ||
+      taxReconState.authorities[0]?.code ||
+      "—";
+
+    if ($id("taxStatTotal")) $id("taxStatTotal").textContent = total;
+    if ($id("taxStatConfigured")) $id("taxStatConfigured").textContent = configured;
+    if ($id("taxStatMissing")) $id("taxStatMissing").textContent = missing;
+    if ($id("taxStatAuthority")) $id("taxStatAuthority").textContent = auth;
+
+    if ($id("taxReconStatus")) {
+      $id("taxReconStatus").textContent =
+        rows.length === total
+          ? `${total} asset tax profile(s) loaded.`
+          : `${rows.length} of ${total} profile(s) shown.`;
+    }
+  }
+
+  function renderTaxRecon() {
+    const tbody = $id("taxReconRows");
+    if (!tbody) return;
+
+    const rows = filteredProfiles();
+    renderSummary(rows);
+
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="9" class="text-center text-slate-500 py-6">
+            No asset tax profiles found. Click Sync Assets.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = rows.map((p) => {
+      const configured = p.config_status === "configured";
+      return `
+        <tr>
+          <td>
+            <div class="font-semibold text-slate-800">${p.asset_name || "—"}</div>
+            <div class="text-xs text-slate-500">${p.asset_code || ""}</div>
+          </td>
+          <td>
+            <div>${p.asset_class || "—"}</div>
+            <div class="text-xs text-slate-500">${p.asset_class_group || ""}</div>
+          </td>
+          <td>${p.tax_authority_code || "—"}</td>
+          <td>
+            <div>${p.rule_name || "Not selected"}</div>
+            <div class="text-xs text-slate-500">${p.method || ""}${p.rate_percent ? ` · ${p.rate_percent}%` : ""}</div>
+          </td>
+          <td>${money(p.tax_cost)}</td>
+          <td>${date10(p.tax_start_date) || "—"}</td>
+          <td>${money(p.private_use_percent)}%</td>
+          <td>
+            <span class="tax-badge ${configured ? "ok" : "warn"}">
+              ${configured ? "Configured" : "Not configured"}
+            </span>
+          </td>
+          <td class="text-right">
+            <button class="btn text-xs" data-tax-configure="${p.profile_id}">
+              Configure
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  function fillSelects(profile) {
+    const authSel = $id("taxProfileAuthority");
+    const ruleSel = $id("taxProfileRule");
+
+    if (authSel) {
+      authSel.innerHTML = taxReconState.authorities.map((a) => `
+        <option value="${a.id}" ${Number(a.id) === Number(profile.tax_authority_id) ? "selected" : ""}>
+          ${a.code} - ${a.name}
+        </option>
+      `).join("");
+    }
+
+    if (ruleSel) {
+      const authId = Number(authSel?.value || profile.tax_authority_id || 0);
+      const rules = taxReconState.rules.filter((r) => Number(r.tax_authority_id) === authId);
+
+      ruleSel.innerHTML = `
+        <option value="">Select allowance rule</option>
+        ${rules.map((r) => `
+          <option value="${r.id}" ${Number(r.id) === Number(profile.allowance_rule_id) ? "selected" : ""}>
+            ${r.rule_name}${r.rate_percent ? ` (${r.rate_percent}%)` : ""}
+          </option>
+        `).join("")}
+      `;
+    }
+  }
+
+  async function openTaxProfileModal(profileId) {
+    const profile = taxReconState.profiles.find((p) => Number(p.profile_id) === Number(profileId));
+    if (!profile) return;
+
+    taxReconState.selected = profile;
+
+    $id("taxProfileId").value = profile.profile_id;
+    $id("taxProfileAssetName").textContent = profile.asset_name || "—";
+    $id("taxProfileAssetClass").textContent = profile.asset_class || "—";
+    $id("taxProfileBookCost").textContent = money(profile.cost || profile.opening_cost || 0);
+
+    $id("taxProfileModalTitle").textContent = `Configure: ${profile.asset_name || "Asset"}`;
+    $id("taxProfileModalSub").textContent = `${profile.tax_authority_code || ""} asset tax profile`;
+
+    $id("taxProfileTaxCost").value = profile.tax_cost ?? "";
+    $id("taxProfileStartDate").value = date10(profile.tax_start_date);
+    $id("taxProfileQualifying").value = profile.qualifying_percent ?? 100;
+    $id("taxProfilePrivateUse").value = profile.private_use_percent ?? 0;
+    $id("taxProfileDepreciable").checked = !!profile.is_tax_depreciable;
+    $id("taxProfileActive").checked = !!profile.is_active;
+    $id("taxProfileNotes").value = profile.notes || "";
+
+    fillSelects(profile);
+
+    $id("taxProfileModal")?.classList.remove("hidden");
+  }
+
+  function closeTaxProfileModal() {
+    $id("taxProfileModal")?.classList.add("hidden");
+    taxReconState.selected = null;
+  }
+
+  async function saveTaxProfile() {
+    const cid = getCid();
+    const profileId = $id("taxProfileId")?.value;
+    if (!cid || !profileId) return;
+
+    const payload = {
+      tax_authority_id: Number($id("taxProfileAuthority")?.value || 0) || null,
+      allowance_rule_id: Number($id("taxProfileRule")?.value || 0) || null,
+      tax_cost: $id("taxProfileTaxCost")?.value || null,
+      tax_start_date: $id("taxProfileStartDate")?.value || null,
+      qualifying_percent: $id("taxProfileQualifying")?.value || 100,
+      private_use_percent: $id("taxProfilePrivateUse")?.value || 0,
+      is_tax_depreciable: !!$id("taxProfileDepreciable")?.checked,
+      is_active: !!$id("taxProfileActive")?.checked,
+      notes: $id("taxProfileNotes")?.value || null,
+    };
+
+    $id("taxProfileSaveBtn").disabled = true;
+
+    try {
+      await apiJson(ENDPOINTS.assetTax.updateProfile(cid, profileId), {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+
+      closeTaxProfileModal();
+      await loadTaxReconData();
+    } catch (e) {
+      alert(e.message || "Failed to save tax profile.");
+    } finally {
+      $id("taxProfileSaveBtn").disabled = false;
+    }
+  }
+
+  async function backfillProfiles() {
+    const cid = getCid();
+    if (!cid) return alert("No active company selected.");
+
+    try {
+      const res = await apiJson(ENDPOINTS.assetTax.backfillProfiles(cid), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      alert(`Sync complete. Created ${res.created || 0} profile(s).`);
+      await loadTaxReconData();
+    } catch (e) {
+      alert(e.message || "Failed to sync assets.");
+    }
+  }
+
+  function bindTaxReconEventsOnce() {
+    if (taxReconState.bound) return;
+    taxReconState.bound = true;
+
+    $id("taxReconRefreshBtn")?.addEventListener("click", loadTaxReconData);
+    $id("taxReconBackfillBtn")?.addEventListener("click", backfillProfiles);
+
+    $id("taxReconSearch")?.addEventListener("input", renderTaxRecon);
+    $id("taxReconStatusFilter")?.addEventListener("change", renderTaxRecon);
+
+    $id("taxReconRows")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-tax-configure]");
+      if (!btn) return;
+      openTaxProfileModal(btn.dataset.taxConfigure);
+    });
+
+    $id("taxProfileCloseBtn")?.addEventListener("click", closeTaxProfileModal);
+    $id("taxProfileCancelBtn")?.addEventListener("click", closeTaxProfileModal);
+
+    $id("taxProfileModal")?.addEventListener("click", (e) => {
+      if (e.target?.dataset?.taxClose) closeTaxProfileModal();
+    });
+
+    $id("taxProfileSaveBtn")?.addEventListener("click", saveTaxProfile);
+
+    $id("taxProfileAuthority")?.addEventListener("change", async () => {
+      const cid = getCid();
+      const authId = $id("taxProfileAuthority")?.value;
+      const res = await apiJson(ENDPOINTS.assetTax.rules(cid, authId));
+      taxReconState.rules = res.items || [];
+      fillSelects(taxReconState.selected || {});
+    });
+  }
+
+  window.bindTaxReconScreen = async function bindTaxReconScreen() {
+    bindTaxReconEventsOnce();
+
+    try {
+      if ($id("taxReconStatus")) {
+        $id("taxReconStatus").textContent = "Loading asset tax profiles...";
+      }
+
+      await loadTaxReconData();
+    } catch (e) {
+      console.warn("[TaxRecon] load failed", e);
+      if ($id("taxReconStatus")) {
+        $id("taxReconStatus").textContent = e.message || "Failed to load tax recon workspace.";
+      }
+    }
+  };
+})();
 // ✅ Period Locks (Control Room)
 // Requires:
 // - getControlsMount()

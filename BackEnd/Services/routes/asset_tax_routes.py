@@ -1,0 +1,141 @@
+from flask import Blueprint, request, jsonify, g, current_app
+
+from BackEnd.Services.db_service import db_service
+from BackEnd.Services.auth_middleware import require_auth
+from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
+from BackEnd.Services.assets.ppe_reporting import _json_error
+from BackEnd.Services.utils.http_helpers import _opt
+
+
+bp_asset_tax = Blueprint("asset_tax", __name__)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/profiles",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_profiles(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    deny = _deny_if_wrong_company(user, company_id)
+    if deny:
+        return deny
+
+    try:
+        items = db_service.asset_tax_list_profiles(company_id)
+        return jsonify({"ok": True, "items": items}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_profiles failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/profiles/backfill",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_backfill_profiles(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    deny = _deny_if_wrong_company(user, company_id)
+    if deny:
+        return deny
+
+    try:
+        with db_service.transaction() as (conn, cur):
+            result = db_service.asset_tax_create_missing_profiles(
+                company_id,
+                cur=cur,
+            )
+
+        return jsonify({"ok": True, **(result or {})}), 200
+
+    except Exception as e:
+        current_app.logger.exception("asset_tax_backfill_profiles failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/profiles/<int:profile_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_update_profile(company_id: int, profile_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    deny = _deny_if_wrong_company(user, company_id)
+    if deny:
+        return deny
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        item = db_service.asset_tax_update_profile(
+            company_id,
+            profile_id,
+            payload,
+        )
+
+        if not item:
+            return _json_error("Asset tax profile not found", 404)
+
+        return jsonify({"ok": True, "item": item}), 200
+
+    except Exception as e:
+        current_app.logger.exception("asset_tax_update_profile failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/rules",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_rules(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    deny = _deny_if_wrong_company(user, company_id)
+    if deny:
+        return deny
+
+    tax_authority_id = request.args.get("tax_authority_id")
+    tax_authority_id = int(tax_authority_id) if tax_authority_id else None
+
+    try:
+        items = db_service.asset_tax_get_rules(tax_authority_id=tax_authority_id)
+        return jsonify({"ok": True, "items": items}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_rules failed")
+        return _json_error(str(e), 400)
+
+
+@bp_asset_tax.route(
+    "/api/companies/<int:company_id>/asset-tax/authorities",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_asset_tax_authorities(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    deny = _deny_if_wrong_company(user, company_id)
+    if deny:
+        return deny
+
+    try:
+        items = db_service.asset_tax_get_authorities()
+        
+        return jsonify({"ok": True, "items": items}), 200
+    except Exception as e:
+        current_app.logger.exception("asset_tax_authorities failed")
+        return _json_error(str(e), 400)

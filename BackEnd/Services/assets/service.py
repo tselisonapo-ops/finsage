@@ -5,7 +5,7 @@ from decimal import Decimal
 from datetime import date
 from BackEnd.Services.assets.posting import generate_single_asset_depreciation
 from flask import current_app
-
+from BackEnd.Services.db_service import db_service
 def _q(schema: str, sql: str) -> str:
     return sql.replace("{schema}", schema)
 
@@ -1070,6 +1070,56 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
         "acquisition_ids": [int(x) for x in acquisition_ids],
     }
 
+def ensure_asset_tax_profile_for_asset_cur(cur, company_id: int, asset_id: int):
+    schema = company_schema(company_id)
+
+    # temporary default until company tax setting is available
+    tax_code = "RSL"
+
+    cur.execute("""
+        SELECT id
+        FROM public.tax_authorities
+        WHERE code = %s
+          AND is_active = TRUE
+        LIMIT 1
+    """, (tax_code,))
+
+    ta = cur.fetchone()
+    if not ta:
+        return None
+
+    cur.execute(_q(schema, """
+        INSERT INTO {schema}.asset_tax_profiles (
+            company_id,
+            asset_id,
+            tax_authority_id,
+            tax_start_date,
+            tax_cost,
+            notes
+        )
+        SELECT
+            a.company_id,
+            a.id,
+            %s,
+            COALESCE(a.available_for_use_date, a.acquisition_date),
+            COALESCE(a.opening_cost, a.cost),
+            'Auto-created from asset register'
+        FROM {schema}.assets a
+        WHERE a.id = %s
+          AND a.company_id = %s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM {schema}.asset_tax_profiles p
+              WHERE p.company_id = a.company_id
+                AND p.asset_id = a.id
+                AND p.tax_authority_id = %s
+          )
+        RETURNING id
+    """), (ta["id"], asset_id, company_id, ta["id"]))
+
+    row = cur.fetchone()
+    return row["id"] if row else None
+
 def create_asset(cur, company_id, payload):
     schema = company_schema(company_id)
 
@@ -1323,7 +1373,28 @@ def create_asset(cur, company_id, payload):
             bool(payload.get("is_qualifying_asset") or False),
             payload.get("ready_for_use_date") or None,
         ))
-    return cur.fetchone()["id"]
+    asset_id = cur.fetchone()["id"]
+
+    try:
+        profile_id = ensure_asset_tax_profile_for_asset_cur(
+            cur,
+            company_id,
+            asset_id,
+        )
+
+        current_app.logger.info(
+            "Asset tax profile created asset_id=%s profile_id=%s",
+            asset_id,
+            profile_id,
+        )
+
+    except Exception:
+        current_app.logger.exception(
+            "Failed creating asset tax profile for asset_id=%s",
+            asset_id,
+        )
+
+    return asset_id
 
 # ✅ whitelist for safe updates
 _ASSET_UPDATE_ALLOWED = {
