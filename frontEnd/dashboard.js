@@ -58633,29 +58633,22 @@ async function renderARStatements() {
   }
 
   async function apiJson(url, opts = {}) {
-    const data = await apiFetch(url, {
-      ...opts,
-      headers: {
-        "Content-Type": "application/json",
-        ...(opts.headers || {}),
-      },
-    });
-
-    if (data?.ok === false) {
-      throw new Error(data.error || "Request failed");
-    }
-
-    return data;
+    return await window.apiFetch(url, opts);
   }
-  
+
   async function loadAll() {
     const companyId = cid();
+    console.log("[TaxRecon] companyId", companyId);
+
     if (!companyId) throw new Error("No active company selected.");
 
     const [profilesRes, authoritiesRes] = await Promise.all([
       apiJson(ENDPOINTS.assetTax.profiles(companyId)),
       apiJson(ENDPOINTS.assetTax.authorities(companyId)),
     ]);
+
+    console.log("[TaxRecon] profilesRes", profilesRes);
+    console.log("[TaxRecon] authoritiesRes", authoritiesRes);
 
     state.profiles = profilesRes.items || [];
     state.authorities = authoritiesRes.items || [];
@@ -58667,6 +58660,8 @@ async function renderARStatements() {
       "";
 
     const rulesRes = await apiJson(ENDPOINTS.assetTax.rules(companyId, authId));
+    console.log("[TaxRecon] rulesRes", rulesRes);
+
     state.rules = rulesRes.items || [];
 
     render();
