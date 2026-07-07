@@ -9523,7 +9523,7 @@ function resolveCurrencyCode({ engagement, customer, company } = {}) {
     customer?.currencyCode ||
     company?.currency_code ||
     company?.currencyCode ||
-    "ZAR" // last fallback only
+    "USD" // last fallback only
   );
 }
 

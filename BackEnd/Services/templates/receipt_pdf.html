@@ -351,7 +351,7 @@
 {% set b = (branding if branding is defined and branding else (receipt.branding if receipt is defined and receipt.branding else {})) %}
 
 {% set rcpt_no = receipt.number or ("RCPT-" ~ receipt.id) %}
-{% set ccy = (receipt.currency or "ZAR") %}
+{% set ccy = (receipt.currency or "USD") %}
 
 {% set c_name  = company.get('name') %}
 {% set c_reg   = company.get('company_reg_no') %}

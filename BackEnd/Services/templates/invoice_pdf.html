@@ -451,7 +451,7 @@
 {% set company = (company if company is defined and company else {}) %}
 {% set b = invoice.branding or {} %}
 {% set inv_no = invoice.number or ("INV-" ~ invoice.id) %}
-{% set ccy = (invoice.currency or "ZAR") %}
+{% set ccy = (invoice.currency or "USD") %}
 
 {# dict-safe company fields #}
 {% set c_name  = company.get('name') %}

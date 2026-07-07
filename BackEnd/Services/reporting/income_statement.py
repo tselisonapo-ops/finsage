@@ -45,7 +45,7 @@ def get_pnl_full_v2(
     if not ctx:
         ctx = {}
 
-    currency = ctx.get("currency") or "ZAR"
+    currency = ctx.get("currency") or "USD"
     company_name = ctx.get("name") or ctx.get("company_name") or ""
 
     organization_type = (

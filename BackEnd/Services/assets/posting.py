@@ -1743,7 +1743,7 @@ def _post_journal_to_ledger_and_tb(cur, schema: str, company_id: int, journal_id
 
 def get_company_currency(cur, company_id):
     # base currency lives in public.companies
-    cur.execute("SELECT COALESCE(NULLIF(trim(currency),''),'ZAR') AS ccy FROM public.companies WHERE id=%s", (company_id,))
+    cur.execute("SELECT COALESCE(NULLIF(trim(currency),''),'USD') AS ccy FROM public.companies WHERE id=%s", (company_id,))
     return cur.fetchone()["ccy"]
 
 def get_asset(cur, schema, company_id, asset_id):
@@ -2877,7 +2877,7 @@ def post_hfs(
             (asset.get("currency_code") or "").strip()
             or (asset.get("currency") or "").strip()
             or (company_profile.get("currency") or "").strip()
-            or "ZAR"
+            or "USD"
         )
 
         db_service.upsert_engagement_posting_activity(
@@ -3094,7 +3094,7 @@ def post_disposal(
             (asset.get("currency_code") or "").strip()
             or (asset.get("currency") or "").strip()
             or (company_profile.get("currency") or "").strip()
-            or "ZAR"
+            or "USD"
         )
 
         disposal_amount = float(abs(gainloss) if gainloss is not None else 0.0)

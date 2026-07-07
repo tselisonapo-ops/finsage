@@ -137,7 +137,7 @@ def api_create_loan(company_id: int):
                 action="create_loan",
                 requested_by_user_id=int(user_id),
                 amount=float(raw.get("principal_amount") or 0.0),
-                currency=(raw.get("currency") or "ZAR"),
+                currency=(raw.get("currency") or "USD"),
                 risk_level=("high" if mode == "controlled" else "medium"),
                 dedupe_key=dedupe_key,
                 payload_json={

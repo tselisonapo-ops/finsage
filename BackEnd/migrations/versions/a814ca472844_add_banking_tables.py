@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column("uploaded_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("statement_start_date", sa.Date(), nullable=True),
         sa.Column("statement_end_date", sa.Date(), nullable=True),
-        sa.Column("currency", sa.Text(), nullable=True, server_default="ZAR"),
+        sa.Column("currency", sa.Text(), nullable=True, server_default="USD"),
         sa.Column("status", sa.Text(), nullable=False, server_default="uploaded"),  # uploaded|parsed|failed
         sa.Column("error", sa.Text(), nullable=True),
         schema="public",
@@ -59,7 +59,7 @@ def upgrade() -> None:
         sa.Column("line_date", sa.Date(), nullable=True),
         sa.Column("value_date", sa.Date(), nullable=True),
         sa.Column("amount", sa.Numeric(18, 2), nullable=False),
-        sa.Column("currency", sa.Text(), nullable=False, server_default="ZAR"),
+        sa.Column("currency", sa.Text(), nullable=False, server_default="USD"),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("reference", sa.Text(), nullable=True),
         sa.Column("counterparty", sa.Text(), nullable=True),

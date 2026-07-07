@@ -1077,7 +1077,7 @@ def api_record_revenue_cash_event(company_id: int, contract_id: int):
         amount = float(body.get("amount") or 0)
         payment_date = body.get("event_date")
         customer_id = (body.get("payload_json") or {}).get("customer_id")
-        currency = body.get("currency") or "ZAR"
+        currency = body.get("currency") or "USD"
 
         if amount <= 0:
             raise ValueError("Cash receipt amount must be greater than zero")

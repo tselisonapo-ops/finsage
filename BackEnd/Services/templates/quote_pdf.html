@@ -385,7 +385,7 @@
 {% set company = (company if company is defined and company else {}) %}
 {% set b = quote.branding or {} %}
 {% set q_no = quote.number or ("QTE-" ~ quote.id) %}
-{% set ccy = (quote.currency or "ZAR") %}
+{% set ccy = (quote.currency or "USD") %}
 
 {# dict-safe company fields #}
 {% set c_name  = company.get('name') %}

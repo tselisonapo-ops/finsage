@@ -54,7 +54,7 @@ def build_loan_register_report(db, company_id, *, q=None, status=None):
         l.last_reclass_journal_id,
         l.last_payment_date,
         l.closed_at,
-        COALESCE(l.currency, 'ZAR') AS currency,
+        COALESCE(l.currency, 'USD') AS currency,
         l.created_at,
         l.updated_at
     FROM {schema}.loans l
@@ -106,7 +106,7 @@ def build_loan_register_report(db, company_id, *, q=None, status=None):
             "last_reclass_journal_id": r.get("last_reclass_journal_id"),
             "last_payment_date": str(r.get("last_payment_date")) if r.get("last_payment_date") else None,
             "closed_at": str(r.get("closed_at")) if r.get("closed_at") else None,
-            "currency": r.get("currency") or "ZAR",
+            "currency": r.get("currency") or "USD",
         })
 
     columns = [

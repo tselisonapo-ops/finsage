@@ -134,5 +134,5 @@ settings = Settings(
     headless=_get_bool("HEADLESS", True),
 
     test_prefix=os.getenv("TEST_PREFIX", "BOT-TEST").strip(),
-    default_currency=os.getenv("DEFAULT_CURRENCY", "ZAR").strip(),
+    default_currency=os.getenv("DEFAULT_CURRENCY", "USD").strip(),
 )

@@ -543,7 +543,7 @@ def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) ->
         "meta": {
             "company_id": company_id,
             "company_name": ctx.get("company_name") or ctx.get("name"),
-            "currency": ctx.get("currency") or "ZAR",
+            "currency": ctx.get("currency") or "USD",
             "statement": "ppe_disclosure",
             "report_name": "Property, Plant and Equipment Disclosure",
             "standard": "IAS 16",
@@ -608,7 +608,7 @@ def build_lease_disclosure(
     meta = {
         "company_id": company_id,
         "company_name": ctx.get("company_name") or ctx.get("name"),
-        "currency": ctx.get("currency") or "ZAR",
+        "currency": ctx.get("currency") or "USD",
         "statement": "lease_disclosure",
         "report_name": "Lease Disclosure",
         "standard": "IFRS 16",
@@ -909,7 +909,7 @@ def build_revenue_disclosure(
         "meta": {
             "company_id": company_id,
             "company_name": ctx.get("company_name") or ctx.get("name"),
-            "currency": ctx.get("currency") or "ZAR",
+            "currency": ctx.get("currency") or "USD",
             "statement": "revenue_disclosure",
             "report_name": "Revenue Disclosure",
             "standard": "IFRS 15",

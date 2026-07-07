@@ -269,7 +269,7 @@ def build_income_statement_template(
     # Context from DB
     # -----------------------------
     ctx = get_company_context_fn(company_id) or {}
-    currency = ctx.get("currency") or "ZAR"
+    currency = ctx.get("currency") or "USD"
     company_name = ctx.get("name") or ctx.get("company_name") or ""
 
     organization_type = (

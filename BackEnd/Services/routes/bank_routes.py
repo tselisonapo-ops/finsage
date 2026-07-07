@@ -95,7 +95,7 @@ def _deny_if_wrong_company(
 
 def _company_currency(company_id: int) -> str:
     ctx = get_company_context(db_service, company_id) or {}
-    return (ctx.get("currency") or "ZAR").strip()
+    return (ctx.get("currency") or "USD").strip()
 
 
 @bank_bp.route("/api/companies/<int:company_id>/bank_statements/preview", methods=["POST"])

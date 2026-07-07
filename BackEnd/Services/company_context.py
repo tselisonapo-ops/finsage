@@ -24,7 +24,7 @@ def get_company_context(db_service, company_id: int) -> Dict[str, Any]:
         "company_name": c.get("name") or "",
         "industry": industry,
         "sub_industry": sub_industry,
-        "currency": c.get("currency") or "ZAR",
+        "currency": c.get("currency") or "USD",
 
         "fin_year_start": c.get("fin_year_start"),
         "first_reporting_period_start": c.get("first_reporting_period_start"),

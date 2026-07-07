@@ -2212,7 +2212,7 @@ class DatabaseService:
             code TEXT NOT NULL UNIQUE,        -- RSL, SARS, BURS
             name TEXT NOT NULL,
             country_code TEXT NOT NULL,       -- LS, ZA, BW
-            currency_code TEXT NULL,          -- LSL, ZAR, BWP
+            currency_code TEXT NULL,          -- LSL, USD, BWP
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -2220,7 +2220,7 @@ class DatabaseService:
         INSERT INTO public.tax_authorities (code, name, country_code, currency_code)
         VALUES
         ('RSL',  'Revenue Services Lesotho', 'LS', 'LSL'),
-        ('SARS', 'South African Revenue Service', 'ZA', 'ZAR'),
+        ('SARS', 'South African Revenue Service', 'ZA', 'USD'),
         ('BURS', 'Botswana Unified Revenue Service', 'BW', 'BWP')
         ON CONFLICT (code) DO UPDATE
         SET name = EXCLUDED.name,
@@ -6224,7 +6224,7 @@ class DatabaseService:
         DO $$
         DECLARE base_ccy text;
         BEGIN
-        SELECT COALESCE(NULLIF(trim(currency), ''), 'ZAR')
+        SELECT COALESCE(NULLIF(trim(currency), ''), 'USD')
         INTO base_ccy
         FROM public.companies
         WHERE id = {company_id};
@@ -7108,7 +7108,7 @@ class DatabaseService:
             account_name TEXT NULL,
             account_number TEXT NULL,
             account_type TEXT NULL,      -- cheque/savings/current
-            currency TEXT NULL,          -- ZAR/USD/etc
+            currency TEXT NULL,          -- USD/USD/etc
             swift_code TEXT NULL,        -- international
             iban TEXT NULL,              -- optional
             is_default BOOLEAN NOT NULL DEFAULT TRUE,
@@ -8361,7 +8361,7 @@ class DatabaseService:
             reviewer_user_id INT NULL,
             status TEXT NOT NULL DEFAULT 'draft', -- draft, pending_review, in_review, approved, posted, returned, rejected, reversed
             amount NUMERIC(18,2) NULL,
-            currency_code TEXT NULL DEFAULT 'ZAR',
+            currency_code TEXT NULL DEFAULT 'USD',
             source_table TEXT NULL,
             source_id INT NULL,
             notes TEXT NULL,
@@ -8397,7 +8397,7 @@ class DatabaseService:
         UPDATE {schema}.engagement_posting_activity SET company_id = {company_id} WHERE company_id IS NULL;
         UPDATE {schema}.engagement_posting_activity SET posting_date = CURRENT_DATE WHERE posting_date IS NULL;
         UPDATE {schema}.engagement_posting_activity SET status = 'draft' WHERE status IS NULL;
-        UPDATE {schema}.engagement_posting_activity SET currency_code = 'ZAR' WHERE currency_code IS NULL;
+        UPDATE {schema}.engagement_posting_activity SET currency_code = 'USD' WHERE currency_code IS NULL;
         UPDATE {schema}.engagement_posting_activity SET is_active = TRUE WHERE is_active IS NULL;
         UPDATE {schema}.engagement_posting_activity SET created_at = NOW() WHERE created_at IS NULL;
         UPDATE {schema}.engagement_posting_activity SET updated_at = NOW() WHERE updated_at IS NULL;
@@ -8405,7 +8405,7 @@ class DatabaseService:
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN company_id SET DEFAULT {company_id};
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN posting_date SET DEFAULT CURRENT_DATE;
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN status SET DEFAULT 'draft';
-        ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN currency_code SET DEFAULT 'ZAR';
+        ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN currency_code SET DEFAULT 'USD';
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN is_active SET DEFAULT TRUE;
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN created_at SET DEFAULT NOW();
         ALTER TABLE {schema}.engagement_posting_activity ALTER COLUMN updated_at SET DEFAULT NOW();
@@ -17063,7 +17063,7 @@ class DatabaseService:
             fees_asset_account_code TEXT NULL,
             fees_expense_account_code TEXT NULL,
 
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            currency TEXT NOT NULL,
 
             payment_amount NUMERIC(18,2) NULL,
             total_interest_projected NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -21338,7 +21338,7 @@ class DatabaseService:
             contract_number TEXT NOT NULL,
             contract_title TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'draft',          -- draft/active/suspended/completed/terminated/cancelled
-            contract_currency TEXT NOT NULL DEFAULT 'ZAR',
+            contract_currency TEXT NOT NULL,
 
             contract_date DATE NOT NULL,
             start_date DATE NULL,
@@ -21775,7 +21775,7 @@ class DatabaseService:
             event_type TEXT NOT NULL DEFAULT 'invoice', -- invoice/credit_note/debit_note/manual
             source_invoice_id INT NULL,
             amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            currency TEXT NOT NULL,
             notes TEXT NULL,
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -21799,7 +21799,7 @@ class DatabaseService:
             event_type TEXT NOT NULL DEFAULT 'receipt', -- receipt/refund/manual
             source_receipt_id INT NULL,
             amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            currency TEXT NOT NULL,
             notes TEXT NULL,
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -21997,7 +21997,7 @@ class DatabaseService:
             supplier_id INT NULL,
             employee_id INT NULL,
 
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            currency TEXT NOT NULL,
 
             transaction_date DATE NOT NULL,
             start_date DATE NOT NULL,
@@ -22013,8 +22013,14 @@ class DatabaseService:
             frequency TEXT NOT NULL DEFAULT 'monthly',
             -- monthly / quarterly / annually / once / manual
 
-            balance_account TEXT NOT NULL,
-            recognition_account TEXT NOT NULL,
+            balance_account TEXT NULL,
+            balance_account_role TEXT NULL,
+
+            recognition_account TEXT NULL,
+            recognition_account_role TEXT NULL,
+
+            settlement_account TEXT NULL,
+            settlement_role TEXT NULL,
 
             tax_account TEXT NULL,
             vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -22067,6 +22073,14 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS source_receipt_id INT NULL,
         ADD COLUMN IF NOT EXISTS source_payment_id INT NULL,
         ADD COLUMN IF NOT EXISTS source_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS balance_account_role TEXT NULL,
+        ADD COLUMN IF NOT EXISTS recognition_account_role TEXT NULL,
+        ADD COLUMN IF NOT EXISTS settlement_account TEXT NULL,
+        ADD COLUMN IF NOT EXISTS settlement_role TEXT NULL,
+
+        ADD COLUMN IF NOT EXISTS initial_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS initial_posted_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS initial_posted_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS approval_status TEXT,
         ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
@@ -22311,14 +22325,14 @@ class DatabaseService:
             event_type TEXT NOT NULL DEFAULT 'initial',
             -- initial / adjustment / addition / reduction / termination / reversal / manual
 
-            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            amount NUMERIC(18,2) NOcurrency TEXT NOT NULL,T NULL DEFAULT 0,
+            currency TEXT NOT NULL,
 
             source_invoice_id INT NULL,
             source_bill_id INT NULL,
             source_receipt_id INT NULL,
             source_payment_id INT NULL,
-            source_journal_id INT NULL,
+            originating_journal_id INT NULL,
 
             notes TEXT NULL,
             payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
@@ -22415,7 +22429,7 @@ class DatabaseService:
             recognition_date DATE NOT NULL,
             derecognition_date DATE NULL,
 
-            currency TEXT NOT NULL DEFAULT 'ZAR',
+            currency TEXT NOT NULL,
 
             original_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
             carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -22487,7 +22501,7 @@ class DatabaseService:
             carrying_amount = COALESCE(carrying_amount, 0),
             classification_status = COALESCE(NULLIF(classification_status,''), 'unclassified'),
             status = COALESCE(NULLIF(status,''), 'active'),
-            currency = COALESCE(NULLIF(currency,''), 'ZAR'),
+            currency = COALESCE(NULLIF(currency,''), 'USD'),
             meta_json = COALESCE(meta_json, '{{}}'::jsonb),
             created_at = COALESCE(created_at, NOW()),
             updated_at = COALESCE(updated_at, NOW());
@@ -22502,7 +22516,7 @@ class DatabaseService:
         ALTER COLUMN status SET NOT NULL,
         ALTER COLUMN status SET DEFAULT 'active',
         ALTER COLUMN currency SET NOT NULL,
-        ALTER COLUMN currency SET DEFAULT 'ZAR',
+        ALTER COLUMN currency SET DEFAULT 'USD',
         ALTER COLUMN meta_json SET NOT NULL,
         ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb,
         ALTER COLUMN created_at SET NOT NULL,
@@ -26422,7 +26436,7 @@ class DatabaseService:
                             pass
                     gross_amount = total_debits
 
-                currency_code = (entry.get("currency") or "ZAR").strip() or "ZAR"
+                currency_code = (entry.get("currency") or "USD").strip() or "USD"
 
                 self.upsert_engagement_posting_activity(
                     cursor,
@@ -29040,7 +29054,7 @@ class DatabaseService:
         currency = (
             ctx.get("currency")
             or ctx.get("base_currency")
-            or "ZAR"
+            or "USD"
         )
 
         organization_type = (
@@ -29565,7 +29579,7 @@ class DatabaseService:
                     reviewer_user_id=None,
                     status="draft",
                     amount=float(result.opening_lease_liability or 0.0),
-                    currency_code="ZAR",
+                    currency_code="USD",
                     source_table="leases",
                     source_id=int(lease_id),
                     notes="Lease master and initial schedule created",
@@ -29678,7 +29692,7 @@ class DatabaseService:
                     "created_by_user_id": user_id,
                     "updated_by_user_id": user_id,
                     "gross_amount": float(gross),
-                    "currency": "ZAR",
+                    "currency": "USD",
                     "lines": lines,
                 }
 
@@ -31028,7 +31042,7 @@ class DatabaseService:
                         if self.get_company_profile(company_id)
                         else ""
                     )
-                    or "ZAR"
+                    or "USD"
                 )
 
                 self.upsert_engagement_posting_activity(
@@ -42401,7 +42415,7 @@ class DatabaseService:
                 (data.get("loan_payable_noncurrent_account_code") or "").strip(),
                 (data.get("fees_asset_account_code") or "").strip() or None,
                 (data.get("fees_expense_account_code") or "").strip() or None,
-                (data.get("currency") or "ZAR").strip(),
+                (data.get("currency") or "USD").strip(),
 
                 principal_amount,
                 _money(data.get("accrued_interest_opening")),
@@ -42544,7 +42558,7 @@ class DatabaseService:
             "gross_amount": float(_money(loan_row.get("principal_amount"))),
             "net_amount": float(_money(loan_row.get("principal_amount"))),
             "vat_amount": 0.0,
-            "currency": loan_row.get("currency") or "ZAR",
+            "currency": loan_row.get("currency") or "USD",
             "lines": built["journal_lines"],
             "resolved_accounts": built.get("resolved_accounts", {}),
             "dr_total": built.get("dr_total"),
@@ -42743,7 +42757,7 @@ class DatabaseService:
                 (data.get("loan_payable_noncurrent_account_code") or "").strip(),
                 (data.get("fees_asset_account_code") or "").strip() or None,
                 (data.get("fees_expense_account_code") or "").strip() or None,
-                (data.get("currency") or "ZAR").strip(),
+                (data.get("currency") or "USD").strip(),
                 outstanding_principal,
                 outstanding_interest,
                 final_status,
@@ -43632,7 +43646,7 @@ class DatabaseService:
             "company_id": int(company_id),
             "loan_name": loan_name,
             "loan_reference": (data.get("loan_reference") or "").strip() or None,
-            "currency": (data.get("currency") or "ZAR").strip() or "ZAR",
+            "currency": (data.get("currency") or "USD").strip() or "USD",
             "principal_amount": principal_amount,
             "start_date": start_date,
             "first_payment_date": first_payment_date,
@@ -43666,7 +43680,7 @@ class DatabaseService:
             "gross_amount": float(_money(loan_row.get("principal_amount"))),
             "net_amount": float(_money(loan_row.get("principal_amount"))),
             "vat_amount": 0.0,
-            "currency": loan_row.get("currency") or "ZAR",
+            "currency": loan_row.get("currency") or "USD",
             "source": "loan_inception_preview",
             "source_id": None,
             "lines": built["journal_lines"],
@@ -43749,7 +43763,7 @@ class DatabaseService:
             "gross_amount": float(total),
             "net_amount": float(total),
             "vat_amount": 0.0,
-            "currency": (loan_row.get("currency") or bank_row.get("currency") or "ZAR"),
+            "currency": (loan_row.get("currency") or bank_row.get("currency") or "USD"),
             "source": "loan_payment_preview",
             "source_id": None,
             "lines": built["journal_lines"],
@@ -46442,7 +46456,7 @@ class DatabaseService:
 
         entry.update({
             "lines": posting_lines,
-            "currency": bill.get("currency") or "ZAR",
+            "currency": bill.get("currency") or "USD",
             "module_name": "accounts_payable",
             "engagement_company_id": bill.get("engagement_company_id") or bill.get("source_company_id"),
             "engagement_id": bill.get("engagement_id"),
@@ -46485,7 +46499,7 @@ class DatabaseService:
         engagement_id = bill.get("engagement_id")
 
         if engagement_company_id and engagement_id:
-            currency_code = (bill.get("currency") or "ZAR").strip() or "ZAR"
+            currency_code = (bill.get("currency") or "USD").strip() or "USD"
 
             self.upsert_engagement_posting_activity(
                 cur,
@@ -47980,7 +47994,7 @@ class DatabaseService:
 
                 rev_entry.update({
                     "lines": posting_lines,
-                    "currency": b.get("currency") or "ZAR",
+                    "currency": b.get("currency") or "USD",
                     "module_name": "accounts_payable",
                     "engagement_company_id": b.get("engagement_company_id") or b.get("source_company_id"),
                     "engagement_id": b.get("engagement_id"),
@@ -49969,7 +49983,7 @@ class DatabaseService:
 
             journal_entry.update({
                 "lines": posting_lines,
-                "currency": inv.get("currency") or "ZAR",
+                "currency": inv.get("currency") or "USD",
                 "module_name": "accounts_receivable",
                 "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
                 "engagement_id": inv.get("engagement_id"),
@@ -50034,7 +50048,7 @@ class DatabaseService:
 
                 if engagement_company_id and engagement_id:
                     total_amount = money(inv.get("total_amount") or inv.get("total") or 0.0)
-                    currency_code = (inv.get("currency") or "ZAR").strip() or "ZAR"
+                    currency_code = (inv.get("currency") or "USD").strip() or "USD"
 
                     self.upsert_engagement_posting_activity(
                         _cur,
@@ -51567,7 +51581,7 @@ class DatabaseService:
 
                 journal_entry.update({
                     "lines": reversal_lines,
-                    "currency": inv.get("currency") or "ZAR",
+                    "currency": inv.get("currency") or "USD",
                     "module_name": "accounts_receivable",
                     "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
                     "engagement_id": inv.get("engagement_id"),
@@ -51776,7 +51790,7 @@ class DatabaseService:
 
                 wo_entry.update({
                     "lines": posting_lines,
-                    "currency": inv.get("currency") or "ZAR",
+                    "currency": inv.get("currency") or "USD",
                     "module_name": "accounts_receivable",
                     "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
                     "engagement_id": inv.get("engagement_id"),
@@ -52451,7 +52465,7 @@ class DatabaseService:
         return row or {"company_id": cid}
 
     def create_bank_import(self, company_id: int, bank_account_id: int | None, file_name: str, file_ext: str,
-                        file_hash: str, uploaded_by: int | None, currency: str = "ZAR") -> int:
+                        file_hash: str, uploaded_by: int | None, currency: str = "USD") -> int:
         row = self.fetch_one("""
             INSERT INTO public.bank_statement_imports
             (company_id, bank_account_id, file_name, file_ext, file_hash, uploaded_by, currency, status)
@@ -52479,7 +52493,7 @@ class DatabaseService:
                 company_id, import_id,
                 ln.get("line_date"), ln.get("value_date"),
                 ln["amount"],
-                ln.get("currency") or "ZAR",
+                ln.get("currency") or "USD",
                 ln.get("description"), ln.get("reference"),
                 ln.get("counterparty"), ln.get("running_balance"),
                 ln["fingerprint"],
@@ -60915,7 +60929,7 @@ class DatabaseService:
         reviewer_user_id: int = None,
         status: str = "draft",
         amount=None,
-        currency_code: str = "ZAR",
+        currency_code: str = "USD",
         source_table: str = None,
         source_id: int = None,
         notes: str = None,
@@ -60962,7 +60976,7 @@ class DatabaseService:
             reviewer_user_id,
             status or "draft",
             amount,
-            currency_code or "ZAR",
+            currency_code or "USD",
             source_table,
             source_id,
             notes,
@@ -64779,7 +64793,7 @@ class DatabaseService:
             reviewer_user_id=entry.get("reviewer_user_id"),
             status=entry.get("status") or "posted",
             amount=entry.get("gross_amount") or entry.get("amount") or entry.get("net_amount"),
-            currency_code=entry.get("currency") or entry.get("currency_code") or "ZAR",
+            currency_code=entry.get("currency") or entry.get("currency_code") or "USD",
             source_table=source_table,
             source_id=source_id,
             notes=entry.get("notes"),
@@ -64895,7 +64909,7 @@ class DatabaseService:
         reviewer_user_id: int = None,
         status: str = "posted",
         amount=None,
-        currency_code: str = "ZAR",
+        currency_code: str = "USD",
         source_table: str = None,
         source_id: int = None,
         notes: str = None,
@@ -70847,7 +70861,7 @@ class DatabaseService:
                 (data.get("contract_number") or "").strip(),
                 (data.get("contract_title") or "").strip(),
                 (data.get("status") or "draft").strip().lower(),
-                (data.get("contract_currency") or "ZAR").strip().upper(),
+                (data.get("contract_currency") or "USD").strip().upper(),
                 data.get("contract_date"),
                 data.get("start_date"),
                 data.get("end_date"),
@@ -70910,7 +70924,7 @@ class DatabaseService:
                         reviewer_user_id=None,
                         status=str(row.get("status") or "draft"),
                         amount=float(row.get("transaction_price") or 0.0),
-                        currency_code=(row.get("contract_currency") or "ZAR"),
+                        currency_code=(row.get("contract_currency") or "USD"),
                         source_table="revenue_contracts",
                         source_id=int(row["id"]),
                         notes="Revenue contract created",
@@ -72461,7 +72475,7 @@ class DatabaseService:
                     data.get("event_type", "receipt"),
                     data.get("source_receipt_id"),
                     float(data.get("amount") or 0),
-                    data.get("currency") or "ZAR",
+                    data.get("currency") or "USD",
                     data.get("notes"),
                     json.dumps(data.get("payload_json") or {}),
                 ),
@@ -72490,7 +72504,7 @@ class DatabaseService:
         contract_id: int,
         invoice_id: int,
         amount: float,
-        currency: str = "ZAR",
+        currency: str = "USD",
         cur=None,
     ) -> dict:
         from decimal import Decimal, ROUND_HALF_UP
@@ -72644,7 +72658,7 @@ class DatabaseService:
             if amount == 0:
                 raise ValueError("Billing amount must be non-zero")
 
-            currency = (data.get("currency") or contract.get("contract_currency") or "ZAR").strip().upper()
+            currency = (data.get("currency") or contract.get("contract_currency") or "USD").strip().upper()
 
             payload_json = data.get("payload_json") or {}
             if isinstance(payload_json, str):
@@ -72821,7 +72835,7 @@ class DatabaseService:
                     (data.get("event_type") or "receipt").strip().lower(),
                     data.get("source_receipt_id"),
                     float(data.get("amount") or 0.0),
-                    (data.get("currency") or "ZAR").strip().upper(),
+                    (data.get("currency") or "USD").strip().upper(),
                     data.get("notes"),
                     _json_dumps(data.get("payload_json")),
                 )
@@ -74589,7 +74603,7 @@ class DatabaseService:
                         reviewer_user_id=int(user_id) if user_id else None,
                         status="approved",
                         amount=float(after.get("transaction_price") or 0.0),
-                        currency_code=(after.get("contract_currency") or "ZAR"),
+                        currency_code=(after.get("contract_currency") or "USD"),
                         source_table="revenue_contracts",
                         source_id=int(after["id"]),
                         notes="Revenue contract approved",
@@ -74891,7 +74905,7 @@ class DatabaseService:
                     customer_id,
                     (patch.get("contract_number", before.get("contract_number")) or "").strip(),
                     (patch.get("contract_title", before.get("contract_title")) or "").strip(),
-                    (patch.get("contract_currency", before.get("contract_currency") or "ZAR") or "ZAR").strip().upper(),
+                    (patch.get("contract_currency", before.get("contract_currency") or "USD") or "USD").strip().upper(),
                     patch.get("contract_date", before.get("contract_date")),
                     patch.get("start_date", before.get("start_date")),
                     patch.get("end_date", before.get("end_date")),
@@ -74938,7 +74952,7 @@ class DatabaseService:
                         reviewer_user_id=int(user_id) if user_id else None,
                         status=str(after.get("status") or "active"),
                         amount=float(after.get("transaction_price") or 0.0),
-                        currency_code=(after.get("contract_currency") or "ZAR"),
+                        currency_code=(after.get("contract_currency") or "USD"),
                         source_table="revenue_contracts",
                         source_id=int(after["id"]),
                         notes="Approved revenue contract modification applied",
@@ -75145,7 +75159,7 @@ class DatabaseService:
                 "lines": jlines,
                 "source": "adjustment",
                 "source_id": int(run_id),
-                "currency": (run.get("currency") or "ZAR"),
+                "currency": (run.get("currency") or "USD"),
                 "created_by_user_id": int(user_id or 0) or None,
                 "updated_by_user_id": int(user_id or 0) or None,
                 "module_name": "revenue",
@@ -75227,7 +75241,7 @@ class DatabaseService:
                         reviewer_user_id=int(user_id) if user_id else None,
                         status="posted",
                         amount=float(run.get("total_revenue_delta") or 0.0),
-                        currency_code=(run.get("currency") or contract.get("contract_currency") or "ZAR"),
+                        currency_code=(run.get("currency") or contract.get("contract_currency") or "USD"),
                         source_table="revenue_recognition_runs",
                         source_id=int(run_id),
                         notes=f"Revenue recognition run posted for contract {contract.get('contract_number') or cid}",
@@ -75319,7 +75333,7 @@ class DatabaseService:
                 "source": "adjustment",
                 "source_id": -int(run_id),
                 "source_table": "revenue_recognition_runs",
-                "currency": (run.get("currency") or "ZAR"),
+                "currency": (run.get("currency") or "USD"),
                 "module_name": "revenue",
                 "event_type": "reversed",
                 "created_by_user_id": int(user_id or 0) or None,
@@ -75824,7 +75838,7 @@ class DatabaseService:
             "contract_number": contract.get("contract_number"),
             "contract_title": contract.get("contract_title"),
             "customer_id": contract.get("customer_id"),
-            "contract_currency": contract.get("contract_currency") or "ZAR",
+            "contract_currency": contract.get("contract_currency") or "USD",
             "settlement_pattern": settlement_pattern or None,
 
             "obligation_id": int(obligation.get("id")),
@@ -78402,6 +78416,19 @@ class DatabaseService:
 
         return f"{prefix}-{int(row.get('next_no') or 1):05d}"
 
+    def company_currency(self, company_id: int) -> str:
+        row = self.fetch_one("""
+            SELECT currency
+            FROM public.companies
+            WHERE id = %s
+        """, (int(company_id),))
+
+        currency = (row or {}).get("currency")
+        if currency:
+            return str(currency).strip().upper()
+
+        # Global fallback
+        return "USD"
 
     def accrual_deferral_create_item(self, company_id: int, payload: dict, user_id=None):
         schema = self.company_schema(company_id)
@@ -78483,7 +78510,10 @@ class DatabaseService:
                 payload.get("customer_id"),
                 payload.get("supplier_id"),
                 payload.get("employee_id"),
-                payload.get("currency") or "ZAR",
+                (
+                    payload.get("currency")
+                    or self.company_currency(company_id)
+                ),
                 transaction_date,
                 start_date,
                 end_date,
@@ -78906,7 +78936,7 @@ class DatabaseService:
             "source": "accrual_deferral_initial",
             "source_id": int(item["id"]),
             "module_name": "accrual_deferrals",
-            "currency": item.get("currency") or "ZAR",
+            "currency": item.get("currency") or "USD",
             "lines": lines,
             "item": item,
         }
@@ -78944,7 +78974,7 @@ class DatabaseService:
                     int(item_id),
                     entry["date"],
                     entry["lines"][0]["debit"] or entry["lines"][1]["credit"],
-                    entry.get("currency") or "ZAR",
+                    entry.get("currency") or "USD",
                     journal_id,
                     "Initial recognition posted",
                     payload or {},
@@ -79087,7 +79117,7 @@ class DatabaseService:
             "source": "accrual_deferral_run",
             "source_id": int(run_id),
             "module_name": "accrual_deferrals",
-            "currency": "ZAR",
+            "currency": "USD",
             "lines": journal_lines,
             "entries": entries,
             "total": total,
@@ -79338,7 +79368,10 @@ class DatabaseService:
             payload.get("counterparty_type"),
             recognition_date,
             payload.get("derecognition_date"),
-            payload.get("currency") or "ZAR",
+            (
+                payload.get("currency")
+                or self.company_currency(company_id)
+            ),
             self._num(payload.get("original_amount")),
             self._num(payload.get("carrying_amount", payload.get("original_amount") or 0)),
             payload.get("classification_status") or "unclassified",
@@ -79688,7 +79721,7 @@ class DatabaseService:
                 l.lender_name,
                 'bank',
                 l.start_date,
-                COALESCE(l.currency, 'ZAR'),
+                COALESCE(l.currency, 'USD'),
                 COALESCE(l.principal_amount, 0),
                 COALESCE(l.outstanding_principal, l.principal_amount, 0),
                 'classified',
@@ -80062,7 +80095,7 @@ class DatabaseService:
             "gross_amount": float(amount),
             "net_amount": float(amount),
             "vat_amount": 0.0,
-            "currency": data.get("currency") or "ZAR",
+            "currency": data.get("currency") or "USD",
             "source": "ifrs9_ecl_preview",
             "source_id": None,
             "lines": lines,
@@ -80186,7 +80219,7 @@ class DatabaseService:
                     "reporting_date": run.get("reporting_date"),
                     "movement_ecl": movement_ecl,
                     "reference": f"IFRS9-ECL-{run.get('id')}",
-                    "currency": "ZAR",
+                    "currency": "USD",
                 },
             )
 
@@ -80219,7 +80252,7 @@ class DatabaseService:
                     "reporting_date": run.get("reporting_date"),
                     "movement_ecl": movement_ecl,
                     "reference": f"IFRS9-ECL-{run_id}",
-                    "currency": "ZAR",
+                    "currency": "USD",
                 },
             )
 
@@ -80230,7 +80263,7 @@ class DatabaseService:
                 "gross_amount": preview["gross_amount"],
                 "net_amount": preview["net_amount"],
                 "vat_amount": 0.0,
-                "currency": preview.get("currency") or "ZAR",
+                "currency": preview.get("currency") or "USD",
                 "source": "ifrs9_ecl",
                 "source_id": int(run_id),
                 "module_name": "ifrs9",
@@ -80281,7 +80314,7 @@ class DatabaseService:
                     entity_ref=f"IFRS9-ECL-{run_id}",
                     journal_id=int(journal_id),
                     amount=float(abs(movement_ecl)),
-                    currency=preview.get("currency") or "ZAR",
+                    currency=preview.get("currency") or "USD",
                     before_json={"run_before": run},
                     after_json={"run_after": posted_run, "journal": entry},
                     message=f"Posted IFRS 9 ECL run {run_id}",

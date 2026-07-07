@@ -204,7 +204,7 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
                         "source_invoice_id": int(invoice_id),
                         "source_receipt_id": int(out.get("receipt_id")) if out.get("receipt_id") else None,
                         "amount": float(amount),
-                        "currency": inv.get("currency") or "ZAR",
+                        "currency": inv.get("currency") or "USD",
                         "notes": f"Cash received for invoice {inv.get('number')}",
                         "payload_json": {
                             "customer_id": int(inv.get("customer_id") or 0),

@@ -285,7 +285,7 @@ def api_credit_submit():
             try:
                 customer_ref = f"CUST-{int(customer_id)}"
                 requested_limit = float((prof_payload or {}).get("requestedLimit") or 0.0)
-                cur0 = (company_profile.get("currency") or company_profile.get("base_currency") or "ZAR")
+                cur0 = (company_profile.get("currency") or company_profile.get("base_currency") or "USD")
 
                 dedupe_key = f"ar:customer:{int(customer_id)}:approve_customer"
 

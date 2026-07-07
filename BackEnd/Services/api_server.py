@@ -991,7 +991,7 @@ def record_invoice_revenue_billing_and_allocation(
             "source_invoice_id": int(invoice_id),
             "obligation_id": billing_obligation_id,
             "amount": billing_amount,
-            "currency": inv.get("currency") or "ZAR",
+            "currency": inv.get("currency") or "USD",
             "notes": f"From AR invoice {inv.get('number') or invoice_id}",
             "payload_json": {
                 "customer_id": int(inv.get("customer_id") or 0),
@@ -1012,7 +1012,7 @@ def record_invoice_revenue_billing_and_allocation(
             contract_id=int(revenue_contract_id),
             invoice_id=int(invoice_id),
             amount=float(billing_amount),
-            currency=inv.get("currency") or "ZAR",
+            currency=inv.get("currency") or "USD",
         )
 
         current_app.logger.info("Auto allocation result: %s", allocation)
@@ -6363,7 +6363,7 @@ def create_invoice(cid: int):
                         "source_invoice_id": int(invoice_id),
                         "obligation_id": billing_obligation_id,
                         "amount": billing_amount,
-                        "currency": inv.get("currency") or header.get("currency") or "ZAR",
+                        "currency": inv.get("currency") or header.get("currency") or "USD",
                         "notes": f"From AR invoice {inv.get('number') or invoice_id}",
                         "payload_json": {
                             "customer_id": int(cust_id),
@@ -6385,7 +6385,7 @@ def create_invoice(cid: int):
                             contract_id=int(revenue_contract_id),
                             invoice_id=int(invoice_id),
                             amount=float(billing_amount),
-                            currency=inv.get("currency") or header.get("currency") or "ZAR",
+                            currency=inv.get("currency") or header.get("currency") or "USD",
                         )
 
                         current_app.logger.info("Auto allocation result: %s", allocation)

@@ -96,7 +96,7 @@ def update_quote(company_id: int, quote_id: int):
 
     # allow UI to send either "quotation_date" or "quote_date"
     quotation_date = (raw.get("quotation_date") or raw.get("quote_date") or str(date.today()))[:10]
-    currency = (raw.get("currency") or "ZAR").strip() or "ZAR"
+    currency = (raw.get("currency") or "USD").strip() or "USD"
     notes = raw.get("notes") or ""
     terms = raw.get("terms") or ""
     status = (raw.get("status") or "draft").strip().lower() or "draft"
@@ -212,9 +212,9 @@ def issue_quote(company_id: int, quote_id: int):
             full0 = db_service.get_quote_full(company_id, quote_id) or {}
             ref0 = (full0.get("number") or f"QUOTE-{quote_id}")
             total0 = float(full0.get("total_amount") or full0.get("total") or 0.0)
-            cur0 = (full0.get("currency") or "ZAR")
+            cur0 = (full0.get("currency") or "USD")
         except Exception:
-            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "ZAR"
+            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "USD"
 
         rid = db_service.create_approval_request(
             company_id,
@@ -225,7 +225,7 @@ def issue_quote(company_id: int, quote_id: int):
             action="quote_issue",
             requested_by_user_id=int(user_id or 0),
             amount=float(total0 or 0.0),
-            currency=str(cur0 or "ZAR"),
+            currency=str(cur0 or "USD"),
             risk_level="low",
             dedupe_key=f"ar:quote:{int(quote_id)}:issue",
             payload_json={"quote_id": int(quote_id)},
@@ -377,9 +377,9 @@ def accept_quote(company_id: int, quote_id: int):
             full0 = db_service.get_quote_full(company_id, quote_id) or {}
             ref0 = (full0.get("number") or f"QUOTE-{quote_id}")
             total0 = float(full0.get("total_amount") or full0.get("total") or 0.0)
-            cur0 = (full0.get("currency") or "ZAR")
+            cur0 = (full0.get("currency") or "USD")
         except Exception:
-            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "ZAR"
+            ref0, total0, cur0 = f"QUOTE-{quote_id}", 0.0, "USD"
 
         rid = db_service.create_approval_request(
             company_id,
@@ -390,7 +390,7 @@ def accept_quote(company_id: int, quote_id: int):
             action="quote_accept",
             requested_by_user_id=int(user_id or 0),
             amount=float(total0 or 0.0),
-            currency=str(cur0 or "ZAR"),
+            currency=str(cur0 or "USD"),
             risk_level="medium",
             dedupe_key=f"ar:quote:{int(quote_id)}:accept",
             payload_json={"quote_id": int(quote_id)},
@@ -875,7 +875,7 @@ def quotes_root(company_id: int):
             "customer_id": customer_id,
             "status": (body.get("status") or "draft").strip().lower(),
             "quotation_date": (body.get("quotation_date") or body.get("quote_date") or str(date.today()))[:10],
-            "currency": (body.get("currency") or "ZAR").strip() or "ZAR",
+            "currency": (body.get("currency") or "USD").strip() or "USD",
             "notes": body.get("notes") or "",
             "terms": body.get("terms") or "",
             "discount_rate": float(body.get("discount_rate") or body.get("discountRate") or 0.0),

@@ -1086,7 +1086,7 @@ def vat_prepare_filing(company_id: int):
             "engagement_id": payload.get("engagement_id"),
 
             "lines": resolved_lines,
-            "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
+            "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "USD",
             "created_by_user_id": int(current_user.get("id") or 0),
             "updated_by_user_id": int(current_user.get("id") or 0),
             "prepared_by_user_id": int(current_user.get("id") or 0),
@@ -1730,7 +1730,7 @@ def vat_filing_pay(company_id: int):
         "engagement_id": filing.get("engagement_id") or payload.get("engagement_id"),
 
         "lines": lines,
-        "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "ZAR",
+        "currency": (get_company_context(db_service, company_id) or {}).get("currency") or "USD",
         "created_by_user_id": int(user.get("id") or 0),
         "updated_by_user_id": int(user.get("id") or 0),
         "prepared_by_user_id": int(user.get("id") or 0),

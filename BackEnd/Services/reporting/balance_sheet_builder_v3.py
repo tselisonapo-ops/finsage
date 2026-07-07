@@ -428,7 +428,7 @@ def build_balance_sheet_v3(
 ) -> Dict[str, Any]:
 
     ctx = get_company_context_fn(company_id) or {}
-    currency = ctx.get("currency") or "ZAR"
+    currency = ctx.get("currency") or "USD"
     company_name = ctx.get("company_name") or ""
 
     organization_type = (

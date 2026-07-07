@@ -172,7 +172,7 @@ class BankService:
         file_bytes: bytes,
         uploaded_by: int | None,
         mapping_json: str | None = None,
-        currency: str | None = None,  # ✅ change default from "ZAR" to None
+        currency: str | None = None,  # ✅ change default from "USD" to None
     ) -> int:
         # ✅ decide currency at runtime (global SaaS)
         currency = self._resolve_currency(company_id, bank_account_id, currency)

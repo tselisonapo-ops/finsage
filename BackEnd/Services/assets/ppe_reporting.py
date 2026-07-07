@@ -4825,7 +4825,10 @@ def approve_post_subsequent_measurement(company_id: int, sm_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
+
     deny = _deny_if_wrong_company(
+        payload,
         int(company_id),
         db_service=db_service,
     )

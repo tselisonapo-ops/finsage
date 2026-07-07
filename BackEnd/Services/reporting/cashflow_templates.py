@@ -499,7 +499,7 @@ def build_cashflow_full_v2(
         "meta": {
             "company_id": company_id,
             "company_name": ctx.get("company_name"),
-            "currency": ctx.get("currency") or "ZAR",
+            "currency": ctx.get("currency") or "USD",
             "statement": "cf",
             "template": template,
             "basis": basis,
@@ -1599,7 +1599,7 @@ def build_cashflow_indirect_v2(
         "meta": {
             "company_id": company_id,
             "company_name": ctx.get("company_name"),
-            "currency": ctx.get("currency") or "ZAR",
+            "currency": ctx.get("currency") or "USD",
             "statement": "cf",
             "template": template,
             "basis": basis,

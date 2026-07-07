@@ -79,5 +79,5 @@ export function companyUsesInventory(company = getCompanyContext()) {
 }
 
 export function getCurrency(company = getCompanyContext()) {
-  return company?.currency || "ZAR";
+  return company?.currency || "USD";
 }

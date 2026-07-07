@@ -834,7 +834,7 @@ countrySel.addEventListener("change", function () {
 
 function fetchCountryMeta() {
   const fallback = [
-    { code: "ZA", name: "South Africa", currency: "ZAR", phone: "+27" },
+    { code: "ZA", name: "South Africa", currency: "USD", phone: "+27" },
     { code: "LS", name: "Lesotho",      currency: "LSL", phone: "+266" },
     { code: "BW", name: "Botswana",     currency: "BWP", phone: "+267" },
     { code: "NA", name: "Namibia",      currency: "NAD", phone: "+264" },

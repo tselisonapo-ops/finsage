@@ -10008,7 +10008,7 @@ window.openFixedAssetsDrawer = openFixedAssetsDrawer;
       company.prices_include_vat ??
       company.pricesIncludeVat ??
       // fallback default similar to hydrateTaxUI
-      (country === "ZA" && vatRegistered && (currency === "ZAR" || !currency));
+      (country === "ZA" && vatRegistered && (currency === "USD" || !currency));
 
     if (inclToggle) {
       inclToggle.checked = !!pricesIncludeVat;
@@ -11279,7 +11279,7 @@ window.loadCompanyProfile = loadCompanyProfile;
 
         <div>
           <label class="block text-[11px] text-slate-500 mb-1">Currency</label>
-          <input name="currency" class="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. ZAR" />
+          <input name="currency" class="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. USD" />
         </div>
 
         <div>
@@ -19296,7 +19296,7 @@ async function bindBankSetupScreen() {
       currency:
         document.getElementById("bankCurrency")?.value.trim() ||
         CURRENT_COMPANY?.currency ||
-        "ZAR",
+        "USD",
       ledger_account_code: document.getElementById("bankLedgerCode")?.value.trim() || "",
       is_default_receipts: !!document.getElementById("bankDefaultReceipts")?.checked,
       is_default_payments: !!document.getElementById("bankDefaultPayments")?.checked,
@@ -19311,7 +19311,7 @@ async function bindBankSetupScreen() {
     document.getElementById("bankAccountNumber").value = "";
     document.getElementById("bankBranchCode").value = "";
     document.getElementById("bankSwiftCode").value = "";
-    document.getElementById("bankCurrency").value = CURRENT_COMPANY?.currency || "ZAR";
+    document.getElementById("bankCurrency").value = CURRENT_COMPANY?.currency || "USD";
     document.getElementById("bankLedgerCode").value = "BS_CA_1000";
     document.getElementById("bankDefaultReceipts").checked = false;
     document.getElementById("bankDefaultPayments").checked = false;
@@ -19329,7 +19329,7 @@ async function bindBankSetupScreen() {
     document.getElementById("bankAccountNumber").value = bank.account_number || "";
     document.getElementById("bankBranchCode").value = bank.branch_code || "";
     document.getElementById("bankSwiftCode").value = bank.swift_code || "";
-    document.getElementById("bankCurrency").value = bank.currency || CURRENT_COMPANY?.currency || "ZAR";
+    document.getElementById("bankCurrency").value = bank.currency || CURRENT_COMPANY?.currency || "USD";
     document.getElementById("bankLedgerCode").value = bank.ledger_account_code || "BS_CA_1000";
     document.getElementById("bankDefaultReceipts").checked = !!bank.is_default_receipts;
     document.getElementById("bankDefaultPayments").checked = !!bank.is_default_payments;
@@ -19563,7 +19563,7 @@ async function editBankSetupAccount(bankId) {
   document.getElementById("bankAccountNumber").value = bank.account_number || "";
   document.getElementById("bankBranchCode").value = bank.branch_code || "";
   document.getElementById("bankSwiftCode").value = bank.swift_code || "";
-  document.getElementById("bankCurrency").value = bank.currency || "ZAR";
+  document.getElementById("bankCurrency").value = bank.currency || "USD";
   document.getElementById("bankLedgerCode").value = bank.ledger_account_code || "BS_CA_1000";
   document.getElementById("bankDefaultReceipts").checked = !!bank.is_default_receipts;
   document.getElementById("bankDefaultPayments").checked = !!bank.is_default_payments;
@@ -20301,7 +20301,7 @@ function renderLedgerTable(rows, meta) {
     return;
   }
 
-  const currency = (window.CURRENT_CURRENCY || "ZAR").toUpperCase();
+  const currency = (window.CURRENT_CURRENCY || "USD").toUpperCase();
   const fmtMoney = (val) => {
     const num = Number(val || 0).toFixed(2);
     const [intPart, dec] = num.split(".");
@@ -27058,11 +27058,11 @@ function metricCard(label, value, ctx, type = "amount") {
     label,
     value,
     type,
-    currency: ctx?.currency || "ZAR",
+    currency: ctx?.currency || "USD",
   };
 }
 
-function fmtInterpretValue(v, type = "amount", currency = "ZAR") {
+function fmtInterpretValue(v, type = "amount", currency = "USD") {
   if (v == null || !Number.isFinite(v)) return "—";
 
   if (type === "percent") {
@@ -27543,7 +27543,7 @@ async function renderStatementViewer(stmtType = "pnl", opts = {}) {
         compare,
         cols_mode,
         detail,
-        currency: data?.meta?.currency || "ZAR",
+        currency: data?.meta?.currency || "USD",
       });
     } catch (e) {
       console.warn("renderStatementInterpretation failed:", e);
@@ -29598,7 +29598,7 @@ window.openLeasePaymentModal = async function openLeasePaymentModal({
           action: "lease_pay",
           lease_name: lease_name || `Lease ${leaseId2}`,
           amount: Number(String(payload.amount || "0").replace(/,/g, "")) || 0,
-          currency: window.CURRENT_COMPANY?.base_currency || "ZAR",
+          currency: window.CURRENT_COMPANY?.base_currency || "USD",
           payload_json: {
             lease_id: leaseId2,
             lease_name,
@@ -37498,7 +37498,11 @@ async function saveEditModal() {
           body: JSON.stringify(payload),
         });
 
+        console.log("SM CREATE RESPONSE:", created);
+
         const id = Number(created?.id || created?.item?.id || created?.data?.id || 0) || 0;
+
+        console.log("SM POST ID:", id);
         if (!id) throw new Error("Subsequent measurement was not created.");
 
         $("smId").value = String(id);
@@ -38779,7 +38783,7 @@ async function saveEditModal() {
     $("#loanAccruedOpening").value = loan.accrued_interest_opening ?? 0;
     $("#loanRepaymentHolidayCount").value = loan.repayment_holiday_count ?? 0;
     $("#loanVariableRate").checked = !!loan.variable_rate;
-    $("#loanCurrency").value = loan.currency || "ZAR";
+    $("#loanCurrency").value = loan.currency || "USD";
     $("#loanBankAccountId").value = loan.bank_account_id || "";
     $("#loanInterestExpenseAccountCode").value = loan.interest_expense_account_code || "";
     $("#loanAccruedInterestAccountCode").value = loan.accrued_interest_account_code || "";
@@ -38848,7 +38852,7 @@ async function saveEditModal() {
           <div class="mt-1 text-xs text-slate-500">${escapeHtml(loan.lender_name || "—")}</div>
           <div class="mt-2 flex items-center justify-between text-xs">
             <span class="text-slate-500">${escapeHtml(loan.loan_reference || "")}</span>
-            <span class="font-semibold text-slate-700">${money(loan.outstanding_principal || 0, loan.currency || "ZAR")}</span>
+            <span class="font-semibold text-slate-700">${money(loan.outstanding_principal || 0, loan.currency || "USD")}</span>
           </div>
         </button>
       `;
@@ -40555,7 +40559,7 @@ async function saveEditModal() {
           start_date: $("adNewStartDate")?.value,
           end_date: $("adNewEndDate")?.value,
           original_amount: Number($("adNewAmount")?.value || 0),
-          currency: $("adNewCurrency")?.value || "ZAR",
+          currency: $("adNewCurrency")?.value || "USD",
           frequency: $("adNewFrequency")?.value || "monthly",
           balance_account: "",
           recognition_account: finalCtx.account?.code || "",
@@ -41495,7 +41499,7 @@ async function saveEditModal() {
       revenue_contract_number: c.contract_number || "",
       revenue_contract_title: c.contract_title || "",
       invoice_date: new Date().toISOString().slice(0, 10),
-      currency: resolveCurrency(c.contract_currency || "ZAR"),
+      currency: resolveCurrency(c.contract_currency || "USD"),
       memo: `Invoice for ${c.contract_title || c.contract_number || "contract"}`,
       line: {
         item_name: c.contract_title || "Contract billing",
@@ -42017,7 +42021,7 @@ async function renderContractPreview(c = {}) {
           if ($("revContractId")) $("revContractId").value = String(contract.id || "");
           if ($("revContractNumber")) $("revContractNumber").value = contract.contract_number || "";
           if ($("revCustomerId")) $("revCustomerId").value = String(contract.customer_id || "");
-          if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "ZAR");
+          if ($("revCashCurrency")) $("revCashCurrency").value = resolveCurrency(contract.contract_currency || "USD");
           if ($("revObligationId")) $("revObligationId").value = String(state.selectedObligation?.id || "");
 
           if (activePolicy?.billing_method === "milestone" && milestoneBasis === "obligation") {
@@ -42997,7 +43001,7 @@ async function renderContractPreview(c = {}) {
             revenue_obligation_id: p.obligation_id || null,
             invoice_date: new Date().toISOString().slice(0, 10),
             currency: resolveCurrency(
-              p.contract_currency || state.selectedContract?.contract_currency || "ZAR"
+              p.contract_currency || state.selectedContract?.contract_currency || "USD"
             ),
             billing_level: p.obligation_id ? "obligation" : "contract",
             settlement_pattern: "cash_before_service",
@@ -45691,7 +45695,7 @@ async function renderContractPreview(c = {}) {
       const contractId = await ensureContractExistsAndLatest();
 
       const amount = Number($("revTransactionPrice")?.value || 0) || 0;
-      const currency = ($("revContractCurrency")?.value || "ZAR").trim();
+      const currency = ($("revContractCurrency")?.value || "USD").trim();
       const contractNumber = ($("revContractNumber")?.value || "").trim() || null;
 
       const out = await submitRevenueApprovalRequest({
@@ -45715,7 +45719,7 @@ async function renderContractPreview(c = {}) {
 
       if (!canApprove && mode !== FS.control.MODES.OWNER) {
         const amount = Number($("revTransactionPrice")?.value || 0) || 0;
-        const currency = ($("revContractCurrency")?.value || "ZAR").trim();
+        const currency = ($("revContractCurrency")?.value || "USD").trim();
         const contractNumber = ($("revContractNumber")?.value || "").trim() || null;
 
         const out = await submitRevenueApprovalRequest({
@@ -46497,7 +46501,7 @@ async function renderContractPreview(c = {}) {
           revenue_obligation_id: preview.obligation_id,
           revenue_obligation_name: preview.obligation_name || "",
           invoice_date: new Date().toISOString().slice(0, 10),
-          currency: preview.contract_currency || "ZAR",
+          currency: preview.contract_currency || "USD",
           memo: `Invoice for recognised work done on ${preview.obligation_name || "obligation"}`,
           line: {
             item_name: preview.obligation_name || "Service",
@@ -46555,7 +46559,7 @@ async function renderContractPreview(c = {}) {
           revenue_obligation_id: preview.obligation_id,
           revenue_obligation_name: preview.obligation_name || "",
           invoice_date: new Date().toISOString().slice(0, 10),
-          currency: preview.contract_currency || "ZAR",
+          currency: preview.contract_currency || "USD",
           memo: `Invoice for recognised work done on ${preview.obligation_name || "obligation"}${preview.contract_number ? ` (${preview.contract_number})` : ""}`,
           line: {
             item_name: preview.obligation_name || "Service",
@@ -48187,7 +48191,7 @@ async function submitInvoiceForApprovalFlow({ cid, invId }) {
 
   const customerName = (document.getElementById("invCustomerName")?.value || "").trim() || null;
   const invNumber    = (document.getElementById("invNumber")?.value || "").trim() || null;
-  const currency     = (document.getElementById("invCurrency")?.value || "").trim() || "ZAR";
+  const currency     = (document.getElementById("invCurrency")?.value || "").trim() || "USD";
 
   // ✅ use your new endpoint here (submit approval request)
   await submitInvoiceApprovalRequest({ cid, invId, amount, currency, customerName, invNumber });
@@ -49261,7 +49265,7 @@ async function openInvoiceIntoForm(invoiceId, { mode = "view" } = {}) {
   $("invDate") && ($("invDate").value = toIsoDateOnly(inv.invoice_date));
   $("invDueDate") && ($("invDueDate").value = toIsoDateOnly(inv.due_date));
   $("invTerms") && ($("invTerms").value = inv.terms || "Due on receipt");
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "ZAR");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
 
   $("invDefaultVat") && ($("invDefaultVat").value = inv.default_vat_code || "STANDARD");
 
@@ -49493,7 +49497,7 @@ function normalizeInvoiceFromApi(raw) {
     due_date:     toIsoDateOnly(inv.due_date ?? inv.dueDate),
 
     terms: inv.terms ?? "Due on receipt",
-    currency: inv.currency ?? "ZAR",
+    currency: inv.currency ?? "USD",
 
     vat_enabled,
     default_vat_code: upper(inv.default_vat_code ?? inv.defaultVatCode, "STANDARD"),
@@ -49621,7 +49625,7 @@ async function loadInvoiceIntoForm(invoiceId) {
   const dueISO = toISODateInput(inv.due_date);
   $("invDueDate") && ($("invDueDate").value = dueISO);
 
-  $("invCurrency") && ($("invCurrency").value = inv.currency || "ZAR");
+  $("invCurrency") && ($("invCurrency").value = inv.currency || "USD");
   $("invTerms") && ($("invTerms").value = inv.terms || $("invTerms").value || "Due on receipt");
 
   const headerRevSel =
@@ -50259,7 +50263,7 @@ function collectInvoiceFromForm() {
   const number       = numInput?.value?.trim() || "";
 
   const terms    = termsSel?.value || "on_receipt";   // on_receipt / 15 / 30
-  const currency = currInput?.value || "ZAR";
+  const currency = currInput?.value || "USD";
 
   if (!customerName) throw new Error("Customer is required.");
   if (!number) throw new Error("Invoice number is required.");
@@ -50417,7 +50421,7 @@ function resetInvoiceForm() {
   if ($("#invNumber")) $("#invNumber").value = "";
   if ($("#invDate")) $("#invDate").value = "";
   if ($("#invTerms")) $("#invTerms").value = "Due on receipt";
-  if ($("#invCurrency")) $("#invCurrency").value = "ZAR";
+  if ($("#invCurrency")) $("#invCurrency").value = "USD";
 
   if ($("#invoiceBankAccount")) $("#invoiceBankAccount").selectedIndex = 0;
 
@@ -50571,7 +50575,7 @@ async function approveInvoiceFromBackend(invoiceId) {
     number: inv.number,
     invoice_date: inv.invoice_date,
     due_date: inv.due_date || null,
-    currency: inv.currency || "ZAR",
+    currency: inv.currency || "USD",
     terms: inv.terms || "Due on receipt",
 
     status: "approved",
@@ -51036,7 +51040,7 @@ function collectQuoteFromForm() {
   const quoteId      = idInput?.value ? parseInt(idInput.value, 10) : null;
   const customerName = custInput?.value?.trim() || "";
   const number       = (numInput?.value || "").trim(); // draft-friendly (may be empty)
-  const currency     = (currInput?.value || "ZAR").trim();
+  const currency     = (currInput?.value || "USD").trim();
 
   if (!customerName) throw new Error("Customer is required.");
 
@@ -51818,7 +51822,7 @@ function wireQuotesScreen() {
     safeValue(getEl("quoteDate"), today);
     safeValue(getEl("quoteValidUntil"), "");
     safeValue(getEl("quoteValidDays"), "30");
-    safeValue(getEl("quoteCurrency"), "ZAR");
+    safeValue(getEl("quoteCurrency"), "USD");
 
     // discount / notes / terms
     safeValue(getEl("quoteDisc"), "0");
@@ -52314,7 +52318,7 @@ window.openQuoteInForm = async function openQuoteInForm(quoteId) {
   document.getElementById("quoteValidUntil").value = (quote.valid_until || "").slice(0, 10);
 
   // currency + notes
-  document.getElementById("quoteCurrency").value = quote.currency || "ZAR";
+  document.getElementById("quoteCurrency").value = quote.currency || "USD";
   document.getElementById("quoteNotes").value = quote.notes || "";
   document.getElementById("quoteTerms").value = quote.terms || "";
 
@@ -52528,7 +52532,7 @@ async function openQuoteViewer(quoteId, opts = {}) {
 
   const q = raw; // normalize if you have a normalizeQuoteFromApi()
 
-  const ccy = q.currency || "ZAR";
+  const ccy = q.currency || "USD";
   const num = q.number || `Q-${q.id || quoteId}`;
   const status = q.status || "draft";
 
@@ -53134,7 +53138,7 @@ function openQuoteIntoForm(q) {
 
   document.getElementById("quoteDate").value = (q.quotation_date || "").slice(0,10);
   document.getElementById("quoteValidUntil").value = (q.valid_until || "").slice(0,10);
-  document.getElementById("quoteCurrency").value = q.currency || "ZAR";
+  document.getElementById("quoteCurrency").value = q.currency || "USD";
 
   document.getElementById("quoteNotes").value = q.notes || "";
   document.getElementById("quoteTerms").value = q.terms || "";
@@ -53875,7 +53879,7 @@ function bindCustomers() {
     // -----------------------------
     // 7) Side stats (optional placeholders)
     // -----------------------------
-    $("#custBalance") && ($("#custBalance").textContent = "ZAR 0.00");
+    $("#custBalance") && ($("#custBalance").textContent = "USD 0.00");
     $("#custLastInv") && ($("#custLastInv").textContent = "—");
     $("#custLastAct") && ($("#custLastAct").textContent = "—");
 
@@ -53963,7 +53967,7 @@ function bindCustomers() {
       module: "ar",
       action: "approve_customer",
       amount: creditLimit,
-      currency: (window.CURRENT_COMPANY?.currency || window.CURRENT_COMPANY?.base_currency || "ZAR"),
+      currency: (window.CURRENT_COMPANY?.currency || window.CURRENT_COMPANY?.base_currency || "USD"),
       risk_level: "low",
       dedupe_key: `ar:customer:approve:${cid}:${saved.id}`,
       payload_json: {
@@ -54481,7 +54485,7 @@ function readInvoiceForm() {
   const terms        = document.getElementById("invTerms")?.value || "Due on receipt";
   const dueDate      = document.getElementById("invDueDate")?.value || "";
   const number       = document.getElementById("invNumber")?.value || "";
-  const currency     = document.getElementById("invCurrency")?.value || "ZAR";
+  const currency     = document.getElementById("invCurrency")?.value || "USD";
   const notes        = document.getElementById("invMemo")?.value || "";
 
   const invId        = document.getElementById("invId")?.value || "";
@@ -55743,7 +55747,7 @@ function renderKycApprovalDetail(rec) {
   if (submittedByEl) submittedByEl.textContent = submittedBy || "unknown";
   if (riskScoreEl)   riskScoreEl.textContent   = riskScore;
   if (riskLevelEl)   riskLevelEl.textContent   = riskLevel;
-  if (limitEl)       limitEl.textContent       = "ZAR " + requestedLimitNumber.toFixed(2);
+  if (limitEl)       limitEl.textContent       = "USD " + requestedLimitNumber.toFixed(2);
 
   if (regEl) regEl.textContent = rec.regNo || "—";
   if (taxEl) taxEl.textContent = rec.taxNo || "—";
@@ -56209,7 +56213,7 @@ function bindAR() {
         payload.line?.unit_price ??
         0;
 
-      const currency = resolveCurrency(payload.currency || "ZAR");
+      const currency = resolveCurrency(payload.currency || "USD");
 
       const rawInvoiceDate =
         payload.invoiceDate ??
@@ -56240,7 +56244,7 @@ function bindAR() {
       if (invCustomerIdEl) invCustomerIdEl.value = customerId ? String(customerId) : "";
       if (invCustomerNameEl) invCustomerNameEl.value = customerName || "";
       if (invDateEl) invDateEl.value = invoiceDate || "";
-      if (invCurrencyEl) invCurrencyEl.value = currency || "ZAR";
+      if (invCurrencyEl) invCurrencyEl.value = currency || "USD";
 
       if (invMemoEl) {
         invMemoEl.value =
@@ -56332,7 +56336,7 @@ function bindAR() {
         if ($("invNumber")) $("invNumber").value = "";
         if ($("invDate")) $("invDate").value = new Date().toISOString().slice(0, 10);
         if ($("invDueDate")) $("invDueDate").value = "";
-        if ($("invCurrency")) $("invCurrency").value = "ZAR";
+        if ($("invCurrency")) $("invCurrency").value = "USD";
         if ($("invMemo")) $("invMemo").value = "";
         if ($("invRevenueContractId")) $("invRevenueContractId").value = "";
 
@@ -61414,7 +61418,7 @@ async function openCustApprovalDetail({ cid, requestId, customerId }) {
   const riskScore = snapKyc?.riskScore ?? req?.risk_score ?? "—";
   const riskLevel = snapKyc?.riskLevel ?? req?.risk_level ?? "—";
   const requestedLimit = req?.amount ?? snapCustomer?.credit_limit ?? 0;
-  const currency = req?.currency || "ZAR";
+  const currency = req?.currency || "USD";
 
   // KYC completeness (controlled mode enforcement)
   const docsArr = Array.isArray(snapKyc?.documents) ? snapKyc.documents : [];
@@ -61588,7 +61592,7 @@ window.requestLeaseApproval = async function requestLeaseApproval({
       entity_id: leaseIdStr,
       entity_ref: lease_name || `Lease ${leaseIdStr}`,
       amount: Number(amount || 0),
-      currency: currency || window.CURRENT_COMPANY?.base_currency || "ZAR",
+      currency: currency || window.CURRENT_COMPANY?.base_currency || "USD",
       risk_level: "medium",
 
       // ✅ valid now
@@ -66278,7 +66282,7 @@ async function openBillFromAssetAcquisition(acqId) {
       vendorName: prefill.vendor_name,
       number: prefill.number || "",
       bill_date: new Date().toISOString().slice(0, 10),
-      currency: window.CURRENT_COMPANY?.currency || "ZAR",
+      currency: window.CURRENT_COMPANY?.currency || "USD",
       notes: prefill.notes || "",
       asset_id: prefill.asset_id,
       asset_acquisition_id: prefill.asset_acquisition_id,
@@ -67534,7 +67538,7 @@ function bindAP() {
     setVal("billNumber", b.number || "");
     setVal("billDate", billDate);
     setVal("billDue", dueDate);
-    setVal("billCurrency", b.currency || (window.CURRENT_COMPANY?.currency || "ZAR"));
+    setVal("billCurrency", b.currency || (window.CURRENT_COMPANY?.currency || "USD"));
     setVal("billAssetId", b.asset_id || "");
     setVal("billAssetAcquisitionId", b.asset_acquisition_id || "");
     setVal("billPostingMode", b.posting_mode || "");
@@ -67615,7 +67619,7 @@ function bindAP() {
       vendor_id: /^\d+$/.test(vendorId) ? parseInt(vendorId, 10) : null,
       vendorName,
       bill_date: today,
-      currency: window.CURRENT_COMPANY?.currency || "ZAR",
+      currency: window.CURRENT_COMPANY?.currency || "USD",
       number: "",
       notes: `Lease direct cost capture${prefill.reference ? " | Ref: " + prefill.reference : ""}`,
     });
@@ -67896,7 +67900,7 @@ function bindAP() {
     setVal("billDue", "");
 
     if (!keepCurrency) {
-      setVal("billCurrency", window.CURRENT_COMPANY?.currency || "ZAR");
+      setVal("billCurrency", window.CURRENT_COMPANY?.currency || "USD");
     }
 
     setVal("billNotes", "");

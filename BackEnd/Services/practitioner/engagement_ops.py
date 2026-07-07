@@ -680,7 +680,7 @@ def engagement_posting_activity_collection_route(cid: int, engagement_id: int):
                 reviewer_user_id=_parse_int(body.get("reviewer_user_id")),
                 status=(body.get("status") or "draft").strip().lower(),
                 amount=body.get("amount"),
-                currency_code=(body.get("currency_code") or "ZAR").strip().upper(),
+                currency_code=(body.get("currency_code") or "USD").strip().upper(),
                 source_table=(body.get("source_table") or "").strip() or None,
                 source_id=_parse_int(body.get("source_id")),
                 notes=(body.get("notes") or "").strip() or None,
