@@ -1298,6 +1298,43 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}/post`,
   },
 
+  ifrs9: {
+    instruments: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments`,
+
+    instrument: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}`,
+
+    classify: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/classify`,
+
+    eir: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/eir`,
+
+    syncLoanPayables: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/sync/loan-payables`,
+
+    eclModels: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models`,
+
+    eclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}`,
+
+    eclBands: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}/bands`,
+
+    eclRuns: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs`,
+
+    eclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}`,
+
+    eclRunPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/preview-journal`,
+
+    postEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/post`,
+  },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
   quotes: {
@@ -5614,6 +5651,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "IFRS 16 Lease Wizard", icon: "📄", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏗️", minRole: "assistant", permission: "can_manage_fixed_assets" },
         {name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials"},
+        { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "📘", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"],},
       ],
     },
 
@@ -7366,6 +7404,12 @@ const SCREEN_POLICY = {
     minRole: "assistant",
     permissionAny: ["can_post_journals", "can_prepare_financials"],
   },
+
+  ifrs9: {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"],
+  },
 };
 
 
@@ -8746,6 +8790,9 @@ async function switchScreen(name) {
   const isAccrualDeferralWorkflow =
     name === "accrual-deferrals";
 
+  const isIFRS9Workflow =
+    name === "ifrs9";
+
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -8795,6 +8842,7 @@ async function switchScreen(name) {
   else if (name === "project-profitability") base = "project-profitability";
   else if (isTaxRecon) base = "tax-recon";
   else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
+  else if (isIFRS9Workflow) base = "ifrs9";
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
@@ -8894,6 +8942,21 @@ async function switchScreen(name) {
     }
 
     await window.bindAccrualDeferralsScreen?.();
+    console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
+
+
+  if (base === "ifrs9") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      }
+    } catch (e) {
+      console.warn("[IFRS9] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindIFRS9Screen?.();
     console.log("[switchScreen] early return at:", name, "base:", base);
     return;
   }
@@ -9255,6 +9318,7 @@ async function switchScreen(name) {
     revenue: "Revenue Desk",
     "accrual-deferrals": "Accruals & Deferrals",
     "revenue-setup": "Revenue Setup",
+    ifrs9: "IFRS 9 Financial Instruments",
     inventory: "Inventory & Services",
     customers: "Customers",
     vendors: "Vendors",
@@ -40270,31 +40334,143 @@ async function saveEditModal() {
   }
 
   function openNewAccrualDeferralModal() {
-    const itemTitle = prompt("Item title, e.g. Insurance prepaid");
-    if (!itemTitle) return;
+    let modal = document.getElementById("adNewItemModal");
 
-    const originalAmount = prompt("Original amount");
-    if (!originalAmount) return;
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "adNewItemModal";
+      modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
+      modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-xl w-[720px] max-w-[95vw] max-h-[90vh] overflow-auto">
+          <div class="p-4 border-b flex justify-between items-center">
+            <div>
+              <h3 class="text-lg font-bold">New Accrual / Deferral Item</h3>
+              <p class="text-sm text-slate-500">Create a prepaid expense, deferred income, or accrual schedule.</p>
+            </div>
+            <button id="adModalCloseBtn" class="btn">✕</button>
+          </div>
 
-    const startDate = prompt("Start date YYYY-MM-DD");
-    if (!startDate) return;
+          <form id="adNewItemForm" class="p-4 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label class="text-sm">
+                Item Title
+                <input id="adNewTitle" class="input" placeholder="Insurance prepaid" required>
+              </label>
 
-    const endDate = prompt("End date YYYY-MM-DD");
-    if (!endDate) return;
+              <label class="text-sm">
+                Type
+                <select id="adNewType" class="input">
+                  <option value="prepaid_expense">Prepaid Expense</option>
+                  <option value="deferred_expense">Deferred Expense</option>
+                  <option value="deferred_income">Deferred Income</option>
+                  <option value="accrued_expense">Accrued Expense</option>
+                  <option value="accrued_income">Accrued Income</option>
+                </select>
+              </label>
 
-    createAccrualDeferralItem({
-      item_title: itemTitle,
-      item_type: "prepaid_expense",
-      transaction_date: startDate,
-      start_date: startDate,
-      end_date: endDate,
-      original_amount: Number(originalAmount),
-      balance_account: "BS_CA_PREPAYMENTS",
-      recognition_account: "PL_EXP_ADMIN",
-      recognition_method: "straight_line",
-      frequency: "monthly",
-      status: "draft",
-    });
+              <label class="text-sm">
+                Original Amount
+                <input id="adNewAmount" type="number" step="0.01" min="0.01" class="input" required>
+              </label>
+
+              <label class="text-sm">
+                Currency
+                <input id="adNewCurrency" class="input" value="ZAR">
+              </label>
+
+              <label class="text-sm">
+                Transaction Date
+                <input id="adNewTransactionDate" type="date" class="input" required>
+              </label>
+
+              <label class="text-sm">
+                Start Date
+                <input id="adNewStartDate" type="date" class="input" required>
+              </label>
+
+              <label class="text-sm">
+                End Date
+                <input id="adNewEndDate" type="date" class="input" required>
+              </label>
+
+              <label class="text-sm">
+                Frequency
+                <select id="adNewFrequency" class="input">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                  <option value="once">Once</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </label>
+
+              <label class="text-sm">
+                Balance Account
+                <input id="adNewBalanceAccount" class="input" placeholder="e.g. BS_CA_1487">
+              </label>
+
+              <label class="text-sm">
+                Recognition Account
+                <input id="adNewRecognitionAccount" class="input" placeholder="e.g. PL_OPEX_6510">
+              </label>
+            </div>
+
+            <label class="text-sm block">
+              Notes
+              <textarea id="adNewNotes" class="input" rows="3"></textarea>
+            </label>
+
+            <div class="flex justify-end gap-2 border-t pt-4">
+              <button type="button" id="adModalCancelBtn" class="btn">Cancel</button>
+              <button type="submit" class="btn-highlight">Create Item</button>
+            </div>
+          </form>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      document.getElementById("adModalCloseBtn")?.addEventListener("click", closeAdNewModal);
+      document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
+
+      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const payload = {
+          item_title: $("adNewTitle")?.value?.trim(),
+          item_type: $("adNewType")?.value,
+          transaction_date: $("adNewTransactionDate")?.value,
+          start_date: $("adNewStartDate")?.value,
+          end_date: $("adNewEndDate")?.value,
+          original_amount: Number($("adNewAmount")?.value || 0),
+          currency: $("adNewCurrency")?.value || "ZAR",
+          frequency: $("adNewFrequency")?.value || "monthly",
+          balance_account: $("adNewBalanceAccount")?.value?.trim(),
+          recognition_account: $("adNewRecognitionAccount")?.value?.trim(),
+          recognition_method: "straight_line",
+          status: "draft",
+          notes: $("adNewNotes")?.value?.trim() || "",
+        };
+
+        if (!payload.item_title) return alert("Item title is required.");
+        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
+        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+
+        await createAccrualDeferralItem(payload);
+        closeAdNewModal();
+      });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    $("adNewTransactionDate").value = today;
+    $("adNewStartDate").value = today;
+    $("adNewEndDate").value = today;
+
+    modal.classList.remove("hidden");
+  }
+
+  function closeAdNewModal() {
+    document.getElementById("adNewItemModal")?.classList.add("hidden");
   }
 
   async function createAccrualDeferralItem(payload) {
@@ -40325,6 +40501,317 @@ async function saveEditModal() {
     }
 
     await loadAccrualDeferrals();
+  };
+})();
+
+(function () {
+  let IFRS9_STATE = {
+    bound: false,
+    instruments: [],
+    eclRuns: [],
+    eclModels: [],
+    previewRunId: null,
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function ifrs9Cid() {
+    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || CURRENT_COMPANY_ID;
+  }
+
+  function money(v) {
+    return Number(v || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function setMsg(msg) {
+    const el = $("ifrs9Message");
+    if (el) el.textContent = msg || "";
+  }
+
+  async function loadIFRS9() {
+    const cid = ifrs9Cid();
+    if (!cid) throw new Error("No active company selected.");
+
+    const [instRes, runsRes, modelsRes] = await Promise.all([
+      apiFetch(ENDPOINTS.ifrs9.instruments(cid)),
+      apiFetch(ENDPOINTS.ifrs9.eclRuns(cid)),
+      apiFetch(ENDPOINTS.ifrs9.eclModels(cid)),
+    ]);
+
+    IFRS9_STATE.instruments = instRes.items || [];
+    IFRS9_STATE.eclRuns = runsRes.items || [];
+    IFRS9_STATE.eclModels = modelsRes.items || [];
+
+    renderIFRS9Instruments();
+    renderIFRS9Runs();
+    renderIFRS9Models();
+  }
+
+  function renderIFRS9Instruments() {
+    const el = $("ifrs9InstrumentList");
+    if (!el) return;
+
+    const rows = IFRS9_STATE.instruments || [];
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No IFRS 9 instruments yet. Click Sync Loan Payables.</p>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Measurement</th>
+            <th>Carrying Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${r.instrument_name || ""}</td>
+              <td>${r.instrument_type || ""}</td>
+              <td>${r.measurement_category || ""}</td>
+              <td>${money(r.carrying_amount)}</td>
+              <td>${r.status || ""}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderIFRS9Runs() {
+    const el = $("ifrs9EclRunList");
+    if (!el) return;
+
+    const rows = IFRS9_STATE.eclRuns || [];
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No ECL runs yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Reporting Date</th>
+            <th>Total Exposure</th>
+            <th>Total ECL</th>
+            <th>Status</th>
+            <th>Journal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${String(r.reporting_date || "").slice(0, 10)}</td>
+              <td>${money(r.total_exposure)}</td>
+              <td>${money(r.total_ecl)}</td>
+              <td>${r.status || ""}</td>
+              <td>${r.journal_id || "-"}</td>
+              <td>
+                <button class="btn btn-sm btn-secondary" data-ifrs9-preview-run="${r.id}">
+                  Preview
+                </button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function renderIFRS9Models() {
+    const el = $("ifrs9EclModelList");
+    if (!el) return;
+
+    const rows = IFRS9_STATE.eclModels || [];
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No ECL models yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Type</th>
+            <th>Applies To</th>
+            <th>Basis</th>
+            <th>Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${r.model_name || ""}</td>
+              <td>${r.model_type || ""}</td>
+              <td>${r.applies_to || ""}</td>
+              <td>${r.basis || ""}</td>
+              <td>${r.is_active ? "Yes" : "No"}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function showIFRS9Tab(tab) {
+    document.querySelectorAll("[data-ifrs9-tab]").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.ifrs9Tab === tab);
+    });
+
+    $("ifrs9TabRegister")?.classList.toggle("hidden", tab !== "register");
+    $("ifrs9TabEclRuns")?.classList.toggle("hidden", tab !== "ecl-runs");
+    $("ifrs9TabEclModels")?.classList.toggle("hidden", tab !== "ecl-models");
+  }
+
+  async function syncLoanPayables() {
+    const cid = ifrs9Cid();
+    setMsg("Syncing loan payables...");
+
+    const res = await apiFetch(ENDPOINTS.ifrs9.syncLoanPayables(cid), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    setMsg(`Synced ${res.created || 0} loan payable instrument(s).`);
+    await loadIFRS9();
+  }
+
+  async function createEclRun() {
+    const cid = ifrs9Cid();
+
+    const totalEcl = Number($("ifrs9TotalEcl")?.value || 0);
+    const previousEcl = Number($("ifrs9PreviousEcl")?.value || 0);
+
+    const payload = {
+      reporting_date: $("ifrs9EclReportingDate")?.value,
+      total_exposure: Number($("ifrs9EclExposure")?.value || 0),
+      previous_ecl: previousEcl,
+      total_ecl: totalEcl,
+      movement_ecl: totalEcl - previousEcl,
+      run_type: "period_end",
+    };
+
+    if (!payload.reporting_date) throw new Error("Reporting date is required.");
+
+    const res = await apiFetch(ENDPOINTS.ifrs9.eclRuns(cid), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    setMsg(`ECL run created: ${res.item?.id || ""}`);
+    await loadIFRS9();
+  }
+
+  async function openPreview(runId) {
+    const cid = ifrs9Cid();
+    IFRS9_STATE.previewRunId = runId;
+
+    const res = await apiFetch(ENDPOINTS.ifrs9.eclRunPreview(cid, runId));
+    const preview = res.preview || {};
+
+    const body = $("ifrs9PreviewBody");
+    if (body) {
+      body.innerHTML = `
+        <div class="journal-preview-header">
+          <p><b>Date:</b> ${preview.date || ""}</p>
+          <p><b>Reference:</b> ${preview.ref || ""}</p>
+          <p><b>Description:</b> ${preview.description || ""}</p>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th>Debit</th>
+              <th>Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(preview.lines || []).map(l => `
+              <tr>
+                <td>${l.account_code || ""}</td>
+                <td>${l.description || ""}</td>
+                <td>${money(l.debit)}</td>
+                <td>${money(l.credit)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="2">Total</th>
+              <th>${money(preview.dr_total)}</th>
+              <th>${money(preview.cr_total)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    }
+
+    $("ifrs9JournalPreviewModal")?.classList.remove("hidden");
+  }
+
+  function closePreview() {
+    IFRS9_STATE.previewRunId = null;
+    $("ifrs9JournalPreviewModal")?.classList.add("hidden");
+  }
+
+  async function postPreviewRun() {
+    const cid = ifrs9Cid();
+    const runId = IFRS9_STATE.previewRunId;
+    if (!runId) throw new Error("No ECL run selected.");
+
+    await apiFetch(ENDPOINTS.ifrs9.postEclRun(cid, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    closePreview();
+    setMsg(`ECL run ${runId} posted.`);
+    await loadIFRS9();
+  }
+
+  window.bindIFRS9Screen = async function bindIFRS9Screen() {
+    if (!IFRS9_STATE.bound) {
+      IFRS9_STATE.bound = true;
+
+      $("ifrs9RefreshBtn")?.addEventListener("click", loadIFRS9);
+      $("ifrs9SyncLoansBtn")?.addEventListener("click", syncLoanPayables);
+      $("ifrs9CreateEclRunBtn")?.addEventListener("click", createEclRun);
+
+      $("ifrs9PreviewCloseBtn")?.addEventListener("click", closePreview);
+      $("ifrs9PreviewCancelBtn")?.addEventListener("click", closePreview);
+      $("ifrs9PreviewPostBtn")?.addEventListener("click", postPreviewRun);
+
+      document.addEventListener("click", async (e) => {
+        const tabBtn = e.target.closest("[data-ifrs9-tab]");
+        if (tabBtn) {
+          showIFRS9Tab(tabBtn.dataset.ifrs9Tab);
+          return;
+        }
+
+        const previewBtn = e.target.closest("[data-ifrs9-preview-run]");
+        if (previewBtn) {
+          await openPreview(Number(previewBtn.dataset.ifrs9PreviewRun));
+        }
+      });
+    }
+
+    await loadIFRS9();
   };
 })();
 

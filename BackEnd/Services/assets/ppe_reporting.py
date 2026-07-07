@@ -4476,7 +4476,21 @@ def subsequent_measurements_list_or_create(company_id):
                 posting.assert_sm_eligible(company_id, asset, event_type, amount, policy_doc)
 
                 # 1) create row (service decides status default draft)
-                new_id = service.create_subsequent_measurement(cur, company_id, payload_in)
+                new_id = service.create_subsequent_measurement(
+                    cur,
+                    company_id,
+                    asset_id,
+                    event_date=payload_in.get("event_date"),
+                    event_type=event_type,
+                    amount=payload_in.get("amount"),
+                    debit_account_code=payload_in.get("debit_account_code"),
+                    credit_account_code=payload_in.get("credit_account_code"),
+                    useful_life_months=payload_in.get("useful_life_months"),
+                    residual_value=payload_in.get("residual_value"),
+                    depreciation_method=payload_in.get("depreciation_method"),
+                    notes=payload_in.get("notes"),
+                    created_by=int(user.get("id") or 0) or None,
+                )
 
                 # 2) if review required: create approval request + mark SM pending_review
                 approval_id = None
