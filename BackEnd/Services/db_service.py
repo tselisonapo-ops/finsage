@@ -22018,7 +22018,7 @@ class DatabaseService:
             approved_at TIMESTAMPTZ NULL,
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_by_user_id INT NULL,
             updated_by_user_id INT NULL,
@@ -22140,7 +22140,7 @@ class DatabaseService:
             posted_by_user_id INT NULL,
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -22204,7 +22204,7 @@ class DatabaseService:
             posted_by_user_id INT NULL,
             posted_at TIMESTAMPTZ NULL,
 
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
@@ -22241,7 +22241,7 @@ class DatabaseService:
             -- system / manual / catch_up / reversal
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -22307,7 +22307,7 @@ class DatabaseService:
             source_journal_id INT NULL,
 
             notes TEXT NULL,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            payload_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -22425,7 +22425,7 @@ class DatabaseService:
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         -- Safe additive evolution
@@ -22474,7 +22474,7 @@ class DatabaseService:
             classification_status = COALESCE(NULLIF(classification_status,''), 'unclassified'),
             status = COALESCE(NULLIF(status,''), 'active'),
             currency = COALESCE(NULLIF(currency,''), 'ZAR'),
-            meta_json = COALESCE(meta_json, '{}'::jsonb),
+            meta_json = COALESCE(meta_json, '{{}}'::jsonb),
             created_at = COALESCE(created_at, NOW()),
             updated_at = COALESCE(updated_at, NOW());
 
@@ -22490,7 +22490,7 @@ class DatabaseService:
         ALTER COLUMN currency SET NOT NULL,
         ALTER COLUMN currency SET DEFAULT 'ZAR',
         ALTER COLUMN meta_json SET NOT NULL,
-        ALTER COLUMN meta_json SET DEFAULT '{}'::jsonb,
+        ALTER COLUMN meta_json SET DEFAULT '{{}}'::jsonb,
         ALTER COLUMN created_at SET NOT NULL,
         ALTER COLUMN created_at SET DEFAULT NOW(),
         ALTER COLUMN updated_at SET NOT NULL,
@@ -22661,7 +22661,7 @@ class DatabaseService:
             approved_at TIMESTAMPTZ NULL,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_class_instr_idx
@@ -22726,7 +22726,7 @@ class DatabaseService:
 
             notes TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_eir_instr_idx
@@ -22776,7 +22776,7 @@ class DatabaseService:
 
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_runs_instr_idx
@@ -22841,7 +22841,7 @@ class DatabaseService:
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_models_company_idx
@@ -22908,7 +22908,7 @@ class DatabaseService:
 
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_date_idx
@@ -22981,7 +22981,7 @@ class DatabaseService:
             movement_ecl NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_lines_run_idx
@@ -23067,7 +23067,7 @@ class DatabaseService:
 
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_mod_instr_idx
@@ -23126,7 +23126,7 @@ class DatabaseService:
 
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_derec_instr_idx
@@ -23192,7 +23192,7 @@ class DatabaseService:
 
             created_by INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_fv_instr_idx
@@ -23278,14 +23278,14 @@ class DatabaseService:
             ecl_writeoffs NUMERIC(18,2) NOT NULL DEFAULT 0,
             ecl_closing NUMERIC(18,2) NOT NULL DEFAULT 0,
 
-            liquidity_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            credit_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            market_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            fair_value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            liquidity_risk_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            credit_risk_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            market_risk_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            fair_value_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             generated_by INT NULL,
-            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_disclosure_year_uq
