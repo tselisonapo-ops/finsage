@@ -36094,6 +36094,40 @@ async function saveEditModal() {
     };
   }
 
+  function extractRevaluationIds(out) {
+    const ids = [];
+
+    if (out?.revaluation_id) ids.push(Number(out.revaluation_id));
+    if (out?.id) ids.push(Number(out.id));
+
+    for (const key of [
+      "revaluation_ids",
+      "ids",
+      "component_revaluation_ids",
+      "created_revaluation_ids",
+    ]) {
+      if (Array.isArray(out?.[key])) {
+        out[key].forEach((x) => ids.push(Number(x)));
+      }
+    }
+
+    if (Array.isArray(out?.components)) {
+      out.components.forEach((c) => {
+        if (c?.revaluation_id) ids.push(Number(c.revaluation_id));
+        if (c?.id) ids.push(Number(c.id));
+      });
+    }
+
+    if (Array.isArray(out?.data?.components)) {
+      out.data.components.forEach((c) => {
+        if (c?.revaluation_id) ids.push(Number(c.revaluation_id));
+        if (c?.id) ids.push(Number(c.id));
+      });
+    }
+
+    return [...new Set(ids.filter((x) => Number.isFinite(x) && x > 0))];
+  }
+
   async function createRevaluationDraftFromSM() {
     const payload = selectedAssetIsComponentGroup()
       ? buildGroupRevaluationPayloadFromSM()
@@ -36118,16 +36152,15 @@ async function saveEditModal() {
       body: JSON.stringify(payload),
     });
 
-    const id =
-      Number(out?.id || out?.item?.id || out?.data?.id || 0) ||
-      Number(out?.group_revaluation_id || out?.data?.group_revaluation_id || 0) ||
-      0;
+    const ids = extractRevaluationIds(out);
 
-    if (!id) throw new Error("Draft revaluation was created but no id was returned.");
+    if (!ids.length) {
+      throw new Error("Draft revaluation was created but no revaluation id was returned.");
+    }
 
-    $("valuationRevaluationId").value = String(id);
+    $("valuationRevaluationId").value = ids.join(",");
 
-    return id;
+    return ids;
   }
 
   function syncPolicyToUI() {
@@ -36994,33 +37027,33 @@ async function saveEditModal() {
       throw new Error("Selected asset standard is not supported for valuation flow.");
     }
 
-    const payload = selectedAssetIsComponentGroup()
-      ? buildGroupRevaluationPayloadFromSM()
-      : buildRevaluationPayloadFromSM();
+    const rawIds = String($("valuationRevaluationId")?.value || "").trim();
 
-    if (!payload.asset_id) throw new Error("Asset is required.");
-    if (!payload.revaluation_date) throw new Error("Valuation date is required.");
+    const revaluationIds = rawIds
+      .split(",")
+      .map((x) => Number(x.trim()))
+      .filter((x) => Number.isFinite(x) && x > 0);
 
-    if (selectedAssetIsComponentGroup()) {
-      const vals = Object.values(payload.components || {});
-      if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
-        throw new Error("Enter fair value for each component.");
-      }
-    } else if (!(Number(payload.fair_value) > 0)) {
-      throw new Error("Fair value must be greater than 0.");
-    }
-
-    const { valuationPost } = EP();
-    const existingId = Number($("valuationRevaluationId")?.value || 0) || 0;
-
-    if (!existingId) {
+    if (!revaluationIds.length) {
       throw new Error("Missing revaluation id.");
     }
 
-    return await api(valuationPost(existingId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const { valuationPost } = EP();
+
+    const posted = [];
+
+    for (const revalId of revaluationIds) {
+      const out = await api(valuationPost(revalId), {
+        method: "POST",
+      });
+
+      posted.push(out);
+    }
+
+    return {
+      ok: true,
+      posted,
+    };
   }
 
   function esc(s) {
@@ -37234,11 +37267,11 @@ async function saveEditModal() {
 
           setMsg($("smFormMsg"), "Creating valuation draft…", "info");
 
-          const revaluationId = await createRevaluationDraftFromSM();
+          const revaluationIds = await createRevaluationDraftFromSM();
 
           openValuationModalFromSM();
 
-          $("valuationRevaluationId").value = String(revaluationId);
+          $("valuationRevaluationId").value = revaluationIds.join(",");
 
           setMsg($("smFormMsg"), "", "info");
           return;

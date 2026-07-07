@@ -17,8 +17,9 @@ CODE_RE = re.compile(r"^(BS|PL)_[A-Z]{2,4}_[0-9]{3,5}$")  # e.g. BS_CL_2215, PL_
 # ────────────────────────────────────────────────────────────────
 # Standard imports
 # ────────────────────────────────────────────────────────────────
-
+import calendar
 import json
+import sys
 import secrets
 import string
 import sqlparse
@@ -214,6 +215,26 @@ def _extract_pnl_profit(pnl: dict) -> float:
                 pass
 
     return 0.0
+
+def _date(value):
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        return date.fromisoformat(value[:10])
+    return None
+
+
+def _month_end(d: date) -> date:
+    last = calendar.monthrange(d.year, d.month)[1]
+    return date(d.year, d.month, last)
+
+
+def _add_month(d: date) -> date:
+    if d.month == 12:
+        return date(d.year + 1, 1, 1)
+    return date(d.year, d.month + 1, 1)
+
+
 # ------------------------------------------------------------
 # Cashflow metadata derivation (authoritative)
 # ------------------------------------------------------------
@@ -6405,7 +6426,14 @@ class DatabaseService:
                         ''pos_return'',
                         ''year_end'',
                         ''year_end_reversal'',
-                        ''year_end_close''
+                        ''year_end_close'',
+                        ''ifrs9_ecl'',
+                        ''ifrs9_ecl_reversal'',
+                        ''ifrs9_amortised_cost'',
+                        ''ifrs9_fair_value'',
+                        ''ifrs9_modification'',
+                        ''ifrs9_derecognition'',
+                        ''ifrs9_writeoff''
                     ]::text[])
                 )',
                 '{schema}',
@@ -21926,6 +21954,368 @@ class DatabaseService:
         END IF;
         END $$;
 
+        -- ==================================================
+        -- ACCRUALS & DEFERRALS: MASTER ITEMS
+        -- Covers:
+        -- prepaid_expense
+        -- deferred_expense
+        -- deferred_income
+        -- accrued_income
+        -- accrued_expense
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.accrual_deferral_items (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            item_number TEXT NOT NULL,
+            item_title TEXT NOT NULL,
+
+            item_type TEXT NOT NULL DEFAULT 'prepaid_expense',
+            -- prepaid_expense / deferred_expense / deferred_income / accrued_income / accrued_expense
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            -- draft / active / suspended / completed / cancelled / terminated
+
+            counterparty_type TEXT NULL,
+            -- customer / supplier / employee / other
+
+            customer_id INT NULL,
+            supplier_id INT NULL,
+            employee_id INT NULL,
+
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+
+            transaction_date DATE NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+
+            original_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognized_to_date NUMERIC(18,2) NOT NULL DEFAULT 0,
+            remaining_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            recognition_method TEXT NOT NULL DEFAULT 'straight_line',
+            -- straight_line / manual / units / milestone
+
+            frequency TEXT NOT NULL DEFAULT 'monthly',
+            -- monthly / quarterly / annually / once / manual
+
+            balance_account TEXT NOT NULL,
+            recognition_account TEXT NOT NULL,
+
+            tax_account TEXT NULL,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_mode TEXT NOT NULL DEFAULT 'exclusive',
+            -- exclusive / inclusive / no_vat
+
+            source_invoice_id INT NULL,
+            source_bill_id INT NULL,
+            source_receipt_id INT NULL,
+            source_payment_id INT NULL,
+            source_journal_id INT NULL,
+
+            approval_status TEXT NOT NULL DEFAULT 'draft',
+            approved_by_user_id INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        ALTER TABLE {schema}.accrual_deferral_items
+        ADD COLUMN IF NOT EXISTS item_number TEXT,
+        ADD COLUMN IF NOT EXISTS item_title TEXT,
+        ADD COLUMN IF NOT EXISTS item_type TEXT,
+        ADD COLUMN IF NOT EXISTS status TEXT,
+        ADD COLUMN IF NOT EXISTS counterparty_type TEXT,
+        ADD COLUMN IF NOT EXISTS customer_id INT NULL,
+        ADD COLUMN IF NOT EXISTS supplier_id INT NULL,
+        ADD COLUMN IF NOT EXISTS employee_id INT NULL,
+        ADD COLUMN IF NOT EXISTS currency TEXT,
+        ADD COLUMN IF NOT EXISTS transaction_date DATE,
+        ADD COLUMN IF NOT EXISTS start_date DATE,
+        ADD COLUMN IF NOT EXISTS end_date DATE,
+        ADD COLUMN IF NOT EXISTS original_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS recognized_to_date NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS remaining_balance NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS recognition_method TEXT,
+        ADD COLUMN IF NOT EXISTS frequency TEXT,
+        ADD COLUMN IF NOT EXISTS balance_account TEXT,
+        ADD COLUMN IF NOT EXISTS recognition_account TEXT,
+        ADD COLUMN IF NOT EXISTS tax_account TEXT NULL,
+        ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS tax_mode TEXT,
+        ADD COLUMN IF NOT EXISTS source_invoice_id INT NULL,
+        ADD COLUMN IF NOT EXISTS source_bill_id INT NULL,
+        ADD COLUMN IF NOT EXISTS source_receipt_id INT NULL,
+        ADD COLUMN IF NOT EXISTS source_payment_id INT NULL,
+        ADD COLUMN IF NOT EXISTS source_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS approval_status TEXT,
+        ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS notes TEXT NULL,
+        ADD COLUMN IF NOT EXISTS payload_json JSONB,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_accrual_deferral_items_type_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.accrual_deferral_items
+                ADD CONSTRAINT %I
+                CHECK (item_type IN (
+                    ''prepaid_expense'',
+                    ''deferred_expense'',
+                    ''deferred_income'',
+                    ''accrued_income'',
+                    ''accrued_expense''
+                ))',
+                '{schema}', '{schema}_accrual_deferral_items_type_ck');
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_accrual_deferral_items_status_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.accrual_deferral_items
+                ADD CONSTRAINT %I
+                CHECK (status IN (
+                    ''draft'',
+                    ''active'',
+                    ''suspended'',
+                    ''completed'',
+                    ''cancelled'',
+                    ''terminated''
+                ))',
+                '{schema}', '{schema}_accrual_deferral_items_status_ck');
+            END IF;
+        END $$;
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_no_uq
+        ON {schema}.accrual_deferral_items(company_id, item_number);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_type_idx
+        ON {schema}.accrual_deferral_items(company_id, item_type, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_dates_idx
+        ON {schema}.accrual_deferral_items(company_id, start_date, end_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_approval_idx
+        ON {schema}.accrual_deferral_items(company_id, approval_status, created_at DESC);
+        -- ==================================================
+        -- ACCRUALS & DEFERRALS: SCHEDULE LINES
+        -- One line per month/period
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.accrual_deferral_schedule_lines (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            item_id BIGINT NOT NULL,
+
+            line_no INT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            recognition_date DATE NOT NULL,
+
+            opening_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognition_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'pending',
+            -- pending / posted / skipped / reversed / void
+
+            journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+            posted_by_user_id INT NULL,
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_accrual_deferral_schedule_lines_uq
+        ON {schema}.accrual_deferral_schedule_lines(item_id, line_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_schedule_lines_period_idx
+        ON {schema}.accrual_deferral_schedule_lines(company_id, recognition_date, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_schedule_lines_item_idx
+        ON {schema}.accrual_deferral_schedule_lines(item_id, period_end);
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_accrual_deferral_schedule_lines_item_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.accrual_deferral_schedule_lines
+                ADD CONSTRAINT %I
+                FOREIGN KEY (item_id)
+                REFERENCES %I.accrual_deferral_items(id)
+                ON DELETE CASCADE',
+                '{schema}', '{schema}_accrual_deferral_schedule_lines_item_fk', '{schema}');
+            END IF;
+        END $$;
+        -- ==================================================
+        -- ACCRUALS & DEFERRALS: POSTING RUNS
+        -- Month-end or manual runs
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.accrual_deferral_runs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            item_id BIGINT NULL,
+
+            run_scope TEXT NOT NULL DEFAULT 'company',
+            -- company / item / type
+
+            item_type TEXT NULL,
+
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            -- draft / posted / reversed / void
+
+            run_reason TEXT NOT NULL DEFAULT 'period_end',
+            -- period_end / manual / catch_up / termination / reversal
+
+            journal_id INT NULL,
+
+            total_recognition_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_asset_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_liability_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            requested_by_user_id INT NULL,
+            posted_by_user_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_runs_period_idx
+        ON {schema}.accrual_deferral_runs(company_id, period_end DESC, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_runs_item_idx
+        ON {schema}.accrual_deferral_runs(item_id, period_end DESC);
+        -- ==================================================
+        -- ACCRUALS & DEFERRALS: POSTING ENTRIES
+        -- Detail behind each run
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.accrual_deferral_entries (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            run_id BIGINT NOT NULL,
+            item_id BIGINT NOT NULL,
+            schedule_line_id BIGINT NULL,
+
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            item_type TEXT NOT NULL,
+
+            opening_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognition_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_balance NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            debit_account TEXT NOT NULL,
+            credit_account TEXT NOT NULL,
+
+            source_basis TEXT NOT NULL DEFAULT 'system',
+            -- system / manual / catch_up / reversal
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_entries_run_idx
+        ON {schema}.accrual_deferral_entries(run_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_entries_item_idx
+        ON {schema}.accrual_deferral_entries(item_id, period_end DESC);
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_accrual_deferral_entries_run_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.accrual_deferral_entries
+                ADD CONSTRAINT %I
+                FOREIGN KEY (run_id)
+                REFERENCES %I.accrual_deferral_runs(id)
+                ON DELETE CASCADE',
+                '{schema}', '{schema}_accrual_deferral_entries_run_fk', '{schema}');
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_accrual_deferral_entries_item_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.accrual_deferral_entries
+                ADD CONSTRAINT %I
+                FOREIGN KEY (item_id)
+                REFERENCES %I.accrual_deferral_items(id)
+                ON DELETE CASCADE',
+                '{schema}', '{schema}_accrual_deferral_entries_item_fk', '{schema}');
+            END IF;
+        END $$;
+        -- ==================================================
+        -- ACCRUALS & DEFERRALS: SOURCE EVENTS / MOVEMENTS
+        -- Tracks initial recognition, adjustments, reversals, additions
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.accrual_deferral_events (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            item_id BIGINT NOT NULL,
+
+            event_date DATE NOT NULL,
+
+            event_type TEXT NOT NULL DEFAULT 'initial',
+            -- initial / adjustment / addition / reduction / termination / reversal / manual
+
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+
+            source_invoice_id INT NULL,
+            source_bill_id INT NULL,
+            source_receipt_id INT NULL,
+            source_payment_id INT NULL,
+            source_journal_id INT NULL,
+
+            notes TEXT NULL,
+            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_accrual_deferral_events_item_date_idx
+        ON {schema}.accrual_deferral_events(item_id, event_date DESC);
+
         CREATE TABLE IF NOT EXISTS {schema}.accounting_policies (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -21978,6 +22368,929 @@ class DatabaseService:
 
             UNIQUE(company_id, note_key, period_from, period_to)
         );
+
+        -- ==================================================
+        -- IFRS 9 / FINANCIAL INSTRUMENTS
+        -- ==================================================
+
+        -- 1) Central financial instrument register
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_financial_instruments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            instrument_name TEXT NOT NULL,
+            instrument_reference TEXT NULL,
+
+            instrument_type TEXT NOT NULL,
+            -- loan_payable|trade_receivable|loan_receivable|staff_loan|director_loan|
+            -- deposit_asset|deposit_liability|investment|bond|note_receivable|
+            -- trade_payable|other_financial_asset|other_financial_liability
+
+            source_table TEXT NULL,
+            source_id INT NULL,
+
+            loan_id INT NULL,
+            customer_id INT NULL,
+            vendor_id INT NULL,
+            invoice_id INT NULL,
+            bill_id INT NULL,
+
+            counterparty_name TEXT NULL,
+            counterparty_type TEXT NULL, -- customer|vendor|bank|employee|director|shareholder|other
+
+            recognition_date DATE NOT NULL,
+            derecognition_date DATE NULL,
+
+            currency TEXT NOT NULL DEFAULT 'ZAR',
+
+            original_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            classification_status TEXT NOT NULL DEFAULT 'unclassified',
+            measurement_category TEXT NULL,
+            -- amortised_cost|fvoci|fvpl
+
+            business_model TEXT NULL,
+            -- hold_to_collect|hold_to_collect_and_sell|other
+
+            sppi_result TEXT NULL,
+            -- pass|fail|not_applicable
+
+            effective_interest_rate NUMERIC(12,6) NULL,
+            contractual_interest_rate NUMERIC(12,6) NULL,
+
+            status TEXT NOT NULL DEFAULT 'active',
+            -- active|derecognised|written_off|closed|void
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        -- Safe additive evolution
+        ALTER TABLE {schema}.ifrs9_financial_instruments
+        ADD COLUMN IF NOT EXISTS company_id INT,
+        ADD COLUMN IF NOT EXISTS instrument_name TEXT,
+        ADD COLUMN IF NOT EXISTS instrument_reference TEXT,
+        ADD COLUMN IF NOT EXISTS instrument_type TEXT,
+        ADD COLUMN IF NOT EXISTS source_table TEXT,
+        ADD COLUMN IF NOT EXISTS source_id INT,
+        ADD COLUMN IF NOT EXISTS loan_id INT,
+        ADD COLUMN IF NOT EXISTS customer_id INT,
+        ADD COLUMN IF NOT EXISTS vendor_id INT,
+        ADD COLUMN IF NOT EXISTS invoice_id INT,
+        ADD COLUMN IF NOT EXISTS bill_id INT,
+        ADD COLUMN IF NOT EXISTS counterparty_name TEXT,
+        ADD COLUMN IF NOT EXISTS counterparty_type TEXT,
+        ADD COLUMN IF NOT EXISTS recognition_date DATE,
+        ADD COLUMN IF NOT EXISTS derecognition_date DATE,
+        ADD COLUMN IF NOT EXISTS currency TEXT,
+        ADD COLUMN IF NOT EXISTS original_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS carrying_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS classification_status TEXT,
+        ADD COLUMN IF NOT EXISTS measurement_category TEXT,
+        ADD COLUMN IF NOT EXISTS business_model TEXT,
+        ADD COLUMN IF NOT EXISTS sppi_result TEXT,
+        ADD COLUMN IF NOT EXISTS effective_interest_rate NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS contractual_interest_rate NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS status TEXT,
+        ADD COLUMN IF NOT EXISTS created_by INT,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS meta_json JSONB;
+
+        UPDATE {schema}.ifrs9_financial_instruments
+        SET company_id = {company_id}
+        WHERE company_id IS NULL;
+
+        ALTER TABLE {schema}.ifrs9_financial_instruments
+        ALTER COLUMN company_id SET NOT NULL,
+        ALTER COLUMN company_id SET DEFAULT {company_id};
+
+        UPDATE {schema}.ifrs9_financial_instruments
+        SET original_amount = COALESCE(original_amount, 0),
+            carrying_amount = COALESCE(carrying_amount, 0),
+            classification_status = COALESCE(NULLIF(classification_status,''), 'unclassified'),
+            status = COALESCE(NULLIF(status,''), 'active'),
+            currency = COALESCE(NULLIF(currency,''), 'ZAR'),
+            meta_json = COALESCE(meta_json, '{}'::jsonb),
+            created_at = COALESCE(created_at, NOW()),
+            updated_at = COALESCE(updated_at, NOW());
+
+        ALTER TABLE {schema}.ifrs9_financial_instruments
+        ALTER COLUMN original_amount SET NOT NULL,
+        ALTER COLUMN original_amount SET DEFAULT 0,
+        ALTER COLUMN carrying_amount SET NOT NULL,
+        ALTER COLUMN carrying_amount SET DEFAULT 0,
+        ALTER COLUMN classification_status SET NOT NULL,
+        ALTER COLUMN classification_status SET DEFAULT 'unclassified',
+        ALTER COLUMN status SET NOT NULL,
+        ALTER COLUMN status SET DEFAULT 'active',
+        ALTER COLUMN currency SET NOT NULL,
+        ALTER COLUMN currency SET DEFAULT 'ZAR',
+        ALTER COLUMN meta_json SET NOT NULL,
+        ALTER COLUMN meta_json SET DEFAULT '{}'::jsonb,
+        ALTER COLUMN created_at SET NOT NULL,
+        ALTER COLUMN created_at SET DEFAULT NOW(),
+        ALTER COLUMN updated_at SET NOT NULL,
+        ALTER COLUMN updated_at SET DEFAULT NOW();
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        original_amount >= 0
+                        AND carrying_amount >= 0
+                        AND instrument_type IN (
+                            ''loan_payable'',
+                            ''trade_receivable'',
+                            ''loan_receivable'',
+                            ''staff_loan'',
+                            ''director_loan'',
+                            ''deposit_asset'',
+                            ''deposit_liability'',
+                            ''investment'',
+                            ''bond'',
+                            ''note_receivable'',
+                            ''trade_payable'',
+                            ''other_financial_asset'',
+                            ''other_financial_liability''
+                        )
+                        AND classification_status IN (
+                            ''unclassified'',
+                            ''classified'',
+                            ''review_required'',
+                            ''approved''
+                        )
+                        AND (
+                            measurement_category IS NULL
+                            OR measurement_category IN (''amortised_cost'',''fvoci'',''fvpl'')
+                        )
+                        AND (
+                            business_model IS NULL
+                            OR business_model IN (
+                                ''hold_to_collect'',
+                                ''hold_to_collect_and_sell'',
+                                ''other''
+                            )
+                        )
+                        AND (
+                            sppi_result IS NULL
+                            OR sppi_result IN (''pass'',''fail'',''not_applicable'')
+                        )
+                        AND status IN (''active'',''derecognised'',''written_off'',''closed'',''void'')
+                    )',
+                    '{schema}', '{schema}_ifrs9_instr_valid_ck'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_company_idx
+        ON {schema}.ifrs9_financial_instruments(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_type_idx
+        ON {schema}.ifrs9_financial_instruments(company_id, instrument_type);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_source_idx
+        ON {schema}.ifrs9_financial_instruments(company_id, source_table, source_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_loan_idx
+        ON {schema}.ifrs9_financial_instruments(company_id, loan_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_customer_idx
+        ON {schema}.ifrs9_financial_instruments(company_id, customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_instr_vendor_idx
+        ON {schema}.ifrs9_financial_instruments(company_id, vendor_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_instr_source_uq
+        ON {schema}.ifrs9_financial_instruments(company_id, source_table, source_id)
+        WHERE source_table IS NOT NULL AND source_id IS NOT NULL;
+
+        -- FKs where existing tables are known
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_loan_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (loan_id)
+                    REFERENCES %I.loans(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_instr_loan_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_instr_customer_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_vendor_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (vendor_id)
+                    REFERENCES %I.vendors(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_instr_vendor_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_bill_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (bill_id)
+                    REFERENCES %I.bills(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_instr_bill_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 2) IFRS 9 classification history
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_classifications (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            classification_date DATE NOT NULL,
+            business_model TEXT NOT NULL,
+            sppi_result TEXT NOT NULL,
+            measurement_category TEXT NOT NULL,
+
+            reason TEXT NULL,
+            approved_by INT NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_class_instr_idx
+        ON {schema}.ifrs9_classifications(company_id, instrument_id, classification_date DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_class_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_classifications
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_class_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_class_valid_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_classifications
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        business_model IN (''hold_to_collect'',''hold_to_collect_and_sell'',''other'')
+                        AND sppi_result IN (''pass'',''fail'',''not_applicable'')
+                        AND measurement_category IN (''amortised_cost'',''fvoci'',''fvpl'')
+                    )',
+                    '{schema}', '{schema}_ifrs9_class_valid_ck'
+                );
+            END IF;
+        END $$;
+
+
+        -- 3) Effective interest / amortised cost setup
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_effective_interest_terms (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            effective_date DATE NOT NULL,
+            contractual_rate NUMERIC(12,6) NOT NULL DEFAULT 0,
+            effective_interest_rate NUMERIC(12,6) NOT NULL DEFAULT 0,
+
+            transaction_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fees_received NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fees_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            premium_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            calculation_method TEXT NOT NULL DEFAULT 'system',
+            -- system|manual
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_eir_instr_idx
+        ON {schema}.ifrs9_effective_interest_terms(company_id, instrument_id, effective_date DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_eir_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_effective_interest_terms
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_eir_instr_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 4) Period amortised cost runs
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_amortised_cost_runs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            run_date DATE NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+
+            opening_carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_expense NUMERIC(18,2) NOT NULL DEFAULT 0,
+            cash_received NUMERIC(18,2) NOT NULL DEFAULT 0,
+            cash_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fees_amortised NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            journal_id INT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            -- draft|posted|reversed|void
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_runs_instr_idx
+        ON {schema}.ifrs9_amortised_cost_runs(company_id, instrument_id, period_end DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_runs_journal_idx
+        ON {schema}.ifrs9_amortised_cost_runs(journal_id);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_amort_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_amortised_cost_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_amort_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_amort_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_amortised_cost_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_amort_journal_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 5) ECL model profiles
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_models (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            model_name TEXT NOT NULL,
+            model_type TEXT NOT NULL DEFAULT 'simplified',
+            -- simplified|general|manual
+
+            applies_to TEXT NOT NULL DEFAULT 'trade_receivable',
+            -- trade_receivable|loan_receivable|deposit_asset|other_financial_asset|all
+
+            basis TEXT NOT NULL DEFAULT 'provision_matrix',
+            -- provision_matrix|pd_lgd_ead|manual
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_models_company_idx
+        ON {schema}.ifrs9_ecl_models(company_id, is_active);
+
+
+        -- 6) ECL provision matrix bands
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_matrix_bands (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            model_id INT NOT NULL,
+
+            band_label TEXT NOT NULL,
+            days_from INT NOT NULL DEFAULT 0,
+            days_to INT NULL,
+
+            loss_rate NUMERIC(12,6) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_matrix_model_idx
+        ON {schema}.ifrs9_ecl_matrix_bands(company_id, model_id, days_from);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_matrix_model_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_matrix_bands
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (model_id)
+                    REFERENCES %I.ifrs9_ecl_models(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_matrix_model_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 7) ECL calculation runs
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_runs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            model_id INT NULL,
+
+            run_date DATE NOT NULL,
+            reporting_date DATE NOT NULL,
+
+            run_type TEXT NOT NULL DEFAULT 'period_end',
+            -- monthly|quarterly|year_end|period_end|manual
+
+            total_exposure NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_ecl NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            journal_id INT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            -- draft|posted|reversed|void
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_date_idx
+        ON {schema}.ifrs9_ecl_runs(company_id, reporting_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_journal_idx
+        ON {schema}.ifrs9_ecl_runs(journal_id);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_run_model_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (model_id)
+                    REFERENCES %I.ifrs9_ecl_models(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_ecl_run_model_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_run_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_ecl_run_journal_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 8) ECL calculation lines
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_run_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            run_id INT NOT NULL,
+            instrument_id INT NOT NULL,
+
+            invoice_id INT NULL,
+            customer_id INT NULL,
+
+            days_past_due INT NOT NULL DEFAULT 0,
+            ageing_band TEXT NULL,
+
+            stage INT NOT NULL DEFAULT 1,
+            -- 1|2|3
+
+            gross_exposure NUMERIC(18,2) NOT NULL DEFAULT 0,
+            loss_rate NUMERIC(12,6) NOT NULL DEFAULT 0,
+
+            pd NUMERIC(12,6) NULL,
+            lgd NUMERIC(12,6) NULL,
+            ead NUMERIC(18,2) NULL,
+
+            expected_credit_loss NUMERIC(18,2) NOT NULL DEFAULT 0,
+            previous_ecl NUMERIC(18,2) NOT NULL DEFAULT 0,
+            movement_ecl NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_lines_run_idx
+        ON {schema}.ifrs9_ecl_run_lines(company_id, run_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_lines_instr_idx
+        ON {schema}.ifrs9_ecl_run_lines(company_id, instrument_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_lines_customer_idx
+        ON {schema}.ifrs9_ecl_run_lines(company_id, customer_id);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_line_run_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_run_lines
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (run_id)
+                    REFERENCES %I.ifrs9_ecl_runs(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_ecl_line_run_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_line_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_run_lines
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_ecl_line_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_line_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_run_lines
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_ecl_line_customer_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 9) Loan / financial liability modifications
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_modifications (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            modification_date DATE NOT NULL,
+            modification_type TEXT NOT NULL DEFAULT 'cashflow_change',
+            -- cashflow_change|rate_change|term_extension|concession|restructure|other
+
+            old_carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            revised_cashflow_pv NUMERIC(18,2) NOT NULL DEFAULT 0,
+            modification_gain_loss NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            substantial_modification BOOLEAN NOT NULL DEFAULT FALSE,
+            derecognition_required BOOLEAN NOT NULL DEFAULT FALSE,
+
+            journal_id INT NULL,
+            reason TEXT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_mod_instr_idx
+        ON {schema}.ifrs9_modifications(company_id, instrument_id, modification_date DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_mod_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_modifications
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_mod_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_mod_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_modifications
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_mod_journal_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 10) Derecognition
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_derecognitions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            derecognition_date DATE NOT NULL,
+            reason TEXT NOT NULL,
+            carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            consideration_received NUMERIC(18,2) NOT NULL DEFAULT 0,
+            consideration_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gain_loss NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            journal_id INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_derec_instr_idx
+        ON {schema}.ifrs9_derecognitions(company_id, instrument_id, derecognition_date DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_derec_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_derecognitions
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_derec_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_derec_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_derecognitions
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_derec_journal_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 11) Fair value measurement runs
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_fair_value_measurements (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            instrument_id INT NOT NULL,
+
+            valuation_date DATE NOT NULL,
+            previous_carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fair_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fair_value_gain_loss NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            fair_value_level TEXT NOT NULL DEFAULT 'level_3',
+            -- level_1|level_2|level_3
+
+            gain_loss_destination TEXT NOT NULL DEFAULT 'profit_or_loss',
+            -- profit_or_loss|oci
+
+            valuation_method TEXT NULL,
+            evidence_reference TEXT NULL,
+
+            journal_id INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_fv_instr_idx
+        ON {schema}.ifrs9_fair_value_measurements(company_id, instrument_id, valuation_date DESC);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_fv_instr_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_fair_value_measurements
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}_ifrs9_fv_instr_fk', '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_fv_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_fair_value_measurements
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}', '{schema}_ifrs9_fv_journal_fk', '{schema}'
+                );
+            END IF;
+        END $$;
+
+
+        -- 12) IFRS 9 account mapping
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_account_mappings (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            mapping_key TEXT NOT NULL,
+            account_code TEXT NOT NULL,
+
+            description TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_mapping_key_uq
+        ON {schema}.ifrs9_account_mappings(company_id, mapping_key)
+        WHERE is_active = TRUE;
+
+
+        -- 13) Disclosure snapshots / note builder support
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_disclosure_snapshots (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            financial_year INT NOT NULL,
+            reporting_date DATE NOT NULL,
+
+            amortised_cost_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fvoci_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fvpl_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            amortised_cost_liabilities NUMERIC(18,2) NOT NULL DEFAULT 0,
+            fvpl_liabilities NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            trade_receivables_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+            trade_receivables_ecl NUMERIC(18,2) NOT NULL DEFAULT 0,
+            trade_receivables_net NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            ecl_opening NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ecl_charge NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ecl_writeoffs NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ecl_closing NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            liquidity_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            credit_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            market_risk_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            fair_value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+            generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            generated_by INT NULL,
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_disclosure_year_uq
+        ON {schema}.ifrs9_disclosure_snapshots(company_id, financial_year, reporting_date);
+
         """
         ddl_ap = """
         -- ==================================================
@@ -30406,7 +31719,7 @@ class DatabaseService:
             cur.execute(sql, tuple(params))
             return int(cur.rowcount or 0)
 
-        return int(self.execute(sql, tuple(params)) or 0)
+        return int(self.execute_sql(sql, tuple(params)) or 0)
 
     def activate_lease_schedule_version(
         self,
@@ -30428,7 +31741,7 @@ class DatabaseService:
             cur.execute(sql, (int(lease_id), int(version_no)))
             return int(cur.rowcount or 0)
 
-        return int(self.execute(sql, (int(lease_id), int(version_no))) or 0)
+        return int(self.execute_sql(sql, (int(lease_id), int(version_no))) or 0)
 
     def swap_active_lease_schedule_version(
         self,
@@ -30644,14 +31957,14 @@ class DatabaseService:
 
         # Optional preview table:
         # lease_modification_schedule_preview
-        self.execute(
+        self.execute_sql(
             f"DELETE FROM {sch}.lease_modification_schedule_preview WHERE modification_id=%s",
             (int(modification_id),),
             cur=cur,
         )
 
         for row in revised_schedule:
-            self.execute(
+            self.execute_sql(
                 f"""
                 INSERT INTO {sch}.lease_modification_schedule_preview (
                     company_id,
@@ -30819,7 +32132,7 @@ class DatabaseService:
             raise ValueError("Modification date missing")
 
         # Deactivate only future rows from modification date onward
-        self.execute(
+        self.execute_sql(
             f"""
             UPDATE {sch}.lease_schedule
             SET
@@ -30834,7 +32147,7 @@ class DatabaseService:
         )
 
         for row in revised_schedule:
-            self.execute(
+            self.execute_sql(
                 f"""
                 INSERT INTO {sch}.lease_schedule (
                     company_id,
@@ -57512,6 +58825,13 @@ class DatabaseService:
         )
 
         runs = recon.get("runs", [])
+
+        if tax_year:
+            runs = [r for r in runs if int(r.get("tax_year") or 0) == int(tax_year)]
+
+        if tax_authority_id:
+            runs = [r for r in runs if int(r.get("tax_authority_id") or 0) == int(tax_authority_id)]
+
         if not runs:
             return {
                 "accounting_profit": 0,
@@ -76997,6 +78317,492 @@ class DatabaseService:
             """,
             tuple(params),
         ) or []    
+
+    def accrual_deferral_list_items(self, company_id: int, item_type=None, status=None):
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [int(company_id)]
+
+        if item_type:
+            where.append("item_type = %s")
+            params.append(item_type)
+
+        if status:
+            where.append("status = %s")
+            params.append(status)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_items
+            WHERE {" AND ".join(where)}
+            ORDER BY created_at DESC, id DESC
+        """, tuple(params))
+
+
+    def accrual_deferral_get_item(self, company_id: int, item_id: int):
+        schema = self.company_schema(company_id)
+
+        item = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_items
+            WHERE company_id = %s AND id = %s
+        """, (int(company_id), int(item_id)))
+
+        if not item:
+            return None
+
+        schedule = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_schedule_lines
+            WHERE company_id = %s AND item_id = %s
+            ORDER BY line_no
+        """, (int(company_id), int(item_id)))
+
+        events = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_events
+            WHERE company_id = %s AND item_id = %s
+            ORDER BY event_date DESC, id DESC
+        """, (int(company_id), int(item_id)))
+
+        return {
+            "item": item,
+            "schedule": schedule,
+            "events": events,
+        }
+
+
+    def accrual_deferral_next_number(self, company_id: int, prefix="AD"):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT COUNT(*) + 1 AS next_no
+            FROM {schema}.accrual_deferral_items
+            WHERE company_id = %s
+        """, (int(company_id),)) or {}
+
+        return f"{prefix}-{int(row.get('next_no') or 1):05d}"
+
+
+    def accrual_deferral_create_item(self, company_id: int, payload: dict, user_id=None):
+        schema = self.company_schema(company_id)
+
+        item_type = payload.get("item_type") or "prepaid_expense"
+        item_number = payload.get("item_number") or self.accrual_deferral_next_number(company_id)
+
+        start_date = _date(payload.get("start_date"))
+        end_date = _date(payload.get("end_date"))
+        transaction_date = _date(payload.get("transaction_date")) or start_date
+
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required")
+
+        if end_date < start_date:
+            raise ValueError("end_date cannot be before start_date")
+
+        original_amount = _d(payload.get("original_amount"))
+
+        if original_amount <= 0:
+            raise ValueError("original_amount must be greater than zero")
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.accrual_deferral_items (
+                    company_id,
+                    item_number,
+                    item_title,
+                    item_type,
+                    status,
+                    counterparty_type,
+                    customer_id,
+                    supplier_id,
+                    employee_id,
+                    currency,
+                    transaction_date,
+                    start_date,
+                    end_date,
+                    original_amount,
+                    recognized_to_date,
+                    remaining_balance,
+                    recognition_method,
+                    frequency,
+                    balance_account,
+                    recognition_account,
+                    tax_account,
+                    vat_amount,
+                    tax_mode,
+                    source_invoice_id,
+                    source_bill_id,
+                    source_receipt_id,
+                    source_payment_id,
+                    source_journal_id,
+                    approval_status,
+                    notes,
+                    payload_json,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,
+                    %s,0,%s,
+                    %s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s
+                )
+                RETURNING *
+            """, (
+                int(company_id),
+                item_number,
+                payload.get("item_title") or payload.get("title") or item_number,
+                item_type,
+                payload.get("status") or "draft",
+                payload.get("counterparty_type"),
+                payload.get("customer_id"),
+                payload.get("supplier_id"),
+                payload.get("employee_id"),
+                payload.get("currency") or "ZAR",
+                transaction_date,
+                start_date,
+                end_date,
+                original_amount,
+                original_amount,
+                payload.get("recognition_method") or "straight_line",
+                payload.get("frequency") or "monthly",
+                payload.get("balance_account"),
+                payload.get("recognition_account"),
+                payload.get("tax_account"),
+                _d(payload.get("vat_amount")),
+                payload.get("tax_mode") or "exclusive",
+                payload.get("source_invoice_id"),
+                payload.get("source_bill_id"),
+                payload.get("source_receipt_id"),
+                payload.get("source_payment_id"),
+                payload.get("source_journal_id"),
+                payload.get("approval_status") or "draft",
+                payload.get("notes"),
+                payload.get("payload_json") or {},
+                user_id,
+                user_id,
+            ))
+
+            item = cur.fetchone()
+
+            cur.execute(f"""
+                INSERT INTO {schema}.accrual_deferral_events (
+                    company_id,
+                    item_id,
+                    event_date,
+                    event_type,
+                    amount,
+                    currency,
+                    source_invoice_id,
+                    source_bill_id,
+                    source_receipt_id,
+                    source_payment_id,
+                    source_journal_id,
+                    notes,
+                    payload_json,
+                    created_by_user_id
+                )
+                VALUES (%s,%s,%s,'initial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                int(company_id),
+                item["id"],
+                transaction_date,
+                original_amount,
+                item["currency"],
+                payload.get("source_invoice_id"),
+                payload.get("source_bill_id"),
+                payload.get("source_receipt_id"),
+                payload.get("source_payment_id"),
+                payload.get("source_journal_id"),
+                payload.get("notes"),
+                payload.get("payload_json") or {},
+                user_id,
+            ))
+
+            self.accrual_deferral_generate_schedule(
+                company_id,
+                item["id"],
+                cur=cur,
+            )
+
+        return self.accrual_deferral_get_item(company_id, item["id"])
+
+
+    def accrual_deferral_generate_schedule(self, company_id: int, item_id: int, cur=None):
+        schema = self.company_schema(company_id)
+
+        own_cursor = cur is None
+
+        if own_cursor:
+            ctx = self.transaction()
+            conn, cur = ctx.__enter__()
+
+        try:
+            cur.execute(f"""
+                SELECT *
+                FROM {schema}.accrual_deferral_items
+                WHERE company_id = %s AND id = %s
+            """, (int(company_id), int(item_id)))
+
+            item = cur.fetchone()
+
+            if not item:
+                raise ValueError("Accrual/deferral item not found")
+
+            cur.execute(f"""
+                DELETE FROM {schema}.accrual_deferral_schedule_lines
+                WHERE company_id = %s
+                AND item_id = %s
+                AND status = 'pending'
+            """, (int(company_id), int(item_id)))
+
+            start = _date(item["start_date"])
+            end = _date(item["end_date"])
+            amount = _d(item["original_amount"])
+
+            months = []
+            d = date(start.year, start.month, 1)
+
+            while d <= end:
+                period_start = max(d, start)
+                period_end = min(_month_end(d), end)
+                months.append((period_start, period_end))
+                d = _add_month(d)
+
+            if not months:
+                return {"created": 0}
+
+            monthly_amount = (amount / Decimal(len(months))).quantize(Decimal("0.01"))
+
+            opening = amount
+            created = 0
+
+            for idx, (ps, pe) in enumerate(months, start=1):
+                if idx == len(months):
+                    recognition_amount = opening
+                else:
+                    recognition_amount = monthly_amount
+
+                closing = opening - recognition_amount
+
+                cur.execute(f"""
+                    INSERT INTO {schema}.accrual_deferral_schedule_lines (
+                        company_id,
+                        item_id,
+                        line_no,
+                        period_start,
+                        period_end,
+                        recognition_date,
+                        opening_balance,
+                        recognition_amount,
+                        closing_balance,
+                        status,
+                        payload_json
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)
+                    ON CONFLICT (item_id, line_no)
+                    DO UPDATE SET
+                        period_start = EXCLUDED.period_start,
+                        period_end = EXCLUDED.period_end,
+                        recognition_date = EXCLUDED.recognition_date,
+                        opening_balance = EXCLUDED.opening_balance,
+                        recognition_amount = EXCLUDED.recognition_amount,
+                        closing_balance = EXCLUDED.closing_balance
+                """, (
+                    int(company_id),
+                    int(item_id),
+                    idx,
+                    ps,
+                    pe,
+                    pe,
+                    opening,
+                    recognition_amount,
+                    closing,
+                    {},
+                ))
+
+                opening = closing
+                created += 1
+
+            if own_cursor:
+                ctx.__exit__(None, None, None)
+
+            return {"created": created}
+
+        except Exception:
+            if own_cursor:
+                ctx.__exit__(*sys.exc_info())
+            raise
+
+
+    def accrual_deferral_update_item(self, company_id: int, item_id: int, payload: dict, user_id=None):
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "item_title",
+            "status",
+            "counterparty_type",
+            "customer_id",
+            "supplier_id",
+            "employee_id",
+            "currency",
+            "transaction_date",
+            "start_date",
+            "end_date",
+            "original_amount",
+            "recognition_method",
+            "frequency",
+            "balance_account",
+            "recognition_account",
+            "tax_account",
+            "vat_amount",
+            "tax_mode",
+            "approval_status",
+            "notes",
+            "payload_json",
+        }
+
+        sets = []
+        params = []
+
+        for key in allowed:
+            if key in payload:
+                sets.append(f"{key} = %s")
+                params.append(payload.get(key))
+
+        if not sets:
+            return self.accrual_deferral_get_item(company_id, item_id)
+
+        sets.append("updated_by_user_id = %s")
+        params.append(user_id)
+
+        sets.append("updated_at = NOW()")
+
+        params.extend([int(company_id), int(item_id)])
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                UPDATE {schema}.accrual_deferral_items
+                SET {", ".join(sets)}
+                WHERE company_id = %s AND id = %s
+                RETURNING *
+            """, tuple(params))
+
+            item = cur.fetchone()
+
+            if not item:
+                return None
+
+            if any(k in payload for k in ("start_date", "end_date", "original_amount", "frequency")):
+                self.accrual_deferral_generate_schedule(
+                    company_id,
+                    item_id,
+                    cur=cur,
+                )
+
+        return self.accrual_deferral_get_item(company_id, item_id)
+
+
+    def accrual_deferral_delete_item(self, company_id: int, item_id: int):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            DELETE FROM {schema}.accrual_deferral_items
+            WHERE company_id = %s
+            AND id = %s
+            AND status IN ('draft', 'cancelled')
+            RETURNING id
+        """, (int(company_id), int(item_id)))
+
+        return bool(row)
+
+
+    def accrual_deferral_list_runs(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_runs
+            WHERE company_id = %s
+            ORDER BY period_end DESC, id DESC
+        """, (int(company_id),))
+
+
+    def accrual_deferral_create_run(self, company_id: int, payload: dict, user_id=None):
+        schema = self.company_schema(company_id)
+
+        period_start = _date(payload.get("period_start"))
+        period_end = _date(payload.get("period_end"))
+
+        if not period_start or not period_end:
+            raise ValueError("period_start and period_end are required")
+
+        item_id = payload.get("item_id")
+        item_type = payload.get("item_type")
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.accrual_deferral_runs (
+                    company_id,
+                    item_id,
+                    run_scope,
+                    item_type,
+                    period_start,
+                    period_end,
+                    status,
+                    run_reason,
+                    requested_by_user_id,
+                    payload_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s)
+                RETURNING *
+            """, (
+                int(company_id),
+                item_id,
+                payload.get("run_scope") or ("item" if item_id else "company"),
+                item_type,
+                period_start,
+                period_end,
+                payload.get("run_reason") or "period_end",
+                user_id,
+                payload.get("payload_json") or {},
+            ))
+
+            run = cur.fetchone()
+
+        return self.accrual_deferral_get_run(company_id, run["id"])
+
+
+    def accrual_deferral_get_run(self, company_id: int, run_id: int):
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_runs
+            WHERE company_id = %s AND id = %s
+        """, (int(company_id), int(run_id)))
+
+        if not run:
+            return None
+
+        entries = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_entries
+            WHERE company_id = %s AND run_id = %s
+            ORDER BY id
+        """, (int(company_id), int(run_id)))
+
+        return {
+            "run": run,
+            "entries": entries,
+        }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
