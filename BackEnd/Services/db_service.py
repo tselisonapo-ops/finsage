@@ -78804,6 +78804,781 @@ class DatabaseService:
             "entries": entries,
         }
 
+    def _num(self, v, default=0):
+        if v is None or v == "":
+            return Decimal(str(default))
+        return Decimal(str(v))
+
+
+    def ifrs9_list_instruments(self, company_id: int, instrument_type=None, status=None):
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params = [int(company_id)]
+
+        if instrument_type:
+            where.append("instrument_type = %s")
+            params.append(instrument_type)
+
+        if status:
+            where.append("status = %s")
+            params.append(status)
+
+        sql = f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE {" AND ".join(where)}
+            ORDER BY recognition_date DESC, id DESC
+        """
+
+        return self.fetch_all(sql, tuple(params))
+
+
+    def ifrs9_get_instrument(self, company_id: int, instrument_id: int):
+        schema = self.company_schema(company_id)
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id = %s
+            AND id = %s
+        """, (int(company_id), int(instrument_id)))
+
+        if not instrument:
+            return None
+
+        classifications = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_classifications
+            WHERE company_id = %s
+            AND instrument_id = %s
+            ORDER BY classification_date DESC, id DESC
+        """, (int(company_id), int(instrument_id)))
+
+        eir_terms = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_effective_interest_terms
+            WHERE company_id = %s
+            AND instrument_id = %s
+            ORDER BY effective_date DESC, id DESC
+        """, (int(company_id), int(instrument_id)))
+
+        return {
+            "item": instrument,
+            "classifications": classifications,
+            "effective_interest_terms": eir_terms,
+        }
+
+
+    def ifrs9_create_instrument(self, company_id: int, payload: dict, cur=None):
+        schema = self.company_schema(company_id)
+
+        instrument_name = (payload.get("instrument_name") or "").strip()
+        instrument_type = (payload.get("instrument_type") or "").strip()
+        recognition_date = payload.get("recognition_date")
+
+        if not instrument_name:
+            raise ValueError("instrument_name is required")
+
+        if not instrument_type:
+            raise ValueError("instrument_type is required")
+
+        if not recognition_date:
+            raise ValueError("recognition_date is required")
+
+        sql = f"""
+            INSERT INTO {schema}.ifrs9_financial_instruments (
+                company_id,
+                instrument_name,
+                instrument_reference,
+                instrument_type,
+                source_table,
+                source_id,
+                loan_id,
+                customer_id,
+                vendor_id,
+                invoice_id,
+                bill_id,
+                counterparty_name,
+                counterparty_type,
+                recognition_date,
+                derecognition_date,
+                currency,
+                original_amount,
+                carrying_amount,
+                classification_status,
+                measurement_category,
+                business_model,
+                sppi_result,
+                effective_interest_rate,
+                contractual_interest_rate,
+                status,
+                created_by,
+                meta_json
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb)
+            )
+            RETURNING *
+        """
+
+        params = (
+            int(company_id),
+            instrument_name,
+            payload.get("instrument_reference"),
+            instrument_type,
+            payload.get("source_table"),
+            payload.get("source_id"),
+            payload.get("loan_id"),
+            payload.get("customer_id"),
+            payload.get("vendor_id"),
+            payload.get("invoice_id"),
+            payload.get("bill_id"),
+            payload.get("counterparty_name"),
+            payload.get("counterparty_type"),
+            recognition_date,
+            payload.get("derecognition_date"),
+            payload.get("currency") or "ZAR",
+            self._num(payload.get("original_amount")),
+            self._num(payload.get("carrying_amount", payload.get("original_amount") or 0)),
+            payload.get("classification_status") or "unclassified",
+            payload.get("measurement_category"),
+            payload.get("business_model"),
+            payload.get("sppi_result"),
+            payload.get("effective_interest_rate"),
+            payload.get("contractual_interest_rate"),
+            payload.get("status") or "active",
+            payload.get("created_by"),
+            payload.get("meta_json"),
+        )
+
+        if cur:
+            cur.execute(sql, params)
+            return cur.fetchone()
+
+        return self.execute_sql(sql, params, fetchone=True)
+
+
+    def ifrs9_update_instrument(self, company_id: int, instrument_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        allowed = {
+            "instrument_name",
+            "instrument_reference",
+            "counterparty_name",
+            "counterparty_type",
+            "derecognition_date",
+            "currency",
+            "original_amount",
+            "carrying_amount",
+            "classification_status",
+            "measurement_category",
+            "business_model",
+            "sppi_result",
+            "effective_interest_rate",
+            "contractual_interest_rate",
+            "status",
+            "meta_json",
+        }
+
+        updates = []
+        params = []
+
+        for key in allowed:
+            if key in payload:
+                if key in {"original_amount", "carrying_amount"}:
+                    updates.append(f"{key} = %s")
+                    params.append(self._num(payload.get(key)))
+                elif key == "meta_json":
+                    updates.append("meta_json = COALESCE(%s::jsonb, '{}'::jsonb)")
+                    params.append(payload.get(key))
+                else:
+                    updates.append(f"{key} = %s")
+                    params.append(payload.get(key))
+
+        if not updates:
+            return self.ifrs9_get_instrument(company_id, instrument_id)["item"]
+
+        updates.append("updated_at = NOW()")
+
+        params.extend([int(company_id), int(instrument_id)])
+
+        sql = f"""
+            UPDATE {schema}.ifrs9_financial_instruments
+            SET {", ".join(updates)}
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *
+        """
+
+        return self.execute_sql(sql, tuple(params), fetchone=True)
+
+
+    def ifrs9_classify_instrument(self, company_id: int, instrument_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        classification_date = payload.get("classification_date") or date.today().isoformat()
+        business_model = payload.get("business_model")
+        sppi_result = payload.get("sppi_result")
+        measurement_category = payload.get("measurement_category")
+
+        if not business_model:
+            raise ValueError("business_model is required")
+
+        if not sppi_result:
+            raise ValueError("sppi_result is required")
+
+        if not measurement_category:
+            raise ValueError("measurement_category is required")
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.ifrs9_classifications (
+                    company_id,
+                    instrument_id,
+                    classification_date,
+                    business_model,
+                    sppi_result,
+                    measurement_category,
+                    reason,
+                    approved_by,
+                    approved_at,
+                    meta_json
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW(),COALESCE(%s::jsonb, '{{}}'::jsonb))
+                RETURNING *
+            """, (
+                int(company_id),
+                int(instrument_id),
+                classification_date,
+                business_model,
+                sppi_result,
+                measurement_category,
+                payload.get("reason"),
+                payload.get("approved_by"),
+                payload.get("meta_json"),
+            ))
+
+            classification = cur.fetchone()
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_financial_instruments
+                SET classification_status = 'classified',
+                    business_model = %s,
+                    sppi_result = %s,
+                    measurement_category = %s,
+                    updated_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+            """, (
+                business_model,
+                sppi_result,
+                measurement_category,
+                int(company_id),
+                int(instrument_id),
+            ))
+
+            instrument = cur.fetchone()
+
+        return {
+            "classification": classification,
+            "instrument": instrument,
+        }
+
+
+    def ifrs9_create_eir_terms(self, company_id: int, instrument_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            INSERT INTO {schema}.ifrs9_effective_interest_terms (
+                company_id,
+                instrument_id,
+                effective_date,
+                contractual_rate,
+                effective_interest_rate,
+                transaction_costs,
+                fees_received,
+                fees_paid,
+                premium_amount,
+                discount_amount,
+                calculation_method,
+                notes,
+                meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
+            RETURNING *
+        """
+
+        item = self.execute_sql(sql, (
+            int(company_id),
+            int(instrument_id),
+            payload.get("effective_date") or date.today().isoformat(),
+            payload.get("contractual_rate") or 0,
+            payload.get("effective_interest_rate") or 0,
+            self._num(payload.get("transaction_costs")),
+            self._num(payload.get("fees_received")),
+            self._num(payload.get("fees_paid")),
+            self._num(payload.get("premium_amount")),
+            self._num(payload.get("discount_amount")),
+            payload.get("calculation_method") or "system",
+            payload.get("notes"),
+            payload.get("meta_json"),
+        ), fetchone=True)
+
+        self.execute_sql(f"""
+            UPDATE {schema}.ifrs9_financial_instruments
+            SET effective_interest_rate = %s,
+                contractual_interest_rate = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+        """, (
+            payload.get("effective_interest_rate") or 0,
+            payload.get("contractual_rate") or 0,
+            int(company_id),
+            int(instrument_id),
+        ))
+
+        return item
+
+
+    def ifrs9_list_ecl_models(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id = %s
+            ORDER BY is_active DESC, model_name
+        """, (int(company_id),))
+
+
+    def ifrs9_create_ecl_model(self, company_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        model_name = (payload.get("model_name") or "").strip()
+        if not model_name:
+            raise ValueError("model_name is required")
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_ecl_models (
+                company_id,
+                model_name,
+                model_type,
+                applies_to,
+                basis,
+                is_active,
+                created_by,
+                meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
+            RETURNING *
+        """, (
+            int(company_id),
+            model_name,
+            payload.get("model_type") or "simplified",
+            payload.get("applies_to") or "trade_receivable",
+            payload.get("basis") or "provision_matrix",
+            bool(payload.get("is_active", True)),
+            payload.get("created_by"),
+            payload.get("meta_json"),
+        ), fetchone=True)
+
+
+    def ifrs9_set_ecl_matrix_bands(self, company_id: int, model_id: int, bands: list):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                DELETE FROM {schema}.ifrs9_ecl_matrix_bands
+                WHERE company_id = %s
+                AND model_id = %s
+            """, (int(company_id), int(model_id)))
+
+            inserted = []
+
+            for b in bands or []:
+                cur.execute(f"""
+                    INSERT INTO {schema}.ifrs9_ecl_matrix_bands (
+                        company_id,
+                        model_id,
+                        band_label,
+                        days_from,
+                        days_to,
+                        loss_rate
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    RETURNING *
+                """, (
+                    int(company_id),
+                    int(model_id),
+                    b.get("band_label"),
+                    int(b.get("days_from") or 0),
+                    b.get("days_to"),
+                    b.get("loss_rate") or 0,
+                ))
+                inserted.append(cur.fetchone())
+
+        return inserted
+
+
+    def ifrs9_get_ecl_model(self, company_id: int, model_id: int):
+        schema = self.company_schema(company_id)
+
+        model = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id = %s
+            AND id = %s
+        """, (int(company_id), int(model_id)))
+
+        if not model:
+            return None
+
+        bands = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_matrix_bands
+            WHERE company_id = %s
+            AND model_id = %s
+            ORDER BY days_from
+        """, (int(company_id), int(model_id)))
+
+        return {
+            "model": model,
+            "bands": bands,
+        }
+
+
+    def ifrs9_sync_loan_payables(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            INSERT INTO {schema}.ifrs9_financial_instruments (
+                company_id,
+                instrument_name,
+                instrument_reference,
+                instrument_type,
+                source_table,
+                source_id,
+                loan_id,
+                counterparty_name,
+                counterparty_type,
+                recognition_date,
+                currency,
+                original_amount,
+                carrying_amount,
+                classification_status,
+                measurement_category,
+                business_model,
+                sppi_result,
+                effective_interest_rate,
+                contractual_interest_rate,
+                status,
+                meta_json
+            )
+            SELECT
+                l.company_id,
+                l.loan_name,
+                l.loan_reference,
+                'loan_payable',
+                'loans',
+                l.id,
+                l.id,
+                l.lender_name,
+                'bank',
+                l.start_date,
+                COALESCE(l.currency, 'ZAR'),
+                COALESCE(l.principal_amount, 0),
+                COALESCE(l.outstanding_principal, l.principal_amount, 0),
+                'classified',
+                'amortised_cost',
+                'hold_to_collect',
+                'not_applicable',
+                NULL,
+                COALESCE(l.annual_interest_rate, 0),
+                CASE
+                    WHEN l.status = 'closed' THEN 'closed'
+                    WHEN l.status = 'void' THEN 'void'
+                    ELSE 'active'
+                END,
+                jsonb_build_object('synced_from', 'loans')
+            FROM {schema}.loans l
+            WHERE l.company_id = %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.ifrs9_financial_instruments fi
+                WHERE fi.company_id = l.company_id
+                    AND fi.source_table = 'loans'
+                    AND fi.source_id = l.id
+            )
+            RETURNING *
+        """
+
+        return self.execute_sql(sql, (int(company_id),), fetchall=True)
+
+
+    def ifrs9_create_modification(self, company_id: int, instrument_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_modifications (
+                company_id,
+                instrument_id,
+                modification_date,
+                modification_type,
+                old_carrying_amount,
+                revised_cashflow_pv,
+                modification_gain_loss,
+                substantial_modification,
+                derecognition_required,
+                journal_id,
+                reason,
+                created_by,
+                meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
+            RETURNING *
+        """, (
+            int(company_id),
+            int(instrument_id),
+            payload.get("modification_date") or date.today().isoformat(),
+            payload.get("modification_type") or "cashflow_change",
+            self._num(payload.get("old_carrying_amount")),
+            self._num(payload.get("revised_cashflow_pv")),
+            self._num(payload.get("modification_gain_loss")),
+            bool(payload.get("substantial_modification", False)),
+            bool(payload.get("derecognition_required", False)),
+            payload.get("journal_id"),
+            payload.get("reason"),
+            payload.get("created_by"),
+            payload.get("meta_json"),
+        ), fetchone=True)
+
+
+    def ifrs9_list_modifications(self, company_id: int, instrument_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_modifications
+            WHERE company_id = %s
+            AND instrument_id = %s
+            ORDER BY modification_date DESC, id DESC
+        """, (int(company_id), int(instrument_id)))
+
+    def ifrs9_get_account_mappings(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_account_mappings
+            WHERE company_id = %s
+            AND is_active = TRUE
+            ORDER BY mapping_key
+        """, (int(company_id),))
+
+
+    def ifrs9_required_account_keys(self):
+        return [
+            "ecl_impairment_loss",
+            "ecl_allowance_trade_receivables",
+            "bad_debt_writeoff",
+            "fair_value_gain_loss_fvpl",
+            "fair_value_oci_reserve",
+            "modification_gain",
+            "modification_loss",
+            "derecognition_gain",
+            "derecognition_loss",
+            "interest_income_amortised_cost",
+            "interest_expense_amortised_cost",
+            "financial_asset_amortised_cost",
+            "financial_liability_amortised_cost",
+        ]
+
+
+    def ifrs9_coa_readiness(self, company_id: int):
+        schema = self.company_schema(company_id)
+        required = self.ifrs9_required_account_keys()
+
+        rows = self.fetch_all(f"""
+            SELECT mapping_key, account_code
+            FROM {schema}.ifrs9_account_mappings
+            WHERE company_id = %s
+            AND is_active = TRUE
+        """, (int(company_id),))
+
+        mapped = {r["mapping_key"]: r["account_code"] for r in rows or []}
+
+        items = []
+        missing = []
+
+        for key in required:
+            raw_code = mapped.get(key)
+            account = None
+
+            if raw_code:
+                row = self.get_account_row_for_posting(company_id, raw_code)
+                if row:
+                    account = {
+                        "raw_code": raw_code,
+                        "posting_code": row[1],
+                        "found": True,
+                    }
+
+            ok = bool(account)
+
+            if not ok:
+                missing.append(key)
+
+            items.append({
+                "mapping_key": key,
+                "account_code": raw_code,
+                "ok": ok,
+                "account": account,
+            })
+
+        return {
+            "items": items,
+            "missing": missing,
+            "ready": len(missing) == 0,
+        }
+
+
+    def ifrs9_resolve_account(self, company_id: int, mapping_key: str) -> str:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT account_code
+            FROM {schema}.ifrs9_account_mappings
+            WHERE company_id = %s
+            AND mapping_key = %s
+            AND is_active = TRUE
+            ORDER BY id DESC
+            LIMIT 1
+        """, (int(company_id), mapping_key))
+
+        if not row or not row.get("account_code"):
+            raise ValueError(f"IFRS 9 account mapping missing: {mapping_key}")
+
+        acct_row = self.get_account_row_for_posting(company_id, row["account_code"])
+
+        if not acct_row:
+            raise ValueError(
+                f"IFRS 9 account '{row['account_code']}' for '{mapping_key}' not found in company COA"
+            )
+
+        posting_code = (acct_row[1] or "").strip()
+
+        if not posting_code:
+            raise ValueError(f"IFRS 9 account mapping resolved blank: {mapping_key}")
+
+        return posting_code
+
+
+    def ifrs9_upsert_account_mapping(self, company_id: int, payload: dict):
+        schema = self.company_schema(company_id)
+
+        mapping_key = (payload.get("mapping_key") or "").strip()
+        account_code = (payload.get("account_code") or "").strip()
+
+        if not mapping_key:
+            raise ValueError("mapping_key is required")
+
+        if not account_code:
+            raise ValueError("account_code is required")
+
+        # validate posting account
+        acct_row = self.get_account_row_for_posting(company_id, account_code)
+        if not acct_row:
+            raise ValueError(f"Account '{account_code}' not found in company COA")
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_account_mappings (
+                company_id,
+                mapping_key,
+                account_code,
+                description,
+                is_active,
+                updated_at
+            )
+            VALUES (%s,%s,%s,%s,TRUE,NOW())
+            ON CONFLICT (company_id, mapping_key)
+            WHERE is_active = TRUE
+            DO UPDATE SET
+                account_code = EXCLUDED.account_code,
+                description = EXCLUDED.description,
+                updated_at = NOW()
+            RETURNING *
+        """, (
+            int(company_id),
+            mapping_key,
+            account_code,
+            payload.get("description"),
+        ), fetchone=True)
+
+    def preview_ifrs9_ecl_journal(self, conn, company_id: int, *, data: dict):
+        reporting_date = data.get("reporting_date")
+        movement_ecl = self._num(data.get("movement_ecl"))
+
+        if not reporting_date:
+            raise ValueError("reporting_date is required")
+
+        if movement_ecl == 0:
+            raise ValueError("movement_ecl cannot be zero")
+
+        expense_account = self.ifrs9_resolve_account(
+            company_id,
+            "ecl_impairment_loss",
+        )
+
+        allowance_account = self.ifrs9_resolve_account(
+            company_id,
+            "ecl_allowance_trade_receivables",
+        )
+
+        amount = abs(movement_ecl)
+
+        if movement_ecl > 0:
+            lines = [
+                {"account_code": expense_account, "dc": "D", "amount": float(amount)},
+                {"account_code": allowance_account, "dc": "C", "amount": float(amount)},
+            ]
+            description = "IFRS 9 expected credit loss recognised"
+        else:
+            lines = [
+                {"account_code": allowance_account, "dc": "D", "amount": float(amount)},
+                {"account_code": expense_account, "dc": "C", "amount": float(amount)},
+            ]
+            description = "IFRS 9 expected credit loss reversed"
+
+        dr_total = sum(x["amount"] for x in lines if x["dc"] == "D")
+        cr_total = sum(x["amount"] for x in lines if x["dc"] == "C")
+
+        if round(dr_total - cr_total, 2) != 0:
+            raise ValueError(f"Journal not balanced D={dr_total} C={cr_total}")
+
+        return {
+            "date": str(reporting_date),
+            "ref": data.get("reference") or "IFRS9-ECL-PREVIEW",
+            "description": description,
+            "gross_amount": float(amount),
+            "net_amount": float(amount),
+            "vat_amount": 0.0,
+            "currency": data.get("currency") or "ZAR",
+            "source": "ifrs9_ecl_preview",
+            "source_id": None,
+            "lines": lines,
+            "resolved_accounts": {
+                "ecl_impairment_loss": expense_account,
+                "ecl_allowance_trade_receivables": allowance_account,
+            },
+            "dr_total": dr_total,
+            "cr_total": cr_total,
+        }
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

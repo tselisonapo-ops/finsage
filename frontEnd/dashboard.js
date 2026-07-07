@@ -1261,6 +1261,31 @@ const ENDPOINTS = {
     },
   },
 
+    accrualDeferrals: {
+      items: (companyId, opts = {}) => {
+        const params = new URLSearchParams();
+
+        if (opts.item_type) params.append("item_type", opts.item_type);
+        if (opts.status) params.append("status", opts.status);
+
+        const qs = params.toString();
+
+        return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items${qs ? `?${qs}` : ""}`;
+      },
+
+      item: (companyId, itemId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}`,
+
+      regenerateSchedule: (companyId, itemId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/schedule/regenerate`,
+
+      runs: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs`,
+
+      run: (companyId, runId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
+    },
+
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
   quotes: {
@@ -5400,6 +5425,13 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           ],
         },
         {
+          name: "Accruals & Deferrals",
+          screen: "accrual-deferrals",
+          icon: "🔁",
+          minRole: "assistant",
+          permissionAny: ["can_post_journals", "can_prepare_financials"],
+        },
+        {
           name: "Project Desk",
           icon: "🏗️",
           isParent: true,
@@ -7316,6 +7348,12 @@ const SCREEN_POLICY = {
   // Fixed Assets
   fixedassets: { auth: "private", minRole: "assistant", permission: "can_manage_fixed_assets" },
   help: { auth: "private", minRole: "clerk" },
+
+  "accrual-deferrals": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: ["can_post_journals", "can_prepare_financials"],
+  },
 };
 
 
@@ -8693,6 +8731,9 @@ async function switchScreen(name) {
   const isTaxRecon =
     name === "tax-recon";
 
+  const isAccrualDeferralWorkflow =
+    name === "accrual-deferrals";
+
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -8741,6 +8782,7 @@ async function switchScreen(name) {
   else if (name === "project-material-issues") base = "project-material-issues";
   else if (name === "project-profitability") base = "project-profitability";
   else if (isTaxRecon) base = "tax-recon";
+  else if (isAccrualDeferralWorkflow) base = "accrual-deferrals";
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
@@ -9149,6 +9191,19 @@ async function switchScreen(name) {
     console.log("[switchScreen] early return at:", name, "base:", base);
 
     return; // ✅ recommended so switchScreen stops here
+  }
+
+  if (base === "accrual-deferrals") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      }
+    } catch (e) {
+      console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindAccrualDeferralsScreen?.();
+    return;
   }
 
   // ✅ bind refresh button when company screen is active
@@ -39982,6 +40037,281 @@ async function saveEditModal() {
   window.setLoanTab = setLoanTab;
   window.openLoanPaymentModal = openLoanPaymentModal;
   window.closeLoanPaymentModal = closeLoanPaymentModal;
+})();
+
+// accrual_deferrals.js
+
+(function () {
+  let AD_STATE = {
+    bound: false,
+    items: [],
+    selectedItem: null,
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function money(v) {
+    const n = Number(v || 0);
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function labelType(t) {
+    return String(t || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  function adCid() {
+    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || CURRENT_COMPANY_ID;
+  }
+
+  async function loadAccrualDeferrals() {
+    const cid = adCid();
+    if (!cid) throw new Error("No active company selected.");
+
+    const itemType = $("adFilterType")?.value || "";
+    const status = $("adFilterStatus")?.value || "";
+
+    const data = await apiFetch(
+      ENDPOINTS.accrualDeferrals.items(cid, {
+        item_type: itemType,
+        status,
+      })
+    );
+
+    AD_STATE.items = data.items || [];
+    renderAccrualDeferrals();
+  }
+
+  function renderAccrualDeferrals() {
+    const items = AD_STATE.items || [];
+
+    const total = items.length;
+    const active = items.filter((x) => x.status === "active").length;
+    const remaining = items.reduce((s, x) => s + Number(x.remaining_balance || 0), 0);
+    const recognised = items.reduce((s, x) => s + Number(x.recognized_to_date || 0), 0);
+
+    if ($("adKpiTotal")) $("adKpiTotal").textContent = total;
+    if ($("adKpiActive")) $("adKpiActive").textContent = active;
+    if ($("adKpiRemaining")) $("adKpiRemaining").textContent = money(remaining);
+    if ($("adKpiRecognised")) $("adKpiRecognised").textContent = money(recognised);
+
+    const body = $("adItemsBody");
+    if (!body) return;
+
+    if (!items.length) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="8" class="p-4 text-center text-slate-500">
+            No accrual or deferral items found.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    body.innerHTML = items.map((item) => `
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3 font-semibold">${item.item_number || ""}</td>
+        <td class="p-3">${item.item_title || ""}</td>
+        <td class="p-3">${labelType(item.item_type)}</td>
+        <td class="p-3 text-right">${money(item.original_amount)}</td>
+        <td class="p-3 text-right">${money(item.recognized_to_date)}</td>
+        <td class="p-3 text-right">${money(item.remaining_balance)}</td>
+        <td class="p-3">
+          <span class="pill">${item.status || "draft"}</span>
+        </td>
+        <td class="p-3 text-right">
+          <button class="btn text-xs" data-ad-open="${item.id}">Open</button>
+        </td>
+      </tr>
+    `).join("");
+
+    body.querySelectorAll("[data-ad-open]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openAccrualDeferralItem(btn.dataset.adOpen);
+      });
+    });
+  }
+
+  async function openAccrualDeferralItem(itemId) {
+    const cid = adCid();
+
+    const data = await apiFetch(
+      ENDPOINTS.accrualDeferrals.item(cid, itemId)
+    );
+
+    AD_STATE.selectedItem = data;
+    renderAccrualDeferralDetail(data);
+  }
+
+  function renderAccrualDeferralDetail(data) {
+    const panel = $("adDetailPanel");
+    if (!panel) return;
+
+    const item = data.item || {};
+    const schedule = data.schedule || [];
+
+    panel.classList.remove("hidden");
+
+    panel.innerHTML = `
+      <div class="flex justify-between gap-3 items-start mb-4">
+        <div>
+          <p class="text-xs uppercase tracking-widest text-slate-500 font-bold">
+            ${labelType(item.item_type)}
+          </p>
+          <h3 class="text-lg font-bold">${item.item_number || ""} — ${item.item_title || ""}</h3>
+          <p class="text-sm text-slate-500">
+            ${item.start_date || ""} to ${item.end_date || ""}
+          </p>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="adRegenerateBtn" class="btn text-sm">Regenerate Schedule</button>
+          <button id="adActivateBtn" class="btn-highlight text-sm">Activate</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <div class="card p-3">
+          <p class="text-xs text-slate-500">Original Amount</p>
+          <p class="font-bold">${money(item.original_amount)}</p>
+        </div>
+        <div class="card p-3">
+          <p class="text-xs text-slate-500">Recognised</p>
+          <p class="font-bold">${money(item.recognized_to_date)}</p>
+        </div>
+        <div class="card p-3">
+          <p class="text-xs text-slate-500">Remaining</p>
+          <p class="font-bold">${money(item.remaining_balance)}</p>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto border rounded-lg">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500">
+            <tr>
+              <th class="p-2 text-left">Line</th>
+              <th class="p-2 text-left">Period</th>
+              <th class="p-2 text-right">Opening</th>
+              <th class="p-2 text-right">Recognition</th>
+              <th class="p-2 text-right">Closing</th>
+              <th class="p-2 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              schedule.length
+                ? schedule.map((line) => `
+                  <tr class="border-t">
+                    <td class="p-2">${line.line_no}</td>
+                    <td class="p-2">${line.period_start} → ${line.period_end}</td>
+                    <td class="p-2 text-right">${money(line.opening_balance)}</td>
+                    <td class="p-2 text-right">${money(line.recognition_amount)}</td>
+                    <td class="p-2 text-right">${money(line.closing_balance)}</td>
+                    <td class="p-2">${line.status}</td>
+                  </tr>
+                `).join("")
+                : `
+                  <tr>
+                    <td colspan="6" class="p-4 text-center text-slate-500">
+                      No schedule lines found.
+                    </td>
+                  </tr>
+                `
+            }
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    $("adRegenerateBtn")?.addEventListener("click", async () => {
+      const cid = adCid();
+
+      await apiFetch(
+        ENDPOINTS.accrualDeferrals.regenerateSchedule(cid, item.id),
+        { method: "POST" }
+      );
+
+      await openAccrualDeferralItem(item.id);
+    });
+
+    $("adActivateBtn")?.addEventListener("click", async () => {
+      const cid = adCid();
+
+      await apiFetch(
+        ENDPOINTS.accrualDeferrals.item(cid, item.id),
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status: "active", approval_status: "approved" }),
+        }
+      );
+
+      await loadAccrualDeferrals();
+      await openAccrualDeferralItem(item.id);
+    });
+  }
+
+  function openNewAccrualDeferralModal() {
+    const itemTitle = prompt("Item title, e.g. Insurance prepaid");
+    if (!itemTitle) return;
+
+    const originalAmount = prompt("Original amount");
+    if (!originalAmount) return;
+
+    const startDate = prompt("Start date YYYY-MM-DD");
+    if (!startDate) return;
+
+    const endDate = prompt("End date YYYY-MM-DD");
+    if (!endDate) return;
+
+    createAccrualDeferralItem({
+      item_title: itemTitle,
+      item_type: "prepaid_expense",
+      transaction_date: startDate,
+      start_date: startDate,
+      end_date: endDate,
+      original_amount: Number(originalAmount),
+      balance_account: "BS_CA_PREPAYMENTS",
+      recognition_account: "PL_EXP_ADMIN",
+      recognition_method: "straight_line",
+      frequency: "monthly",
+      status: "draft",
+    });
+  }
+
+  async function createAccrualDeferralItem(payload) {
+    const cid = adCid();
+
+    const data = await apiFetch(
+      ENDPOINTS.accrualDeferrals.items(cid),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    await loadAccrualDeferrals();
+
+    if (data.item?.id) {
+      await openAccrualDeferralItem(data.item.id);
+    }
+  }
+
+  window.bindAccrualDeferralsScreen = async function bindAccrualDeferralsScreen() {
+    if (!AD_STATE.bound) {
+      $("adRefreshBtn")?.addEventListener("click", loadAccrualDeferrals);
+      $("adApplyFiltersBtn")?.addEventListener("click", loadAccrualDeferrals);
+      $("adNewItemBtn")?.addEventListener("click", openNewAccrualDeferralModal);
+
+      AD_STATE.bound = true;
+    }
+
+    await loadAccrualDeferrals();
+  };
 })();
 
 (function () {

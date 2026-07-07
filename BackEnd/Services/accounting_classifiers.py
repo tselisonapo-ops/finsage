@@ -1136,6 +1136,154 @@ def _coa_role_from_text(
         return "contract_revenue"
 
     # ----------------------------
+    # IFRS 9 / Financial Instruments
+    # ----------------------------
+
+    # ECL / impairment expense
+    if is_expense or "adjustment" in sec or "other adjustments" in sec:
+        if has_any(
+            "expected credit loss",
+            "ecl",
+            "credit loss",
+            "impairment - client receivables",
+            "impairment - trade receivables",
+            "impairment loss",
+            "bad debts & impairment",
+            "bad debt expense",
+            "doubtful debts expense",
+        ):
+            return "ifrs9_ecl_impairment_loss"
+
+        if has_any(
+            "bad debt write-off",
+            "bad debts written off",
+            "write off receivable",
+            "write-off receivable",
+        ):
+            return "ifrs9_bad_debt_writeoff"
+
+        if has_any(
+            "fair value adjustment",
+            "fair value gain",
+            "fair value loss",
+            "fair value movement",
+            "trading book",
+        ):
+            return "ifrs9_fair_value_gain_loss_fvpl"
+
+        if has_any(
+            "modification gain",
+            "financial instrument modification gain",
+            "loan modification gain",
+        ):
+            return "ifrs9_modification_gain"
+
+        if has_any(
+            "modification loss",
+            "financial instrument modification loss",
+            "loan modification loss",
+        ):
+            return "ifrs9_modification_loss"
+
+        if has_any(
+            "derecognition gain",
+            "financial instrument derecognition gain",
+            "gain on derecognition",
+        ):
+            return "ifrs9_derecognition_gain"
+
+        if has_any(
+            "derecognition loss",
+            "financial instrument derecognition loss",
+            "loss on derecognition",
+        ):
+            return "ifrs9_derecognition_loss"
+
+    # ECL allowance / contra asset
+    if is_asset:
+        if has_any(
+            "allowance for doubtful debts",
+            "allowance for expected credit losses",
+            "allowance for ecl",
+            "loss allowance",
+            "impairment allowance",
+            "allowance for impairment",
+        ):
+            return "ifrs9_ecl_allowance_trade_receivables"
+
+        if has_any(
+            "financial asset at amortised cost",
+            "financial assets at amortised cost",
+            "loans receivable",
+            "note receivable",
+            "notes receivable",
+            "staff loan",
+            "director loan receivable",
+            "investment securities - amortised cost",
+        ):
+            return "ifrs9_financial_asset_amortised_cost"
+
+        if has_any(
+            "investment securities - fvoci",
+            "financial asset at fvoci",
+            "financial assets at fvoci",
+            "fvoci investment",
+        ):
+            return "ifrs9_financial_asset_fvoci"
+
+        if has_any(
+            "financial asset at fvpl",
+            "financial assets at fvpl",
+            "trading investment",
+            "trading securities",
+        ):
+            return "ifrs9_financial_asset_fvpl"
+
+    # IFRS 9 equity / OCI reserve
+    if "equity" in sec:
+        if has_any(
+            "fvoci reserve",
+            "fair value through oci reserve",
+            "fair value reserve",
+            "oci reserve",
+            "other comprehensive income reserve",
+        ):
+            return "ifrs9_fair_value_oci_reserve"
+
+    # IFRS 9 interest income / expense
+    if "income" in sec or "income" in cat or "other income" in sec:
+        if has_any(
+            "interest income",
+            "interest income - loans",
+            "interest income - loans & advances",
+            "interest income - investment securities",
+        ):
+            return "ifrs9_interest_income_amortised_cost"
+
+    if is_expense:
+        if has_any(
+            "interest expense",
+            "interest expense - loans",
+            "interest expense - loans & overdraft",
+            "interest expense - deposits & borrowings",
+        ):
+            if not has_any("lease"):
+                return "ifrs9_interest_expense_amortised_cost"
+
+    # IFRS 9 financial liability
+    if is_liability:
+        if has_any(
+            "financial liability at amortised cost",
+            "financial liabilities at amortised cost",
+            "borrowings",
+            "loan payable",
+            "loans payable",
+            "deposit liability",
+            "financial liability",
+        ):
+            return "ifrs9_financial_liability_amortised_cost"
+        
+    # ----------------------------
     # loan / borrowing roles
     # ----------------------------
     if is_liability:

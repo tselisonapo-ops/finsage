@@ -3222,6 +3222,106 @@ html, body {
           </div>
         </section>
 
+        <section id="screen-accrual-deferrals" class="screen hidden">
+          <div class="p-4 md:p-6 space-y-4">
+
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <p class="text-xs uppercase tracking-widest text-slate-500 font-bold">
+                  Accruals & Deferrals
+                </p>
+                <h2 class="text-2xl font-extrabold text-slate-900">
+                  Prepayments, Deferred Income & Deferred Expenses
+                </h2>
+                <p class="text-sm text-slate-500">
+                  Create recognition schedules and prepare monthly deferral journals.
+                </p>
+              </div>
+
+              <div class="flex gap-2 flex-wrap">
+                <button id="adRefreshBtn" class="btn">Refresh</button>
+                <button id="adNewItemBtn" class="btn-highlight">New Item</button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div class="card p-4">
+                <p class="text-xs text-slate-500">Total Items</p>
+                <p id="adKpiTotal" class="text-2xl font-bold">0</p>
+              </div>
+              <div class="card p-4">
+                <p class="text-xs text-slate-500">Active</p>
+                <p id="adKpiActive" class="text-2xl font-bold">0</p>
+              </div>
+              <div class="card p-4">
+                <p class="text-xs text-slate-500">Remaining Balance</p>
+                <p id="adKpiRemaining" class="text-2xl font-bold">0.00</p>
+              </div>
+              <div class="card p-4">
+                <p class="text-xs text-slate-500">Recognised to Date</p>
+                <p id="adKpiRecognised" class="text-2xl font-bold">0.00</p>
+              </div>
+            </div>
+
+            <div class="card p-4">
+              <div class="flex flex-col md:flex-row gap-2 md:items-end">
+                <label class="text-sm">
+                  Type
+                  <select id="adFilterType" class="input">
+                    <option value="">All</option>
+                    <option value="prepaid_expense">Prepaid Expense</option>
+                    <option value="deferred_expense">Deferred Expense</option>
+                    <option value="deferred_income">Deferred Income</option>
+                    <option value="accrued_income">Accrued Income</option>
+                    <option value="accrued_expense">Accrued Expense</option>
+                  </select>
+                </label>
+
+                <label class="text-sm">
+                  Status
+                  <select id="adFilterStatus" class="input">
+                    <option value="">All</option>
+                    <option value="draft">Draft</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="terminated">Terminated</option>
+                  </select>
+                </label>
+
+                <button id="adApplyFiltersBtn" class="btn">Apply</button>
+              </div>
+            </div>
+
+            <div class="card overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th class="text-left p-3">Number</th>
+                    <th class="text-left p-3">Title</th>
+                    <th class="text-left p-3">Type</th>
+                    <th class="text-right p-3">Original</th>
+                    <th class="text-right p-3">Recognised</th>
+                    <th class="text-right p-3">Remaining</th>
+                    <th class="text-left p-3">Status</th>
+                    <th class="text-right p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="adItemsBody">
+                  <tr>
+                    <td colspan="8" class="p-4 text-center text-slate-500">
+                      No items loaded.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div id="adDetailPanel" class="card p-4 hidden"></div>
+          </div>
+        </section>
+
         <!-- Vendors (Customer-style) -->
         <section id="screen-vendors" class="screen">
           <div class="grid grid-cols-1 xl:grid-cols-[320px_1fr_360px] gap-4 h-screen">

@@ -74,6 +74,18 @@ def _pick_coa_by_keywords(cur, schema: str, keywords: list[str], default_code: s
 def _money(x: Decimal) -> float:
     return float(x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
+def coa_by_role(cur, schema: str, role: str) -> str | None:
+    cur.execute(_q(schema, """
+        SELECT code
+        FROM {schema}.coa
+        WHERE LOWER(COALESCE(role, '')) = LOWER(%s)
+          AND posting = TRUE
+        ORDER BY code
+        LIMIT 1
+    """), (role,))
+    row = fetchone(cur)
+    return row["code"] if row else None
+
 def resolve_impairment_accounts(
     cur,
     schema: str,
@@ -2570,15 +2582,37 @@ def post_revaluation(
         return r["posted_journal_id"]
 
     asset = get_asset(cur, schema, company_id, r["asset_id"])
-    if not asset or not asset.get("asset_account_code"):
+    if not asset:
+        raise Exception("asset not found")
+
+    asset_account_code = asset.get("asset_account_code")
+
+    revaluation_reserve_account_code = (
+        asset.get("revaluation_reserve_account_code")
+        or coa_by_role(cur, schema, "equity_revaluation_reserve")
+    )
+
+    revaluation_surplus_to_pnl_account_code = (
+        asset.get("revaluation_surplus_to_pnl_account_code")
+        or coa_by_role(cur, schema, "revaluation_surplus_pnl")
+    )
+
+    revaluation_deficit_pnl_account_code = (
+        asset.get("revaluation_deficit_pnl_account_code")
+        or coa_by_role(cur, schema, "revaluation_deficit_pnl")
+    )
+
+    if not asset_account_code:
         raise Exception("asset missing asset_account_code")
 
-    if Decimal(r["oci_revaluation_surplus"]) > 0 and not asset.get("revaluation_reserve_account_code"):
-        raise Exception("missing revaluation_reserve_account_code")
-    if Decimal(r["pnl_revaluation_gain"]) > 0 and not asset.get("revaluation_surplus_to_pnl_account_code"):
-        raise Exception("missing revaluation_surplus_to_pnl_account_code")
-    if Decimal(r["pnl_revaluation_loss"]) > 0 and not asset.get("revaluation_deficit_pnl_account_code"):
-        raise Exception("missing revaluation_deficit_pnl_account_code")
+    if Decimal(r["oci_revaluation_surplus"] or 0) > 0 and not revaluation_reserve_account_code:
+        raise Exception("missing revaluation reserve account role: equity_revaluation_reserve")
+
+    if Decimal(r["pnl_revaluation_gain"] or 0) > 0 and not revaluation_surplus_to_pnl_account_code:
+        raise Exception("missing revaluation surplus P/L role: revaluation_surplus_pnl")
+
+    if Decimal(r["pnl_revaluation_loss"] or 0) > 0 and not revaluation_deficit_pnl_account_code:
+        raise Exception("missing revaluation deficit P/L role: revaluation_deficit_pnl")
 
     ccy = get_company_currency(cur, company_id)
     jid = create_journal(
@@ -2590,27 +2624,27 @@ def post_revaluation(
 
     delta = Decimal(r["revaluation_change"] or 0)
     if delta > 0:
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Increase carrying amount", delta, 0, "asset_revaluation", r["id"])
+        add_line(cur, schema, company_id, jid, asset_account_code, "Increase carrying amount", delta, 0, "asset_revaluation", r["id"])
     elif delta < 0:
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Decrease carrying amount", 0, abs(delta), "asset_revaluation", r["id"])
+        add_line(cur, schema, company_id, jid, asset_account_code, "Decrease carrying amount", 0, abs(delta), "asset_revaluation", r["id"])
 
     oci = Decimal(r["oci_revaluation_surplus"] or 0)
     gain = Decimal(r["pnl_revaluation_gain"] or 0)
     loss = Decimal(r["pnl_revaluation_loss"] or 0)
 
     if oci > 0:
-        add_line(cur, schema, company_id, jid, asset["revaluation_reserve_account_code"], "OCI revaluation surplus", 0, oci, "asset_revaluation", r["id"])
+        add_line(cur, schema, company_id, jid, revaluation_reserve_account_code, "OCI revaluation surplus", 0, oci, "asset_revaluation", r["id"])
         cur.execute(_q(schema, """
           INSERT INTO {schema}.asset_revaluation_reserve(
             company_id, asset_id, event_date, event_type, reserve_movement,
             revaluation_id, equity_account_code, status, posted_journal_id, posted_at
           ) VALUES (%s,%s,%s,'revaluation',%s,%s,%s,'posted',%s,NOW())
-        """), (company_id, r["asset_id"], r["revaluation_date"], oci, r["id"], asset["revaluation_reserve_account_code"], jid))
+        """), (company_id, r["asset_id"], r["revaluation_date"], oci, r["id"], revaluation_reserve_account_code, jid))
 
     if gain > 0:
-        add_line(cur, schema, company_id, jid, asset["revaluation_surplus_to_pnl_account_code"], "Revaluation gain (P/L)", 0, gain, "asset_revaluation", r["id"])
+        add_line(cur, schema, company_id, jid, revaluation_surplus_to_pnl_account_code, "Revaluation gain (P/L)", 0, gain, "asset_revaluation", r["id"])
     if loss > 0:
-        add_line(cur, schema, company_id, jid, asset["revaluation_deficit_pnl_account_code"], "Revaluation deficit (P/L)", loss, 0, "asset_revaluation", r["id"])
+        add_line(cur, schema, company_id, jid, revaluation_deficit_pnl_account_code, "Revaluation deficit (P/L)", loss, 0, "asset_revaluation", r["id"])
 
     finalize_journal(cur, schema, company_id, jid)
 
