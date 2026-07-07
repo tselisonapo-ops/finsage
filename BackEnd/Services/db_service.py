@@ -36474,6 +36474,403 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+    def fifo_consume(
+        self,
+        company_id: int,
+        *,
+        item_id: int,
+        qty_out: float,
+        tx_date,                 # invoice date
+        source: str,
+        source_id: int,
+        posted_journal_id: int,
+        cur
+    ) -> float:
+        """
+        Consume qty from oldest layers first.
+        Updates inventory_layers.qty_out and writes inventory_fifo_allocations rows.
+        Returns total_cost consumed.
+        """
+        from decimal import Decimal, ROUND_HALF_UP
+
+        def money(x):
+            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+        schema = f"company_{company_id}"
+
+        if qty_out <= 0:
+            return 0.0
+
+        # idempotent: if already allocated for this source/source_id, do nothing
+        cur.execute(f"""
+        SELECT 1 FROM {schema}.inventory_fifo_allocations
+        WHERE company_id=%s AND source=%s AND source_id=%s
+        LIMIT 1
+        """, (int(company_id), source, int(source_id)))
+        if cur.fetchone():
+            return 0.0
+
+        # Normalize date
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date)[:10]
+
+        remaining = float(qty_out)
+        total_cost = 0.0
+
+        # Lock and pick layers FIFO: oldest first with remaining > 0
+        cur.execute(f"""
+        SELECT id, tx_date, unit_cost,
+                (qty_in - qty_out) AS remaining_qty
+        FROM {schema}.inventory_layers
+        WHERE company_id=%s AND item_id=%s
+            AND (qty_in - qty_out) > 0
+        ORDER BY tx_date ASC, id ASC
+        FOR UPDATE
+        """, (int(company_id), int(item_id)))
+
+        layers = cur.fetchall() or []
+
+        for r in layers:
+            if remaining <= 0:
+                break
+
+            layer_id = int(r["id"])
+            layer_rem = float(r["remaining_qty"] or 0)
+            uc = float(r["unit_cost"] or 0)
+
+            take = min(remaining, layer_rem)
+            if take <= 0:
+                continue
+
+            # 1) increase qty_out on that inbound layer
+            cur.execute(f"""
+            UPDATE {schema}.inventory_layers
+            SET qty_out = qty_out + %s
+            WHERE company_id=%s AND id=%s
+            """, (float(take), int(company_id), int(layer_id)))
+
+            # 2) write allocation record
+            cur.execute(f"""
+            INSERT INTO {schema}.inventory_fifo_allocations
+                (company_id, item_id, layer_id, qty, unit_cost, source, source_id, posted_journal_id)
+            VALUES
+                (%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (int(company_id), int(item_id), int(layer_id), float(take), float(uc), source, int(source_id), int(posted_journal_id)))
+
+            total_cost += money(take * uc)
+            remaining -= take
+
+        if remaining > 0.0001:
+            raise ValueError(f"INSUFFICIENT_STOCK|item_id={item_id}|missing={remaining}")
+
+        return money(total_cost)
+
+    def apply_bill_landed_costs(
+        self,
+        company_id: int,
+        *,
+        bill: dict,
+        bill_id: int, 
+        journal_id: int,
+        cur,
+    ) -> None:
+        """
+        Allocate landed costs from a Bill to inventory receipt layers using bill.grni_links.
+
+        Rules:
+        - Only allocate if bill has grni_links (explicit targets).
+        - Allocate landed cost across receipt items by receipt value (qty * unit_cost).
+        - Update inbound inventory_layers.unit_cost for remaining qty.
+        - If layer already consumed (qty_out > 0), move consumed portion to COGS (Dr COGS, Cr Inventory).
+        - Idempotent: if inventory_landed_costs exists for (source='bill', source_id=bill_id) -> return.
+        """
+
+        if not bill or not isinstance(bill, dict):
+            return
+
+        schema = self.company_schema(company_id)
+
+        # -------------------------
+        # Idempotency gate
+        # -------------------------
+        cur.execute(
+            f"""
+            SELECT 1
+            FROM {schema}.inventory_landed_costs
+            WHERE company_id=%s AND source='bill' AND source_id=%s
+            LIMIT 1;
+            """,
+            (int(company_id), int(bill_id)),
+        )
+        if cur.fetchone():
+            return
+
+        lines = bill.get("lines") or []
+        grni_links = bill.get("grni_links") or []
+
+        # No explicit targets => do NOT guess
+        if not grni_links:
+            return
+
+        # -------------------------
+        # Detect landed cost amount on bill
+        # (works across industries: keywords fallback; you can enhance with cf_bucket later)
+        # -------------------------
+        def _text(*xs):
+            return " ".join(str(x or "").strip().lower() for x in xs if x is not None)
+
+        def _is_landed_cost_line(ln: dict) -> bool:
+            t = _text(
+                ln.get("description"),
+                ln.get("name"),
+                ln.get("memo"),
+                ln.get("notes"),
+                ln.get("account_name"),
+                ln.get("account_code"),
+            )
+            # freight-in family (include carriage inwards ✅)
+            return any(k in t for k in (
+                "freight-in", "freight in",
+                "carriage in", "carriage-in", "carriage inwards", "carriage inward",
+                "inbound freight", "shipping in", "delivery in",
+                "import duty", "customs", "clearing", "port charges",
+                "handling", "landing", "landed cost",
+            ))
+
+        def _money(x):
+            try:
+                return float(x or 0.0)
+            except Exception:
+                return 0.0
+
+        # bill line amount: prefer line_total else qty*unit_price
+        def _line_amount(ln: dict) -> float:
+            if ln.get("line_total") is not None:
+                return _money(ln.get("line_total"))
+            qty = _money(ln.get("quantity") or ln.get("qty") or 0.0)
+            price = _money(ln.get("unit_price") or ln.get("price") or 0.0)
+            return qty * price
+
+        landed_total = 0.0
+        for ln in lines:
+            if _is_landed_cost_line(ln):
+                amt = _line_amount(ln)
+                if amt > 0:
+                    landed_total += amt
+
+        if landed_total <= 0:
+            return
+
+        # -------------------------
+        # Create landed cost header
+        # -------------------------
+        tx_date = bill.get("bill_date") or bill.get("date") or bill.get("tx_date")
+        if hasattr(tx_date, "isoformat"):
+            tx_date = tx_date.isoformat()[:10]
+        else:
+            tx_date = str(tx_date)[:10]
+
+        ref = (bill.get("bill_no") or bill.get("number") or f"BILL-{bill_id}").strip()
+        notes = (bill.get("notes") or "").strip() or "Landed cost allocation"
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.inventory_landed_costs
+            (company_id, tx_date, source, source_id, ref, notes)
+            VALUES (%s,%s,'bill',%s,%s,%s)
+            RETURNING id;
+            """,
+            (int(company_id), tx_date, int(bill_id), ref, notes),
+        )
+        r = cur.fetchone() or {}
+        landed_cost_id = int(r.get("id") if isinstance(r, dict) else r[0])
+
+        # -------------------------
+        # Allocation targets: use grni_links amounts to split landed_total by receipt
+        # -------------------------
+        # If bill.grni_links.amount sums to 0, fall back to even split
+        link_sum = sum(_money(x.get("amount")) for x in grni_links)
+        if link_sum <= 0:
+            weights = {int(x["receipt_tx_id"]): 1.0 for x in grni_links if x.get("receipt_tx_id")}
+            wsum = sum(weights.values()) or 1.0
+            receipt_share = {k: landed_total * (v / wsum) for k, v in weights.items()}
+        else:
+            receipt_share = {
+                int(x["receipt_tx_id"]): landed_total * (_money(x.get("amount")) / link_sum)
+                for x in grni_links
+                if x.get("receipt_tx_id")
+            }
+
+        # -------------------------
+        # For each receipt: allocate across receipt items by receipt value
+        # -------------------------
+        for receipt_tx_id, alloc_for_receipt in receipt_share.items():
+            if alloc_for_receipt <= 0:
+                continue
+
+            # Pull receipt lines
+            cur.execute(
+                f"""
+                SELECT item_id, COALESCE(qty,0)::numeric AS qty, COALESCE(unit_cost,0)::numeric AS unit_cost
+                FROM {schema}.inventory_tx_lines
+                WHERE company_id=%s AND tx_id=%s;
+                """,
+                (int(company_id), int(receipt_tx_id)),
+            )
+            rlines = cur.fetchall() or []
+            if not rlines:
+                continue
+
+            # receipt total value
+            def _f(v):
+                try:
+                    return float(v or 0.0)
+                except Exception:
+                    return 0.0
+
+            rvals = []
+            total_receipt_value = 0.0
+            for rl in rlines:
+                item_id = int(rl.get("item_id") if isinstance(rl, dict) else rl[0])
+                qty = _f(rl.get("qty") if isinstance(rl, dict) else rl[1])
+                unit_cost = _f(rl.get("unit_cost") if isinstance(rl, dict) else rl[2])
+                value = max(qty, 0.0) * max(unit_cost, 0.0)
+                if item_id and value > 0:
+                    rvals.append((item_id, qty, unit_cost, value))
+                    total_receipt_value += value
+
+            if total_receipt_value <= 0:
+                continue
+
+            # Find inbound layers for this receipt
+            # IMPORTANT: ensure your receipt posting uses source='inventory_tx' and source_id=receipt_tx_id when inserting layers.
+            cur.execute(
+                f"""
+                SELECT id, item_id, COALESCE(qty_in,0)::numeric AS qty_in,
+                    COALESCE(qty_out,0)::numeric AS qty_out,
+                    COALESCE(unit_cost,0)::numeric AS unit_cost
+                FROM {schema}.inventory_layers
+                WHERE company_id=%s
+                AND source IN ('inventory_tx','grv','receipt')
+                AND source_id=%s
+                ORDER BY id ASC;
+                """,
+                (int(company_id), int(receipt_tx_id)),
+            )
+            layers = cur.fetchall() or []
+            layers_by_item: dict[int, list] = {}
+            for ly in layers:
+                ly_id = int(ly.get("id") if isinstance(ly, dict) else ly[0])
+                item_id = int(ly.get("item_id") if isinstance(ly, dict) else ly[1])
+                qty_in = _f(ly.get("qty_in") if isinstance(ly, dict) else ly[2])
+                qty_out = _f(ly.get("qty_out") if isinstance(ly, dict) else ly[3])
+                unit_cost = _f(ly.get("unit_cost") if isinstance(ly, dict) else ly[4])
+                layers_by_item.setdefault(item_id, []).append((ly_id, qty_in, qty_out, unit_cost))
+
+            # Allocate per item based on receipt line value
+            for item_id, qty, unit_cost, value in rvals:
+                item_share_amt = alloc_for_receipt * (value / total_receipt_value)
+                if item_share_amt <= 0:
+                    continue
+
+                item_layers = layers_by_item.get(item_id) or []
+                if not item_layers:
+                    # No layer found => skip (don’t guess)
+                    continue
+
+                # If multiple layers exist for same item under this receipt, allocate by layer qty_in
+                layer_qty_total = sum(max(x[1], 0.0) for x in item_layers) or 1.0
+
+                for (layer_id, qty_in, qty_out, old_uc) in item_layers:
+                    if qty_in <= 0:
+                        continue
+
+                    layer_amt = item_share_amt * (qty_in / layer_qty_total)
+                    if layer_amt <= 0:
+                        continue
+
+                    # Write allocation line (idempotent via unique index)
+                    cur.execute(
+                        f"""
+                        INSERT INTO {schema}.inventory_landed_cost_allocations
+                        (company_id, landed_cost_id, receipt_tx_id, item_id, layer_id, amount)
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT DO NOTHING;
+                        """,
+                        (int(company_id), int(landed_cost_id), int(receipt_tx_id), int(item_id), int(layer_id), float(layer_amt)),
+                    )
+
+                    # Apply cost:
+                    # - remaining qty increases inventory (unit_cost)
+                    # - consumed portion goes to COGS adjustment (keeps inventory correct)
+                    consumed = max(min(qty_out, qty_in), 0.0)
+                    remaining = max(qty_in - consumed, 0.0)
+
+                    alloc_consumed = layer_amt * (consumed / qty_in) if qty_in > 0 else 0.0
+                    alloc_remaining = layer_amt - alloc_consumed
+
+                    # Update layer unit_cost for remaining (if any)
+                    if remaining > 0 and alloc_remaining > 0:
+                        add_per_unit = alloc_remaining / remaining
+                        new_uc = old_uc + add_per_unit
+                        cur.execute(
+                            f"""
+                            UPDATE {schema}.inventory_layers
+                            SET unit_cost=%s
+                            WHERE company_id=%s AND id=%s;
+                            """,
+                            (float(new_uc), int(company_id), int(layer_id)),
+                        )
+
+                    # If already consumed, push consumed portion to COGS now
+                    if alloc_consumed > 0:
+                        # get item accounts
+                        cur.execute(
+                            f"""
+                            SELECT inventory_account, cogs_account
+                            FROM {schema}.inventory_items
+                            WHERE company_id=%s AND id=%s
+                            LIMIT 1;
+                            """,
+                            (int(company_id), int(item_id)),
+                        )
+                        it = cur.fetchone() or {}
+                        inv_acct = (it.get("inventory_account") or "").strip()
+                        cogs_acct = (it.get("cogs_account") or "").strip()
+                        if inv_acct and cogs_acct:
+                            inv_row = self.get_account_row_for_posting(company_id, inv_acct)
+                            cogs_row = self.get_account_row_for_posting(company_id, cogs_acct)
+                            inv_code = (inv_row[1] if inv_row else inv_acct) or inv_acct
+                            cogs_code = (cogs_row[1] if cogs_row else cogs_acct) or cogs_acct
+
+                            # Dr COGS, Cr Inventory
+                            self.insert_ledger(
+                                company_id=company_id,
+                                journal_id=int(journal_id),
+                                je_date=tx_date,
+                                line={"account_code": cogs_code, "debit": float(alloc_consumed), "credit": 0.0, "memo": "Landed cost (consumed)"},
+                                ref=ref,
+                                source="bill",
+                                source_id=int(bill_id),
+                                cur=cur,
+                            )
+                            self.update_trial_balance(company_id, {"account_code": cogs_code, "debit": float(alloc_consumed), "credit": 0.0}, cur=cur)
+
+                            self.insert_ledger(
+                                company_id=company_id,
+                                journal_id=int(journal_id),
+                                je_date=tx_date,
+                                line={"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed), "memo": "Landed cost (consumed)"},
+                                ref=ref,
+                                source="bill",
+                                source_id=int(bill_id),
+                                cur=cur,
+                            )
+                            self.update_trial_balance(company_id, {"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed)}, cur=cur)
+
+
     def pos_ensure_packing_queue_item(self, company_id: int, order_id: int) -> int:
         schema = self.company_schema(company_id)
 
@@ -39189,34 +39586,34 @@ class DatabaseService:
 
         return {"summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date, start_dt, end_dt).get("summary", {}), "rows": [[r["promotion"], r["type"], r["discount"], r["transactions"], r["value"]] for r in rows]}
 
-        def _pos_report_customer_accounts(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
-            start_date = start_date or date.today()
-            end_date = end_date or date.today()
+    def _pos_report_customer_accounts(self, company_id: int, schema: str, q: str = "", start_date=None, end_date=None) -> dict:
+        start_date = start_date or date.today()
+        end_date = end_date or date.today()
 
-            rows = self.fetch_all(f"""
-                SELECT
-                    cp.customer_name,
-                    cp.customer_type,
-                    COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS account_sales,
-                    cp.current_balance::numeric(18,2) AS balance,
-                    cp.credit_limit::numeric(18,2) AS credit_limit
-                FROM {schema}.pos_customer_profiles cp
-                LEFT JOIN {schema}.pos_sales s
-                ON (s.customer_account_id = cp.id OR s.customer_id = cp.id)
-                AND s.status = 'completed'
-                AND s.sale_type = 'account_sale'
-                AND s.business_date BETWEEN %s AND %s
-                WHERE cp.company_id = %s
-                AND (%s = '' OR cp.customer_name ILIKE %s)
-                GROUP BY cp.customer_name, cp.customer_type, cp.current_balance, cp.credit_limit
-                ORDER BY account_sales DESC
-                LIMIT 500
-            """, (start_date, end_date, int(company_id), q or "", f"%{q}%")) or []
+        rows = self.fetch_all(f"""
+            SELECT
+                cp.customer_name,
+                cp.customer_type,
+                COALESCE(SUM(s.gross_amount), 0)::numeric(18,2) AS account_sales,
+                cp.current_balance::numeric(18,2) AS balance,
+                cp.credit_limit::numeric(18,2) AS credit_limit
+            FROM {schema}.pos_customer_profiles cp
+            LEFT JOIN {schema}.pos_sales s
+            ON (s.customer_account_id = cp.id OR s.customer_id = cp.id)
+            AND s.status = 'completed'
+            AND s.sale_type = 'account_sale'
+            AND s.business_date BETWEEN %s AND %s
+            WHERE cp.company_id = %s
+            AND (%s = '' OR cp.customer_name ILIKE %s)
+            GROUP BY cp.customer_name, cp.customer_type, cp.current_balance, cp.credit_limit
+            ORDER BY account_sales DESC
+            LIMIT 500
+        """, (start_date, end_date, int(company_id), q or "", f"%{q}%")) or []
 
-            return {
-                "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
-                "rows": [[r["customer_name"], r["customer_type"], r["account_sales"], r["balance"], r["credit_limit"]] for r in rows],
-            }
+        return {
+            "summary": self._pos_report_trading_summary(company_id, schema, q, start_date, end_date).get("summary", {}),
+            "rows": [[r["customer_name"], r["customer_type"], r["account_sales"], r["balance"], r["credit_limit"]] for r in rows],
+        }
 
     def _pos_report_returns_report(
         self,
@@ -41462,404 +41859,6 @@ class DatabaseService:
             int(company_id),
             int(leave_id),
         ))
-
-    def fifo_consume(
-        self,
-        company_id: int,
-        *,
-        item_id: int,
-        qty_out: float,
-        tx_date,                 # invoice date
-        source: str,
-        source_id: int,
-        posted_journal_id: int,
-        cur
-    ) -> float:
-        """
-        Consume qty from oldest layers first.
-        Updates inventory_layers.qty_out and writes inventory_fifo_allocations rows.
-        Returns total_cost consumed.
-        """
-        from decimal import Decimal, ROUND_HALF_UP
-
-        def money(x):
-            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-
-        schema = f"company_{company_id}"
-
-        if qty_out <= 0:
-            return 0.0
-
-        # idempotent: if already allocated for this source/source_id, do nothing
-        cur.execute(f"""
-        SELECT 1 FROM {schema}.inventory_fifo_allocations
-        WHERE company_id=%s AND source=%s AND source_id=%s
-        LIMIT 1
-        """, (int(company_id), source, int(source_id)))
-        if cur.fetchone():
-            return 0.0
-
-        # Normalize date
-        if hasattr(tx_date, "isoformat"):
-            tx_date = tx_date.isoformat()[:10]
-        else:
-            tx_date = str(tx_date)[:10]
-
-        remaining = float(qty_out)
-        total_cost = 0.0
-
-        # Lock and pick layers FIFO: oldest first with remaining > 0
-        cur.execute(f"""
-        SELECT id, tx_date, unit_cost,
-                (qty_in - qty_out) AS remaining_qty
-        FROM {schema}.inventory_layers
-        WHERE company_id=%s AND item_id=%s
-            AND (qty_in - qty_out) > 0
-        ORDER BY tx_date ASC, id ASC
-        FOR UPDATE
-        """, (int(company_id), int(item_id)))
-
-        layers = cur.fetchall() or []
-
-        for r in layers:
-            if remaining <= 0:
-                break
-
-            layer_id = int(r["id"])
-            layer_rem = float(r["remaining_qty"] or 0)
-            uc = float(r["unit_cost"] or 0)
-
-            take = min(remaining, layer_rem)
-            if take <= 0:
-                continue
-
-            # 1) increase qty_out on that inbound layer
-            cur.execute(f"""
-            UPDATE {schema}.inventory_layers
-            SET qty_out = qty_out + %s
-            WHERE company_id=%s AND id=%s
-            """, (float(take), int(company_id), int(layer_id)))
-
-            # 2) write allocation record
-            cur.execute(f"""
-            INSERT INTO {schema}.inventory_fifo_allocations
-                (company_id, item_id, layer_id, qty, unit_cost, source, source_id, posted_journal_id)
-            VALUES
-                (%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (int(company_id), int(item_id), int(layer_id), float(take), float(uc), source, int(source_id), int(posted_journal_id)))
-
-            total_cost += money(take * uc)
-            remaining -= take
-
-        if remaining > 0.0001:
-            raise ValueError(f"INSUFFICIENT_STOCK|item_id={item_id}|missing={remaining}")
-
-        return money(total_cost)
-
-    def apply_bill_landed_costs(
-        self,
-        company_id: int,
-        *,
-        bill: dict,
-        bill_id: int, 
-        journal_id: int,
-        cur,
-    ) -> None:
-        """
-        Allocate landed costs from a Bill to inventory receipt layers using bill.grni_links.
-
-        Rules:
-        - Only allocate if bill has grni_links (explicit targets).
-        - Allocate landed cost across receipt items by receipt value (qty * unit_cost).
-        - Update inbound inventory_layers.unit_cost for remaining qty.
-        - If layer already consumed (qty_out > 0), move consumed portion to COGS (Dr COGS, Cr Inventory).
-        - Idempotent: if inventory_landed_costs exists for (source='bill', source_id=bill_id) -> return.
-        """
-
-        if not bill or not isinstance(bill, dict):
-            return
-
-        schema = self.company_schema(company_id)
-
-        # -------------------------
-        # Idempotency gate
-        # -------------------------
-        cur.execute(
-            f"""
-            SELECT 1
-            FROM {schema}.inventory_landed_costs
-            WHERE company_id=%s AND source='bill' AND source_id=%s
-            LIMIT 1;
-            """,
-            (int(company_id), int(bill_id)),
-        )
-        if cur.fetchone():
-            return
-
-        lines = bill.get("lines") or []
-        grni_links = bill.get("grni_links") or []
-
-        # No explicit targets => do NOT guess
-        if not grni_links:
-            return
-
-        # -------------------------
-        # Detect landed cost amount on bill
-        # (works across industries: keywords fallback; you can enhance with cf_bucket later)
-        # -------------------------
-        def _text(*xs):
-            return " ".join(str(x or "").strip().lower() for x in xs if x is not None)
-
-        def _is_landed_cost_line(ln: dict) -> bool:
-            t = _text(
-                ln.get("description"),
-                ln.get("name"),
-                ln.get("memo"),
-                ln.get("notes"),
-                ln.get("account_name"),
-                ln.get("account_code"),
-            )
-            # freight-in family (include carriage inwards ✅)
-            return any(k in t for k in (
-                "freight-in", "freight in",
-                "carriage in", "carriage-in", "carriage inwards", "carriage inward",
-                "inbound freight", "shipping in", "delivery in",
-                "import duty", "customs", "clearing", "port charges",
-                "handling", "landing", "landed cost",
-            ))
-
-        def _money(x):
-            try:
-                return float(x or 0.0)
-            except Exception:
-                return 0.0
-
-        # bill line amount: prefer line_total else qty*unit_price
-        def _line_amount(ln: dict) -> float:
-            if ln.get("line_total") is not None:
-                return _money(ln.get("line_total"))
-            qty = _money(ln.get("quantity") or ln.get("qty") or 0.0)
-            price = _money(ln.get("unit_price") or ln.get("price") or 0.0)
-            return qty * price
-
-        landed_total = 0.0
-        for ln in lines:
-            if _is_landed_cost_line(ln):
-                amt = _line_amount(ln)
-                if amt > 0:
-                    landed_total += amt
-
-        if landed_total <= 0:
-            return
-
-        # -------------------------
-        # Create landed cost header
-        # -------------------------
-        tx_date = bill.get("bill_date") or bill.get("date") or bill.get("tx_date")
-        if hasattr(tx_date, "isoformat"):
-            tx_date = tx_date.isoformat()[:10]
-        else:
-            tx_date = str(tx_date)[:10]
-
-        ref = (bill.get("bill_no") or bill.get("number") or f"BILL-{bill_id}").strip()
-        notes = (bill.get("notes") or "").strip() or "Landed cost allocation"
-
-        cur.execute(
-            f"""
-            INSERT INTO {schema}.inventory_landed_costs
-            (company_id, tx_date, source, source_id, ref, notes)
-            VALUES (%s,%s,'bill',%s,%s,%s)
-            RETURNING id;
-            """,
-            (int(company_id), tx_date, int(bill_id), ref, notes),
-        )
-        r = cur.fetchone() or {}
-        landed_cost_id = int(r.get("id") if isinstance(r, dict) else r[0])
-
-        # -------------------------
-        # Allocation targets: use grni_links amounts to split landed_total by receipt
-        # -------------------------
-        # If bill.grni_links.amount sums to 0, fall back to even split
-        link_sum = sum(_money(x.get("amount")) for x in grni_links)
-        if link_sum <= 0:
-            weights = {int(x["receipt_tx_id"]): 1.0 for x in grni_links if x.get("receipt_tx_id")}
-            wsum = sum(weights.values()) or 1.0
-            receipt_share = {k: landed_total * (v / wsum) for k, v in weights.items()}
-        else:
-            receipt_share = {
-                int(x["receipt_tx_id"]): landed_total * (_money(x.get("amount")) / link_sum)
-                for x in grni_links
-                if x.get("receipt_tx_id")
-            }
-
-        # -------------------------
-        # For each receipt: allocate across receipt items by receipt value
-        # -------------------------
-        for receipt_tx_id, alloc_for_receipt in receipt_share.items():
-            if alloc_for_receipt <= 0:
-                continue
-
-            # Pull receipt lines
-            cur.execute(
-                f"""
-                SELECT item_id, COALESCE(qty,0)::numeric AS qty, COALESCE(unit_cost,0)::numeric AS unit_cost
-                FROM {schema}.inventory_tx_lines
-                WHERE company_id=%s AND tx_id=%s;
-                """,
-                (int(company_id), int(receipt_tx_id)),
-            )
-            rlines = cur.fetchall() or []
-            if not rlines:
-                continue
-
-            # receipt total value
-            def _f(v):
-                try:
-                    return float(v or 0.0)
-                except Exception:
-                    return 0.0
-
-            rvals = []
-            total_receipt_value = 0.0
-            for rl in rlines:
-                item_id = int(rl.get("item_id") if isinstance(rl, dict) else rl[0])
-                qty = _f(rl.get("qty") if isinstance(rl, dict) else rl[1])
-                unit_cost = _f(rl.get("unit_cost") if isinstance(rl, dict) else rl[2])
-                value = max(qty, 0.0) * max(unit_cost, 0.0)
-                if item_id and value > 0:
-                    rvals.append((item_id, qty, unit_cost, value))
-                    total_receipt_value += value
-
-            if total_receipt_value <= 0:
-                continue
-
-            # Find inbound layers for this receipt
-            # IMPORTANT: ensure your receipt posting uses source='inventory_tx' and source_id=receipt_tx_id when inserting layers.
-            cur.execute(
-                f"""
-                SELECT id, item_id, COALESCE(qty_in,0)::numeric AS qty_in,
-                    COALESCE(qty_out,0)::numeric AS qty_out,
-                    COALESCE(unit_cost,0)::numeric AS unit_cost
-                FROM {schema}.inventory_layers
-                WHERE company_id=%s
-                AND source IN ('inventory_tx','grv','receipt')
-                AND source_id=%s
-                ORDER BY id ASC;
-                """,
-                (int(company_id), int(receipt_tx_id)),
-            )
-            layers = cur.fetchall() or []
-            layers_by_item: dict[int, list] = {}
-            for ly in layers:
-                ly_id = int(ly.get("id") if isinstance(ly, dict) else ly[0])
-                item_id = int(ly.get("item_id") if isinstance(ly, dict) else ly[1])
-                qty_in = _f(ly.get("qty_in") if isinstance(ly, dict) else ly[2])
-                qty_out = _f(ly.get("qty_out") if isinstance(ly, dict) else ly[3])
-                unit_cost = _f(ly.get("unit_cost") if isinstance(ly, dict) else ly[4])
-                layers_by_item.setdefault(item_id, []).append((ly_id, qty_in, qty_out, unit_cost))
-
-            # Allocate per item based on receipt line value
-            for item_id, qty, unit_cost, value in rvals:
-                item_share_amt = alloc_for_receipt * (value / total_receipt_value)
-                if item_share_amt <= 0:
-                    continue
-
-                item_layers = layers_by_item.get(item_id) or []
-                if not item_layers:
-                    # No layer found => skip (don’t guess)
-                    continue
-
-                # If multiple layers exist for same item under this receipt, allocate by layer qty_in
-                layer_qty_total = sum(max(x[1], 0.0) for x in item_layers) or 1.0
-
-                for (layer_id, qty_in, qty_out, old_uc) in item_layers:
-                    if qty_in <= 0:
-                        continue
-
-                    layer_amt = item_share_amt * (qty_in / layer_qty_total)
-                    if layer_amt <= 0:
-                        continue
-
-                    # Write allocation line (idempotent via unique index)
-                    cur.execute(
-                        f"""
-                        INSERT INTO {schema}.inventory_landed_cost_allocations
-                        (company_id, landed_cost_id, receipt_tx_id, item_id, layer_id, amount)
-                        VALUES (%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT DO NOTHING;
-                        """,
-                        (int(company_id), int(landed_cost_id), int(receipt_tx_id), int(item_id), int(layer_id), float(layer_amt)),
-                    )
-
-                    # Apply cost:
-                    # - remaining qty increases inventory (unit_cost)
-                    # - consumed portion goes to COGS adjustment (keeps inventory correct)
-                    consumed = max(min(qty_out, qty_in), 0.0)
-                    remaining = max(qty_in - consumed, 0.0)
-
-                    alloc_consumed = layer_amt * (consumed / qty_in) if qty_in > 0 else 0.0
-                    alloc_remaining = layer_amt - alloc_consumed
-
-                    # Update layer unit_cost for remaining (if any)
-                    if remaining > 0 and alloc_remaining > 0:
-                        add_per_unit = alloc_remaining / remaining
-                        new_uc = old_uc + add_per_unit
-                        cur.execute(
-                            f"""
-                            UPDATE {schema}.inventory_layers
-                            SET unit_cost=%s
-                            WHERE company_id=%s AND id=%s;
-                            """,
-                            (float(new_uc), int(company_id), int(layer_id)),
-                        )
-
-                    # If already consumed, push consumed portion to COGS now
-                    if alloc_consumed > 0:
-                        # get item accounts
-                        cur.execute(
-                            f"""
-                            SELECT inventory_account, cogs_account
-                            FROM {schema}.inventory_items
-                            WHERE company_id=%s AND id=%s
-                            LIMIT 1;
-                            """,
-                            (int(company_id), int(item_id)),
-                        )
-                        it = cur.fetchone() or {}
-                        inv_acct = (it.get("inventory_account") or "").strip()
-                        cogs_acct = (it.get("cogs_account") or "").strip()
-                        if inv_acct and cogs_acct:
-                            inv_row = self.get_account_row_for_posting(company_id, inv_acct)
-                            cogs_row = self.get_account_row_for_posting(company_id, cogs_acct)
-                            inv_code = (inv_row[1] if inv_row else inv_acct) or inv_acct
-                            cogs_code = (cogs_row[1] if cogs_row else cogs_acct) or cogs_acct
-
-                            # Dr COGS, Cr Inventory
-                            self.insert_ledger(
-                                company_id=company_id,
-                                journal_id=int(journal_id),
-                                je_date=tx_date,
-                                line={"account_code": cogs_code, "debit": float(alloc_consumed), "credit": 0.0, "memo": "Landed cost (consumed)"},
-                                ref=ref,
-                                source="bill",
-                                source_id=int(bill_id),
-                                cur=cur,
-                            )
-                            self.update_trial_balance(company_id, {"account_code": cogs_code, "debit": float(alloc_consumed), "credit": 0.0}, cur=cur)
-
-                            self.insert_ledger(
-                                company_id=company_id,
-                                journal_id=int(journal_id),
-                                je_date=tx_date,
-                                line={"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed), "memo": "Landed cost (consumed)"},
-                                ref=ref,
-                                source="bill",
-                                source_id=int(bill_id),
-                                cur=cur,
-                            )
-                            self.update_trial_balance(company_id, {"account_code": inv_code, "debit": 0.0, "credit": float(alloc_consumed)}, cur=cur)
-
-
 
     def list_loans(
         self,
@@ -78804,6 +78803,386 @@ class DatabaseService:
             "entries": entries,
         }
 
+    def accrual_deferral_account_by_role(self, company_id: int, role: str):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT code, name, role, section, category
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND posting = TRUE
+            AND lower(coalesce(role,'')) = lower(%s)
+            ORDER BY id
+            LIMIT 1
+        """, (int(company_id), role))
+
+        if not row:
+            raise ValueError(f"Missing COA role mapping: {role}")
+
+        return row
+
+
+    def accrual_deferral_build_initial_preview(self, company_id: int, item_id: int, payload=None):
+        payload = payload or {}
+        schema = self.company_schema(company_id)
+
+        item = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_items
+            WHERE company_id=%s AND id=%s
+        """, (int(company_id), int(item_id)))
+
+        if not item:
+            raise ValueError("Accrual/deferral item not found")
+
+        item_type = item["item_type"]
+        amount = float(item.get("original_amount") or 0)
+
+        settlement_account = (
+            payload.get("settlement_account")
+            or payload.get("contra_account")
+            or item.get("source_account")
+        )
+
+        if not settlement_account:
+            settlement_role = payload.get("settlement_role") or "cash_bank"
+            settlement_account = self.accrual_deferral_account_by_role(
+                company_id, settlement_role
+            )["code"]
+
+        balance_account = item.get("balance_account")
+        recognition_account = item.get("recognition_account")
+
+        if not balance_account:
+            role_map = {
+                "prepaid_expense": "prepaid_expense",
+                "deferred_expense": "deferred_expense",
+                "deferred_income": "deferred_income",
+                "accrued_expense": "accrued_expense",
+                "accrued_income": "accrued_income",
+            }
+            balance_account = self.accrual_deferral_account_by_role(
+                company_id, role_map[item_type]
+            )["code"]
+
+        if item_type in ("prepaid_expense", "deferred_expense", "accrued_income"):
+            lines = [
+                {"account_code": balance_account, "debit": amount, "credit": 0},
+                {"account_code": settlement_account, "debit": 0, "credit": amount},
+            ]
+
+        elif item_type in ("deferred_income", "accrued_expense"):
+            lines = [
+                {"account_code": settlement_account, "debit": amount, "credit": 0},
+                {"account_code": balance_account, "debit": 0, "credit": amount},
+            ]
+
+        else:
+            raise ValueError(f"Unsupported item_type: {item_type}")
+
+        return {
+            "date": str(item.get("transaction_date")),
+            "ref": f"AD-INIT-{item['id']}",
+            "description": f"Initial recognition - {item.get('item_title')}",
+            "source": "accrual_deferral_initial",
+            "source_id": int(item["id"]),
+            "module_name": "accrual_deferrals",
+            "currency": item.get("currency") or "ZAR",
+            "lines": lines,
+            "item": item,
+        }
+
+
+    def accrual_deferral_post_initial(self, company_id: int, item_id: int, payload=None, user_id=None):
+        payload = payload or {}
+        schema = self.company_schema(company_id)
+
+        entry = self.accrual_deferral_build_initial_preview(company_id, item_id, payload)
+        entry["created_by_user_id"] = user_id
+        entry["prepared_by_user_id"] = user_id
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                journal_id = self.post_journal(company_id, entry, cur=cur, conn=conn)
+
+                cur.execute(f"""
+                    UPDATE {schema}.accrual_deferral_items
+                    SET source_journal_id = %s,
+                        status = CASE WHEN status='draft' THEN 'active' ELSE status END,
+                        updated_by_user_id = %s,
+                        updated_at = NOW()
+                    WHERE company_id=%s AND id=%s
+                """, (journal_id, user_id, int(company_id), int(item_id)))
+
+                cur.execute(f"""
+                    INSERT INTO {schema}.accrual_deferral_events (
+                        company_id, item_id, event_date, event_type, amount,
+                        currency, source_journal_id, notes, payload_json, created_by_user_id
+                    )
+                    VALUES (%s,%s,%s,'initial_posted',%s,%s,%s,%s,%s,%s)
+                """, (
+                    int(company_id),
+                    int(item_id),
+                    entry["date"],
+                    entry["lines"][0]["debit"] or entry["lines"][1]["credit"],
+                    entry.get("currency") or "ZAR",
+                    journal_id,
+                    "Initial recognition posted",
+                    payload or {},
+                    user_id,
+                ))
+
+                conn.commit()
+                return {
+                    "journal_id": journal_id,
+                    "preview": entry,
+                    "item": self.accrual_deferral_get_item(company_id, item_id),
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
+
+    def accrual_deferral_build_recognition_preview(self, company_id: int, run_id: int):
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_runs
+            WHERE company_id=%s AND id=%s
+        """, (int(company_id), int(run_id)))
+
+        if not run:
+            raise ValueError("Accrual/deferral run not found")
+
+        where = [
+            "l.company_id = %s",
+            "l.status = 'pending'",
+            "l.recognition_date BETWEEN %s AND %s",
+            "i.status = 'active'",
+        ]
+        params = [int(company_id), run["period_start"], run["period_end"]]
+
+        if run.get("item_id"):
+            where.append("i.id = %s")
+            params.append(int(run["item_id"]))
+
+        if run.get("item_type"):
+            where.append("i.item_type = %s")
+            params.append(run["item_type"])
+
+        lines_src = self.fetch_all(f"""
+            SELECT
+                l.*,
+                i.item_title,
+                i.item_type,
+                i.balance_account,
+                i.recognition_account,
+                i.currency
+            FROM {schema}.accrual_deferral_schedule_lines l
+            JOIN {schema}.accrual_deferral_items i ON i.id = l.item_id
+            WHERE {" AND ".join(where)}
+            ORDER BY l.recognition_date, l.item_id, l.line_no
+        """, tuple(params))
+
+        journal_lines = []
+        entries = []
+
+        for row in lines_src:
+            amount = float(row.get("recognition_amount") or 0)
+            if amount <= 0:
+                continue
+
+            item_type = row["item_type"]
+
+            balance_account = row.get("balance_account")
+            recognition_account = row.get("recognition_account")
+
+            if not balance_account:
+                balance_role = {
+                    "prepaid_expense": "prepaid_expense",
+                    "deferred_expense": "deferred_expense",
+                    "deferred_income": "deferred_income",
+                    "accrued_expense": "accrued_expense",
+                    "accrued_income": "accrued_income",
+                }[item_type]
+                balance_account = self.accrual_deferral_account_by_role(company_id, balance_role)["code"]
+
+            if not recognition_account:
+                raise ValueError(
+                    f"Missing recognition_account for item {row.get('item_id')} - {row.get('item_title')}"
+                )
+
+            if item_type in ("prepaid_expense", "deferred_expense"):
+                debit_account = recognition_account
+                credit_account = balance_account
+
+            elif item_type == "deferred_income":
+                debit_account = balance_account
+                credit_account = recognition_account
+
+            elif item_type == "accrued_expense":
+                debit_account = recognition_account
+                credit_account = balance_account
+
+            elif item_type == "accrued_income":
+                debit_account = balance_account
+                credit_account = recognition_account
+
+            else:
+                raise ValueError(f"Unsupported item_type: {item_type}")
+
+            journal_lines.append({
+                "account_code": debit_account,
+                "debit": amount,
+                "credit": 0,
+                "description": row.get("item_title"),
+            })
+            journal_lines.append({
+                "account_code": credit_account,
+                "debit": 0,
+                "credit": amount,
+                "description": row.get("item_title"),
+            })
+
+            entries.append({
+                "schedule_line_id": row["id"],
+                "item_id": row["item_id"],
+                "item_type": item_type,
+                "period_start": row["period_start"],
+                "period_end": row["period_end"],
+                "opening_balance": row["opening_balance"],
+                "recognition_amount": row["recognition_amount"],
+                "closing_balance": row["closing_balance"],
+                "debit_account": debit_account,
+                "credit_account": credit_account,
+            })
+
+        total = round(sum(float(x["debit"] or 0) for x in journal_lines), 2)
+
+        return {
+            "date": str(run["period_end"]),
+            "ref": f"AD-RUN-{run_id}",
+            "description": f"Accruals/Deferrals recognition run to {run['period_end']}",
+            "source": "accrual_deferral_run",
+            "source_id": int(run_id),
+            "module_name": "accrual_deferrals",
+            "currency": "ZAR",
+            "lines": journal_lines,
+            "entries": entries,
+            "total": total,
+            "run": run,
+        }
+
+
+    def accrual_deferral_post_run(self, company_id: int, run_id: int, user_id=None):
+        schema = self.company_schema(company_id)
+
+        preview = self.accrual_deferral_build_recognition_preview(company_id, run_id)
+
+        if not preview["lines"]:
+            raise ValueError("No pending schedule lines found for this run")
+
+        preview["created_by_user_id"] = user_id
+        preview["prepared_by_user_id"] = user_id
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                journal_id = self.post_journal(company_id, preview, cur=cur, conn=conn)
+
+                for e in preview["entries"]:
+                    cur.execute(f"""
+                        INSERT INTO {schema}.accrual_deferral_entries (
+                            company_id,
+                            run_id,
+                            item_id,
+                            schedule_line_id,
+                            period_start,
+                            period_end,
+                            item_type,
+                            opening_balance,
+                            recognition_amount,
+                            closing_balance,
+                            debit_account,
+                            credit_account,
+                            source_basis,
+                            payload_json
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'system',%s)
+                    """, (
+                        int(company_id),
+                        int(run_id),
+                        int(e["item_id"]),
+                        int(e["schedule_line_id"]),
+                        e["period_start"],
+                        e["period_end"],
+                        e["item_type"],
+                        e["opening_balance"],
+                        e["recognition_amount"],
+                        e["closing_balance"],
+                        e["debit_account"],
+                        e["credit_account"],
+                        {},
+                    ))
+
+                    cur.execute(f"""
+                        UPDATE {schema}.accrual_deferral_schedule_lines
+                        SET status='posted',
+                            journal_id=%s,
+                            posted_at=NOW(),
+                            posted_by_user_id=%s
+                        WHERE company_id=%s AND id=%s
+                    """, (
+                        journal_id,
+                        user_id,
+                        int(company_id),
+                        int(e["schedule_line_id"]),
+                    ))
+
+                    cur.execute(f"""
+                        UPDATE {schema}.accrual_deferral_items
+                        SET recognized_to_date = recognized_to_date + %s,
+                            remaining_balance = GREATEST(remaining_balance - %s, 0),
+                            updated_by_user_id = %s,
+                            updated_at = NOW()
+                        WHERE company_id=%s AND id=%s
+                    """, (
+                        e["recognition_amount"],
+                        e["recognition_amount"],
+                        user_id,
+                        int(company_id),
+                        int(e["item_id"]),
+                    ))
+
+                cur.execute(f"""
+                    UPDATE {schema}.accrual_deferral_runs
+                    SET status='posted',
+                        journal_id=%s,
+                        total_recognition_amount=%s,
+                        posted_by_user_id=%s,
+                        posted_at=NOW()
+                    WHERE company_id=%s AND id=%s
+                """, (
+                    journal_id,
+                    preview["total"],
+                    user_id,
+                    int(company_id),
+                    int(run_id),
+                ))
+
+                conn.commit()
+
+                return {
+                    "journal_id": journal_id,
+                    "preview": preview,
+                    "run": self.accrual_deferral_get_run(company_id, run_id),
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
     def _num(self, v, default=0):
         if v is None or v == "":
             return Decimal(str(default))
@@ -79495,7 +79874,8 @@ class DatabaseService:
         if not acct_row:
             raise ValueError(f"Account '{account_code}' not found in company COA")
 
-        return self.execute_sql(f"""
+        return self.execute_sql(
+            f"""
             INSERT INTO {schema}.ifrs9_account_mappings (
                 company_id,
                 mapping_key,
@@ -79512,12 +79892,108 @@ class DatabaseService:
                 description = EXCLUDED.description,
                 updated_at = NOW()
             RETURNING *
-        """, (
-            int(company_id),
-            mapping_key,
-            account_code,
-            payload.get("description"),
-        ), fetchone=True)
+            """,
+            (
+                int(company_id),
+                mapping_key,
+                account_code,
+                payload.get("description"),
+            ),
+            fetchone=True,
+        )
+    
+    def _money2(self, v, default=0):
+        from decimal import Decimal, ROUND_HALF_UP
+        if v is None or v == "":
+            v = default
+        return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+    def ifrs9_account_by_role(self, company_id: int, role: str, *, required=True):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT code, name, role
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND posting = TRUE
+            AND role = %s
+            ORDER BY id
+            LIMIT 1
+        """, (int(company_id), role))
+
+        if not row and required:
+            raise ValueError(f"IFRS 9 COA role missing: {role}")
+
+        return (row.get("code") if row else None)
+
+
+    def build_ifrs9_ecl_journal_lines(self, company_id: int, *, movement_ecl):
+        movement_ecl = self._money2(movement_ecl)
+
+        if movement_ecl == 0:
+            raise ValueError("movement_ecl cannot be zero")
+
+        expense_account = self.ifrs9_account_by_role(
+            company_id,
+            "ifrs9_ecl_impairment_loss",
+            required=True,
+        )
+
+        allowance_account = self.ifrs9_account_by_role(
+            company_id,
+            "ifrs9_ecl_allowance_trade_receivables",
+            required=True,
+        )
+
+        amount = abs(movement_ecl)
+
+        if movement_ecl > 0:
+            lines = [
+                {
+                    "account_code": expense_account,
+                    "description": "IFRS 9 expected credit loss expense",
+                    "debit": float(amount),
+                    "credit": 0.0,
+                },
+                {
+                    "account_code": allowance_account,
+                    "description": "IFRS 9 loss allowance",
+                    "debit": 0.0,
+                    "credit": float(amount),
+                },
+            ]
+        else:
+            lines = [
+                {
+                    "account_code": allowance_account,
+                    "description": "IFRS 9 loss allowance reversal",
+                    "debit": float(amount),
+                    "credit": 0.0,
+                },
+                {
+                    "account_code": expense_account,
+                    "description": "IFRS 9 expected credit loss reversal",
+                    "debit": 0.0,
+                    "credit": float(amount),
+                },
+            ]
+
+        dr_total = sum(float(x.get("debit") or 0) for x in lines)
+        cr_total = sum(float(x.get("credit") or 0) for x in lines)
+
+        if round(dr_total, 2) != round(cr_total, 2):
+            raise ValueError(f"IFRS 9 ECL journal not balanced D={dr_total} C={cr_total}")
+
+        return {
+            "journal_lines": lines,
+            "resolved_accounts": {
+                "ifrs9_ecl_impairment_loss": expense_account,
+                "ifrs9_ecl_allowance_trade_receivables": allowance_account,
+            },
+            "dr_total": dr_total,
+            "cr_total": cr_total,
+        }
 
     def preview_ifrs9_ecl_journal(self, conn, company_id: int, *, data: dict):
         reporting_date = data.get("reporting_date")
@@ -79577,6 +80053,228 @@ class DatabaseService:
             },
             "dr_total": dr_total,
             "cr_total": cr_total,
+        }
+
+    def ifrs9_create_ecl_run(self, company_id: int, payload: dict, *, user_id=None):
+        schema = self.company_schema(company_id)
+
+        reporting_date = payload.get("reporting_date")
+        if not reporting_date:
+            raise ValueError("reporting_date is required")
+
+        total_exposure = self._money2(payload.get("total_exposure"))
+        total_ecl = self._money2(payload.get("total_ecl"))
+        previous_ecl = self._money2(payload.get("previous_ecl"))
+        movement_ecl = self._money2(payload.get("movement_ecl", total_ecl - previous_ecl))
+
+        if movement_ecl == 0:
+            raise ValueError("movement_ecl cannot be zero")
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.ifrs9_ecl_runs (
+                    company_id,
+                    model_id,
+                    run_date,
+                    reporting_date,
+                    run_type,
+                    total_exposure,
+                    total_ecl,
+                    journal_id,
+                    status,
+                    created_by,
+                    meta_json
+                )
+                VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,NULL,'draft',%s,
+                    jsonb_build_object(
+                        'previous_ecl', %s,
+                        'movement_ecl', %s,
+                        'input', COALESCE(%s::jsonb, '{{}}'::jsonb)
+                    )
+                )
+                RETURNING *
+            """, (
+                int(company_id),
+                payload.get("model_id"),
+                reporting_date,
+                payload.get("run_type") or "period_end",
+                total_exposure,
+                total_ecl,
+                user_id,
+                previous_ecl,
+                movement_ecl,
+                payload.get("meta_json"),
+            ))
+
+            run = cur.fetchone()
+
+        return run
+
+
+    def ifrs9_get_ecl_run(self, company_id: int, run_id: int):
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id = %s
+            AND id = %s
+        """, (int(company_id), int(run_id)))
+
+        if not run:
+            return None
+
+        lines = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_run_lines
+            WHERE company_id = %s
+            AND run_id = %s
+            ORDER BY id
+        """, (int(company_id), int(run_id)))
+
+        return {
+            "run": run,
+            "lines": lines,
+        }
+
+
+    def ifrs9_list_ecl_runs(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id = %s
+            ORDER BY reporting_date DESC, id DESC
+        """, (int(company_id),))
+
+
+    def ifrs9_preview_ecl_run_journal(self, company_id: int, run_id: int):
+        item = self.ifrs9_get_ecl_run(company_id, run_id)
+        if not item or not item.get("run"):
+            raise ValueError("IFRS 9 ECL run not found")
+
+        run = item["run"]
+        meta = run.get("meta_json") or {}
+
+        movement_ecl = self._money2(meta.get("movement_ecl"))
+
+        with self._conn_cursor() as (conn, cur):
+            return self.preview_ifrs9_ecl_journal(
+                conn,
+                company_id,
+                data={
+                    "reporting_date": run.get("reporting_date"),
+                    "movement_ecl": movement_ecl,
+                    "reference": f"IFRS9-ECL-{run.get('id')}",
+                    "currency": "ZAR",
+                },
+            )
+
+
+    def ifrs9_post_ecl_run(self, company_id: int, run_id: int, *, user_id=None):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            run = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.ifrs9_ecl_runs
+                WHERE company_id = %s
+                AND id = %s
+                FOR UPDATE
+            """, (int(company_id), int(run_id)), cur=cur)
+
+            if not run:
+                raise ValueError("IFRS 9 ECL run not found")
+
+            if run.get("status") == "posted":
+                raise ValueError("IFRS 9 ECL run already posted")
+
+            meta = run.get("meta_json") or {}
+            movement_ecl = self._money2(meta.get("movement_ecl"))
+
+            preview = self.preview_ifrs9_ecl_journal(
+                conn,
+                company_id,
+                data={
+                    "reporting_date": run.get("reporting_date"),
+                    "movement_ecl": movement_ecl,
+                    "reference": f"IFRS9-ECL-{run_id}",
+                    "currency": "ZAR",
+                },
+            )
+
+            entry = {
+                "date": preview["date"],
+                "ref": preview["ref"],
+                "description": preview["description"],
+                "gross_amount": preview["gross_amount"],
+                "net_amount": preview["net_amount"],
+                "vat_amount": 0.0,
+                "currency": preview.get("currency") or "ZAR",
+                "source": "ifrs9_ecl",
+                "source_id": int(run_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": preview["lines"],
+            }
+
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_ecl_runs
+                SET journal_id = %s,
+                    status = 'posted',
+                    meta_json = COALESCE(meta_json, '{{}}'::jsonb)
+                        || jsonb_build_object(
+                            'posted_by', %s,
+                            'posted_at', NOW(),
+                            'journal_preview', %s::jsonb
+                        )
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+            """, (
+                int(journal_id),
+                user_id,
+                json.dumps(preview, default=str),
+                int(company_id),
+                int(run_id),
+            ))
+
+            posted_run = cur.fetchone()
+
+            try:
+                self.audit_log(
+                    company_id,
+                    actor_user_id=user_id or 0,
+                    module="ifrs9",
+                    action="post_ecl_run",
+                    severity="info",
+                    entity_type="ifrs9_ecl_run",
+                    entity_id=str(run_id),
+                    entity_ref=f"IFRS9-ECL-{run_id}",
+                    journal_id=int(journal_id),
+                    amount=float(abs(movement_ecl)),
+                    currency=preview.get("currency") or "ZAR",
+                    before_json={"run_before": run},
+                    after_json={"run_after": posted_run, "journal": entry},
+                    message=f"Posted IFRS 9 ECL run {run_id}",
+                    source="api",
+                )
+            except Exception:
+                pass
+
+        return {
+            "run": posted_run,
+            "journal_id": journal_id,
+            "preview": preview,
         }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:

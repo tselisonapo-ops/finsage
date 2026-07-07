@@ -1504,10 +1504,16 @@ def _preview_add_cost(asset_row, payload, policy, ca_before, cur=None):
 
     ca_after = ca_before + amt
 
+    schema = db_service.company_schema(int(asset_row["company_id"]))
+
     return {
         "header": _preview_header(payload, memo="SM preview: add_cost"),
-        "lines": _attach_account_names(lines, company_id=asset_row["company_id"], cur=cur),
-        "impact": {"carrying_amount_before": ca_before, "carrying_amount_after": ca_after, "delta": ca_after - ca_before},
+        "lines": _attach_account_names(lines, schema=schema, cur=cur),
+        "impact": {
+            "carrying_amount_before": ca_before,
+            "carrying_amount_after": ca_after,
+            "delta": ca_after - ca_before,
+        },
         "warnings": [],
     }
 

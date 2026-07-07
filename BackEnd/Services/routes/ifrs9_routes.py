@@ -291,65 +291,6 @@ def api_ifrs9_modifications(company_id: int, instrument_id: int):
         current_app.logger.exception("ifrs9_modifications failed")
         return _json_error(str(e), 400)
     
-def preview_ifrs9_ecl_journal(self, conn, company_id: int, *, data: dict):
-    reporting_date = data.get("reporting_date")
-    movement_ecl = self._num(data.get("movement_ecl"))
-
-    if not reporting_date:
-        raise ValueError("reporting_date is required")
-
-    if movement_ecl == 0:
-        raise ValueError("movement_ecl cannot be zero")
-
-    expense_account = self.ifrs9_resolve_account(
-        company_id,
-        "ecl_impairment_loss",
-    )
-
-    allowance_account = self.ifrs9_resolve_account(
-        company_id,
-        "ecl_allowance_trade_receivables",
-    )
-
-    amount = abs(movement_ecl)
-
-    if movement_ecl > 0:
-        lines = [
-            {"account_code": expense_account, "dc": "D", "amount": float(amount)},
-            {"account_code": allowance_account, "dc": "C", "amount": float(amount)},
-        ]
-        description = "IFRS 9 expected credit loss recognised"
-    else:
-        lines = [
-            {"account_code": allowance_account, "dc": "D", "amount": float(amount)},
-            {"account_code": expense_account, "dc": "C", "amount": float(amount)},
-        ]
-        description = "IFRS 9 expected credit loss reversed"
-
-    dr_total = sum(x["amount"] for x in lines if x["dc"] == "D")
-    cr_total = sum(x["amount"] for x in lines if x["dc"] == "C")
-
-    if round(dr_total - cr_total, 2) != 0:
-        raise ValueError(f"Journal not balanced D={dr_total} C={cr_total}")
-
-    return {
-        "date": str(reporting_date),
-        "ref": data.get("reference") or "IFRS9-ECL-PREVIEW",
-        "description": description,
-        "gross_amount": float(amount),
-        "net_amount": float(amount),
-        "vat_amount": 0.0,
-        "currency": data.get("currency") or "ZAR",
-        "source": "ifrs9_ecl_preview",
-        "source_id": None,
-        "lines": lines,
-        "resolved_accounts": {
-            "ecl_impairment_loss": expense_account,
-            "ecl_allowance_trade_receivables": allowance_account,
-        },
-        "dr_total": dr_total,
-        "cr_total": cr_total,
-    }
 
 @bp_ifrs9.route(
     "/api/companies/<int:company_id>/ifrs9/coa/readiness",
@@ -431,3 +372,110 @@ def api_ifrs9_ecl_preview_journal(company_id: int):
         current_app.logger.exception("ifrs9_ecl_preview_journal failed")
         return _json_error(str(e), 400)
     
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/runs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_ecl_runs(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.ifrs9_list_ecl_runs(company_id)
+            return jsonify({"ok": True, "items": items}), 200
+
+        payload = request.get_json(silent=True) or {}
+        item = db_service.ifrs9_create_ecl_run(
+            company_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+        return jsonify({"ok": True, "item": item}), 201
+
+    except Exception as e:
+        current_app.logger.exception("ifrs9_ecl_runs failed")
+        return _json_error(str(e), 400)
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/runs/<int:run_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_get_ecl_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_get_ecl_run(company_id, run_id)
+        if not result:
+            return _json_error("IFRS 9 ECL run not found", 404)
+
+        return jsonify({"ok": True, **result}), 200
+
+    except Exception as e:
+        current_app.logger.exception("ifrs9_get_ecl_run failed")
+        return _json_error(str(e), 400)
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/runs/<int:run_id>/preview-journal",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_ecl_run_preview_journal(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        preview = db_service.ifrs9_preview_ecl_run_journal(company_id, run_id)
+        return jsonify({"ok": True, "preview": preview}), 200
+
+    except Exception as e:
+        current_app.logger.exception("ifrs9_ecl_run_preview_journal failed")
+        return _json_error(str(e), 400)
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/runs/<int:run_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_ecl_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_post_ecl_run(
+            company_id,
+            run_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({"ok": True, **result}), 200
+
+    except Exception as e:
+        current_app.logger.exception("ifrs9_post_ecl_run failed")
+        return _json_error(str(e), 400)

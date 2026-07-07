@@ -4017,396 +4017,6 @@ def api_delete_company_logo(company_id: int):
 
     return jsonify({"ok": True}), 200
 
-@app.route("/api/companies/<int:company_id>/journal/recent", methods=["GET"])
-@require_auth
-def api_recent_journals(company_id: int):
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    try:
-        limit = int(request.args.get("limit", 50))
-    except ValueError:
-        limit = 50
-
-    date_from, date_to, meta = resolve_company_period(db_service, company_id, request, mode="range")
-
-    rows = db_service.list_recent_journals(
-        company_id,
-        limit,
-        date_from=date_from.isoformat() if date_from else None,
-        date_to=date_to.isoformat() if date_to else None,
-    ) or []
-
-    return jsonify({"meta": meta, "rows": rows}), 200
-
-
-# API: replace the whole body with a single service call
-@app.route("/api/companies/<int:company_id>/journal", methods=["GET", "POST"])
-@require_auth
-def api_journal(company_id: int):
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    # ✅ GET detail: /journal?journal_id=5
-    if request.method == "GET":
-        journal_id = request.args.get("journal_id")
-        if not journal_id:
-            return jsonify({"ok": False, "error": "journal_id is required"}), 400
-
-        data = db_service.get_journal_with_lines(company_id, int(journal_id))
-        return jsonify(data), 200
-
-    # ✅ POST posting
-    try:
-        entry = request.get_json(force=True) or {}
-        before_json = entry
-
-        ref = (entry.get("ref") or "").strip()
-
-        if ref:
-            existing = db_service.fetch_one(
-                f"""
-                SELECT id
-                FROM company_{company_id}.journal
-                WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
-                AND COALESCE(reversal_of_journal_id, 0) = 0
-                LIMIT 1
-                """,
-                (ref,),
-            )
-
-            if existing:
-                return jsonify({
-                    "ok": False,
-                    "error": f"Duplicate journal reference: {ref}",
-                    "code": "DUPLICATE_JOURNAL_REF",
-                    "ref": ref,
-                    "journal_id": existing.get("id"),
-                }), 409
-        # ✅ Ensure schema/table evolution ran BEFORE we select currency
-        # (use your real ensure function name here)
-        try:
-            db_service.ensure_company_schema(company_id)
-            db_service.ensure_company_journal(company_id)  # <-- the one that contains your CREATE/ALTER for journal
-        except Exception:
-            # don't fail posting just because ensure threw; posting may still succeed
-            pass
-
-        journal_id = db_service.post_journal_with_overdraft(company_id, entry)
-
-        # ✅ Link manual journal back to lease_schedule when journal is IFRS16 monthly amortisation
-        try:
-            src = (entry.get("source") or "").strip()
-            source_id = entry.get("source_id")
-
-            if src == "lease_monthly" and source_id:
-                # source_id should be lease_schedule.id
-                sched = db_service.fetch_one(
-                    f"""
-                    SELECT id, lease_id, period_no
-                    FROM company_{company_id}.lease_schedule
-                    WHERE company_id=%s
-                    AND id=%s
-                    LIMIT 1
-                    """,
-                    (int(company_id), int(source_id)),
-                )
-
-                if sched:
-                    db_service.mark_lease_schedule_month_posted(
-                        int(company_id),
-                        schedule_id=int(sched["id"]),
-                        lease_id=int(sched["lease_id"]),
-                        journal_id=int(journal_id),
-                    )
-
-        except Exception:
-            current_app.logger.exception("Failed to link manual IFRS16 journal to lease schedule")
-            
-        # ✅ company base currency (no circular import risk if you already can call this here)
-        try:
-            ctx = get_company_context(db_service, company_id) or {}
-            base_ccy = ctx.get("currency")
-        except Exception:
-            base_ccy = None
-
-        # ✅ pull saved journal for reference
-        # IMPORTANT: avoid crashing if column doesn't exist yet (legacy tenant)
-        saved = {}
-        try:
-            saved = db_service.fetch_one(
-                f"SELECT id, date, ref, description, gross_amount, currency "
-                f"FROM company_{company_id}.journal WHERE id=%s",
-                (int(journal_id),),
-            ) or {}
-        except Exception:
-            # fallback without currency column
-            saved = db_service.fetch_one(
-                f"SELECT id, date, ref, description, gross_amount "
-                f"FROM company_{company_id}.journal WHERE id=%s",
-                (int(journal_id),),
-            ) or {}
-
-        audit_currency = (
-            (saved.get("currency") if isinstance(saved, dict) else None)
-            or entry.get("currency")
-            or base_ccy
-        )
-
-        db_service.audit_log(
-            company_id=company_id,
-            actor_user_id=int(current_user.get("id") or 0),
-            module="gl",
-            action="post_journal",
-            severity="info",
-            entity_type="journal",
-            entity_id=str(journal_id),
-            entity_ref=(saved.get("ref") or saved.get("description") or f"journal_{journal_id}"),
-            journal_id=int(journal_id),
-            amount=float(saved.get("gross_amount") or 0.0),
-            currency=audit_currency,
-            before_json=before_json if isinstance(before_json, dict) else {},
-            after_json=saved if isinstance(saved, dict) else {},
-            message="Journal posted",
-            source="api",
-        )
-
-        return jsonify({"ok": True, "journal_id": journal_id}), 200
-
-    except ValueError as e:
-        msg = str(e)
-        if msg.startswith("PERIOD_LOCKED|"):
-            parts = msg.split("|")
-
-            # optional: base currency fallback here too
-            try:
-                ctx = get_company_context(db_service, company_id) or {}
-                base_ccy = ctx.get("currency")
-            except Exception:
-                base_ccy = None
-
-            db_service.audit_log(
-                company_id=company_id,
-                actor_user_id=int(current_user.get("id") or 0),
-                module="gl",
-                action="post_journal_failed",
-                severity="warning",
-                entity_type="journal",
-                entity_id="",
-                entity_ref=None,
-                amount=float((entry or {}).get("gross_amount") or 0.0),
-                currency=((entry or {}).get("currency") or base_ccy),
-                before_json=entry if isinstance(entry, dict) else {},
-                after_json={},
-                message=str(e),
-                source="api",
-            )
-
-            return jsonify({
-                "ok": False,
-                "error": "Period is locked",
-                "code": "PERIOD_LOCKED",
-                "module": parts[1] if len(parts) > 1 else "gl",
-                "date": parts[2] if len(parts) > 2 else None,
-            }), 409
-
-        return jsonify({"ok": False, "error": msg}), 400
-
-@app.route("/api/companies/<int:company_id>/journal/<int:journal_id>", methods=["GET"])
-@require_auth
-def api_journal_detail(company_id: int, journal_id: int):
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    try:
-        data = db_service.get_journal_with_lines(company_id, journal_id)
-        return jsonify(data), 200
-    except Exception as e:
-        current_app.logger.exception("Error loading journal detail")
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-@app.route("/api/companies/<int:company_id>/journal/by-ref/<path:ref>", methods=["GET"])
-@require_auth
-def api_journal_by_ref(company_id: int, ref: str):
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    row = db_service.get_journal_by_ref(company_id, ref)
-    if not row:
-        return jsonify({"ok": False, "error": "Not found"}), 404
-    return jsonify(row), 200
-
-
-@app.route("/api/companies/<int:company_id>/journal/<int:journal_id>/reverse", methods=["POST"])
-@require_auth
-def api_reverse_journal(company_id: int, journal_id: int):
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    try:
-        payload = request.get_json(silent=True) or {}
-
-        # (optional) snapshot "before"
-        before = db_service.fetch_one(
-            f"""
-            SELECT id, date, ref, description, gross_amount, currency
-            FROM company_{company_id}.journal
-            WHERE id=%s
-            """,
-            (int(journal_id),)
-        ) or {}
-
-        reversal_journal_id = db_service.reverse_journal(company_id, journal_id, payload)
-
-        # snapshot "after" (the new reversing journal)
-        after = db_service.fetch_one(
-            f"""
-            SELECT id, date, ref, description, gross_amount, currency, reversal_of_journal_id
-            FROM company_{company_id}.journal
-            WHERE id=%s
-            """,
-            (int(reversal_journal_id),)
-        ) or {}
-
-        # ✅ AUDIT HERE (right after success)
-        db_service.audit_log(
-            company_id=company_id,
-            actor_user_id=int(current_user.get("id") or 0),
-            module="gl",
-            action="reverse_journal",
-            severity="info",
-            entity_type="journal",
-            entity_id=str(journal_id),  # the original journal being reversed
-            entity_ref=(before.get("ref") or before.get("description") or f"journal_{journal_id}"),
-            journal_id=int(journal_id),
-            amount=float(before.get("gross_amount") or 0.0),
-            currency=(before.get("currency") or after.get("currency") or payload.get("currency")),
-            before_json=before if isinstance(before, dict) else {},
-            after_json={
-                "reversal_journal_id": int(reversal_journal_id),
-                **(after if isinstance(after, dict) else {})
-            },
-            message=f"Journal reversed. reversal_journal_id={reversal_journal_id}",
-            source="api",
-        )
-
-        return jsonify({"ok": True, "reversal_journal_id": reversal_journal_id}), 200
-
-    except Exception as e:
-        current_app.logger.exception("Error reversing journal")
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-@app.route("/api/companies/<int:company_id>/ledger", methods=["GET"])
-@require_auth
-def api_get_ledger(company_id: int):
-
-    current_user = getattr(g, "current_user", None)
-    if not current_user or current_user.get("company_id") != company_id:
-        return jsonify({"error": "Not authorised for this company"}), 403
-
-    account_code = (request.args.get("account") or "").strip()
-    raw_from     = request.args.get("from") or None
-    raw_to       = request.args.get("to") or None
-
-    def parse_date(val):
-        if not val:
-            return None
-        try:
-            return datetime.strptime(val, "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    date_from = parse_date(raw_from)
-    date_to   = parse_date(raw_to)
-
-    try:
-        # ✅ ALL accounts → simple rows
-        if not account_code or account_code.upper() == "ALL":
-            rows = db_service.get_ledger_for_all_accounts(
-                company_id, date_from, date_to
-            )
-            return jsonify(rows), 200
-
-        # ✅ Single account → enrich with balance, journal_lines, counterparties
-        raw_rows = db_service.get_ledger_for_account(
-            company_id,
-            account_code,
-            date_from=date_from,
-            date_to=date_to,
-        )
-
-        if not raw_rows:
-            return jsonify([]), 200
-
-        # fetch all journal lines for the involved journal_ids
-        journal_ids = sorted(
-            {r["journal_id"] for r in raw_rows if r.get("journal_id") is not None}
-        )
-
-        lines_by_journal: Dict[int, List[Dict[str, Any]]] = {}
-        if journal_ids:
-            j_lines = db_service.get_journal_lines_for_ids(company_id, journal_ids)
-            for ln in j_lines:
-                jid = ln["journal_id"]
-                lines_by_journal.setdefault(jid, []).append({
-                    "account": ln["account"],
-                    "account_name": ln.get("account_name"),
-                    "debit": float(ln.get("debit") or 0),
-                    "credit": float(ln.get("credit") or 0),
-                    "memo": ln.get("memo"),
-                })
-
-        # build response with running balance + breakdown
-        balance = 0.0
-        out = []
-
-        for r in raw_rows:
-            debit  = float(r.get("debit") or 0)
-            credit = float(r.get("credit") or 0)
-            balance += debit - credit
-
-            jid = r.get("journal_id")
-            journal_lines = lines_by_journal.get(jid, []) if jid else []
-
-            # counterparties: *other* accounts in same journal
-            counterparties = []
-            seen = set()
-            for ln in journal_lines:
-                acc = ln["account"]
-                if acc == r.get("account"):
-                    continue
-                if acc in seen:
-                    continue
-                seen.add(acc)
-                label = f"{acc} - {ln['account_name']}" if ln.get("account_name") else acc
-                counterparties.append(label)
-
-            out.append({
-                "id":            r.get("id"),
-                "journal_id":    jid,
-                "date":          r.get("date").isoformat() if r.get("date") else None,
-                "ref":           r.get("ref"),
-                "journal_ref":   r.get("journal_ref"),
-                "account":       r.get("account"),
-                "debit":         debit,
-                "credit":        credit,
-                "description":   r.get("memo") or r.get("journal_description"),
-                "balance":       balance,
-                "journal_lines": journal_lines,
-                "counterparties": counterparties,
-            })
-
-        return jsonify(out), 200
-
-    except Exception as e:
-        current_app.logger.exception("Error in GET /ledger: %s", e)
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/api/companies/<int:company_id>/period-range", methods=["GET"])
 @require_auth
 def api_company_period_range(company_id: int):
@@ -8483,6 +8093,396 @@ Kind regards,
     )
     return jsonify({"ok": True, "to_email": to_email, "cc": cc_emails, "bcc": bcc_emails}), 200
 
+@app.route("/api/companies/<int:company_id>/journal/recent", methods=["GET"])
+@require_auth
+def api_recent_journals(company_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        limit = 50
+
+    date_from, date_to, meta = resolve_company_period(db_service, company_id, request, mode="range")
+
+    rows = db_service.list_recent_journals(
+        company_id,
+        limit,
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
+    ) or []
+
+    return jsonify({"meta": meta, "rows": rows}), 200
+
+
+# API: replace the whole body with a single service call
+@app.route("/api/companies/<int:company_id>/journal", methods=["GET", "POST"])
+@require_auth
+def api_journal(company_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    # ✅ GET detail: /journal?journal_id=5
+    if request.method == "GET":
+        journal_id = request.args.get("journal_id")
+        if not journal_id:
+            return jsonify({"ok": False, "error": "journal_id is required"}), 400
+
+        data = db_service.get_journal_with_lines(company_id, int(journal_id))
+        return jsonify(data), 200
+
+    # ✅ POST posting
+    try:
+        entry = request.get_json(force=True) or {}
+        before_json = entry
+
+        ref = (entry.get("ref") or "").strip()
+
+        if ref:
+            existing = db_service.fetch_one(
+                f"""
+                SELECT id
+                FROM company_{company_id}.journal
+                WHERE LOWER(TRIM(ref)) = LOWER(TRIM(%s))
+                AND COALESCE(reversal_of_journal_id, 0) = 0
+                LIMIT 1
+                """,
+                (ref,),
+            )
+
+            if existing:
+                return jsonify({
+                    "ok": False,
+                    "error": f"Duplicate journal reference: {ref}",
+                    "code": "DUPLICATE_JOURNAL_REF",
+                    "ref": ref,
+                    "journal_id": existing.get("id"),
+                }), 409
+        # ✅ Ensure schema/table evolution ran BEFORE we select currency
+        # (use your real ensure function name here)
+        try:
+            db_service.ensure_company_schema(company_id)
+            db_service.ensure_company_journal(company_id)  # <-- the one that contains your CREATE/ALTER for journal
+        except Exception:
+            # don't fail posting just because ensure threw; posting may still succeed
+            pass
+
+        journal_id = db_service.post_journal_with_overdraft(company_id, entry)
+
+        # ✅ Link manual journal back to lease_schedule when journal is IFRS16 monthly amortisation
+        try:
+            src = (entry.get("source") or "").strip()
+            source_id = entry.get("source_id")
+
+            if src == "lease_monthly" and source_id:
+                # source_id should be lease_schedule.id
+                sched = db_service.fetch_one(
+                    f"""
+                    SELECT id, lease_id, period_no
+                    FROM company_{company_id}.lease_schedule
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1
+                    """,
+                    (int(company_id), int(source_id)),
+                )
+
+                if sched:
+                    db_service.mark_lease_schedule_month_posted(
+                        int(company_id),
+                        schedule_id=int(sched["id"]),
+                        lease_id=int(sched["lease_id"]),
+                        journal_id=int(journal_id),
+                    )
+
+        except Exception:
+            current_app.logger.exception("Failed to link manual IFRS16 journal to lease schedule")
+            
+        # ✅ company base currency (no circular import risk if you already can call this here)
+        try:
+            ctx = get_company_context(db_service, company_id) or {}
+            base_ccy = ctx.get("currency")
+        except Exception:
+            base_ccy = None
+
+        # ✅ pull saved journal for reference
+        # IMPORTANT: avoid crashing if column doesn't exist yet (legacy tenant)
+        saved = {}
+        try:
+            saved = db_service.fetch_one(
+                f"SELECT id, date, ref, description, gross_amount, currency "
+                f"FROM company_{company_id}.journal WHERE id=%s",
+                (int(journal_id),),
+            ) or {}
+        except Exception:
+            # fallback without currency column
+            saved = db_service.fetch_one(
+                f"SELECT id, date, ref, description, gross_amount "
+                f"FROM company_{company_id}.journal WHERE id=%s",
+                (int(journal_id),),
+            ) or {}
+
+        audit_currency = (
+            (saved.get("currency") if isinstance(saved, dict) else None)
+            or entry.get("currency")
+            or base_ccy
+        )
+
+        db_service.audit_log(
+            company_id=company_id,
+            actor_user_id=int(current_user.get("id") or 0),
+            module="gl",
+            action="post_journal",
+            severity="info",
+            entity_type="journal",
+            entity_id=str(journal_id),
+            entity_ref=(saved.get("ref") or saved.get("description") or f"journal_{journal_id}"),
+            journal_id=int(journal_id),
+            amount=float(saved.get("gross_amount") or 0.0),
+            currency=audit_currency,
+            before_json=before_json if isinstance(before_json, dict) else {},
+            after_json=saved if isinstance(saved, dict) else {},
+            message="Journal posted",
+            source="api",
+        )
+
+        return jsonify({"ok": True, "journal_id": journal_id}), 200
+
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("PERIOD_LOCKED|"):
+            parts = msg.split("|")
+
+            # optional: base currency fallback here too
+            try:
+                ctx = get_company_context(db_service, company_id) or {}
+                base_ccy = ctx.get("currency")
+            except Exception:
+                base_ccy = None
+
+            db_service.audit_log(
+                company_id=company_id,
+                actor_user_id=int(current_user.get("id") or 0),
+                module="gl",
+                action="post_journal_failed",
+                severity="warning",
+                entity_type="journal",
+                entity_id="",
+                entity_ref=None,
+                amount=float((entry or {}).get("gross_amount") or 0.0),
+                currency=((entry or {}).get("currency") or base_ccy),
+                before_json=entry if isinstance(entry, dict) else {},
+                after_json={},
+                message=str(e),
+                source="api",
+            )
+
+            return jsonify({
+                "ok": False,
+                "error": "Period is locked",
+                "code": "PERIOD_LOCKED",
+                "module": parts[1] if len(parts) > 1 else "gl",
+                "date": parts[2] if len(parts) > 2 else None,
+            }), 409
+
+        return jsonify({"ok": False, "error": msg}), 400
+
+@app.route("/api/companies/<int:company_id>/journal/<int:journal_id>", methods=["GET"])
+@require_auth
+def api_journal_detail(company_id: int, journal_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    try:
+        data = db_service.get_journal_with_lines(company_id, journal_id)
+        return jsonify(data), 200
+    except Exception as e:
+        current_app.logger.exception("Error loading journal detail")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@app.route("/api/companies/<int:company_id>/journal/by-ref/<path:ref>", methods=["GET"])
+@require_auth
+def api_journal_by_ref(company_id: int, ref: str):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    row = db_service.get_journal_by_ref(company_id, ref)
+    if not row:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    return jsonify(row), 200
+
+
+@app.route("/api/companies/<int:company_id>/journal/<int:journal_id>/reverse", methods=["POST"])
+@require_auth
+def api_reverse_journal(company_id: int, journal_id: int):
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        # (optional) snapshot "before"
+        before = db_service.fetch_one(
+            f"""
+            SELECT id, date, ref, description, gross_amount, currency
+            FROM company_{company_id}.journal
+            WHERE id=%s
+            """,
+            (int(journal_id),)
+        ) or {}
+
+        reversal_journal_id = db_service.reverse_journal(company_id, journal_id, payload)
+
+        # snapshot "after" (the new reversing journal)
+        after = db_service.fetch_one(
+            f"""
+            SELECT id, date, ref, description, gross_amount, currency, reversal_of_journal_id
+            FROM company_{company_id}.journal
+            WHERE id=%s
+            """,
+            (int(reversal_journal_id),)
+        ) or {}
+
+        # ✅ AUDIT HERE (right after success)
+        db_service.audit_log(
+            company_id=company_id,
+            actor_user_id=int(current_user.get("id") or 0),
+            module="gl",
+            action="reverse_journal",
+            severity="info",
+            entity_type="journal",
+            entity_id=str(journal_id),  # the original journal being reversed
+            entity_ref=(before.get("ref") or before.get("description") or f"journal_{journal_id}"),
+            journal_id=int(journal_id),
+            amount=float(before.get("gross_amount") or 0.0),
+            currency=(before.get("currency") or after.get("currency") or payload.get("currency")),
+            before_json=before if isinstance(before, dict) else {},
+            after_json={
+                "reversal_journal_id": int(reversal_journal_id),
+                **(after if isinstance(after, dict) else {})
+            },
+            message=f"Journal reversed. reversal_journal_id={reversal_journal_id}",
+            source="api",
+        )
+
+        return jsonify({"ok": True, "reversal_journal_id": reversal_journal_id}), 200
+
+    except Exception as e:
+        current_app.logger.exception("Error reversing journal")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@app.route("/api/companies/<int:company_id>/ledger", methods=["GET"])
+@require_auth
+def api_get_ledger(company_id: int):
+
+    current_user = getattr(g, "current_user", None)
+    if not current_user or current_user.get("company_id") != company_id:
+        return jsonify({"error": "Not authorised for this company"}), 403
+
+    account_code = (request.args.get("account") or "").strip()
+    raw_from     = request.args.get("from") or None
+    raw_to       = request.args.get("to") or None
+
+    def parse_date(val):
+        if not val:
+            return None
+        try:
+            return datetime.strptime(val, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    date_from = parse_date(raw_from)
+    date_to   = parse_date(raw_to)
+
+    try:
+        # ✅ ALL accounts → simple rows
+        if not account_code or account_code.upper() == "ALL":
+            rows = db_service.get_ledger_for_all_accounts(
+                company_id, date_from, date_to
+            )
+            return jsonify(rows), 200
+
+        # ✅ Single account → enrich with balance, journal_lines, counterparties
+        raw_rows = db_service.get_ledger_for_account(
+            company_id,
+            account_code,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        if not raw_rows:
+            return jsonify([]), 200
+
+        # fetch all journal lines for the involved journal_ids
+        journal_ids = sorted(
+            {r["journal_id"] for r in raw_rows if r.get("journal_id") is not None}
+        )
+
+        lines_by_journal: Dict[int, List[Dict[str, Any]]] = {}
+        if journal_ids:
+            j_lines = db_service.get_journal_lines_for_ids(company_id, journal_ids)
+            for ln in j_lines:
+                jid = ln["journal_id"]
+                lines_by_journal.setdefault(jid, []).append({
+                    "account": ln["account"],
+                    "account_name": ln.get("account_name"),
+                    "debit": float(ln.get("debit") or 0),
+                    "credit": float(ln.get("credit") or 0),
+                    "memo": ln.get("memo"),
+                })
+
+        # build response with running balance + breakdown
+        balance = 0.0
+        out = []
+
+        for r in raw_rows:
+            debit  = float(r.get("debit") or 0)
+            credit = float(r.get("credit") or 0)
+            balance += debit - credit
+
+            jid = r.get("journal_id")
+            journal_lines = lines_by_journal.get(jid, []) if jid else []
+
+            # counterparties: *other* accounts in same journal
+            counterparties = []
+            seen = set()
+            for ln in journal_lines:
+                acc = ln["account"]
+                if acc == r.get("account"):
+                    continue
+                if acc in seen:
+                    continue
+                seen.add(acc)
+                label = f"{acc} - {ln['account_name']}" if ln.get("account_name") else acc
+                counterparties.append(label)
+
+            out.append({
+                "id":            r.get("id"),
+                "journal_id":    jid,
+                "date":          r.get("date").isoformat() if r.get("date") else None,
+                "ref":           r.get("ref"),
+                "journal_ref":   r.get("journal_ref"),
+                "account":       r.get("account"),
+                "debit":         debit,
+                "credit":        credit,
+                "description":   r.get("memo") or r.get("journal_description"),
+                "balance":       balance,
+                "journal_lines": journal_lines,
+                "counterparties": counterparties,
+            })
+
+        return jsonify(out), 200
+
+    except Exception as e:
+        current_app.logger.exception("Error in GET /ledger: %s", e)
+        return jsonify({"error": str(e)}), 500
+    
 @app.route("/api/companies/<int:company_id>/trial_balance_mini", methods=["GET"])
 @require_auth
 def api_trial_balance_mini(company_id: int):

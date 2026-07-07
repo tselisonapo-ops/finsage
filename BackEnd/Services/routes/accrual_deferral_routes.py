@@ -213,3 +213,108 @@ def api_ad_get_run(company_id: int, run_id: int):
     except Exception as e:
         current_app.logger.exception("api_ad_get_run failed")
         return _json_error(str(e), 400)
+    
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/items/<int:item_id>/initial-preview",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_initial_preview(company_id: int, item_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.accrual_deferral_build_initial_preview(
+            company_id,
+            item_id,
+            payload,
+        )
+        return jsonify({"ok": True, "preview": result}), 200
+    except Exception as e:
+        current_app.logger.exception("api_ad_initial_preview failed")
+        return _json_error(str(e), 400)
+
+
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/items/<int:item_id>/post-initial",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_post_initial(company_id: int, item_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.accrual_deferral_post_initial(
+            company_id,
+            item_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("api_ad_post_initial failed")
+        return _json_error(str(e), 400)
+
+
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/runs/<int:run_id>/preview",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ad_run_preview(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.accrual_deferral_build_recognition_preview(
+            company_id,
+            run_id,
+        )
+        return jsonify({"ok": True, "preview": result}), 200
+    except Exception as e:
+        current_app.logger.exception("api_ad_run_preview failed")
+        return _json_error(str(e), 400)
+
+
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/runs/<int:run_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_post_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.accrual_deferral_post_run(
+            company_id,
+            run_id,
+            user_id=user.get("user_id"),
+        )
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("api_ad_post_run failed")
+        return _json_error(str(e), 400)

@@ -1261,30 +1261,42 @@ const ENDPOINTS = {
     },
   },
 
-    accrualDeferrals: {
-      items: (companyId, opts = {}) => {
-        const params = new URLSearchParams();
+  accrualDeferrals: {
+    items: (companyId, opts = {}) => {
+      const params = new URLSearchParams();
 
-        if (opts.item_type) params.append("item_type", opts.item_type);
-        if (opts.status) params.append("status", opts.status);
+      if (opts.item_type) params.append("item_type", opts.item_type);
+      if (opts.status) params.append("status", opts.status);
 
-        const qs = params.toString();
+      const qs = params.toString();
 
-        return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items${qs ? `?${qs}` : ""}`;
-      },
-
-      item: (companyId, itemId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}`,
-
-      regenerateSchedule: (companyId, itemId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/schedule/regenerate`,
-
-      runs: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs`,
-
-      run: (companyId, runId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items${qs ? `?${qs}` : ""}`;
     },
+
+    item: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}`,
+
+    regenerateSchedule: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/schedule/regenerate`,
+
+    runs: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs`,
+
+    run: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
+  
+    initialPreview: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
+
+    postInitial: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/post-initial`,
+
+    runPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}/preview`,
+
+    postRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}/post`,
+  },
 
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -8872,6 +8884,20 @@ async function switchScreen(name) {
     return;
   }
 
+  if (base === "accrual-deferrals") {
+    try {
+      if (typeof ensureCompanyDataLoaded === "function") {
+        await ensureCompanyDataLoaded();
+      }
+    } catch (e) {
+      console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e);
+    }
+
+    await window.bindAccrualDeferralsScreen?.();
+    console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
+
   // Lessors binder
   if (base === "lessors") {
     try {
@@ -9193,19 +9219,6 @@ async function switchScreen(name) {
     return; // ✅ recommended so switchScreen stops here
   }
 
-  if (base === "accrual-deferrals") {
-    try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {
-      console.warn("[AccrualDeferrals] ensureCompanyDataLoaded failed:", e);
-    }
-
-    await window.bindAccrualDeferralsScreen?.();
-    return;
-  }
-
   // ✅ bind refresh button when company screen is active
   bindMgmtPacksUI?.();
 
@@ -9240,6 +9253,7 @@ async function switchScreen(name) {
     "bank-recon": "Bank Reconciliation",
     loans: "Loans & Financing",
     revenue: "Revenue Desk",
+    "accrual-deferrals": "Accruals & Deferrals",
     "revenue-setup": "Revenue Setup",
     inventory: "Inventory & Services",
     customers: "Customers",

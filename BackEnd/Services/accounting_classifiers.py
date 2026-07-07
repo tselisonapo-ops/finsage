@@ -1006,7 +1006,15 @@ def _coa_role_from_text(
     # ----------------------------
     # Accruals & Deferrals
     # ----------------------------
-
+    # Guard: asset-side customer deposit clearing must not become deferred income
+    if is_asset and has_any(
+        "customer deposits",
+        "customer deposit",
+        "receivable clearing",
+        "customer deposits receivable clearing",
+    ):
+        return ""
+    
     # Prepaid / deferred expense assets
     if is_asset:
         if has_any(
@@ -1125,7 +1133,7 @@ def _coa_role_from_text(
     # ----------------------------
     # IFRS 15 / contract liability
     # ----------------------------
-    if has_any(
+    if is_liability and has_any(
         "deferred revenue",
         "deferred income",
         "contract liability",
@@ -1150,7 +1158,6 @@ def _coa_role_from_text(
         "billings in excess of costs",
     ):
         return "CONTRACT_LIABILITY"
-
     # ----------------------------
     # IFRS 15 / contract asset
     # ----------------------------
