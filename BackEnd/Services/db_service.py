@@ -28455,10 +28455,15 @@ class DatabaseService:
         )
         VALUES (
             %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s,
             'prepared',
             %s,
             NOW(),
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
             %s,
             %s,
             %s,
@@ -28487,15 +28492,15 @@ class DatabaseService:
         """
 
         params = (
-            int(company_id),
-            period_start,
-            period_end,
-            period_label,
-            due_date,
-            float(input_total or 0),
-            float(output_total or 0),
-            float(net_vat or 0),
-            notes,
+            int(company_id),          # company_id
+            period_start,            # period_start
+            period_end,              # period_end
+            period_label,            # period_label
+            due_date,                # due_date
+            float(input_total or 0), # input_total
+            float(output_total or 0),# output_total
+            float(net_vat or 0),     # net_vat
+            notes,                   # notes
             int(prepared_by_user_id) if prepared_by_user_id else None,
             source,
             source_id,
