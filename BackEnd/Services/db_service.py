@@ -80329,6 +80329,218 @@ class DatabaseService:
             "preview": preview,
         }
 
+    def ifrs9_ar_exposure(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            WITH paid AS (
+                SELECT
+                    ra.invoice_id,
+                    COALESCE(SUM(ra.amount), 0) AS amount_paid
+                FROM {schema}.receipt_allocations ra
+                JOIN {schema}.receipts r
+                ON r.id = ra.receipt_id
+                AND r.company_id = ra.company_id
+                WHERE ra.company_id = %s
+                AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY ra.invoice_id
+            )
+            SELECT
+                c.id AS customer_id,
+                c.name AS customer_name,
+                COUNT(i.id) AS open_invoices_count,
+                COALESCE(SUM(
+                    COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
+                ), 0) AS open_balance,
+                MIN(i.due_date) AS oldest_due_date,
+                GREATEST(
+                    0,
+                    COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
+                ) AS days_past_due
+            FROM {schema}.customers c
+            JOIN {schema}.invoices i
+            ON i.customer_id = c.id
+            AND i.company_id = c.company_id
+            LEFT JOIN paid p
+            ON p.invoice_id = i.id
+            WHERE c.company_id = %s
+            AND COALESCE(i.status, '') NOT IN ('void', 'cancelled', 'draft')
+            AND COALESCE(i.reversed_journal_id, 0) = 0
+            AND COALESCE(i.writeoff_journal_id, 0) = 0
+            AND (COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)) > 0
+            GROUP BY c.id, c.name
+            ORDER BY open_balance DESC, c.name
+        """, (int(company_id), int(company_id)))
+
+    def ifrs9_sync_trade_receivables(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH paid AS (
+                SELECT
+                    ra.invoice_id,
+                    COALESCE(SUM(ra.amount), 0) AS amount_paid
+                FROM {schema}.receipt_allocations ra
+                JOIN {schema}.receipts r
+                ON r.id = ra.receipt_id
+                AND r.company_id = ra.company_id
+                WHERE ra.company_id = %s
+                AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY ra.invoice_id
+            )
+            exposure AS (
+                SELECT
+                    c.company_id,
+                    c.id AS customer_id,
+                    c.name AS customer_name,
+                    COALESCE(MAX(NULLIF(i.currency, '')), 'ZAR') AS currency,
+                    COUNT(i.id) AS open_invoices_count,
+                    MIN(i.invoice_date) AS oldest_invoice_date,
+                    MIN(i.due_date) AS oldest_due_date,
+                    GREATEST(
+                        0,
+                        COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
+                    ) AS days_past_due,
+                    COALESCE(SUM(
+                        COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
+                    ), 0) AS open_balance
+                FROM {schema}.customers c
+                JOIN {schema}.invoices i
+                ON i.customer_id = c.id
+                AND i.company_id = c.company_id
+                LEFT JOIN paid p
+                ON p.invoice_id = i.id
+                WHERE c.company_id = %s
+                AND COALESCE(i.status, '') NOT IN ('void', 'cancelled', 'draft')
+                AND COALESCE(i.reversed_journal_id, 0) = 0
+                AND COALESCE(i.writeoff_journal_id, 0) = 0
+                AND (COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)) > 0
+                GROUP BY c.company_id, c.id, c.name
+            )
+            INSERT INTO {schema}.ifrs9_financial_instruments (
+                company_id,
+                instrument_name,
+                instrument_reference,
+                instrument_type,
+                source_table,
+                source_id,
+                customer_id,
+                counterparty_name,
+                counterparty_type,
+                recognition_date,
+                currency,
+                original_amount,
+                carrying_amount,
+                classification_status,
+                measurement_category,
+                business_model,
+                sppi_result,
+                status,
+                meta_json
+            )
+            SELECT
+                x.company_id,
+                'Trade receivable - ' || x.customer_name,
+                'AR-CUST-' || x.customer_id::text,
+                'trade_receivable',
+                'customers',
+                x.customer_id,
+                x.customer_id,
+                x.customer_name,
+                'customer',
+                COALESCE(x.oldest_invoice_date, CURRENT_DATE),
+                x.currency,
+                x.open_balance,
+                x.open_balance,
+                'classified',
+                'amortised_cost',
+                'hold_to_collect',
+                'pass',
+                'active',
+                jsonb_build_object(
+                    'synced_from', 'ar_open_customer_balances',
+                    'open_invoices_count', x.open_invoices_count,
+                    'oldest_due_date', x.oldest_due_date,
+                    'days_past_due', x.days_past_due
+                )
+            FROM exposure x
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM {schema}.ifrs9_financial_instruments fi
+                WHERE fi.company_id = x.company_id
+                AND fi.instrument_type = 'trade_receivable'
+                AND fi.source_table = 'customers'
+                AND fi.source_id = x.customer_id
+            )
+            RETURNING *
+        """
+
+        return self.execute_sql(sql, (int(company_id), int(company_id)), fetchall=True)
+
+    def ifrs9_refresh_trade_receivables(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        sql = f"""
+            WITH paid AS (
+                SELECT
+                    ra.invoice_id,
+                    COALESCE(SUM(ra.amount), 0) AS amount_paid
+                FROM {schema}.receipt_allocations ra
+                JOIN {schema}.receipts r
+                ON r.id = ra.receipt_id
+                AND r.company_id = ra.company_id
+                WHERE ra.company_id = %s
+                AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY ra.invoice_id
+            )
+            exposure AS (
+                SELECT
+                    c.company_id,
+                    c.id AS customer_id,
+                    COUNT(i.id) AS open_invoices_count,
+                    MIN(i.due_date) AS oldest_due_date,
+                    GREATEST(
+                        0,
+                        COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
+                    ) AS days_past_due,
+                    COALESCE(SUM(
+                        COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
+                    ), 0) AS open_balance
+                FROM {schema}.customers c
+                LEFT JOIN {schema}.invoices i
+                ON i.customer_id = c.id
+                AND i.company_id = c.company_id
+                AND COALESCE(i.status, '') NOT IN ('void', 'cancelled', 'draft')
+                AND COALESCE(i.reversed_journal_id, 0) = 0
+                AND COALESCE(i.writeoff_journal_id, 0) = 0
+                LEFT JOIN paid p
+                ON p.invoice_id = i.id
+                WHERE c.company_id = %s
+                GROUP BY c.company_id, c.id
+            )
+            UPDATE {schema}.ifrs9_financial_instruments fi
+            SET carrying_amount = x.open_balance,
+                original_amount = x.open_balance,
+                status = CASE WHEN x.open_balance > 0 THEN 'active' ELSE 'closed' END,
+                updated_at = NOW(),
+                meta_json = COALESCE(fi.meta_json, '{{}}'::jsonb)
+                    || jsonb_build_object(
+                        'refreshed_from', 'ar_open_customer_balances',
+                        'open_invoices_count', x.open_invoices_count,
+                        'oldest_due_date', x.oldest_due_date,
+                        'days_past_due', x.days_past_due,
+                        'refreshed_at', NOW()
+                    )
+            FROM exposure x
+            WHERE fi.company_id = x.company_id
+            AND fi.instrument_type = 'trade_receivable'
+            AND fi.source_table = 'customers'
+            AND fi.source_id = x.customer_id
+            RETURNING fi.*
+        """
+
+        return self.execute_sql(sql, (int(company_id), int(company_id)), fetchall=True)
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

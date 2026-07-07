@@ -1334,6 +1334,12 @@ const ENDPOINTS = {
 
     postEclRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/post`,
+  
+    syncTradeReceivables: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/sync/trade-receivables`,
+
+    arExposure: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/ar-exposure`,
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -36390,6 +36396,11 @@ async function saveEditModal() {
     return currentPolicy;
   }
 
+  function requiresValuationStep(t) {
+    t = String(t || "").trim().toLowerCase();
+    return t === "revaluation" || t === "fair_value_valuation";
+  }
+
   // =========================================================
   // Modal open/close
   // =========================================================
@@ -37055,16 +37066,14 @@ async function saveEditModal() {
     const saveBtn = $("smSave");
     const subTitle = $("smSubTitle");
 
-    if (isValuationStepEvent(t)) {
+    if (requiresValuationStep(t)) {
       if (saveBtn) saveBtn.classList.add("hidden");
-
       if (submitBtn) {
         submitBtn.classList.remove("hidden");
         submitBtn.textContent = "Next";
       }
-
       if (subTitle) {
-        subTitle.textContent = "Step 1 of 2. Capture the event first, then valuer details.";
+        subTitle.textContent = "Step 1 of 2. Capture valuation first, then valuer details.";
       }
       return;
     }
@@ -37457,7 +37466,7 @@ async function saveEditModal() {
       try {
         const t = String($("smEventType")?.value || "").trim().toLowerCase();
         await ensurePreviewIsCurrent();
-        if (isValuationStepEvent(t)) {
+        if (requiresValuationStep(t)) {
           const payload = smPayloadFromUI();
 
           if (!payload.event_date) throw new Error("Date is required");
@@ -40715,6 +40724,7 @@ async function saveEditModal() {
     instruments: [],
     eclRuns: [],
     eclModels: [],
+    arExposure: [],
     previewRunId: null,
   };
 
@@ -40746,27 +40756,87 @@ async function saveEditModal() {
     $("ifrs9TabEclModels")?.classList.toggle("hidden", tab !== "ecl-models");
   }
 
+  async function syncTradeReceivables() {
+    const companyId = cid();
+    setMsg("Syncing trade receivables...");
+
+    const res = await apiFetch(ENDPOINTS.ifrs9.syncTradeReceivables(companyId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    setMsg(`Synced ${res.created || 0} trade receivable instrument(s).`);
+    await loadAll();
+  }
+
+  async function loadArExposure() {
+    const companyId = cid();
+    const res = await apiFetch(ENDPOINTS.ifrs9.arExposure(companyId));
+    IFRS9.arExposure = res.items || [];
+    renderArExposure();
+  }
+
   async function loadAll() {
     const companyId = cid();
     if (!companyId) return setMsg("No active company selected.");
 
     setMsg("Loading IFRS 9 data...");
 
-    const [inst, runs, models] = await Promise.all([
+    const [inst, runs, models, arExp] = await Promise.all([
       apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
       apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
       apiFetch(ENDPOINTS.ifrs9.eclModels(companyId)),
+      apiFetch(ENDPOINTS.ifrs9.arExposure(companyId)),
     ]);
 
     IFRS9.instruments = inst.items || [];
     IFRS9.eclRuns = runs.items || [];
     IFRS9.eclModels = models.items || [];
+    IFRS9.arExposure = arExp.items || [];
 
     renderInstruments();
     renderRuns();
     renderModels();
+    renderArExposure();
 
     setMsg("");
+  }
+
+  function renderArExposure() {
+    const el = $("ifrs9ArExposureList");
+    if (!el) return;
+
+    const rows = IFRS9.arExposure || [];
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No open trade receivables exposure found.</p>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Open Balance</th>
+            <th>Open Invoices</th>
+            <th>Oldest Due</th>
+            <th>Days Past Due</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${r.customer_name || ""}</td>
+              <td>${money(r.open_balance)}</td>
+              <td>${r.open_invoices_count || 0}</td>
+              <td>${String(r.oldest_due_date || "").slice(0, 10)}</td>
+              <td>${r.days_past_due || 0}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
   }
 
   function renderInstruments() {
@@ -40978,6 +41048,7 @@ async function saveEditModal() {
       $("ifrs9RefreshBtn")?.addEventListener("click", loadAll);
       $("ifrs9SyncLoansBtn")?.addEventListener("click", syncLoans);
       $("ifrs9CreateEclRunBtn")?.addEventListener("click", createRun);
+      $("ifrs9SyncReceivablesBtn")?.addEventListener("click", syncTradeReceivables);
 
       $("ifrs9PreviewCloseBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewCancelBtn")?.addEventListener("click", closePreview);

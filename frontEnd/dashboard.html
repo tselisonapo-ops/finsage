@@ -3565,6 +3565,7 @@ html, body {
             <div class="screen-actions">
               <button id="ifrs9SyncLoansBtn" class="btn btn-secondary">Sync Loan Payables</button>
               <button id="ifrs9RefreshBtn" class="btn btn-primary">Refresh</button>
+              <button id="ifrs9SyncReceivablesBtn" class="btn btn-secondary">Sync Trade Receivables</button>
             </div>
           </div>
 
@@ -3585,6 +3586,13 @@ html, body {
 
           <div id="ifrs9TabEclRuns" class="ifrs9-tab-panel hidden">
             <div class="card">
+
+              <div class="card">
+                <h3>Trade Receivables Exposure</h3>
+                <p class="muted">Open customer balances used for IFRS 9 expected credit loss.</p>
+                <div id="ifrs9ArExposureList"></div>
+              </div>
+
               <h3>Create ECL Run</h3>
 
               <div class="form-grid">
