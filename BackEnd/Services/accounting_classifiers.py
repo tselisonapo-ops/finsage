@@ -1004,6 +1004,125 @@ def _coa_role_from_text(
             return "cogs_merchandise"
 
     # ----------------------------
+    # Accruals & Deferrals
+    # ----------------------------
+
+    # Prepaid / deferred expense assets
+    if is_asset:
+        if has_any(
+            "prepaid expense",
+            "prepaid expenses",
+            "prepayment",
+            "prepayments",
+            "prepaid insurance",
+            "prepaid rent",
+            "prepaid rental",
+            "prepaid licence",
+            "prepaid license",
+            "prepaid subscription",
+            "prepaid software",
+            "prepaid project costs",
+            "supplier advances",
+            "vendor prepayment",
+            "vendor prepayments",
+            "advance to supplier",
+            "advances to suppliers",
+        ):
+            return "prepaid_expense"
+
+        if has_any(
+            "deferred expense",
+            "deferred expenses",
+            "deferred cost",
+            "deferred costs",
+            "deferred contract cost",
+            "deferred project cost",
+            "deferred commission cost",
+        ):
+            return "deferred_expense"
+
+        if has_any(
+            "accrued income",
+            "accrued revenue",
+            "income accrued",
+            "revenue accrued",
+            "income receivable",
+            "revenue receivable",
+        ):
+            return "accrued_income"
+
+    # Deferred income / income received in advance
+    if is_liability:
+        if has_any(
+            "deferred income",
+            "deferred revenue",
+            "contract liability",
+            "unearned income",
+            "unearned revenue",
+            "income received in advance",
+            "revenue received in advance",
+            "fees received in advance",
+            "subscriptions received in advance",
+            "membership fees received in advance",
+            "rent received in advance",
+            "rental income received in advance",
+            "service contracts received in advance",
+            "course fees received in advance",
+            "school fees received in advance",
+            "customer advances",
+            "customer deposits",
+            "client deposits",
+            "function deposits",
+        ):
+            return "deferred_income"
+
+        if has_any(
+            "accrued expense",
+            "accrued expenses",
+            "accruals",
+            "expense accrued",
+            "expenses accrued",
+            "accrued utilities",
+            "accrued wages",
+            "accrued salaries",
+            "accrued labour",
+            "accrued maintenance",
+            "accrued commission",
+        ):
+            return "accrued_expense"
+
+    # Recognition expense roles
+    if is_expense:
+        if has_any("insurance expense", "insurance premiums", "fleet insurance", "professional indemnity insurance"):
+            return "insurance_expense"
+
+        if has_any("software subscription", "software tools", "software licenses", "software licences", "license fees", "licence fees"):
+            return "software_subscription_expense"
+
+        if has_any("professional subscriptions", "subscriptions expense", "membership subscription expense"):
+            return "professional_subscription_expense"
+
+        if has_any("repairs & maintenance", "repairs and maintenance", "maintenance expense", "cleaning & office maintenance"):
+            return "maintenance_expense"
+
+        if has_any("rent expense", "rental expense", "office rent", "premises rent"):
+            return "rent_expense"
+
+    # Recognition income roles
+    if "income" in sec or "revenue" in sec or "income" in cat or "revenue" in cat:
+        if has_any("rent income", "rental income", "facility rental income", "chair / booth rental income"):
+            return "rent_income"
+
+        if has_any("subscription revenue", "subscription income", "membership subscriptions"):
+            return "subscription_income"
+
+        if has_any("maintenance contract revenue", "maintenance revenue", "service contract revenue"):
+            return "maintenance_income"
+
+        if has_any("license sales", "licence sales", "license revenue", "licence revenue"):
+            return "licence_income"
+        
+    # ----------------------------
     # IFRS 15 / contract liability
     # ----------------------------
     if has_any(

@@ -72139,19 +72139,7 @@ async function renderHealthComplianceCard(periodKey = "this_month") {
   }
 }
 window.renderHealthComplianceCard = renderHealthComplianceCard;
- 
-  function renderFixedAssets() {
-    console.log("[FixedAssets] Render placeholder — no UI yet");
-    const el = document.querySelector("#fixed-assets-container");
-    if (el) {
-      el.innerHTML = `
-        <div style="padding:20px;color:#777;">
-          <h3>Fixed Assets Module</h3>
-          <p>Coming soon — Asset register, IAS16, depreciation automation, disposal, and IFRS reporting.</p>
-        </div>
-      `;
-    }
-  }
+
 
 function renderVendors() {
   console.log("renderVendors() stub called");

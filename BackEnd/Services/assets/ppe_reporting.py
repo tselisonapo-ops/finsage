@@ -1812,39 +1812,51 @@ def revaluation_post(company_id, reval_id):
                 # 4) Post
                 jid = posting.post_revaluation(cur, company_id, reval_id, user=user)
 
-                # 5) Fetch after (optional, but good for audit + amount)
+                # Fetch after before commit
                 cur.execute(_q(schema, """
                     SELECT id, company_id, asset_id, revaluation_date, status, posted_journal_id,
-                           revaluation_change, oci_revaluation_surplus, pnl_revaluation_gain, pnl_revaluation_loss
+                        revaluation_change, oci_revaluation_surplus, pnl_revaluation_gain, pnl_revaluation_loss
                     FROM {schema}.asset_revaluations
                     WHERE company_id=%s AND id=%s
                 """), (company_id, reval_id))
                 after = cur.fetchone() or {}
 
-                _audit_safe(
-                    company_id=company_id,
-                    payload=user,
-                    module="ppe",
-                    action="post_revaluation",
-                    entity_type="revaluation",
-                    entity_id=str(reval_id),
-                    entity_ref=f"REVAL-{reval_id}",
-                    journal_id=int(jid) if jid else None,
-                    amount=float(after.get("revaluation_change") or before.get("revaluation_change") or 0.0),
-                    currency=(pol.get("company") or {}).get("currency"),
-                    before_json={"row": before},
-                    after_json={"row": after},
-                    message=f"Posted revaluation {reval_id} to journal {jid}",
-                    cur=cur,
-                )
-
+                # Commit the actual posting first
                 conn.commit()
-                return jsonify({"ok": True, "status": "posted", "posted_journal_id": int(jid) if jid else None}), 200
+
+                # Audit must not rollback posting
+                try:
+                    with get_conn(company_id) as audit_conn:
+                        with audit_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as audit_cur:
+                            _audit_safe(
+                                company_id=company_id,
+                                payload=user,
+                                module="ppe",
+                                action="post_revaluation",
+                                entity_type="revaluation",
+                                entity_id=str(reval_id),
+                                entity_ref=f"REVAL-{reval_id}",
+                                journal_id=int(jid) if jid else None,
+                                amount=float(after.get("revaluation_change") or before.get("revaluation_change") or 0.0),
+                                currency=(pol.get("company") or {}).get("currency"),
+                                before_json={"row": before},
+                                after_json={"row": after},
+                                message=f"Posted revaluation {reval_id} to journal {jid}",
+                                cur=audit_cur,
+                            )
+                            audit_conn.commit()
+                except Exception:
+                    current_app.logger.exception("audit failed after post_revaluation; posting was already committed")
+
+                return jsonify({
+                    "ok": True,
+                    "status": "posted",
+                    "posted_journal_id": int(jid) if jid else None,
+                }), 200
 
     except Exception as e:
         current_app.logger.exception("post_revaluation failed")
         return _json_error(str(e), 400)
-    
 # -------------------------
 # IMPAIRMENTS CRUD + VOID + POST
 # -------------------------
