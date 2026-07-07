@@ -15372,13 +15372,22 @@ class DatabaseService:
                 'transfer_ppe_to_ip',
                 'transfer_ip_to_ppe'
             )
-            AND status IN ('draft','pending_review','posted','void')
+            AND status IN (
+                'draft',
+                'pending_review',
+                'posted',
+                'reversed',
+                'void'
+            )
 
             -- posted fields must make sense for JOURNALED event types
             AND (
-                status <> 'posted'
+                status NOT IN ('posted', 'reversed')
                 OR event_type = 'change_estimate'
-                OR (posted_journal_id IS NOT NULL AND posted_at IS NOT NULL)
+                OR (
+                    posted_journal_id IS NOT NULL
+                    AND posted_at IS NOT NULL
+                )
             )
 
             -- add_cost must have amount + account codes
@@ -15448,8 +15457,13 @@ class DatabaseService:
         ) THEN
             EXECUTE format($sql$
             CREATE UNIQUE INDEX uq_asm_posted_once
-            ON %I.asset_subsequent_measurements(asset_id, event_date, event_type, COALESCE(posted_journal_id,0))
-            WHERE status <> 'void'
+            ON {schema}.asset_subsequent_measurements(
+                asset_id,
+                event_date,
+                event_type,
+                COALESCE(posted_journal_id,0)
+            )
+            WHERE status NOT IN ('void', 'reversed');
             $sql$, '{schema}');
         END IF;
         END $$;

@@ -4909,6 +4909,81 @@ def approve_post_subsequent_measurement(company_id: int, sm_id: int):
         current_app.logger.exception("approve_post_subsequent_measurement failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route("/api/companies/<int:company_id>/subsequent-measurements/<int:sm_id>", methods=["PUT", "OPTIONS"])
+@require_auth
+def subsequent_measurement_update(company_id: int, sm_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    schema = company_schema(company_id)
+    payload_in = request.get_json(force=True) or {}
+
+    try:
+        if isinstance(payload_in.get("event_date"), str):
+            payload_in["event_date"] = _iso_date(payload_in["event_date"])
+
+        _must_not_be_future(payload_in.get("event_date"), "Event date")
+
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(_q(schema, """
+                    UPDATE {schema}.asset_subsequent_measurements
+                    SET event_date=%s,
+                        event_type=%s,
+                        asset_id=%s,
+                        amount=%s,
+                        debit_account_code=%s,
+                        credit_account_code=%s,
+                        useful_life_months=%s,
+                        residual_value=%s,
+                        depreciation_method=%s,
+                        notes=%s,
+                        meta_json=%s,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    AND status IN ('draft', 'pending_review')
+                    RETURNING *
+                """), (
+                    payload_in.get("event_date"),
+                    (payload_in.get("event_type") or "").strip().lower(),
+                    int(payload_in.get("asset_id") or 0),
+                    payload_in.get("amount"),
+                    payload_in.get("debit_account_code"),
+                    payload_in.get("credit_account_code"),
+                    payload_in.get("useful_life_months"),
+                    payload_in.get("residual_value"),
+                    payload_in.get("depreciation_method"),
+                    payload_in.get("notes"),
+                    psycopg2.extras.Json(payload_in.get("meta_json")) if payload_in.get("meta_json") is not None else None,
+                    int(user.get("id") or 0) or None,
+                    company_id,
+                    sm_id,
+                ))
+
+                row = cur.fetchone()
+                if not row:
+                    return _json_error("Subsequent measurement not found or not editable", 404)
+
+                conn.commit()
+                return jsonify({"ok": True, "data": row}), 200
+
+    except Exception as e:
+        current_app.logger.exception("update_subsequent_measurement failed")
+        return _json_error(str(e), 400)
+    
 @ppe_bp.route("/api/companies/<int:company_id>/assets/policies", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def asset_policies_get_or_save(company_id: int):

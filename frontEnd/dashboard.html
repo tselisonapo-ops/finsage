@@ -1490,6 +1490,239 @@ html, body {
     grid-template-columns:1fr;
   }
 } 
+
+/* ==============================
+   IFRS 9 Financial Instruments
+   ============================== */
+
+#screen-ifrs9 {
+  padding: 18px;
+  animation: fsScreenIn .22s ease-out;
+}
+
+#screen-ifrs9 .screen-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+#screen-ifrs9 h1 {
+  margin: 0;
+  color: var(--fs-navy);
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#screen-ifrs9 .muted {
+  color: var(--fs-muted);
+  font-size: 13px;
+}
+
+#screen-ifrs9 .screen-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#screen-ifrs9 .tabs {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0;
+  overflow-x: auto;
+}
+
+#screen-ifrs9 .tab {
+  border: 1px solid var(--fs-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#screen-ifrs9 .tab.active {
+  background: rgba(0, 200, 200, .12);
+  border-color: rgba(0, 200, 200, .35);
+  color: var(--fs-navy);
+}
+
+#screen-ifrs9 .card {
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .045);
+}
+
+#screen-ifrs9 .card h3 {
+  margin: 0 0 12px;
+  color: var(--fs-navy);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+#screen-ifrs9 .form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#screen-ifrs9 label {
+  display: block;
+  font-size: 12px;
+  color: var(--fs-muted);
+  font-weight: 700;
+}
+
+#screen-ifrs9 input,
+#screen-ifrs9 select {
+  width: 100%;
+  margin-top: 5px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: .55rem .75rem;
+  border-radius: .6rem;
+  font-size: .875rem;
+  color: #0f172a;
+}
+
+#screen-ifrs9 table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #fff;
+}
+
+#screen-ifrs9 th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--fs-muted);
+  border-bottom: 1px solid var(--fs-border);
+  padding: 10px;
+}
+
+#screen-ifrs9 td {
+  border-bottom: 1px solid #eef2f7;
+  padding: 10px;
+}
+
+#screen-ifrs9 tbody tr:hover {
+  background: rgba(0, 200, 200, .05);
+}
+
+#ifrs9Message {
+  min-height: 18px;
+}
+
+/* IFRS 9 journal preview modal */
+#ifrs9JournalPreviewModal {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .45);
+}
+
+#ifrs9JournalPreviewModal.hidden {
+  display: none !important;
+}
+
+#ifrs9JournalPreviewModal .modal-content {
+  width: min(920px, calc(100vw - 28px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid var(--fs-border);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, .22);
+}
+
+#ifrs9JournalPreviewModal .modal-header,
+#ifrs9JournalPreviewModal .modal-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--fs-border);
+}
+
+#ifrs9JournalPreviewModal .modal-footer {
+  justify-content: flex-end;
+  border-bottom: 0;
+  border-top: 1px solid var(--fs-border);
+}
+
+#ifrs9JournalPreviewModal h2 {
+  margin: 0;
+  color: var(--fs-navy);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+#ifrs9PreviewBody {
+  padding: 16px;
+}
+
+#ifrs9PreviewBody .journal-preview-header {
+  background: #f8fafc;
+  border: 1px solid var(--fs-border);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+#ifrs9PreviewBody .journal-preview-header p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+#ifrs9PreviewBody table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+#ifrs9PreviewBody th,
+#ifrs9PreviewBody td {
+  padding: 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+#ifrs9PreviewBody tfoot th {
+  border-top: 1px solid #0f172a;
+  color: var(--fs-navy);
+}
+
+/* Mobile */
+@media (max-width: 800px) {
+  #screen-ifrs9 .screen-header {
+    flex-direction: column;
+  }
+
+  #screen-ifrs9 .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #screen-ifrs9 .screen-actions {
+    width: 100%;
+  }
+
+  #screen-ifrs9 .screen-actions .btn {
+    flex: 1;
+  }
+
+  #screen-ifrs9 {
+    padding: 12px;
+  }
+}
   </style>
 
 </head>
