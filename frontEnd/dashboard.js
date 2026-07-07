@@ -428,9 +428,32 @@ window.addEventListener("unhandledrejection", (e) => {
     if (res.status !== 204) {
       if (isJSON) {
         const txt = await res.text().catch(() => "");
-        data = txt ? JSON.parse(txt) : null;
+        try {
+          data = txt ? JSON.parse(txt) : null;
+        } catch {
+          const err = new Error("INVALID_JSON_RESPONSE");
+          err.status = res.status;
+          err.data = txt.slice(0, 300);
+          err.url = finalUrl;
+          throw err;
+        }
       } else {
         data = await res.text().catch(() => "");
+      }
+    }
+
+    if (!isJSON && typeof data === "string") {
+      const looksHtml = /^\s*<!doctype html|^\s*<html/i.test(data);
+
+      if (looksHtml || res.redirected || finalUrl.includes("/signin")) {
+        sessionStorage.setItem("fs_session_locked", "1");
+        showSessionLockModal?.();
+
+        const err = new Error("SIGNED_OUT_OR_HTML_RESPONSE");
+        err.status = res.status || 401;
+        err.data = data.slice(0, 300);
+        err.url = finalUrl;
+        throw err;
       }
     }
 
