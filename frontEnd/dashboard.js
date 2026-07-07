@@ -35500,7 +35500,11 @@ async function saveEditModal() {
         `/api/companies/${cid}/subsequent-measurements/preview`,
 
       valuationPost: (id) =>
-        (A.valuation?.post?.(cid, id) || `/api/companies/${cid}/asset-revaluations/${id}/post`),
+        (
+          A.valuation?.post?.(cid, id) ||
+          window.ENDPOINTS?.assets?.postRevaluation?.(cid, id) ||
+          `/api/companies/${cid}/revaluations/${id}/post`
+        ),
 
       valuationPostNew:
         (A.valuation?.postNew?.(cid) || `/api/companies/${cid}/asset-revaluations/post`),
@@ -37034,18 +37038,28 @@ async function saveEditModal() {
       .map((x) => Number(x.trim()))
       .filter((x) => Number.isFinite(x) && x > 0);
 
+    // 👇 ADD THESE HERE
+    console.log("Hidden field:", rawIds);
+    console.log("Revaluation IDs:", revaluationIds);
+
     if (!revaluationIds.length) {
       throw new Error("Missing revaluation id.");
     }
 
     const { valuationPost } = EP();
 
+    console.log("Posting URL test:", valuationPost(revaluationIds[0]));
+
     const posted = [];
 
     for (const revalId of revaluationIds) {
+      console.log("Posting revaluation:", revalId);
+
       const out = await api(valuationPost(revalId), {
         method: "POST",
       });
+
+      console.log("Post response:", out);
 
       posted.push(out);
     }
@@ -37270,6 +37284,9 @@ async function saveEditModal() {
           const revaluationIds = await createRevaluationDraftFromSM();
 
           openValuationModalFromSM();
+
+          console.log("REVALUATION IDS TO POST:", revaluationIds);
+          console.log("valuationRevaluationId value:", $("valuationRevaluationId")?.value);
 
           $("valuationRevaluationId").value = revaluationIds.join(",");
 
@@ -46672,7 +46689,7 @@ window.saveInvItemFromModal = saveInvItemFromModal;
     }
   }
 
-  /* ---------- CUSTOMERS & VENDORS ---------- */
+   /* ---------- CUSTOMERS & VENDORS ---------- */
   function fillCounterpartyLists() {
     const custArr = window.CUSTOMERS || [];
     const vendArr = store.get(K.VENDORS, []);
