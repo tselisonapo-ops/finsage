@@ -723,6 +723,10 @@ def ppe_review_required(mode: str, policy: dict, action: str, user: dict | None 
     p = policy or {}
     ppe = p.get("ppe") if isinstance(p.get("ppe"), dict) else {}
 
+    # Owner-managed must bypass review locks
+    if mode == "owner_managed":
+        return False
+
     global_review = bool(ppe.get("review_enabled", False))
 
     action_flag_map = {
@@ -739,9 +743,6 @@ def ppe_review_required(mode: str, policy: dict, action: str, user: dict | None 
 
     action_key = str(action or "").strip().lower()
     needs = action_flag_map.get(action_key, global_review)
-
-    if mode == "owner_managed":
-        return bool(needs)
 
     return bool(global_review or needs)
 
