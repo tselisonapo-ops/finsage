@@ -4492,6 +4492,16 @@ def subsequent_measurements_list_or_create(company_id):
                     created_by=int(user.get("id") or 0) or None,
                 )
 
+                cur.execute(_q(schema, """
+                    SELECT id, company_id, asset_id, event_type, status
+                    FROM {schema}.asset_subsequent_measurements
+                    WHERE company_id=%s AND id=%s
+                """), (company_id, int(new_id)))
+
+                check = cur.fetchone()
+                if not check:
+                    raise ValueError(f"SM create returned id {new_id}, but row was not found after insert")
+
                 # 2) if review required: create approval request + mark SM pending_review
                 approval_id = None
                 if review_required:

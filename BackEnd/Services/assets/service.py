@@ -354,7 +354,6 @@ def create_subsequent_measurement(
     row = cur.fetchone()
     return row["id"]
 
-
 def fetch_asset_row(cur, company_id: int, asset_id: int) -> dict:
     schema = company_schema(company_id)
     cur.execute(_q(schema, """

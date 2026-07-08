@@ -6539,76 +6539,6 @@ function setHtml(id, html) {
   if (el) el.innerHTML = html || "";
 }
 
-async function loadDeliverablesData(engagementId, { status = "", q = "", limit = 200, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.deliverablesList(companyId, engagementId, {
-      status, q, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
-}
-
-async function loadPostingActivityData(engagementId, { module_name = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.postingActivityList(companyId, engagementId, {
-      module_name, status, q, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
-}
-
-async function loadMonthlyCloseTasksData(engagementId, { close_period = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.monthlyCloseTasksList(companyId, engagementId, {
-      close_period, status, q, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
-}
-
-async function loadYearEndTasksData(engagementId, { reporting_year_end = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.yearEndTasksList(companyId, engagementId, {
-      reporting_year_end, status, q, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
-}
-
-async function loadSignoffStepsData(engagementId, { reporting_year_end = "", status = "", limit = 100, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.signoffStepsList(companyId, engagementId, {
-      reporting_year_end, status, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
-}
-
 function populateAnyUserSelect(selectId, users, placeholder = "Select user") {
   const el = document.getElementById(selectId);
   if (!el) return;
@@ -7121,6 +7051,20 @@ async function openDeliverableModal() {
   openModal("deliverableModal");
 }
 
+async function loadDeliverablesData(engagementId, { status = "", q = "", limit = 200, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.deliverablesList(companyId, engagementId, {
+      status, q, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
+}
+
 function readDeliverableModalPayload() {
   return {
     deliverable_code: document.getElementById("deliverableCode")?.value?.trim() || "",
@@ -7141,6 +7085,78 @@ function readDeliverableModalPayload() {
 function validateDeliverablePayload(payload) {
   if (!payload.deliverable_name) return "Deliverable name is required.";
   return "";
+}
+
+function renderDeliverablesSummary(rows) {
+  const today = new Date();
+  const overdue = rows.filter(r => r.due_date && new Date(r.due_date) < today && !["completed", "received", "waived"].includes(String(r.status || "").toLowerCase())).length;
+  const outstanding = rows.filter(r => ["not_started", "requested", "outstanding"].includes(String(r.status || "").toLowerCase())).length;
+  const inReview = rows.filter(r => String(r.status || "").toLowerCase() === "in_review").length;
+  const awaitingClient = rows.filter(r => {
+    const requestedFrom = String(r.requested_from || "").toLowerCase();
+    return requestedFrom.includes("client");
+  }).length;
+
+  setText("deliverablesOutstandingCount", String(outstanding));
+  setText("deliverablesOverdueCount", String(overdue));
+  setText("deliverablesAwaitingClientCount", String(awaitingClient));
+  setText("deliverablesInReviewCount", String(inReview));
+}
+
+function renderDeliverablesTable(rows) {
+  const tbody = document.getElementById("deliverablesTableBody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(7, "No deliverables found.");
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.deliverable_name || "--")}</td>
+      <td>${escapeHtml(row.requested_from || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "assigned"))}</td>
+      <td>${escapeHtml(fmtDate(row.due_date))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.priority)}">${escapeHtml(humanizeWorkflowStatus(row.priority))}</span></td>
+      <td>
+        <button
+          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          data-deliverable-edit="${escapeHtml(row.id)}"
+        >
+          Edit
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function refreshDeliverablesScreen() {
+  const msg = document.getElementById("deliverablesMsg");
+  const engagementId = getSelectedEngagementId();
+  const q = document.getElementById("deliverablesSearch")?.value?.trim() || "";
+
+  if (!engagementId) {
+    if (msg) msg.textContent = "Select or open an engagement first.";
+    renderDeliverablesSummary([]);
+    renderDeliverablesTable([]);
+    return;
+  }
+
+  try {
+    if (msg) msg.textContent = "Loading deliverables...";
+    const rows = await loadDeliverablesData(engagementId, { q });
+    PR_DELIVERABLES_CACHE = rows;
+    renderDeliverablesSummary(rows);
+    renderDeliverablesTable(rows);
+    if (msg) msg.textContent = `${rows.length} deliverable(s) loaded.`;
+  } catch (err) {
+    console.error(err);
+    if (msg) msg.textContent = err.message || "Failed to load deliverables.";
+    renderDeliverablesSummary([]);
+    renderDeliverablesTable([]);
+  }
 }
 
 async function handleDeliverableSave() {
@@ -7193,116 +7209,28 @@ function bindDeliverableModalEvents() {
   document.getElementById("deliverableModalSave")?.addEventListener("click", handleDeliverableSave);
 }
 
-function resetMonthlyCloseModalForm() {
-  [
-    "monthlyCloseTaskId",
-    "monthlyClosePeriod",
-    "monthlyCloseTaskCode",
-    "monthlyCloseTaskName",
-    "monthlyCloseTaskDescription",
-    "monthlyCloseOwnerUserId",
-    "monthlyCloseReviewerUserId",
-    "monthlyCloseDueDate",
-    "monthlyCloseNotes",
-    "monthlyCloseSortOrder"
-  ].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.value = "";
+function bindYearEndEvents() {
+  if (PR_YEAR_END_EVENTS_BOUND) return;
+  PR_YEAR_END_EVENTS_BOUND = true;
+
+  document.getElementById("yearEndRefreshBtn")?.addEventListener("click", refreshYearEndScreen);
+  document.getElementById("yearEndAddTaskBtn")?.addEventListener("click", openYearEndTaskModal);
+  document.getElementById("signoffAddBtn")?.addEventListener("click", openSignoffStepModal);
+  document.getElementById("yearEndTableBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-year-end-edit]");
+    if (!btn) return;
+    const taskId = Number(btn.getAttribute("data-year-end-edit") || 0);
+    if (!taskId) return;
+    await editYearEndTask(taskId);
   });
 
-  const statusEl = document.getElementById("monthlyCloseStatus");
-  const priorityEl = document.getElementById("monthlyClosePriority");
-  if (statusEl) statusEl.value = "not_started";
-  if (priorityEl) priorityEl.value = "normal";
-
-  setText("monthlyCloseModalTitle", "Add monthly close task");
-  setModalMsg("monthlyCloseModalMsg", "");
-}
-
-async function openMonthlyCloseModal() {
-  const engagementId = getSelectedEngagementId();
-  if (!engagementId) {
-    alert("Select or open an engagement first.");
-    return;
-  }
-
-  resetMonthlyCloseModalForm();
-  await ensureUsersCacheLoaded();
-  populateAnyUserSelect("monthlyCloseOwnerUserId", PR_USERS_CACHE, "Select owner");
-  populateAnyUserSelect("monthlyCloseReviewerUserId", PR_USERS_CACHE, "Select reviewer");
-  openModal("monthlyCloseModal");
-}
-
-function readMonthlyCloseModalPayload() {
-  return {
-    close_period: document.getElementById("monthlyClosePeriod")?.value || null,
-    task_code: document.getElementById("monthlyCloseTaskCode")?.value?.trim() || "",
-    task_name: document.getElementById("monthlyCloseTaskName")?.value?.trim() || "",
-    description: document.getElementById("monthlyCloseTaskDescription")?.value?.trim() || "",
-    owner_user_id: _parseModalInt(document.getElementById("monthlyCloseOwnerUserId")?.value),
-    reviewer_user_id: _parseModalInt(document.getElementById("monthlyCloseReviewerUserId")?.value),
-    due_date: document.getElementById("monthlyCloseDueDate")?.value || null,
-    status: document.getElementById("monthlyCloseStatus")?.value || "not_started",
-    priority: document.getElementById("monthlyClosePriority")?.value || "normal",
-    sort_order: _parseModalInt(document.getElementById("monthlyCloseSortOrder")?.value) || 0,
-    notes: document.getElementById("monthlyCloseNotes")?.value?.trim() || ""
-  };
-}
-
-function validateMonthlyClosePayload(payload) {
-  if (!payload.close_period) return "Close period is required.";
-  if (!payload.task_name) return "Task name is required.";
-  return "";
-}
-
-async function handleMonthlyCloseSave() {
-  const companyId = getActiveCompanyId();
-  const engagementId = getSelectedEngagementId();
-  const saveBtn = document.getElementById("monthlyCloseModalSave");
-  const taskId = _parseModalInt(document.getElementById("monthlyCloseTaskId")?.value);
-
-  try {
-    const payload = readMonthlyCloseModalPayload();
-    const validation = validateMonthlyClosePayload(payload);
-    if (validation) {
-      setModalMsg("monthlyCloseModalMsg", validation, "error");
-      return;
-    }
-
-    if (saveBtn) saveBtn.disabled = true;
-    setModalMsg("monthlyCloseModalMsg", taskId ? "Updating monthly close task..." : "Creating monthly close task...");
-
-    if (taskId) {
-      await apiFetch(ENDPOINTS.engagementOps.monthlyCloseTasksUpdate(companyId, taskId), {
-        method: "PATCH",
-        body: JSON.stringify(payload)
-      });
-    } else {
-      await apiFetch(ENDPOINTS.engagementOps.monthlyCloseTasksCreate(companyId, engagementId), {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-    }
-
-    setModalMsg("monthlyCloseModalMsg", "Saved successfully.", "success");
-    closeModal("monthlyCloseModal");
-    await refreshMonthlyCloseScreen();
-  } catch (err) {
-    console.error(err);
-    setModalMsg("monthlyCloseModalMsg", err.message || "Failed to save monthly close task.", "error");
-  } finally {
-    if (saveBtn) saveBtn.disabled = false;
-  }
-}
-
-function bindMonthlyCloseModalEvents() {
-  if (PR_MONTHLY_CLOSE_MODAL_BOUND) return;
-  PR_MONTHLY_CLOSE_MODAL_BOUND = true;
-
-  document.getElementById("monthlyCloseModalClose")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
-  document.getElementById("monthlyCloseModalCancel")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
-  document.getElementById("monthlyCloseModalBackdrop")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
-  document.getElementById("monthlyCloseModalSave")?.addEventListener("click", handleMonthlyCloseSave);
+  document.getElementById("yearEndSignoffWrap")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-signoff-step-edit]");
+    if (!btn) return;
+    const stepId = Number(btn.getAttribute("data-signoff-step-edit") || 0);
+    if (!stepId) return;
+    await editSignoffStep(stepId);
+  });
 }
 
 function resetYearEndTaskModalForm() {
@@ -7345,6 +7273,130 @@ async function openYearEndTaskModal() {
   openModal("yearEndTaskModal");
 }
 
+async function renderYearEndReportingScreen(me) {
+  bindYearEndEvents();
+  bindYearEndTaskModalEvents();
+  bindSignoffStepModalEvents();
+
+  if (!PR_ASSIGNMENTS_CACHE.length) {
+    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
+  }
+
+  await refreshYearEndScreen();
+}
+
+function renderYearEndSummary(taskRows, signoffRows, engagementRow) {
+  const total = taskRows.length;
+  const done = taskRows.filter(r => String(r.status || "").toLowerCase() === "completed").length;
+  const progress = pct(done, total);
+  const openReviewPoints = taskRows.filter(r => ["in_review", "blocked"].includes(String(r.status || "").toLowerCase())).length;
+
+  setText("yearEndProgressValue", `${progress}%`);
+  const bar = document.getElementById("yearEndProgressBar");
+  if (bar) bar.style.width = `${progress}%`;
+
+  setText("yearEndOpenReviewPoints", String(openReviewPoints));
+
+  const firstIncompleteSignoff = signoffRows.find(r => String(r.status || "").toLowerCase() !== "completed");
+  setText("yearEndApprovalStage", firstIncompleteSignoff ? firstIncompleteSignoff.step_name || "--" : "Completed");
+  setText("yearEndExpectedSignoff", fmtDate(engagementRow?.due_date));
+
+  const stageBadge = document.getElementById("yearEndStageBadge");
+  if (stageBadge) stageBadge.textContent = firstIncompleteSignoff ? humanizeWorkflowStatus(firstIncompleteSignoff.status) : "Completed";
+}
+
+function renderYearEndTable(rows) {
+  const tbody = document.getElementById("yearEndTableBody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(6, "No year-end tasks found.");
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.task_name || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
+      <td>${escapeHtml(fmtDate(row.due_date))}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+      <td>
+        <button
+          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          data-year-end-edit="${escapeHtml(row.id)}"
+        >
+          Edit
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function loadSignoffStepsData(engagementId, { reporting_year_end = "", status = "", limit = 100, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.signoffStepsList(companyId, engagementId, {
+      reporting_year_end, status, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
+}
+
+async function refreshYearEndScreen() {
+  const msg = document.getElementById("yearEndMsg");
+  const engagementId = getSelectedEngagementId();
+  const engagementRow = getSelectedEngagementRow();
+
+  if (!engagementId || !engagementRow) {
+    if (msg) msg.textContent = "Select or open an engagement first.";
+    renderYearEndSummary([], [], null);
+    renderYearEndTable([]);
+    renderSignoffSteps([]);
+    return;
+  }
+
+  try {
+    if (msg) msg.textContent = "Loading year-end reporting...";
+    const [taskRows, signoffRows] = await Promise.all([
+      loadYearEndTasksData(engagementId),
+      loadSignoffStepsData(engagementId)
+    ]);
+
+    PR_YEAR_END_CACHE = taskRows;
+    PR_SIGNOFF_CACHE = signoffRows;
+
+    renderYearEndSummary(taskRows, signoffRows, engagementRow);
+    renderYearEndTable(taskRows);
+    renderSignoffSteps(signoffRows);
+
+    if (msg) msg.textContent = `${taskRows.length} year-end task(s) loaded.`;
+  } catch (err) {
+    console.error(err);
+    if (msg) msg.textContent = err.message || "Failed to load year-end reporting.";
+    renderYearEndSummary([], [], engagementRow);
+    renderYearEndTable([]);
+    renderSignoffSteps([]);
+  }
+}
+
+async function loadYearEndTasksData(engagementId, { reporting_year_end = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.yearEndTasksList(companyId, engagementId, {
+      reporting_year_end, status, q, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
+}
 function readYearEndTaskModalPayload() {
   return {
     reporting_year_end: document.getElementById("yearEndReportingYearEnd")?.value || null,
@@ -7526,187 +7578,6 @@ function bindSignoffStepModalEvents() {
   document.getElementById("signoffStepModalSave")?.addEventListener("click", handleSignoffStepSave);
 }
 
-function renderDeliverablesSummary(rows) {
-  const today = new Date();
-  const overdue = rows.filter(r => r.due_date && new Date(r.due_date) < today && !["completed", "received", "waived"].includes(String(r.status || "").toLowerCase())).length;
-  const outstanding = rows.filter(r => ["not_started", "requested", "outstanding"].includes(String(r.status || "").toLowerCase())).length;
-  const inReview = rows.filter(r => String(r.status || "").toLowerCase() === "in_review").length;
-  const awaitingClient = rows.filter(r => {
-    const requestedFrom = String(r.requested_from || "").toLowerCase();
-    return requestedFrom.includes("client");
-  }).length;
-
-  setText("deliverablesOutstandingCount", String(outstanding));
-  setText("deliverablesOverdueCount", String(overdue));
-  setText("deliverablesAwaitingClientCount", String(awaitingClient));
-  setText("deliverablesInReviewCount", String(inReview));
-}
-
-function renderDeliverablesTable(rows) {
-  const tbody = document.getElementById("deliverablesTableBody");
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(7, "No deliverables found.");
-    return;
-  }
-
-  tbody.innerHTML = rows.map(row => `
-    <tr>
-      <td>${escapeHtml(row.deliverable_name || "--")}</td>
-      <td>${escapeHtml(row.requested_from || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "assigned"))}</td>
-      <td>${escapeHtml(fmtDate(row.due_date))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.priority)}">${escapeHtml(humanizeWorkflowStatus(row.priority))}</span></td>
-      <td>
-        <button
-          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-          data-deliverable-edit="${escapeHtml(row.id)}"
-        >
-          Edit
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-function renderPostingActivitySummary(rows) {
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-  const unposted = rows.filter(r => ["draft", "approved"].includes(String(r.status || "").toLowerCase())).length;
-  const underReview = rows.filter(r => ["pending_review", "in_review"].includes(String(r.status || "").toLowerCase())).length;
-  const returned = rows.filter(r => ["returned", "rejected"].includes(String(r.status || "").toLowerCase())).length;
-  const postedToday = rows.filter(r => String(r.status || "").toLowerCase() === "posted" && String(r.posting_date || "").slice(0, 10) === todayStr).length;
-
-  setText("postingUnpostedCount", String(unposted));
-  setText("postingUnderReviewCount", String(underReview));
-  setText("postingReturnedCount", String(returned));
-  setText("postingPostedTodayCount", String(postedToday));
-}
-
-function renderPostingActivityTable(rows) {
-  const tbody = document.getElementById("postingActivityTableBody");
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(7, "No posting activity found.");
-    return;
-  }
-
-  tbody.innerHTML = rows.map(row => `
-    <tr>
-      <td>${escapeHtml(fmtDate(row.posting_date))}</td>
-      <td>${escapeHtml(humanizeWorkflowStatus(row.module_name))}</td>
-      <td>${escapeHtml(row.reference_no || "--")}</td>
-      <td>${escapeHtml(row.description || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "prepared"))}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-    </tr>
-  `).join("");
-}
-
-function renderMonthlyCloseSummary(rows) {
-  const total = rows.length;
-  const done = rows.filter(r => String(r.status || "").toLowerCase() === "completed").length;
-  const review = rows.filter(r => String(r.status || "").toLowerCase() === "in_review").length;
-  const open = rows.filter(r => !["completed", "skipped"].includes(String(r.status || "").toLowerCase())).length;
-
-  const today = new Date();
-  const overdue = rows.filter(r => r.due_date && new Date(r.due_date) < today && String(r.status || "").toLowerCase() !== "completed").length;
-  const progress = pct(done, total);
-
-  setText("monthlyCloseProgressValue", `${progress}%`);
-  const bar = document.getElementById("monthlyCloseProgressBar");
-  if (bar) bar.style.width = `${progress}%`;
-
-  setText("monthlyCloseOpenCount", String(open));
-  setText("monthlyCloseReviewCount", String(review));
-  setText("monthlyCloseOverdueCount", String(overdue));
-
-  const firstPeriod = rows[0]?.close_period;
-  setText("monthlyClosePeriodBadge", firstPeriod ? `${fmtDate(firstPeriod)} Close` : "Current Close");
-}
-
-function renderMonthlyCloseTable(rows) {
-  const tbody = document.getElementById("monthlyCloseTableBody");
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(7, "No monthly close tasks found.");
-    return;
-  }
-
-  tbody.innerHTML = rows.map(row => `
-    <tr>
-      <td>${escapeHtml(row.task_name || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
-      <td>${escapeHtml(fmtDate(row.due_date))}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-      <td>${escapeHtml(row.notes || "--")}</td>
-      <td>
-        <button
-          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-          data-monthly-close-edit="${escapeHtml(row.id)}"
-        >
-          Edit
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-function renderYearEndSummary(taskRows, signoffRows, engagementRow) {
-  const total = taskRows.length;
-  const done = taskRows.filter(r => String(r.status || "").toLowerCase() === "completed").length;
-  const progress = pct(done, total);
-  const openReviewPoints = taskRows.filter(r => ["in_review", "blocked"].includes(String(r.status || "").toLowerCase())).length;
-
-  setText("yearEndProgressValue", `${progress}%`);
-  const bar = document.getElementById("yearEndProgressBar");
-  if (bar) bar.style.width = `${progress}%`;
-
-  setText("yearEndOpenReviewPoints", String(openReviewPoints));
-
-  const firstIncompleteSignoff = signoffRows.find(r => String(r.status || "").toLowerCase() !== "completed");
-  setText("yearEndApprovalStage", firstIncompleteSignoff ? firstIncompleteSignoff.step_name || "--" : "Completed");
-  setText("yearEndExpectedSignoff", fmtDate(engagementRow?.due_date));
-
-  const stageBadge = document.getElementById("yearEndStageBadge");
-  if (stageBadge) stageBadge.textContent = firstIncompleteSignoff ? humanizeWorkflowStatus(firstIncompleteSignoff.status) : "Completed";
-}
-
-function renderYearEndTable(rows) {
-  const tbody = document.getElementById("yearEndTableBody");
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(6, "No year-end tasks found.");
-    return;
-  }
-
-  tbody.innerHTML = rows.map(row => `
-    <tr>
-      <td>${escapeHtml(row.task_name || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
-      <td>${escapeHtml(fmtDate(row.due_date))}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-      <td>
-        <button
-          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-          data-year-end-edit="${escapeHtml(row.id)}"
-        >
-          Edit
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-
 async function editDeliverable(deliverableId) {
   const companyId = getActiveCompanyId();
   if (!companyId || !deliverableId) return;
@@ -7744,45 +7615,6 @@ async function editDeliverable(deliverableId) {
   } catch (err) {
     console.error(err);
     alert(err.message || "Failed to load deliverable.");
-  }
-}
-
-async function editMonthlyCloseTask(taskId) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !taskId) return;
-
-  try {
-    await ensureUsersCacheLoaded();
-    populateAnyUserSelect("monthlyCloseOwnerUserId", PR_USERS_CACHE, "Select owner");
-    populateAnyUserSelect("monthlyCloseReviewerUserId", PR_USERS_CACHE, "Select reviewer");
-
-    const out = await apiFetch(
-      ENDPOINTS.engagementOps.monthlyCloseTasksGet(companyId, taskId),
-      { method: "GET" }
-    );
-
-    const row = out?.row;
-    if (!row) throw new Error("Monthly close task not found.");
-
-    document.getElementById("monthlyCloseTaskId").value = row.id || "";
-    document.getElementById("monthlyClosePeriod").value = row.close_period || "";
-    document.getElementById("monthlyCloseTaskCode").value = row.task_code || "";
-    document.getElementById("monthlyCloseTaskName").value = row.task_name || "";
-    document.getElementById("monthlyCloseTaskDescription").value = row.description || "";
-    document.getElementById("monthlyCloseOwnerUserId").value = row.owner_user_id || "";
-    document.getElementById("monthlyCloseReviewerUserId").value = row.reviewer_user_id || "";
-    document.getElementById("monthlyCloseDueDate").value = row.due_date || "";
-    document.getElementById("monthlyCloseStatus").value = row.status || "not_started";
-    document.getElementById("monthlyClosePriority").value = row.priority || "normal";
-    document.getElementById("monthlyCloseSortOrder").value = row.sort_order ?? 0;
-    document.getElementById("monthlyCloseNotes").value = row.notes || "";
-
-    setText("monthlyCloseModalTitle", "Edit monthly close task");
-    setModalMsg("monthlyCloseModalMsg", "");
-    openModal("monthlyCloseModal");
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "Failed to load monthly close task.");
   }
 }
 
@@ -7891,31 +7723,357 @@ function renderSignoffSteps(rows) {
   `).join("");
 }
 
-async function refreshDeliverablesScreen() {
-  const msg = document.getElementById("deliverablesMsg");
+
+function bindDeliverablesEvents() {
+  if (PR_DELIVERABLES_EVENTS_BOUND) return;
+  PR_DELIVERABLES_EVENTS_BOUND = true;
+
+  document.getElementById("deliverablesRefreshBtn")?.addEventListener("click", refreshDeliverablesScreen);
+  document.getElementById("deliverablesAddBtn")?.addEventListener("click", openDeliverableModal);
+
+  document.getElementById("deliverablesSearch")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") refreshDeliverablesScreen();
+  });
+
+  document.getElementById("deliverablesTableBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-deliverable-edit]");
+    if (!btn) return;
+    const deliverableId = Number(btn.getAttribute("data-deliverable-edit") || 0);
+    if (!deliverableId) return;
+    await editDeliverable(deliverableId);
+  });
+}
+
+async function loadMonthlyCloseTasksData(engagementId, { close_period = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.monthlyCloseTasksList(companyId, engagementId, {
+      close_period, status, q, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
+}
+
+async function refreshMonthlyCloseScreen() {
+  const msg = document.getElementById("monthlyCloseMsg");
   const engagementId = getSelectedEngagementId();
-  const q = document.getElementById("deliverablesSearch")?.value?.trim() || "";
 
   if (!engagementId) {
     if (msg) msg.textContent = "Select or open an engagement first.";
-    renderDeliverablesSummary([]);
-    renderDeliverablesTable([]);
+    renderMonthlyCloseSummary([]);
+    renderMonthlyCloseTable([]);
     return;
   }
 
   try {
-    if (msg) msg.textContent = "Loading deliverables...";
-    const rows = await loadDeliverablesData(engagementId, { q });
-    PR_DELIVERABLES_CACHE = rows;
-    renderDeliverablesSummary(rows);
-    renderDeliverablesTable(rows);
-    if (msg) msg.textContent = `${rows.length} deliverable(s) loaded.`;
+    if (msg) msg.textContent = "Loading monthly close tasks...";
+    const rows = await loadMonthlyCloseTasksData(engagementId);
+    PR_MONTHLY_CLOSE_CACHE = rows;
+    renderMonthlyCloseSummary(rows);
+    renderMonthlyCloseTable(rows);
+    if (msg) msg.textContent = `${rows.length} monthly close task(s) loaded.`;
   } catch (err) {
     console.error(err);
-    if (msg) msg.textContent = err.message || "Failed to load deliverables.";
-    renderDeliverablesSummary([]);
-    renderDeliverablesTable([]);
+    if (msg) msg.textContent = err.message || "Failed to load monthly close tasks.";
+    renderMonthlyCloseSummary([]);
+    renderMonthlyCloseTable([]);
   }
+}
+
+
+function renderMonthlyCloseSummary(rows) {
+  const total = rows.length;
+  const done = rows.filter(r => String(r.status || "").toLowerCase() === "completed").length;
+  const review = rows.filter(r => String(r.status || "").toLowerCase() === "in_review").length;
+  const open = rows.filter(r => !["completed", "skipped"].includes(String(r.status || "").toLowerCase())).length;
+
+  const today = new Date();
+  const overdue = rows.filter(r => r.due_date && new Date(r.due_date) < today && String(r.status || "").toLowerCase() !== "completed").length;
+  const progress = pct(done, total);
+
+  setText("monthlyCloseProgressValue", `${progress}%`);
+  const bar = document.getElementById("monthlyCloseProgressBar");
+  if (bar) bar.style.width = `${progress}%`;
+
+  setText("monthlyCloseOpenCount", String(open));
+  setText("monthlyCloseReviewCount", String(review));
+  setText("monthlyCloseOverdueCount", String(overdue));
+
+  const firstPeriod = rows[0]?.close_period;
+  setText("monthlyClosePeriodBadge", firstPeriod ? `${fmtDate(firstPeriod)} Close` : "Current Close");
+}
+
+function renderMonthlyCloseTable(rows) {
+  const tbody = document.getElementById("monthlyCloseTableBody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(7, "No monthly close tasks found.");
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.task_name || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
+      <td>${escapeHtml(fmtDate(row.due_date))}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+      <td>${escapeHtml(row.notes || "--")}</td>
+      <td>
+        <button
+          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          data-monthly-close-edit="${escapeHtml(row.id)}"
+        >
+          Edit
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+
+async function editMonthlyCloseTask(taskId) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !taskId) return;
+
+  try {
+    await ensureUsersCacheLoaded();
+    populateAnyUserSelect("monthlyCloseOwnerUserId", PR_USERS_CACHE, "Select owner");
+    populateAnyUserSelect("monthlyCloseReviewerUserId", PR_USERS_CACHE, "Select reviewer");
+
+    const out = await apiFetch(
+      ENDPOINTS.engagementOps.monthlyCloseTasksGet(companyId, taskId),
+      { method: "GET" }
+    );
+
+    const row = out?.row;
+    if (!row) throw new Error("Monthly close task not found.");
+
+    document.getElementById("monthlyCloseTaskId").value = row.id || "";
+    document.getElementById("monthlyClosePeriod").value = row.close_period || "";
+    document.getElementById("monthlyCloseTaskCode").value = row.task_code || "";
+    document.getElementById("monthlyCloseTaskName").value = row.task_name || "";
+    document.getElementById("monthlyCloseTaskDescription").value = row.description || "";
+    document.getElementById("monthlyCloseOwnerUserId").value = row.owner_user_id || "";
+    document.getElementById("monthlyCloseReviewerUserId").value = row.reviewer_user_id || "";
+    document.getElementById("monthlyCloseDueDate").value = row.due_date || "";
+    document.getElementById("monthlyCloseStatus").value = row.status || "not_started";
+    document.getElementById("monthlyClosePriority").value = row.priority || "normal";
+    document.getElementById("monthlyCloseSortOrder").value = row.sort_order ?? 0;
+    document.getElementById("monthlyCloseNotes").value = row.notes || "";
+
+    setText("monthlyCloseModalTitle", "Edit monthly close task");
+    setModalMsg("monthlyCloseModalMsg", "");
+    openModal("monthlyCloseModal");
+  } catch (err) {
+    console.error(err);
+    alert(err.message || "Failed to load monthly close task.");
+  }
+}
+
+function bindMonthlyCloseEvents() {
+  if (PR_MONTHLY_CLOSE_EVENTS_BOUND) return;
+  PR_MONTHLY_CLOSE_EVENTS_BOUND = true;
+
+  document.getElementById("monthlyCloseRefreshBtn")?.addEventListener("click", refreshMonthlyCloseScreen);
+  document.getElementById("monthlyCloseAddBtn")?.addEventListener("click", openMonthlyCloseModal);
+
+  document.getElementById("monthlyCloseTableBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-monthly-close-edit]");
+    if (!btn) return;
+    const taskId = Number(btn.getAttribute("data-monthly-close-edit") || 0);
+    if (!taskId) return;
+    await editMonthlyCloseTask(taskId);
+  });
+}
+
+async function renderMonthlyCloseRoutinesScreen(me) {
+  bindMonthlyCloseEvents();
+  bindMonthlyCloseModalEvents();
+
+  if (!PR_ASSIGNMENTS_CACHE.length) {
+    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
+  }
+
+  await refreshMonthlyCloseScreen();
+}
+
+function resetMonthlyCloseModalForm() {
+  [
+    "monthlyCloseTaskId",
+    "monthlyClosePeriod",
+    "monthlyCloseTaskCode",
+    "monthlyCloseTaskName",
+    "monthlyCloseTaskDescription",
+    "monthlyCloseOwnerUserId",
+    "monthlyCloseReviewerUserId",
+    "monthlyCloseDueDate",
+    "monthlyCloseNotes",
+    "monthlyCloseSortOrder"
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+
+  const statusEl = document.getElementById("monthlyCloseStatus");
+  const priorityEl = document.getElementById("monthlyClosePriority");
+  if (statusEl) statusEl.value = "not_started";
+  if (priorityEl) priorityEl.value = "normal";
+
+  setText("monthlyCloseModalTitle", "Add monthly close task");
+  setModalMsg("monthlyCloseModalMsg", "");
+}
+
+async function openMonthlyCloseModal() {
+  const engagementId = getSelectedEngagementId();
+  if (!engagementId) {
+    alert("Select or open an engagement first.");
+    return;
+  }
+
+  resetMonthlyCloseModalForm();
+  await ensureUsersCacheLoaded();
+  populateAnyUserSelect("monthlyCloseOwnerUserId", PR_USERS_CACHE, "Select owner");
+  populateAnyUserSelect("monthlyCloseReviewerUserId", PR_USERS_CACHE, "Select reviewer");
+  openModal("monthlyCloseModal");
+}
+
+function readMonthlyCloseModalPayload() {
+  return {
+    close_period: document.getElementById("monthlyClosePeriod")?.value || null,
+    task_code: document.getElementById("monthlyCloseTaskCode")?.value?.trim() || "",
+    task_name: document.getElementById("monthlyCloseTaskName")?.value?.trim() || "",
+    description: document.getElementById("monthlyCloseTaskDescription")?.value?.trim() || "",
+    owner_user_id: _parseModalInt(document.getElementById("monthlyCloseOwnerUserId")?.value),
+    reviewer_user_id: _parseModalInt(document.getElementById("monthlyCloseReviewerUserId")?.value),
+    due_date: document.getElementById("monthlyCloseDueDate")?.value || null,
+    status: document.getElementById("monthlyCloseStatus")?.value || "not_started",
+    priority: document.getElementById("monthlyClosePriority")?.value || "normal",
+    sort_order: _parseModalInt(document.getElementById("monthlyCloseSortOrder")?.value) || 0,
+    notes: document.getElementById("monthlyCloseNotes")?.value?.trim() || ""
+  };
+}
+
+function validateMonthlyClosePayload(payload) {
+  if (!payload.close_period) return "Close period is required.";
+  if (!payload.task_name) return "Task name is required.";
+  return "";
+}
+
+async function handleMonthlyCloseSave() {
+  const companyId = getActiveCompanyId();
+  const engagementId = getSelectedEngagementId();
+  const saveBtn = document.getElementById("monthlyCloseModalSave");
+  const taskId = _parseModalInt(document.getElementById("monthlyCloseTaskId")?.value);
+
+  try {
+    const payload = readMonthlyCloseModalPayload();
+    const validation = validateMonthlyClosePayload(payload);
+    if (validation) {
+      setModalMsg("monthlyCloseModalMsg", validation, "error");
+      return;
+    }
+
+    if (saveBtn) saveBtn.disabled = true;
+    setModalMsg("monthlyCloseModalMsg", taskId ? "Updating monthly close task..." : "Creating monthly close task...");
+
+    if (taskId) {
+      await apiFetch(ENDPOINTS.engagementOps.monthlyCloseTasksUpdate(companyId, taskId), {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+    } else {
+      await apiFetch(ENDPOINTS.engagementOps.monthlyCloseTasksCreate(companyId, engagementId), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+    }
+
+    setModalMsg("monthlyCloseModalMsg", "Saved successfully.", "success");
+    closeModal("monthlyCloseModal");
+    await refreshMonthlyCloseScreen();
+  } catch (err) {
+    console.error(err);
+    setModalMsg("monthlyCloseModalMsg", err.message || "Failed to save monthly close task.", "error");
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function bindMonthlyCloseModalEvents() {
+  if (PR_MONTHLY_CLOSE_MODAL_BOUND) return;
+  PR_MONTHLY_CLOSE_MODAL_BOUND = true;
+
+  document.getElementById("monthlyCloseModalClose")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
+  document.getElementById("monthlyCloseModalCancel")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
+  document.getElementById("monthlyCloseModalBackdrop")?.addEventListener("click", () => closeModal("monthlyCloseModal"));
+  document.getElementById("monthlyCloseModalSave")?.addEventListener("click", handleMonthlyCloseSave);
+}
+
+async function renderPendingDeliverablesScreen(me) {
+  bindDeliverablesEvents();
+  bindDeliverableModalEvents();
+
+  if (!PR_ASSIGNMENTS_CACHE.length) {
+    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
+  }
+
+  await refreshDeliverablesScreen();
+}
+
+function renderPostingActivitySummary(rows) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const unposted = rows.filter(r => ["draft", "approved"].includes(String(r.status || "").toLowerCase())).length;
+  const underReview = rows.filter(r => ["pending_review", "in_review"].includes(String(r.status || "").toLowerCase())).length;
+  const returned = rows.filter(r => ["returned", "rejected"].includes(String(r.status || "").toLowerCase())).length;
+  const postedToday = rows.filter(r => String(r.status || "").toLowerCase() === "posted" && String(r.posting_date || "").slice(0, 10) === todayStr).length;
+
+  setText("postingUnpostedCount", String(unposted));
+  setText("postingUnderReviewCount", String(underReview));
+  setText("postingReturnedCount", String(returned));
+  setText("postingPostedTodayCount", String(postedToday));
+}
+
+function renderPostingActivityTable(rows) {
+  const tbody = document.getElementById("postingActivityTableBody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(7, "No posting activity found.");
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(fmtDate(row.posting_date))}</td>
+      <td>${escapeHtml(humanizeWorkflowStatus(row.module_name))}</td>
+      <td>${escapeHtml(row.reference_no || "--")}</td>
+      <td>${escapeHtml(row.description || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "prepared"))}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+    </tr>
+  `).join("");
+}
+
+async function loadPostingActivityData(engagementId, { module_name = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.postingActivityList(companyId, engagementId, {
+      module_name, status, q, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
 }
 
 async function refreshPostingActivityScreen() {
@@ -7945,89 +8103,6 @@ async function refreshPostingActivityScreen() {
   }
 }
 
-async function refreshMonthlyCloseScreen() {
-  const msg = document.getElementById("monthlyCloseMsg");
-  const engagementId = getSelectedEngagementId();
-
-  if (!engagementId) {
-    if (msg) msg.textContent = "Select or open an engagement first.";
-    renderMonthlyCloseSummary([]);
-    renderMonthlyCloseTable([]);
-    return;
-  }
-
-  try {
-    if (msg) msg.textContent = "Loading monthly close tasks...";
-    const rows = await loadMonthlyCloseTasksData(engagementId);
-    PR_MONTHLY_CLOSE_CACHE = rows;
-    renderMonthlyCloseSummary(rows);
-    renderMonthlyCloseTable(rows);
-    if (msg) msg.textContent = `${rows.length} monthly close task(s) loaded.`;
-  } catch (err) {
-    console.error(err);
-    if (msg) msg.textContent = err.message || "Failed to load monthly close tasks.";
-    renderMonthlyCloseSummary([]);
-    renderMonthlyCloseTable([]);
-  }
-}
-
-async function refreshYearEndScreen() {
-  const msg = document.getElementById("yearEndMsg");
-  const engagementId = getSelectedEngagementId();
-  const engagementRow = getSelectedEngagementRow();
-
-  if (!engagementId || !engagementRow) {
-    if (msg) msg.textContent = "Select or open an engagement first.";
-    renderYearEndSummary([], [], null);
-    renderYearEndTable([]);
-    renderSignoffSteps([]);
-    return;
-  }
-
-  try {
-    if (msg) msg.textContent = "Loading year-end reporting...";
-    const [taskRows, signoffRows] = await Promise.all([
-      loadYearEndTasksData(engagementId),
-      loadSignoffStepsData(engagementId)
-    ]);
-
-    PR_YEAR_END_CACHE = taskRows;
-    PR_SIGNOFF_CACHE = signoffRows;
-
-    renderYearEndSummary(taskRows, signoffRows, engagementRow);
-    renderYearEndTable(taskRows);
-    renderSignoffSteps(signoffRows);
-
-    if (msg) msg.textContent = `${taskRows.length} year-end task(s) loaded.`;
-  } catch (err) {
-    console.error(err);
-    if (msg) msg.textContent = err.message || "Failed to load year-end reporting.";
-    renderYearEndSummary([], [], engagementRow);
-    renderYearEndTable([]);
-    renderSignoffSteps([]);
-  }
-}
-
-function bindDeliverablesEvents() {
-  if (PR_DELIVERABLES_EVENTS_BOUND) return;
-  PR_DELIVERABLES_EVENTS_BOUND = true;
-
-  document.getElementById("deliverablesRefreshBtn")?.addEventListener("click", refreshDeliverablesScreen);
-  document.getElementById("deliverablesAddBtn")?.addEventListener("click", openDeliverableModal);
-
-  document.getElementById("deliverablesSearch")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") refreshDeliverablesScreen();
-  });
-
-  document.getElementById("deliverablesTableBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-deliverable-edit]");
-    if (!btn) return;
-    const deliverableId = Number(btn.getAttribute("data-deliverable-edit") || 0);
-    if (!deliverableId) return;
-    await editDeliverable(deliverableId);
-  });
-}
-
 function bindPostingActivityEvents() {
   if (PR_POSTING_EVENTS_BOUND) return;
   PR_POSTING_EVENTS_BOUND = true;
@@ -8038,58 +8113,6 @@ function bindPostingActivityEvents() {
   });
 }
 
-function bindMonthlyCloseEvents() {
-  if (PR_MONTHLY_CLOSE_EVENTS_BOUND) return;
-  PR_MONTHLY_CLOSE_EVENTS_BOUND = true;
-
-  document.getElementById("monthlyCloseRefreshBtn")?.addEventListener("click", refreshMonthlyCloseScreen);
-  document.getElementById("monthlyCloseAddBtn")?.addEventListener("click", openMonthlyCloseModal);
-
-  document.getElementById("monthlyCloseTableBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-monthly-close-edit]");
-    if (!btn) return;
-    const taskId = Number(btn.getAttribute("data-monthly-close-edit") || 0);
-    if (!taskId) return;
-    await editMonthlyCloseTask(taskId);
-  });
-}
-
-function bindYearEndEvents() {
-  if (PR_YEAR_END_EVENTS_BOUND) return;
-  PR_YEAR_END_EVENTS_BOUND = true;
-
-  document.getElementById("yearEndRefreshBtn")?.addEventListener("click", refreshYearEndScreen);
-  document.getElementById("yearEndAddTaskBtn")?.addEventListener("click", openYearEndTaskModal);
-  document.getElementById("signoffAddBtn")?.addEventListener("click", openSignoffStepModal);
-  document.getElementById("yearEndTableBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-year-end-edit]");
-    if (!btn) return;
-    const taskId = Number(btn.getAttribute("data-year-end-edit") || 0);
-    if (!taskId) return;
-    await editYearEndTask(taskId);
-  });
-
-  document.getElementById("yearEndSignoffWrap")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-signoff-step-edit]");
-    if (!btn) return;
-    const stepId = Number(btn.getAttribute("data-signoff-step-edit") || 0);
-    if (!stepId) return;
-    await editSignoffStep(stepId);
-  });
-}
-
-
-async function renderPendingDeliverablesScreen(me) {
-  bindDeliverablesEvents();
-  bindDeliverableModalEvents();
-
-  if (!PR_ASSIGNMENTS_CACHE.length) {
-    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
-  }
-
-  await refreshDeliverablesScreen();
-}
-
 async function renderDayToDayPostingsScreen(me) {
   bindPostingActivityEvents();
 
@@ -8098,29 +8121,6 @@ async function renderDayToDayPostingsScreen(me) {
   }
 
   await refreshPostingActivityScreen();
-}
-
-async function renderMonthlyCloseRoutinesScreen(me) {
-  bindMonthlyCloseEvents();
-  bindMonthlyCloseModalEvents();
-
-  if (!PR_ASSIGNMENTS_CACHE.length) {
-    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
-  }
-
-  await refreshMonthlyCloseScreen();
-}
-
-async function renderYearEndReportingScreen(me) {
-  bindYearEndEvents();
-  bindYearEndTaskModalEvents();
-  bindSignoffStepModalEvents();
-
-  if (!PR_ASSIGNMENTS_CACHE.length) {
-    try { PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({}); } catch (_) {}
-  }
-
-  await refreshYearEndScreen();
 }
 
 async function loadPractitionerAnalyticsOverview(me, { force = false } = {}) {

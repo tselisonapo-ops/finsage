@@ -79008,10 +79008,10 @@ class DatabaseService:
         where = [
             "l.company_id = %s",
             "l.status = 'pending'",
-            "l.recognition_date BETWEEN %s AND %s",
+            "l.recognition_date <= %s",
             "i.status = 'active'",
         ]
-        params = [int(company_id), run["period_start"], run["period_end"]]
+        params = [int(company_id), run["period_end"]]
 
         if run.get("item_id"):
             where.append("i.id = %s")
@@ -79108,29 +79108,36 @@ class DatabaseService:
                 "credit_account": credit_account,
             })
 
-        total = round(sum(float(x["debit"] or 0) for x in journal_lines), 2)
+        total_debit = round(sum(float(x.get("debit") or 0) for x in journal_lines), 2)
+        total_credit = round(sum(float(x.get("credit") or 0) for x in journal_lines), 2)
 
         return {
-            "date": str(run["period_end"]),
-            "ref": f"AD-RUN-{run_id}",
-            "description": f"Accruals/Deferrals recognition run to {run['period_end']}",
-            "source": "accrual_deferral_run",
-            "source_id": int(run_id),
-            "module_name": "accrual_deferrals",
-            "currency": "USD",
-            "lines": journal_lines,
+            "journal": {
+                "date": str(run["period_end"]),
+                "ref": f"AD-RUN-{run_id}",
+                "description": f"Accruals/Deferrals recognition run to {run['period_end']}",
+                "source": "accrual_deferral_run",
+                "source_id": int(run_id),
+                "module_name": "accrual_deferrals",
+                "currency": self.company_currency(company_id),
+                "lines": journal_lines,
+                "total_debit": total_debit,
+                "total_credit": total_credit,
+                "balanced": round(total_debit, 2) == round(total_credit, 2),
+            },
             "entries": entries,
-            "total": total,
+            "schedule": entries,
+            "total": total_debit,
             "run": run,
         }
-
 
     def accrual_deferral_post_run(self, company_id: int, run_id: int, user_id=None):
         schema = self.company_schema(company_id)
 
         preview = self.accrual_deferral_build_recognition_preview(company_id, run_id)
 
-        if not preview["lines"]:
+        journal = preview.get("journal") or {}
+        if not journal.get("lines"):
             raise ValueError("No pending schedule lines found for this run")
 
         preview["created_by_user_id"] = user_id
@@ -79138,7 +79145,7 @@ class DatabaseService:
 
         with self._conn_cursor() as (conn, cur):
             try:
-                journal_id = self.post_journal(company_id, preview, cur=cur, conn=conn)
+                journal_id = self.post_journal(company_id, journal, cur=cur, conn=conn)
 
                 for e in preview["entries"]:
                     cur.execute(f"""
@@ -80049,62 +80056,36 @@ class DatabaseService:
 
     def preview_ifrs9_ecl_journal(self, conn, company_id: int, *, data: dict):
         reporting_date = data.get("reporting_date")
-        movement_ecl = self._num(data.get("movement_ecl"))
+        movement_ecl = self._money2(data.get("movement_ecl"))
 
         if not reporting_date:
             raise ValueError("reporting_date is required")
 
-        if movement_ecl == 0:
-            raise ValueError("movement_ecl cannot be zero")
-
-        expense_account = self.ifrs9_resolve_account(
+        built = self.build_ifrs9_ecl_journal_lines(
             company_id,
-            "ecl_impairment_loss",
-        )
-
-        allowance_account = self.ifrs9_resolve_account(
-            company_id,
-            "ecl_allowance_trade_receivables",
+            movement_ecl=movement_ecl,
         )
 
         amount = abs(movement_ecl)
 
-        if movement_ecl > 0:
-            lines = [
-                {"account_code": expense_account, "dc": "D", "amount": float(amount)},
-                {"account_code": allowance_account, "dc": "C", "amount": float(amount)},
-            ]
-            description = "IFRS 9 expected credit loss recognised"
-        else:
-            lines = [
-                {"account_code": allowance_account, "dc": "D", "amount": float(amount)},
-                {"account_code": expense_account, "dc": "C", "amount": float(amount)},
-            ]
-            description = "IFRS 9 expected credit loss reversed"
-
-        dr_total = sum(x["amount"] for x in lines if x["dc"] == "D")
-        cr_total = sum(x["amount"] for x in lines if x["dc"] == "C")
-
-        if round(dr_total - cr_total, 2) != 0:
-            raise ValueError(f"Journal not balanced D={dr_total} C={cr_total}")
-
         return {
             "date": str(reporting_date),
             "ref": data.get("reference") or "IFRS9-ECL-PREVIEW",
-            "description": description,
+            "description": (
+                "IFRS 9 expected credit loss recognised"
+                if movement_ecl > 0
+                else "IFRS 9 expected credit loss reversed"
+            ),
             "gross_amount": float(amount),
             "net_amount": float(amount),
             "vat_amount": 0.0,
-            "currency": data.get("currency") or "USD",
+            "currency": data.get("currency") or self.company_currency(company_id),
             "source": "ifrs9_ecl_preview",
             "source_id": None,
-            "lines": lines,
-            "resolved_accounts": {
-                "ecl_impairment_loss": expense_account,
-                "ecl_allowance_trade_receivables": allowance_account,
-            },
-            "dr_total": dr_total,
-            "cr_total": cr_total,
+            "lines": built["journal_lines"],
+            "resolved_accounts": built.get("resolved_accounts", {}),
+            "dr_total": built.get("dr_total"),
+            "cr_total": built.get("cr_total"),
         }
 
     def ifrs9_create_ecl_run(self, company_id: int, payload: dict, *, user_id=None):
@@ -80219,10 +80200,9 @@ class DatabaseService:
                     "reporting_date": run.get("reporting_date"),
                     "movement_ecl": movement_ecl,
                     "reference": f"IFRS9-ECL-{run.get('id')}",
-                    "currency": "USD",
+                    "currency": self.company_currency(company_id),
                 },
             )
-
 
     def ifrs9_post_ecl_run(self, company_id: int, run_id: int, *, user_id=None):
         schema = self.company_schema(company_id)
@@ -80252,7 +80232,7 @@ class DatabaseService:
                     "reporting_date": run.get("reporting_date"),
                     "movement_ecl": movement_ecl,
                     "reference": f"IFRS9-ECL-{run_id}",
-                    "currency": "USD",
+                    "currency": self.company_currency(company_id),
                 },
             )
 
@@ -80263,7 +80243,7 @@ class DatabaseService:
                 "gross_amount": preview["gross_amount"],
                 "net_amount": preview["net_amount"],
                 "vat_amount": 0.0,
-                "currency": preview.get("currency") or "USD",
+                "currency": preview.get("currency") or self.company_currency(company_id),
                 "source": "ifrs9_ecl",
                 "source_id": int(run_id),
                 "module_name": "ifrs9",
@@ -80314,7 +80294,7 @@ class DatabaseService:
                     entity_ref=f"IFRS9-ECL-{run_id}",
                     journal_id=int(journal_id),
                     amount=float(abs(movement_ecl)),
-                    currency=preview.get("currency") or "USD",
+                    currency=preview.get("currency") or self.company_currency(company_id),
                     before_json={"run_before": run},
                     after_json={"run_after": posted_run, "journal": entry},
                     message=f"Posted IFRS 9 ECL run {run_id}",
@@ -80746,7 +80726,7 @@ class DatabaseService:
         """
 
         # ifrs9_sync_loan_payables
-        return self.fetch_all(sql, (int(company_id),))
+        return self.fetch_all(sql, (int(company_id), int(company_id)))
 
     def ifrs9_discover_financial_instruments(self, company_id: int):
         loans = self.ifrs9_sync_loan_payables(company_id)

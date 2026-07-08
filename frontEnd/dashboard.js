@@ -40514,7 +40514,7 @@ async function saveEditModal() {
       modal.id = "adNewItemModal";
       modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
       modal.innerHTML = `
-        <div class="bg-white rounded-xl shadow-xl w-[720px] max-w-[95vw] max-h-[90vh] overflow-auto">
+        <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-auto">
           <div class="p-4 border-b flex justify-between items-center">
             <div>
               <h3 class="text-lg font-bold">New Accrual / Deferral Item</h3>
@@ -40523,87 +40523,117 @@ async function saveEditModal() {
             <button id="adModalCloseBtn" class="btn">✕</button>
           </div>
 
-          <form id="adNewItemForm" class="p-4 space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label class="text-sm">
-                Item Title
-                <input id="adNewTitle" class="input" placeholder="Insurance prepaid" required>
-              </label>
+          <form id="adNewItemForm" class="p-4 h-[calc(92vh-90px)] overflow-hidden">
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 h-full">
 
-              <label class="text-sm">
-                Type
-                <select id="adNewType" class="input">
-                  <option value="prepaid_expense">Prepaid Expense</option>
-                  <option value="deferred_expense">Deferred Expense</option>
-                  <option value="deferred_income">Deferred Income</option>
-                  <option value="accrued_expense">Accrued Expense</option>
-                  <option value="accrued_income">Accrued Income</option>
-                </select>
-              </label>
+              <div class="overflow-auto pr-2 space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label class="text-sm">
+                    Item Title
+                    <input id="adNewTitle" class="input" placeholder="Insurance prepaid" required>
+                  </label>
 
-              <label class="text-sm">
-                Original Amount
-                <input id="adNewAmount" type="number" step="0.01" min="0.01" class="input" required>
-              </label>
+                  <label class="text-sm">
+                    Type
+                    <select id="adNewType" class="input">
+                      <option value="prepaid_expense">Prepaid Expense</option>
+                      <option value="deferred_expense">Deferred Expense</option>
+                      <option value="deferred_income">Deferred Income</option>
+                      <option value="accrued_expense">Accrued Expense</option>
+                      <option value="accrued_income">Accrued Income</option>
+                    </select>
+                  </label>
 
-              <label class="text-sm">
-                Currency
-                <input id="adNewCurrency" class="input" readonly>
-              </label>
+                  <label class="text-sm">
+                    Original Amount
+                    <input id="adNewAmount" type="number" step="0.01" min="0.01" class="input" required>
+                  </label>
 
-              <label class="text-sm">
-                Transaction Date
-                <input id="adNewTransactionDate" type="date" class="input" required>
-              </label>
+                  <label class="text-sm">
+                    Currency
+                    <input id="adNewCurrency" class="input" readonly>
+                  </label>
 
-              <label class="text-sm">
-                Settlement / Bank Account
-                <select id="adNewSettlementAccount" class="input">
-                  <option value="">Loading bank accounts...</option>
-                </select>
-              </label>
+                  <label class="text-sm">
+                    Transaction Date
+                    <input id="adNewTransactionDate" type="date" class="input" required>
+                  </label>
 
-              <label class="text-sm">
-                Start Date
-                <input id="adNewStartDate" type="date" class="input" required>
-              </label>
+                  <label class="text-sm">
+                    Settlement / Bank Account
+                    <select id="adNewSettlementAccount" class="input">
+                      <option value="">Loading bank accounts...</option>
+                    </select>
+                  </label>
 
-              <label class="text-sm">
-                End Date
-                <input id="adNewEndDate" type="date" class="input" required>
-              </label>
+                  <label class="text-sm">
+                    Start Date
+                    <input id="adNewStartDate" type="date" class="input" required>
+                  </label>
 
-              <label class="text-sm">
-                Frequency
-                <select id="adNewFrequency" class="input">
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="annually">Annually</option>
-                  <option value="once">Once</option>
-                  <option value="manual">Manual</option>
-                </select>
-              </label>
+                  <label class="text-sm">
+                    End Date
+                    <input id="adNewEndDate" type="date" class="input" required>
+                  </label>
 
-              <label class="text-sm">
-                Balance Account Role
-                <input id="adNewBalanceAccountDisplay" class="input" readonly>
-              </label>
+                  <label class="text-sm">
+                    Frequency
+                    <select id="adNewFrequency" class="input">
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="annually">Annually</option>
+                      <option value="once">Once</option>
+                      <option value="manual">Manual</option>
+                    </select>
+                  </label>
 
-              <label class="text-sm">
-                Recognition Account
-                <input id="adNewRecognitionAccount" class="input" readonly>
-              </label>
+                  <label class="text-sm">
+                    Balance Account Role
+                    <input id="adNewBalanceAccountDisplay" class="input" readonly>
+                  </label>
+
+                  <label class="text-sm md:col-span-2">
+                    Recognition Account
+                    <input id="adNewRecognitionAccount" class="input" readonly>
+                  </label>
+                </div>
+
+                <input id="adNewBalanceAccountRole" type="hidden">
+                <input id="adNewRecognitionRole" type="hidden">
+
+                <label class="text-sm block">
+                  Notes
+                  <textarea id="adNewNotes" class="input" rows="4"></textarea>
+                </label>
+              </div>
+
+              <div class="overflow-auto border rounded-xl bg-slate-50 p-4 space-y-4">
+                <div>
+                  <h4 class="font-bold">Initial Measurement Preview</h4>
+                  <p class="text-xs text-slate-500">
+                    Backend-driven journal preview before posting.
+                  </p>
+                </div>
+
+                <div id="adInitialPreviewHost" class="text-sm text-slate-500">
+                  Complete the form to preview journal lines.
+                </div>
+
+                <div class="pt-4 border-t">
+                  <h4 class="font-bold">Pending Recognition Schedule</h4>
+                  <p class="text-xs text-slate-500">
+                    Shows pending lines awaiting amortisation/recognition posting.
+                  </p>
+                </div>
+
+                <div id="adPendingScheduleHost" class="text-sm text-slate-500">
+                  Schedule will appear after item creation.
+                </div>
+              </div>
+
             </div>
 
-            <input id="adNewBalanceAccountRole" type="hidden">
-            <input id="adNewRecognitionRole" type="hidden">
-
-            <label class="text-sm block">
-              Notes
-              <textarea id="adNewNotes" class="input" rows="3"></textarea>
-            </label>
-
-            <div class="flex justify-end gap-2 border-t pt-4">
+            <div class="flex justify-end gap-2 border-t pt-4 mt-4">
               <button type="button" id="adModalCancelBtn" class="btn">Cancel</button>
               <button type="submit" class="btn-highlight">Create Item</button>
             </div>
@@ -40674,6 +40704,83 @@ async function saveEditModal() {
     modal.classList.remove("hidden");
   }
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
+
+  function renderAdJournalPreview(preview) {
+    const host = $("adInitialPreviewHost");
+    if (!host) return;
+
+    const j = preview?.journal || preview || {};
+    const lines = j.lines || [];
+
+    if (!lines.length) {
+      host.innerHTML = `<p class="text-slate-500">No preview available yet.</p>`;
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="bg-white rounded-lg border p-3 space-y-2">
+        <div><b>Date:</b> ${j.date || ""}</div>
+        <div><b>Reference:</b> ${j.ref || ""}</div>
+        <div><b>Description:</b> ${j.description || ""}</div>
+
+        <table class="w-full text-xs mt-3">
+          <thead>
+            <tr class="border-b">
+              <th class="text-left py-1">Account</th>
+              <th class="text-right py-1">Debit</th>
+              <th class="text-right py-1">Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map((ln) => `
+              <tr class="border-b">
+                <td class="py-1">${ln.account_code || ln.account || ""}</td>
+                <td class="py-1 text-right">${money(ln.debit)}</td>
+                <td class="py-1 text-right">${money(ln.credit)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+
+        <div class="flex justify-between font-bold pt-2">
+          <span>Balanced: ${j.balanced === false ? "No" : "Yes"}</span>
+          <span>${money(j.total_debit)} / ${money(j.total_credit)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  async function createAccrualDeferralItem(payload) {
+    const cid = adCid();
+
+    const data = await apiFetch(
+      ENDPOINTS.accrualDeferrals.items(cid),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const itemId = data.item?.id;
+
+    if (itemId) {
+      const preview = await apiFetch(
+        ENDPOINTS.accrualDeferrals.initialPreview(cid, itemId),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            settlement_account: payload.settlement_account,
+            settlement_role: payload.settlement_role || "cash_bank",
+          }),
+        }
+      );
+
+      renderAdJournalPreview(preview.preview);
+
+      await loadAccrualDeferrals();
+      await openAccrualDeferralItem(itemId);
+    }
+  }
 
   function closeAdNewModal() {
     document.getElementById("adNewItemModal")?.classList.add("hidden");
@@ -41003,6 +41110,31 @@ async function saveEditModal() {
     await loadAll();
   }
 
+  async function createEclModel() {
+    const companyId = cid();
+
+    const payload = {
+      model_name: $("ifrs9ModelName")?.value || "",
+      model_type: $("ifrs9ModelType")?.value || "simplified",
+      applies_to: $("ifrs9ModelAppliesTo")?.value || "trade_receivable",
+      basis: $("ifrs9ModelBasis")?.value || "provision_matrix",
+      is_active: true,
+    };
+
+    if (!payload.model_name.trim()) {
+      alert("Model name is required.");
+      return;
+    }
+
+    await apiFetch(ENDPOINTS.ifrs9.eclModels(companyId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    setMsg("ECL model created.");
+    await loadAll();
+  }
+
   async function createRun() {
     const companyId = cid();
 
@@ -41104,6 +41236,7 @@ async function saveEditModal() {
       $("ifrs9PreviewCloseBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewCancelBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);
+      $("ifrs9CreateModelBtn")?.addEventListener("click", createEclModel);
 
       document.addEventListener("click", async (e) => {
         const tab = e.target.closest("[data-ifrs9-tab]");
