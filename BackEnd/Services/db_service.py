@@ -15463,7 +15463,7 @@ class DatabaseService:
                 event_type,
                 COALESCE(posted_journal_id,0)
             )
-            WHERE status NOT IN ('void', 'reversed');
+            WHERE status = 'posted';
             $sql$, '{schema}');
         END IF;
         END $$;
