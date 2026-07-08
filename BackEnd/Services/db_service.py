@@ -80355,7 +80355,7 @@ class DatabaseService:
                 MIN(i.due_date) AS oldest_due_date,
                 GREATEST(
                     0,
-                    COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
+                    COALESCE((CURRENT_DATE - MIN(i.due_date))::int, 0)
                 ) AS days_past_due
             FROM {schema}.customers c
             JOIN {schema}.invoices i
@@ -80399,8 +80399,8 @@ class DatabaseService:
                     MIN(i.due_date) AS oldest_due_date,
                     GREATEST(
                         0,
-                        COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
-                    ) AS days_past_due,
+                        COALESCE((CURRENT_DATE - MIN(i.due_date))::int, 0)
+                    ) AS days_past_due
                     COALESCE(SUM(
                         COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
                     ), 0) AS open_balance
@@ -80501,8 +80501,8 @@ class DatabaseService:
                     MIN(i.due_date) AS oldest_due_date,
                     GREATEST(
                         0,
-                        COALESCE(DATE_PART('day', CURRENT_DATE - MIN(i.due_date))::int, 0)
-                    ) AS days_past_due,
+                        COALESCE((CURRENT_DATE - MIN(i.due_date))::int, 0)
+                    ) AS days_past_due
                     COALESCE(SUM(
                         COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
                     ), 0) AS open_balance
