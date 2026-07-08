@@ -3584,49 +3584,88 @@ html, body {
           </div>
 
           <div id="ifrs9TabEclRuns" class="ifrs9-tab-panel hidden">
-            <div id="ifrs9TabEclModels" class="ifrs9-tab-panel hidden">
-              <div class="card">
-                <h3>Create ECL Model</h3>
+            <div class="card">
+              <h3>Trade Receivables Exposure</h3>
+              <p class="muted">Open customer balances used for IFRS 9 expected credit loss.</p>
+              <div id="ifrs9ArExposureList"></div>
+            </div>
 
-                <div class="form-grid">
-                  <label>
-                    Model Name
-                    <input id="ifrs9ModelName" placeholder="Simplified Trade Receivables">
-                  </label>
+            <div class="card">
+              <h3>Create ECL Run</h3>
 
-                  <label>
-                    Model Type
-                    <select id="ifrs9ModelType">
-                      <option value="simplified">Simplified</option>
-                      <option value="general">General</option>
-                    </select>
-                  </label>
+              <div class="form-grid">
+                <label>
+                  Reporting Date
+                  <input id="ifrs9EclReportingDate" type="date">
+                </label>
 
-                  <label>
-                    Applies To
-                    <select id="ifrs9ModelAppliesTo">
-                      <option value="trade_receivable">Trade Receivables</option>
-                      <option value="loan_receivable">Loan Receivables</option>
-                      <option value="other_financial_asset">Other Financial Assets</option>
-                    </select>
-                  </label>
+                <label>
+                  Total Exposure
+                  <input id="ifrs9EclExposure" type="number" step="0.01" value="0">
+                </label>
 
-                  <label>
-                    Basis
-                    <select id="ifrs9ModelBasis">
-                      <option value="provision_matrix">Provision Matrix</option>
-                      <option value="pd_lgd_ead">PD / LGD / EAD</option>
-                    </select>
-                  </label>
-                </div>
+                <label>
+                  Previous ECL
+                  <input id="ifrs9PreviousEcl" type="number" step="0.01" value="0">
+                </label>
 
-                <button id="ifrs9CreateModelBtn" class="btn btn-primary">Create Model</button>
+                <label>
+                  Total ECL
+                  <input id="ifrs9TotalEcl" type="number" step="0.01" value="0">
+                </label>
               </div>
 
-              <div class="card">
-                <h3>ECL Models</h3>
-                <div id="ifrs9EclModelList"></div>
+              <button id="ifrs9CreateEclRunBtn" class="btn btn-primary">Create ECL Run</button>
+            </div>
+
+            <div class="card">
+              <h3>ECL Runs</h3>
+              <div id="ifrs9EclRunList"></div>
+            </div>
+          </div>
+
+          <div id="ifrs9TabEclModels" class="ifrs9-tab-panel hidden">
+            <div class="card">
+              <h3>Create ECL Model</h3>
+
+              <div class="form-grid">
+                <label>
+                  Model Name
+                  <input id="ifrs9ModelName" placeholder="Simplified Trade Receivables">
+                </label>
+
+                <label>
+                  Model Type
+                  <select id="ifrs9ModelType">
+                    <option value="simplified">Simplified</option>
+                    <option value="general">General</option>
+                  </select>
+                </label>
+
+                <label>
+                  Applies To
+                  <select id="ifrs9ModelAppliesTo">
+                    <option value="trade_receivable">Trade Receivables</option>
+                    <option value="loan_receivable">Loan Receivables</option>
+                    <option value="other_financial_asset">Other Financial Assets</option>
+                  </select>
+                </label>
+
+                <label>
+                  Basis
+                  <select id="ifrs9ModelBasis">
+                    <option value="provision_matrix">Provision Matrix</option>
+                    <option value="pd_lgd_ead">PD / LGD / EAD</option>
+                  </select>
+                </label>
               </div>
+
+              <button id="ifrs9CreateModelBtn" class="btn btn-primary">Create Model</button>
+            </div>
+
+            <div class="card">
+              <h3>ECL Models</h3>
+              <div id="ifrs9EclModelList"></div>
             </div>
           </div>
         </section>

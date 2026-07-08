@@ -4492,6 +4492,13 @@ def subsequent_measurements_list_or_create(company_id):
                     created_by=int(user.get("id") or 0) or None,
                 )
 
+                current_app.logger.warning("SM CREATE DEBUG %s", {
+                    "company_id": int(company_id),
+                    "schema": schema,
+                    "new_id": int(new_id),
+                    "asset_id": int(asset_id),
+                    "event_type": event_type,
+                })
                 cur.execute(_q(schema, """
                     SELECT id, company_id, asset_id, event_type, status
                     FROM {schema}.asset_subsequent_measurements
@@ -4711,8 +4718,25 @@ def subsequent_measurement_post(company_id: int, sm_id: int):
                 """), (company_id, sm_id))
                 sm = cur.fetchone()
                 if not sm:
-                    return _json_error("Subsequent measurement not found", 404)
+                    cur.execute(_q(schema, """
+                        SELECT id, company_id, asset_id, event_date, event_type, status, posted_journal_id
+                        FROM {schema}.asset_subsequent_measurements
+                        ORDER BY id DESC
+                        LIMIT 10
+                    """))
+                    recent = cur.fetchall() or []
 
+                    current_app.logger.error("SM POST NOT FOUND DEBUG %s", {
+                        "route_company_id": int(company_id),
+                        "schema": schema,
+                        "requested_sm_id": int(sm_id),
+                        "recent_sm_rows": [dict(r) for r in recent],
+                    })
+
+                    return _json_error(
+                        f"Subsequent measurement not found: company_id={company_id}, sm_id={sm_id}, schema={schema}",
+                        404
+                    )
                 policy_doc = company_asset_rules(company_id)
 
                 asset = service.fetch_asset_row(cur, company_id, int(sm.get("asset_id") or 0))
