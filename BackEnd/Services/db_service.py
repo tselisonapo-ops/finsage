@@ -80387,7 +80387,7 @@ class DatabaseService:
                 WHERE ra.company_id = %s
                 AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
                 GROUP BY ra.invoice_id
-            )
+            ),
             exposure AS (
                 SELECT
                     c.company_id,
@@ -80400,7 +80400,7 @@ class DatabaseService:
                     GREATEST(
                         0,
                         COALESCE((CURRENT_DATE - MIN(i.due_date))::int, 0)
-                    ) AS days_past_due
+                    ) AS days_past_due,
                     COALESCE(SUM(
                         COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
                     ), 0) AS open_balance
@@ -80492,7 +80492,7 @@ class DatabaseService:
                 WHERE ra.company_id = %s
                 AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
                 GROUP BY ra.invoice_id
-            )
+            ),
             exposure AS (
                 SELECT
                     c.company_id,
@@ -80502,7 +80502,7 @@ class DatabaseService:
                     GREATEST(
                         0,
                         COALESCE((CURRENT_DATE - MIN(i.due_date))::int, 0)
-                    ) AS days_past_due
+                    ) AS days_past_due,
                     COALESCE(SUM(
                         COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0)
                     ), 0) AS open_balance
@@ -80540,6 +80540,202 @@ class DatabaseService:
         """
 
         return self.execute_sql(sql, (int(company_id), int(company_id)), fetchall=True)
+
+    def ifrs9_sync_bank_accounts(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_financial_instruments (
+                company_id, instrument_name, instrument_reference,
+                instrument_type, source_table, source_id,
+                counterparty_name, counterparty_type,
+                recognition_date, currency, original_amount, carrying_amount,
+                classification_status, measurement_category, business_model,
+                sppi_result, status, meta_json
+            )
+            SELECT
+                b.company_id,
+                'Bank account - ' || b.name,
+                'BANK-' || b.id::text,
+                'deposit_asset',
+                'company_bank_accounts',
+                b.id,
+                b.bank_name,
+                'bank',
+                CURRENT_DATE,
+                COALESCE(NULLIF(b.currency,''), 'ZAR'),
+                0,
+                0,
+                'classified',
+                'amortised_cost',
+                'hold_to_collect',
+                'pass',
+                CASE WHEN b.is_active THEN 'active' ELSE 'closed' END,
+                jsonb_build_object(
+                    'synced_from', 'company_bank_accounts',
+                    'ledger_account_code', b.ledger_account_code,
+                    'account_number', b.account_number
+                )
+            FROM {schema}.company_bank_accounts b
+            WHERE b.company_id = %s
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.ifrs9_financial_instruments fi
+                WHERE fi.company_id = b.company_id
+                    AND fi.instrument_type = 'deposit_asset'
+                    AND fi.source_table = 'company_bank_accounts'
+                    AND fi.source_id = b.id
+            )
+            RETURNING *
+        """, (int(company_id),), fetchall=True)
+
+
+    def ifrs9_ap_exposure(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            WITH paid AS (
+                SELECT
+                    vpa.bill_id,
+                    COALESCE(SUM(vpa.amount), 0) AS amount_paid
+                FROM {schema}.vendor_payment_allocations vpa
+                JOIN {schema}.vendor_payments vp
+                ON vp.id = vpa.payment_id
+                AND vp.company_id = vpa.company_id
+                WHERE vpa.company_id = %s
+                AND COALESCE(vp.status, '') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY vpa.bill_id
+            )
+            SELECT
+                v.id AS vendor_id,
+                v.name AS vendor_name,
+                COUNT(b.id) AS open_bills_count,
+                COALESCE(SUM(COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)), 0) AS open_balance,
+                MIN(b.due_date) AS oldest_due_date,
+                GREATEST(0, COALESCE((CURRENT_DATE - MIN(b.due_date))::int, 0)) AS days_past_due
+            FROM {schema}.vendors v
+            JOIN {schema}.bills b
+            ON b.vendor_id = v.id
+            AND b.company_id = v.company_id
+            LEFT JOIN paid p
+            ON p.bill_id = b.id
+            WHERE v.company_id = %s
+            AND COALESCE(b.status, '') NOT IN ('void', 'cancelled', 'draft')
+            AND COALESCE(b.reversed_journal_id, 0) = 0
+            AND COALESCE(b.writeoff_journal_id, 0) = 0
+            AND (COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)) > 0
+            GROUP BY v.id, v.name
+            ORDER BY open_balance DESC, v.name
+        """, (int(company_id), int(company_id)))
+
+
+    def ifrs9_sync_trade_payables(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.execute_sql(f"""
+            WITH paid AS (
+                SELECT
+                    vpa.bill_id,
+                    COALESCE(SUM(vpa.amount), 0) AS amount_paid
+                FROM {schema}.vendor_payment_allocations vpa
+                JOIN {schema}.vendor_payments vp
+                ON vp.id = vpa.payment_id
+                AND vp.company_id = vpa.company_id
+                WHERE vpa.company_id = %s
+                AND COALESCE(vp.status, '') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY vpa.bill_id
+            ),
+            exposure AS (
+                SELECT
+                    v.company_id,
+                    v.id AS vendor_id,
+                    v.name AS vendor_name,
+                    COALESCE(MAX(NULLIF(b.currency, '')), 'ZAR') AS currency,
+                    COUNT(b.id) AS open_bills_count,
+                    MIN(b.bill_date) AS oldest_bill_date,
+                    MIN(b.due_date) AS oldest_due_date,
+                    GREATEST(0, COALESCE((CURRENT_DATE - MIN(b.due_date))::int, 0)) AS days_past_due,
+                    COALESCE(SUM(COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)), 0) AS open_balance
+                FROM {schema}.vendors v
+                JOIN {schema}.bills b
+                ON b.vendor_id = v.id
+                AND b.company_id = v.company_id
+                LEFT JOIN paid p
+                ON p.bill_id = b.id
+                WHERE v.company_id = %s
+                AND COALESCE(b.status, '') NOT IN ('void', 'cancelled', 'draft')
+                AND COALESCE(b.reversed_journal_id, 0) = 0
+                AND COALESCE(b.writeoff_journal_id, 0) = 0
+                AND (COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)) > 0
+                GROUP BY v.company_id, v.id, v.name
+            )
+            INSERT INTO {schema}.ifrs9_financial_instruments (
+                company_id, instrument_name, instrument_reference,
+                instrument_type, source_table, source_id,
+                vendor_id, counterparty_name, counterparty_type,
+                recognition_date, currency, original_amount, carrying_amount,
+                classification_status, measurement_category, business_model,
+                sppi_result, status, meta_json
+            )
+            SELECT
+                x.company_id,
+                'Trade payable - ' || x.vendor_name,
+                'AP-VEND-' || x.vendor_id::text,
+                'trade_payable',
+                'vendors',
+                x.vendor_id,
+                x.vendor_id,
+                x.vendor_name,
+                'vendor',
+                COALESCE(x.oldest_bill_date, CURRENT_DATE),
+                x.currency,
+                x.open_balance,
+                x.open_balance,
+                'classified',
+                'amortised_cost',
+                'hold_to_collect',
+                'not_applicable',
+                'active',
+                jsonb_build_object(
+                    'synced_from', 'ap_open_vendor_balances',
+                    'open_bills_count', x.open_bills_count,
+                    'oldest_due_date', x.oldest_due_date,
+                    'days_past_due', x.days_past_due
+                )
+            FROM exposure x
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM {schema}.ifrs9_financial_instruments fi
+                WHERE fi.company_id = x.company_id
+                AND fi.instrument_type = 'trade_payable'
+                AND fi.source_table = 'vendors'
+                AND fi.source_id = x.vendor_id
+            )
+            RETURNING *
+        """, (int(company_id), int(company_id)), fetchall=True)
+
+
+    def ifrs9_discover_financial_instruments(self, company_id: int):
+        loans = self.ifrs9_sync_loan_payables(company_id)
+        receivables = self.ifrs9_sync_trade_receivables(company_id)
+        payables = self.ifrs9_sync_trade_payables(company_id)
+        banks = self.ifrs9_sync_bank_accounts(company_id)
+
+        refreshed_ar = self.ifrs9_refresh_trade_receivables(company_id)
+
+        return {
+            "loan_payables_created": len(loans or []),
+            "trade_receivables_created": len(receivables or []),
+            "trade_payables_created": len(payables or []),
+            "bank_accounts_created": len(banks or []),
+            "trade_receivables_refreshed": len(refreshed_ar or []),
+            "created_items": {
+                "loan_payables": loans or [],
+                "trade_receivables": receivables or [],
+                "trade_payables": payables or [],
+                "bank_accounts": banks or [],
+            },
+        }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

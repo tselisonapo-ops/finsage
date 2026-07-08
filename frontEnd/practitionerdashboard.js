@@ -6523,22 +6523,6 @@ function getSelectedEngagementRow() {
   );
 }
 
-function badgeClassForWorkflowStatus(status) {
-  const s = String(status || "").toLowerCase();
-
-  if (["completed", "approved", "posted", "received", "ready"].includes(s)) return "badge-ok";
-  if (["in_progress", "in review", "in_review", "pending_review", "awaiting review"].includes(s)) return "badge-brand";
-  if (["pending", "outstanding", "blocked", "urgent"].includes(s)) return "badge-warn";
-  if (["returned", "rejected", "cancelled"].includes(s)) return "badge-danger";
-  return "badge-slate";
-}
-
-function humanizeWorkflowStatus(status) {
-  return String(status || "--")
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, ch => ch.toUpperCase());
-}
-
 function pct(numerator, denominator) {
   const d = Number(denominator || 0);
   if (!d) return 0;
@@ -6553,21 +6537,6 @@ function setText(id, value) {
 function setHtml(id, html) {
   const el = document.getElementById(id);
   if (el) el.innerHTML = html || "";
-}
-
-function renderSimpleEmptyRow(colspan, message) {
-  return `
-    <tr>
-      <td colspan="${colspan}" class="text-center text-slate-500">${escapeHtml(message || "No rows found.")}</td>
-    </tr>
-  `;
-}
-
-function formatUserNameFromRow(row, prefix) {
-  const first = String(row?.[`${prefix}_first_name`] || "").trim();
-  const last = String(row?.[`${prefix}_last_name`] || "").trim();
-  const full = [first, last].filter(Boolean).join(" ").trim();
-  return full || row?.[`${prefix}_email`] || "--";
 }
 
 async function loadReportingItemsData(engagementId, { item_type = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
@@ -6748,6 +6717,37 @@ function setModalMsg(id, msg, tone = "info") {
   else el.classList.add("text-slate-500");
 }
 
+function humanizeWorkflowStatus(status) {
+  return String(status || "--")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function renderSimpleEmptyRow(colspan, message) {
+  return `
+    <tr>
+      <td colspan="${colspan}" class="text-center text-slate-500">${escapeHtml(message || "No rows found.")}</td>
+    </tr>
+  `;
+}
+
+function formatUserNameFromRow(row, prefix) {
+  const first = String(row?.[`${prefix}_first_name`] || "").trim();
+  const last = String(row?.[`${prefix}_last_name`] || "").trim();
+  const full = [first, last].filter(Boolean).join(" ").trim();
+  return full || row?.[`${prefix}_email`] || "--";
+}
+
+function badgeClassForWorkflowStatus(status) {
+  const s = String(status || "").toLowerCase();
+
+  if (["completed", "approved", "posted", "received", "ready"].includes(s)) return "badge-ok";
+  if (["in_progress", "in review", "in_review", "pending_review", "awaiting review"].includes(s)) return "badge-brand";
+  if (["pending", "outstanding", "blocked", "urgent"].includes(s)) return "badge-warn";
+  if (["returned", "rejected", "cancelled"].includes(s)) return "badge-danger";
+  return "badge-slate";
+}
+
 function resetReportingItemModalForm() {
   [
     "reportingItemId",
@@ -6851,6 +6851,114 @@ async function handleReportingItemSave() {
   }
 }
 
+
+function renderReportingOverviewHeader(engagementRow, items = []) {
+  setText("reportingOverviewCycleBadge", humanizeWorkflowStatus(engagementRow?.reporting_cycle || "--"));
+  setText("reportingOverviewStatusBadge", humanizeWorkflowStatus(engagementRow?.status || "--"));
+
+  setText("reportingOverviewEngagementName", engagementRow?.engagement_name || "--");
+  setText("reportingOverviewClientName", engagementRow?.customer_name || engagementRow?.company_name || "--");
+  setText("reportingOverviewCycleText", humanizeWorkflowStatus(engagementRow?.reporting_cycle || "--"));
+  setText("reportingOverviewYearEndText", engagementRow?.fiscal_year_end ? `Financial year ending ${fmtDate(engagementRow.fiscal_year_end)}` : "--");
+  setText("reportingOverviewDueDate", fmtDate(engagementRow?.due_date));
+
+  const total = items.length;
+  const done = items.filter(x => ["completed", "approved", "ready"].includes(String(x.status || "").toLowerCase())).length;
+  const readiness = pct(done, total);
+
+  setText("reportingOverviewReadinessValue", `${readiness}%`);
+  const bar = document.getElementById("reportingOverviewReadinessBar");
+  if (bar) bar.style.width = `${readiness}%`;
+  setText("reportingOverviewReadinessText", total ? `${done} of ${total} reporting items ready/completed` : "No reporting items yet");
+}
+
+function renderReportingMilestonesTable(rows) {
+  const tbody = document.getElementById("reportingOverviewMilestonesBody");
+  if (!tbody) return;
+
+  const milestones = rows.filter(r => String(r.item_type || "").toLowerCase() === "milestone");
+  if (!milestones.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(5, "No reporting milestones found.");
+    return;
+  }
+
+  tbody.innerHTML = milestones.map(row => `
+    <tr>
+      <td>${escapeHtml(row.item_name || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
+      <td>${escapeHtml(fmtDate(row.due_date))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+      <td>
+        <button
+          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          data-reporting-item-edit="${escapeHtml(row.id)}"
+        >
+          Edit
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderReportingComponentsTable(rows) {
+  const tbody = document.getElementById("reportingOverviewComponentsBody");
+  if (!tbody) return;
+
+  const components = rows.filter(r => String(r.item_type || "").toLowerCase() === "component");
+  if (!components.length) {
+    tbody.innerHTML = renderSimpleEmptyRow(5, "No reporting components found.");
+    return;
+  }
+
+  tbody.innerHTML = components.map(row => `
+    <tr>
+      <td>${escapeHtml(row.item_name || "--")}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
+      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
+      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
+      <td>
+        <button
+          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+          data-reporting-item-edit="${escapeHtml(row.id)}"
+        >
+          Edit
+        </button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function refreshReportingOverviewScreen() {
+  const msg = document.getElementById("reportingOverviewMsg");
+  const engagementRow = getSelectedEngagementRow();
+  const engagementId = getSelectedEngagementId();
+
+  if (!engagementId || !engagementRow) {
+    if (msg) msg.textContent = "Select or open an engagement first.";
+    renderReportingOverviewHeader(null, []);
+    renderReportingMilestonesTable([]);
+    renderReportingComponentsTable([]);
+    return;
+  }
+
+  try {
+    if (msg) msg.textContent = "Loading reporting overview...";
+    const rows = await loadReportingItemsData(engagementId);
+    PR_REPORTING_ITEMS_CACHE = rows;
+
+    renderReportingOverviewHeader(engagementRow, rows);
+    renderReportingMilestonesTable(rows);
+    renderReportingComponentsTable(rows);
+
+    if (msg) msg.textContent = `${rows.length} reporting item(s) loaded.`;
+  } catch (err) {
+    console.error(err);
+    if (msg) msg.textContent = err.message || "Failed to load reporting overview.";
+    renderReportingMilestonesTable([]);
+    renderReportingComponentsTable([]);
+  }
+}
+
 function bindReportingItemModalEvents() {
   if (PR_REPORTING_MODAL_BOUND) return;
   PR_REPORTING_MODAL_BOUND = true;
@@ -6859,6 +6967,78 @@ function bindReportingItemModalEvents() {
   document.getElementById("reportingItemModalCancel")?.addEventListener("click", () => closeModal("reportingItemModal"));
   document.getElementById("reportingItemModalBackdrop")?.addEventListener("click", () => closeModal("reportingItemModal"));
   document.getElementById("reportingItemModalSave")?.addEventListener("click", handleReportingItemSave);
+}
+
+async function renderWorkflowReadinessInto(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  try {
+    const snapshot = await loadEngagementWorkflowSnapshot();
+    el.innerHTML = renderEngagementReadinessCard(snapshot?.readiness);
+  } catch (err) {
+    el.innerHTML = `
+      <div class="card p-5">
+        <div class="panel-title">Engagement Readiness</div>
+        <div class="panel-subtitle mt-1">${String(err?.message || "Failed to load readiness.")}</div>
+      </div>
+    `;
+  }
+}
+
+
+async function renderReportingOverviewScreen(me) {
+  bindReportingOverviewEvents();
+  bindReportingItemModalEvents();
+
+  if (!PR_ASSIGNMENTS_CACHE.length) {
+    try {
+      PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({});
+    } catch (_) {}
+  }
+
+  const ctx = PR_SCREEN_CONTEXT || {};
+  if (ctx.customerId) {
+    const customerSelect = document.getElementById("reportingCustomerSelect");
+    if (customerSelect) {
+      customerSelect.value = String(ctx.customerId);
+    }
+  }
+
+  if (ctx.filters?.status) {
+    const statusSelect = document.getElementById("reportingStatusFilter");
+    if (statusSelect) {
+      statusSelect.value = String(ctx.filters.status);
+    }
+  }
+
+  await refreshReportingOverviewScreen();
+  await renderWorkflowReadinessInto("reportingReadinessSlot");
+}
+
+
+function bindReportingOverviewEvents() {
+  if (PR_REPORTING_EVENTS_BOUND) return;
+  PR_REPORTING_EVENTS_BOUND = true;
+
+  document.getElementById("reportingOverviewRefreshBtn")?.addEventListener("click", refreshReportingOverviewScreen);
+  document.getElementById("reportingComponentsRefreshBtn")?.addEventListener("click", refreshReportingOverviewScreen);
+
+  document.getElementById("reportingOverviewMilestonesBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-reporting-item-edit]");
+    if (!btn) return;
+    const itemId = Number(btn.getAttribute("data-reporting-item-edit") || 0);
+    if (!itemId) return;
+    await editReportingItem(itemId);
+  });
+
+  document.getElementById("reportingOverviewComponentsBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-reporting-item-edit]");
+    if (!btn) return;
+    const itemId = Number(btn.getAttribute("data-reporting-item-edit") || 0);
+    if (!itemId) return;
+    await editReportingItem(itemId);
+  });
 }
 
 function resetDeliverableModalForm() {
@@ -7308,83 +7488,6 @@ function bindSignoffStepModalEvents() {
   document.getElementById("signoffStepModalSave")?.addEventListener("click", handleSignoffStepSave);
 }
 
-
-function renderReportingOverviewHeader(engagementRow, items = []) {
-  setText("reportingOverviewCycleBadge", humanizeWorkflowStatus(engagementRow?.reporting_cycle || "--"));
-  setText("reportingOverviewStatusBadge", humanizeWorkflowStatus(engagementRow?.status || "--"));
-
-  setText("reportingOverviewEngagementName", engagementRow?.engagement_name || "--");
-  setText("reportingOverviewClientName", engagementRow?.customer_name || engagementRow?.company_name || "--");
-  setText("reportingOverviewCycleText", humanizeWorkflowStatus(engagementRow?.reporting_cycle || "--"));
-  setText("reportingOverviewYearEndText", engagementRow?.fiscal_year_end ? `Financial year ending ${fmtDate(engagementRow.fiscal_year_end)}` : "--");
-  setText("reportingOverviewDueDate", fmtDate(engagementRow?.due_date));
-
-  const total = items.length;
-  const done = items.filter(x => ["completed", "approved", "ready"].includes(String(x.status || "").toLowerCase())).length;
-  const readiness = pct(done, total);
-
-  setText("reportingOverviewReadinessValue", `${readiness}%`);
-  const bar = document.getElementById("reportingOverviewReadinessBar");
-  if (bar) bar.style.width = `${readiness}%`;
-  setText("reportingOverviewReadinessText", total ? `${done} of ${total} reporting items ready/completed` : "No reporting items yet");
-}
-
-function renderReportingMilestonesTable(rows) {
-  const tbody = document.getElementById("reportingOverviewMilestonesBody");
-  if (!tbody) return;
-
-  const milestones = rows.filter(r => String(r.item_type || "").toLowerCase() === "milestone");
-  if (!milestones.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(5, "No reporting milestones found.");
-    return;
-  }
-
-  tbody.innerHTML = milestones.map(row => `
-    <tr>
-      <td>${escapeHtml(row.item_name || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
-      <td>${escapeHtml(fmtDate(row.due_date))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-      <td>
-        <button
-          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-          data-reporting-item-edit="${escapeHtml(row.id)}"
-        >
-          Edit
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
-function renderReportingComponentsTable(rows) {
-  const tbody = document.getElementById("reportingOverviewComponentsBody");
-  if (!tbody) return;
-
-  const components = rows.filter(r => String(r.item_type || "").toLowerCase() === "component");
-  if (!components.length) {
-    tbody.innerHTML = renderSimpleEmptyRow(5, "No reporting components found.");
-    return;
-  }
-
-  tbody.innerHTML = components.map(row => `
-    <tr>
-      <td>${escapeHtml(row.item_name || "--")}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "owner"))}</td>
-      <td>${escapeHtml(formatUserNameFromRow(row, "reviewer"))}</td>
-      <td><span class="badge ${badgeClassForWorkflowStatus(row.status)}">${escapeHtml(humanizeWorkflowStatus(row.status))}</span></td>
-      <td>
-        <button
-          class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
-          data-reporting-item-edit="${escapeHtml(row.id)}"
-        >
-          Edit
-        </button>
-      </td>
-    </tr>
-  `).join("");
-}
-
 function renderDeliverablesSummary(rows) {
   const today = new Date();
   const overdue = rows.filter(r => r.due_date && new Date(r.due_date) < today && !["completed", "received", "waived"].includes(String(r.status || "").toLowerCase())).length;
@@ -7788,37 +7891,6 @@ function renderSignoffSteps(rows) {
   `).join("");
 }
 
-async function refreshReportingOverviewScreen() {
-  const msg = document.getElementById("reportingOverviewMsg");
-  const engagementRow = getSelectedEngagementRow();
-  const engagementId = getSelectedEngagementId();
-
-  if (!engagementId || !engagementRow) {
-    if (msg) msg.textContent = "Select or open an engagement first.";
-    renderReportingOverviewHeader(null, []);
-    renderReportingMilestonesTable([]);
-    renderReportingComponentsTable([]);
-    return;
-  }
-
-  try {
-    if (msg) msg.textContent = "Loading reporting overview...";
-    const rows = await loadReportingItemsData(engagementId);
-    PR_REPORTING_ITEMS_CACHE = rows;
-
-    renderReportingOverviewHeader(engagementRow, rows);
-    renderReportingMilestonesTable(rows);
-    renderReportingComponentsTable(rows);
-
-    if (msg) msg.textContent = `${rows.length} reporting item(s) loaded.`;
-  } catch (err) {
-    console.error(err);
-    if (msg) msg.textContent = err.message || "Failed to load reporting overview.";
-    renderReportingMilestonesTable([]);
-    renderReportingComponentsTable([]);
-  }
-}
-
 async function refreshDeliverablesScreen() {
   const msg = document.getElementById("deliverablesMsg");
   const engagementId = getSelectedEngagementId();
@@ -7936,30 +8008,6 @@ async function refreshYearEndScreen() {
   }
 }
 
-function bindReportingOverviewEvents() {
-  if (PR_REPORTING_EVENTS_BOUND) return;
-  PR_REPORTING_EVENTS_BOUND = true;
-
-  document.getElementById("reportingOverviewRefreshBtn")?.addEventListener("click", refreshReportingOverviewScreen);
-  document.getElementById("reportingComponentsRefreshBtn")?.addEventListener("click", refreshReportingOverviewScreen);
-
-  document.getElementById("reportingOverviewMilestonesBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-reporting-item-edit]");
-    if (!btn) return;
-    const itemId = Number(btn.getAttribute("data-reporting-item-edit") || 0);
-    if (!itemId) return;
-    await editReportingItem(itemId);
-  });
-
-  document.getElementById("reportingOverviewComponentsBody")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-reporting-item-edit]");
-    if (!btn) return;
-    const itemId = Number(btn.getAttribute("data-reporting-item-edit") || 0);
-    if (!itemId) return;
-    await editReportingItem(itemId);
-  });
-}
-
 function bindDeliverablesEvents() {
   if (PR_DELIVERABLES_EVENTS_BOUND) return;
   PR_DELIVERABLES_EVENTS_BOUND = true;
@@ -8028,35 +8076,6 @@ function bindYearEndEvents() {
     if (!stepId) return;
     await editSignoffStep(stepId);
   });
-}
-
-async function renderReportingOverviewScreen(me) {
-  bindReportingOverviewEvents();
-  bindReportingItemModalEvents();
-
-  if (!PR_ASSIGNMENTS_CACHE.length) {
-    try {
-      PR_ASSIGNMENTS_CACHE = await loadAssignmentsData({});
-    } catch (_) {}
-  }
-
-  const ctx = PR_SCREEN_CONTEXT || {};
-  if (ctx.customerId) {
-    const customerSelect = document.getElementById("reportingCustomerSelect");
-    if (customerSelect) {
-      customerSelect.value = String(ctx.customerId);
-    }
-  }
-
-  if (ctx.filters?.status) {
-    const statusSelect = document.getElementById("reportingStatusFilter");
-    if (statusSelect) {
-      statusSelect.value = String(ctx.filters.status);
-    }
-  }
-
-  await refreshReportingOverviewScreen();
-  await renderWorkflowReadinessInto("reportingReadinessSlot");
 }
 
 
@@ -19930,22 +19949,6 @@ async function openDeliverablesForWorkingPaper(workingPaperRow, me) {
   }
 }
 
-async function renderWorkflowReadinessInto(containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-
-  try {
-    const snapshot = await loadEngagementWorkflowSnapshot();
-    el.innerHTML = renderEngagementReadinessCard(snapshot?.readiness);
-  } catch (err) {
-    el.innerHTML = `
-      <div class="card p-5">
-        <div class="panel-title">Engagement Readiness</div>
-        <div class="panel-subtitle mt-1">${String(err?.message || "Failed to load readiness.")}</div>
-      </div>
-    `;
-  }
-}
 
 async function refreshEngagementWorkflowScreens(me) {
   const currentScreen =

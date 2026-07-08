@@ -1363,6 +1363,12 @@ const ENDPOINTS = {
 
     arExposure: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/ar-exposure`,
+  
+    discover: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/discover`,
+
+    apExposure: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/ap-exposure`,
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -17875,10 +17881,14 @@ function detectFutureModuleHint(acct) {
   if (!acct) return null;
 
   const txt = normalizeTxt([
+    acct.name,
+    acct.role,
     acct.category,
     acct.subcategory,
     acct.section,
     acct.standard,
+    acct.description,
+    acct.reporting_description,
   ].join(" "));
 
   const code = String(acct.code || acct.account_code || "").toUpperCase();
@@ -17914,6 +17924,15 @@ function detectFutureModuleHint(acct) {
     txt.includes("amort") ||
     txt.includes("intangible");
 
+  console.log("[AD DETECT]", {
+    code: acct.code,
+    name: acct.name,
+    role: acct.role,
+    roleLower: String(acct.role || "").trim().toLowerCase(),
+  });
+
+  const roleLower = String(acct.role || "").trim().toLowerCase();
+
   const adRoles = [
     "prepaid_expense",
     "deferred_expense",
@@ -17931,9 +17950,20 @@ function detectFutureModuleHint(acct) {
     "licence_income",
   ];
 
-  if (adRoles.includes(String(acct.role || "").trim().toLowerCase())) {
+  const isAccrualDeferralAccount =
+    adRoles.includes(roleLower) ||
+    txt.includes("prepaid") ||
+    txt.includes("prepayment") ||
+    txt.includes("deferred income") ||
+    txt.includes("deferred revenue") ||
+    txt.includes("accrued expense") ||
+    txt.includes("accrual") ||
+    txt.includes("received in advance");
+
+  if (isAccrualDeferralAccount) {
     return "accrual_deferral";
-}
+  }
+
   if (isPPE) return "ppe";
   if (isLease) return "lease";
   if (isAmort) return "amort";
@@ -17960,6 +17990,7 @@ function getPostingMode(moduleKey, ctx = {}) {
     insurance_schedule: "guided",
     advertising_schedule: "guided",
     tax: "guided",
+    accrual_deferral: "guided",
   };
 
   // company-level overrides if you later inject them from backend
@@ -37509,13 +37540,12 @@ async function saveEditModal() {
 
           const revaluationIds = await createRevaluationDraftFromSM();
 
-          openValuationModalFromSM();
+          $("valuationRevaluationId").value = revaluationIds.join(",");
 
           console.log("REVALUATION IDS TO POST:", revaluationIds);
           console.log("valuationRevaluationId value:", $("valuationRevaluationId")?.value);
 
-          $("valuationRevaluationId").value = revaluationIds.join(",");
-
+          openValuationModalFromSM();
           setMsg($("smFormMsg"), "", "info");
           return;
         }
@@ -40748,6 +40778,7 @@ async function saveEditModal() {
     eclRuns: [],
     eclModels: [],
     arExposure: [],
+    apExposure: [],
     previewRunId: null,
   };
 
@@ -40777,26 +40808,6 @@ async function saveEditModal() {
     $("ifrs9TabRegister")?.classList.toggle("hidden", tab !== "register");
     $("ifrs9TabEclRuns")?.classList.toggle("hidden", tab !== "ecl-runs");
     $("ifrs9TabEclModels")?.classList.toggle("hidden", tab !== "ecl-models");
-  }
-
-  async function syncTradeReceivables() {
-    const companyId = cid();
-    setMsg("Syncing trade receivables...");
-
-    const res = await apiFetch(ENDPOINTS.ifrs9.syncTradeReceivables(companyId), {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-
-    setMsg(`Synced ${res.created || 0} trade receivable instrument(s).`);
-    await loadAll();
-  }
-
-  async function loadArExposure() {
-    const companyId = cid();
-    const res = await apiFetch(ENDPOINTS.ifrs9.arExposure(companyId));
-    IFRS9.arExposure = res.items || [];
-    renderArExposure();
   }
 
   async function loadAll() {
@@ -40867,7 +40878,11 @@ async function saveEditModal() {
     if (!el) return;
 
     if (!IFRS9.instruments.length) {
-      el.innerHTML = `<p class="muted">No instruments found. Click <b>Sync Loan Payables</b>.</p>`;
+      el.innerHTML = `
+        <p class="muted">
+          No financial instruments found. Click <b>Discover Financial Instruments</b>.
+        </p>
+      `;
       return;
     }
 
@@ -40960,16 +40975,24 @@ async function saveEditModal() {
     `;
   }
 
-  async function syncLoans() {
+  async function discoverFinancialInstruments() {
     const companyId = cid();
-    setMsg("Syncing loan payables...");
+    if (!companyId) return setMsg("No active company selected.");
 
-    const res = await apiFetch(ENDPOINTS.ifrs9.syncLoanPayables(companyId), {
+    setMsg("Discovering financial instruments...");
+
+    const res = await apiFetch(ENDPOINTS.ifrs9.discover(companyId), {
       method: "POST",
       body: JSON.stringify({}),
     });
 
-    setMsg(`Synced ${res.created || 0} loan payable(s).`);
+    setMsg(
+      `Discovered: loans ${res.loan_payables_created || 0}, ` +
+      `receivables ${res.trade_receivables_created || 0}, ` +
+      `payables ${res.trade_payables_created || 0}, ` +
+      `bank accounts ${res.bank_accounts_created || 0}.`
+    );
+
     await loadAll();
   }
 
@@ -41069,10 +41092,8 @@ async function saveEditModal() {
       IFRS9.bound = true;
 
       $("ifrs9RefreshBtn")?.addEventListener("click", loadAll);
-      $("ifrs9SyncLoansBtn")?.addEventListener("click", syncLoans);
       $("ifrs9CreateEclRunBtn")?.addEventListener("click", createRun);
-      $("ifrs9SyncReceivablesBtn")?.addEventListener("click", syncTradeReceivables);
-
+      $("ifrs9DiscoverBtn")?.addEventListener("click", discoverFinancialInstruments);
       $("ifrs9PreviewCloseBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewCancelBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);

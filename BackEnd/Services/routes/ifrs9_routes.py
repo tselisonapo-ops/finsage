@@ -532,3 +532,45 @@ def api_ifrs9_sync_trade_receivables(company_id: int):
         current_app.logger.exception("ifrs9_sync_trade_receivables failed")
         return _json_error(str(e), 400)
     
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/discover",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_discover(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_discover_financial_instruments(company_id)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("ifrs9_discover failed")
+        return _json_error(str(e), 400)
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/ap-exposure",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_ap_exposure(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        items = db_service.ifrs9_ap_exposure(company_id)
+        return jsonify({"ok": True, "items": items}), 200
+    except Exception as e:
+        current_app.logger.exception("ifrs9_ap_exposure failed")
+        return _json_error(str(e), 400)
