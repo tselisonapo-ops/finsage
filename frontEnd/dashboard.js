@@ -1287,17 +1287,20 @@ const ENDPOINTS = {
   accrualDeferrals: {
     items: (companyId, opts = {}) => {
       const params = new URLSearchParams();
-
       if (opts.item_type) params.append("item_type", opts.item_type);
       if (opts.status) params.append("status", opts.status);
-
       const qs = params.toString();
-
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items${qs ? `?${qs}` : ""}`;
     },
 
     item: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}`,
+
+    itemPreview: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/preview`,
+
+    createAndPost: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/create-and-post`,
 
     regenerateSchedule: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/schedule/regenerate`,
@@ -1307,7 +1310,7 @@ const ENDPOINTS = {
 
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
-  
+
     initialPreview: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
 
@@ -1319,6 +1322,12 @@ const ENDPOINTS = {
 
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}/post`,
+
+    runPreviewByDate: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/preview`,
+
+    postRunByDate: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/post`,
   },
 
   ifrs9: {
@@ -40339,9 +40348,12 @@ async function saveEditModal() {
         <td class="p-3">
           <span class="pill">${item.status || "draft"}</span>
         </td>
-        <td class="p-3 text-right">
-          <button class="btn text-xs" data-ad-open="${item.id}">Open</button>
-        </td>
+          <td class="p-3 text-right">
+            <div class="flex justify-end gap-2">
+              <button class="btn text-xs" data-ad-open="${item.id}">Open</button>
+              <button class="btn-highlight text-xs" data-ad-run-item="${item.id}">Run Recognition</button>
+            </div>
+          </td>
       </tr>
     `).join("");
 
@@ -40705,49 +40717,143 @@ async function saveEditModal() {
   }
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
 
+  function adPayloadFromWizard(ctx = {}) {
+    return {
+      item_title: $("adNewTitle")?.value?.trim(),
+      item_type: $("adNewType")?.value,
+      transaction_date: $("adNewTransactionDate")?.value,
+      start_date: $("adNewStartDate")?.value,
+      end_date: $("adNewEndDate")?.value,
+      original_amount: Number($("adNewAmount")?.value || 0),
+      currency: $("adNewCurrency")?.value || resolveCurrency?.() || "USD",
+      frequency: $("adNewFrequency")?.value || "monthly",
+
+      balance_account_role: $("adNewBalanceAccountRole")?.value?.trim(),
+      recognition_account_role: $("adNewRecognitionRole")?.value?.trim(),
+      recognition_account: ctx.account?.code || "",
+
+      settlement_account: $("adNewSettlementAccount")?.value?.trim(),
+      settlement_role: $("adNewSettlementAccount")?.value ? "" : "cash_bank",
+
+      recognition_method: "straight_line",
+      status: "draft",
+      notes: $("adNewNotes")?.value?.trim() || "",
+    };
+  }
+
   function renderAdJournalPreview(preview) {
     const host = $("adInitialPreviewHost");
     if (!host) return;
 
-    const j = preview?.journal || preview || {};
-    const lines = j.lines || [];
+    const journal = preview?.journal || {};
+    const lines = journal.lines || [];
 
     if (!lines.length) {
-      host.innerHTML = `<p class="text-slate-500">No preview available yet.</p>`;
+      host.innerHTML = `<p class="text-slate-500">Complete the form to preview journal lines.</p>`;
       return;
     }
 
     host.innerHTML = `
-      <div class="bg-white rounded-lg border p-3 space-y-2">
-        <div><b>Date:</b> ${j.date || ""}</div>
-        <div><b>Reference:</b> ${j.ref || ""}</div>
-        <div><b>Description:</b> ${j.description || ""}</div>
+      <div class="bg-white rounded-xl border p-3 space-y-3">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div><b>Date:</b> ${journal.date || ""}</div>
+          <div><b>Reference:</b> ${journal.ref || journal.reference || ""}</div>
+          <div class="col-span-2"><b>Description:</b> ${journal.description || ""}</div>
+        </div>
 
-        <table class="w-full text-xs mt-3">
-          <thead>
-            <tr class="border-b">
-              <th class="text-left py-1">Account</th>
-              <th class="text-right py-1">Debit</th>
-              <th class="text-right py-1">Credit</th>
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="text-left p-2">Account</th>
+              <th class="text-right p-2">Debit</th>
+              <th class="text-right p-2">Credit</th>
             </tr>
           </thead>
           <tbody>
             ${lines.map((ln) => `
-              <tr class="border-b">
-                <td class="py-1">${ln.account_code || ln.account || ""}</td>
-                <td class="py-1 text-right">${money(ln.debit)}</td>
-                <td class="py-1 text-right">${money(ln.credit)}</td>
+              <tr class="border-t">
+                <td class="p-2">${ln.account_code || ln.account || ""}</td>
+                <td class="p-2 text-right">${money(ln.debit)}</td>
+                <td class="p-2 text-right">${money(ln.credit)}</td>
               </tr>
             `).join("")}
           </tbody>
         </table>
 
-        <div class="flex justify-between font-bold pt-2">
-          <span>Balanced: ${j.balanced === false ? "No" : "Yes"}</span>
-          <span>${money(j.total_debit)} / ${money(j.total_credit)}</span>
+        <div class="flex justify-between font-bold text-xs border-t pt-2">
+          <span>Balanced: ${journal.balanced ? "Yes" : "No"}</span>
+          <span>${money(journal.total_debit)} / ${money(journal.total_credit)}</span>
         </div>
       </div>
     `;
+  }
+
+  function renderAdSchedulePreview(schedule = []) {
+    const host = $("adPendingScheduleHost");
+    if (!host) return;
+
+    if (!schedule.length) {
+      host.innerHTML = `<p class="text-slate-500">Schedule will appear after valid details are entered.</p>`;
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="bg-white rounded-xl border overflow-auto max-h-[360px]">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 sticky top-0">
+            <tr>
+              <th class="text-left p-2">#</th>
+              <th class="text-left p-2">Period</th>
+              <th class="text-right p-2">Opening</th>
+              <th class="text-right p-2">Recognition</th>
+              <th class="text-right p-2">Closing</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${schedule.map((x, i) => `
+              <tr class="border-t">
+                <td class="p-2">${x.line_no || i + 1}</td>
+                <td class="p-2">${x.period_start || ""} → ${x.period_end || ""}</td>
+                <td class="p-2 text-right">${money(x.opening_balance)}</td>
+                <td class="p-2 text-right font-semibold">${money(x.recognition_amount)}</td>
+                <td class="p-2 text-right">${money(x.closing_balance)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  let adPreviewTimer = null;
+
+  function scheduleAdPreview(ctx = {}) {
+    clearTimeout(adPreviewTimer);
+    adPreviewTimer = setTimeout(() => refreshAdPreview(ctx), 300);
+  }
+
+  async function refreshAdPreview(ctx = {}) {
+    const payload = adPayloadFromWizard(ctx);
+
+    if (!payload.item_title || !(payload.original_amount > 0) || !payload.start_date || !payload.end_date) {
+      renderAdJournalPreview(null);
+      renderAdSchedulePreview([]);
+      return;
+    }
+
+    try {
+      const cid = adCid();
+
+      const data = await apiFetch(ENDPOINTS.accrualDeferrals.itemPreview(cid), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      renderAdJournalPreview(data.preview);
+      renderAdSchedulePreview(data.preview?.schedule_preview || data.preview?.schedule || []);
+    } catch (e) {
+      $("adInitialPreviewHost").innerHTML = `<p class="text-red-600">${escapeHtml(e.message || "Preview failed")}</p>`;
+    }
   }
 
   async function createAccrualDeferralItem(payload) {
@@ -40877,7 +40983,12 @@ async function saveEditModal() {
       $("adRefreshBtn")?.addEventListener("click", loadAccrualDeferrals);
       $("adApplyFiltersBtn")?.addEventListener("click", loadAccrualDeferrals);
       $("adNewItemBtn")?.addEventListener("click", openNewAccrualDeferralModal);
-
+      $("adOpenRunBtn")?.addEventListener("click", () => openAdRecognitionRunModal({}));
+      body.querySelectorAll("[data-ad-run-item]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          openAdRecognitionRunModal({ itemId: btn.dataset.adRunItem });
+        });
+      });
       AD_STATE.bound = true;
     }
 

@@ -79239,6 +79239,133 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
+def accrual_deferral_build_item_preview_from_payload(self, company_id: int, payload: dict):
+    item_type = payload.get("item_type") or "prepaid_expense"
+    amount = float(payload.get("original_amount") or 0)
+    currency = (payload.get("currency") or self.company_currency(company_id) or "USD").upper()
+
+    if amount <= 0:
+        raise ValueError("original_amount must be greater than zero")
+
+    balance_role = payload.get("balance_account_role") or item_type
+    recognition_role = payload.get("recognition_account_role")
+    settlement_role = payload.get("settlement_role") or "cash_bank"
+
+    balance_account = (
+        payload.get("balance_account")
+        or self.accrual_deferral_account_by_role(company_id, balance_role)["code"]
+    )
+
+    recognition_account = payload.get("recognition_account")
+    if not recognition_account and recognition_role:
+        recognition_account = self.accrual_deferral_account_by_role(company_id, recognition_role)["code"]
+
+    settlement_account = payload.get("settlement_account")
+    if not settlement_account:
+        settlement_account = self.accrual_deferral_account_by_role(company_id, settlement_role)["code"]
+
+    if item_type in ("prepaid_expense", "deferred_expense", "accrued_income"):
+        lines = [
+            {"account_code": balance_account, "debit": amount, "credit": 0},
+            {"account_code": settlement_account, "debit": 0, "credit": amount},
+        ]
+    elif item_type in ("deferred_income", "accrued_expense"):
+        lines = [
+            {"account_code": settlement_account, "debit": amount, "credit": 0},
+            {"account_code": balance_account, "debit": 0, "credit": amount},
+        ]
+    else:
+        raise ValueError(f"Unsupported item_type: {item_type}")
+
+    total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
+    total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
+
+    schedule = self.accrual_deferral_schedule_preview_from_payload(company_id, payload)
+
+    return {
+        "journal": {
+            "date": payload.get("transaction_date"),
+            "ref": "AD-INIT-DRAFT",
+            "description": f"Initial recognition - {payload.get('item_title') or 'Accrual/Deferral'}",
+            "source": "accrual_deferral_initial",
+            "source_id": None,
+            "module_name": "accrual_deferrals",
+            "currency": currency,
+            "lines": lines,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "balanced": total_debit == total_credit,
+        },
+        "accounts": {
+            "settlement": settlement_account,
+            "balance": balance_account,
+            "recognition": recognition_account,
+        },
+        "schedule_preview": schedule,
+        "warnings": [],
+    }
+
+
+    def accrual_deferral_schedule_preview_from_payload(self, company_id: int, payload: dict):
+        start = _date(payload.get("start_date"))
+        end = _date(payload.get("end_date"))
+        amount = _d(payload.get("original_amount"))
+
+        if not start or not end or amount <= 0:
+            return []
+
+        months = []
+        d = date(start.year, start.month, 1)
+
+        while d <= end:
+            ps = max(d, start)
+            pe = min(_month_end(d), end)
+            months.append((ps, pe))
+            d = _add_month(d)
+
+        if not months:
+            return []
+
+        monthly_amount = (amount / Decimal(len(months))).quantize(Decimal("0.01"))
+        opening = amount
+        rows = []
+
+        for idx, (ps, pe) in enumerate(months, start=1):
+            recognition_amount = opening if idx == len(months) else monthly_amount
+            closing = opening - recognition_amount
+
+            rows.append({
+                "line_no": idx,
+                "period_start": ps.isoformat(),
+                "period_end": pe.isoformat(),
+                "recognition_date": pe.isoformat(),
+                "opening_balance": float(opening),
+                "recognition_amount": float(recognition_amount),
+                "closing_balance": float(closing),
+                "status": "pending",
+            })
+
+            opening = closing
+
+        return rows
+
+
+    def accrual_deferral_create_and_post_initial(self, company_id: int, payload: dict, user_id=None):
+        item = self.accrual_deferral_create_item(company_id, payload, user_id=user_id)
+        item_id = item["item"]["id"]
+
+        posted = self.accrual_deferral_post_initial(
+            company_id,
+            item_id,
+            {
+                "settlement_account": payload.get("settlement_account"),
+                "settlement_role": payload.get("settlement_role") or "cash_bank",
+            },
+            user_id=user_id,
+        )
+
+        return posted
+
     def _num(self, v, default=0):
         if v is None or v == "":
             return Decimal(str(default))

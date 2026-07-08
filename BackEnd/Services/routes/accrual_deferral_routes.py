@@ -318,3 +318,55 @@ def api_ad_post_run(company_id: int, run_id: int):
     except Exception as e:
         current_app.logger.exception("api_ad_post_run failed")
         return _json_error(str(e), 400)
+    
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/items/preview",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_item_preview(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.accrual_deferral_build_item_preview_from_payload(
+            company_id,
+            payload,
+        )
+        return jsonify({"ok": True, "preview": result}), 200
+    except Exception as e:
+        current_app.logger.exception("api_ad_item_preview failed")
+        return _json_error(str(e), 400)
+
+
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/items/create-and-post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_create_and_post(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.accrual_deferral_create_and_post_initial(
+            company_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+        return jsonify({"ok": True, **result}), 201
+    except Exception as e:
+        current_app.logger.exception("api_ad_create_and_post failed")
+        return _json_error(str(e), 400)

@@ -363,12 +363,23 @@ def _audit_safe(
     message: str | None = None,
     cur=None,
 ):
-    """Best-effort audit logging using your existing db_service.audit_log(). Never breaks the route."""
+    """Best-effort audit logging. Never breaks the route transaction."""
     try:
-        actor = _actor_user_id(payload) or 0
-        db_service.audit_log(
+        actor = _actor_user_id(payload)
+
+        if not actor:
+            current_app.logger.warning("audit_log skipped: missing actor_user_id %s", {
+                "company_id": company_id,
+                "module": module,
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+            })
+            return None
+
+        return db_service.audit_log(
             company_id,
-            actor_user_id=actor,
+            actor_user_id=int(actor),
             module=module,
             action=action,
             severity="info",
@@ -386,11 +397,19 @@ def _audit_safe(
             source="api",
             cur=cur,
         )
+
     except Exception:
         current_app.logger.exception("audit_log failed (non-fatal)")
 
+        # important: clear failed transaction state only if caller passed cursor
+        if cur is not None:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
 
-
+        return None
+    
 @ppe_bp.route("/api/companies/<int:company_id>/asset-acquisitions/<int:acq_id>/journal-preview", methods=["GET", "OPTIONS"])
 @require_auth
 def acquisition_journal_preview(company_id, acq_id):
@@ -1830,7 +1849,7 @@ def revaluation_post(company_id, reval_id):
                         with audit_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as audit_cur:
                             _audit_safe(
                                 company_id=company_id,
-                                payload=user,
+                                payload=payload,
                                 module="ppe",
                                 action="post_revaluation",
                                 entity_type="revaluation",
@@ -2048,7 +2067,7 @@ def impairment_post(company_id, imp_id):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="post_impairment",
                     entity_type="impairment",
@@ -2258,7 +2277,7 @@ def disposal_post(company_id, disp_id):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="post_disposal",
                     entity_type="disposal",
@@ -2469,7 +2488,7 @@ def hfs_post(company_id, hfs_id):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="post_hfs",
                     entity_type="held_for_sale",
@@ -3646,7 +3665,7 @@ def approve_post_depreciation(company_id: int, dep_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_depreciation" if review_required else "post_depreciation",
                     entity_type="depreciation",
@@ -3749,7 +3768,7 @@ def approve_post_revaluation(company_id: int, reval_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_revaluation" if review_required else "post_revaluation",
                     entity_type="revaluation",
@@ -3776,6 +3795,7 @@ def approve_post_impairment(company_id: int, imp_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
     deny = _deny_if_wrong_company(
         int(company_id),
         db_service=db_service,
@@ -3850,7 +3870,7 @@ def approve_post_impairment(company_id: int, imp_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_impairment" if review_required else "post_impairment",
                     entity_type="impairment",
@@ -3877,6 +3897,7 @@ def approve_post_hfs(company_id: int, hfs_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
     deny = _deny_if_wrong_company(
         int(company_id),
         db_service=db_service,
@@ -3957,7 +3978,7 @@ def approve_post_hfs(company_id: int, hfs_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_hfs" if review_required else "post_hfs",
                     entity_type="held_for_sale",
@@ -4146,7 +4167,7 @@ def approve_post_asset_disposal(company_id: int, disposal_id: int):
                 # ---------------------------------------------------
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action=(
                         "approve_post_disposal"
@@ -4221,6 +4242,7 @@ def approve_post_depreciation_batch(company_id: int):
         return _opt()
 
     user = getattr(g, "current_user", None) or {}
+    payload = request.jwt_payload or {}
     deny = _deny_if_wrong_company(
         int(company_id),
         db_service=db_service,
@@ -4338,7 +4360,7 @@ def approve_post_depreciation_batch(company_id: int):
                 # ✅ Audit (single batch record)
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_depreciation_batch" if review_required else "post_depreciation_batch",
                     entity_type="depreciation_batch",
@@ -4559,7 +4581,7 @@ def subsequent_measurements_list_or_create(company_id):
 
                     _audit_safe(
                         company_id=company_id,
-                        payload=user,
+                        payload=payload,
                         module="ppe",
                         action="create_subsequent_measurement",
                         entity_type="subsequent_measurement",
@@ -4583,7 +4605,7 @@ def subsequent_measurements_list_or_create(company_id):
                 # no review required => normal create result
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="create_subsequent_measurement",
                     entity_type="subsequent_measurement",
@@ -4807,7 +4829,7 @@ def subsequent_measurement_post(company_id: int, sm_id: int):
 
                     _audit_safe(
                         company_id=company_id,
-                        payload=user,
+                        payload=payload,
                         module="ppe",
                         action="post_subsequent_measurement",
                         entity_type="subsequent_measurement",
@@ -4833,7 +4855,7 @@ def subsequent_measurement_post(company_id: int, sm_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="post_subsequent_measurement",
                     entity_type="subsequent_measurement",
@@ -4926,7 +4948,7 @@ def approve_post_subsequent_measurement(company_id: int, sm_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="approve_post_subsequent_measurement" if review_required else "post_subsequent_measurement",
                     entity_type="subsequent_measurement",
@@ -5095,7 +5117,7 @@ def asset_policies_get_or_save(company_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="save_asset_policies",
                     entity_type="asset_policies",
@@ -5184,7 +5206,7 @@ def subsequent_measurement_get_update_delete(company_id: int, sm_id: int):
 
                     _audit_safe(
                         company_id=company_id,
-                        payload=user,
+                        payload=payload,
                         module="ppe",
                         action="void_subsequent_measurement",
                         entity_type="subsequent_measurement",
@@ -5250,7 +5272,7 @@ def subsequent_measurement_get_update_delete(company_id: int, sm_id: int):
 
                 _audit_safe(
                     company_id=company_id,
-                    payload=user,
+                    payload=payload,
                     module="ppe",
                     action="update_subsequent_measurement",
                     entity_type="subsequent_measurement",
