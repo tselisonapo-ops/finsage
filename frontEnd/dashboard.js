@@ -40552,6 +40552,11 @@ async function saveEditModal() {
               </label>
 
               <label class="text-sm">
+                Transaction Date
+                <input id="adNewTransactionDate" type="date" class="input" required>
+              </label>
+
+              <label class="text-sm">
                 Settlement / Bank Account
                 <select id="adNewSettlementAccount" class="input">
                   <option value="">Loading bank accounts...</option>
@@ -40580,8 +40585,8 @@ async function saveEditModal() {
               </label>
 
               <label class="text-sm">
-                Balance Account
-                <input id="adNewBalanceAccount" class="input" placeholder="e.g. BS_CA_1487">
+                Balance Account Role
+                <input id="adNewBalanceAccountDisplay" class="input" readonly>
               </label>
 
               <label class="text-sm">
@@ -40590,7 +40595,7 @@ async function saveEditModal() {
               </label>
             </div>
 
-            <input id="adNewBalanceAccount" type="hidden">
+            <input id="adNewBalanceAccountRole" type="hidden">
             <input id="adNewRecognitionRole" type="hidden">
 
             <label class="text-sm block">
@@ -40625,7 +40630,7 @@ async function saveEditModal() {
           frequency: $("adNewFrequency")?.value || "monthly",
           balance_account: "",
           recognition_account: finalCtx.account?.code || "",
-          balance_account_role: $("adNewBalanceAccount")?.value?.trim(),
+          balance_account_role: $("adNewBalanceAccountRole")?.value?.trim(),
           recognition_account_role: $("adNewRecognitionRole")?.value?.trim(),
           settlement_account: $("adNewSettlementAccount")?.value?.trim(),
           settlement_role: $("adNewSettlementAccount")?.value ? "" : "cash_bank",
@@ -40682,6 +40687,7 @@ async function saveEditModal() {
 
     const recognition = $("adNewRecognitionAccount");
     const balance = $("adNewBalanceAccount");
+    const balanceDisplay = $("adNewBalanceAccountDisplay");
     const role = $("adNewRecognitionRole");
 
     const fromRole = ctx.account?.role || "";
@@ -40732,6 +40738,7 @@ async function saveEditModal() {
     const d = defaults[type];
 
     if (balance) balance.value = d.balanceRole;
+    if (balanceDisplay) balanceDisplay.value = d.balanceRole;
     if (role) role.value = d.recognitionRole;
     if (recognition) recognition.value = d.recognitionText;
 

@@ -5329,113 +5329,6 @@ function populateTeamEngagementFilter(rows) {
   if (current) select.value = current;
 }
 
-function renderTeamTable(rows) {
-  const tbody = document.getElementById("teamTableBody");
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="7" class="text-center text-slate-500">No team members found.</td>
-      </tr>
-    `;
-    return;
-  }
-
-  tbody.innerHTML = rows.map((row) => {
-    const fullName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || `User #${row.user_id}`;
-    return `
-      <tr>
-        <td>${esc(fullName)}</td>
-        <td>${esc(row.email || "--")}</td>
-        <td><span class="badge ${roleBadgeClass(row.role_on_engagement)}">${esc(row.role_on_engagement || "--")}</span></td>
-        <td>${row.allocation_percent != null ? esc(row.allocation_percent) : "--"}</td>
-        <td>${fmtDate(row.start_date)}</td>
-        <td>${fmtDate(row.end_date)}</td>
-        <td><span class="badge ${row.is_active ? "badge-ok" : "badge-slate"}">${row.is_active ? "Active" : "Inactive"}</span></td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function renderTeamSummary(rows, engagementRow) {
-  const card = document.getElementById("teamSummaryCard");
-  const subtitle = document.getElementById("teamSummarySubtitle");
-  const body = document.getElementById("teamSummaryBody");
-  if (!card || !subtitle || !body) return;
-
-  if (!engagementRow) {
-    card.classList.add("hidden");
-    return;
-  }
-
-  const activeRows = rows.filter(r => !!r.is_active);
-  const total = rows.length;
-  const active = activeRows.length;
-  const alloc = activeRows.reduce((sum, r) => sum + Number(r.allocation_percent || 0), 0);
-
-  card.classList.remove("hidden");
-  subtitle.textContent = `${engagementRow.engagement_name || "--"} • ${engagementRow.customer_name || "--"}`;
-
-  body.innerHTML = `
-    <div class="card-soft p-4">
-      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Team Members</div>
-      <div class="mt-2 metric-number">${total}</div>
-      <div class="mt-1 text-sm text-slate-600">All rows on this engagement</div>
-    </div>
-
-    <div class="card-soft p-4">
-      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Active Assignments</div>
-      <div class="mt-2 metric-number">${active}</div>
-      <div class="mt-1 text-sm text-slate-600">Currently active team allocations</div>
-    </div>
-
-    <div class="card-soft p-4">
-      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Allocation Total</div>
-      <div class="mt-2 metric-number">${alloc.toFixed(0)}%</div>
-      <div class="mt-1 text-sm text-slate-600">Sum of active allocation percentages</div>
-    </div>
-  `;
-}
-
-async function refreshTeamScreen() {
-  const msg = document.getElementById("teamMsg");
-  const engagementId = Number(document.getElementById("teamEngagementFilter")?.value || 0);
-  const activeOnly = (document.getElementById("teamActiveFilter")?.value || "true") === "true";
-
-  if (!engagementId) {
-    if (msg) msg.textContent = "Select an engagement to load team members.";
-    renderTeamTable([]);
-    renderTeamSummary([], null);
-    return;
-  }
-
-  try {
-    if (msg) msg.textContent = "Loading team members...";
-    const rows = await loadEngagementTeamData(engagementId, activeOnly);
-    PR_TEAM_CACHE = rows;
-
-    const engagementRow =
-      PR_ASSIGNMENTS_CACHE.find(r => Number(r.id) === engagementId) ||
-      PR_SELECTED_ENGAGEMENT ||
-      null;
-
-    renderTeamTable(rows);
-    renderTeamSummary(rows, engagementRow);
-    if (msg) msg.textContent = `${rows.length} team row(s) loaded.`;
-  } catch (err) {
-    console.error(err);
-    if (msg) msg.textContent = err.message || "Failed to load team.";
-    renderTeamTable([]);
-    renderTeamSummary([], null);
-  }
-}
-
-function bindTeamScreenEvents() {
-  document.getElementById("teamRefreshBtn")?.addEventListener("click", refreshTeamScreen);
-  document.getElementById("teamEngagementFilter")?.addEventListener("change", refreshTeamScreen);
-  document.getElementById("teamActiveFilter")?.addEventListener("change", refreshTeamScreen);
-}
 
 
 async function loadCustomersData({ q = "", limit = 200, offset = 0 } = {}) {
@@ -6503,6 +6396,113 @@ async function renderTeamScreen(me) {
   }
 }
 
+function renderTeamTable(rows) {
+  const tbody = document.getElementById("teamTableBody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="text-center text-slate-500">No team members found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = rows.map((row) => {
+    const fullName = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || `User #${row.user_id}`;
+    return `
+      <tr>
+        <td>${esc(fullName)}</td>
+        <td>${esc(row.email || "--")}</td>
+        <td><span class="badge ${roleBadgeClass(row.role_on_engagement)}">${esc(row.role_on_engagement || "--")}</span></td>
+        <td>${row.allocation_percent != null ? esc(row.allocation_percent) : "--"}</td>
+        <td>${fmtDate(row.start_date)}</td>
+        <td>${fmtDate(row.end_date)}</td>
+        <td><span class="badge ${row.is_active ? "badge-ok" : "badge-slate"}">${row.is_active ? "Active" : "Inactive"}</span></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderTeamSummary(rows, engagementRow) {
+  const card = document.getElementById("teamSummaryCard");
+  const subtitle = document.getElementById("teamSummarySubtitle");
+  const body = document.getElementById("teamSummaryBody");
+  if (!card || !subtitle || !body) return;
+
+  if (!engagementRow) {
+    card.classList.add("hidden");
+    return;
+  }
+
+  const activeRows = rows.filter(r => !!r.is_active);
+  const total = rows.length;
+  const active = activeRows.length;
+  const alloc = activeRows.reduce((sum, r) => sum + Number(r.allocation_percent || 0), 0);
+
+  card.classList.remove("hidden");
+  subtitle.textContent = `${engagementRow.engagement_name || "--"} • ${engagementRow.customer_name || "--"}`;
+
+  body.innerHTML = `
+    <div class="card-soft p-4">
+      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Team Members</div>
+      <div class="mt-2 metric-number">${total}</div>
+      <div class="mt-1 text-sm text-slate-600">All rows on this engagement</div>
+    </div>
+
+    <div class="card-soft p-4">
+      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Active Assignments</div>
+      <div class="mt-2 metric-number">${active}</div>
+      <div class="mt-1 text-sm text-slate-600">Currently active team allocations</div>
+    </div>
+
+    <div class="card-soft p-4">
+      <div class="text-xs uppercase tracking-[0.08em] text-slate-500">Allocation Total</div>
+      <div class="mt-2 metric-number">${alloc.toFixed(0)}%</div>
+      <div class="mt-1 text-sm text-slate-600">Sum of active allocation percentages</div>
+    </div>
+  `;
+}
+
+async function refreshTeamScreen() {
+  const msg = document.getElementById("teamMsg");
+  const engagementId = Number(document.getElementById("teamEngagementFilter")?.value || 0);
+  const activeOnly = (document.getElementById("teamActiveFilter")?.value || "true") === "true";
+
+  if (!engagementId) {
+    if (msg) msg.textContent = "Select an engagement to load team members.";
+    renderTeamTable([]);
+    renderTeamSummary([], null);
+    return;
+  }
+
+  try {
+    if (msg) msg.textContent = "Loading team members...";
+    const rows = await loadEngagementTeamData(engagementId, activeOnly);
+    PR_TEAM_CACHE = rows;
+
+    const engagementRow =
+      PR_ASSIGNMENTS_CACHE.find(r => Number(r.id) === engagementId) ||
+      PR_SELECTED_ENGAGEMENT ||
+      null;
+
+    renderTeamTable(rows);
+    renderTeamSummary(rows, engagementRow);
+    if (msg) msg.textContent = `${rows.length} team row(s) loaded.`;
+  } catch (err) {
+    console.error(err);
+    if (msg) msg.textContent = err.message || "Failed to load team.";
+    renderTeamTable([]);
+    renderTeamSummary([], null);
+  }
+}
+
+function bindTeamScreenEvents() {
+  document.getElementById("teamRefreshBtn")?.addEventListener("click", refreshTeamScreen);
+  document.getElementById("teamEngagementFilter")?.addEventListener("change", refreshTeamScreen);
+  document.getElementById("teamActiveFilter")?.addEventListener("change", refreshTeamScreen);
+}
 
 function getSelectedEngagementId() {
   const selected = Number(PR_SELECTED_ENGAGEMENT?.id || 0);
@@ -6537,20 +6537,6 @@ function setText(id, value) {
 function setHtml(id, html) {
   const el = document.getElementById(id);
   if (el) el.innerHTML = html || "";
-}
-
-async function loadReportingItemsData(engagementId, { item_type = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
-
-  const out = await apiFetch(
-    ENDPOINTS.engagementOps.reportingItemsList(companyId, engagementId, {
-      item_type, status, q, limit, offset
-    }),
-    { method: "GET" }
-  );
-
-  return Array.isArray(out?.rows) ? out.rows : [];
 }
 
 async function loadDeliverablesData(engagementId, { status = "", q = "", limit = 200, offset = 0 } = {}) {
@@ -7016,6 +7002,58 @@ async function renderReportingOverviewScreen(me) {
   await renderWorkflowReadinessInto("reportingReadinessSlot");
 }
 
+async function loadReportingItemsData(engagementId, { item_type = "", status = "", q = "", limit = 200, offset = 0 } = {}) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !engagementId) throw new Error("Missing engagement context.");
+
+  const out = await apiFetch(
+    ENDPOINTS.engagementOps.reportingItemsList(companyId, engagementId, {
+      item_type, status, q, limit, offset
+    }),
+    { method: "GET" }
+  );
+
+  return Array.isArray(out?.rows) ? out.rows : [];
+}
+
+async function editReportingItem(itemId) {
+  const companyId = getActiveCompanyId();
+  if (!companyId || !itemId) return;
+
+  try {
+    await ensureUsersCacheLoaded();
+    populateAnyUserSelect("reportingItemOwnerUserId", PR_USERS_CACHE, "Select owner");
+    populateAnyUserSelect("reportingItemReviewerUserId", PR_USERS_CACHE, "Select reviewer");
+
+    const out = await apiFetch(
+      ENDPOINTS.engagementOps.reportingItemsGet(companyId, itemId),
+      { method: "GET" }
+    );
+
+    const row = out?.row;
+    if (!row) throw new Error("Reporting item not found.");
+
+    document.getElementById("reportingItemId").value = row.id || "";
+    document.getElementById("reportingItemType").value = row.item_type || "milestone";
+    document.getElementById("reportingItemCode").value = row.item_code || "";
+    document.getElementById("reportingItemName").value = row.item_name || "";
+    document.getElementById("reportingItemDescription").value = row.description || "";
+    document.getElementById("reportingItemOwnerUserId").value = row.owner_user_id || "";
+    document.getElementById("reportingItemReviewerUserId").value = row.reviewer_user_id || "";
+    document.getElementById("reportingItemDueDate").value = row.due_date || "";
+    document.getElementById("reportingItemStatus").value = row.status || "not_started";
+    document.getElementById("reportingItemPriority").value = row.priority || "normal";
+    document.getElementById("reportingItemSortOrder").value = row.sort_order ?? 0;
+    document.getElementById("reportingItemNotes").value = row.notes || "";
+
+    setText("reportingItemModalTitle", "Edit reporting item");
+    setModalMsg("reportingItemModalMsg", "");
+    openModal("reportingItemModal");
+  } catch (err) {
+    console.error(err);
+    alert(err.message || "Failed to load reporting item.");
+  }
+}
 
 function bindReportingOverviewEvents() {
   if (PR_REPORTING_EVENTS_BOUND) return;
@@ -7668,44 +7706,6 @@ function renderYearEndTable(rows) {
   `).join("");
 }
 
-async function editReportingItem(itemId) {
-  const companyId = getActiveCompanyId();
-  if (!companyId || !itemId) return;
-
-  try {
-    await ensureUsersCacheLoaded();
-    populateAnyUserSelect("reportingItemOwnerUserId", PR_USERS_CACHE, "Select owner");
-    populateAnyUserSelect("reportingItemReviewerUserId", PR_USERS_CACHE, "Select reviewer");
-
-    const out = await apiFetch(
-      ENDPOINTS.engagementOps.reportingItemsGet(companyId, itemId),
-      { method: "GET" }
-    );
-
-    const row = out?.row;
-    if (!row) throw new Error("Reporting item not found.");
-
-    document.getElementById("reportingItemId").value = row.id || "";
-    document.getElementById("reportingItemType").value = row.item_type || "milestone";
-    document.getElementById("reportingItemCode").value = row.item_code || "";
-    document.getElementById("reportingItemName").value = row.item_name || "";
-    document.getElementById("reportingItemDescription").value = row.description || "";
-    document.getElementById("reportingItemOwnerUserId").value = row.owner_user_id || "";
-    document.getElementById("reportingItemReviewerUserId").value = row.reviewer_user_id || "";
-    document.getElementById("reportingItemDueDate").value = row.due_date || "";
-    document.getElementById("reportingItemStatus").value = row.status || "not_started";
-    document.getElementById("reportingItemPriority").value = row.priority || "normal";
-    document.getElementById("reportingItemSortOrder").value = row.sort_order ?? 0;
-    document.getElementById("reportingItemNotes").value = row.notes || "";
-
-    setText("reportingItemModalTitle", "Edit reporting item");
-    setModalMsg("reportingItemModalMsg", "");
-    openModal("reportingItemModal");
-  } catch (err) {
-    console.error(err);
-    alert(err.message || "Failed to load reporting item.");
-  }
-}
 
 async function editDeliverable(deliverableId) {
   const companyId = getActiveCompanyId();

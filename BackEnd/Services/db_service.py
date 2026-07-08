@@ -79748,7 +79748,7 @@ class DatabaseService:
             RETURNING *
         """
 
-        return self.execute_sql(sql, (int(company_id),), fetchall=True)
+        return self.fetch_all(sql, (int(company_id),))
 
 
     def ifrs9_create_modification(self, company_id: int, instrument_id: int, payload: dict):
@@ -80474,8 +80474,7 @@ class DatabaseService:
             )
             RETURNING *
         """
-
-        return self.execute_sql(sql, (int(company_id), int(company_id)), fetchall=True)
+        return self.fetch_all(sql, (int(company_id), int(company_id)))
 
     def ifrs9_refresh_trade_receivables(self, company_id: int):
         schema = self.company_schema(company_id)
@@ -80539,19 +80538,31 @@ class DatabaseService:
             RETURNING fi.*
         """
 
-        return self.execute_sql(sql, (int(company_id), int(company_id)), fetchall=True)
+        return self.fetch_all(sql, (int(company_id), int(company_id)))
 
     def ifrs9_sync_bank_accounts(self, company_id: int):
         schema = self.company_schema(company_id)
 
-        return self.execute_sql(f"""
+        sql = f"""
             INSERT INTO {schema}.ifrs9_financial_instruments (
-                company_id, instrument_name, instrument_reference,
-                instrument_type, source_table, source_id,
-                counterparty_name, counterparty_type,
-                recognition_date, currency, original_amount, carrying_amount,
-                classification_status, measurement_category, business_model,
-                sppi_result, status, meta_json
+                company_id,
+                instrument_name,
+                instrument_reference,
+                instrument_type,
+                source_table,
+                source_id,
+                counterparty_name,
+                counterparty_type,
+                recognition_date,
+                currency,
+                original_amount,
+                carrying_amount,
+                classification_status,
+                measurement_category,
+                business_model,
+                sppi_result,
+                status,
+                meta_json
             )
             SELECT
                 b.company_id,
@@ -80587,7 +80598,9 @@ class DatabaseService:
                     AND fi.source_id = b.id
             )
             RETURNING *
-        """, (int(company_id),), fetchall=True)
+        """
+
+        return self.fetch_all(sql, (int(company_id),))
 
 
     def ifrs9_ap_exposure(self, company_id: int):
@@ -80632,7 +80645,7 @@ class DatabaseService:
     def ifrs9_sync_trade_payables(self, company_id: int):
         schema = self.company_schema(company_id)
 
-        return self.execute_sql(f"""
+        sql = f"""
             WITH paid AS (
                 SELECT
                     vpa.bill_id,
@@ -80654,8 +80667,13 @@ class DatabaseService:
                     COUNT(b.id) AS open_bills_count,
                     MIN(b.bill_date) AS oldest_bill_date,
                     MIN(b.due_date) AS oldest_due_date,
-                    GREATEST(0, COALESCE((CURRENT_DATE - MIN(b.due_date))::int, 0)) AS days_past_due,
-                    COALESCE(SUM(COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)), 0) AS open_balance
+                    GREATEST(
+                        0,
+                        COALESCE((CURRENT_DATE - MIN(b.due_date))::int, 0)
+                    ) AS days_past_due,
+                    COALESCE(SUM(
+                        COALESCE(b.total_amount, 0) - COALESCE(p.amount_paid, 0)
+                    ), 0) AS open_balance
                 FROM {schema}.vendors v
                 JOIN {schema}.bills b
                 ON b.vendor_id = v.id
@@ -80670,12 +80688,25 @@ class DatabaseService:
                 GROUP BY v.company_id, v.id, v.name
             )
             INSERT INTO {schema}.ifrs9_financial_instruments (
-                company_id, instrument_name, instrument_reference,
-                instrument_type, source_table, source_id,
-                vendor_id, counterparty_name, counterparty_type,
-                recognition_date, currency, original_amount, carrying_amount,
-                classification_status, measurement_category, business_model,
-                sppi_result, status, meta_json
+                company_id,
+                instrument_name,
+                instrument_reference,
+                instrument_type,
+                source_table,
+                source_id,
+                vendor_id,
+                counterparty_name,
+                counterparty_type,
+                recognition_date,
+                currency,
+                original_amount,
+                carrying_amount,
+                classification_status,
+                measurement_category,
+                business_model,
+                sppi_result,
+                status,
+                meta_json
             )
             SELECT
                 x.company_id,
@@ -80712,8 +80743,10 @@ class DatabaseService:
                 AND fi.source_id = x.vendor_id
             )
             RETURNING *
-        """, (int(company_id), int(company_id)), fetchall=True)
+        """
 
+        # ifrs9_sync_loan_payables
+        return self.fetch_all(sql, (int(company_id),))
 
     def ifrs9_discover_financial_instruments(self, company_id: int):
         loans = self.ifrs9_sync_loan_payables(company_id)
