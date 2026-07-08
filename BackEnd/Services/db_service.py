@@ -79266,71 +79266,71 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
-def accrual_deferral_build_item_preview_from_payload(self, company_id: int, payload: dict):
-    item_type = payload.get("item_type") or "prepaid_expense"
-    amount = float(payload.get("original_amount") or 0)
-    currency = (payload.get("currency") or self.company_currency(company_id) or "USD").upper()
+    def accrual_deferral_build_item_preview_from_payload(self, company_id: int, payload: dict):
+        item_type = payload.get("item_type") or "prepaid_expense"
+        amount = float(payload.get("original_amount") or 0)
+        currency = (payload.get("currency") or self.company_currency(company_id) or "USD").upper()
 
-    if amount <= 0:
-        raise ValueError("original_amount must be greater than zero")
+        if amount <= 0:
+            raise ValueError("original_amount must be greater than zero")
 
-    balance_role = payload.get("balance_account_role") or item_type
-    recognition_role = payload.get("recognition_account_role")
-    settlement_role = payload.get("settlement_role") or "cash_bank"
+        balance_role = payload.get("balance_account_role") or item_type
+        recognition_role = payload.get("recognition_account_role")
+        settlement_role = payload.get("settlement_role") or "cash_bank"
 
-    balance_account = (
-        payload.get("balance_account")
-        or self.accrual_deferral_account_by_role(company_id, balance_role)["code"]
-    )
+        balance_account = (
+            payload.get("balance_account")
+            or self.accrual_deferral_account_by_role(company_id, balance_role)["code"]
+        )
 
-    recognition_account = payload.get("recognition_account")
-    if not recognition_account and recognition_role:
-        recognition_account = self.accrual_deferral_account_by_role(company_id, recognition_role)["code"]
+        recognition_account = payload.get("recognition_account")
+        if not recognition_account and recognition_role:
+            recognition_account = self.accrual_deferral_account_by_role(company_id, recognition_role)["code"]
 
-    settlement_account = payload.get("settlement_account")
-    if not settlement_account:
-        settlement_account = self.accrual_deferral_account_by_role(company_id, settlement_role)["code"]
+        settlement_account = payload.get("settlement_account")
+        if not settlement_account:
+            settlement_account = self.accrual_deferral_account_by_role(company_id, settlement_role)["code"]
 
-    if item_type in ("prepaid_expense", "deferred_expense", "accrued_income"):
-        lines = [
-            {"account_code": balance_account, "debit": amount, "credit": 0},
-            {"account_code": settlement_account, "debit": 0, "credit": amount},
-        ]
-    elif item_type in ("deferred_income", "accrued_expense"):
-        lines = [
-            {"account_code": settlement_account, "debit": amount, "credit": 0},
-            {"account_code": balance_account, "debit": 0, "credit": amount},
-        ]
-    else:
-        raise ValueError(f"Unsupported item_type: {item_type}")
+        if item_type in ("prepaid_expense", "deferred_expense", "accrued_income"):
+            lines = [
+                {"account_code": balance_account, "debit": amount, "credit": 0},
+                {"account_code": settlement_account, "debit": 0, "credit": amount},
+            ]
+        elif item_type in ("deferred_income", "accrued_expense"):
+            lines = [
+                {"account_code": settlement_account, "debit": amount, "credit": 0},
+                {"account_code": balance_account, "debit": 0, "credit": amount},
+            ]
+        else:
+            raise ValueError(f"Unsupported item_type: {item_type}")
 
-    total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
-    total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
+        total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
+        total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
 
-    schedule = self.accrual_deferral_schedule_preview_from_payload(company_id, payload)
+        schedule = self.accrual_deferral_schedule_preview_from_payload(company_id, payload)
 
-    return {
-        "journal": {
-            "date": payload.get("transaction_date"),
-            "ref": "AD-INIT-DRAFT",
-            "description": f"Initial recognition - {payload.get('item_title') or 'Accrual/Deferral'}",
-            "source": "accrual_deferral_initial",
-            "source_id": None,
-            "module_name": "accrual_deferrals",
-            "currency": currency,
-            "lines": lines,
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-            "balanced": total_debit == total_credit,
-        },
-        "accounts": {
-            "settlement": settlement_account,
-            "balance": balance_account,
-            "recognition": recognition_account,
-        },
-        "schedule_preview": schedule,
-        "warnings": [],
-    }
+        return {
+            "journal": {
+                "date": payload.get("transaction_date"),
+                "ref": "AD-INIT-DRAFT",
+                "description": f"Initial recognition - {payload.get('item_title') or 'Accrual/Deferral'}",
+                "source": "accrual_deferral_initial",
+                "source_id": None,
+                "module_name": "accrual_deferrals",
+                "currency": currency,
+                "lines": lines,
+                "total_debit": total_debit,
+                "total_credit": total_credit,
+                "balanced": total_debit == total_credit,
+            },
+            "accounts": {
+                "settlement": settlement_account,
+                "balance": balance_account,
+                "recognition": recognition_account,
+            },
+            "schedule_preview": schedule,
+            "warnings": [],
+        }
 
 
     def accrual_deferral_schedule_preview_from_payload(self, company_id: int, payload: dict):
