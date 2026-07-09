@@ -40362,6 +40362,12 @@ async function saveEditModal() {
         openAccrualDeferralItem(btn.dataset.adOpen);
       });
     });
+
+    body.querySelectorAll("[data-ad-run-item]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openAdRecognitionRunModal({ itemId: btn.dataset.adRunItem });
+      });
+    });
   }
 
   async function openAccrualDeferralItem(itemId) {
@@ -40619,7 +40625,20 @@ async function saveEditModal() {
           <form id="adNewItemForm" class="flex flex-col h-[calc(92vh-78px)]">
             <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 flex-1 overflow-hidden p-4">
 
-              <div class="overflow-auto pr-2 space-y-4 border rounded-xl bg-white p-4">
+              <div class="overflow-auto pr-2 space-y-4 border rounded-xl bg-white p-4">               
+                <div id="adJournalHandoffBox" class="border rounded-xl bg-slate-50 p-3 text-xs hidden">
+                  <p class="font-bold text-slate-700 mb-2">Source Journal Context</p>
+                  <div class="grid grid-cols-2 gap-2">
+                    <label>
+                      Journal Date
+                      <input id="adSourceJournalDate" class="input" readonly>
+                    </label>
+                    <label>
+                      Journal Reference
+                      <input id="adSourceJournalRef" class="input" readonly>
+                    </label>
+                  </div>
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <label class="text-sm">
                     Item Title
@@ -40755,6 +40774,7 @@ async function saveEditModal() {
 
       document.getElementById("adModalCloseBtn")?.addEventListener("click", closeAdNewModal);
       document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
+
       document.getElementById("adPreviewBtn")?.addEventListener("click", async () => {
         await refreshAdPreview(window._AD_FINAL_CTX || {});
       });
@@ -40775,21 +40795,23 @@ async function saveEditModal() {
         closeAdNewModal();
       });
 
-      e.preventDefault();
+      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
 
-      const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
-      if (!payload.item_title) return alert("Item title is required.");
-      if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
-      if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+        if (!payload.item_title) return alert("Item title is required.");
+        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
+        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
 
-      await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
-        method: "POST",
-        body: JSON.stringify(payload),
+        await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        await loadAccrualDeferrals();
+        closeAdNewModal();
       });
-
-      await loadAccrualDeferrals();
-      closeAdNewModal();
     }
 
     const handoffRaw = store?.get?.("fs_ad_redirect_context") || "";
@@ -40798,6 +40820,15 @@ async function saveEditModal() {
 
     const finalCtx = { ...handoff, ...ctx };
     window._AD_FINAL_CTX = finalCtx;
+    const sourceDate = finalCtx.journalDate || finalCtx.journal_date || "";
+    const sourceRef = finalCtx.journalRef || finalCtx.journal_ref || "";
+
+    if ($("adJournalHandoffBox")) {
+      $("adJournalHandoffBox").classList.toggle("hidden", !(sourceDate || sourceRef));
+    }
+    if ($("adSourceJournalDate")) $("adSourceJournalDate").value = sourceDate;
+    if ($("adSourceJournalRef")) $("adSourceJournalRef").value = sourceRef;
+
     const today = new Date().toISOString().slice(0, 10);
     const txDate = finalCtx.journalDate || finalCtx.journal_date || today;
 
@@ -41086,11 +41117,7 @@ async function saveEditModal() {
       $("adApplyFiltersBtn")?.addEventListener("click", loadAccrualDeferrals);
       $("adNewItemBtn")?.addEventListener("click", openNewAccrualDeferralModal);
       $("adOpenRunBtn")?.addEventListener("click", () => openAdRecognitionRunModal({}));
-      body.querySelectorAll("[data-ad-run-item]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          openAdRecognitionRunModal({ itemId: btn.dataset.adRunItem });
-        });
-      });
+
       AD_STATE.bound = true;
     }
 
