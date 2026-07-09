@@ -35831,7 +35831,24 @@ async function saveEditModal() {
   }
 
   function bankAccountCode(row) {
-    return row?.gl_account_code || row?.account_code || row?.code || "";
+    const candidates = [
+      row?.gl_account_code,
+      row?.account_code,
+      row?.coa_code,
+      row?.ledger_account_code,
+    ];
+
+    for (const c of candidates) {
+      const v = String(c || "").trim();
+
+      // accept FinSage reporting/GL codes like BS_CA_1000
+      if (/^[A-Z]{2,}_[A-Z0-9_]+$/i.test(v)) return v;
+
+      // accept normal GL numbers like 1000, 1010, 1200
+      if (/^[0-9]{3,}$/.test(v)) return v;
+    }
+
+    return "";
   }
 
   async function ensureBankAccountsLoaded() {
@@ -35851,7 +35868,8 @@ async function saveEditModal() {
     const opts = [`<option value="">Select bank account…</option>`];
 
     for (const row of bankAccountsCache) {
-      const value = String(bankAccountCode(row) || row?.id || "");
+      const value = String(bankAccountCode(row) || "");
+        if (!value) continue;
       const label = bankAccountCode(row)
         ? `${bankAccountCode(row)} — ${bankAccountLabel(row)}`
         : bankAccountLabel(row);
@@ -37157,6 +37175,13 @@ async function saveEditModal() {
   }
 
   function smPayloadFromUI() {
+    console.log("BANK SELECT DEBUG", {
+      value: $("smCreditBankAccount")?.value,
+      selectedIndex: $("smCreditBankAccount")?.selectedIndex,
+      selectedText: $("smCreditBankAccount")?.selectedOptions?.[0]?.textContent,
+      selectedOption: $("smCreditBankAccount")?.selectedOptions?.[0],
+    });
+
     const t = String($("smEventType")?.value || "add_cost");
 
     const meta_json = {};
@@ -40574,35 +40599,92 @@ async function saveEditModal() {
     const sel = $("adNewSettlementAccount");
     if (!sel) return;
 
-    sel.innerHTML = `<option value="">Loading bank accounts...</option>`;
+    sel.innerHTML = `<option value="">Loading settlement accounts...</option>`;
+
+    const options = [];
 
     try {
-      const rows = await loadBankAccounts(cid);
-      const list = Array.isArray(rows) ? rows : [];
+      const res = await apiFetch(ENDPOINTS.bankAccounts(cid), { method: "GET" });
+      const banks = Array.isArray(res)
+        ? res
+        : (res.accounts || res.rows || res.bank_accounts || []);
 
-      sel.innerHTML = `
-        <option value="">Select bank / cash account</option>
-        ${list.map((b) => {
-          const code =
-            b.account_code ||
-            b.coa_code ||
-            b.gl_account_code ||
-            b.code ||
-            "";
+      (banks || []).forEach((b) => {
+        const code =
+          b.account_code ||
+          b.coa_code ||
+          b.gl_account_code ||
+          b.code ||
+          "";
 
-          const name =
-            b.name ||
-            b.bank_name ||
-            b.account_name ||
-            code;
+        const name =
+          b.name ||
+          b.bank_name ||
+          b.account_name ||
+          code;
 
-          return `<option value="${code}">${name} — ${code}</option>`;
-        }).join("")}
-      `;
+        if (code) {
+          options.push({ code, name, group: "Bank / Cash" });
+        }
+      });
     } catch (e) {
-      console.warn("[AD] load bank accounts failed", e);
-      sel.innerHTML = `<option value="">Use default cash/bank role</option>`;
+      console.warn("[AD] bank accounts apiFetch failed", e);
     }
+
+    const coa = Array.isArray(window.CURRENT_COA) ? window.CURRENT_COA : [];
+    coa.forEach((a) => {
+      const code = a.code || "";
+      const name = a.name || code;
+      const role = String(a.role || "").toLowerCase();
+      const category = String(a.category || "").toLowerCase();
+
+      const useful =
+        role.includes("cash") ||
+        role.includes("bank") ||
+        role.includes("accounts_payable") ||
+        role.includes("ap") ||
+        role.includes("accounts_receivable") ||
+        role.includes("ar") ||
+        role.includes("supplier") ||
+        role.includes("customer") ||
+        category.includes("current liabilities") ||
+        name.toLowerCase().includes("bank") ||
+        name.toLowerCase().includes("cash") ||
+        name.toLowerCase().includes("payable") ||
+        name.toLowerCase().includes("receivable") ||
+        name.toLowerCase().includes("clearing");
+
+      if (code && useful && !options.some((x) => x.code === code)) {
+        options.push({ code, name, group: "COA Contra Accounts" });
+      }
+    });
+
+    if (!options.length) {
+      sel.innerHTML = `<option value="">No settlement accounts found</option>`;
+      return;
+    }
+
+    sel.innerHTML = `
+      <option value="">Use default settlement role</option>
+      ${options.map((x) => `
+        <option value="${escapeHtml(x.code)}">
+          ${escapeHtml(x.name)}
+        </option>
+      `).join("")}
+    `;
+  }
+
+  function adSettlementIsAP() {
+    const sel = $("adNewSettlementAccount");
+    const opt = sel?.selectedOptions?.[0];
+    const txt = `${opt?.textContent || ""} ${sel?.value || ""}`.toLowerCase();
+
+    return (
+      txt.includes("accounts payable") ||
+      txt.includes("trade payable") ||
+      txt.includes("payables") ||
+      txt.includes("supplier")
+    );
   }
 
   async function openNewAccrualDeferralModal(ctx = {}) {
@@ -40795,23 +40877,51 @@ async function saveEditModal() {
         closeAdNewModal();
       });
 
-      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      e.preventDefault();
 
-        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+      const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
-        if (!payload.item_title) return alert("Item title is required.");
-        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
-        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+      if (!payload.item_title) return alert("Item title is required.");
+      if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
+      if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
 
-        await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
+      if (adSettlementIsAP()) {
+        const saved = await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            status: "draft",
+            source_flow: "ap_bill_pending",
+            initial_posting_status: "pending_ap_bill",
+          }),
         });
 
-        await loadAccrualDeferrals();
+        localStorage.setItem("fs_ad_ap_bill_prefill", JSON.stringify({
+          source: "accrual_deferral",
+          item_id: saved?.item?.id,
+          item_title: payload.item_title,
+          bill_date: payload.transaction_date,
+          currency: payload.currency,
+          amount: payload.original_amount,
+          account_code: payload.balance_account || "",
+          account_role: payload.balance_account_role || "prepaid_expense",
+          description: payload.item_title,
+          reference: window._AD_FINAL_CTX?.journalRef || window._AD_FINAL_CTX?.journal_ref || "",
+        }));
+
         closeAdNewModal();
+        await window.switchScreen?.("ap");
+        window.showToast?.("Draft saved. Complete the supplier bill in AP.", "info");
+        return;
+      }
+
+      await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
+        method: "POST",
+        body: JSON.stringify(payload),
       });
+
+      await loadAccrualDeferrals();
+      closeAdNewModal();
     }
 
     const handoffRaw = store?.get?.("fs_ad_redirect_context") || "";
@@ -40905,7 +41015,7 @@ async function saveEditModal() {
           <tbody>
             ${lines.map((ln) => `
               <tr class="border-t">
-                <td class="p-2">${ln.account_code || ln.account || ""}</td>
+                <td class="p-2">${ln.account_name || ln.name || ln.account_label || ln.account_code || ln.account || ""}</td>
                 <td class="p-2 text-right">${money(ln.debit)}</td>
                 <td class="p-2 text-right">${money(ln.credit)}</td>
               </tr>
@@ -41042,40 +41152,40 @@ async function saveEditModal() {
       prepaid_expense: {
         balanceRole: "prepaid_expense",
         recognitionRole: fromRole || "insurance_expense",
-        recognitionText: ctx.account?.code
-          ? `${ctx.account.name} — ${ctx.account.code}`
+        recognitionText: ctx.account?.name
+          ? ctx.account.name
           : "Expense account will be resolved from selected profile/account",
         settlementText: "Paid from Bank / Cash",
       },
       deferred_expense: {
         balanceRole: "deferred_expense",
         recognitionRole: fromRole || "maintenance_expense",
-        recognitionText: ctx.account?.code
-          ? `${ctx.account.name} — ${ctx.account.code}`
+        recognitionText: ctx.account?.name
+          ? ctx.account.name
           : "Expense account will be resolved from selected profile/account",
         settlementText: "Paid from Bank / Cash",
       },
       deferred_income: {
         balanceRole: "deferred_income",
         recognitionRole: fromRole || "rent_income",
-        recognitionText: ctx.account?.code
-          ? `${ctx.account.name} — ${ctx.account.code}`
+        recognitionText: ctx.account?.name
+          ? ctx.account.name
           : "Income account will be resolved from selected profile/account",
         settlementText: "Received into Bank / Cash",
       },
       accrued_expense: {
         balanceRole: "accrued_expense",
         recognitionRole: fromRole || "maintenance_expense",
-        recognitionText: ctx.account?.code
-          ? `${ctx.account.name} — ${ctx.account.code}`
+        recognitionText: ctx.account?.name
+          ? ctx.account.name
           : "Expense account will be resolved from selected profile/account",
         settlementText: "Accrual liability",
       },
       accrued_income: {
         balanceRole: "accrued_income",
         recognitionRole: fromRole || "rent_income",
-        recognitionText: ctx.account?.code
-          ? `${ctx.account.name} — ${ctx.account.code}`
+        recognitionText: ctx.account?.name
+          ? ctx.account.name
           : "Income account will be resolved from selected profile/account",
         settlementText: "Accrued income asset",
       },
@@ -68569,6 +68679,61 @@ function bindAP() {
     }
   } catch (e) {
     console.warn("[AP] failed to apply lease AP prefill", e);
+  }
+
+  // ======================================================
+  // Accrual / Deferral AP Prefill
+  // ======================================================
+
+  try {
+      const raw = localStorage.getItem("fs_ad_ap_bill_prefill");
+
+      if (raw) {
+          const prefill = JSON.parse(raw);
+          localStorage.removeItem("fs_ad_ap_bill_prefill");
+
+          setTimeout(() => {
+
+              window.clearBillForm?.({ keepCurrency: true });
+
+              window.writeBillForm?.({
+                  bill_date: prefill.bill_date,
+                  currency: prefill.currency,
+                  number: prefill.reference || "",
+                  notes: `Accrual/Deferral prepaid bill: ${prefill.item_title || ""}`,
+              });
+
+              const memoEl = document.getElementById("billMemo");
+              if (memoEl) {
+                  memoEl.value =
+                      prefill.description ||
+                      prefill.item_title ||
+                      "";
+              }
+
+              const linesBody = document.getElementById("billLines");
+              if (linesBody) linesBody.innerHTML = "";
+
+              window.addBillLine?.({
+                  item_name: prefill.item_title || "Prepaid Expense",
+                  description:
+                      prefill.description ||
+                      prefill.item_title ||
+                      "Prepaid Expense",
+                  quantity: 1,
+                  unit_price: Number(prefill.amount || 0),
+                  account_code: prefill.account_code || null,
+                  vat_code: "ZERO",
+                  vat_rate: 0,
+              });
+
+              window.recalcBill?.({ force: true });
+              window.saveBillDraftToLocal?.();
+
+          }, 150);
+      }
+  } catch (e) {
+      console.warn("[AP] failed to apply Accrual/Deferral prefill", e);
   }
 }
 window.bindAP = bindAP;

@@ -5719,6 +5719,199 @@ class DatabaseService:
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
 
+    def ensure_company_forecast(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_budgets (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            budget_type TEXT NOT NULL DEFAULT 'original',
+            financial_year INT,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            currency TEXT,
+            basis TEXT NOT NULL DEFAULT 'monthly',
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_by INT,
+            submitted_by INT,
+            submitted_at TIMESTAMPTZ,
+            approved_by INT,
+            approved_at TIMESTAMPTZ,
+            locked_by INT,
+            locked_at TIMESTAMPTZ,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_budget_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            budget_id INT NOT NULL REFERENCES {schema}.forecast_budgets(id) ON DELETE CASCADE,
+            account_code TEXT NOT NULL,
+            period_month DATE NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            line_type TEXT NOT NULL DEFAULT 'manual',
+            source_type TEXT,
+            source_ref TEXT,
+            notes TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (budget_id, account_code, period_month)
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_versions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            budget_id INT REFERENCES {schema}.forecast_budgets(id) ON DELETE SET NULL,
+            name TEXT NOT NULL,
+            version_type TEXT NOT NULL DEFAULT 'forecast',
+            scenario_name TEXT,
+            actuals_to_date DATE,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            currency TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_by INT,
+            approved_by INT,
+            approved_at TIMESTAMPTZ,
+            locked_by INT,
+            locked_at TIMESTAMPTZ,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            version_id INT NOT NULL REFERENCES {schema}.forecast_versions(id) ON DELETE CASCADE,
+            account_code TEXT NOT NULL,
+            period_month DATE NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source_type TEXT NOT NULL DEFAULT 'manual',
+            source_ref TEXT,
+            notes TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (version_id, account_code, period_month)
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_drivers (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            version_id INT REFERENCES {schema}.forecast_versions(id) ON DELETE CASCADE,
+            budget_id INT REFERENCES {schema}.forecast_budgets(id) ON DELETE CASCADE,
+            account_code TEXT NOT NULL,
+            driver_name TEXT NOT NULL,
+            driver_type TEXT NOT NULL DEFAULT 'quantity_rate',
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 0,
+            rate NUMERIC(18,4) NOT NULL DEFAULT 0,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            period_month DATE,
+            formula_text TEXT,
+            notes TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_approvals (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            budget_id INT REFERENCES {schema}.forecast_budgets(id) ON DELETE CASCADE,
+            version_id INT REFERENCES {schema}.forecast_versions(id) ON DELETE CASCADE,
+            action TEXT NOT NULL,
+            action_by INT,
+            action_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            comment TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_import_batches (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id INT,
+            file_name TEXT,
+            imported_by INT,
+            imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            status TEXT NOT NULL DEFAULT 'draft',
+            rows_total INT NOT NULL DEFAULT 0,
+            rows_success INT NOT NULL DEFAULT 0,
+            rows_failed INT NOT NULL DEFAULT 0,
+            error_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_audit_events (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id INT,
+            action TEXT NOT NULL,
+            actor_user_id INT,
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            before_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            after_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            message TEXT
+        );
+        """)
+
+        self.execute_ddl(f"""
+        CREATE INDEX IF NOT EXISTS idx_forecast_budgets_company
+            ON {schema}.forecast_budgets(company_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_budget_lines_budget
+            ON {schema}.forecast_budget_lines(budget_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_budget_lines_account_month
+            ON {schema}.forecast_budget_lines(company_id, account_code, period_month);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_versions_company
+            ON {schema}.forecast_versions(company_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_versions_budget
+            ON {schema}.forecast_versions(budget_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_lines_version
+            ON {schema}.forecast_lines(version_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_lines_account_month
+            ON {schema}.forecast_lines(company_id, account_code, period_month);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_drivers_version
+            ON {schema}.forecast_drivers(version_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_drivers_budget
+            ON {schema}.forecast_drivers(budget_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_approvals_budget
+            ON {schema}.forecast_approvals(budget_id);
+
+        CREATE INDEX IF NOT EXISTS idx_forecast_approvals_version
+            ON {schema}.forecast_approvals(version_id);
+        """)
+        
     def ensure_company_schema(self, company_id: int) -> None:
         schema = f"company_{company_id}"
 

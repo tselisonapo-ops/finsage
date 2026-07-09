@@ -222,6 +222,36 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
             raise ValueError(f"{label} control resolved blank posting code")
         return code
 
+    def resolve_accrual_deferral_line_account(ln: dict) -> str | None:
+        ad_item_id = ln.get("accrual_deferral_item_id") or ln.get("prepayment_id")
+        if not ad_item_id:
+            return None
+
+        schema = f"company_{int(company_id)}"
+
+        row = db_service.fetch_one(f"""
+            SELECT
+                id,
+                item_type,
+                balance_account,
+                balance_account_role
+            FROM {schema}.accrual_deferral_items
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1
+        """, (int(company_id), int(ad_item_id)))
+
+        if not row:
+            raise ValueError(f"Accrual/deferral item not found: {ad_item_id}")
+
+        account = (row.get("balance_account") or "").strip()
+        role = (row.get("balance_account_role") or row.get("item_type") or "prepaid_expense").strip()
+
+        if account:
+            return resolve_posting_code(account)
+
+        return db_service.accrual_deferral_account_by_role(company_id, role)["code"]
+
     def resolve_posting_code(raw_code: str) -> str:
         k = (raw_code or "").strip()
         if not k:
@@ -386,7 +416,7 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
     # IMPORTANT: use NET = qty*unit_price (line discounts already baked into stored net_amount in DB;
     # if you want to respect stored net_amount, prefer it when present.)
     for ln in lines:
-        acct = resolve_posting_code(ln.get("account_code"))
+        acct = resolve_accrual_deferral_line_account(ln) or resolve_posting_code(ln.get("account_code"))
 
         qty  = float(ln.get("quantity") or 0.0)
         up   = float(ln.get("unit_price") or 0.0)
@@ -478,7 +508,7 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
 
         # 2) reliable fallback: if the line posts to GRNI control account, it's inventory
         try:
-            acct = resolve_posting_code(ln.get("account_code"))
+            acct = resolve_accrual_deferral_line_account(ln) or resolve_posting_code(ln.get("account_code"))
             if GRNI_ACCOUNT and acct == GRNI_ACCOUNT:
                 return True
         except Exception:
