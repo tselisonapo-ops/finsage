@@ -31,7 +31,7 @@ def api_payroll_settings(company_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     if request.method == "GET":
         try:
@@ -84,7 +84,7 @@ def api_payroll_calendars(company_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     if request.method == "GET":
         try:
@@ -142,7 +142,7 @@ def api_payroll_employees(company_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     if request.method == "GET":
         try:
@@ -201,7 +201,7 @@ def api_payroll_employee(company_id: int, employee_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     if request.method == "GET":
         try:
@@ -259,7 +259,7 @@ def api_payroll_contract_create(company_id: int, employee_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     user_id = _jwt_user_id()
     if not user_id:
@@ -307,7 +307,7 @@ def api_payroll_tax_profile_create(company_id: int, employee_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
+   
 
     user_id = _jwt_user_id()
     if not user_id:
@@ -337,7 +337,6 @@ def api_payroll_bank_account_create(company_id: int, employee_id: int):
     if deny:
         return deny
 
-    _ensure_payroll(company_id)
 
     user_id = _jwt_user_id()
     if not user_id:
@@ -355,4 +354,22 @@ def api_payroll_bank_account_create(company_id: int, employee_id: int):
         return jsonify({"ok": True, "data": out}), 201
     except Exception as e:
         current_app.logger.exception("payroll_bank_account_create failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+    
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/bootstrap", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_payroll_bootstrap(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_bootstrap(int(company_id))
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_bootstrap failed")
         return jsonify({"ok": False, "error": str(e)}), 400

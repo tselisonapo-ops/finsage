@@ -82091,6 +82091,43 @@ class DatabaseService:
     # =========================
     # DB METHODS - PAYROLL
     # =========================
+    def payroll_bootstrap(self, company_id: int) -> dict:
+        company_id = int(company_id)
+
+        self.payroll_ensure_ready(company_id)
+
+        return {
+            "settings": self.payroll_settings_get(company_id) or {},
+            "calendars": self.payroll_calendars_list(company_id),
+            "employees": self.payroll_employees_list(company_id),
+        }
+
+    def payroll_ensure_ready(self, company_id: int) -> dict:
+        company_id = int(company_id)
+
+        self.ensure_company_payroll(company_id)
+
+        settings = self.payroll_settings_get(company_id)
+        if not settings:
+            company = self.fetch_one("""
+                SELECT currency
+                FROM public.companies
+                WHERE id=%s
+                LIMIT 1;
+            """, (company_id,)) or {}
+
+            settings = self.payroll_settings_upsert(company_id, {
+                "default_frequency": "monthly",
+                "default_currency": company.get("currency") or "ZAR",
+                "payroll_start_date": None,
+                "tax_authority_id": None,
+                "is_active": True,
+            })
+
+        return {
+            "ok": True,
+            "settings": settings,
+        }
 
     def payroll_settings_get(self, company_id: int):
         schema = self.company_schema(company_id)

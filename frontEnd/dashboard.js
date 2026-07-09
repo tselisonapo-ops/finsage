@@ -1424,6 +1424,9 @@ const ENDPOINTS = {
     // POST /api/companies/<cid>/payroll/employees/<employeeId>/bank-accounts
     bankAccounts: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/bank-accounts`,
+    
+    bootstrap: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/bootstrap`, 
   },
 
   forecast: {
@@ -41053,6 +41056,63 @@ async function saveEditModal() {
     setStatus("");
   }
 
+  function renderVarianceLanding() {
+    const el = $("bfVariancePane");
+    if (!el) return;
+
+    const budgets = BF.budgets || [];
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="section-head">
+          <div>
+            <h3>Budget vs Actual</h3>
+            <p class="muted">Select a budget to compare against actual ledger results.</p>
+          </div>
+        </div>
+
+        ${
+          budgets.length
+            ? `
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Budget</th>
+                    <th>FY</th>
+                    <th>Period</th>
+                    <th>Status</th>
+                    <th class="right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${budgets.map((b) => `
+                    <tr>
+                      <td><strong>${esc(b.name || "")}</strong></td>
+                      <td>${esc(b.financial_year || "")}</td>
+                      <td>${esc(String(b.period_start || "").slice(0, 10))} → ${esc(String(b.period_end || "").slice(0, 10))}</td>
+                      <td><span class="pill">${esc(b.status || "")}</span></td>
+                      <td class="right">
+                        <button class="btn small" data-bf-budget-variance="${b.id}">
+                          View Variance
+                        </button>
+                      </td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            `
+            : `
+              <div class="empty-state">
+                <h3>No budgets available</h3>
+                <p class="muted">Create a budget first, then variance analysis will appear here.</p>
+                <button class="btn primary" data-bf-action="create-budget">Create Budget</button>
+              </div>
+            `
+        }
+      </div>
+    `;
+  }
+
   function renderVariance() {
     const el = $("bfVariancePane");
     if (!el) return;
@@ -41489,8 +41549,15 @@ async function saveEditModal() {
 
   async function onTab(tab) {
     showTab(tab);
+
     if (tab === "budgets") await loadBudgets();
     if (tab === "forecast") await loadVersions();
+
+    if (tab === "variance") {
+      renderVarianceLanding();
+      return;
+    }
+
     if (tab === "drivers") await loadDrivers();
     if (tab === "imports") await loadImports();
   }
@@ -41595,15 +41662,12 @@ async function saveEditModal() {
 
     showPayrollStatus("Loading payroll…");
 
-    const [settingsRes, calendarsRes, employeesRes] = await Promise.all([
-      apiFetch(ENDPOINTS.payroll.settings(companyId)),
-      apiFetch(ENDPOINTS.payroll.calendars(companyId)),
-      apiFetch(ENDPOINTS.payroll.employees(companyId)),
-    ]);
+    const res = await apiFetch(ENDPOINTS.payroll.bootstrap(companyId));
+    const data = res?.data || {};
 
-    payrollState.settings = settingsRes?.data || {};
-    payrollState.calendars = calendarsRes?.items || [];
-    payrollState.employees = employeesRes?.items || [];
+    payrollState.settings = data.settings || {};
+    payrollState.calendars = data.calendars || [];
+    payrollState.employees = data.employees || [];
 
     renderPayrollSettings();
     renderPayrollCalendars();
