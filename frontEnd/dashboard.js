@@ -19920,7 +19920,7 @@ async function loadBankAccounts() {
     }
   });
 }
-
+window.loadBankAccounts = loadBankAccounts;
 let BANK_ACCOUNTS_INFLIGHT = null;
 
 async function refreshBankAccounts() {
@@ -40482,6 +40482,87 @@ async function saveEditModal() {
     });
   }
 
+  function openAdRecognitionRunModal(ctx = {}) {
+    let modal = document.getElementById("adRecognitionRunModal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "adRecognitionRunModal";
+      modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
+      modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-hidden flex flex-col">
+          <div class="p-4 border-b flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-lg font-bold">Recognition / Amortisation Run</h3>
+              <p class="text-sm text-slate-500">Post all pending recognition lines up to the selected date.</p>
+            </div>
+            <button id="adRunCloseBtn" class="btn">✕</button>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-[520px_1fr] gap-4 flex-1 overflow-hidden p-4">
+            <div class="border rounded-xl bg-white overflow-auto p-4">
+              <div class="grid grid-cols-2 gap-3 mb-4">
+                <label class="text-sm">
+                  Recognition Date
+                  <input id="adRunDate" type="date" class="input">
+                </label>
+                <label class="text-sm">
+                  Type
+                  <select id="adRunType" class="input">
+                    <option value="">All</option>
+                    <option value="prepaid_expense">Prepaid Expense</option>
+                    <option value="deferred_expense">Deferred Expense</option>
+                    <option value="deferred_income">Deferred Income</option>
+                    <option value="accrued_income">Accrued Income</option>
+                    <option value="accrued_expense">Accrued Expense</option>
+                  </select>
+                </label>
+              </div>
+
+              <h4 class="font-bold mb-2">Pending Schedule Lines</h4>
+              <div id="adRunScheduleHost" class="text-sm text-slate-500">
+                Click Preview to load pending lines.
+              </div>
+            </div>
+
+            <div class="border rounded-xl bg-slate-50 overflow-auto p-4">
+              <h4 class="font-bold">Journal Preview</h4>
+              <div id="adRunJournalHost" class="text-sm text-slate-500 mt-3">
+                Journal preview will appear here.
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center gap-2 border-t bg-white px-4 py-3 shrink-0">
+            <div class="text-xs text-slate-500">
+              This run includes all pending schedule lines up to the selected date.
+            </div>
+
+            <div class="flex gap-2">
+              <button id="adRunCancelBtn" type="button" class="btn">Cancel</button>
+              <button id="adRunPreviewBtn" type="button" class="btn">Preview</button>
+              <button id="adRunPostBtn" type="button" class="btn-highlight">Post Recognition</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      $("adRunCloseBtn")?.addEventListener("click", closeAdRecognitionRunModal);
+      $("adRunCancelBtn")?.addEventListener("click", closeAdRecognitionRunModal);
+    }
+
+    $("adRunDate").value = new Date().toISOString().slice(0, 10);
+    modal.classList.remove("hidden");
+  }
+
+  function closeAdRecognitionRunModal() {
+    document.getElementById("adRecognitionRunModal")?.classList.add("hidden");
+  }
+
+  window.openAdRecognitionRunModal = openAdRecognitionRunModal;
+
   async function loadAdBankAccounts() {
     const cid = adCid();
     const sel = $("adNewSettlementAccount");
@@ -40526,7 +40607,7 @@ async function saveEditModal() {
       modal.id = "adNewItemModal";
       modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
       modal.innerHTML = `
-        <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-auto">
+        <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-hidden">
           <div class="p-4 border-b flex justify-between items-center">
             <div>
               <h3 class="text-lg font-bold">New Accrual / Deferral Item</h3>
@@ -40535,10 +40616,10 @@ async function saveEditModal() {
             <button id="adModalCloseBtn" class="btn">✕</button>
           </div>
 
-          <form id="adNewItemForm" class="p-4 h-[calc(92vh-90px)] overflow-hidden">
-            <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 h-full">
+          <form id="adNewItemForm" class="flex flex-col h-[calc(92vh-78px)]">
+            <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 flex-1 overflow-hidden p-4">
 
-              <div class="overflow-auto pr-2 space-y-4">
+              <div class="overflow-auto pr-2 space-y-4 border rounded-xl bg-white p-4">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <label class="text-sm">
                     Item Title

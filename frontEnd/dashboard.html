@@ -1728,155 +1728,76 @@ html, body {
    Accruals & Deferrals Register
    ============================== */
 
-#screen-accrual-deferrals {
-  min-height: 100%;
-  background:
-    radial-gradient(circle at top right, rgba(0,200,200,.12), transparent 34%),
-    linear-gradient(180deg, #f8fbff 0%, #f4f7fb 52%, #f7faf9 100%);
-  animation: fsScreenIn .22s ease-out;
+#screen-accrual-deferrals{
+    min-height:100%;
+    background:#ffffff;
+    animation:fsScreenIn .22s ease-out;
 }
 
-#screen-accrual-deferrals .ad-hero {
-  background:
-    linear-gradient(135deg, #00284F 0%, #075985 48%, #00C8C8 100%);
-  color: #fff;
-  border-radius: 22px;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 20px 55px rgba(0,40,79,.18);
+/*------------------------------------------
+  HEADER
+-------------------------------------------*/
+
+#screen-accrual-deferrals .ad-hero{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    border-radius:18px;
+    padding:22px 26px;
+    box-shadow:0 2px 8px rgba(15,23,42,.04);
 }
 
-#screen-accrual-deferrals .ad-hero::before {
-  content: "";
-  position: absolute;
-  right: -70px;
-  top: -70px;
-  width: 220px;
-  height: 220px;
-  border-radius: 50%;
-  background: rgba(255,255,255,.12);
+#screen-accrual-deferrals .ad-hero::before{
+    display:none;
 }
 
-#screen-accrual-deferrals .ad-hero p,
-#screen-accrual-deferrals .ad-hero h2 {
-  position: relative;
-  z-index: 1;
+#screen-accrual-deferrals .ad-hero h2{
+    color:#0f172a;
+    font-weight:800;
 }
 
-#screen-accrual-deferrals .ad-hero .btn {
-  position: relative;
-  z-index: 1;
-  background: rgba(255,255,255,.94);
-  border-color: rgba(255,255,255,.45);
+#screen-accrual-deferrals .ad-hero p:first-child{
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-weight:700;
 }
 
-#screen-accrual-deferrals .ad-hero .btn-highlight {
-  position: relative;
-  z-index: 1;
-  background: #00C8C8;
-  border-color: #00C8C8;
-  box-shadow: 0 10px 24px rgba(0,200,200,.28);
+#screen-accrual-deferrals .ad-hero .text-sm{
+    color:#64748b;
 }
 
-#screen-accrual-deferrals .card {
-  border: 1px solid rgba(148,163,184,.28);
-  border-radius: 18px;
-  background: rgba(255,255,255,.92);
-  box-shadow: 0 10px 26px rgba(15,23,42,.045);
+#screen-accrual-deferrals .ad-hero .btn{
+    background:#ffffff;
 }
 
-#screen-accrual-deferrals .card:hover {
-  box-shadow: 0 14px 34px rgba(15,23,42,.07);
+#screen-accrual-deferrals .ad-hero .btn-highlight{
+    background:#14b8a6;
+    border-color:#14b8a6;
+    color:white;
 }
 
-#screen-accrual-deferrals .ad-kpi {
-  position: relative;
-  overflow: hidden;
-  min-height: 92px;
+#screen-accrual-deferrals .card{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    box-shadow:0 1px 4px rgba(15,23,42,.04);
+}#screen-accrual-deferrals .card{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    box-shadow:0 1px 4px rgba(15,23,42,.04);
 }
 
-#screen-accrual-deferrals .ad-kpi::after {
-  content: "";
-  position: absolute;
-  right: -28px;
-  top: -36px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: rgba(0,200,200,.08);
+#screen-accrual-deferrals table{
+    background:white;
 }
 
-#screen-accrual-deferrals .ad-kpi p {
-  position: relative;
-  z-index: 1;
+#screen-accrual-deferrals thead{
+    background:#f8fafc;
 }
 
-#screen-accrual-deferrals .ad-toolbar {
-  background: rgba(255,255,255,.78);
-  backdrop-filter: blur(10px);
-}
-
-#screen-accrual-deferrals table thead {
-  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
-}
-
-#screen-accrual-deferrals table th {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: #64748b;
-}
-
-#screen-accrual-deferrals tbody tr:hover {
-  background: rgba(0,200,200,.045);
-}
-
-#screen-accrual-deferrals .pill {
-  border-radius: 999px;
-  padding: 4px 9px;
-  font-size: 11px;
-  font-weight: 700;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-}
-
-#screen-accrual-deferrals .pill.status-active {
-  background: #ccfbf1;
-  color: #0f766e;
-  border-color: #99f6e4;
-}
-
-#screen-accrual-deferrals .pill.status-draft {
-  background: #ede9fe;
-  color: #5b21b6;
-  border-color: #ddd6fe;
-}
-
-#screen-accrual-deferrals .pill.status-completed {
-  background: #dcfce7;
-  color: #166534;
-  border-color: #bbf7d0;
-}
-
-#screen-accrual-deferrals .pill.status-cancelled,
-#screen-accrual-deferrals .pill.status-terminated {
-  background: #fee2e2;
-  color: #991b1b;
-  border-color: #fecaca;
-}
-
-#screen-accrual-deferrals .ad-empty {
-  padding: 60px 20px;
-  text-align: center;
-  color: #64748b;
-}
-
-#screen-accrual-deferrals .ad-empty strong {
-  display: block;
-  color: #00284F;
-  font-size: 16px;
-  margin-bottom: 4px;
+#screen-accrual-deferrals tbody tr:hover{
+    background:#f8fafc;
 }
   </style>
 
@@ -3610,7 +3531,7 @@ html, body {
           </div>
         </section>
 
-        <section id="screen-accrual-deferrals" class="screen hidden">
+        <section id="screen-accrual-deferrals"class="screen hidden bg-white min-h-screen">
           <div class="p-4 md:p-6 space-y-5">
 
             <div class="ad-hero flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
