@@ -5719,6 +5719,345 @@ class DatabaseService:
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
 
+    def ensure_company_payroll(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        self.execute_ddl(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_settings (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            tax_authority_id INTEGER,
+            default_frequency TEXT NOT NULL DEFAULT 'monthly',
+            default_currency TEXT,
+            payroll_start_date DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_settings_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_settings_tax_authority_fk
+                FOREIGN KEY (tax_authority_id) REFERENCES public.tax_authorities(id),
+
+            CONSTRAINT {schema}_payroll_settings_company_uniq
+                UNIQUE (company_id),
+
+            CONSTRAINT {schema}_payroll_settings_frequency_ck
+                CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_pay_calendars (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            frequency TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            payment_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_cal_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_cal_uniq
+                UNIQUE (company_id, frequency, period_start, period_end),
+
+            CONSTRAINT {schema}_payroll_cal_status_ck
+                CHECK (status IN ('open','locked','processed','closed')),
+
+            CONSTRAINT {schema}_payroll_cal_frequency_ck
+                CHECK (frequency IN ('weekly','fortnightly','monthly')),
+
+            CONSTRAINT {schema}_payroll_cal_dates_ck
+                CHECK (period_end >= period_start)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_cal_company_idx
+            ON {schema}.payroll_pay_calendars(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_cal_status_idx
+            ON {schema}.payroll_pay_calendars(company_id, status);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_departments (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_dept_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_dept_uniq
+                UNIQUE (company_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_dept_company_idx
+            ON {schema}.payroll_departments(company_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_positions (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            department_id INTEGER,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_pos_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_pos_department_fk
+                FOREIGN KEY (department_id) REFERENCES {schema}.payroll_departments(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_pos_uniq
+                UNIQUE (company_id, title)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_pos_company_idx
+            ON {schema}.payroll_positions(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_pos_dept_idx
+            ON {schema}.payroll_positions(company_id, department_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_account_mappings (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            mapping_key TEXT NOT NULL,
+            gl_account_code TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_map_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_map_coa_fk
+                FOREIGN KEY (gl_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_map_uniq
+                UNIQUE (company_id, mapping_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_map_company_idx
+            ON {schema}.payroll_account_mappings(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_map_account_idx
+            ON {schema}.payroll_account_mappings(company_id, gl_account_code);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_earning_types (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            gl_account_code TEXT,
+            taxable BOOLEAN NOT NULL DEFAULT TRUE,
+            pensionable BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_earn_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_earn_coa_fk
+                FOREIGN KEY (gl_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_earn_uniq
+                UNIQUE (company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_earn_company_idx
+            ON {schema}.payroll_earning_types(company_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_deduction_types (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            liability_account_code TEXT,
+            is_statutory BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_ded_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_ded_coa_fk
+                FOREIGN KEY (liability_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_ded_uniq
+                UNIQUE (company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_ded_company_idx
+            ON {schema}.payroll_deduction_types(company_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employer_contribution_types (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_cont_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_cont_expense_coa_fk
+                FOREIGN KEY (expense_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_cont_liability_coa_fk
+                FOREIGN KEY (liability_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_cont_uniq
+                UNIQUE (company_id, code)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_cont_company_idx
+            ON {schema}.payroll_employer_contribution_types(company_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employees (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_no TEXT NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            id_number TEXT,
+            passport_number TEXT,
+            tax_number TEXT,
+            department_id INTEGER,
+            position_id INTEGER,
+            start_date DATE NOT NULL,
+            termination_date DATE,
+            employment_status TEXT NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_emp_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_dept_fk
+                FOREIGN KEY (department_id) REFERENCES {schema}.payroll_departments(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_emp_pos_fk
+                FOREIGN KEY (position_id) REFERENCES {schema}.payroll_positions(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_emp_uniq
+                UNIQUE (company_id, employee_no),
+
+            CONSTRAINT {schema}_payroll_emp_status_ck
+                CHECK (employment_status IN ('active','inactive','terminated','suspended')),
+
+            CONSTRAINT {schema}_payroll_emp_dates_ck
+                CHECK (termination_date IS NULL OR termination_date >= start_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_company_idx
+            ON {schema}.payroll_employees(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_status_idx
+            ON {schema}.payroll_employees(company_id, employment_status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_name_idx
+            ON {schema}.payroll_employees(company_id, last_name, first_name);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_contracts (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            contract_type TEXT NOT NULL,
+            salary_type TEXT NOT NULL,
+            basic_salary NUMERIC(18,2) NOT NULL DEFAULT 0,
+            hourly_rate NUMERIC(18,2) NOT NULL DEFAULT 0,
+            normal_hours_per_month NUMERIC(18,2),
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_contract_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_contract_emp_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_contract_type_ck
+                CHECK (contract_type IN ('permanent','fixed_term','temporary','casual','contractor')),
+
+            CONSTRAINT {schema}_payroll_salary_type_ck
+                CHECK (salary_type IN ('monthly','hourly','daily','commission_only')),
+
+            CONSTRAINT {schema}_payroll_contract_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_contract_emp_idx
+            ON {schema}.payroll_employee_contracts(company_id, employee_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_payroll_contract_active_uniq
+            ON {schema}.payroll_employee_contracts(company_id, employee_id)
+            WHERE is_active = TRUE;
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_tax_profiles (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            tax_authority_id INTEGER,
+            tax_number TEXT,
+            paye_exempt BOOLEAN NOT NULL DEFAULT FALSE,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_tax_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_tax_emp_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_tax_authority_fk
+                FOREIGN KEY (tax_authority_id) REFERENCES public.tax_authorities(id),
+
+            CONSTRAINT {schema}_payroll_tax_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_tax_emp_idx
+            ON {schema}.payroll_employee_tax_profiles(company_id, employee_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_tax_authority_idx
+            ON {schema}.payroll_employee_tax_profiles(company_id, tax_authority_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_bank_accounts (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            bank_name TEXT NOT NULL,
+            account_name TEXT NOT NULL,
+            account_number TEXT NOT NULL,
+            branch_code TEXT,
+            account_type TEXT,
+            is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_emp_bank_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_bank_emp_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_bank_type_ck
+                CHECK (account_type IS NULL OR account_type IN ('current','savings','transmission','business'))
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_bank_emp_idx
+            ON {schema}.payroll_employee_bank_accounts(company_id, employee_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_payroll_emp_bank_primary_uniq
+            ON {schema}.payroll_employee_bank_accounts(company_id, employee_id)
+            WHERE is_primary = TRUE;
+        """)
+
     def ensure_company_forecast(self, company_id: int):
         schema = self.company_schema(company_id)
 
@@ -23750,6 +24089,8 @@ class DatabaseService:
             total_amount NUMERIC(18,2) DEFAULT 0
         );
 
+        ALTER TABLE {schema}.bill_lines
+        ADD COLUMN IF NOT EXISTS accrual_deferral_item_id INT NULL;
         -- ==================================================
         -- Bill lines → Bills FK (company-safe)
         -- ==================================================
@@ -23823,6 +24164,9 @@ class DatabaseService:
         -- Most common query: fetch lines for a bill (and keep order)
         CREATE INDEX IF NOT EXISTS {schema}_bill_lines_bill_line_idx
         ON {schema}.bill_lines(bill_id, line_no);
+
+        CREATE INDEX IF NOT EXISTS {schema}_bill_lines_ad_item_idx
+        ON {schema}.bill_lines(company_id, accrual_deferral_item_id);
 
         -- 7) GRNI ↔ Bill linking (receipt accrual clearing traceability)
         CREATE TABLE IF NOT EXISTS {schema}.bill_grni_links (
@@ -45877,6 +46221,11 @@ class DatabaseService:
                 "vat_rate": vat_rate,
                 "vat_amount": vat,
                 "total_amount": line_total,
+                "accrual_deferral_item_id": (
+                    int(ln.get("accrual_deferral_item_id") or ln.get("prepayment_id") or 0)
+                    if (ln.get("accrual_deferral_item_id") or ln.get("prepayment_id"))
+                    else None
+                ),
             })
 
         # ---- header discount ----
@@ -46021,10 +46370,11 @@ class DatabaseService:
                     f"""
                     INSERT INTO {schema}.bill_lines (
                         company_id, bill_id, line_no, item_name, description, account_code,
+                        accrual_deferral_item_id,
                         quantity, unit_price, discount_amount, net_amount,
                         vat_rate, vat_amount, total_amount
                     )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
                     """,
                     (
                         int(company_id),
@@ -46033,6 +46383,7 @@ class DatabaseService:
                         pl.get("item_name"),
                         pl["description"],
                         pl.get("account_code"),
+                        pl.get("accrual_deferral_item_id"),
                         pl["quantity"],
                         pl["unit_price"],
                         pl["discount_amount"],
@@ -81096,6 +81447,602 @@ class DatabaseService:
                 "bank_accounts": banks or [],
             },
         }
+
+    def forecast_list_budgets(self, company_id: int) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s
+            ORDER BY created_at DESC, id DESC;
+        """, (int(company_id),))
+
+
+    def forecast_create_budget(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        name = (payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("Budget name is required.")
+
+        period_start = payload.get("period_start")
+        period_end = payload.get("period_end")
+        if not period_start or not period_end:
+            raise ValueError("Period start and period end are required.")
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_budgets (
+                company_id, name, description, budget_type, financial_year,
+                period_start, period_end, currency, basis, status, created_by
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft',%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            name,
+            payload.get("description"),
+            payload.get("budget_type") or "original",
+            payload.get("financial_year"),
+            period_start,
+            period_end,
+            payload.get("currency"),
+            payload.get("basis") or "monthly",
+            user_id,
+        ))
+
+        return row
+
+
+    def forecast_get_budget(self, company_id: int, budget_id: int) -> Optional[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        budget = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s AND id = %s
+            LIMIT 1;
+        """, (int(company_id), int(budget_id)))
+
+        if not budget:
+            return None
+
+        budget["lines"] = self.fetch_all(f"""
+            SELECT
+                l.*,
+                c.name AS account_name,
+                c.section,
+                c.category
+            FROM {schema}.forecast_budget_lines l
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = l.company_id
+            AND c.code = l.account_code
+            WHERE l.company_id = %s
+            AND l.budget_id = %s
+            ORDER BY l.period_month, l.account_code;
+        """, (int(company_id), int(budget_id)))
+
+        return budget
+
+
+    def forecast_upsert_budget_line(self, company_id: int, budget_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        account_code = (payload.get("account_code") or "").strip()
+        period_month = payload.get("period_month")
+
+        if not account_code:
+            raise ValueError("Account code is required.")
+        if not period_month:
+            raise ValueError("Period month is required.")
+
+        account = self.fetch_one(f"""
+            SELECT code
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND code = %s
+            AND posting = TRUE
+            LIMIT 1;
+        """, (int(company_id), account_code))
+
+        if not account:
+            raise ValueError(f"Invalid posting account code: {account_code}")
+
+        budget = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s AND id = %s
+            LIMIT 1;
+        """, (int(company_id), int(budget_id)))
+
+        if not budget:
+            raise ValueError("Budget not found.")
+
+        if budget.get("status") in ("approved", "locked"):
+            raise ValueError("Cannot edit an approved or locked budget.")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_budget_lines (
+                company_id, budget_id, account_code, period_month,
+                amount, line_type, source_type, source_ref, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (budget_id, account_code, period_month)
+            DO UPDATE SET
+                amount = EXCLUDED.amount,
+                line_type = EXCLUDED.line_type,
+                source_type = EXCLUDED.source_type,
+                source_ref = EXCLUDED.source_ref,
+                notes = EXCLUDED.notes,
+                updated_at = now()
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(budget_id),
+            account_code,
+            period_month,
+            payload.get("amount") or 0,
+            payload.get("line_type") or "manual",
+            payload.get("source_type"),
+            payload.get("source_ref"),
+            payload.get("notes"),
+        ))
+
+
+    def forecast_submit_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.forecast_budgets
+            SET status = 'submitted',
+                submitted_by = %s,
+                submitted_at = now(),
+                updated_at = now()
+            WHERE company_id = %s
+            AND id = %s
+            AND status = 'draft'
+            RETURNING *;
+        """, (user_id, int(company_id), int(budget_id)))
+
+        if not row:
+            raise ValueError("Budget not found or cannot be submitted.")
+
+        return row
+
+
+    def forecast_approve_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None, comment: Optional[str] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.forecast_budgets
+            SET status = 'approved',
+                approved_by = %s,
+                approved_at = now(),
+                updated_at = now()
+            WHERE company_id = %s
+            AND id = %s
+            AND status IN ('draft', 'submitted')
+            RETURNING *;
+        """, (user_id, int(company_id), int(budget_id)))
+
+        if not row:
+            raise ValueError("Budget not found or cannot be approved.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.forecast_approvals (
+                company_id, budget_id, action, action_by, comment
+            )
+            VALUES (%s,%s,'approved',%s,%s);
+        """, (int(company_id), int(budget_id), user_id, comment))
+
+        return row
+
+
+    def forecast_lock_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.forecast_budgets
+            SET status = 'locked',
+                locked_by = %s,
+                locked_at = now(),
+                updated_at = now()
+            WHERE company_id = %s
+            AND id = %s
+            AND status = 'approved'
+            RETURNING *;
+        """, (user_id, int(company_id), int(budget_id)))
+
+        if not row:
+            raise ValueError("Budget not found or must be approved before locking.")
+
+        return row
+
+
+    def forecast_budget_vs_actual(self, company_id: int, budget_id: int) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            WITH b AS (
+                SELECT
+                    l.company_id,
+                    l.account_code,
+                    l.period_month,
+                    SUM(l.amount) AS budget_amount
+                FROM {schema}.forecast_budget_lines l
+                WHERE l.company_id = %s
+                AND l.budget_id = %s
+                GROUP BY l.company_id, l.account_code, l.period_month
+            ),
+            a AS (
+                SELECT
+                    company_id,
+                    account AS account_code,
+                    date_trunc('month', date)::date AS period_month,
+                    SUM(debit - credit) AS actual_amount
+                FROM {schema}.ledger
+                WHERE company_id = %s
+                GROUP BY company_id, account, date_trunc('month', date)::date
+            )
+            SELECT
+                b.account_code,
+                c.name AS account_name,
+                c.section,
+                c.category,
+                b.period_month,
+                COALESCE(b.budget_amount, 0) AS budget_amount,
+                COALESCE(a.actual_amount, 0) AS actual_amount,
+                COALESCE(a.actual_amount, 0) - COALESCE(b.budget_amount, 0) AS variance_amount,
+                CASE
+                    WHEN COALESCE(b.budget_amount, 0) = 0 THEN NULL
+                    ELSE ROUND(
+                        ((COALESCE(a.actual_amount, 0) - COALESCE(b.budget_amount, 0))
+                        / NULLIF(ABS(b.budget_amount), 0)) * 100,
+                        2
+                    )
+                END AS variance_pct
+            FROM b
+            LEFT JOIN a
+                ON a.company_id = b.company_id
+            AND a.account_code = b.account_code
+            AND a.period_month = b.period_month
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = b.company_id
+            AND c.code = b.account_code
+            ORDER BY b.period_month, b.account_code;
+        """, (int(company_id), int(budget_id), int(company_id)))
+
+
+    def forecast_create_version(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        name = (payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("Forecast name is required.")
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_versions (
+                company_id, budget_id, name, version_type, scenario_name,
+                actuals_to_date, period_start, period_end, currency, status, created_by
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft',%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            payload.get("budget_id"),
+            name,
+            payload.get("version_type") or "forecast",
+            payload.get("scenario_name"),
+            payload.get("actuals_to_date"),
+            payload.get("period_start"),
+            payload.get("period_end"),
+            payload.get("currency"),
+            user_id,
+        ))
+
+        return row
+
+
+    def forecast_list_versions(self, company_id: int) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.forecast_versions
+            WHERE company_id = %s
+            ORDER BY created_at DESC, id DESC;
+        """, (int(company_id),))
+
+    # =========================
+    # DB METHODS - PAYROLL
+    # =========================
+
+    def payroll_settings_get(self, company_id: int):
+        schema = self.company_schema(company_id)
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_settings
+            WHERE company_id=%s
+            LIMIT 1;
+        """, (int(company_id),))
+
+
+    def payroll_settings_upsert(self, company_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_settings (
+                company_id,
+                tax_authority_id,
+                default_frequency,
+                default_currency,
+                payroll_start_date,
+                is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,COALESCE(%s, TRUE))
+            ON CONFLICT (company_id)
+            DO UPDATE SET
+                tax_authority_id = EXCLUDED.tax_authority_id,
+                default_frequency = EXCLUDED.default_frequency,
+                default_currency = EXCLUDED.default_currency,
+                payroll_start_date = EXCLUDED.payroll_start_date,
+                is_active = EXCLUDED.is_active
+            RETURNING *;
+        """, (
+            int(company_id),
+            data.get("tax_authority_id"),
+            data.get("default_frequency") or "monthly",
+            data.get("default_currency"),
+            data.get("payroll_start_date"),
+            data.get("is_active"),
+        ))
+
+
+    def payroll_calendars_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_pay_calendars
+            WHERE company_id=%s
+            ORDER BY period_start DESC, id DESC;
+        """, (int(company_id),))
+
+
+    def payroll_calendar_create(self, company_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_pay_calendars (
+                company_id, frequency, period_start, period_end, payment_date, status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            data.get("frequency") or "monthly",
+            data.get("period_start"),
+            data.get("period_end"),
+            data.get("payment_date"),
+            data.get("status") or "open",
+        ))
+
+
+    def payroll_employees_list(self, company_id: int, status=None):
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = "WHERE e.company_id=%s"
+
+        if status:
+            where += " AND e.employment_status=%s"
+            params.append(status)
+
+        return self.fetch_all(f"""
+            SELECT
+                e.*,
+                d.name AS department_name,
+                p.title AS position_title
+            FROM {schema}.payroll_employees e
+            LEFT JOIN {schema}.payroll_departments d ON d.id = e.department_id
+            LEFT JOIN {schema}.payroll_positions p ON p.id = e.position_id
+            {where}
+            ORDER BY e.last_name, e.first_name, e.id;
+        """, tuple(params))
+
+
+    def payroll_employee_get(self, company_id: int, employee_id: int):
+        schema = self.company_schema(company_id)
+
+        emp = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(employee_id)))
+
+        if not emp:
+            return None
+
+        emp["contracts"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_contracts
+            WHERE company_id=%s AND employee_id=%s
+            ORDER BY effective_from DESC, id DESC;
+        """, (int(company_id), int(employee_id)))
+
+        emp["tax_profiles"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_tax_profiles
+            WHERE company_id=%s AND employee_id=%s
+            ORDER BY effective_from DESC, id DESC;
+        """, (int(company_id), int(employee_id)))
+
+        emp["bank_accounts"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_bank_accounts
+            WHERE company_id=%s AND employee_id=%s
+            ORDER BY is_primary DESC, id DESC;
+        """, (int(company_id), int(employee_id)))
+
+        return emp
+
+
+    def payroll_employee_create(self, company_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employees (
+                company_id, employee_no, first_name, last_name, email, phone,
+                id_number, passport_number, tax_number,
+                department_id, position_id, start_date, employment_status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            data.get("employee_no"),
+            data.get("first_name"),
+            data.get("last_name"),
+            data.get("email"),
+            data.get("phone"),
+            data.get("id_number"),
+            data.get("passport_number"),
+            data.get("tax_number"),
+            data.get("department_id"),
+            data.get("position_id"),
+            data.get("start_date"),
+            data.get("employment_status") or "active",
+        ))
+
+
+    def payroll_employee_update(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        allowed = [
+            "employee_no", "first_name", "last_name", "email", "phone",
+            "id_number", "passport_number", "tax_number",
+            "department_id", "position_id", "start_date",
+            "termination_date", "employment_status"
+        ]
+
+        sets = []
+        params = []
+
+        for key in allowed:
+            if key in data:
+                sets.append(f"{key}=%s")
+                params.append(data.get(key))
+
+        if not sets:
+            return self.payroll_employee_get(company_id, employee_id)
+
+        params.extend([int(company_id), int(employee_id)])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.payroll_employees
+            SET {", ".join(sets)}
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """, tuple(params))
+
+
+    def payroll_contract_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        if data.get("is_active", True):
+            self.execute(f"""
+                UPDATE {schema}.payroll_employee_contracts
+                SET is_active = FALSE,
+                    effective_to = COALESCE(effective_to, %s::date - INTERVAL '1 day')
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND is_active = TRUE;
+            """, (
+                data.get("effective_from"),
+                int(company_id),
+                int(employee_id),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_contracts (
+                company_id, employee_id, contract_type, salary_type,
+                basic_salary, hourly_rate, normal_hours_per_month,
+                effective_from, effective_to, is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, TRUE))
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("contract_type") or "permanent",
+            data.get("salary_type") or "monthly",
+            data.get("basic_salary") or 0,
+            data.get("hourly_rate") or 0,
+            data.get("normal_hours_per_month"),
+            data.get("effective_from"),
+            data.get("effective_to"),
+            data.get("is_active"),
+        ))
+
+
+    def payroll_tax_profile_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_tax_profiles (
+                company_id, employee_id, tax_authority_id, tax_number,
+                paye_exempt, effective_from, effective_to
+            )
+            VALUES (%s,%s,%s,%s,COALESCE(%s,FALSE),%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("tax_authority_id"),
+            data.get("tax_number"),
+            data.get("paye_exempt"),
+            data.get("effective_from"),
+            data.get("effective_to"),
+        ))
+
+
+    def payroll_bank_account_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        if data.get("is_primary", True):
+            self.execute(f"""
+                UPDATE {schema}.payroll_employee_bank_accounts
+                SET is_primary = FALSE
+                WHERE company_id=%s AND employee_id=%s;
+            """, (int(company_id), int(employee_id)))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_bank_accounts (
+                company_id, employee_id, bank_name, account_name,
+                account_number, branch_code, account_type, is_primary
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,TRUE))
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("bank_name"),
+            data.get("account_name"),
+            data.get("account_number"),
+            data.get("branch_code"),
+            data.get("account_type"),
+            data.get("is_primary"),
+        ))
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

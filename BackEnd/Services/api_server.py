@@ -187,6 +187,7 @@ from BackEnd.Services.routes.pos_routes import pos_bp
 from BackEnd.Services.routes.asset_tax_routes import bp_asset_tax
 from BackEnd.Services.routes.accrual_deferral_routes import bp_accrual_deferral
 from BackEnd.Services.routes.ifrs9_routes import bp_ifrs9
+from BackEnd.Services.routes.payroll_routes import payroll_bp
 
 
 
@@ -329,6 +330,7 @@ app.register_blueprint(pos_bp)
 app.register_blueprint(bp_asset_tax)
 app.register_blueprint(bp_accrual_deferral)
 app.register_blueprint(bp_ifrs9)
+app.register_blueprint(payroll_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

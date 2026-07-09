@@ -9720,6 +9720,208 @@ html, body {
           </div>
         </section>
 
+      <!-- Budgeting -->
+      <section id="screen-budgeting" class="screen hidden">
+        <div id="bfRoot"></div>
+      </section>
+
+      <section id="screen-payroll" class="screen hidden">
+        <div class="page-head">
+          <div>
+            <h2>Payroll</h2>
+            <p class="muted">Manage payroll setup, pay calendars, employees, contracts, tax profiles and bank details.</p>
+          </div>
+          <div class="row gap">
+            <button id="payrollRefreshBtn" class="btn secondary">Refresh</button>
+            <button id="payrollAddEmployeeBtn" class="btn primary">Add Employee</button>
+          </div>
+        </div>
+
+        <div id="payrollStatus" class="notice hidden"></div>
+
+        <div class="tabs">
+          <button class="tab active" data-payroll-tab="overview">Overview</button>
+          <button class="tab" data-payroll-tab="settings">Settings</button>
+          <button class="tab" data-payroll-tab="calendars">Pay Calendars</button>
+          <button class="tab" data-payroll-tab="employees">Employees</button>
+        </div>
+
+        <div id="payrollTabOverview" class="payroll-tab-panel">
+          <div class="grid cards-3">
+            <div class="card"><h3>Employees</h3><div id="payrollEmpCount" class="metric">0</div></div>
+            <div class="card"><h3>Open Calendars</h3><div id="payrollOpenCalCount" class="metric">0</div></div>
+            <div class="card"><h3>Default Frequency</h3><div id="payrollFrequency" class="metric">—</div></div>
+          </div>
+        </div>
+
+        <div id="payrollTabSettings" class="payroll-tab-panel hidden">
+          <div class="card">
+            <h3>Payroll Settings</h3>
+            <div class="form-grid">
+              <label>Default Frequency
+                <select id="payrollDefaultFrequency">
+                  <option value="monthly">Monthly</option>
+                  <option value="fortnightly">Fortnightly</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </label>
+
+              <label>Default Currency
+                <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
+              </label>
+
+              <label>Tax Authority ID
+                <input id="payrollTaxAuthorityId" type="number" placeholder="Optional">
+              </label>
+
+              <label>Payroll Start Date
+                <input id="payrollStartDate" type="date">
+              </label>
+            </div>
+
+            <button id="payrollSaveSettingsBtn" class="btn primary">Save Settings</button>
+          </div>
+        </div>
+
+        <div id="payrollTabCalendars" class="payroll-tab-panel hidden">
+          <div class="card">
+            <h3>Create Pay Calendar</h3>
+            <div class="form-grid">
+              <label>Frequency
+                <select id="payrollCalFrequency">
+                  <option value="monthly">Monthly</option>
+                  <option value="fortnightly">Fortnightly</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </label>
+              <label>Period Start <input id="payrollCalStart" type="date"></label>
+              <label>Period End <input id="payrollCalEnd" type="date"></label>
+              <label>Payment Date <input id="payrollCalPaymentDate" type="date"></label>
+            </div>
+            <button id="payrollCreateCalendarBtn" class="btn primary">Create Calendar</button>
+          </div>
+
+          <div class="card">
+            <h3>Calendars</h3>
+            <div id="payrollCalendarsList"></div>
+          </div>
+        </div>
+
+        <div id="payrollTabEmployees" class="payroll-tab-panel hidden">
+          <div class="card">
+            <div class="row between">
+              <h3>Employees</h3>
+              <select id="payrollEmployeeStatusFilter">
+                <option value="">All</option>
+                <option value="active">Active</option>
+                <option value="terminated">Terminated</option>
+                <option value="inactive">Inactive</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+            <div id="payrollEmployeesList"></div>
+          </div>
+        </div>
+      </section>
+
+      <div id="payrollEmployeeModal" class="modal hidden">
+        <div class="modal-card large">
+          <div class="modal-head">
+            <h3 id="payrollEmployeeModalTitle">Add Employee</h3>
+            <button id="payrollEmployeeModalClose" class="icon-btn">×</button>
+          </div>
+
+          <div class="tabs small">
+            <button class="tab active" data-payroll-emp-tab="bio">Employee</button>
+            <button class="tab" data-payroll-emp-tab="contract">Contract</button>
+            <button class="tab" data-payroll-emp-tab="tax">Tax</button>
+            <button class="tab" data-payroll-emp-tab="bank">Bank</button>
+          </div>
+
+          <input id="payrollEditingEmployeeId" type="hidden">
+
+          <div id="payrollEmpPanelBio" class="payroll-emp-panel">
+            <div class="form-grid">
+              <label>Employee No <input id="payEmpNo"></label>
+              <label>First Name <input id="payFirstName"></label>
+              <label>Last Name <input id="payLastName"></label>
+              <label>Email <input id="payEmail" type="email"></label>
+              <label>Phone <input id="payPhone"></label>
+              <label>ID Number <input id="payIdNumber"></label>
+              <label>Passport Number <input id="payPassportNumber"></label>
+              <label>Tax Number <input id="payTaxNumber"></label>
+              <label>Start Date <input id="payStartDate" type="date"></label>
+              <label>Status
+                <select id="payEmploymentStatus">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="terminated">Terminated</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </label>
+            </div>
+            <button id="payrollSaveEmployeeBtn" class="btn primary">Save Employee</button>
+          </div>
+
+          <div id="payrollEmpPanelContract" class="payroll-emp-panel hidden">
+            <div class="form-grid">
+              <label>Contract Type
+                <select id="payContractType">
+                  <option value="permanent">Permanent</option>
+                  <option value="fixed_term">Fixed Term</option>
+                  <option value="temporary">Temporary</option>
+                  <option value="casual">Casual</option>
+                  <option value="contractor">Contractor</option>
+                </select>
+              </label>
+              <label>Salary Type
+                <select id="paySalaryType">
+                  <option value="monthly">Monthly</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                  <option value="commission_only">Commission Only</option>
+                </select>
+              </label>
+              <label>Basic Salary <input id="payBasicSalary" type="number" step="0.01"></label>
+              <label>Hourly Rate <input id="payHourlyRate" type="number" step="0.01"></label>
+              <label>Normal Hours / Month <input id="payNormalHours" type="number" step="0.01"></label>
+              <label>Effective From <input id="payContractFrom" type="date"></label>
+            </div>
+            <button id="payrollSaveContractBtn" class="btn primary">Save Contract</button>
+          </div>
+
+          <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden">
+            <div class="form-grid">
+              <label>Tax Authority ID <input id="payTaxProfileAuthorityId" type="number"></label>
+              <label>Tax Number <input id="payTaxProfileNumber"></label>
+              <label>Effective From <input id="payTaxEffectiveFrom" type="date"></label>
+              <label><input id="payPayeExempt" type="checkbox"> PAYE Exempt</label>
+            </div>
+            <button id="payrollSaveTaxBtn" class="btn primary">Save Tax Profile</button>
+          </div>
+
+          <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden">
+            <div class="form-grid">
+              <label>Bank Name <input id="payBankName"></label>
+              <label>Account Name <input id="payBankAccountName"></label>
+              <label>Account Number <input id="payBankAccountNumber"></label>
+              <label>Branch Code <input id="payBankBranchCode"></label>
+              <label>Account Type
+                <select id="payBankAccountType">
+                  <option value="">Select…</option>
+                  <option value="current">Current</option>
+                  <option value="savings">Savings</option>
+                  <option value="transmission">Transmission</option>
+                  <option value="business">Business</option>
+                </select>
+              </label>
+              <label><input id="payBankPrimary" type="checkbox" checked> Primary Account</label>
+            </div>
+            <button id="payrollSaveBankBtn" class="btn primary">Save Bank Account</button>
+          </div>
+        </div>
+      </div>
+
         <section id="screen-fixedassets" class="screen">
           <div class="card p-4">
             <div class="flex items-center justify-between">
@@ -10834,15 +11036,6 @@ html, body {
         </div>
       </div>
 
-      <!-- Budgeting -->
-      <section id="screen-budgeting" class="screen">
-        <div class="card p-4">
-          <h3 class="font-bold">Budgets & Forecasts</h3>
-          <p class="mt-1 text-sm text-slate-600">
-            Budget versions, forecasts, and scenario modelling.
-          </p>
-        </div>
-      </section> 
       </div>
     </main>
   </div>

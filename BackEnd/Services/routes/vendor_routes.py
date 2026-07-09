@@ -245,12 +245,17 @@ def build_bill_journal_lines(bill: dict, company_id: int) -> dict:
             raise ValueError(f"Accrual/deferral item not found: {ad_item_id}")
 
         account = (row.get("balance_account") or "").strip()
-        role = (row.get("balance_account_role") or row.get("item_type") or "prepaid_expense").strip()
+        role = (
+            row.get("balance_account_role")
+            or row.get("item_type")
+            or "prepaid_expense"
+        ).strip()
 
         if account:
             return resolve_posting_code(account)
 
-        return db_service.accrual_deferral_account_by_role(company_id, role)["code"]
+        resolved = db_service.accrual_deferral_account_by_role(company_id, role)
+        return resolved["code"]
 
     def resolve_posting_code(raw_code: str) -> str:
         k = (raw_code or "").strip()
@@ -789,6 +794,26 @@ def post_bill_with_asset_awareness(company_id: int, bill_id: int, payload: dict 
     
     built = build_bill_journal_lines(bill, company_id)
     jid = db_service.post_bill_to_gl(company_id, bill_id, jlines=built["lines"])
+
+    schema = f"company_{int(company_id)}"
+
+    ad_ids = {
+        int(ln.get("accrual_deferral_item_id") or 0)
+        for ln in (bill.get("lines") or [])
+        if int(ln.get("accrual_deferral_item_id") or 0) > 0
+    }
+
+    for ad_id in ad_ids:
+        db_service.execute_sql(f"""
+            UPDATE {schema}.accrual_deferral_items
+            SET source_bill_id = %s,
+                initial_journal_id = %s,
+                initial_posted_at = NOW(),
+                status = CASE WHEN status='draft' THEN 'active' ELSE status END,
+                updated_at = NOW()
+            WHERE company_id=%s
+            AND id=%s
+        """, (int(bill_id), int(jid), int(company_id), int(ad_id)))
 
     return {
         "journal_id": int(jid),
