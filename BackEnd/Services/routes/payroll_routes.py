@@ -373,3 +373,119 @@ def api_payroll_bootstrap(company_id: int):
     except Exception as e:
         current_app.logger.exception("payroll_bootstrap failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/setup", methods=["GET", "OPTIONS"])
+@require_auth
+def api_payroll_setup_master(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        db_service.payroll_ensure_ready(int(company_id))
+        out = db_service.payroll_setup_master(int(company_id))
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_setup_master failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/benefits", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_payroll_employee_benefits(company_id: int, employee_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            items = db_service.payroll_employee_benefits_list(int(company_id), int(employee_id))
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("payroll_employee_benefits_list failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    try:
+        body = _payroll_body()
+        if not body.get("benefit_type_id") or not body.get("effective_from"):
+            return jsonify({"ok": False, "error": "benefit_type_id and effective_from are required"}), 400
+
+        out = db_service.payroll_employee_benefit_create(int(company_id), int(employee_id), body)
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("payroll_employee_benefit_create failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/leave", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_payroll_employee_leave(company_id: int, employee_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            items = db_service.payroll_employee_leave_list(int(company_id), int(employee_id))
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("payroll_employee_leave_list failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    try:
+        body = _payroll_body()
+        required = ["leave_type_id", "date_from", "date_to"]
+        missing = [k for k in required if not body.get(k)]
+        if missing:
+            return jsonify({"ok": False, "error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+        out = db_service.payroll_leave_request_create(int(company_id), int(employee_id), body)
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("payroll_leave_request_create failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/loans", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_payroll_employee_loans(company_id: int, employee_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            items = db_service.payroll_employee_loans_list(int(company_id), int(employee_id))
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception("payroll_employee_loans_list failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    try:
+        body = _payroll_body()
+        required = ["loan_no", "principal_amount", "repayment_amount", "start_date"]
+        missing = [k for k in required if not body.get(k)]
+        if missing:
+            return jsonify({"ok": False, "error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+        out = db_service.payroll_employee_loan_create(int(company_id), int(employee_id), body)
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("payroll_employee_loan_create failed")
+        return jsonify({"ok": False, "error": str(e)}), 400

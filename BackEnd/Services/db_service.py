@@ -6056,6 +6056,232 @@ class DatabaseService:
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_payroll_emp_bank_primary_uniq
             ON {schema}.payroll_employee_bank_accounts(company_id, employee_id)
             WHERE is_primary = TRUE;
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_benefit_types (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            benefit_category TEXT NOT NULL DEFAULT 'allowance',
+            earning_type_id INTEGER,
+            deduction_type_id INTEGER,
+            contribution_type_id INTEGER,
+            taxable BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_benefit_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_benefit_earning_fk
+                FOREIGN KEY (earning_type_id) REFERENCES {schema}.payroll_earning_types(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_benefit_deduction_fk
+                FOREIGN KEY (deduction_type_id) REFERENCES {schema}.payroll_deduction_types(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_benefit_contribution_fk
+                FOREIGN KEY (contribution_type_id) REFERENCES {schema}.payroll_employer_contribution_types(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_benefit_uniq
+                UNIQUE(company_id, code),
+
+            CONSTRAINT {schema}_payroll_benefit_category_ck
+                CHECK (benefit_category IN ('allowance','deduction','employer_contribution','fringe_benefit','mixed'))
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_benefit_company_idx
+            ON {schema}.payroll_benefit_types(company_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefits (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            benefit_type_id INTEGER NOT NULL,
+            calc_method TEXT NOT NULL DEFAULT 'fixed_amount',
+            employee_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employer_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employee_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            employer_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+            taxable_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            provider_name TEXT,
+            policy_number TEXT,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_emp_benefit_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_benefit_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_benefit_type_fk
+                FOREIGN KEY (benefit_type_id) REFERENCES {schema}.payroll_benefit_types(id),
+
+            CONSTRAINT {schema}_payroll_emp_benefit_calc_ck
+                CHECK (calc_method IN ('fixed_amount','percentage','manual')),
+
+            CONSTRAINT {schema}_payroll_emp_benefit_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_benefit_employee_idx
+            ON {schema}.payroll_employee_benefits(company_id, employee_id, is_active);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_recurring_earnings (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            earning_type_id INTEGER NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 1,
+            rate NUMERIC(18,4) NOT NULL DEFAULT 0,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_rec_earn_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_earn_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_earn_type_fk
+                FOREIGN KEY (earning_type_id) REFERENCES {schema}.payroll_earning_types(id),
+
+            CONSTRAINT {schema}_payroll_rec_earn_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_recurring_deductions (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            deduction_type_id INTEGER NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_rec_ded_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_ded_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_ded_type_fk
+                FOREIGN KEY (deduction_type_id) REFERENCES {schema}.payroll_deduction_types(id),
+
+            CONSTRAINT {schema}_payroll_rec_ded_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_recurring_contributions (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            contribution_type_id INTEGER NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_rec_cont_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_cont_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_rec_cont_type_fk
+                FOREIGN KEY (contribution_type_id) REFERENCES {schema}.payroll_employer_contribution_types(id),
+
+            CONSTRAINT {schema}_payroll_rec_cont_dates_ck
+                CHECK (effective_to IS NULL OR effective_to >= effective_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_types (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            paid BOOLEAN NOT NULL DEFAULT TRUE,
+            accrues BOOLEAN NOT NULL DEFAULT TRUE,
+            annual_entitlement_days NUMERIC(9,2) NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_leave_type_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_leave_type_uniq
+                UNIQUE(company_id, code)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_requests (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            leave_type_id INTEGER NOT NULL,
+            date_from DATE NOT NULL,
+            date_to DATE NOT NULL,
+            days NUMERIC(9,2) NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft',
+            reason TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_leave_req_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_leave_req_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_leave_req_type_fk
+                FOREIGN KEY (leave_type_id) REFERENCES {schema}.payroll_leave_types(id),
+
+            CONSTRAINT {schema}_payroll_leave_req_status_ck
+                CHECK (status IN ('draft','submitted','approved','rejected','cancelled')),
+
+            CONSTRAINT {schema}_payroll_leave_req_dates_ck
+                CHECK (date_to >= date_from)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_loans (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            loan_no TEXT NOT NULL,
+            principal_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            balance_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            repayment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            start_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            deduction_type_id INTEGER,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_emp_loan_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_loan_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_emp_loan_deduction_fk
+                FOREIGN KEY (deduction_type_id) REFERENCES {schema}.payroll_deduction_types(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_emp_loan_uniq
+                UNIQUE(company_id, loan_no),
+
+            CONSTRAINT {schema}_payroll_emp_loan_status_ck
+                CHECK (status IN ('active','settled','cancelled'))
+        );
         """)
 
     def ensure_company_forecast(self, company_id: int):
@@ -82091,6 +82317,98 @@ class DatabaseService:
     # =========================
     # DB METHODS - PAYROLL
     # =========================
+    def payroll_seed_defaults(self, company_id: int) -> dict:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        self.ensure_company_payroll(company_id)
+
+        earnings = [
+            ("BASIC", "Basic Salary", True, True),
+            ("OVERTIME", "Overtime", True, True),
+            ("BONUS", "Bonus", True, True),
+            ("COMMISSION", "Commission", True, True),
+            ("ALLOW_TRAVEL", "Travel Allowance", True, False),
+            ("ALLOW_HOUSING", "Housing Allowance", True, False),
+            ("ALLOW_CELLPHONE", "Cellphone Allowance", True, False),
+        ]
+
+        deductions = [
+            ("PAYE", "PAYE", True),
+            ("PENSION_EMP", "Pension Employee Deduction", False),
+            ("MEDICAL_EMP", "Medical Aid Employee Deduction", False),
+            ("LOAN_REPAY", "Employee Loan Repayment", False),
+            ("ADVANCE_RECOVERY", "Salary Advance Recovery", False),
+            ("UNION", "Union Fee", False),
+        ]
+
+        contributions = [
+            ("PENSION_ER", "Employer Pension Contribution"),
+            ("MEDICAL_ER", "Employer Medical Aid Contribution"),
+            ("UIF_ER", "Employer UIF Contribution"),
+            ("SKILLS_LEVY", "Skills Levy"),
+        ]
+
+        benefits = [
+            ("MEDICAL", "Medical Aid", "mixed"),
+            ("PENSION", "Pension Fund", "mixed"),
+            ("HOUSING", "Housing Allowance", "allowance"),
+            ("TRAVEL", "Travel Allowance", "allowance"),
+            ("CELLPHONE", "Cellphone Allowance", "allowance"),
+            ("COMPANY_CAR", "Company Vehicle", "fringe_benefit"),
+            ("UNIFORM", "Uniform Allowance", "allowance"),
+            ("STUDY", "Study Assistance", "fringe_benefit"),
+        ]
+
+        leave_types = [
+            ("ANNUAL", "Annual Leave", True, True, 15),
+            ("SICK", "Sick Leave", True, True, 0),
+            ("FAMILY", "Family Responsibility Leave", True, True, 0),
+            ("UNPAID", "Unpaid Leave", False, False, 0),
+        ]
+
+        for code, name, taxable, pensionable in earnings:
+            self.execute(f"""
+                INSERT INTO {schema}.payroll_earning_types
+                    (company_id, code, name, taxable, pensionable)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (company_id, code) DO NOTHING;
+            """, (company_id, code, name, taxable, pensionable))
+
+        for code, name, statutory in deductions:
+            self.execute(f"""
+                INSERT INTO {schema}.payroll_deduction_types
+                    (company_id, code, name, is_statutory)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (company_id, code) DO NOTHING;
+            """, (company_id, code, name, statutory))
+
+        for code, name in contributions:
+            self.execute(f"""
+                INSERT INTO {schema}.payroll_employer_contribution_types
+                    (company_id, code, name)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (company_id, code) DO NOTHING;
+            """, (company_id, code, name))
+
+        for code, name, category in benefits:
+            self.execute(f"""
+                INSERT INTO {schema}.payroll_benefit_types
+                    (company_id, code, name, benefit_category)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (company_id, code) DO NOTHING;
+            """, (company_id, code, name, category))
+
+        for code, name, paid, accrues, days in leave_types:
+            self.execute(f"""
+                INSERT INTO {schema}.payroll_leave_types
+                    (company_id, code, name, paid, accrues, annual_entitlement_days)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (company_id, code) DO NOTHING;
+            """, (company_id, code, name, paid, accrues, days))
+
+        return {"ok": True}
+
     def payroll_bootstrap(self, company_id: int) -> dict:
         company_id = int(company_id)
 
@@ -82100,12 +82418,14 @@ class DatabaseService:
             "settings": self.payroll_settings_get(company_id) or {},
             "calendars": self.payroll_calendars_list(company_id),
             "employees": self.payroll_employees_list(company_id),
+            "setup": self.payroll_setup_master(company_id),
         }
 
     def payroll_ensure_ready(self, company_id: int) -> dict:
         company_id = int(company_id)
 
         self.ensure_company_payroll(company_id)
+        self.payroll_seed_defaults(company_id)
 
         settings = self.payroll_settings_get(company_id)
         if not settings:
@@ -82124,10 +82444,7 @@ class DatabaseService:
                 "is_active": True,
             })
 
-        return {
-            "ok": True,
-            "settings": settings,
-        }
+        return {"ok": True, "settings": settings}
 
     def payroll_settings_get(self, company_id: int):
         schema = self.company_schema(company_id)
@@ -82138,6 +82455,152 @@ class DatabaseService:
             LIMIT 1;
         """, (int(company_id),))
 
+    def payroll_setup_master(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+        company_id = int(company_id)
+
+        return {
+            "earning_types": self.fetch_all(f"""
+                SELECT * FROM {schema}.payroll_earning_types
+                WHERE company_id=%s
+                ORDER BY code;
+            """, (company_id,)),
+            "deduction_types": self.fetch_all(f"""
+                SELECT * FROM {schema}.payroll_deduction_types
+                WHERE company_id=%s
+                ORDER BY code;
+            """, (company_id,)),
+            "contribution_types": self.fetch_all(f"""
+                SELECT * FROM {schema}.payroll_employer_contribution_types
+                WHERE company_id=%s
+                ORDER BY code;
+            """, (company_id,)),
+            "benefit_types": self.fetch_all(f"""
+                SELECT * FROM {schema}.payroll_benefit_types
+                WHERE company_id=%s
+                ORDER BY code;
+            """, (company_id,)),
+            "leave_types": self.fetch_all(f"""
+                SELECT * FROM {schema}.payroll_leave_types
+                WHERE company_id=%s
+                ORDER BY code;
+            """, (company_id,)),
+        }
+
+
+    def payroll_employee_benefit_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_benefits (
+                company_id, employee_id, benefit_type_id, calc_method,
+                employee_amount, employer_amount, employee_percent, employer_percent,
+                taxable_amount, provider_name, policy_number,
+                effective_from, effective_to, is_active, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,TRUE),%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("benefit_type_id"),
+            data.get("calc_method") or "fixed_amount",
+            data.get("employee_amount") or 0,
+            data.get("employer_amount") or 0,
+            data.get("employee_percent") or 0,
+            data.get("employer_percent") or 0,
+            data.get("taxable_amount") or 0,
+            data.get("provider_name"),
+            data.get("policy_number"),
+            data.get("effective_from"),
+            data.get("effective_to"),
+            data.get("is_active"),
+            data.get("notes"),
+        ))
+
+
+    def payroll_employee_benefits_list(self, company_id: int, employee_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT b.*, bt.code AS benefit_code, bt.name AS benefit_name, bt.benefit_category
+            FROM {schema}.payroll_employee_benefits b
+            JOIN {schema}.payroll_benefit_types bt ON bt.id = b.benefit_type_id
+            WHERE b.company_id=%s AND b.employee_id=%s
+            ORDER BY b.is_active DESC, b.effective_from DESC, b.id DESC;
+        """, (int(company_id), int(employee_id)))
+
+
+    def payroll_leave_request_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_leave_requests (
+                company_id, employee_id, leave_type_id, date_from, date_to,
+                days, status, reason
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("leave_type_id"),
+            data.get("date_from"),
+            data.get("date_to"),
+            data.get("days") or 0,
+            data.get("status") or "draft",
+            data.get("reason"),
+        ))
+
+
+    def payroll_employee_leave_list(self, company_id: int, employee_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT l.*, lt.code AS leave_code, lt.name AS leave_name
+            FROM {schema}.payroll_leave_requests l
+            JOIN {schema}.payroll_leave_types lt ON lt.id = l.leave_type_id
+            WHERE l.company_id=%s AND l.employee_id=%s
+            ORDER BY l.date_from DESC, l.id DESC;
+        """, (int(company_id), int(employee_id)))
+
+
+    def payroll_employee_loan_create(self, company_id: int, employee_id: int, data: dict):
+        schema = self.company_schema(company_id)
+
+        principal = float(data.get("principal_amount") or 0)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_loans (
+                company_id, employee_id, loan_no, principal_amount,
+                balance_amount, repayment_amount, start_date, status,
+                deduction_type_id, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(employee_id),
+            data.get("loan_no"),
+            principal,
+            data.get("balance_amount") if data.get("balance_amount") is not None else principal,
+            data.get("repayment_amount") or 0,
+            data.get("start_date"),
+            data.get("status") or "active",
+            data.get("deduction_type_id"),
+            data.get("notes"),
+        ))
+
+
+    def payroll_employee_loans_list(self, company_id: int, employee_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_loans
+            WHERE company_id=%s AND employee_id=%s
+            ORDER BY status, start_date DESC, id DESC;
+        """, (int(company_id), int(employee_id)))
 
     def payroll_settings_upsert(self, company_id: int, data: dict):
         schema = self.company_schema(company_id)
@@ -82255,6 +82718,10 @@ class DatabaseService:
             WHERE company_id=%s AND employee_id=%s
             ORDER BY is_primary DESC, id DESC;
         """, (int(company_id), int(employee_id)))
+
+        emp["benefits"] = self.payroll_employee_benefits_list(company_id, employee_id)
+        emp["leave_requests"] = self.payroll_employee_leave_list(company_id, employee_id)
+        emp["loans"] = self.payroll_employee_loans_list(company_id, employee_id)
 
         return emp
 

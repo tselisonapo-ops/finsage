@@ -1427,6 +1427,18 @@ const ENDPOINTS = {
     
     bootstrap: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/bootstrap`, 
+  
+    setup: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup`,
+
+    benefits: (companyId, employeeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/benefits`,
+
+    leave: (companyId, employeeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/leave`,
+
+    loans: (companyId, employeeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/loans`,
   },
 
   forecast: {
@@ -41637,6 +41649,13 @@ async function saveEditModal() {
     employees: [],
     selectedEmployee: null,
     bound: false,
+    setup: {
+      earning_types: [],
+      deduction_types: [],
+      contribution_types: [],
+      benefit_types: [],
+      leave_types: [],
+    },
   };
 
   function cid() {
@@ -41668,7 +41687,9 @@ async function saveEditModal() {
     payrollState.settings = data.settings || {};
     payrollState.calendars = data.calendars || [];
     payrollState.employees = data.employees || [];
+    payrollState.setup = data.setup || payrollState.setup || {};
 
+    renderPayrollSetupSelects();
     renderPayrollSettings();
     renderPayrollCalendars();
     renderPayrollEmployees();
@@ -41700,6 +41721,60 @@ async function saveEditModal() {
         await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
       });
     });
+  }
+
+  function fillSelect(id, items, labelFn) {
+    const el = $(id);
+    if (!el) return;
+    el.innerHTML = `<option value="">Select…</option>` + (items || []).map(x =>
+      `<option value="${esc(x.id)}">${esc(labelFn(x))}</option>`
+    ).join("");
+  }
+
+  function renderPayrollSetupSelects() {
+    const setup = payrollState.setup || {};
+    fillSelect("payBenefitTypeId", setup.benefit_types, x => `${x.code} — ${x.name}`);
+    fillSelect("payLeaveTypeId", setup.leave_types, x => `${x.code} — ${x.name}`);
+    fillSelect("payLoanDeductionTypeId", setup.deduction_types, x => `${x.code} — ${x.name}`);
+  }
+
+  function renderEmployeeSubrecords(e) {
+    const benefits = e?.benefits || [];
+    const leave = e?.leave_requests || [];
+    const loans = e?.loans || [];
+
+    const bEl = $("payrollBenefitsList");
+    if (bEl) {
+      bEl.innerHTML = benefits.length ? benefits.map(x => `
+        <div class="payroll-mini-row">
+          <strong>${esc(x.benefit_name || x.benefit_code || "")}</strong>
+          <span>Employee: ${money(x.employee_amount)}</span>
+          <span>Employer: ${money(x.employer_amount)}</span>
+        </div>
+      `).join("") : `<p class="payroll-muted">No benefits captured.</p>`;
+    }
+
+    const lEl = $("payrollLeaveList");
+    if (lEl) {
+      lEl.innerHTML = leave.length ? leave.map(x => `
+        <div class="payroll-mini-row">
+          <strong>${esc(x.leave_name || x.leave_code || "")}</strong>
+          <span>${esc(x.date_from)} → ${esc(x.date_to)}</span>
+          <span>${esc(x.status || "")}</span>
+        </div>
+      `).join("") : `<p class="payroll-muted">No leave captured.</p>`;
+    }
+
+    const loanEl = $("payrollLoansList");
+    if (loanEl) {
+      loanEl.innerHTML = loans.length ? loans.map(x => `
+        <div class="payroll-mini-row">
+          <strong>${esc(x.loan_no || "")}</strong>
+          <span>Balance: ${money(x.balance_amount)}</span>
+          <span>${esc(x.status || "")}</span>
+        </div>
+      `).join("") : `<p class="payroll-muted">No loans or advances captured.</p>`;
+    }
   }
 
   function renderPayrollEmployeeRow(e) {
@@ -41819,7 +41894,7 @@ async function saveEditModal() {
       btn.classList.toggle("active", btn.dataset.payrollEmpTab === tab);
     });
 
-    ["bio", "contract", "tax", "bank"].forEach(name => {
+    ["bio", "contract", "tax", "bank", "benefits", "leave", "loans"].forEach(name => {
       $(`payrollEmpPanel${cap(name)}`)?.classList.toggle("hidden", name !== tab);
     });
   }
@@ -41894,6 +41969,7 @@ async function saveEditModal() {
     $("payBankAccountType").value = bank.account_type || "";
     $("payBankPrimary").checked = bank.is_primary !== false;
 
+    renderEmployeeSubrecords(e);
     openPayrollEmployeeModal("edit");
   }
 
@@ -42046,6 +42122,75 @@ async function saveEditModal() {
     showPayrollStatus("Bank account saved.", "success");
   }
 
+  async function savePayrollBenefit() {
+    const companyId = cid();
+    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
+    if (!employeeId) throw new Error("Save employee first.");
+
+    await apiFetch(ENDPOINTS.payroll.benefits(companyId, employeeId), {
+      method: "POST",
+      body: JSON.stringify({
+        benefit_type_id: Number($("payBenefitTypeId").value || 0),
+        calc_method: $("payBenefitCalcMethod").value,
+        employee_amount: Number($("payBenefitEmployeeAmount").value || 0),
+        employer_amount: Number($("payBenefitEmployerAmount").value || 0),
+        employee_percent: Number($("payBenefitEmployeePercent").value || 0),
+        employer_percent: Number($("payBenefitEmployerPercent").value || 0),
+        taxable_amount: Number($("payBenefitTaxableAmount").value || 0),
+        provider_name: $("payBenefitProvider").value.trim() || null,
+        policy_number: $("payBenefitPolicy").value.trim() || null,
+        effective_from: $("payBenefitEffectiveFrom").value,
+        notes: $("payBenefitNotes").value.trim() || null,
+        is_active: true,
+      }),
+    });
+
+    await openPayrollEmployee(employeeId);
+    showPayrollStatus("Benefit saved.", "success");
+  }
+
+  async function savePayrollLeave() {
+    const companyId = cid();
+    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
+    if (!employeeId) throw new Error("Save employee first.");
+
+    await apiFetch(ENDPOINTS.payroll.leave(companyId, employeeId), {
+      method: "POST",
+      body: JSON.stringify({
+        leave_type_id: Number($("payLeaveTypeId").value || 0),
+        date_from: $("payLeaveFrom").value,
+        date_to: $("payLeaveTo").value,
+        days: Number($("payLeaveDays").value || 0),
+        reason: $("payLeaveReason").value.trim() || null,
+        status: "draft",
+      }),
+    });
+
+    await openPayrollEmployee(employeeId);
+    showPayrollStatus("Leave saved.", "success");
+  }
+
+  async function savePayrollLoan() {
+    const companyId = cid();
+    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
+    if (!employeeId) throw new Error("Save employee first.");
+
+    await apiFetch(ENDPOINTS.payroll.loans(companyId, employeeId), {
+      method: "POST",
+      body: JSON.stringify({
+        loan_no: $("payLoanNo").value.trim(),
+        principal_amount: Number($("payLoanPrincipal").value || 0),
+        repayment_amount: Number($("payLoanRepayment").value || 0),
+        start_date: $("payLoanStartDate").value,
+        deduction_type_id: $("payLoanDeductionTypeId").value ? Number($("payLoanDeductionTypeId").value) : null,
+        notes: $("payLoanNotes").value.trim() || null,
+      }),
+    });
+
+    await openPayrollEmployee(employeeId);
+    showPayrollStatus("Loan / advance saved.", "success");
+  }
+
   function bindPayrollEventsOnce() {
     if (payrollState.bound) return;
     payrollState.bound = true;
@@ -42103,6 +42248,21 @@ async function saveEditModal() {
 
     $("payrollSaveBankBtn")?.addEventListener("click", async () => {
       try { await savePayrollBankAccount(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollSaveBenefitBtn")?.addEventListener("click", async () => {
+      try { await savePayrollBenefit(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollSaveLeaveBtn")?.addEventListener("click", async () => {
+      try { await savePayrollLeave(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollSaveLoanBtn")?.addEventListener("click", async () => {
+      try { await savePayrollLoan(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
   }
