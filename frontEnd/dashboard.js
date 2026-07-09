@@ -40548,7 +40548,7 @@ async function saveEditModal() {
         </div>
       </div>
 
-      <div class="tabs">
+      <div class="tabs bf-tabs">
         <button class="tab active" data-bf-tab="budgets">Budgets</button>
         <button class="tab" data-bf-tab="forecast">Forecasts</button>
         <button class="tab" data-bf-tab="variance">Variance</button>
@@ -42408,6 +42408,7 @@ async function saveEditModal() {
       modal = document.createElement("div");
       modal.id = "adNewItemModal";
       modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
+
       modal.innerHTML = `
         <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-hidden">
           <div class="p-4 border-b flex justify-between items-center">
@@ -42421,7 +42422,7 @@ async function saveEditModal() {
           <form id="adNewItemForm" class="flex flex-col h-[calc(92vh-78px)]">
             <div class="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 flex-1 overflow-hidden p-4">
 
-              <div class="overflow-auto pr-2 space-y-4 border rounded-xl bg-white p-4">               
+              <div class="overflow-auto pr-2 space-y-4 border rounded-xl bg-white p-4">
                 <div id="adJournalHandoffBox" class="border rounded-xl bg-slate-50 p-3 text-xs hidden">
                   <p class="font-bold text-slate-700 mb-2">Source Journal Context</p>
                   <div class="grid grid-cols-2 gap-2">
@@ -42435,6 +42436,7 @@ async function saveEditModal() {
                     </label>
                   </div>
                 </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <label class="text-sm">
                     Item Title
@@ -42468,9 +42470,9 @@ async function saveEditModal() {
                   </label>
 
                   <label class="text-sm">
-                    Settlement / Bank Account
+                    Settlement / Contra Account
                     <select id="adNewSettlementAccount" class="input">
-                      <option value="">Loading bank accounts...</option>
+                      <option value="">Loading settlement accounts...</option>
                     </select>
                   </label>
 
@@ -42518,9 +42520,7 @@ async function saveEditModal() {
               <div class="overflow-auto border rounded-xl bg-slate-50 p-4 space-y-4">
                 <div>
                   <h4 class="font-bold">Initial Measurement Preview</h4>
-                  <p class="text-xs text-slate-500">
-                    Backend-driven journal preview before posting.
-                  </p>
+                  <p class="text-xs text-slate-500">Backend-driven journal preview before posting.</p>
                 </div>
 
                 <div id="adInitialPreviewHost" class="text-sm text-slate-500">
@@ -42538,25 +42538,16 @@ async function saveEditModal() {
                   Schedule will appear after item creation.
                 </div>
               </div>
-
             </div>
 
-            <div class="flex justify-between gap-2 border-t pt-4 mt-4">
-              <div class="flex gap-2">
-                <button type="button" id="adPreviewBtn" class="btn">
-                  Preview
-                </button>
+            <div class="flex justify-between items-center gap-2 border-t bg-white px-4 py-3 shrink-0">
+              <div>
+                <button type="button" id="adPreviewBtn" class="btn">Preview</button>
               </div>
 
               <div class="flex gap-2">
-                <button type="button" id="adModalCancelBtn" class="btn">
-                  Cancel
-                </button>
-
-                <button type="button" id="adSaveDraftBtn" class="btn">
-                  Save Draft
-                </button>
-
+                <button type="button" id="adModalCancelBtn" class="btn">Cancel</button>
+                <button type="button" id="adSaveDraftBtn" class="btn">Save Draft</button>
                 <button type="submit" id="adCreatePostBtn" class="btn-highlight">
                   Create & Post Initial Recognition
                 </button>
@@ -42591,86 +42582,114 @@ async function saveEditModal() {
         closeAdNewModal();
       });
 
-      e.preventDefault();
+      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
 
-      const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
-      if (!payload.item_title) return alert("Item title is required.");
-      if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
-      if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+        if (!payload.item_title) return alert("Item title is required.");
+        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
+        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
 
-      if (adSettlementIsAP()) {
-        const saved = await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
+        if (typeof adSettlementIsAP === "function" && adSettlementIsAP()) {
+          const saved = await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
+            method: "POST",
+            body: JSON.stringify({
+              ...payload,
+              status: "draft",
+              source_flow: "ap_bill_pending",
+              initial_posting_status: "pending_ap_bill",
+            }),
+          });
+
+          localStorage.setItem("fs_ad_ap_bill_prefill", JSON.stringify({
+            source: "accrual_deferral",
+            item_id: saved?.item?.id,
+            item_title: payload.item_title,
+            bill_date: payload.transaction_date,
+            currency: payload.currency,
+            amount: payload.original_amount,
+            account_code: payload.balance_account || "",
+            account_role: payload.balance_account_role || "prepaid_expense",
+            description: payload.item_title,
+            reference: window._AD_FINAL_CTX?.journalRef || window._AD_FINAL_CTX?.journal_ref || "",
+          }));
+
+          closeAdNewModal();
+          await window.switchScreen?.("ap");
+          window.showToast?.("Draft saved. Complete the supplier bill in AP.", "info");
+          return;
+        }
+
+        await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
           method: "POST",
-          body: JSON.stringify({
-            ...payload,
-            status: "draft",
-            source_flow: "ap_bill_pending",
-            initial_posting_status: "pending_ap_bill",
-          }),
+          body: JSON.stringify(payload),
         });
 
-        localStorage.setItem("fs_ad_ap_bill_prefill", JSON.stringify({
-          source: "accrual_deferral",
-          item_id: saved?.item?.id,
-          item_title: payload.item_title,
-          bill_date: payload.transaction_date,
-          currency: payload.currency,
-          amount: payload.original_amount,
-          account_code: payload.balance_account || "",
-          account_role: payload.balance_account_role || "prepaid_expense",
-          description: payload.item_title,
-          reference: window._AD_FINAL_CTX?.journalRef || window._AD_FINAL_CTX?.journal_ref || "",
-        }));
-
+        await loadAccrualDeferrals();
         closeAdNewModal();
-        await window.switchScreen?.("ap");
-        window.showToast?.("Draft saved. Complete the supplier bill in AP.", "info");
-        return;
-      }
-
-      await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
-        method: "POST",
-        body: JSON.stringify(payload),
       });
-
-      await loadAccrualDeferrals();
-      closeAdNewModal();
     }
 
     const handoffRaw = store?.get?.("fs_ad_redirect_context") || "";
     let handoff = {};
-    try { handoff = handoffRaw ? JSON.parse(handoffRaw) : {}; } catch {}
+    try {
+      handoff = handoffRaw ? JSON.parse(handoffRaw) : {};
+    } catch {}
 
     const finalCtx = { ...handoff, ...ctx };
     window._AD_FINAL_CTX = finalCtx;
+
     const sourceDate = finalCtx.journalDate || finalCtx.journal_date || "";
     const sourceRef = finalCtx.journalRef || finalCtx.journal_ref || "";
 
-    if ($("adJournalHandoffBox")) {
-      $("adJournalHandoffBox").classList.toggle("hidden", !(sourceDate || sourceRef));
-    }
+    $("adJournalHandoffBox")?.classList.toggle("hidden", !(sourceDate || sourceRef));
     if ($("adSourceJournalDate")) $("adSourceJournalDate").value = sourceDate;
     if ($("adSourceJournalRef")) $("adSourceJournalRef").value = sourceRef;
 
     const today = new Date().toISOString().slice(0, 10);
     const txDate = finalCtx.journalDate || finalCtx.journal_date || today;
 
-    $("adNewCurrency").value = resolveCurrency?.() || "USD";
-    $("adNewTransactionDate").value = txDate;
-    $("adNewStartDate").value = txDate;
-    $("adNewEndDate").value = txDate;
+    if ($("adNewCurrency")) $("adNewCurrency").value = resolveCurrency?.() || "USD";
+    if ($("adNewTransactionDate")) $("adNewTransactionDate").value = txDate;
+    if ($("adNewStartDate")) $("adNewStartDate").value = txDate;
+    if ($("adNewEndDate")) $("adNewEndDate").value = txDate;
 
-    if (finalCtx.account?.name) {
+    if (finalCtx.account?.name && $("adNewTitle")) {
       $("adNewTitle").value = finalCtx.account.name;
     }
 
     await loadAdBankAccounts();
     applyAdTypeDefaults(finalCtx);
 
-    $("adNewType")?.addEventListener("change", () => applyAdTypeDefaults(finalCtx));
+    if ($("adNewType") && $("adNewType").dataset.adTypeBound !== "1") {
+      $("adNewType").dataset.adTypeBound = "1";
+      $("adNewType").addEventListener("change", () => {
+        applyAdTypeDefaults(window._AD_FINAL_CTX || {});
+        scheduleAdPreview?.(window._AD_FINAL_CTX || {});
+      });
+    }
+
+    [
+      "adNewTitle",
+      "adNewAmount",
+      "adNewTransactionDate",
+      "adNewStartDate",
+      "adNewEndDate",
+      "adNewFrequency",
+      "adNewSettlementAccount",
+    ].forEach((id) => {
+      const el = $(id);
+      if (el && el.dataset.adPreviewBound !== "1") {
+        el.dataset.adPreviewBound = "1";
+        el.addEventListener("input", () => scheduleAdPreview?.(window._AD_FINAL_CTX || {}));
+        el.addEventListener("change", () => scheduleAdPreview?.(window._AD_FINAL_CTX || {}));
+      }
+    });
 
     modal.classList.remove("hidden");
+
+    scheduleAdPreview?.(finalCtx);
   }
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
 

@@ -1799,6 +1799,554 @@ html, body {
 #screen-accrual-deferrals tbody tr:hover{
     background:#f8fafc;
 }
+
+#screen-budgeting {
+  padding: 24px 32px;
+  background: linear-gradient(135deg, #f8fbff 0%, #eefafa 100%);
+  min-height: calc(100vh - 72px);
+}
+
+#bfRoot .page-head,
+#bfRoot .page-subhead,
+#bfRoot .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+#bfRoot h1 {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: #08233f;
+}
+
+#bfRoot h2,
+#bfRoot h3 {
+  margin: 0;
+  color: #08233f;
+}
+
+#bfRoot .muted {
+  color: #64748b;
+  font-size: 13px;
+}
+
+#bfRoot .actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#bfRoot .btn {
+  border: 1px solid #d6e2ef;
+  background: #fff;
+  color: #0f2a44;
+  padding: 9px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(15, 42, 68, 0.06);
+}
+
+#bfRoot .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 42, 68, 0.10);
+}
+
+#bfRoot .btn.primary {
+  background: #00b8c8;
+  color: #fff;
+  border-color: #00b8c8;
+}
+
+#bfRoot .btn.danger {
+  color: #b42318;
+  border-color: #ffd3cc;
+}
+
+#bfRoot .btn.small {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+#bfRoot .tabs {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0;
+  background: #fff;
+  padding: 8px;
+  border: 1px solid #dbe7f3;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(15, 42, 68, 0.06);
+  width: fit-content;
+}
+
+#bfRoot .tab {
+  border: 0;
+  background: transparent;
+  padding: 9px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  color: #475569;
+}
+
+#bfRoot .tab.active {
+  background: #e6fbfd;
+  color: #00818c;
+}
+
+#bfRoot .card {
+  background: #fff;
+  border: 1px solid #dbe7f3;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(15, 42, 68, 0.07);
+  margin-top: 16px;
+}
+
+#bfRoot .empty-state {
+  text-align: center;
+  padding: 44px 20px;
+}
+
+#bfRoot .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+#bfRoot .table th {
+  text-align: left;
+  padding: 12px 10px;
+  color: #52667a;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  border-bottom: 1px solid #e6eef7;
+}
+
+#bfRoot .table td {
+  padding: 13px 10px;
+  border-bottom: 1px solid #edf3f8;
+  vertical-align: middle;
+}
+
+#bfRoot .table tr:hover td {
+  background: #f8fcff;
+}
+
+#bfRoot .right {
+  text-align: right;
+}
+
+#bfRoot .pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #0f5f99;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+#bfStatus {
+  margin: 8px 0;
+  min-height: 18px;
+}
+
+#bfStatus.success {
+  color: #087f5b;
+  font-weight: 700;
+}
+
+#bfStatus.error {
+  color: #b42318;
+  font-weight: 700;
+}
+
+#bfRoot .grid.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+#bfRoot label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 800;
+  color: #17324d;
+  font-size: 12px;
+}
+
+#bfRoot input,
+#bfRoot select,
+#bfRoot textarea {
+  border: 1px solid #d6e2ef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+}
+
+#bfRoot .modal-backdrop.active {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 9998;
+}
+
+#bfRoot .modal.active {
+  position: fixed;
+  top: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #dbe7f3;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+  z-index: 9999;
+  overflow: hidden;
+}
+
+#bfRoot .modal-head,
+#bfRoot .modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px;
+  border-bottom: 1px solid #edf3f8;
+}
+
+#bfRoot .modal-foot {
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #edf3f8;
+  border-bottom: 0;
+}
+
+#bfRoot .modal-body {
+  padding: 18px;
+}
+
+@media (max-width: 800px) {
+  #screen-budgeting {
+    padding: 18px;
+  }
+
+  #bfRoot .page-head,
+  #bfRoot .page-subhead,
+  #bfRoot .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #bfRoot .grid.two {
+    grid-template-columns: 1fr;
+  }
+
+  #bfRoot .tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* ==========================================================
+   PAYROLL
+========================================================== */
+
+#screen-payroll{
+    padding:24px 28px;
+    background:#f7f9fc;
+    min-height:100%;
+}
+
+/* ---------- Header ---------- */
+
+.page-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    margin-bottom:22px;
+}
+
+.page-head h2{
+    margin:0;
+    font-size:30px;
+    font-weight:700;
+    color:#16335B;
+}
+
+.page-head p{
+    margin-top:6px;
+    color:#667085;
+    font-size:14px;
+}
+
+.row{
+    display:flex;
+    align-items:center;
+}
+
+.gap{
+    gap:10px;
+}
+
+.between{
+    justify-content:space-between;
+}
+
+/* ---------- Buttons ---------- */
+
+.btn{
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    padding:11px 18px;
+    font-size:14px;
+    font-weight:600;
+    transition:.2s;
+}
+
+.btn.primary{
+    background:#1E63EE;
+    color:#fff;
+}
+
+.btn.primary:hover{
+    background:#1958d5;
+}
+
+.btn.secondary{
+    background:#fff;
+    color:#344054;
+    border:1px solid #d0d5dd;
+}
+
+.btn.secondary:hover{
+    background:#f9fafb;
+}
+
+/* ---------- Tabs ---------- */
+
+.tabs{
+    display:flex;
+    gap:10px;
+    margin-bottom:22px;
+    border-bottom:1px solid #eaecf0;
+}
+
+.tabs .tab{
+    background:none;
+    border:none;
+    cursor:pointer;
+    padding:14px 18px;
+    color:#667085;
+    font-weight:600;
+    border-bottom:3px solid transparent;
+}
+
+.tabs .tab.active{
+    color:#1E63EE;
+    border-bottom:3px solid #1E63EE;
+}
+
+.tabs.small{
+    margin-bottom:15px;
+}
+
+/* ---------- Cards ---------- */
+
+.card{
+    background:#fff;
+    border-radius:14px;
+    padding:22px;
+    border:1px solid #eaecf0;
+    box-shadow:0 2px 8px rgba(16,24,40,.04);
+    margin-bottom:20px;
+}
+
+.card h3{
+    margin-top:0;
+    margin-bottom:16px;
+    font-size:18px;
+    color:#16335B;
+}
+
+/* ---------- Dashboard cards ---------- */
+
+.cards-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+}
+
+.metric{
+    margin-top:8px;
+    font-size:34px;
+    font-weight:700;
+    color:#1E63EE;
+}
+
+/* ---------- Forms ---------- */
+
+.form-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:18px;
+}
+
+.form-grid label{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+    font-size:13px;
+    color:#344054;
+    font-weight:600;
+}
+
+.form-grid input,
+.form-grid select{
+    border:1px solid #d0d5dd;
+    border-radius:10px;
+    padding:11px 14px;
+    font-size:14px;
+    background:#fff;
+    transition:.2s;
+}
+
+.form-grid input:focus,
+.form-grid select:focus{
+    border-color:#1E63EE;
+    outline:none;
+    box-shadow:0 0 0 4px rgba(30,99,238,.10);
+}
+
+/* ---------- Employee list ---------- */
+
+.list-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:16px;
+    border:1px solid #eaecf0;
+    border-radius:12px;
+    margin-bottom:10px;
+    background:#fff;
+    transition:.18s;
+}
+
+.list-row:hover{
+    border-color:#1E63EE;
+    box-shadow:0 4px 14px rgba(30,99,238,.08);
+}
+
+.clickable{
+    cursor:pointer;
+}
+
+.pill{
+    display:inline-block;
+    padding:5px 12px;
+    border-radius:100px;
+    background:#EEF4FF;
+    color:#1E63EE;
+    font-size:12px;
+    font-weight:600;
+}
+
+/* ---------- Status ---------- */
+
+.notice{
+    margin-bottom:18px;
+    padding:12px 16px;
+    border-radius:10px;
+    font-size:14px;
+}
+
+.notice.success{
+    background:#ECFDF3;
+    color:#027A48;
+}
+
+.notice.error{
+    background:#FEF3F2;
+    color:#B42318;
+}
+
+.notice.info{
+    background:#EFF8FF;
+    color:#175CD3;
+}
+
+/* ---------- Modal ---------- */
+
+.modal{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.45);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    z-index:10000;
+}
+
+.modal.hidden{
+    display:none;
+}
+
+.modal-card{
+    background:#fff;
+    width:min(1100px,95vw);
+    max-height:90vh;
+    overflow:auto;
+    border-radius:18px;
+    box-shadow:0 30px 80px rgba(0,0,0,.18);
+}
+
+.modal-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:22px 28px;
+    border-bottom:1px solid #eaecf0;
+}
+
+.modal-head h3{
+    margin:0;
+    color:#16335B;
+}
+
+.icon-btn{
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-size:28px;
+    color:#667085;
+}
+
+.payroll-emp-panel{
+    padding:26px;
+}
+
+/* ---------- Utilities ---------- */
+
+.hidden{
+    display:none !important;
+}
+
+.muted{
+    color:#667085;
+    font-size:13px;
+}
   </style>
 
 </head>
@@ -9726,101 +10274,164 @@ html, body {
       </section>
 
       <section id="screen-payroll" class="screen hidden">
-        <div class="page-head">
-          <div>
-            <h2>Payroll</h2>
-            <p class="muted">Manage payroll setup, pay calendars, employees, contracts, tax profiles and bank details.</p>
+        <div class="payroll-shell">
+
+          <div class="payroll-hero">
+            <div>
+              <h2>Payroll</h2>
+              <p>Employees, pay calendars, contracts, tax profiles, bank details and payroll reports.</p>
+            </div>
+
+            <div class="payroll-hero-actions">
+              <button id="payrollRefreshBtn" class="payroll-secondary">Refresh</button>
+              <button id="payrollAddEmployeeBtn" class="payroll-primary">+ Add Employee</button>
+            </div>
           </div>
-          <div class="row gap">
-            <button id="payrollRefreshBtn" class="btn secondary">Refresh</button>
-            <button id="payrollAddEmployeeBtn" class="btn primary">Add Employee</button>
+
+          <div id="payrollStatus" class="notice hidden"></div>
+
+          <div class="payroll-tabs">
+            <button class="active" data-payroll-tab="overview">Dashboard</button>
+            <button data-payroll-tab="employees">Employees</button>
+            <button data-payroll-tab="calendars">Calendars</button>
+            <button data-payroll-tab="settings">Settings</button>
+            <button data-payroll-tab="reports">Reports</button>
           </div>
-        </div>
 
-        <div id="payrollStatus" class="notice hidden"></div>
+          <div id="payrollTabOverview" class="payroll-panel">
+            <h3>Overview</h3>
 
-        <div class="tabs">
-          <button class="tab active" data-payroll-tab="overview">Overview</button>
-          <button class="tab" data-payroll-tab="settings">Settings</button>
-          <button class="tab" data-payroll-tab="calendars">Pay Calendars</button>
-          <button class="tab" data-payroll-tab="employees">Employees</button>
-        </div>
+            <div class="payroll-kpis">
+              <div>
+                <span>Employees</span>
+                <strong id="payrollEmpCount">0</strong>
+              </div>
 
-        <div id="payrollTabOverview" class="payroll-tab-panel">
-          <div class="grid cards-3">
-            <div class="card"><h3>Employees</h3><div id="payrollEmpCount" class="metric">0</div></div>
-            <div class="card"><h3>Open Calendars</h3><div id="payrollOpenCalCount" class="metric">0</div></div>
-            <div class="card"><h3>Default Frequency</h3><div id="payrollFrequency" class="metric">—</div></div>
+              <div>
+                <span>Open Runs</span>
+                <strong id="payrollOpenRunCount">0</strong>
+              </div>
+
+              <div>
+                <span>Next Payday</span>
+                <strong id="payrollNextPayday">—</strong>
+              </div>
+
+              <div>
+                <span>Draft Runs</span>
+                <strong id="payrollDraftRunCount">0</strong>
+              </div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <h3>Recent Employees</h3>
+                <button class="payroll-link" data-payroll-goto="employees">View all</button>
+              </div>
+
+              <div id="payrollRecentEmployees"></div>
+            </div>
           </div>
-        </div>
 
-        <div id="payrollTabSettings" class="payroll-tab-panel hidden">
-          <div class="card">
-            <h3>Payroll Settings</h3>
-            <div class="form-grid">
-              <label>Default Frequency
-                <select id="payrollDefaultFrequency">
-                  <option value="monthly">Monthly</option>
-                  <option value="fortnightly">Fortnightly</option>
-                  <option value="weekly">Weekly</option>
+          <div id="payrollTabEmployees" class="payroll-panel hidden">
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <h3>Employees</h3>
+                <button id="payrollNewEmployeeBtn" class="payroll-primary small">+ New Employee</button>
+              </div>
+
+              <div class="payroll-filters">
+                <input id="payrollEmployeeSearch" placeholder="Search employee…">
+
+                <select id="payrollEmployeeStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="terminated">Terminated</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
                 </select>
-              </label>
 
-              <label>Default Currency
-                <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
-              </label>
-
-              <label>Tax Authority ID
-                <input id="payrollTaxAuthorityId" type="number" placeholder="Optional">
-              </label>
-
-              <label>Payroll Start Date
-                <input id="payrollStartDate" type="date">
-              </label>
-            </div>
-
-            <button id="payrollSaveSettingsBtn" class="btn primary">Save Settings</button>
-          </div>
-        </div>
-
-        <div id="payrollTabCalendars" class="payroll-tab-panel hidden">
-          <div class="card">
-            <h3>Create Pay Calendar</h3>
-            <div class="form-grid">
-              <label>Frequency
-                <select id="payrollCalFrequency">
-                  <option value="monthly">Monthly</option>
-                  <option value="fortnightly">Fortnightly</option>
-                  <option value="weekly">Weekly</option>
+                <select id="payrollEmployeeDepartmentFilter">
+                  <option value="">All departments</option>
                 </select>
-              </label>
-              <label>Period Start <input id="payrollCalStart" type="date"></label>
-              <label>Period End <input id="payrollCalEnd" type="date"></label>
-              <label>Payment Date <input id="payrollCalPaymentDate" type="date"></label>
+              </div>
+
+              <div id="payrollEmployeesList"></div>
             </div>
-            <button id="payrollCreateCalendarBtn" class="btn primary">Create Calendar</button>
           </div>
 
-          <div class="card">
-            <h3>Calendars</h3>
-            <div id="payrollCalendarsList"></div>
-          </div>
-        </div>
+          <div id="payrollTabCalendars" class="payroll-panel hidden">
+            <div class="payroll-card">
+              <h3>Create Pay Calendar</h3>
 
-        <div id="payrollTabEmployees" class="payroll-tab-panel hidden">
-          <div class="card">
-            <div class="row between">
-              <h3>Employees</h3>
-              <select id="payrollEmployeeStatusFilter">
-                <option value="">All</option>
-                <option value="active">Active</option>
-                <option value="terminated">Terminated</option>
-                <option value="inactive">Inactive</option>
-                <option value="suspended">Suspended</option>
-              </select>
+              <div class="form-grid">
+                <label>Frequency
+                  <select id="payrollCalFrequency">
+                    <option value="monthly">Monthly</option>
+                    <option value="fortnightly">Fortnightly</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </label>
+
+                <label>Period Start
+                  <input id="payrollCalStart" type="date">
+                </label>
+
+                <label>Period End
+                  <input id="payrollCalEnd" type="date">
+                </label>
+
+                <label>Payment Date
+                  <input id="payrollCalPaymentDate" type="date">
+                </label>
+              </div>
+
+              <button id="payrollCreateCalendarBtn" class="payroll-primary">Create Calendar</button>
             </div>
-            <div id="payrollEmployeesList"></div>
+
+            <div class="payroll-card">
+              <h3>Calendars</h3>
+              <div id="payrollCalendarsList"></div>
+            </div>
           </div>
+
+          <div id="payrollTabSettings" class="payroll-panel hidden">
+            <div class="payroll-card">
+              <h3>Payroll Settings</h3>
+
+              <div class="form-grid">
+                <label>Default Frequency
+                  <select id="payrollDefaultFrequency">
+                    <option value="monthly">Monthly</option>
+                    <option value="fortnightly">Fortnightly</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </label>
+
+                <label>Default Currency
+                  <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
+                </label>
+
+                <label>Tax Authority ID
+                  <input id="payrollTaxAuthorityId" type="number" placeholder="Optional">
+                </label>
+
+                <label>Payroll Start Date
+                  <input id="payrollStartDate" type="date">
+                </label>
+              </div>
+
+              <button id="payrollSaveSettingsBtn" class="payroll-primary">Save Settings</button>
+            </div>
+          </div>
+
+          <div id="payrollTabReports" class="payroll-panel hidden">
+            <div class="payroll-card">
+              <h3>Payroll Reports</h3>
+              <p class="payroll-muted">Payslips, employee cost summaries and statutory reports will appear here.</p>
+            </div>
+          </div>
+
         </div>
       </section>
 
