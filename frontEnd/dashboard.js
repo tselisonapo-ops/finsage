@@ -41618,6 +41618,45 @@ async function saveEditModal() {
     if (el) el.textContent = value;
   }
 
+  function renderPayrollRecentEmployees() {
+    const el = document.getElementById("payrollRecentEmployees");
+    if (!el) return;
+
+    const items = (payrollState.employees || []).slice(0, 5);
+
+    if (!items.length) {
+      el.innerHTML = `<p class="payroll-muted">No employees yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = items.map(renderPayrollEmployeeRow).join("");
+
+    el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
+      row.addEventListener("click", async () => {
+        await openPayrollEmployee(Number(row.dataset.payrollEmployeeId));
+      });
+    });
+  }
+
+  function renderPayrollEmployeeRow(e) {
+    const name = `${e.first_name || ""} ${e.last_name || ""}`.trim();
+    const dept = e.department_name || e.position_title || "—";
+    const status = e.employment_status || "active";
+
+    return `
+      <div class="payroll-row" data-payroll-employee-id="${esc(e.id)}">
+        <strong>${esc(e.employee_no || "")}</strong>
+        <div>
+          <strong>${esc(name || "Unnamed Employee")}</strong>
+          <div class="payroll-muted">${esc(e.email || "")}</div>
+        </div>
+        <div>${esc(dept)}</div>
+        <span class="payroll-pill">${esc(status)}</span>
+        <span class="payroll-arrow">›</span>
+      </div>
+    `;
+  }
+
   function renderPayrollOverview() {
     const employees = payrollState.employees || [];
     const calendars = payrollState.calendars || [];
@@ -41636,7 +41675,9 @@ async function saveEditModal() {
     setTxt("payrollDraftRunCount", "0");
     setTxt("payrollNextPayday", next || "—");
 
-    renderPayrollRecentEmployees?.();
+    if (typeof renderPayrollRecentEmployees === "function") {
+      renderPayrollRecentEmployees();
+    }
   }
 
   function renderPayrollSettings() {

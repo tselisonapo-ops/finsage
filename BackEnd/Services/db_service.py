@@ -81448,17 +81448,353 @@ class DatabaseService:
             },
         }
 
-    def forecast_list_budgets(self, company_id: int) -> List[Dict[str, Any]]:
+    def forecast_list_budgets(self, company_id: int, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = "WHERE company_id = %s"
+
+        if status:
+            where += " AND status = %s"
+            params.append(status)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.forecast_budgets
+            {where}
+            ORDER BY created_at DESC, id DESC;
+        """, tuple(params))
+
+
+    def forecast_get_budget_required(self, company_id: int, budget_id: int) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s AND id = %s
+            LIMIT 1;
+        """, (int(company_id), int(budget_id)))
+
+        if not row:
+            raise ValueError("Budget not found.")
+
+        return row
+
+
+    def forecast_get_version_required(self, company_id: int, version_id: int) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_versions
+            WHERE company_id = %s AND id = %s
+            LIMIT 1;
+        """, (int(company_id), int(version_id)))
+
+        if not row:
+            raise ValueError("Forecast version not found.")
+
+        return row
+
+
+    def forecast_assert_editable(self, row: Dict[str, Any], label: str = "Record"):
+        status = str(row.get("status") or "").lower()
+        if status in ("approved", "locked"):
+            raise ValueError(f"Cannot edit {label.lower()} in status '{status}'.")
+
+
+    def forecast_validate_account(self, company_id: int, account_code: str) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT code, name, section, category, posting
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND code = %s
+            AND posting = TRUE
+            LIMIT 1;
+        """, (int(company_id), account_code))
+
+        if not row:
+            raise ValueError(f"Invalid posting account code: {account_code}")
+
+        return row
+
+
+    def forecast_delete_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        budget = self.forecast_get_budget_required(company_id, budget_id)
+        self.forecast_assert_editable(budget, "Budget")
+
+        self.execute_sql(f"""
+            DELETE FROM {schema}.forecast_budgets
+            WHERE company_id = %s AND id = %s;
+        """, (int(company_id), int(budget_id)))
+
+        return {"deleted": True, "id": int(budget_id)}
+
+
+    def forecast_bulk_upsert_budget_lines(self, company_id: int, budget_id: int, lines: List[Dict[str, Any]], user_id: Optional[int] = None) -> Dict[str, Any]:
+        if not isinstance(lines, list) or not lines:
+            raise ValueError("lines must be a non-empty list.")
+
+        saved = []
+        for line in lines:
+            saved.append(self.forecast_upsert_budget_line(company_id, budget_id, line, user_id=user_id))
+
+        return {"count": len(saved), "lines": saved}
+
+
+    def forecast_delete_budget_line(self, company_id: int, budget_id: int, line_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        budget = self.forecast_get_budget_required(company_id, budget_id)
+        self.forecast_assert_editable(budget, "Budget")
+
+        row = self.fetch_one(f"""
+            DELETE FROM {schema}.forecast_budget_lines
+            WHERE company_id = %s
+            AND budget_id = %s
+            AND id = %s
+            RETURNING *;
+        """, (int(company_id), int(budget_id), int(line_id)))
+
+        if not row:
+            raise ValueError("Budget line not found.")
+
+        return {"deleted": True, "id": int(line_id)}
+
+
+    def forecast_list_versions(self, company_id: int, budget_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = "WHERE company_id = %s"
+
+        if budget_id:
+            where += " AND budget_id = %s"
+            params.append(int(budget_id))
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.forecast_versions
+            {where}
+            ORDER BY created_at DESC, id DESC;
+        """, tuple(params))
+
+
+    def forecast_get_version(self, company_id: int, version_id: int) -> Optional[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        version = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_versions
+            WHERE company_id = %s AND id = %s
+            LIMIT 1;
+        """, (int(company_id), int(version_id)))
+
+        if not version:
+            return None
+
+        version["lines"] = self.fetch_all(f"""
+            SELECT
+                l.*,
+                c.name AS account_name,
+                c.section,
+                c.category
+            FROM {schema}.forecast_lines l
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = l.company_id
+            AND c.code = l.account_code
+            WHERE l.company_id = %s
+            AND l.version_id = %s
+            ORDER BY l.period_month, l.account_code;
+        """, (int(company_id), int(version_id)))
+
+        return version
+
+
+    def forecast_upsert_line(self, company_id: int, version_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        version = self.forecast_get_version_required(company_id, version_id)
+        self.forecast_assert_editable(version, "Forecast")
+
+        account_code = (payload.get("account_code") or "").strip()
+        period_month = payload.get("period_month")
+
+        if not account_code:
+            raise ValueError("account_code is required.")
+        if not period_month:
+            raise ValueError("period_month is required.")
+
+        self.forecast_validate_account(company_id, account_code)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_lines (
+                company_id, version_id, account_code, period_month,
+                amount, source_type, source_ref, notes, meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT (version_id, account_code, period_month)
+            DO UPDATE SET
+                amount = EXCLUDED.amount,
+                source_type = EXCLUDED.source_type,
+                source_ref = EXCLUDED.source_ref,
+                notes = EXCLUDED.notes,
+                meta_json = EXCLUDED.meta_json,
+                updated_at = now()
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(version_id),
+            account_code,
+            period_month,
+            payload.get("amount") or 0,
+            payload.get("source_type") or "manual",
+            payload.get("source_ref"),
+            payload.get("notes"),
+            json.dumps(payload.get("meta_json") or {}),
+        ))
+
+
+    def forecast_bulk_upsert_lines(self, company_id: int, version_id: int, lines: List[Dict[str, Any]], user_id: Optional[int] = None) -> Dict[str, Any]:
+        if not isinstance(lines, list) or not lines:
+            raise ValueError("lines must be a non-empty list.")
+
+        saved = []
+        for line in lines:
+            saved.append(self.forecast_upsert_line(company_id, version_id, line, user_id=user_id))
+
+        return {"count": len(saved), "lines": saved}
+
+
+    def forecast_list_drivers(self, company_id: int, budget_id: Optional[int] = None, version_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = "WHERE d.company_id = %s"
+
+        if budget_id:
+            where += " AND d.budget_id = %s"
+            params.append(int(budget_id))
+
+        if version_id:
+            where += " AND d.version_id = %s"
+            params.append(int(version_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                d.*,
+                c.name AS account_name
+            FROM {schema}.forecast_drivers d
+            LEFT JOIN {schema}.coa c
+                ON c.company_id = d.company_id
+            AND c.code = d.account_code
+            {where}
+            ORDER BY d.period_month, d.account_code, d.id;
+        """, tuple(params))
+
+
+    def forecast_create_driver(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        account_code = (payload.get("account_code") or "").strip()
+        driver_name = (payload.get("driver_name") or "").strip()
+
+        if not account_code:
+            raise ValueError("account_code is required.")
+        if not driver_name:
+            raise ValueError("driver_name is required.")
+
+        self.forecast_validate_account(company_id, account_code)
+
+        quantity = Decimal(str(payload.get("quantity") or 0))
+        rate = Decimal(str(payload.get("rate") or 0))
+        amount = payload.get("amount")
+
+        if amount is None:
+            amount = quantity * rate
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_drivers (
+                company_id, version_id, budget_id, account_code,
+                driver_name, driver_type, quantity, rate, amount,
+                period_month, formula_text, notes, meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+            RETURNING *;
+        """, (
+            int(company_id),
+            payload.get("version_id"),
+            payload.get("budget_id"),
+            account_code,
+            driver_name,
+            payload.get("driver_type") or "quantity_rate",
+            quantity,
+            rate,
+            amount,
+            payload.get("period_month"),
+            payload.get("formula_text"),
+            payload.get("notes"),
+            json.dumps(payload.get("meta_json") or {}),
+        ))
+
+
+    def forecast_list_import_batches(self, company_id: int) -> List[Dict[str, Any]]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
         return self.fetch_all(f"""
             SELECT *
-            FROM {schema}.forecast_budgets
+            FROM {schema}.forecast_import_batches
             WHERE company_id = %s
-            ORDER BY created_at DESC, id DESC;
+            ORDER BY imported_at DESC, id DESC;
         """, (int(company_id),))
 
+
+    def forecast_create_import_batch(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        target_type = payload.get("target_type")
+        if target_type not in ("budget", "forecast"):
+            raise ValueError("target_type must be 'budget' or 'forecast'.")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_import_batches (
+                company_id, target_type, target_id, file_name,
+                imported_by, status, rows_total, rows_success,
+                rows_failed, error_json, meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)
+            RETURNING *;
+        """, (
+            int(company_id),
+            target_type,
+            payload.get("target_id"),
+            payload.get("file_name"),
+            user_id,
+            payload.get("status") or "draft",
+            payload.get("rows_total") or 0,
+            payload.get("rows_success") or 0,
+            payload.get("rows_failed") or 0,
+            json.dumps(payload.get("error_json") or []),
+            json.dumps(payload.get("meta_json") or {}),
+        ))
 
     def forecast_create_budget(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
