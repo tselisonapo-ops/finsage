@@ -3,6 +3,11 @@ import { getCompanyContext, getPosMode, companyUsesInventory, getCurrency } from
 import { posApi } from "../services/posApi.js";
 import { OrderScreen } from "./OrderScreen.jsx";
 import { renderSlip, printHtml } from "../utils/receiptTemplates.js";
+import {
+  saveOfflineSale,
+  getPendingOfflineSales,
+  updateOfflineSale,
+} from "../utils/posOfflineDb.js";
 
 const fsToken =
   sessionStorage.getItem("fs_user_token") ||
@@ -50,6 +55,9 @@ export function CashierPage() {
   const [clockedIn, setClockedIn] = useState(false);
   const [receiptSettings, setReceiptSettings] = useState({});
   
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+
   const [showCustomerModal, setShowCustomerModal] = useState(false);
 
   const [customerForm, setCustomerForm] = useState({
@@ -81,6 +89,28 @@ export function CashierPage() {
 
     return () => {
       window.removeEventListener("pos-auth-required", handlePosAuthRequired);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+      syncOfflineSales();
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+      setMessage("Offline mode active. Sales will be saved locally.");
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    refreshPendingOfflineCount();
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -391,6 +421,37 @@ export function CashierPage() {
     };
   }
 
+  async function refreshPendingOfflineCount() {
+    const pending = await getPendingOfflineSales();
+    setPendingOfflineCount(pending.length);
+  }
+
+  async function syncOfflineSales() {
+    const pending = await getPendingOfflineSales();
+
+    for (const offlineSale of pending) {
+      try {
+        const res = await posApi.syncOfflineSale({
+          offline_local_id: offlineSale.offline_local_id,
+          ...offlineSale.payload,
+        });
+
+        offlineSale.sync_status = "synced";
+        offlineSale.synced_at = new Date().toISOString();
+        offlineSale.server_sale_id = res.sale_id || null;
+        offlineSale.sync_error = null;
+
+        await updateOfflineSale(offlineSale);
+      } catch (err) {
+        offlineSale.sync_status = "offline_pending";
+        offlineSale.sync_error = err.message || "Sync failed";
+        await updateOfflineSale(offlineSale);
+      }
+    }
+
+    await refreshPendingOfflineCount();
+  }
+
   function addMenuItemToCart(item) {
     if (!canOrder && !canSell) {
       setMessage("You do not have permission to add items.");
@@ -611,6 +672,31 @@ export function CashierPage() {
       return;
     }
 
+    if (!navigator.onLine) {
+      await saveOfflineSale({
+        company_id: company?.id || Number(localStorage.getItem("active_company_id")),
+        terminal_id: activeTerminal?.id,
+        shift_id: activeShift?.id || null,
+        cashier_user_id: cashier?.company_user_id || cashier?.user_id || cashier?.id,
+        customer_id: selectedCustomer?.id || null,
+        customer_name: selectedCustomer?.customer_name || "Walk-in Customer",
+        sale_type: selectedPaymentMethod === "account" ? "account_sale" : "cash_sale",
+        payment_method: selectedPaymentMethod,
+        amount_paid: Number(amountTendered || totals.gross || 0),
+        change_amount:
+          selectedPaymentMethod === "cash"
+            ? Math.max(Number(amountTendered || 0) - Number(totals.gross || 0), 0)
+            : 0,
+        totals,
+        lines: cart,
+      });
+
+      setCart([]);
+      setMessage("Offline sale saved. It will sync when internet returns.");
+      await refreshPendingOfflineCount();
+      return;
+    }
+
     try {
 
       const saleType =
@@ -794,6 +880,11 @@ export function CashierPage() {
                 : "Cashier sales workspace"
             }
           </p>
+        </div>
+
+        <div className="pos-sync-badge">
+          {isOnline ? "ONLINE" : "OFFLINE"}
+          {pendingOfflineCount > 0 ? ` • ${pendingOfflineCount} unsynced` : ""}
         </div>
 
         <nav className="header-actions">

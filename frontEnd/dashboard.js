@@ -1439,6 +1439,24 @@ const ENDPOINTS = {
 
     loans: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/loans`,
+  
+    runs: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs`,
+
+    run: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}`,
+
+    calculateRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/calculate`,
+
+    postRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/post`,
+  
+    journalPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/journal-preview`,
+  
+    glDiagnostics: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-diagnostics`,
   },
 
   forecast: {
@@ -41649,6 +41667,9 @@ async function saveEditModal() {
     employees: [],
     selectedEmployee: null,
     bound: false,
+    runs: [],
+    selectedRun: null,
+    journalPreview: null,
     setup: {
       earning_types: [],
       deduction_types: [],
@@ -41690,6 +41711,8 @@ async function saveEditModal() {
     payrollState.setup = data.setup || payrollState.setup || {};
 
     renderPayrollSetupSelects();
+    renderPayrollRunCalendarSelect();
+    await loadPayrollRuns();
     renderPayrollSettings();
     renderPayrollCalendars();
     renderPayrollEmployees();
@@ -41729,6 +41752,229 @@ async function saveEditModal() {
     el.innerHTML = `<option value="">Select…</option>` + (items || []).map(x =>
       `<option value="${esc(x.id)}">${esc(labelFn(x))}</option>`
     ).join("");
+  }
+
+  function renderPayrollRunCalendarSelect() {
+    const el = $("payrollRunCalendarId");
+    if (!el) return;
+
+    el.innerHTML = `<option value="">Select calendar…</option>` + (payrollState.calendars || []).map(c => `
+      <option value="${esc(c.id)}">
+        ${esc(c.frequency)} | ${esc(c.period_start)} → ${esc(c.period_end)} | Pay ${esc(c.payment_date)}
+      </option>
+    `).join("");
+  }
+
+  async function loadPayrollRuns() {
+    const companyId = cid();
+    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId));
+    payrollState.runs = res?.items || [];
+    renderPayrollRuns();
+    renderPayrollOverview();
+  }
+
+  function renderPayrollRuns() {
+    const el = $("payrollRunsList");
+    if (!el) return;
+
+    const status = String($("payrollRunStatusFilter")?.value || "").toLowerCase();
+    let items = payrollState.runs || [];
+
+    if (status) {
+      items = items.filter(r => String(r.status || "").toLowerCase() === status);
+    }
+
+    if (!items.length) {
+      el.innerHTML = `<p class="payroll-muted">No payroll runs yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = items.map(r => `
+      <div class="payroll-row" data-payroll-run-id="${esc(r.id)}">
+        <strong>${esc(r.run_no || "")}</strong>
+        <div>
+          <strong>${esc(r.period_start || "")} → ${esc(r.period_end || "")}</strong>
+          <div class="payroll-muted">Pay date: ${esc(r.payment_date || "")}</div>
+        </div>
+        <div>${esc(r.frequency || "—")}</div>
+        <span class="payroll-pill">${esc(r.status || "draft")}</span>
+        <span class="payroll-arrow">›</span>
+      </div>
+    `).join("");
+
+    el.querySelectorAll("[data-payroll-run-id]").forEach(row => {
+      row.addEventListener("click", async () => {
+        await openPayrollRun(Number(row.dataset.payrollRunId));
+      });
+    });
+  }
+
+  async function createPayrollRun() {
+    const companyId = cid();
+    const calendarId = Number($("payrollRunCalendarId")?.value || 0);
+    if (!calendarId) throw new Error("Select a payroll calendar first.");
+
+    await apiFetch(ENDPOINTS.payroll.runs(companyId), {
+      method: "POST",
+      body: JSON.stringify({ pay_calendar_id: calendarId }),
+    });
+
+    await loadPayrollRuns();
+    showPayrollStatus("Payroll run created.", "success");
+  }
+
+  async function openPayrollRun(runId) {
+    const companyId = cid();
+    const res = await apiFetch(ENDPOINTS.payroll.run(companyId, runId));
+    const run = res?.data;
+    if (!run) return;
+
+    payrollState.selectedRun = run;
+
+    $("payrollRunDetail")?.classList.remove("hidden");
+    setTxt("payrollRunTitle", run.run_no || "Payroll Run");
+    setTxt("payrollRunStatus", run.status || "draft");
+    setTxt("payrollRunGross", money(run.gross_pay));
+    setTxt("payrollRunDeductions", money(run.total_deductions));
+    setTxt("payrollRunEmployer", money(run.total_employer_contributions));
+    setTxt("payrollRunNet", money(run.net_pay));
+
+    renderPayrollRunEmployees(run);
+  }
+
+  function renderPayrollRunEmployees(run) {
+    const el = $("payrollRunEmployeesList");
+    if (!el) return;
+
+    const items = run?.employees || [];
+
+    if (!items.length) {
+      el.innerHTML = `<p class="payroll-muted">No employees calculated yet.</p>`;
+      return;
+    }
+
+    el.innerHTML = items.map(e => `
+      <div class="payroll-mini-row payroll-mini-row-5">
+        <strong>${esc(e.employee_no || "")} — ${esc(e.first_name || "")} ${esc(e.last_name || "")}</strong>
+        <span>Gross: ${money(e.gross_pay)}</span>
+        <span>Deductions: ${money(e.total_deductions)}</span>
+        <span>Employer: ${money(e.employer_contributions)}</span>
+        <span>Net: ${money(e.net_pay)}</span>
+      </div>
+    `).join("");
+  }
+
+  async function calculateSelectedPayrollRun() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+    if (!runId) throw new Error("Select a payroll run first.");
+
+    const res = await apiFetch(ENDPOINTS.payroll.calculateRun(companyId, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    payrollState.selectedRun = res?.data;
+    await loadPayrollRuns();
+    await openPayrollRun(runId);
+    showPayrollStatus("Payroll run calculated.", "success");
+  }
+
+  async function previewSelectedPayrollJournal() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+    if (!runId) throw new Error("Select a payroll run first.");
+
+    const res = await apiFetch(ENDPOINTS.payroll.journalPreview(companyId, runId));
+    payrollState.journalPreview = res?.data;
+
+    renderPayrollJournalPreview(payrollState.journalPreview);
+    $("payrollJournalPreviewModal")?.classList.remove("hidden");
+  }
+
+  function renderPayrollJournalPreview(preview) {
+    const metaEl = $("payrollJournalPreviewMeta");
+    const issuesEl = $("payrollJournalPreviewIssues");
+    const linesEl = $("payrollJournalPreviewLines");
+
+    const run = preview?.run || {};
+
+    if (metaEl) {
+      metaEl.innerHTML = `
+        <div class="payroll-preview-meta">
+          <div><span>Run</span><strong>${esc(run.run_no || "")}</strong></div>
+          <div><span>Status</span><strong>${esc(run.status || "")}</strong></div>
+          <div><span>Payment Date</span><strong>${esc(run.payment_date || "")}</strong></div>
+          <div><span>Ready</span><strong>${preview?.ready_to_post ? "Yes" : "No"}</strong></div>
+        </div>
+      `;
+    }
+
+    if (issuesEl) {
+      const missing = preview?.missing_mappings || [];
+      const invalid = preview?.invalid_accounts || [];
+
+      issuesEl.innerHTML = `
+        ${missing.length ? `<div class="notice error">Missing mappings: ${esc(missing.join(", "))}</div>` : ""}
+        ${invalid.length ? `<div class="notice error">Invalid accounts: ${esc(invalid.join(", "))}</div>` : ""}
+        ${preview?.difference ? `<div class="notice error">Difference: ${money(preview.difference)}</div>` : ""}
+      `;
+    }
+
+    if (linesEl) {
+      const lines = preview?.lines || [];
+
+      linesEl.innerHTML = `
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="num">Debit</th>
+              <th class="num">Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map(ln => `
+              <tr>
+                <td>
+                  <strong>${esc(ln.account_code || "")}</strong>
+                  <div class="payroll-muted">${esc(ln.account_name || "")}</div>
+                </td>
+                <td>${esc(ln.description || "")}</td>
+                <td class="num">${money(ln.debit)}</td>
+                <td class="num">${money(ln.credit)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="2">Total</th>
+              <th class="num">${money(preview?.debits)}</th>
+              <th class="num">${money(preview?.credits)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    }
+
+    $("payrollJournalPreviewPostBtn").disabled = !preview?.ready_to_post;
+  }
+
+  async function postSelectedPayrollRun() {
+    const companyId = cid();
+    const runId = payrollState.selectedRun?.id;
+    if (!runId) throw new Error("Select a payroll run first.");
+
+    await apiFetch(ENDPOINTS.payroll.postRun(companyId, runId), {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    $("payrollJournalPreviewModal")?.classList.add("hidden");
+    await loadPayrollRuns();
+    await openPayrollRun(runId);
+    showPayrollStatus("Payroll posted successfully.", "success");
   }
 
   function renderPayrollSetupSelects() {
@@ -41854,23 +42100,37 @@ async function saveEditModal() {
     const el = $("payrollEmployeesList");
     if (!el) return;
 
-    if (!payrollState.employees.length) {
-      el.innerHTML = `<p class="muted">No employees added yet.</p>`;
+    const q = String($("payrollEmployeeSearch")?.value || "").toLowerCase().trim();
+    const status = String($("payrollEmployeeStatusFilter")?.value || "").toLowerCase().trim();
+
+    let items = payrollState.employees || [];
+
+    if (status) {
+      items = items.filter(e => String(e.employment_status || "").toLowerCase() === status);
+    }
+
+    if (q) {
+      items = items.filter(e => {
+        const hay = [
+          e.employee_no,
+          e.first_name,
+          e.last_name,
+          e.email,
+          e.phone,
+          e.department_name,
+          e.position_title,
+        ].join(" ").toLowerCase();
+
+        return hay.includes(q);
+      });
+    }
+
+    if (!items.length) {
+      el.innerHTML = `<p class="payroll-muted">No employees found.</p>`;
       return;
     }
 
-    el.innerHTML = payrollState.employees.map(e => `
-      <div class="list-row clickable" data-payroll-employee-id="${e.id}">
-        <div>
-          <strong>${esc(e.employee_no || "")} — ${esc(e.first_name || "")} ${esc(e.last_name || "")}</strong>
-          <div class="muted">${esc(e.email || "")} ${e.phone ? " • " + esc(e.phone) : ""}</div>
-        </div>
-        <div>
-          <span class="pill">${esc(e.employment_status || "active")}</span>
-          <div class="muted">${esc(e.position_title || "")}</div>
-        </div>
-      </div>
-    `).join("");
+    el.innerHTML = items.map(renderPayrollEmployeeRow).join("");
 
     el.querySelectorAll("[data-payroll-employee-id]").forEach(row => {
       row.addEventListener("click", async () => {
@@ -41884,7 +42144,7 @@ async function saveEditModal() {
       btn.classList.toggle("active", btn.dataset.payrollTab === tab);
     });
 
-    ["overview", "settings", "calendars", "employees"].forEach(name => {
+    ["overview", "employees", "calendars", "runs", "settings", "reports"].forEach(name => {
       $(`payrollTab${cap(name)}`)?.classList.toggle("hidden", name !== tab);
     });
   }
@@ -42264,6 +42524,49 @@ async function saveEditModal() {
     $("payrollSaveLoanBtn")?.addEventListener("click", async () => {
       try { await savePayrollLoan(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollNewEmployeeBtn")?.addEventListener("click", () => {
+      clearPayrollEmployeeForm();
+      openPayrollEmployeeModal("create");
+    });
+
+    document.querySelectorAll("[data-payroll-goto]").forEach(btn => {
+      btn.addEventListener("click", () => switchPayrollTab(btn.dataset.payrollGoto));
+    });
+
+    $("payrollEmployeeSearch")?.addEventListener("input", renderPayrollEmployees);
+    $("payrollEmployeeDepartmentFilter")?.addEventListener("change", renderPayrollEmployees);
+  
+    $("payrollRunStatusFilter")?.addEventListener("change", renderPayrollRuns);
+
+    $("payrollCreateRunBtn")?.addEventListener("click", async () => {
+      try { await createPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollCalculateRunBtn")?.addEventListener("click", async () => {
+      try { await calculateSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollPreviewJournalBtn")?.addEventListener("click", async () => {
+      try { await previewSelectedPayrollJournal(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollPostRunBtn")?.addEventListener("click", async () => {
+      try { await previewSelectedPayrollJournal(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollJournalPreviewPostBtn")?.addEventListener("click", async () => {
+      try { await postSelectedPayrollRun(); }
+      catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollJournalPreviewClose")?.addEventListener("click", () => {
+      $("payrollJournalPreviewModal")?.classList.add("hidden");
     });
   }
 

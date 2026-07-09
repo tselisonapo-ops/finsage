@@ -489,3 +489,111 @@ def api_payroll_employee_loans(company_id: int, employee_id: int):
     except Exception as e:
         current_app.logger.exception("payroll_employee_loan_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/runs", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def api_payroll_runs(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            return jsonify({"ok": True, "items": db_service.payroll_runs_list(company_id)}), 200
+        except Exception as e:
+            current_app.logger.exception("payroll_runs_list failed")
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    try:
+        body = _payroll_body()
+        if not body.get("pay_calendar_id"):
+            return jsonify({"ok": False, "error": "pay_calendar_id is required"}), 400
+
+        out = db_service.payroll_run_create(company_id, int(body["pay_calendar_id"]))
+        return jsonify({"ok": True, "data": out}), 201
+    except Exception as e:
+        current_app.logger.exception("payroll_run_create failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>", methods=["GET", "OPTIONS"])
+@require_auth
+def api_payroll_run_get(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_run_get(company_id, run_id)
+        if not out:
+            return jsonify({"ok": False, "error": "Payroll run not found"}), 404
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_run_get failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>/calculate", methods=["POST", "OPTIONS"])
+@require_auth
+def api_payroll_run_calculate(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_run_calculate(company_id, run_id)
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_run_calculate failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>/post", methods=["POST", "OPTIONS"])
+@require_auth
+def api_payroll_run_post(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+
+    try:
+        out = db_service.payroll_run_post(company_id, run_id, user_id=user_id)
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_run_post failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>/journal-preview", methods=["GET", "OPTIONS"])
+@require_auth
+def api_payroll_run_journal_preview(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.payroll_run_journal_preview(int(company_id), int(run_id))
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("payroll_run_journal_preview failed")
+        return jsonify({"ok": False, "error": str(e)}), 400

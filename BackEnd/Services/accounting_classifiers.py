@@ -1004,6 +1004,72 @@ def _coa_role_from_text(
             return "cogs_merchandise"
 
     # ----------------------------
+    # Payroll roles
+    # ----------------------------
+
+    if is_expense:
+        if has_any(
+            "salaries & wages",
+            "salaries and wages",
+            "salary expense",
+            "salaries expense",
+            "wages expense",
+            "payroll expense",
+            "basic salary",
+            "staff costs",
+            "employee costs",
+        ):
+            return "payroll_salary_expense"
+
+        if has_any("bonus expense", "bonuses expense", "staff bonus", "employee bonus"):
+            return "payroll_bonus_expense"
+
+        if has_any("commission expense", "sales commission", "employee commission"):
+            return "payroll_commission_expense"
+
+        if has_any(
+            "employer contribution",
+            "employer pension",
+            "employer provident",
+            "employer medical",
+            "employer uif",
+            "payroll contributions expense",
+            "employee benefits expense",
+        ):
+            return "payroll_employer_contribution_expense"
+
+    if is_liability:
+        if has_any(
+            "paye",
+            "pay as you earn",
+            "withholding tax payable",
+            "employee tax payable",
+            "payroll tax payable",
+        ):
+            return "payroll_paye_payable"
+
+        if has_any("net salary payable", "net salaries payable", "wages payable", "salaries payable", "payroll payable"):
+            return "payroll_net_salary_payable"
+
+        if has_any("pension payable", "provident payable", "retirement fund payable"):
+            return "payroll_pension_payable"
+
+        if has_any("medical aid payable", "medical payable", "medical scheme payable"):
+            return "payroll_medical_aid_payable"
+
+        if has_any(
+            "payroll deductions payable",
+            "employee deductions payable",
+            "union fees payable",
+            "salary advance recovery",
+            "employee loan deduction payable",
+        ):
+            return "payroll_other_deductions_payable"
+
+        if has_any("provision for bonuses", "bonus provision", "accrued bonus", "bonuses payable"):
+            return "payroll_bonus_payable"
+        
+    # ----------------------------
     # Accruals & Deferrals
     # ----------------------------
     # Guard: asset-side customer deposit clearing must not become deferred income

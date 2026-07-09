@@ -6282,6 +6282,107 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_emp_loan_status_ck
                 CHECK (status IN ('active','settled','cancelled'))
         );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_runs (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            pay_calendar_id INTEGER NOT NULL,
+            run_no TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            payment_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            gross_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_deductions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_employer_contributions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id INTEGER,
+            posted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            CONSTRAINT {schema}_payroll_runs_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_runs_calendar_fk
+                FOREIGN KEY (pay_calendar_id) REFERENCES {schema}.payroll_pay_calendars(id),
+
+            CONSTRAINT {schema}_payroll_runs_journal_fk
+                FOREIGN KEY (posted_journal_id) REFERENCES {schema}.journal(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_runs_uniq
+                UNIQUE(company_id, pay_calendar_id),
+
+            CONSTRAINT {schema}_payroll_runs_status_ck
+                CHECK (status IN ('draft','calculated','approved','posted','reversed'))
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_run_employees (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            payroll_run_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            contract_id INTEGER,
+            basic_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_deductions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employer_contributions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            CONSTRAINT {schema}_payroll_run_emp_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_run_emp_run_fk
+                FOREIGN KEY (payroll_run_id) REFERENCES {schema}.payroll_runs(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_run_emp_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id),
+
+            CONSTRAINT {schema}_payroll_run_emp_contract_fk
+                FOREIGN KEY (contract_id) REFERENCES {schema}.payroll_employee_contracts(id) ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_payroll_run_emp_uniq
+                UNIQUE(company_id, payroll_run_id, employee_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_run_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+            payroll_run_id INTEGER NOT NULL,
+            run_employee_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL,
+            line_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            earning_type_id INTEGER,
+            deduction_type_id INTEGER,
+            contribution_type_id INTEGER,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gl_account_code TEXT,
+
+            CONSTRAINT {schema}_payroll_run_lines_company_fk
+                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_run_lines_run_fk
+                FOREIGN KEY (payroll_run_id) REFERENCES {schema}.payroll_runs(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_run_lines_run_emp_fk
+                FOREIGN KEY (run_employee_id) REFERENCES {schema}.payroll_run_employees(id) ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_run_lines_employee_fk
+                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id),
+
+            CONSTRAINT {schema}_payroll_run_lines_coa_fk
+                FOREIGN KEY (gl_account_code) REFERENCES {schema}.coa(code),
+
+            CONSTRAINT {schema}_payroll_run_lines_type_ck
+                CHECK (line_type IN ('earning','deduction','employer_contribution','tax','net_pay'))
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_runs_status_idx
+            ON {schema}.payroll_runs(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_payroll_run_lines_run_idx
+            ON {schema}.payroll_run_lines(company_id, payroll_run_id);
         """)
 
     def ensure_company_forecast(self, company_id: int):
@@ -19891,6 +19992,16 @@ class DatabaseService:
         ALTER TABLE {schema}.pos_sales
         ADD COLUMN IF NOT EXISTS posting_flow TEXT NOT NULL DEFAULT 'normal_pos';
 
+        ALTER TABLE {schema}.pos_sales
+        ADD COLUMN IF NOT EXISTS offline_local_id TEXT NULL,
+        ADD COLUMN IF NOT EXISTS sync_status TEXT NOT NULL DEFAULT 'online',
+        ADD COLUMN IF NOT EXISTS sync_error TEXT NULL,
+        ADD COLUMN IF NOT EXISTS inventory_status TEXT NOT NULL DEFAULT 'not_checked';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sales_offline_local_id_uniq
+        ON {schema}.pos_sales(company_id, offline_local_id)
+        WHERE offline_local_id IS NOT NULL;
+
         CREATE TABLE IF NOT EXISTS {schema}.pos_sale_lines (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -19913,6 +20024,11 @@ class DatabaseService:
             price_source TEXT NULL, -- normal|customer_price|bulk_discount|manual_override|promotion
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.pos_sale_lines
+        ADD COLUMN IF NOT EXISTS inventory_check_status TEXT NOT NULL DEFAULT 'not_checked',
+        ADD COLUMN IF NOT EXISTS qty_available_at_sync NUMERIC(18,4) NULL,
+        ADD COLUMN IF NOT EXISTS qty_short NUMERIC(18,4) NULL;
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_pos_sale_lines_line_uniq
         ON {schema}.pos_sale_lines(sale_id, line_no);
@@ -39461,42 +39577,63 @@ class DatabaseService:
                 raise ValueError("Payment is less than sale total")
 
             # 1) Consume inventory / recipe ingredients and update line costs
-            total_cost = 0.0
+            try:
+                total_cost = 0.0
 
-            for line in lines:
-                item_type = (line.get("item_type") or "").lower()
+                for line in lines:
+                    item_type = (line.get("item_type") or "").lower()
 
-                if item_type in {"service", "misc"}:
-                    continue
+                    if item_type in {"service", "misc"}:
+                        continue
 
-                item_id = line.get("item_id")
-                if not item_id:
-                    continue
+                    item_id = line.get("item_id")
+                    if not item_id:
+                        continue
 
-                qty = float(line.get("qty") or 0)
+                    qty = float(line.get("qty") or 0)
 
-                line_cost = self._pos_consume_recipe_for_sale_line(
-                    cur,
-                    schema,
-                    int(company_id),
-                    sale_id=int(sale_id),
-                    sale_line_id=int(line["id"]),
-                    menu_item_id=int(item_id),
-                    qty_sold=qty,
-                )
+                    line_cost = self._pos_consume_recipe_for_sale_line(
+                        cur,
+                        schema,
+                        int(company_id),
+                        sale_id=int(sale_id),
+                        line_id=int(line["id"]),
+                        item_id=int(item_id),
+                        qty=qty,
+                    )
 
-                total_cost += float(line_cost or 0)
+                    total_cost += float(line_cost or 0)
 
+                    cur.execute(f"""
+                        UPDATE {schema}.pos_sale_lines
+                        SET cost_amount=%s,
+                            inventory_check_status='ok',
+                            qty_short=0
+                        WHERE company_id=%s AND id=%s
+                    """, (
+                        line_cost,
+                        int(company_id),
+                        int(line["id"]),
+                    ))
+
+            except ValueError as ex:
                 cur.execute(f"""
-                    UPDATE {schema}.pos_sale_lines
-                    SET cost_amount = %s
-                    WHERE company_id = %s
-                    AND id = %s
+                    UPDATE {schema}.pos_sales
+                    SET inventory_status='blocked',
+                        sync_status=CASE
+                            WHEN sync_status='offline_pending' THEN 'sync_failed'
+                            ELSE sync_status
+                        END,
+                        sync_error=%s
+                    WHERE company_id=%s AND id=%s
                 """, (
-                    round(float(line_cost or 0), 2),
+                    str(ex),
                     int(company_id),
-                    int(line["id"]),
+                    int(sale_id),
                 ))
+
+                conn.commit()
+                raise
 
             total_cost = round(total_cost, 2)
 
@@ -41279,6 +41416,17 @@ class DatabaseService:
 
         layers = cur.fetchall() or []
 
+        available_total = sum(
+            float(x.get("qty_in") or 0) - float(x.get("qty_out") or 0)
+            for x in layers
+        )
+
+        if available_total + 0.0001 < remaining:
+            raise ValueError(
+                f"Insufficient stock for item {item_id}. "
+                f"Available {available_total:.4f}, required {remaining:.4f}"
+            )
+
         for layer in layers:
             if remaining <= 0:
                 break
@@ -41295,39 +41443,28 @@ class DatabaseService:
                 AND id=%s
             """, (take_qty, int(company_id), int(layer["id"])))
 
-            cost_amount = round(take_qty * unit_cost, 2)
-
             cur.execute(f"""
                 INSERT INTO {schema}.inventory_fifo_allocations
                 (
-                    company_id,
-                    item_id,
-                    layer_id,
-                    qty,
-                    unit_cost,
-                    cost_amount,
-                    source,
-                    source_id,
-                    source_line_id
+                    company_id, item_id, layer_id, qty,
+                    unit_cost, cost_amount,
+                    source, source_id, source_line_id
                 )
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 int(company_id),
                 int(item_id),
                 int(layer["id"]),
-                float(take_qty),
-                float(unit_cost),
-                float(cost_amount),
+                take_qty,
+                unit_cost,
+                cost_amount,
                 source,
-                int(source_id) if source_id else None,
-                int(source_line_id) if source_line_id else None,
+                source_id,
+                source_line_id,
             ))
 
             total_cost += cost_amount
             remaining -= take_qty
-
-        if remaining > 0.0001:
-            raise ValueError(f"Insufficient stock for item_id={item_id}")
 
         return round(total_cost, 2)
 
@@ -82368,7 +82505,7 @@ class DatabaseService:
         ]
 
         for code, name, taxable, pensionable in earnings:
-            self.execute(f"""
+            self.execute_sql(f"""
                 INSERT INTO {schema}.payroll_earning_types
                     (company_id, code, name, taxable, pensionable)
                 VALUES (%s,%s,%s,%s,%s)
@@ -82376,7 +82513,7 @@ class DatabaseService:
             """, (company_id, code, name, taxable, pensionable))
 
         for code, name, statutory in deductions:
-            self.execute(f"""
+            self.execute_sql(f"""
                 INSERT INTO {schema}.payroll_deduction_types
                     (company_id, code, name, is_statutory)
                 VALUES (%s,%s,%s,%s)
@@ -82384,7 +82521,7 @@ class DatabaseService:
             """, (company_id, code, name, statutory))
 
         for code, name in contributions:
-            self.execute(f"""
+            self.execute_sql(f"""
                 INSERT INTO {schema}.payroll_employer_contribution_types
                     (company_id, code, name)
                 VALUES (%s,%s,%s)
@@ -82392,7 +82529,7 @@ class DatabaseService:
             """, (company_id, code, name))
 
         for code, name, category in benefits:
-            self.execute(f"""
+            self.execute_sql(f"""
                 INSERT INTO {schema}.payroll_benefit_types
                     (company_id, code, name, benefit_category)
                 VALUES (%s,%s,%s,%s)
@@ -82400,7 +82537,7 @@ class DatabaseService:
             """, (company_id, code, name, category))
 
         for code, name, paid, accrues, days in leave_types:
-            self.execute(f"""
+            self.execute_sql(f"""
                 INSERT INTO {schema}.payroll_leave_types
                     (company_id, code, name, paid, accrues, annual_entitlement_days)
                 VALUES (%s,%s,%s,%s,%s,%s)
@@ -82789,7 +82926,7 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         if data.get("is_active", True):
-            self.execute(f"""
+            self.execute_sql(f"""
                 UPDATE {schema}.payroll_employee_contracts
                 SET is_active = FALSE,
                     effective_to = COALESCE(effective_to, %s::date - INTERVAL '1 day')
@@ -82849,7 +82986,7 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         if data.get("is_primary", True):
-            self.execute(f"""
+            self.execute_sql(f"""
                 UPDATE {schema}.payroll_employee_bank_accounts
                 SET is_primary = FALSE
                 WHERE company_id=%s AND employee_id=%s;
@@ -82872,6 +83009,507 @@ class DatabaseService:
             data.get("account_type"),
             data.get("is_primary"),
         ))
+
+    def payroll_mapping(self, company_id: int) -> dict:
+        schema = self.company_schema(company_id)
+        rows = self.fetch_all(f"""
+            SELECT mapping_key, gl_account_code
+            FROM {schema}.payroll_account_mappings
+            WHERE company_id=%s;
+        """, (int(company_id),))
+
+        return {r["mapping_key"]: r["gl_account_code"] for r in rows}
+
+
+    def payroll_run_create(self, company_id: int, pay_calendar_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        cal = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_pay_calendars
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(pay_calendar_id)))
+
+        if not cal:
+            raise ValueError("Pay calendar not found")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_runs (
+                company_id, pay_calendar_id, run_no,
+                period_start, period_end, payment_date, status
+            )
+            VALUES (
+                %s,%s,
+                'PAY-' || %s || '-' || to_char(%s::date, 'YYYYMM'),
+                %s,%s,%s,
+                'draft'
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(pay_calendar_id),
+            int(company_id),
+            cal["period_start"],
+            cal["period_start"],
+            cal["period_end"],
+            cal["payment_date"],
+        ))
+
+
+    def payroll_run_calculate(self, company_id: int, payroll_run_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(payroll_run_id)))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] == "posted":
+            raise ValueError("Posted payroll cannot be recalculated")
+
+        self.execute_sql(f"""
+            DELETE FROM {schema}.payroll_run_lines
+            WHERE company_id=%s AND payroll_run_id=%s;
+
+            DELETE FROM {schema}.payroll_run_employees
+            WHERE company_id=%s AND payroll_run_id=%s;
+        """, (
+            int(company_id), int(payroll_run_id),
+            int(company_id), int(payroll_run_id),
+        ))
+
+        employees = self.fetch_all(f"""
+            SELECT e.*, c.id AS contract_id, c.basic_salary
+            FROM {schema}.payroll_employees e
+            JOIN {schema}.payroll_employee_contracts c
+            ON c.employee_id = e.id
+            AND c.company_id = e.company_id
+            AND c.is_active = TRUE
+            WHERE e.company_id=%s
+            AND e.employment_status='active'
+            AND e.start_date <= %s
+            AND (e.termination_date IS NULL OR e.termination_date >= %s)
+            ORDER BY e.id;
+        """, (int(company_id), run["period_end"], run["period_start"]))
+
+        totals = {
+            "gross": 0.0,
+            "deductions": 0.0,
+            "employer": 0.0,
+            "net": 0.0,
+        }
+
+        for emp in employees:
+            basic = float(emp.get("basic_salary") or 0)
+            gross = basic
+            deductions = 0.0
+            employer = 0.0
+
+            # Simple starter PAYE placeholder. Later replace with country rules.
+            paye = 0.0
+
+            # Loans
+            loans = self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.payroll_employee_loans
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND status='active'
+                AND start_date <= %s;
+            """, (int(company_id), int(emp["id"]), run["period_end"]))
+
+            loan_ded = sum(float(x.get("repayment_amount") or 0) for x in loans)
+
+            deductions += paye + loan_ded
+            net = gross - deductions
+
+            run_emp = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_run_employees (
+                    company_id, payroll_run_id, employee_id, contract_id,
+                    basic_pay, gross_pay, total_deductions,
+                    employer_contributions, net_pay, status
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'calculated')
+                RETURNING *;
+            """, (
+                int(company_id),
+                int(payroll_run_id),
+                int(emp["id"]),
+                emp.get("contract_id"),
+                basic,
+                gross,
+                deductions,
+                employer,
+                net,
+            ))
+
+            self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_run_lines (
+                    company_id, payroll_run_id, run_employee_id, employee_id,
+                    line_type, description, amount
+                )
+                VALUES (%s,%s,%s,%s,'earning','Basic Salary',%s)
+                RETURNING *;
+            """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], basic))
+
+            if paye > 0:
+                self.fetch_one(f"""
+                    INSERT INTO {schema}.payroll_run_lines (
+                        company_id, payroll_run_id, run_employee_id, employee_id,
+                        line_type, description, amount
+                    )
+                    VALUES (%s,%s,%s,%s,'tax','PAYE',%s)
+                    RETURNING *;
+                """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], paye))
+
+            if loan_ded > 0:
+                self.fetch_one(f"""
+                    INSERT INTO {schema}.payroll_run_lines (
+                        company_id, payroll_run_id, run_employee_id, employee_id,
+                        line_type, description, amount
+                    )
+                    VALUES (%s,%s,%s,%s,'deduction','Employee loan repayment',%s)
+                    RETURNING *;
+                """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], loan_ded))
+
+            totals["gross"] += gross
+            totals["deductions"] += deductions
+            totals["employer"] += employer
+            totals["net"] += net
+
+        out = self.fetch_one(f"""
+            UPDATE {schema}.payroll_runs
+            SET status='calculated',
+                gross_pay=%s,
+                total_deductions=%s,
+                total_employer_contributions=%s,
+                net_pay=%s
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """, (
+            totals["gross"],
+            totals["deductions"],
+            totals["employer"],
+            totals["net"],
+            int(company_id),
+            int(payroll_run_id),
+        ))
+
+        return self.payroll_run_get(company_id, payroll_run_id)
+
+
+    def payroll_run_get(self, company_id: int, payroll_run_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(payroll_run_id)))
+
+        if not run:
+            return None
+
+        run["employees"] = self.fetch_all(f"""
+            SELECT re.*, e.employee_no, e.first_name, e.last_name
+            FROM {schema}.payroll_run_employees re
+            JOIN {schema}.payroll_employees e ON e.id = re.employee_id
+            WHERE re.company_id=%s AND re.payroll_run_id=%s
+            ORDER BY e.employee_no;
+        """, (int(company_id), int(payroll_run_id)))
+
+        run["lines"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_run_lines
+            WHERE company_id=%s AND payroll_run_id=%s
+            ORDER BY run_employee_id, id;
+        """, (int(company_id), int(payroll_run_id)))
+
+        return run
+
+
+    def payroll_runs_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+        return self.fetch_all(f"""
+            SELECT r.*, c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c ON c.id = r.pay_calendar_id
+            WHERE r.company_id=%s
+            ORDER BY r.period_start DESC, r.id DESC;
+        """, (int(company_id),))
+
+
+    def payroll_run_post(self, company_id: int, payroll_run_id: int, user_id=None) -> dict:
+        schema = self.company_schema(company_id)
+
+        run = self.payroll_run_get(company_id, payroll_run_id)
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] == "posted":
+            raise ValueError("Payroll run already posted")
+
+        if run["status"] not in ("calculated", "approved"):
+            raise ValueError("Payroll run must be calculated before posting")
+
+        preview = self.payroll_run_journal_preview(company_id, payroll_run_id)
+
+        if not preview.get("ready_to_post"):
+            raise ValueError(
+                "Payroll journal preview is not ready to post. "
+                f"Missing mappings: {preview.get('missing_mappings')}. "
+                f"Invalid accounts: {preview.get('invalid_accounts')}. "
+                f"Difference: {preview.get('difference')}"
+            )
+
+        journal_lines = [
+            {
+                "account_code": ln["account_code"],
+                "description": ln["description"],
+                "debit": ln["debit"],
+                "credit": ln["credit"],
+            }
+            for ln in preview["lines"]
+        ]
+
+        journal_id = self.post_journal(company_id, {
+            "date": str(run["payment_date"]),
+            "ref": f"PAYROLL-RUN-{payroll_run_id}",
+            "description": f"Payroll run {run['run_no']}",
+            "source": "payroll_run",
+            "source_id": int(payroll_run_id),
+            "currency": run.get("currency") or "ZAR",
+            "gross_amount": preview["debits"],
+            "net_amount": preview["debits"],
+            "vat_amount": 0,
+            "lines": journal_lines,
+            "created_by_user_id": user_id,
+            "prepared_by_user_id": user_id,
+            "module_name": "payroll",
+        })
+
+        out = self.fetch_one(f"""
+            UPDATE {schema}.payroll_runs
+            SET status='posted',
+                posted_journal_id=%s,
+                posted_at=now()
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """, (int(journal_id), int(company_id), int(payroll_run_id)))
+
+        return {
+            "run": out,
+            "journal_id": int(journal_id),
+            "journal_preview": preview,
+        }
+
+    def payroll_run_journal_preview(self, company_id: int, payroll_run_id: int) -> dict:
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+
+        schema = self.company_schema(company_id)
+
+        run = self.payroll_run_get(company_id, payroll_run_id)
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run.get("status") not in ("calculated", "approved", "posted"):
+            return {
+                "ok": True,
+                "ready_to_post": False,
+                "reason": "Payroll run must be calculated before journal preview.",
+                "run": run,
+                "lines": [],
+                "debits": 0,
+                "credits": 0,
+                "difference": 0,
+                "missing_mappings": [],
+            }
+
+        mappings = self.payroll_mapping(company_id)
+
+        required = {
+            "salary_expense": mappings.get("salary_expense"),
+            "net_salary_payable": mappings.get("net_salary_payable"),
+            "paye_payable": mappings.get("paye_payable"),
+            "other_deductions_payable": mappings.get("other_deductions_payable"),
+        }
+
+        missing = [k for k, v in required.items() if not v]
+
+        if missing:
+            return {
+                "ok": True,
+                "ready_to_post": False,
+                "reason": "Missing payroll GL mappings.",
+                "run": run,
+                "lines": [],
+                "debits": 0,
+                "credits": 0,
+                "difference": 0,
+                "missing_mappings": missing,
+            }
+
+        gross = round(float(run.get("gross_pay") or 0), 2)
+        net = round(float(run.get("net_pay") or 0), 2)
+
+        tax_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run.get("lines", [])
+            if x.get("line_type") == "tax"
+        ), 2)
+
+        deduction_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run.get("lines", [])
+            if x.get("line_type") == "deduction"
+        ), 2)
+
+        employer_total = round(sum(
+            float(x.get("amount") or 0)
+            for x in run.get("lines", [])
+            if x.get("line_type") == "employer_contribution"
+        ), 2)
+
+        lines = []
+
+        def add_line(account_code, description, debit=0, credit=0, bucket=None):
+            debit = round(float(debit or 0), 2)
+            credit = round(float(credit or 0), 2)
+
+            if debit <= 0 and credit <= 0:
+                return
+
+            lines.append({
+                "account_code": account_code,
+                "description": description,
+                "debit": debit,
+                "credit": credit,
+                "bucket": bucket,
+            })
+
+        add_line(
+            required["salary_expense"],
+            "Payroll gross salaries and wages",
+            debit=gross,
+            bucket="gross_pay"
+        )
+
+        if employer_total > 0:
+            employer_expense = mappings.get("employer_contribution_expense")
+            employer_payable = mappings.get("other_deductions_payable")
+
+            if not employer_expense:
+                missing.append("employer_contribution_expense")
+            if not employer_payable:
+                missing.append("other_deductions_payable")
+
+            if employer_expense and employer_payable:
+                add_line(
+                    employer_expense,
+                    "Employer payroll contributions expense",
+                    debit=employer_total,
+                    bucket="employer_contribution_expense"
+                )
+                add_line(
+                    employer_payable,
+                    "Employer payroll contributions payable",
+                    credit=employer_total,
+                    bucket="employer_contribution_payable"
+                )
+
+        add_line(
+            required["paye_payable"],
+            "PAYE / withholding tax payable",
+            credit=tax_total,
+            bucket="tax"
+        )
+
+        add_line(
+            required["other_deductions_payable"],
+            "Other payroll deductions payable",
+            credit=deduction_total,
+            bucket="deductions"
+        )
+
+        add_line(
+            required["net_salary_payable"],
+            "Net salaries payable",
+            credit=net,
+            bucket="net_pay"
+        )
+
+        debits = round(sum(float(x.get("debit") or 0) for x in lines), 2)
+        credits = round(sum(float(x.get("credit") or 0) for x in lines), 2)
+        difference = round(debits - credits, 2)
+
+        account_codes = [x["account_code"] for x in lines if x.get("account_code")]
+
+        account_rows = self.fetch_all(f"""
+            SELECT code, name, section, category, role, posting
+            FROM {schema}.coa
+            WHERE code = ANY(%s)
+            ORDER BY code;
+        """, (account_codes,)) if account_codes else []
+
+        account_by_code = {r["code"]: r for r in account_rows}
+
+        enriched_lines = []
+        invalid_accounts = []
+
+        for ln in lines:
+            acct = account_by_code.get(ln["account_code"])
+            if not acct or not acct.get("posting"):
+                invalid_accounts.append(ln["account_code"])
+
+            enriched_lines.append({
+                **ln,
+                "account_name": acct.get("name") if acct else None,
+                "section": acct.get("section") if acct else None,
+                "category": acct.get("category") if acct else None,
+                "role": acct.get("role") if acct else None,
+            })
+
+        missing = sorted(set(missing))
+        invalid_accounts = sorted(set(invalid_accounts))
+
+        return {
+            "ok": True,
+            "ready_to_post": (
+                not missing
+                and not invalid_accounts
+                and debits > 0
+                and credits > 0
+                and difference == 0
+            ),
+            "reason": None if difference == 0 and not missing and not invalid_accounts else "Payroll journal preview has issues.",
+            "run": {
+                "id": run.get("id"),
+                "run_no": run.get("run_no"),
+                "status": run.get("status"),
+                "period_start": run.get("period_start"),
+                "period_end": run.get("period_end"),
+                "payment_date": run.get("payment_date"),
+                "gross_pay": gross,
+                "total_deductions": round(float(run.get("total_deductions") or 0), 2),
+                "total_employer_contributions": round(float(run.get("total_employer_contributions") or 0), 2),
+                "net_pay": net,
+                "posted_journal_id": run.get("posted_journal_id"),
+            },
+            "lines": enriched_lines,
+            "debits": debits,
+            "credits": credits,
+            "difference": difference,
+            "missing_mappings": missing,
+            "invalid_accounts": invalid_accounts,
+        }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

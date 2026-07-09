@@ -439,4 +439,11 @@ export const posApi = {
             ...payload,
         });
     },
+
+    syncOfflineSale(payload) {
+    return apiFetch(`/api/companies/${companyId()}/pos/offline-sync`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
+    },
 };
