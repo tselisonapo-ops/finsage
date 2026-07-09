@@ -322,3 +322,193 @@ def forecast_budget_lock(company_id, budget_id):
     except Exception as e:
         return _json_error(e, 400)
 
+@forecast_bp.route("/api/companies/<int:company_id>/forecast/versions", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def forecast_versions_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        deny = _require_planning_view(payload)
+        if deny:
+            return deny
+
+        try:
+            budget_id = request.args.get("budget_id", type=int)
+            rows = db_service.forecast_list_versions(company_id, budget_id=budget_id)
+            return jsonify({"ok": True, "data": rows}), 200
+        except Exception as e:
+            current_app.logger.exception("forecast list versions failed")
+            return _json_error(e, 400)
+
+    deny = _require_planning_edit(payload)
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(force=True) or {}
+        row = db_service.forecast_create_version(
+            company_id,
+            body,
+            user_id=_actor_user_id(payload),
+        )
+        return jsonify({"ok": True, "data": row}), 201
+    except Exception as e:
+        current_app.logger.exception("forecast create version failed")
+        return _json_error(e, 400)
+
+
+@forecast_bp.route("/api/companies/<int:company_id>/forecast/versions/<int:version_id>", methods=["GET", "OPTIONS"])
+@require_auth
+def forecast_version_get(company_id, version_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    deny = _require_planning_view(payload)
+    if deny:
+        return deny
+
+    try:
+        row = db_service.forecast_get_version(company_id, version_id)
+        if not row:
+            return _json_error("Forecast version not found", 404)
+        return jsonify({"ok": True, "data": row}), 200
+    except Exception as e:
+        current_app.logger.exception("forecast get version failed")
+        return _json_error(e, 400)
+
+
+@forecast_bp.route("/api/companies/<int:company_id>/forecast/versions/<int:version_id>/lines", methods=["POST", "PUT", "OPTIONS"])
+@require_auth
+def forecast_version_lines_upsert(company_id, version_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    deny = _require_planning_edit(payload)
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(force=True) or {}
+
+        if isinstance(body.get("lines"), list):
+            out = db_service.forecast_bulk_upsert_lines(
+                company_id,
+                version_id,
+                body["lines"],
+                user_id=_actor_user_id(payload),
+            )
+        else:
+            out = db_service.forecast_upsert_line(
+                company_id,
+                version_id,
+                body,
+                user_id=_actor_user_id(payload),
+            )
+
+        return jsonify({"ok": True, "data": out}), 200
+    except Exception as e:
+        current_app.logger.exception("forecast upsert version lines failed")
+        return _json_error(e, 400)
+
+
+@forecast_bp.route("/api/companies/<int:company_id>/forecast/drivers", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def forecast_drivers_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        deny = _require_planning_view(payload)
+        if deny:
+            return deny
+
+        try:
+            budget_id = request.args.get("budget_id", type=int)
+            version_id = request.args.get("version_id", type=int)
+
+            rows = db_service.forecast_list_drivers(
+                company_id,
+                budget_id=budget_id,
+                version_id=version_id,
+            )
+            return jsonify({"ok": True, "data": rows}), 200
+        except Exception as e:
+            current_app.logger.exception("forecast list drivers failed")
+            return _json_error(e, 400)
+
+    deny = _require_planning_edit(payload)
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(force=True) or {}
+        row = db_service.forecast_create_driver(
+            company_id,
+            body,
+            user_id=_actor_user_id(payload),
+        )
+        return jsonify({"ok": True, "data": row}), 201
+    except Exception as e:
+        current_app.logger.exception("forecast create driver failed")
+        return _json_error(e, 400)
+
+
+@forecast_bp.route("/api/companies/<int:company_id>/forecast/import-batches", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def forecast_import_batches_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        deny = _require_planning_view(payload)
+        if deny:
+            return deny
+
+        try:
+            rows = db_service.forecast_list_import_batches(company_id)
+            return jsonify({"ok": True, "data": rows}), 200
+        except Exception as e:
+            current_app.logger.exception("forecast list import batches failed")
+            return _json_error(e, 400)
+
+    deny = _require_planning_edit(payload)
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(force=True) or {}
+        row = db_service.forecast_create_import_batch(
+            company_id,
+            body,
+            user_id=_actor_user_id(payload),
+        )
+        return jsonify({"ok": True, "data": row}), 201
+    except Exception as e:
+        current_app.logger.exception("forecast create import batch failed")
+        return _json_error(e, 400)

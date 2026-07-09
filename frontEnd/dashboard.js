@@ -41613,12 +41613,30 @@ async function saveEditModal() {
     showPayrollStatus("");
   }
 
+  function setTxt(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
   function renderPayrollOverview() {
-    $("payrollEmpCount").textContent = String(payrollState.employees.length || 0);
-    $("payrollOpenCalCount").textContent = String(
-      payrollState.calendars.filter(x => String(x.status || "").toLowerCase() === "open").length
+    const employees = payrollState.employees || [];
+    const calendars = payrollState.calendars || [];
+
+    const openCalendars = calendars.filter(
+      x => String(x.status || "").toLowerCase() === "open"
     );
-    $("payrollFrequency").textContent = payrollState.settings?.default_frequency || "—";
+
+    const next = openCalendars
+      .map(x => x.payment_date)
+      .filter(Boolean)
+      .sort()[0];
+
+    setTxt("payrollEmpCount", String(employees.length));
+    setTxt("payrollOpenRunCount", "0");
+    setTxt("payrollDraftRunCount", "0");
+    setTxt("payrollNextPayday", next || "—");
+
+    renderPayrollRecentEmployees?.();
   }
 
   function renderPayrollSettings() {
