@@ -40645,9 +40645,26 @@ async function saveEditModal() {
 
             </div>
 
-            <div class="flex justify-end gap-2 border-t pt-4 mt-4">
-              <button type="button" id="adModalCancelBtn" class="btn">Cancel</button>
-              <button type="submit" class="btn-highlight">Create Item</button>
+            <div class="flex justify-between gap-2 border-t pt-4 mt-4">
+              <div class="flex gap-2">
+                <button type="button" id="adPreviewBtn" class="btn">
+                  Preview
+                </button>
+              </div>
+
+              <div class="flex gap-2">
+                <button type="button" id="adModalCancelBtn" class="btn">
+                  Cancel
+                </button>
+
+                <button type="button" id="adSaveDraftBtn" class="btn">
+                  Save Draft
+                </button>
+
+                <button type="submit" id="adCreatePostBtn" class="btn-highlight">
+                  Create & Post Initial Recognition
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -40657,37 +40674,41 @@ async function saveEditModal() {
 
       document.getElementById("adModalCloseBtn")?.addEventListener("click", closeAdNewModal);
       document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
+      document.getElementById("adPreviewBtn")?.addEventListener("click", async () => {
+        await refreshAdPreview(window._AD_FINAL_CTX || {});
+      });
 
-      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-
-        const payload = {
-          item_title: $("adNewTitle")?.value?.trim(),
-          item_type: $("adNewType")?.value,
-          transaction_date: $("adNewTransactionDate")?.value,
-          start_date: $("adNewStartDate")?.value,
-          end_date: $("adNewEndDate")?.value,
-          original_amount: Number($("adNewAmount")?.value || 0),
-          currency: $("adNewCurrency")?.value || "USD",
-          frequency: $("adNewFrequency")?.value || "monthly",
-          balance_account: "",
-          recognition_account: finalCtx.account?.code || "",
-          balance_account_role: $("adNewBalanceAccountRole")?.value?.trim(),
-          recognition_account_role: $("adNewRecognitionRole")?.value?.trim(),
-          settlement_account: $("adNewSettlementAccount")?.value?.trim(),
-          settlement_role: $("adNewSettlementAccount")?.value ? "" : "cash_bank",
-          recognition_method: "straight_line",
-          status: "draft",
-          notes: $("adNewNotes")?.value?.trim() || "",
-        };
+      document.getElementById("adSaveDraftBtn")?.addEventListener("click", async () => {
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
         if (!payload.item_title) return alert("Item title is required.");
         if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
         if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
 
-        await createAccrualDeferralItem(payload);
+        await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        await loadAccrualDeferrals();
         closeAdNewModal();
       });
+
+      e.preventDefault();
+
+      const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+
+      if (!payload.item_title) return alert("Item title is required.");
+      if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
+      if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+
+      await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      await loadAccrualDeferrals();
+      closeAdNewModal();
     }
 
     const handoffRaw = store?.get?.("fs_ad_redirect_context") || "";
@@ -40695,7 +40716,7 @@ async function saveEditModal() {
     try { handoff = handoffRaw ? JSON.parse(handoffRaw) : {}; } catch {}
 
     const finalCtx = { ...handoff, ...ctx };
-
+    window._AD_FINAL_CTX = finalCtx;
     const today = new Date().toISOString().slice(0, 10);
     const txDate = finalCtx.journalDate || finalCtx.journal_date || today;
 

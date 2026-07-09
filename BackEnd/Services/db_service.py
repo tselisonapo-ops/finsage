@@ -65503,72 +65503,6 @@ class DatabaseService:
         row = cur.fetchone()
         return int(row["id"] if isinstance(row, dict) else row[0])
 
-    def backfill_overdue_working_paper_escalations(self, cur, company_id: int):
-        schema = self.company_schema(company_id)
-
-        cur.execute(
-            f"""
-            INSERT INTO {schema}.engagement_escalations (
-                company_id,
-                engagement_id,
-                source_type,
-                source_id,
-                escalation_type,
-                severity,
-                title,
-                description,
-                status,
-                raised_by_user_id,
-                assigned_to_user_id,
-                due_date,
-                is_active,
-                created_at,
-                updated_at
-            )
-            SELECT
-                wp.company_id,
-                wp.engagement_id,
-                'working_paper' AS source_type,
-                wp.id AS source_id,
-                'deadline_risk' AS escalation_type,
-                CASE
-                    WHEN wp.due_date < CURRENT_DATE - INTERVAL '7 days' THEN 'high'
-                    ELSE 'medium'
-                END AS severity,
-                CONCAT('Overdue working paper: ', wp.paper_name) AS title,
-                CONCAT(
-                    'Working paper ',
-                    COALESCE(wp.paper_code, '#' || wp.id::text),
-                    ' is overdue and still not completed.'
-                ) AS description,
-                'open' AS status,
-                wp.preparer_user_id AS raised_by_user_id,
-                wp.reviewer_user_id AS assigned_to_user_id,
-                wp.due_date,
-                TRUE,
-                NOW(),
-                NOW()
-            FROM {schema}.engagement_working_papers wp
-            WHERE wp.company_id = %s
-            AND wp.is_active = TRUE
-            AND wp.due_date IS NOT NULL
-            AND wp.due_date < CURRENT_DATE
-            AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
-            AND NOT EXISTS (
-                SELECT 1
-                FROM {schema}.engagement_escalations e
-                WHERE e.company_id = wp.company_id
-                    AND e.engagement_id = wp.engagement_id
-                    AND e.source_type = 'working_paper'
-                    AND e.source_id = wp.id
-                    AND e.escalation_type = 'deadline_risk'
-                    AND e.is_active = TRUE
-                    AND e.status IN ('open', 'in_progress')
-            )
-            """,
-            (company_id,),
-        )
-
     def update_engagement_working_paper(
         self,
         cur,
@@ -67192,6 +67126,72 @@ class DatabaseService:
         )
         return cur.rowcount
 
+    def backfill_overdue_working_paper_escalations(self, cur, company_id: int):
+        schema = self.company_schema(company_id)
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.engagement_escalations (
+                company_id,
+                engagement_id,
+                source_type,
+                source_id,
+                escalation_type,
+                severity,
+                title,
+                description,
+                status,
+                raised_by_user_id,
+                assigned_to_user_id,
+                due_date,
+                is_active,
+                created_at,
+                updated_at
+            )
+            SELECT
+                wp.company_id,
+                wp.engagement_id,
+                'working_paper' AS source_type,
+                wp.id AS source_id,
+                'deadline_risk' AS escalation_type,
+                CASE
+                    WHEN wp.due_date < CURRENT_DATE - INTERVAL '7 days' THEN 'high'
+                    ELSE 'medium'
+                END AS severity,
+                CONCAT('Overdue working paper: ', wp.paper_name) AS title,
+                CONCAT(
+                    'Working paper ',
+                    COALESCE(wp.paper_code, '#' || wp.id::text),
+                    ' is overdue and still not completed.'
+                ) AS description,
+                'open' AS status,
+                wp.preparer_user_id AS raised_by_user_id,
+                wp.reviewer_user_id AS assigned_to_user_id,
+                wp.due_date,
+                TRUE,
+                NOW(),
+                NOW()
+            FROM {schema}.engagement_working_papers wp
+            WHERE wp.company_id = %s
+            AND wp.is_active = TRUE
+            AND wp.due_date IS NOT NULL
+            AND wp.due_date < CURRENT_DATE
+            AND wp.status NOT IN ('reviewed', 'cleared', 'archived')
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.engagement_escalations e
+                WHERE e.company_id = wp.company_id
+                    AND e.engagement_id = wp.engagement_id
+                    AND e.source_type = 'working_paper'
+                    AND e.source_id = wp.id
+                    AND e.escalation_type = 'deadline_risk'
+                    AND e.is_active = TRUE
+                    AND e.status IN ('open', 'in_progress')
+            )
+            """,
+            (company_id,),
+        )
+        
     def _resource_planning_base_cte_sql(self, schema: str):
         return f"""
             WITH engagement_scope AS (
