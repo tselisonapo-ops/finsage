@@ -82088,17 +82088,6 @@ class DatabaseService:
         return row
 
 
-    def forecast_list_versions(self, company_id: int) -> List[Dict[str, Any]]:
-        self.ensure_company_forecast(company_id)
-        schema = self.company_schema(company_id)
-
-        return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.forecast_versions
-            WHERE company_id = %s
-            ORDER BY created_at DESC, id DESC;
-        """, (int(company_id),))
-
     # =========================
     # DB METHODS - PAYROLL
     # =========================
