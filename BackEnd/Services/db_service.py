@@ -16452,11 +16452,33 @@ class DatabaseService:
             ALTER TABLE %I.asset_carrying_amount_history
             ADD CONSTRAINT ck_asset_carry_hist_valid
             CHECK (
-            as_at IS NOT NULL
-            AND source_event IN ('depreciation','revaluation','impairment','subseq','rebuild','opening')
-            AND cost_total >= 0
-            AND accumulated_depreciation >= 0
-            AND carrying_amount >= 0
+                as_at IS NOT NULL
+
+                AND source_event IN (
+                    'opening',
+                    'depreciation',
+                    'revaluation',
+                    'impairment',
+
+                    -- Subsequent Measurements
+                    'add_cost',
+                    'change_estimate',
+                    'held_for_sale_classify',
+                    'held_for_sale_unclassify',
+                    'impairment_loss',
+                    'impairment_reversal',
+                    'fair_value_valuation',
+                    'transfer_ppe_to_ip',
+                    'transfer_ip_to_ppe',
+
+                    -- Legacy / generic
+                    'subseq',
+                    'rebuild'
+                )
+
+                AND cost_total >= 0
+                AND accumulated_depreciation >= 0
+                AND carrying_amount >= 0
             )
         $sql$, '{schema}');
         END IF;
