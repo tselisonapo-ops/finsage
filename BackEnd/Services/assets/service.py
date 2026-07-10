@@ -1181,7 +1181,16 @@ def create_asset(cur, company_id, payload):
     # ----------------------------
     # Opening balance fields
     # ----------------------------
-    cost = Decimal(str(payload.get("cost") or 0))
+    entered_cost = Decimal(str(payload.get("cost") or 0))
+
+    if entry_mode == "opening_balance":
+        cost = entered_cost
+
+        if opening_cost is None:
+            opening_cost = cost
+    else:
+        cost = Decimal("0.00")
+
     residual_value = Decimal(str(payload.get("residual_value") or 0))
 
     opening_as_at = payload.get("opening_as_at") or None
@@ -1204,11 +1213,15 @@ def create_asset(cur, company_id, payload):
     else:
         opening_impairment = Decimal(str(opening_impairment))
 
-    if cost < 0:
+    validation_cost = entered_cost
+
+    if validation_cost < 0:
         raise Exception("cost cannot be negative")
+
     if residual_value < 0:
         raise Exception("residual_value cannot be negative")
-    if residual_value > cost:
+
+    if validation_cost > 0 and residual_value > validation_cost:
         raise Exception("residual_value cannot exceed cost")
 
     if entry_mode == "opening_balance":
@@ -1595,63 +1608,118 @@ def create_acquisition(cur, company_id, asset_id, payload):
     if not payload.get("acquisition_date"):
         raise Exception("acquisition_date is required")
 
-    # OPTIONAL flag if you ever want it:
-    # - for now we KEEP IT SIMPLE and enforce:
-    #   grni -> NET
-    #   bank_cash/vendor_credit/other -> GROSS (VAT-inclusive)
-    amount_is_gross = payload.get("amount_is_gross")
-    if amount_is_gross is None:
-        amount_is_gross = (funding != "grni")  # default
+    # ----------------------------
+    # VAT treatment and amount meaning
+    # ----------------------------
+    vat_treatment = str(
+        payload.get("vat_treatment") or "no_vat"
+    ).strip().lower()
 
-    amount_is_gross = bool(amount_is_gross)
+    if vat_treatment not in {"no_vat", "inclusive", "exclusive"}:
+        raise Exception(
+            "vat_treatment must be no_vat, inclusive or exclusive"
+        )
 
     vat_input_claimable = bool(payload.get("vat_input_claimable") or False)
-    vat_recovery_reason = (payload.get("vat_recovery_reason") or "").strip() or None
-    vat_recovery_percent = Decimal(str(payload.get("vat_recovery_percent") or (100 if vat_input_claimable else 0)))
+
+    vat_recovery_reason = (
+        payload.get("vat_recovery_reason") or ""
+    ).strip() or None
+
+    vat_recovery_percent = Decimal(
+        str(
+            payload.get("vat_recovery_percent")
+            or (100 if vat_input_claimable else 0)
+        )
+    )
+
     if vat_recovery_percent < 0 or vat_recovery_percent > 100:
         raise Exception("vat_recovery_percent must be between 0 and 100")
 
-    # Require VAT reason only when input VAT is claimable
     if vat_input_claimable and not vat_recovery_reason:
         raise Exception("vat_recovery_reason is required")
 
-    # If VAT is not claimable, keep reason empty and percent 0
     if not vat_input_claimable:
         vat_recovery_reason = None
         vat_recovery_percent = Decimal("0")
 
+    recoverable_vat = Decimal("0.00")
     non_recoverable_vat = Decimal("0.00")
-    net_amount = None
     vat_amount = Decimal("0.00")
-    gross_amount = None
+    net_amount = Decimal("0.00")
+    gross_amount = Decimal("0.00")
+    capitalized_amount = Decimal("0.00")
 
     if funding == "grni":
-        net_amount = _q2(amt)
-        gross_amount = net_amount
-        vat_amount = Decimal("0.00")
-    else:
+        # GRNI is posted net because the supplier invoice has not yet been received.
+        if vat_treatment != "no_vat":
+            raise Exception("GRNI must use vat_treatment='no_vat'")
+
         gross_amount = _q2(amt)
-        net_calc, vat_calc, _ = _vat_split(gross_amount)
+        capitalized_amount = gross_amount
+        net_amount = capitalized_amount
+        vat_amount = Decimal("0.00")
 
-        recoverable_vat = _q2(vat_calc * vat_recovery_percent / Decimal("100"))
-        non_recoverable_vat = _q2(vat_calc - recoverable_vat)
+    elif vat_treatment == "no_vat":
+        gross_amount = _q2(amt)
+        capitalized_amount = gross_amount
+        net_amount = capitalized_amount
+        vat_amount = Decimal("0.00")
+        non_recoverable_vat = Decimal("0.00")
 
-        net_amount = _q2(net_calc + non_recoverable_vat)
+    elif vat_treatment == "inclusive":
+        gross_amount = _q2(amt)
+
+        net_excluding_vat, total_vat, _ = _vat_split(gross_amount)
+
+        recoverable_vat = _q2(
+            total_vat
+            * vat_recovery_percent
+            / Decimal("100")
+        )
+
+        non_recoverable_vat = _q2(
+            total_vat - recoverable_vat
+        )
+
+        capitalized_amount = _q2(
+            net_excluding_vat + non_recoverable_vat
+        )
+
+        net_amount = capitalized_amount
         vat_amount = recoverable_vat
 
-    if funding == "grni":
-        # GRNI must be NET (invoice not received yet)
-        if amount_is_gross:
-            raise Exception("GRNI amount must be NET (no VAT). Set amount_is_gross=false or capture net amount.")
-        net = _q2(amt)
-        payload["amount"] = str(net)  # store NET
+    elif vat_treatment == "exclusive":
+        net_excluding_vat = _q2(amt)
 
-    else:
-        # bank_cash / vendor_credit / other -> treat as VAT-inclusive gross
-        if not amount_is_gross:
-            raise Exception("For bank_cash/vendor_credit/other, amount must be VAT-inclusive (gross). Set amount_is_gross=true.")
-        gross = _q2(amt)
-        payload["amount"] = str(gross)  # store GROSS (VAT-inclusive)
+        # Use your configured VAT rate here.
+        total_vat = _q2(
+            net_excluding_vat * VAT_RATE
+        )
+
+        recoverable_vat = _q2(
+            total_vat
+            * vat_recovery_percent
+            / Decimal("100")
+        )
+
+        non_recoverable_vat = _q2(
+            total_vat - recoverable_vat
+        )
+
+        gross_amount = _q2(
+            net_excluding_vat + total_vat
+        )
+
+        capitalized_amount = _q2(
+            net_excluding_vat + non_recoverable_vat
+        )
+
+        net_amount = capitalized_amount
+        vat_amount = recoverable_vat
+
+    # Keep amount as the entered transaction amount.
+    payload["amount"] = str(_q2(amt))
 
     # ----------------------------
     # vendor / invoice / GRN rules
@@ -1714,17 +1782,72 @@ def create_acquisition(cur, company_id, asset_id, payload):
         raise Exception("posting_date is required")
 
     cur.execute(_q(schema, """
-    INSERT INTO {schema}.asset_acquisitions(
-        company_id, asset_id,
-        source_company_id,
-        engagement_company_id,
-        engagement_id,
-        created_by_user_id,
-        updated_by_user_id,
+        INSERT INTO {schema}.asset_acquisitions(
+            company_id,
+            asset_id,
+
+            source_company_id,
+            engagement_company_id,
+            engagement_id,
+            created_by_user_id,
+            updated_by_user_id,
+
+            posting_date,
+            acquisition_date,
+            amount,
+            vat_treatment,
+
+            net_amount,
+            vat_amount,
+            gross_amount,
+            vat_input_claimable,
+            vat_recovery_reason,
+            vat_recovery_percent,
+            non_recoverable_vat_amount,
+
+            funding_source,
+            bank_account_id,
+            bank_account_code,
+            credit_account_code,
+
+            supplier_id,
+            vendor_invoice_no,
+            grn_no,
+
+            reference,
+            notes,
+            status
+        )
+        VALUES (
+            %s,%s,
+
+            %s,%s,%s,%s,%s,
+
+            %s,%s,%s,%s,
+
+            %s,%s,%s,%s,%s,%s,%s,
+
+            %s,%s,%s,%s,
+
+            %s,%s,%s,
+
+            %s,%s,COALESCE(%s,'draft')
+        )
+        RETURNING id
+    """), (
+        company_id,
+        asset_id,
+
+        payload.get("source_company_id"),
+        payload.get("engagement_company_id"),
+        payload.get("engagement_id"),
+        payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
 
         posting_date,
-        acquisition_date,
-        amount,
+        payload["acquisition_date"],
+        payload["amount"],
+        vat_treatment,
 
         net_amount,
         vat_amount,
@@ -1732,8 +1855,9 @@ def create_acquisition(cur, company_id, asset_id, payload):
         vat_input_claimable,
         vat_recovery_reason,
         vat_recovery_percent,
-        non_recoverable_vat_amount,
-        funding_source,
+        non_recoverable_vat,
+
+        funding,
         bank_account_id,
         bank_account_code,
         credit_account_code,
@@ -1742,57 +1866,9 @@ def create_acquisition(cur, company_id, asset_id, payload):
         vendor_invoice_no,
         grn_no,
 
-        reference,
-        notes,
-        status
-    )
-    VALUES (
-        %s,%s,
-        %s,%s,%s,%s,%s,
-
-        %s,%s,%s,
-
-        %s,%s,%s,%s,%s,
-
-        %s,%s,%s,%s,%s,%s,
-
-        %s,%s,%s,
-
-        %s,%s,COALESCE(%s,'draft')
-    )
-    RETURNING id
-    """), (
-    company_id, asset_id,
-    payload.get("source_company_id"),
-    payload.get("engagement_company_id"),
-    payload.get("engagement_id"),
-    payload.get("created_by_user_id"),
-    payload.get("updated_by_user_id"),
-
-    posting_date,
-    payload["acquisition_date"],
-    payload["amount"],
-
-    net_amount,
-    vat_amount,
-    gross_amount,
-    vat_input_claimable,
-    vat_recovery_reason,
-    vat_recovery_percent,
-    non_recoverable_vat,
-
-    funding,
-    bank_account_id,
-    bank_account_code,
-    credit_account_code,
-
-    supplier_id,
-    vendor_invoice_no,
-    grn_no,
-
-    payload.get("reference"),
-    payload.get("notes"),
-    payload.get("status", "draft"),
+        payload.get("reference"),
+        payload.get("notes"),
+        payload.get("status", "draft"),
     ))
 
     row = cur.fetchone()

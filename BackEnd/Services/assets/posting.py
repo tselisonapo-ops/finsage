@@ -1790,20 +1790,31 @@ def get_reval_net(cur, schema, company_id, asset_id, as_at_date):
     return Decimal(cur.fetchone()["net"] or 0)
 
 def get_cost_total(cur, schema, company_id, asset_id, as_at_date):
-    # 1) Sum posted acquisitions up to as_at_date
+    # Fallback base cost for legacy/opening assets
     cur.execute(_q(schema, """
-        SELECT COALESCE(SUM(amount),0) AS s
+        SELECT COALESCE(opening_cost, cost, 0) AS base_cost
+        FROM {schema}.assets
+        WHERE company_id=%s
+          AND id=%s
+    """), (company_id, asset_id))
+
+    base_cost = Decimal((cur.fetchone() or {}).get("base_cost") or 0)
+
+    # Posted acquisition rows are authoritative when present
+    cur.execute(_q(schema, """
+        SELECT COALESCE(SUM(amount), 0) AS s
         FROM {schema}.asset_acquisitions
         WHERE company_id=%s
           AND asset_id=%s
           AND status='posted'
           AND acquisition_date <= %s
     """), (company_id, asset_id, as_at_date))
+
     acq_sum = Decimal((cur.fetchone() or {}).get("s") or 0)
 
-    # 2) Sum posted subsequent add_cost up to as_at_date
+    # Posted subsequent capital additions
     cur.execute(_q(schema, """
-        SELECT COALESCE(SUM(amount),0) AS s
+        SELECT COALESCE(SUM(amount), 0) AS s
         FROM {schema}.asset_subsequent_measurements
         WHERE company_id=%s
           AND asset_id=%s
@@ -1811,19 +1822,12 @@ def get_cost_total(cur, schema, company_id, asset_id, as_at_date):
           AND event_type='add_cost'
           AND event_date <= %s
     """), (company_id, asset_id, as_at_date))
+
     add_sum = Decimal((cur.fetchone() or {}).get("s") or 0)
 
-    # If we have any posted acquisition/add_cost rows, treat those as authoritative cost
-    if (acq_sum + add_sum) > 0:
-        return (acq_sum + add_sum)
+    original_cost = acq_sum if acq_sum > 0 else base_cost
 
-    # 3) Fallback to opening_cost or cost (legacy assets)
-    cur.execute(_q(schema, """
-        SELECT COALESCE(opening_cost, cost, 0) AS base_cost
-        FROM {schema}.assets
-        WHERE company_id=%s AND id=%s
-    """), (company_id, asset_id))
-    return Decimal((cur.fetchone() or {}).get("base_cost") or 0)
+    return original_cost + add_sum
 
 def carrying_amount(cur, schema, company_id, asset_id, as_at_date):
     # cost + reval - accum_dep - opening_impairment - impair_net
@@ -2195,11 +2199,24 @@ def post_acquisition(
         raise Exception("posting_date is required before posting acquisition")
 
     amount = _D(acq.get("amount"))
-    vat_input_claimable = bool(acq.get("vat_input_claimable"))
 
-    stored_net = _D(acq.get("net_amount"))
-    stored_vat = _D(acq.get("vat_amount"))
-    stored_gross = _D(acq.get("gross_amount"))
+    capitalized_amount = _q2(
+        _D(acq.get("net_amount"))
+    )
+
+    recoverable_vat = _q2(
+        _D(acq.get("vat_amount"))
+    )
+
+    settlement_amount = _q2(
+        _D(acq.get("gross_amount"))
+    )
+
+    if capitalized_amount <= 0:
+        raise Exception("capitalized acquisition amount must be > 0")
+
+    if settlement_amount <= 0:
+        settlement_amount = _q2(amount)
     if amount <= 0:
         raise Exception("amount must be > 0")
 
@@ -2243,6 +2260,14 @@ def post_acquisition(
 
         raise Exception("bank_account_code or bank_account_id->ledger_account_code required for bank_cash funding_source")
 
+    if _q2(capitalized_amount + recoverable_vat) != _q2(settlement_amount):
+        raise Exception(
+            "Acquisition amounts do not balance: "
+            f"capitalized={capitalized_amount}, "
+            f"recoverable_vat={recoverable_vat}, "
+            f"settlement={settlement_amount}"
+        )
+
     jid = create_journal(
         cur, schema, company_id,
         posting_date,
@@ -2252,56 +2277,160 @@ def post_acquisition(
     )
 
     if funding == "grni":
-        net = amount
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(_q2(net)), 0, "asset_acquisition", acq["id"])
-        add_line(cur, schema, company_id, jid, grni_control_code, "GRNI control (net)", 0, float(_q2(net)), "asset_acquisition", acq["id"])
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            asset["asset_account_code"],
+            "Acquire PPE (capitalized amount)",
+            float(capitalized_amount),
+            0,
+            "asset_acquisition",
+            acq["id"],
+        )
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            grni_control_code,
+            "GRNI control",
+            0,
+            float(settlement_amount),
+            "asset_acquisition",
+            acq["id"],
+        )
 
     elif funding == "vendor_credit":
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            asset["asset_account_code"],
+            "Acquire PPE (capitalized amount)",
+            float(capitalized_amount),
+            0,
+            "asset_acquisition",
+            acq["id"],
+        )
 
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
-        if vat > 0:
-            add_line(cur, schema, company_id, jid, vat_input_code, "VAT input", float(vat), 0, "asset_acquisition", acq["id"])
-        add_line(cur, schema, company_id, jid, ap_control_code, "AP control (gross)", 0, float(_q2(gross)), "asset_acquisition", acq["id"])
+        if recoverable_vat > 0:
+            add_line(
+                cur,
+                schema,
+                company_id,
+                jid,
+                vat_input_code,
+                "Recoverable input VAT",
+                float(recoverable_vat),
+                0,
+                "asset_acquisition",
+                acq["id"],
+            )
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            ap_control_code,
+            "AP control",
+            0,
+            float(settlement_amount),
+            "asset_acquisition",
+            acq["id"],
+        )
 
     elif funding == "bank_cash":
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
-
         bank_gl = _resolve_bank_gl_code()
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
-        if vat > 0:
-            add_line(cur, schema, company_id, jid, vat_input_code, "VAT input", float(vat), 0, "asset_acquisition", acq["id"])
-        add_line(cur, schema, company_id, jid, bank_gl, "Bank/Cash (gross)", 0, float(_q2(gross)), "asset_acquisition", acq["id"])
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            asset["asset_account_code"],
+            "Acquire PPE (capitalized amount)",
+            float(capitalized_amount),
+            0,
+            "asset_acquisition",
+            acq["id"],
+        )
+
+        if recoverable_vat > 0:
+            add_line(
+                cur,
+                schema,
+                company_id,
+                jid,
+                vat_input_code,
+                "Recoverable input VAT",
+                float(recoverable_vat),
+                0,
+                "asset_acquisition",
+                acq["id"],
+            )
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            bank_gl,
+            "Bank/Cash settlement",
+            0,
+            float(settlement_amount),
+            "asset_acquisition",
+            acq["id"],
+        )
 
     else:
-        credit_acct = (acq.get("credit_account_code") or "").strip() or "BS_CL_2000"
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
+        credit_acct = (
+            acq.get("credit_account_code") or ""
+        ).strip() or "BS_CL_2000"
 
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Acquire PPE (net)", float(net), 0, "asset_acquisition", acq["id"])
-        if vat > 0:
-            add_line(cur, schema, company_id, jid, vat_input_code, "VAT input (assumed)", float(vat), 0, "asset_acquisition", acq["id"])
-        add_line(cur, schema, company_id, jid, credit_acct, "Credit (gross)", 0, float(_q2(gross)), "asset_acquisition", acq["id"])
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            asset["asset_account_code"],
+            "Acquire PPE (capitalized amount)",
+            float(capitalized_amount),
+            0,
+            "asset_acquisition",
+            acq["id"],
+        )
+
+        if recoverable_vat > 0:
+            add_line(
+                cur,
+                schema,
+                company_id,
+                jid,
+                vat_input_code,
+                "Recoverable input VAT",
+                float(recoverable_vat),
+                0,
+                "asset_acquisition",
+                acq["id"],
+            )
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            credit_acct,
+            "Settlement / credit",
+            0,
+            float(settlement_amount),
+            "asset_acquisition",
+            acq["id"],
+        )
 
     finalize_journal(cur, schema, company_id, jid)
 
@@ -2319,6 +2448,41 @@ def post_acquisition(
       SET status='posted', posted_journal_id=%s, posted_at=NOW()
       WHERE company_id=%s AND id=%s
     """), (jid, company_id, acq_id))
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.assets a
+        SET cost =
+            COALESCE((
+                SELECT SUM(x.net_amount)
+                FROM {schema}.asset_acquisitions x
+                WHERE x.company_id = a.company_id
+                AND x.asset_id = a.id
+                AND x.status = 'posted'
+            ), 0)
+            +
+            COALESCE((
+                SELECT SUM(sm.amount)
+                FROM {schema}.asset_subsequent_measurements sm
+                WHERE sm.company_id = a.company_id
+                AND sm.asset_id = a.id
+                AND sm.event_type = 'add_cost'
+                AND sm.status = 'posted'
+            ), 0)
+        WHERE a.company_id=%s
+        AND a.id=%s
+    """), (
+        company_id,
+        int(acq["asset_id"]),
+    ))
+
+    upsert_carrying_snapshot(
+        cur,
+        company_id,
+        int(acq["asset_id"]),
+        as_at=posting_date,
+        source_event="acquisition",
+        created_by=(user or {}).get("id") if user else None,
+    )
 
     if engagement_company_id and engagement_id:
         db_service.upsert_engagement_posting_activity(

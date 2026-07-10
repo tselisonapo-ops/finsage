@@ -6542,6 +6542,38 @@ class DatabaseService:
             message TEXT
         );
         """)
+        self.execute_ddl(f"""
+            CREATE TABLE IF NOT EXISTS {schema}.forecast_capex_items (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            version_id INT REFERENCES {schema}.forecast_versions(id) ON DELETE CASCADE,
+            budget_id INT REFERENCES {schema}.forecast_budgets(id) ON DELETE CASCADE,
+
+            asset_name TEXT NOT NULL,
+            asset_class TEXT,
+            account_code TEXT,
+
+            purchase_month DATE NOT NULL,
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            useful_life_months INT,
+            residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+            depreciation_method TEXT DEFAULT 'straight_line',
+
+            funding_source TEXT DEFAULT 'cash',
+            loan_percentage NUMERIC(7,4) NOT NULL DEFAULT 0,
+
+            notes TEXT,
+            meta_json JSONB NOT NULL DEFAULT {{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """)
+
+
 
         self.execute_ddl(f"""
         CREATE INDEX IF NOT EXISTS idx_forecast_budgets_company
@@ -14293,11 +14325,22 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2);
 
         ALTER TABLE {schema}.asset_acquisitions
+        ADD COLUMN IF NOT EXISTS vat_treatment TEXT NOT NULL DEFAULT 'no_vat';
+        ALTER TABLE {schema}.asset_acquisitions
         ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.asset_acquisitions
+        DROP CONSTRAINT IF EXISTS ck_asset_acq_vat_treatment;
+
+        ALTER TABLE {schema}.asset_acquisitions
+        ADD CONSTRAINT ck_asset_acq_vat_treatment
+        CHECK (
+            vat_treatment IN ('no_vat', 'inclusive', 'exclusive')
+        );
 
         DO $$
         BEGIN
@@ -16456,6 +16499,7 @@ class DatabaseService:
 
                 AND source_event IN (
                     'opening',
+                    'acquisition',
                     'depreciation',
                     'revaluation',
                     'impairment',

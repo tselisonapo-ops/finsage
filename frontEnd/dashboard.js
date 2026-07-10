@@ -40514,12 +40514,60 @@ async function saveEditModal() {
     forecastDraftLines: {},
     forecastWorkspaceMode: null,
 
+    driverDraftAccountCode: null,
+    driverDraftAccountName: null,
+    driverDraftValues: {},
+
     varianceRows: [],
     activeTab: "budgets",
     bound: false,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  const BF_DRIVER_GROUPS = [
+    {
+      key: "revenue",
+      title: "Revenue Drivers",
+      types: [
+        "units_price",
+        "customers_average_spend",
+        "contracts_monthly_fee",
+        "occupancy_rate",
+        "billable_hours_rate",
+      ],
+    },
+    {
+      key: "cost_of_revenue",
+      title: "Cost of Revenue Drivers",
+      types: [
+        "units_unit_cost",
+        "revenue_percentage",
+        "labour_hours_rate",
+        "material_quantity_cost",
+      ],
+    },
+    {
+      key: "operating_expenses",
+      title: "Spending Drivers",
+      types: [
+        "employees_average_salary",
+        "headcount_fixed_rate",
+        "monthly_fixed",
+        "usage_rate",
+        "inflation_growth",
+      ],
+    },
+    {
+      key: "capital_expenditure",
+      title: "Capital Expenditure Drivers",
+      types: [
+        "quantity_unit_cost",
+        "project_milestone",
+        "replacement_cycle",
+      ],
+    },
+  ];
 
   function esc(v) {
     return String(v ?? "")
@@ -40559,33 +40607,43 @@ async function saveEditModal() {
     );
   }
 
+  function bfNormalizeToken(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_/-]+/g, " ")
+      .replace(/\s+/g, " ");
+  }
+
   function bfIsPnlAccount(row) {
-    const key = bfTextKey(
-      row?.section,
-      row?.category,
-      row?.subcategory,
-      row?.role,
-      row?.code,
-      row?.name,
-      row?.reporting_description
-    );
-
     const code = bfAccountCode(row).toUpperCase();
+    const section = bfNormalizeToken(row?.section);
 
+    /*
+    * Strongest rule:
+    * Only explicit P&L account-code families enter this forecast.
+    */
     if (
       code.startsWith("PL_") ||
-      key.includes("profit or loss") ||
-      key.includes("income statement") ||
-      key.includes("revenue") ||
-      key.includes("income") ||
-      key.includes("sales") ||
-      key.includes("cost of sales") ||
-      key.includes("cost of revenue") ||
-      key.includes("expense") ||
-      key.includes("finance cost") ||
-      key.includes("tax expense")
+      code.startsWith("BS_PL_")
     ) {
       return true;
+    }
+
+    /*
+    * Optional fallback for custom company accounts whose code does not
+    * follow the standard PL_ naming convention.
+    */
+    if (
+      section === "income" ||
+      section === "expense" ||
+      section === "profit or loss" ||
+      section === "adjustment"
+    ) {
+      /*
+      * Never allow an explicit BS_ account into the P&L grid.
+      */
+      return !code.startsWith("BS_");
     }
 
     return false;
@@ -40731,77 +40789,175 @@ async function saveEditModal() {
     return false;
   }
 
-  function bfPnlGroup(row) {
-    const key = bfTextKey(
-      row?.section,
-      row?.category,
-      row?.subcategory,
-      row?.role,
-      row?.code,
-      row?.name,
-      row?.reporting_description
+  function applyPlanningMethodToAccount(accountCode, method) {
+    const inputs = document.querySelectorAll(
+      `#bfForecastPane .bf-forecast-cell[data-bf-account-code="${CSS.escape(accountCode)}"]`
     );
 
+    const isDriverBased = method === "driver_based";
+
+    inputs.forEach((input) => {
+      input.readOnly = isDriverBased;
+      input.classList.toggle("is-driver-controlled", isDriverBased);
+    });
+  }
+
+  function bindPlanningMethodSelectors() {
+    document
+      .querySelectorAll("#bfForecastPane .bf-planning-method")
+      .forEach((select) => {
+        const accountCode =
+          String(select.dataset.bfMethodAccount || "").trim();
+
+        applyPlanningMethodToAccount(
+          accountCode,
+          select.value
+        );
+
+        select.addEventListener("change", () => {
+          applyPlanningMethodToAccount(
+            accountCode,
+            select.value
+          );
+
+          if (select.value === "driver_based") {
+            const account = BF.coa.find(
+              (row) => bfAccountCode(row) === accountCode
+            );
+
+            openAccountDriverWorkspace(
+              accountCode,
+              bfAccountName(account)
+            );
+          }
+        });
+      });
+  }
+
+  function bfPnlGroup(row) {
+    const code = bfAccountCode(row).toUpperCase();
+
+    const section = bfNormalizeToken(row?.section);
+    const category = bfNormalizeToken(row?.category);
+    const subcategory = bfNormalizeToken(row?.subcategory);
+    const role = bfNormalizeToken(row?.role);
+    const cfBucket = bfNormalizeToken(row?.cf_bucket);
+
+    /*
+    * ==========================================================
+    * 1. Exact account-code families
+    * ==========================================================
+    */
+
+    // Revenue from ordinary activities
     if (
-      key.includes("income tax") ||
-      key.includes("tax expense") ||
-      key.includes("current tax") ||
-      key.includes("deferred tax")
+      code.startsWith("PL_REV_") ||
+      code.startsWith("PL_SALES_")
     ) {
-      return "income_tax";
+      return "revenue";
     }
 
+    // Cost of sales / cost of revenue
     if (
-      key.includes("finance cost") ||
-      key.includes("interest expense") ||
-      key.includes("borrowing cost")
-    ) {
-      return "finance_costs";
-    }
-
-    if (
-      key.includes("other income") ||
-      key.includes("finance income") ||
-      key.includes("interest income") ||
-      key.includes("investment income")
-    ) {
-      return "other_income";
-    }
-
-    if (
-      key.includes("cost of sales") ||
-      key.includes("cost of goods") ||
-      key.includes("cost of revenue") ||
-      key.includes("direct cost") ||
-      key.includes("cost of service") ||
-      key.includes("cost of services") ||
-      key.includes("cos")
+      code.startsWith("PL_COS_") ||
+      code.startsWith("PL_COGS_") ||
+      code.startsWith("PL_COR_") ||
+      code.startsWith("BS_PL_53")
     ) {
       return "cost_of_revenue";
     }
 
+    // Other income
     if (
-      key.includes("revenue") ||
-      key.includes("sales") ||
-      key.includes("turnover") ||
-      key.includes("service income") ||
-      key.includes("operating income")
+      code.startsWith("PL_OI_") ||
+      code.startsWith("PL_OTHER_INCOME_")
+    ) {
+      return "other_income";
+    }
+
+    // Tax expense — evaluate before generic OPEX
+    if (
+      role.startsWith("income tax expense") ||
+      role.startsWith("income_tax_expense") ||
+      category === "tax expense" ||
+      code.startsWith("PL_TAX_")
+    ) {
+      return "income_tax";
+    }
+
+    // Finance cost — evaluate before generic OPEX
+    if (
+      category === "finance costs" ||
+      role.includes("interest expense") ||
+      role.includes("loan interest expense") ||
+      cfBucket === "lease interest" ||
+      code.startsWith("PL_FIN_")
+    ) {
+      return "finance_costs";
+    }
+
+    // Operating expenses
+    if (
+      code.startsWith("PL_OPEX_") ||
+      code.startsWith("PL_EXP_")
+    ) {
+      return "operating_expenses";
+    }
+
+    /*
+    * ==========================================================
+    * 2. Structured metadata fallback
+    * ==========================================================
+    */
+
+    if (
+      category === "revenue" ||
+      category === "service revenue" ||
+      category === "sales revenue" ||
+      category === "operating revenue"
     ) {
       return "revenue";
     }
 
     if (
-      key.includes("expense") ||
-      key.includes("operating cost") ||
-      key.includes("administration") ||
-      key.includes("administrative") ||
-      key.includes("distribution") ||
-      key.includes("depreciation") ||
-      key.includes("amortisation") ||
-      key.includes("amortization") ||
-      key.includes("payroll") ||
-      key.includes("wages") ||
-      key.includes("salary")
+      category === "cost of sales" ||
+      category === "cost of revenue" ||
+      category === "cost of goods sold" ||
+      category === "direct costs"
+    ) {
+      return "cost_of_revenue";
+    }
+
+    if (
+      category === "other income" ||
+      category === "finance income"
+    ) {
+      return "other_income";
+    }
+
+    if (
+      category === "tax expense" ||
+      subcategory === "tax expense"
+    ) {
+      return "income_tax";
+    }
+
+    if (
+      category === "finance costs" ||
+      subcategory === "finance costs"
+    ) {
+      return "finance_costs";
+    }
+
+    if (
+      category === "operating expenses" ||
+      category === "other expense" ||
+      category === "depreciation & amortization" ||
+      category === "depreciation and amortization" ||
+      category === "other adjustments" ||
+      category === "non operating adjustments" ||
+      section === "expense" ||
+      section === "adjustment"
     ) {
       return "operating_expenses";
     }
@@ -40847,6 +41003,37 @@ async function saveEditModal() {
         description: "Accounts that could not be classified automatically.",
       },
     ];
+  }
+
+  function bfIsForecastablePnlAccount(row) {
+    if (!bfIsPostingAccount(row)) return false;
+    if (!bfIsPnlAccount(row)) return false;
+
+    const code = bfAccountCode(row).toUpperCase();
+    const category = bfNormalizeToken(row?.category);
+    const role = bfNormalizeToken(row?.role);
+
+    /*
+    * Exclude pure migration, opening and year-end clean-up accounts.
+    */
+    const excludedCodes = new Set([
+      "PL_OPEX_6027", // Year-End Reclassification Adjustment
+      "PL_OPEX_6028", // Opening Balance Adjustment
+      "PL_OPEX_6030", // Miscellaneous Adjustment
+    ]);
+
+    if (excludedCodes.has(code)) {
+      return false;
+    }
+
+    if (
+      category === "other adjustments" &&
+      !role
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   function bfMonthKey(value) {
@@ -40946,6 +41133,7 @@ async function saveEditModal() {
         <button class="tab active" data-bf-tab="budgets">Budgets</button>
         <button class="tab" data-bf-tab="forecast">Forecasts</button>
         <button class="tab" data-bf-tab="variance">Variance</button>
+        <button class="tab" data-bf-tab="capex">Capital Expenditure</button>
         <button class="tab" data-bf-tab="drivers">Drivers</button>
         <button class="tab" data-bf-tab="imports">Imports</button>
       </div>
@@ -40957,7 +41145,7 @@ async function saveEditModal() {
       <div id="bfVariancePane" class="hidden"></div>
       <div id="bfDriversPane" class="hidden"></div>
       <div id="bfImportsPane" class="hidden"></div>
-
+      <div id="bfCapexPane" class="hidden"></div>
       <div id="bfModalHost"></div>
     `;
   }
@@ -40974,6 +41162,7 @@ async function saveEditModal() {
     $("bfVariancePane")?.classList.toggle("hidden", tab !== "variance");
     $("bfDriversPane")?.classList.toggle("hidden", tab !== "drivers");
     $("bfImportsPane")?.classList.toggle("hidden", tab !== "imports");
+    $("bfCapexPane")?.classList.toggle("hidden", tab !== "capex");
   }
 
   function modal(title, bodyHtml, footerHtml = "") {
@@ -40999,6 +41188,791 @@ async function saveEditModal() {
   function closeModal() {
     const host = $("bfModalHost");
     if (host) host.innerHTML = "";
+  }
+
+  function openAccountDriverWorkspace(accountCode, accountName) {
+    BF.driverDraftAccountCode = accountCode;
+    BF.driverDraftAccountName = accountName;
+    BF.driverDraftValues = {};
+
+    const el = $("bfForecastPane");
+    if (!el) return;
+
+    const months =
+      BF.draftForecastMonths?.length
+        ? BF.draftForecastMonths
+        : bfMonthsBetween(
+            BF.selectedVersion?.period_start,
+            BF.selectedVersion?.period_end
+          );
+
+    el.innerHTML = `
+      <div class="bf-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="back-from-driver"
+            >
+              ← Back to Forecast
+            </button>
+
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">Driver-based Planning</span>
+              <h2>${esc(accountName)}</h2>
+              <p class="muted">
+                Define the calculation that will generate monthly forecast amounts.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn primary"
+            data-bf-action="apply-account-driver"
+          >
+            Apply Driver
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="grid four">
+            <label>
+              Driver name
+              <input
+                id="bfAccountDriverName"
+                value="${esc(accountName)} driver"
+              >
+            </label>
+
+            <label>
+              Driver type
+              <select id="bfAccountDriverType">
+                <option value="quantity_rate">Quantity × Rate</option>
+                <option value="revenue_percentage">Percentage of Revenue</option>
+                <option value="monthly_fixed">Fixed Monthly Amount</option>
+                <option value="growth_percentage">Growth Percentage</option>
+              </select>
+            </label>
+
+            <label>
+              Default quantity
+              <input
+                id="bfAccountDriverDefaultQty"
+                type="number"
+                step="0.0001"
+                value="0"
+              >
+            </label>
+
+            <label>
+              Default rate
+              <input
+                id="bfAccountDriverDefaultRate"
+                type="number"
+                step="0.0001"
+                value="0"
+              >
+            </label>
+          </div>
+        </div>
+
+        <div class="bf-planning-grid-wrap">
+          <table class="bf-planning-grid">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Quantity / Basis</th>
+                <th>Rate / Percentage</th>
+                <th>Calculated Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${months.map((month) => `
+                <tr>
+                  <td>
+                    <strong>${esc(bfMonthLabel(month))}</strong>
+                  </td>
+
+                  <td>
+                    <input
+                      class="bf-driver-qty"
+                      type="number"
+                      step="0.0001"
+                      value="0"
+                      data-bf-driver-month="${esc(month)}"
+                    >
+                  </td>
+
+                  <td>
+                    <input
+                      class="bf-driver-rate"
+                      type="number"
+                      step="0.0001"
+                      value="0"
+                      data-bf-driver-month="${esc(month)}"
+                    >
+                  </td>
+
+                  <td
+                    class="right"
+                    data-bf-driver-amount="${esc(month)}"
+                  >
+                    0.00
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    bindAccountDriverInputs();
+  }
+
+  function calculateDriverAmount(type, quantity, rate) {
+    quantity = Number(quantity || 0);
+    rate = Number(rate || 0);
+
+    if (type === "quantity_rate") {
+      return quantity * rate;
+    }
+
+    if (type === "monthly_fixed") {
+      return rate;
+    }
+
+    if (type === "revenue_percentage") {
+      return quantity * (rate / 100);
+    }
+
+    if (type === "growth_percentage") {
+      return quantity * (1 + rate / 100);
+    }
+
+    return quantity * rate;
+  }
+
+  function renderCreateForecastWorkspace() {
+    const el = $("bfForecastPane");
+    if (!el) return;
+
+    const budget = BF.selectedBudget || {};
+
+    const defaultStart = String(
+      budget.period_start || `${fyGuess()}-01-01`
+    ).slice(0, 10);
+
+    const defaultEnd = String(
+      budget.period_end || `${fyGuess()}-12-31`
+    ).slice(0, 10);
+
+    const months = bfMonthsBetween(defaultStart, defaultEnd);
+
+    const accounts = (BF.coa || [])
+      .filter(bfIsForecastablePnlAccount);
+
+    BF.draftForecastMonths = months;
+    BF.draftForecastAccounts = accounts;
+
+    const grouped = Object.fromEntries(
+      bfPnlGroups().map((group) => [group.key, []])
+    );
+
+    for (const account of accounts) {
+      const groupKey = bfPnlGroup(account);
+
+      if (grouped[groupKey]) {
+        grouped[groupKey].push(account);
+      } else {
+        grouped.unclassified.push(account);
+      }
+    }
+
+    Object.values(grouped).forEach((rows) => {
+      rows.sort((a, b) =>
+        bfAccountCode(a).localeCompare(bfAccountCode(b))
+      );
+    });
+
+    function accountRows(groupKey) {
+      const rows = grouped[groupKey] || [];
+
+      if (!rows.length) {
+        return `
+          <tr>
+            <td colspan="${months.length + 2}" class="muted">
+              No accounts were classified into this section.
+            </td>
+          </tr>
+        `;
+      }
+
+      return rows.map((account) => {
+        const accountCode = bfAccountCode(account);
+
+        return `
+          <tr class="bf-planning-account-row">
+            <td class="bf-sticky-account">
+              <strong>${esc(bfAccountName(account))}</strong>
+
+              <div class="bf-account-planning-actions">
+                <select
+                  class="bf-planning-method"
+                  data-bf-method-account="${esc(accountCode)}"
+                >
+                  <option value="manual">Manual</option>
+                  <option value="driver_based">Driver-based</option>
+                  <option value="prior_year">Prior-year actual</option>
+                  <option value="growth">Growth percentage</option>
+                  <option value="average">Actual monthly average</option>
+                </select>
+
+                <button
+                  type="button"
+                  class="btn small"
+                  data-bf-open-driver-account="${esc(accountCode)}"
+                  data-bf-open-driver-name="${esc(bfAccountName(account))}"
+                >
+                  Drivers
+                </button>
+              </div>
+            </td>
+
+            ${months.map((month) => `
+              <td>
+                <input
+                  type="number"
+                  step="0.01"
+                  class="bf-forecast-cell bf-draft-forecast-cell"
+                  value="${esc(bfGetDraftValue(accountCode, month))}"
+                  data-bf-account-code="${esc(accountCode)}"
+                  data-bf-month="${esc(month)}"
+                >
+              </td>
+            `).join("")}
+
+            <td
+              class="right bf-annual-total"
+              data-bf-draft-account-total="${esc(accountCode)}"
+            >
+              ${money(bfDraftAnnualTotal(accountCode, months))}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function calculatedRow(label, calculationKey, extraClass = "") {
+      return `
+        <tr class="bf-calculation-row ${extraClass}">
+          <td class="bf-sticky-account">
+            <strong>${esc(label)}</strong>
+          </td>
+
+          ${months.map((month) => `
+            <td
+              class="right bf-total-value"
+              data-bf-draft-calculation="${esc(calculationKey)}"
+              data-bf-month="${esc(month)}"
+            >
+              ${money(
+                calculateDraftForecastResult(
+                  calculationKey,
+                  month,
+                  grouped
+                )
+              )}
+            </td>
+          `).join("")}
+
+          <td
+            class="right"
+            data-bf-draft-calculation-annual="${esc(calculationKey)}"
+          >
+            <strong>
+              ${money(
+                months.reduce(
+                  (total, month) =>
+                    total +
+                    calculateDraftForecastResult(
+                      calculationKey,
+                      month,
+                      grouped
+                    ),
+                  0
+                )
+              )}
+            </strong>
+          </td>
+        </tr>
+      `;
+    }
+
+    const sections = [
+      {
+        key: "revenue",
+        title: "Revenue",
+        description: "Sales, service income and operating revenue.",
+        footer: calculatedRow("Total Revenue", "revenue"),
+      },
+      {
+        key: "cost_of_revenue",
+        title: resolveCostOfRevenueTitle(),
+        description: "Direct costs associated with generating revenue.",
+        footer: calculatedRow("Gross Profit", "gross_profit"),
+      },
+      {
+        key: "operating_expenses",
+        title: "Operating Expenses",
+        description: "Administrative, payroll, selling and other operating expenses.",
+        footer: calculatedRow("Operating Profit", "operating_profit"),
+      },
+      {
+        key: "other_income",
+        title: "Other Income",
+        description: "Interest and other non-operating income.",
+        footer: "",
+      },
+      {
+        key: "finance_costs",
+        title: "Finance Costs",
+        description: "Interest and financing costs.",
+        footer: calculatedRow("Profit Before Tax", "profit_before_tax"),
+      },
+      {
+        key: "income_tax",
+        title: "Estimated Income Tax Expense",
+        description: "Estimated current and deferred tax expense.",
+        footer: calculatedRow(
+          "Forecast Net Profit",
+          "net_profit",
+          "bf-net-profit"
+        ),
+      },
+    ];
+
+    el.innerHTML = `
+      <div class="bf-workspace bf-create-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="back-versions"
+            >
+              ← Forecasts
+            </button>
+
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">Planning & Performance</span>
+              <h2>Create Forecast</h2>
+              <p class="muted">
+                Enter monthly forecast amounts by profit or loss account.
+              </p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="cancel-create-version"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              class="btn primary"
+              data-bf-action="create-version-workspace"
+            >
+              Save Forecast
+            </button>
+          </div>
+        </div>
+
+        <div class="bf-workspace-meta card">
+          <div class="section-head">
+            <div>
+              <h3>Forecast Details</h3>
+              <p class="muted">
+                Define the forecast period and scenario.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid four bf-meta-grid">
+            <label>
+              Forecast name
+              <input
+                id="bfWorkspaceVersionName"
+                value="${esc(
+                  budget.name
+                    ? `${budget.name} Forecast`
+                    : "Rolling Forecast"
+                )}"
+              >
+            </label>
+
+            <label>
+              Forecast type
+              <select id="bfWorkspaceVersionType">
+                <option value="forecast">Forecast</option>
+                <option value="rolling">Rolling Forecast</option>
+                <option value="year_end">Year-end Forecast</option>
+                <option value="scenario">Scenario</option>
+              </select>
+            </label>
+
+            <label>
+              Scenario
+              <select id="bfWorkspaceScenario">
+                <option value="base">Base Case</option>
+                <option value="best">Best Case</option>
+                <option value="worst">Worst Case</option>
+                <option value="custom">Custom Scenario</option>
+              </select>
+            </label>
+
+            <label>
+              Custom scenario name
+              <input
+                id="bfWorkspaceScenarioName"
+                placeholder="Optional"
+              >
+            </label>
+
+            <label>
+              Actuals to date
+              <input
+                id="bfWorkspaceActualsTo"
+                type="date"
+                value="${todayIso()}"
+              >
+            </label>
+
+            <label>
+              Period start
+              <input
+                id="bfWorkspacePeriodStart"
+                type="date"
+                value="${esc(defaultStart)}"
+              >
+            </label>
+
+            <label>
+              Period end
+              <input
+                id="bfWorkspacePeriodEnd"
+                type="date"
+                value="${esc(defaultEnd)}"
+              >
+            </label>
+
+            <label>
+              Currency
+              <input
+                id="bfWorkspaceCurrency"
+                value="${esc(budget.currency || companyCurrency())}"
+              >
+            </label>
+          </div>
+        </div>
+
+        <div class="bf-summary-strip">
+          <div>
+            <span>Posting P&amp;L Accounts</span>
+            <strong>${accounts.length}</strong>
+          </div>
+
+          <div>
+            <span>Forecast Months</span>
+            <strong>${months.length}</strong>
+          </div>
+
+          <div>
+            <span>Linked Budget</span>
+            <strong>${esc(budget.name || "None")}</strong>
+          </div>
+
+          <div>
+            <span>Forecast Net Profit</span>
+            <strong id="bfDraftNetProfitSummary">
+              ${money(
+                months.reduce(
+                  (total, month) =>
+                    total +
+                    calculateDraftForecastResult(
+                      "net_profit",
+                      month,
+                      grouped
+                    ),
+                  0
+                )
+              )}
+            </strong>
+          </div>
+        </div>
+
+        ${
+          accounts.length
+            ? `
+              <div class="bf-planning-grid-wrap">
+                <table class="bf-planning-grid">
+                  <thead>
+                    <tr>
+                      <th class="bf-sticky-account">Account</th>
+
+                      ${months.map((month) => `
+                        <th>${esc(bfMonthLabel(month))}</th>
+                      `).join("")}
+
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${sections.map((section) => `
+                      <tr class="bf-section-title-row">
+                        <td colspan="${months.length + 2}">
+                          <strong>${esc(section.title)}</strong>
+                          <small>${esc(section.description)}</small>
+                        </td>
+                      </tr>
+
+                      ${accountRows(section.key)}
+
+                      ${section.footer}
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <div class="card empty-state">
+                <h3>No posting P&amp;L accounts found</h3>
+                <p class="muted">
+                  The Chart of Accounts response could not be classified.
+                  Check the Forecast COA output in the browser console.
+                </p>
+              </div>
+            `
+        }
+
+        <div class="bf-workspace-footer">
+          <div>
+            <strong>Management profit or loss forecast</strong>
+            <p class="muted">
+              Enter values by account and month, then save the full forecast.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="btn primary"
+            data-bf-action="create-version-workspace"
+            ${accounts.length ? "" : "disabled"}
+          >
+            Save Forecast
+          </button>
+        </div>
+      </div>
+    `;
+
+    bindDraftForecastGrid(grouped);
+    bindPlanningMethodSelectors();
+  }
+
+  function bindAccountDriverInputs() {
+    const recalculate = () => {
+      const type =
+        $("bfAccountDriverType")?.value ||
+        "quantity_rate";
+
+      const defaultQty =
+        Number($("bfAccountDriverDefaultQty")?.value || 0);
+
+      const defaultRate =
+        Number($("bfAccountDriverDefaultRate")?.value || 0);
+
+      document
+        .querySelectorAll("[data-bf-driver-amount]")
+        .forEach((cell) => {
+          const month = cell.dataset.bfDriverAmount;
+
+          const qtyInput = document.querySelector(
+            `.bf-driver-qty[data-bf-driver-month="${month}"]`
+          );
+
+          const rateInput = document.querySelector(
+            `.bf-driver-rate[data-bf-driver-month="${month}"]`
+          );
+
+          const quantity =
+            qtyInput?.value === ""
+              ? defaultQty
+              : Number(qtyInput?.value || 0);
+
+          const rate =
+            rateInput?.value === ""
+              ? defaultRate
+              : Number(rateInput?.value || 0);
+
+          const amount =
+            calculateDriverAmount(type, quantity, rate);
+
+          BF.driverDraftValues[month] = {
+            quantity,
+            rate,
+            amount,
+          };
+
+          cell.textContent = money(amount);
+        });
+    };
+
+    document
+      .querySelectorAll(
+        "#bfForecastPane .bf-driver-qty, #bfForecastPane .bf-driver-rate"
+      )
+      .forEach((input) => {
+        input.addEventListener("input", recalculate);
+      });
+
+    $("bfAccountDriverType")?.addEventListener("change", recalculate);
+    $("bfAccountDriverDefaultQty")?.addEventListener("input", recalculate);
+    $("bfAccountDriverDefaultRate")?.addEventListener("input", recalculate);
+
+    recalculate();
+  }
+
+  function applyAccountDriverToDraft() {
+    const accountCode = BF.driverDraftAccountCode;
+
+    if (!accountCode) {
+      alert("No account is selected.");
+      return;
+    }
+
+    for (const [month, values] of Object.entries(BF.driverDraftValues || {})) {
+      bfSetDraftValue(
+        accountCode,
+        month,
+        values.amount
+      );
+    }
+
+    renderCreateForecastWorkspace();
+  }
+
+  async function saveAccountDriverToVersion() {
+    const accountCode = BF.driverDraftAccountCode;
+
+    const driverName =
+      $("bfAccountDriverName")?.value?.trim() ||
+      `${BF.driverDraftAccountName} driver`;
+
+    const driverType =
+      $("bfAccountDriverType")?.value ||
+      "quantity_rate";
+
+    const driverRows = Object.entries(
+      BF.driverDraftValues || {}
+    );
+
+    for (const [month, values] of driverRows) {
+      await apiFetch(
+        ENDPOINTS.forecast.drivers(cid()),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            version_id: BF.selectedVersionId,
+            budget_id: BF.selectedBudgetId,
+            account_code: accountCode,
+            driver_name: driverName,
+            driver_type: driverType,
+            quantity: values.quantity,
+            rate: values.rate,
+            amount: values.amount,
+            period_month: month,
+          }),
+        }
+      );
+    }
+
+    const lines = driverRows.map(([month, values]) => ({
+      account_code: accountCode,
+      period_month: month,
+      amount: values.amount,
+      source_type: "driver_based",
+      source_ref: driverName,
+    }));
+
+    await apiFetch(
+      ENDPOINTS.forecast.versionLines(
+        cid(),
+        BF.selectedVersionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({ lines }),
+      }
+    );
+
+    await openVersion(BF.selectedVersionId);
+  }
+
+  function renderCapexPlanner() {
+    const el = $("bfCapexPane");
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="section-head">
+        <div>
+          <h3>Capital Expenditure Plan</h3>
+          <p class="muted">
+            Plan asset purchases and estimate their depreciation and cash impact.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          class="btn primary"
+          data-bf-action="add-capex-item"
+        >
+          + Add Capital Item
+        </button>
+      </div>
+
+      <div class="card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Asset / Project</th>
+              <th>Asset Class</th>
+              <th>Purchase Month</th>
+              <th class="right">Quantity</th>
+              <th class="right">Unit Cost</th>
+              <th class="right">Total Capex</th>
+              <th>Useful Life</th>
+              <th>Funding</th>
+            </tr>
+          </thead>
+
+          <tbody id="bfCapexRows">
+            <tr>
+              <td colspan="8" class="muted">
+                No capital expenditure items have been added.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   async function loadBudgets() {
@@ -41650,415 +42624,6 @@ async function saveEditModal() {
     }, 0);
   }
 
-  function renderCreateForecastWorkspace() {
-    const el = $("bfForecastPane");
-    if (!el) return;
-
-    const budget = BF.selectedBudget || {};
-
-    const defaultStart = String(
-      budget.period_start || `${fyGuess()}-01-01`
-    ).slice(0, 10);
-
-    const defaultEnd = String(
-      budget.period_end || `${fyGuess()}-12-31`
-    ).slice(0, 10);
-
-    const months = bfMonthsBetween(defaultStart, defaultEnd);
-
-    const accounts = (BF.coa || [])
-      .filter(bfIsPostingAccount)
-      .filter(bfIsPnlAccount);
-
-    BF.draftForecastMonths = months;
-    BF.draftForecastAccounts = accounts;
-
-    const grouped = Object.fromEntries(
-      bfPnlGroups().map((group) => [group.key, []])
-    );
-
-    for (const account of accounts) {
-      const groupKey = bfPnlGroup(account);
-
-      if (grouped[groupKey]) {
-        grouped[groupKey].push(account);
-      } else {
-        grouped.unclassified.push(account);
-      }
-    }
-
-    Object.values(grouped).forEach((rows) => {
-      rows.sort((a, b) =>
-        bfAccountCode(a).localeCompare(bfAccountCode(b))
-      );
-    });
-
-    function accountRows(groupKey) {
-      const rows = grouped[groupKey] || [];
-
-      if (!rows.length) {
-        return `
-          <tr>
-            <td colspan="${months.length + 2}" class="muted">
-              No accounts were classified into this section.
-            </td>
-          </tr>
-        `;
-      }
-
-      return rows.map((account) => {
-        const accountCode = bfAccountCode(account);
-
-        return `
-          <tr class="bf-planning-account-row">
-            <td class="bf-sticky-account">
-              <strong>${esc(accountCode)}</strong>
-              <span>${esc(bfAccountName(account))}</span>
-            </td>
-
-            ${months.map((month) => `
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  class="bf-forecast-cell bf-draft-forecast-cell"
-                  value="${esc(bfGetDraftValue(accountCode, month))}"
-                  data-bf-account-code="${esc(accountCode)}"
-                  data-bf-month="${esc(month)}"
-                >
-              </td>
-            `).join("")}
-
-            <td
-              class="right bf-annual-total"
-              data-bf-draft-account-total="${esc(accountCode)}"
-            >
-              ${money(bfDraftAnnualTotal(accountCode, months))}
-            </td>
-          </tr>
-        `;
-      }).join("");
-    }
-
-    function calculatedRow(label, calculationKey, extraClass = "") {
-      return `
-        <tr class="bf-calculation-row ${extraClass}">
-          <td class="bf-sticky-account">
-            <strong>${esc(label)}</strong>
-          </td>
-
-          ${months.map((month) => `
-            <td
-              class="right bf-total-value"
-              data-bf-draft-calculation="${esc(calculationKey)}"
-              data-bf-month="${esc(month)}"
-            >
-              ${money(
-                calculateDraftForecastResult(
-                  calculationKey,
-                  month,
-                  grouped
-                )
-              )}
-            </td>
-          `).join("")}
-
-          <td
-            class="right"
-            data-bf-draft-calculation-annual="${esc(calculationKey)}"
-          >
-            <strong>
-              ${money(
-                months.reduce(
-                  (total, month) =>
-                    total +
-                    calculateDraftForecastResult(
-                      calculationKey,
-                      month,
-                      grouped
-                    ),
-                  0
-                )
-              )}
-            </strong>
-          </td>
-        </tr>
-      `;
-    }
-
-    const sections = [
-      {
-        key: "revenue",
-        title: "Revenue",
-        description: "Sales, service income and operating revenue.",
-        footer: calculatedRow("Total Revenue", "revenue"),
-      },
-      {
-        key: "cost_of_revenue",
-        title: resolveCostOfRevenueTitle(),
-        description: "Direct costs associated with generating revenue.",
-        footer: calculatedRow("Gross Profit", "gross_profit"),
-      },
-      {
-        key: "operating_expenses",
-        title: "Operating Expenses",
-        description: "Administrative, payroll, selling and other operating expenses.",
-        footer: calculatedRow("Operating Profit", "operating_profit"),
-      },
-      {
-        key: "other_income",
-        title: "Other Income",
-        description: "Interest and other non-operating income.",
-        footer: "",
-      },
-      {
-        key: "finance_costs",
-        title: "Finance Costs",
-        description: "Interest and financing costs.",
-        footer: calculatedRow("Profit Before Tax", "profit_before_tax"),
-      },
-      {
-        key: "income_tax",
-        title: "Estimated Income Tax Expense",
-        description: "Estimated current and deferred tax expense.",
-        footer: calculatedRow(
-          "Forecast Net Profit",
-          "net_profit",
-          "bf-net-profit"
-        ),
-      },
-    ];
-
-    el.innerHTML = `
-      <div class="bf-workspace bf-create-workspace">
-        <div class="bf-workspace-header">
-          <div>
-            <button
-              type="button"
-              class="btn"
-              data-bf-action="back-versions"
-            >
-              ← Forecasts
-            </button>
-
-            <div class="bf-workspace-title">
-              <span class="bf-eyebrow">Planning & Performance</span>
-              <h2>Create Forecast</h2>
-              <p class="muted">
-                Enter monthly forecast amounts by profit or loss account.
-              </p>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button
-              type="button"
-              class="btn"
-              data-bf-action="cancel-create-version"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              class="btn primary"
-              data-bf-action="create-version-workspace"
-            >
-              Save Forecast
-            </button>
-          </div>
-        </div>
-
-        <div class="bf-workspace-meta card">
-          <div class="section-head">
-            <div>
-              <h3>Forecast Details</h3>
-              <p class="muted">
-                Define the forecast period and scenario.
-              </p>
-            </div>
-          </div>
-
-          <div class="grid four bf-meta-grid">
-            <label>
-              Forecast name
-              <input
-                id="bfWorkspaceVersionName"
-                value="${esc(
-                  budget.name
-                    ? `${budget.name} Forecast`
-                    : "Rolling Forecast"
-                )}"
-              >
-            </label>
-
-            <label>
-              Forecast type
-              <select id="bfWorkspaceVersionType">
-                <option value="forecast">Forecast</option>
-                <option value="rolling">Rolling Forecast</option>
-                <option value="year_end">Year-end Forecast</option>
-                <option value="scenario">Scenario</option>
-              </select>
-            </label>
-
-            <label>
-              Scenario
-              <select id="bfWorkspaceScenario">
-                <option value="base">Base Case</option>
-                <option value="best">Best Case</option>
-                <option value="worst">Worst Case</option>
-                <option value="custom">Custom Scenario</option>
-              </select>
-            </label>
-
-            <label>
-              Custom scenario name
-              <input
-                id="bfWorkspaceScenarioName"
-                placeholder="Optional"
-              >
-            </label>
-
-            <label>
-              Actuals to date
-              <input
-                id="bfWorkspaceActualsTo"
-                type="date"
-                value="${todayIso()}"
-              >
-            </label>
-
-            <label>
-              Period start
-              <input
-                id="bfWorkspacePeriodStart"
-                type="date"
-                value="${esc(defaultStart)}"
-              >
-            </label>
-
-            <label>
-              Period end
-              <input
-                id="bfWorkspacePeriodEnd"
-                type="date"
-                value="${esc(defaultEnd)}"
-              >
-            </label>
-
-            <label>
-              Currency
-              <input
-                id="bfWorkspaceCurrency"
-                value="${esc(budget.currency || companyCurrency())}"
-              >
-            </label>
-          </div>
-        </div>
-
-        <div class="bf-summary-strip">
-          <div>
-            <span>Posting P&amp;L Accounts</span>
-            <strong>${accounts.length}</strong>
-          </div>
-
-          <div>
-            <span>Forecast Months</span>
-            <strong>${months.length}</strong>
-          </div>
-
-          <div>
-            <span>Linked Budget</span>
-            <strong>${esc(budget.name || "None")}</strong>
-          </div>
-
-          <div>
-            <span>Forecast Net Profit</span>
-            <strong id="bfDraftNetProfitSummary">
-              ${money(
-                months.reduce(
-                  (total, month) =>
-                    total +
-                    calculateDraftForecastResult(
-                      "net_profit",
-                      month,
-                      grouped
-                    ),
-                  0
-                )
-              )}
-            </strong>
-          </div>
-        </div>
-
-        ${
-          accounts.length
-            ? `
-              <div class="bf-planning-grid-wrap">
-                <table class="bf-planning-grid">
-                  <thead>
-                    <tr>
-                      <th class="bf-sticky-account">Account</th>
-
-                      ${months.map((month) => `
-                        <th>${esc(bfMonthLabel(month))}</th>
-                      `).join("")}
-
-                      <th>Total</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    ${sections.map((section) => `
-                      <tr class="bf-section-title-row">
-                        <td colspan="${months.length + 2}">
-                          <strong>${esc(section.title)}</strong>
-                          <small>${esc(section.description)}</small>
-                        </td>
-                      </tr>
-
-                      ${accountRows(section.key)}
-
-                      ${section.footer}
-                    `).join("")}
-                  </tbody>
-                </table>
-              </div>
-            `
-            : `
-              <div class="card empty-state">
-                <h3>No posting P&amp;L accounts found</h3>
-                <p class="muted">
-                  The Chart of Accounts response could not be classified.
-                  Check the Forecast COA output in the browser console.
-                </p>
-              </div>
-            `
-        }
-
-        <div class="bf-workspace-footer">
-          <div>
-            <strong>Management profit or loss forecast</strong>
-            <p class="muted">
-              Enter values by account and month, then save the full forecast.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            class="btn primary"
-            data-bf-action="create-version-workspace"
-            ${accounts.length ? "" : "disabled"}
-          >
-            Save Forecast
-          </button>
-        </div>
-      </div>
-    `;
-
-    bindDraftForecastGrid(grouped);
-  }
   async function createVersionFromWorkspace() {
     const name =
       $("bfWorkspaceVersionName")?.value?.trim();
@@ -42471,7 +43036,7 @@ async function saveEditModal() {
     bfPnlGroups().map((group) => [group.key, []])
   );
 
-  for (const account of BF.coa.filter(bfIsPostingAccount)) {
+  for (const account of BF.coa.filter(bfIsForecastablePnlAccount)) {
     const groupKey = bfPnlGroup(account);
 
     if (grouped[groupKey]) {
@@ -42553,11 +43118,54 @@ async function saveEditModal() {
       .map((account) => {
         const accountCode = bfAccountCode(account);
 
+        const accountLines = months
+          .map((month) => lineMap.get(`${accountCode}|${month}`))
+          .filter(Boolean);
+
+        const savedMethod =
+          accountLines.find((line) => line.source_type)?.source_type ||
+          "manual";
+
         return `
           <tr class="bf-planning-account-row">
             <td class="bf-sticky-account">
-              <strong>${esc(accountCode)}</strong>
-              <span>${esc(bfAccountName(account))}</span>
+              <strong>${esc(bfAccountName(account))}</strong>
+
+              <div class="bf-account-planning-actions">
+                <select
+                  class="bf-planning-method"
+                  data-bf-method-account="${esc(accountCode)}"
+                >
+                  <option value="manual" ${savedMethod === "manual" ? "selected" : ""}>
+                    Manual
+                  </option>
+
+                  <option value="driver_based" ${savedMethod === "driver_based" ? "selected" : ""}>
+                    Driver-based
+                  </option>
+
+                  <option value="prior_year" ${savedMethod === "prior_year" ? "selected" : ""}>
+                    Prior-year actual
+                  </option>
+
+                  <option value="growth" ${savedMethod === "growth" ? "selected" : ""}>
+                    Growth percentage
+                  </option>
+
+                  <option value="average" ${savedMethod === "average" ? "selected" : ""}>
+                    Actual monthly average
+                  </option>
+                </select>
+
+                <button
+                  type="button"
+                  class="btn small"
+                  data-bf-open-driver-account="${esc(accountCode)}"
+                  data-bf-open-driver-name="${esc(bfAccountName(account))}"
+                >
+                  Drivers
+                </button>
+              </div>
             </td>
 
             ${months
@@ -42797,6 +43405,7 @@ async function saveEditModal() {
   `;
 
   bindForecastGridInputs();
+  bindPlanningMethodSelectors();
 }
 
   function collectForecastGridLines() {
@@ -43107,6 +43716,11 @@ async function saveEditModal() {
       return;
     }
 
+    if (tab === "capex") {
+      renderCapexPlanner();
+      return;
+    }
+
     if (tab === "drivers") await loadDrivers();
     if (tab === "imports") await loadImports();
   }
@@ -43123,6 +43737,15 @@ async function saveEditModal() {
       if (tab) {
         await onTab(tab);
         return;
+      }
+
+      const driverButton = t.closest?.("[data-bf-open-driver-account]");
+
+      if (driverButton) {
+        return openAccountDriverWorkspace(
+          String(driverButton.dataset.bfOpenDriverAccount || "").trim(),
+          String(driverButton.dataset.bfOpenDriverName || "").trim()
+        );
       }
 
       const action = t.dataset?.bfAction;
@@ -43160,6 +43783,22 @@ async function saveEditModal() {
       if (action === "add-driver") return openDriverModal();
       if (action === "refresh-imports") return loadImports();
 
+      if (action === "apply-account-driver") {
+        if (BF.forecastWorkspaceMode === "create") {
+          return applyAccountDriverToDraft();
+        }
+
+        return saveAccountDriverToVersion();
+      }
+
+      if (action === "back-from-driver") {
+        if (BF.forecastWorkspaceMode === "create") {
+          return renderCreateForecastWorkspace();
+        }
+
+        return openVersion(BF.selectedVersionId);
+      }
+
       if (t.id === "bfRefreshBtn") return onTab(BF.activeTab);
       if (t.id === "bfCreateBudgetBtn") return openCreateBudgetModal();
 
@@ -43174,6 +43813,12 @@ async function saveEditModal() {
         return;
       }
 
+      if (t.dataset?.bfOpenDriverAccount) {
+        return openAccountDriverWorkspace(
+          t.dataset.bfOpenDriverAccount,
+          t.dataset.bfOpenDriverName || ""
+        );
+      }
       if (t.dataset?.bfEditLine) return openBudgetLineModal(Number(t.dataset.bfEditLine));
       if (t.dataset?.bfDeleteLine) return deleteBudgetLine(Number(t.dataset.bfDeleteLine));
       if (t.dataset?.bfOpenVersion) return openVersion(Number(t.dataset.bfOpenVersion));
