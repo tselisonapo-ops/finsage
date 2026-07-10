@@ -564,6 +564,265 @@ def _asset_carrying_amount(asset_row: dict) -> float:
 
     return float(cost - accum_dep - impairment)
 
+def _build_group_sm_preview(
+    *,
+    company_id: int,
+    group_asset: dict,
+    payload: dict,
+    policy: dict,
+    cur,
+    schema: str,
+    user=None,
+) -> dict:
+    if not cur:
+        raise ValueError("Database cursor is required for component-group preview.")
+
+    et = (payload.get("event_type") or "").strip().lower()
+
+    supplied_components = (
+        payload.get("components")
+        or (payload.get("meta_json") or {}).get("components")
+        or {}
+    )
+
+    if not isinstance(supplied_components, dict) or not supplied_components:
+        raise ValueError("Select at least one affected component.")
+
+    selected_ids = []
+
+    for raw_id, values in supplied_components.items():
+        values = values if isinstance(values, dict) else {}
+
+        if values.get("selected") is False:
+            continue
+
+        try:
+            component_id = int(
+                values.get("asset_id")
+                or raw_id
+                or 0
+            )
+        except (TypeError, ValueError):
+            component_id = 0
+
+        if component_id > 0:
+            selected_ids.append(component_id)
+
+    selected_ids = sorted(set(selected_ids))
+
+    if not selected_ids:
+        raise ValueError("Select at least one affected component.")
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id=%s
+          AND parent_asset_id=%s
+          AND is_component=TRUE
+          AND id = ANY(%s)
+        ORDER BY id
+    """), (
+        company_id,
+        int(group_asset["id"]),
+        selected_ids,
+    ))
+
+    components = cur.fetchall() or []
+
+    found_ids = {int(row["id"]) for row in components}
+    missing_ids = sorted(set(selected_ids) - found_ids)
+
+    if missing_ids:
+        raise ValueError(
+            f"Invalid or unrelated component ids: {missing_ids}"
+        )
+
+    combined_lines: list[dict] = []
+    component_results: list[dict] = []
+    combined_warnings: list[str] = []
+
+    total_before = D("0")
+    total_after = D("0")
+
+    for component in components:
+        component_id = int(component["id"])
+        component_input = (
+            supplied_components.get(str(component_id))
+            or supplied_components.get(component_id)
+            or {}
+        )
+
+        component_payload = _component_payload_for_preview(
+            base_payload=payload,
+            component_input=component_input,
+            component_id=component_id,
+        )
+
+        component_out = _build_single_sm_preview(
+            asset_row=component,
+            payload=component_payload,
+            policy=policy,
+            cur=cur,
+        )
+
+        impact = component_out.get("impact") or {}
+
+        before = D(
+            impact.get("carrying_amount_before")
+            or _asset_carrying_amount(component)
+            or 0
+        )
+        after = D(
+            impact.get("carrying_amount_after")
+            if impact.get("carrying_amount_after") is not None
+            else before
+        )
+
+        total_before += before
+        total_after += after
+
+        for line in component_out.get("lines") or []:
+            row = dict(line)
+            row["component_asset_id"] = component_id
+            row["component_asset_name"] = (
+                component.get("asset_name")
+                or f"Component {component_id}"
+            )
+            combined_lines.append(row)
+
+        for warning in component_out.get("warnings") or []:
+            combined_warnings.append(
+                f"{component.get('asset_name') or component_id}: {warning}"
+            )
+
+        component_results.append({
+            "asset_id": component_id,
+            "asset_name": component.get("asset_name"),
+            "component_type": component.get("component_type"),
+            "impact": impact,
+            "lines": component_out.get("lines") or [],
+        })
+
+    combined_lines = _combine_preview_lines(combined_lines)
+
+    return {
+        "header": _preview_header(
+            payload,
+            memo=f"SM group preview: {et}",
+        ),
+        "lines": combined_lines,
+        "impact": {
+            "carrying_amount_before": money(total_before),
+            "carrying_amount_after": money(total_after),
+            "delta": money(total_after - total_before),
+        },
+        "components": component_results,
+        "warnings": combined_warnings,
+    }
+
+def _component_payload_for_preview(
+    *,
+    base_payload: dict,
+    component_input: dict,
+    component_id: int,
+) -> dict:
+    et = (base_payload.get("event_type") or "").strip().lower()
+
+    out = dict(base_payload)
+    out["asset_id"] = int(component_id)
+    out["components"] = None
+
+    base_meta = dict(base_payload.get("meta_json") or {})
+    base_meta.pop("components", None)
+
+    if et == "add_cost":
+        out["amount"] = component_input.get("allocation_amount")
+
+        # VAT amounts must be allocated or calculated consistently.
+        if component_input.get("vat_treatment") is not None:
+            out["vat_treatment"] = component_input.get("vat_treatment")
+
+        if component_input.get("vat_rate_percent") is not None:
+            out["vat_rate_percent"] = component_input.get(
+                "vat_rate_percent"
+            )
+
+        if component_input.get("vat_input_claimable") is not None:
+            out["vat_input_claimable"] = component_input.get(
+                "vat_input_claimable"
+            )
+
+        if component_input.get("vat_recovery_percent") is not None:
+            out["vat_recovery_percent"] = component_input.get(
+                "vat_recovery_percent"
+            )
+
+    elif et == "impairment_loss":
+        out["amount"] = component_input.get("impairment_amount")
+
+    elif et == "impairment_reversal":
+        out["amount"] = component_input.get("reversal_amount")
+
+    elif et in ("revaluation", "fair_value_valuation"):
+        fair_value = component_input.get("fair_value")
+        base_meta["fair_value"] = fair_value
+
+    elif et == "change_estimate":
+        out["useful_life_months"] = component_input.get(
+            "useful_life_months"
+        )
+        out["residual_value"] = component_input.get(
+            "residual_value"
+        )
+        out["depreciation_method"] = component_input.get(
+            "depreciation_method"
+        )
+
+    out["meta_json"] = base_meta or None
+    return out
+
+def _combine_preview_lines(lines: list[dict]) -> list[dict]:
+    grouped: dict[tuple, dict] = {}
+
+    for line in lines:
+        account_code = (
+            line.get("account_code")
+            or ""
+        ).strip()
+
+        memo = (
+            line.get("memo")
+            or line.get("description")
+            or ""
+        ).strip()
+
+        key = (
+            account_code,
+            memo,
+        )
+
+        if key not in grouped:
+            grouped[key] = {
+                "account_code": account_code,
+                "account_name": line.get("account_name"),
+                "memo": memo or None,
+                "debit": 0.0,
+                "credit": 0.0,
+                "components": [],
+            }
+
+        grouped[key]["debit"] += float(line.get("debit") or 0)
+        grouped[key]["credit"] += float(line.get("credit") or 0)
+
+        component_id = line.get("component_asset_id")
+        if component_id:
+            grouped[key]["components"].append({
+                "asset_id": component_id,
+                "asset_name": line.get("component_asset_name"),
+            })
+
+    return list(grouped.values())
+
 def build_sm_preview(
     *,
     company_id: int,
@@ -576,77 +835,152 @@ def build_sm_preview(
 ) -> dict:
     et = (payload.get("event_type") or "").strip().lower()
 
-    ca_before = _asset_carrying_amount(asset_row)
-
-    warnings: list[str] = []
-
-    # Use company_id meaningfully for consistency / safety checks
     asset_company_id = int(asset_row.get("company_id") or 0)
     if asset_company_id and asset_company_id != int(company_id):
         raise ValueError(
             f"Asset company mismatch: asset belongs to company_id={asset_company_id}, "
             f"but preview requested for company_id={company_id}."
         )
-    assert_not_component_group(asset_row)
-    # Use your role helper
+
     role = user_role(user or {})
-    if role and role not in ("owner", "admin", "cfo", "ceo", "manager", "senior", "accountant"):
+    warnings: list[str] = []
+
+    if role and role not in (
+        "owner",
+        "admin",
+        "cfo",
+        "ceo",
+        "manager",
+        "senior",
+        "accountant",
+    ):
         warnings.append(
             f"Preview generated for role '{role}' without posting/approval authority."
         )
 
-    # Dispatch calculators
-    if et == "add_cost":
-        out = _preview_add_cost(asset_row, payload, policy, ca_before, cur=cur)
+    is_group = bool(asset_row.get("is_component_group"))
 
-    elif et in ("held_for_sale_classify", "held_for_sale_unclassify"):
-        out = _preview_hfs(asset_row, payload, policy, ca_before, cur=cur)
-
-    elif et in ("impairment_loss", "impairment_reversal"):
-        out = _preview_impairment(asset_row, payload, policy, ca_before, cur=cur)
-
-    elif et == "revaluation":
-        out = _preview_revaluation(asset_row, payload, policy, ca_before, cur=cur)
-
-    elif et == "fair_value_valuation":
-        out = _preview_fair_value_valuation(asset_row, payload, policy, ca_before, cur=cur)
-
-    elif et in ("transfer_ppe_to_ip", "transfer_ip_to_ppe"):
-        out = _preview_transfer(asset_row, payload, policy, ca_before, cur=cur)
-
-    elif et == "change_estimate":
-        out = {
-            "header": _preview_header(payload, memo=f"SM preview: {et}"),
-            "lines": [],
-            "impact": {
-                "carrying_amount_before": ca_before,
-                "carrying_amount_after": ca_before,
-                "delta": 0.0,
-            },
-            "warnings": ["No journal for change_estimate (depreciation changes prospectively)."],
-        }
-
+    if is_group:
+        out = _build_group_sm_preview(
+            company_id=company_id,
+            group_asset=asset_row,
+            payload=payload,
+            policy=policy,
+            cur=cur,
+            schema=schema or company_schema(company_id),
+            user=user,
+        )
     else:
-        raise ValueError(f"Unsupported event_type '{et}'")
+        out = _build_single_sm_preview(
+            asset_row=asset_row,
+            payload=payload,
+            policy=policy,
+            cur=cur,
+        )
 
-    # Enrich lines with account names from tenant COA
     if cur and schema and out.get("lines"):
-        out["lines"] = _attach_account_names(out["lines"], schema=schema, cur=cur)
+        out["lines"] = _attach_account_names(
+            out["lines"],
+            schema=schema,
+            cur=cur,
+        )
 
-    # Add contextual warnings
     if warnings:
         out.setdefault("warnings", []).extend(warnings)
 
-    # Optional metadata, useful to the UI / debugging
     out.setdefault("context", {})
     out["context"].update({
         "company_id": int(company_id),
         "asset_id": int(asset_row.get("id") or 0),
         "event_type": et,
+        "is_component_group": is_group,
         "user_role": role or "",
     })
 
     return out
+
+def _build_single_sm_preview(
+    *,
+    asset_row: dict,
+    payload: dict,
+    policy: dict,
+    cur=None,
+) -> dict:
+    et = (payload.get("event_type") or "").strip().lower()
+    ca_before = _asset_carrying_amount(asset_row)
+
+    if et == "add_cost":
+        return _preview_add_cost(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et in ("held_for_sale_classify", "held_for_sale_unclassify"):
+        return _preview_hfs(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et in ("impairment_loss", "impairment_reversal"):
+        return _preview_impairment(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et == "revaluation":
+        return _preview_revaluation(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et == "fair_value_valuation":
+        return _preview_fair_value_valuation(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et in ("transfer_ppe_to_ip", "transfer_ip_to_ppe"):
+        return _preview_transfer(
+            asset_row,
+            payload,
+            policy,
+            ca_before,
+            cur=cur,
+        )
+
+    if et == "change_estimate":
+        return {
+            "header": _preview_header(
+                payload,
+                memo="SM preview: change_estimate",
+            ),
+            "lines": [],
+            "impact": {
+                "carrying_amount_before": money(ca_before),
+                "carrying_amount_after": money(ca_before),
+                "delta": 0.0,
+            },
+            "warnings": [
+                "No journal for change_estimate; depreciation changes prospectively."
+            ],
+        }
+
+    raise ValueError(f"Unsupported event_type '{et}'")
 
 def _preview_header(payload: dict, memo: str):
     return {

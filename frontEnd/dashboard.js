@@ -37097,10 +37097,10 @@ async function saveEditModal() {
     if (!payload.revaluation_date) throw new Error("Valuation date is required.");
 
     if (selectedAssetIsComponentGroup()) {
-      const vals = Object.values(payload.components || {});
-      if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
-        throw new Error("Enter fair value for each component.");
-      }
+      validateGroupComponents({
+        ...payload,
+        event_type: payload.source_event_type,
+      });
     } else if (!(Number(payload.fair_value) > 0)) {
       throw new Error("Fair value must be greater than 0.");
     }
@@ -37912,13 +37912,13 @@ async function saveEditModal() {
       if (!payload.debit_account_code) throw new Error("Selected asset account is missing");
       if (!payload.credit_account_code) throw new Error("Bank account is required");
     }
-    if (payload.event_type === "revaluation" || payload.event_type === "fair_value_valuation") {
-      if (selectedAssetIsComponentGroup()) {
-        const vals = Object.values(payload.components || {});
-        if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
-          throw new Error("Enter fair value for each component.");
-        }
-      } else if (!(Number(payload?.meta_json?.fair_value || 0) > 0)) {
+    if (selectedAssetIsComponentGroup()) {
+      validateGroupComponents(payload);
+    } else if (
+      payload.event_type === "revaluation" ||
+      payload.event_type === "fair_value_valuation"
+    ) {
+      if (!(Number(payload?.meta_json?.fair_value || 0) > 0)) {
         throw new Error("Fair value must be > 0");
       }
     }
@@ -38124,7 +38124,7 @@ async function saveEditModal() {
     const payload = smPayloadFromUI();
 
     validateGroupComponents(payload);
-    
+
     if (!payload.event_date) throw new Error("Date is required");
     if (!payload.asset_id) throw new Error("Asset ID is required");
 
@@ -38425,42 +38425,72 @@ async function saveEditModal() {
 
     $("smSubmit")?.addEventListener("click", async () => {
       try {
-        const t = String($("smEventType")?.value || "").trim().toLowerCase();
+        const t = String(
+          $("smEventType")?.value || ""
+        ).trim().toLowerCase();
+
+        const payload = smPayloadFromUI();
+
+        if (!payload.event_date) {
+          throw new Error("Date is required");
+        }
+
+        if (!payload.asset_id) {
+          throw new Error("Asset is required");
+        }
+
+        if (selectedAssetIsComponentGroup()) {
+          validateGroupComponents(payload);
+        }
+
         await ensurePreviewIsCurrent();
+
         if (requiresValuationStep(t)) {
-          const payload = smPayloadFromUI();
+          if (!selectedAssetIsComponentGroup()) {
+            const fv = Number(
+              payload?.meta_json?.fair_value || 0
+            );
 
-          if (!payload.event_date) throw new Error("Date is required");
-          if (!payload.asset_id) throw new Error("Asset is required");
-
-          if (selectedAssetIsComponentGroup()) {
-            const vals = Object.values(payload.components || {});
-            if (!vals.length || vals.some((x) => !(Number(x?.fair_value || 0) > 0))) {
-              throw new Error("Enter fair value for each component.");
+            if (fv <= 0) {
+              throw new Error("Fair value must be > 0");
             }
-          } else {
-            const fv = Number(payload?.meta_json?.fair_value || 0);
-            if (fv <= 0) throw new Error("Fair value must be > 0");
           }
 
-          setMsg($("smFormMsg"), "Creating valuation draft…", "info");
+          setMsg(
+            $("smFormMsg"),
+            "Creating valuation draft…",
+            "info"
+          );
 
-          const revaluationIds = await createRevaluationDraftFromSM();
+          const revaluationIds =
+            await createRevaluationDraftFromSM();
 
-          $("valuationRevaluationId").value = revaluationIds.join(",");
+          $("valuationRevaluationId").value =
+            revaluationIds.join(",");
 
-          console.log("REVALUATION IDS TO POST:", revaluationIds);
-          console.log("valuationRevaluationId value:", $("valuationRevaluationId")?.value);
+          console.log(
+            "REVALUATION IDS TO POST:",
+            revaluationIds
+          );
+
+          console.log(
+            "valuationRevaluationId value:",
+            $("valuationRevaluationId")?.value
+          );
 
           openValuationModalFromSM();
+
           setMsg($("smFormMsg"), "", "info");
           return;
         }
 
-        const payload = smPayloadFromUI();
         const { createSM } = EP();
 
-        setMsg($("smFormMsg"), "Creating and posting…", "info");
+        setMsg(
+          $("smFormMsg"),
+          "Creating and posting…",
+          "info"
+        );
 
         const created = await api(createSM, {
           method: "POST",
@@ -38469,17 +38499,32 @@ async function saveEditModal() {
 
         console.log("SM CREATE RESPONSE:", created);
 
-        const id = Number(created?.id || created?.item?.id || created?.data?.id || 0) || 0;
+        const id = Number(
+          created?.id ||
+          created?.item?.id ||
+          created?.data?.id ||
+          0
+        ) || 0;
 
         console.log("SM POST ID:", id);
-        if (!id) throw new Error("Subsequent measurement was not created.");
+
+        if (!id) {
+          throw new Error(
+            "Subsequent measurement was not created."
+          );
+        }
 
         $("smId").value = String(id);
 
         await postSm(id);
         closeSmModal();
+
       } catch (e) {
-        setMsg($("smFormMsg"), e.message, "error");
+        setMsg(
+          $("smFormMsg"),
+          e.message,
+          "error"
+        );
       }
     });
 
