@@ -19,6 +19,14 @@ def _payroll_body():
 def _ensure_payroll(company_id: int):
     db_service.ensure_company_payroll(int(company_id))
 
+def _payroll_company_guard(company_id: int):
+    payload = request.jwt_payload or {}
+
+    return _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
 
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/settings", methods=["GET", "POST", "PATCH", "OPTIONS"])
 @require_auth
@@ -597,3 +605,429 @@ def api_payroll_run_journal_preview(company_id: int, run_id: int):
     except Exception as e:
         current_app.logger.exception("payroll_run_journal_preview failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/calendars/generate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_calendars_generate(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        body = _payroll_body()
+
+        periods = body.get("periods")
+        from_month = body.get("from_month")
+
+        items = db_service.payroll_calendars_generate(
+            int(company_id),
+            periods=int(periods) if periods else None,
+            from_month=from_month,
+        )
+
+        try:
+            db_service.audit_log(
+                company_id,
+                actor_user_id=user_id,
+                module="payroll",
+                action="generate_payroll_calendars",
+                severity="info",
+                entity_type="payroll_pay_calendar",
+                entity_id=None,
+                entity_ref=f"PAYROLL-CALENDARS-{company_id}",
+                before_json={},
+                after_json={
+                    "count": len(items),
+                    "periods": periods,
+                    "from_month": from_month,
+                },
+                message=(
+                    f"Generated {len(items)} payroll periods"
+                ),
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed in "
+                "api_payroll_calendars_generate"
+            )
+
+        return jsonify({
+            "ok": True,
+            "items": items,
+            "count": len(items),
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "payroll_calendars_generate failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/departments",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_departments(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.payroll_departments_list(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        user_id = _jwt_user_id()
+
+        if not user_id:
+            return jsonify({
+                "ok": False,
+                "error": "AUTH|missing_user_id",
+            }), 401
+
+        out = db_service.payroll_department_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_departments failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/positions",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_positions(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.payroll_positions_list(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        out = db_service.payroll_position_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_positions failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/earning-types",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_earning_types(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            setup = db_service.payroll_setup_master(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": setup.get("earning_types", []),
+            }), 200
+
+        out = db_service.payroll_earning_type_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_earning_types failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/deduction-types",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_deduction_types(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            setup = db_service.payroll_setup_master(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": setup.get("deduction_types", []),
+            }), 200
+
+        out = db_service.payroll_deduction_type_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_deduction_types failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/contribution-types",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_contribution_types(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            setup = db_service.payroll_setup_master(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": setup.get(
+                    "contribution_types",
+                    [],
+                ),
+            }), 200
+
+        out = db_service.payroll_contribution_type_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_contribution_types failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/benefit-types",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_benefit_types(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            setup = db_service.payroll_setup_master(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": setup.get("benefit_types", []),
+            }), 200
+
+        out = db_service.payroll_benefit_type_create(
+            int(company_id),
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_benefit_types failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/gl-mappings",
+    methods=["GET", "POST", "PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_gl_mappings(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.payroll_mappings_list(
+                int(company_id)
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        body = _payroll_body()
+
+        mappings = (
+            body.get("mappings")
+            if isinstance(body, dict)
+            else None
+        )
+
+        if not isinstance(mappings, list):
+            return jsonify({
+                "ok": False,
+                "error": "mappings must be an array",
+            }), 400
+
+        items = db_service.payroll_mappings_upsert(
+            int(company_id),
+            mappings,
+        )
+
+        return jsonify({
+            "ok": True,
+            "items": items,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_gl_mappings failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400

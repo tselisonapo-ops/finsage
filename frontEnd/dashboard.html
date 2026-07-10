@@ -2419,6 +2419,66 @@ html, body {
     display: none;
   }
 }
+
+#bfRoot.bf-workspace-active {
+  padding-top: 0;
+}
+
+#bfRoot.bf-workspace-active #bfForecastPane {
+  width: 100%;
+}
+
+#bfRoot.bf-workspace-active .bf-workspace {
+  min-height: calc(100vh - 90px);
+}
+
+#bfRoot.bf-workspace-active .bf-workspace-header {
+  top: 0;
+}
+
+#bfRoot .bf-planning-mode-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 18px 0;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #dbe7f3;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(15, 42, 68, 0.06);
+}
+
+#bfRoot .bf-planning-mode-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+#bfRoot .bf-mode-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 13px 16px;
+  text-align: left;
+  background: #fff;
+  color: #19354e;
+  border: 1px solid #d8e5ef;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+#bfRoot .bf-mode-option span {
+  color: #6b7f91;
+  font-size: 11px;
+}
+
+#bfRoot .bf-mode-option.active {
+  background: #e9fbfc;
+  border-color: #00aebb;
+  box-shadow: 0 0 0 2px rgba(0, 174, 187, 0.1);
+}
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
@@ -11148,12 +11208,14 @@ html, body {
 
               <div class="payroll-setup-tabs">
                 <button class="active" data-payroll-setup-tab="general">General</button>
+                <button data-payroll-setup-tab="schedule">Pay Schedule</button>
                 <button data-payroll-setup-tab="departments">Departments</button>
                 <button data-payroll-setup-tab="positions">Positions</button>
                 <button data-payroll-setup-tab="earnings">Earnings</button>
                 <button data-payroll-setup-tab="deductions">Deductions</button>
                 <button data-payroll-setup-tab="contributions">Employer Contributions</button>
                 <button data-payroll-setup-tab="benefits">Benefit Types</button>
+                <button data-payroll-setup-tab="employee-pay">Employee Pay Setup</button>
                 <button data-payroll-setup-tab="mappings">GL Mappings</button>
               </div>
             </div>
@@ -11190,6 +11252,259 @@ html, body {
 
                 <button id="payrollSaveSettingsBtn" class="payroll-primary">
                   Save General Settings
+                </button>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelSchedule" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Pay Schedule</h3>
+                    <p class="payroll-muted">
+                      Configure how payroll periods and payment dates are generated.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <label>
+                    Pay Frequency
+                    <select id="payrollScheduleFrequency">
+                      <option value="monthly">Monthly</option>
+                      <option value="fortnightly">Fortnightly</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </label>
+
+                  <label id="payrollPeriodStartDayWrap">
+                    Payroll Period Starts
+                    <select id="payrollPeriodStartDay"></select>
+                  </label>
+
+                  <label id="payrollPeriodEndDayWrap">
+                    Payroll Period Ends
+                    <select id="payrollPeriodEndDay"></select>
+                  </label>
+
+                  <label>
+                    End Month
+                    <select id="payrollPeriodEndOffset">
+                      <option value="0">Same month</option>
+                      <option value="1">Following month</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Payment Day
+                    <select id="payrollPaymentDayRule">
+                      <option value="day:1">1st day of month</option>
+                      <option value="day:15">15th of month</option>
+                      <option value="day:20">20th of month</option>
+                      <option value="day:25">25th of month</option>
+                      <option value="day:28">28th of month</option>
+                      <option value="last_day">Last day of month</option>
+                      <option value="day_before_last">
+                        Day before last day of month
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Payment Month
+                    <select id="payrollPaymentMonthOffset">
+                      <option value="0">Period-end month</option>
+                      <option value="1">Following month</option>
+                      <option value="-1">Previous month</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Weekend / Holiday Adjustment
+                    <select id="payrollPaymentAdjustment">
+                      <option value="none">No adjustment</option>
+                      <option value="previous_working_day">
+                        Previous working day
+                      </option>
+                      <option value="next_working_day">
+                        Next working day
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    First Payroll Period
+                    <input id="payrollFirstPeriodMonth" type="month">
+                  </label>
+                </div>
+
+                <div id="payrollSchedulePreview" class="payroll-schedule-preview"></div>
+
+                <button id="payrollSaveScheduleBtn" class="payroll-primary">
+                  Save Pay Schedule
+                </button>
+              </div>
+
+              <div class="payroll-card">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Generated Payroll Periods</h3>
+                    <p class="payroll-muted">
+                      Actual dated periods generated from the saved schedule.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollGeneratePeriodsBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Generate Periods
+                  </button>
+                </div>
+
+                <div id="payrollCalendarsList"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelEmployeePay" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Employee Pay Setup</h3>
+                    <p class="payroll-muted">
+                      Assign recurring remuneration, benefits, deductions and tax treatment.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <label>
+                    Employee
+                    <select id="payrollPaySetupEmployeeId">
+                      <option value="">Select employee…</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Pay Basis
+                    <select id="payrollPayBasis">
+                      <option value="monthly">Monthly Salary</option>
+                      <option value="hourly">Hours × Rate</option>
+                      <option value="daily">Days × Rate</option>
+                      <option value="quantity">Quantity × Rate</option>
+                      <option value="commission_only">Commission Only</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Basic Earning
+                    <select id="payrollBasicEarningTypeId"></select>
+                  </label>
+
+                  <label>
+                    Fixed Basic Amount
+                    <input
+                      id="payrollPayBasicAmount"
+                      type="number"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label>
+                    Standard Quantity
+                    <input
+                      id="payrollPayStandardQuantity"
+                      type="number"
+                      step="0.0001"
+                    >
+                  </label>
+
+                  <label>
+                    Rate
+                    <input
+                      id="payrollPayRate"
+                      type="number"
+                      step="0.0001"
+                    >
+                  </label>
+
+                  <label>
+                    PAYE Treatment
+                    <select id="payrollPayTaxTreatment">
+                      <option value="standard">Standard PAYE</option>
+                      <option value="manual">Manual PAYE Input</option>
+                      <option value="exempt">PAYE Exempt</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Manual PAYE Amount
+                    <input
+                      id="payrollManualPayeAmount"
+                      type="number"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label>
+                    Effective From
+                    <input id="payrollPaySetupEffectiveFrom" type="date">
+                  </label>
+                </div>
+
+                <div class="payroll-run-overview-grid">
+                  <div class="payroll-run-info-card">
+                    <h4>Recurring Earnings</h4>
+                    <div id="payrollPaySetupEarnings"></div>
+                    <button
+                      id="payrollPaySetupAddEarningBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      + Add Earning
+                    </button>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Recurring Deductions</h4>
+                    <div id="payrollPaySetupDeductions"></div>
+                    <button
+                      id="payrollPaySetupAddDeductionBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      + Add Deduction
+                    </button>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Benefits</h4>
+                    <div id="payrollPaySetupBenefits"></div>
+                    <button
+                      id="payrollPaySetupAddBenefitBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      + Add Benefit
+                    </button>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Employer Contributions</h4>
+                    <div id="payrollPaySetupContributions"></div>
+                    <button
+                      id="payrollPaySetupAddContributionBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      + Add Employer Contribution
+                    </button>
+                  </div>
+                </div>
+
+                <button id="payrollSaveEmployeePaySetupBtn" class="payroll-primary">
+                  Save Employee Pay Setup
                 </button>
               </div>
             </div>
@@ -12221,6 +12536,10 @@ html, body {
                     <div class="font-medium">Add cost</div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                      <div
+                        id="smAddCostImpact"
+                        class="hidden grid grid-cols-1 md:grid-cols-4 gap-2 mb-3"
+                      ></div>
                       <div>
                         <label class="block text-xs text-slate-500 mb-1">Amount</label>
                         <input
@@ -12248,6 +12567,64 @@ html, body {
                         <select id="smCreditBankAccount" class="w-full border rounded px-3 py-2">
                           <option value="">Select bank account…</option>
                         </select>
+                      </div>
+
+                      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-1">
+                            VAT treatment
+                          </label>
+                          <select
+                            id="smAddCostVatTreatment"
+                            class="w-full border rounded px-3 py-2"
+                          >
+                            <option value="no_vat">No VAT</option>
+                            <option value="inclusive">VAT inclusive</option>
+                            <option value="exclusive">VAT exclusive</option>
+                          </select>
+                        </div>
+
+                        <div id="smAddCostVatRateWrap" class="hidden">
+                          <label class="block text-xs text-slate-500 mb-1">
+                            VAT rate %
+                          </label>
+                          <input
+                            id="smAddCostVatRate"
+                            type="number"
+                            min="0"
+                            step="0.0001"
+                            class="w-full border rounded px-3 py-2"
+                            value="15"
+                          />
+                        </div>
+
+                        <div id="smAddCostVatClaimableWrap" class="hidden">
+                          <label class="block text-xs text-slate-500 mb-1">
+                            Input VAT
+                          </label>
+                          <select
+                            id="smAddCostVatClaimable"
+                            class="w-full border rounded px-3 py-2"
+                          >
+                            <option value="false">Not claimable</option>
+                            <option value="true">Claimable</option>
+                          </select>
+                        </div>
+
+                        <div id="smAddCostVatRecoveryWrap" class="hidden">
+                          <label class="block text-xs text-slate-500 mb-1">
+                            Recovery %
+                          </label>
+                          <input
+                            id="smAddCostVatRecoveryPercent"
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            class="w-full border rounded px-3 py-2"
+                            value="100"
+                          />
+                        </div>
                       </div>
                     </div>
 

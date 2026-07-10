@@ -1401,11 +1401,20 @@ const ENDPOINTS = {
     calendars: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/calendars`,
 
+    // POST /api/companies/<cid>/payroll/calendars/generate
+    generateCalendars: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/calendars/generate`,
+
     // GET/POST /api/companies/<cid>/payroll/employees?status=
     employees: (companyId, { status = "" } = {}) => {
       const params = new URLSearchParams();
-      if (status) params.append("status", String(status));
+
+      if (status) {
+        params.append("status", String(status));
+      }
+
       const qs = params.toString();
+
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees${qs ? `?${qs}` : ""}`;
     },
 
@@ -1413,23 +1422,56 @@ const ENDPOINTS = {
     employee: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}`,
 
-    // POST /api/companies/<cid>/payroll/employees/<employeeId>/contracts
     contracts: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/contracts`,
 
-    // POST /api/companies/<cid>/payroll/employees/<employeeId>/tax-profiles
     taxProfiles: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/tax-profiles`,
 
-    // POST /api/companies/<cid>/payroll/employees/<employeeId>/bank-accounts
     bankAccounts: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/bank-accounts`,
-    
+
     bootstrap: (companyId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/bootstrap`, 
-  
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/bootstrap`,
+
     setup: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup`,
+
+    // GET/POST /payroll/setup/departments
+    departments: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/departments`,
+
+    // GET/PATCH /payroll/setup/departments/<id>
+    department: (companyId, departmentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/departments/${encodeURIComponent(departmentId)}`,
+
+    // GET/POST /payroll/setup/positions
+    positions: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/positions`,
+
+    // GET/PATCH /payroll/setup/positions/<id>
+    position: (companyId, positionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/positions/${encodeURIComponent(positionId)}`,
+
+    // GET/POST /payroll/setup/earning-types
+    earningTypes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/earning-types`,
+
+    // GET/POST /payroll/setup/deduction-types
+    deductionTypes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/deduction-types`,
+
+    // GET/POST /payroll/setup/contribution-types
+    contributionTypes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/contribution-types`,
+
+    // GET/POST /payroll/setup/benefit-types
+    benefitTypes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/benefit-types`,
+
+    // GET/POST /payroll/gl-mappings
+    glMappings: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-mappings`,
 
     benefits: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/benefits`,
@@ -1439,7 +1481,7 @@ const ENDPOINTS = {
 
     loans: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/loans`,
-  
+
     runs: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs`,
 
@@ -1451,10 +1493,10 @@ const ENDPOINTS = {
 
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/post`,
-  
+
     journalPreview: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/journal-preview`,
-  
+
     glDiagnostics: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-diagnostics`,
   },
@@ -1511,6 +1553,61 @@ const ENDPOINTS = {
 
     imports: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/forecast/import-batches`,
+  
+    capex: (cid, opts = {}) => {
+      const params =
+        new URLSearchParams();
+
+      if (opts.version_id) {
+        params.set(
+          "version_id",
+          opts.version_id
+        );
+      }
+
+      if (opts.budget_id) {
+        params.set(
+          "budget_id",
+          opts.budget_id
+        );
+      }
+
+      const qs =
+        params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/forecast/capex${
+        qs ? `?${qs}` : ""
+      }`;
+    },
+
+    capexItem: (cid, capexId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/forecast/capex/${encodeURIComponent(capexId)}`,
+
+    capexImpacts: (cid, opts = {}) => {
+      const params =
+        new URLSearchParams();
+
+      if (opts.version_id) {
+        params.set(
+          "version_id",
+          opts.version_id
+        );
+      }
+
+      if (opts.budget_id) {
+        params.set(
+          "budget_id",
+          opts.budget_id
+        );
+      }
+
+      const qs =
+        params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/forecast/capex/impacts${
+        qs ? `?${qs}` : ""
+      }`;
+    },
   },
 
   assets: {
@@ -36115,74 +36212,454 @@ async function saveEditModal() {
     return assetsCache.find(x => Number(x?.id || 0) === id) || null;
   }
 
+  function componentEventConfig(eventType) {
+    const t = String(eventType || "").trim().toLowerCase();
+
+    const map = {
+      add_cost: {
+        title: "Allocate capital addition",
+        help: "Enter the capitalised amount only for the affected component(s). Leave unaffected components at 0.",
+        field: "allocation_amount",
+        label: "Capitalised amount",
+        inputType: "number",
+        min: 0,
+        step: "0.01",
+      },
+
+      change_estimate: {
+        title: "Update component estimates",
+        help: "Complete only the estimate fields that change for the affected component(s).",
+        field: "estimate",
+      },
+
+      impairment_loss: {
+        title: "Allocate impairment loss",
+        help: "Enter an impairment amount only for the damaged or impaired component(s). Leave unaffected components at 0.",
+        field: "impairment_amount",
+        label: "Impairment loss",
+        inputType: "number",
+        min: 0,
+        step: "0.01",
+      },
+
+      impairment_reversal: {
+        title: "Allocate impairment reversal",
+        help: "Enter a reversal only for components with a previous impairment. Leave unaffected components at 0.",
+        field: "reversal_amount",
+        label: "Impairment reversal",
+        inputType: "number",
+        min: 0,
+        step: "0.01",
+      },
+
+      revaluation: {
+        title: "Enter component fair values",
+        help: "Enter fair values only for components included in this revaluation.",
+        field: "fair_value",
+        label: "Fair value",
+        inputType: "number",
+        min: 0,
+        step: "0.01",
+      },
+
+      fair_value_valuation: {
+        title: "Enter component fair values",
+        help: "Enter fair values only for components included in this valuation.",
+        field: "fair_value",
+        label: "Fair value",
+        inputType: "number",
+        min: 0,
+        step: "0.01",
+      },
+
+      transfer_ppe_to_ip: {
+        title: "Select components transferred to investment property",
+        help: "Mark only the component(s) whose use has changed.",
+        field: "selected",
+      },
+
+      transfer_ip_to_ppe: {
+        title: "Select components transferred to PPE",
+        help: "Mark only the component(s) whose use has changed.",
+        field: "selected",
+      },
+
+      held_for_sale_classify: {
+        title: "Select components classified as held for sale",
+        help: "Select the whole group or only the components included in the disposal plan.",
+        field: "selected",
+      },
+
+      held_for_sale_unclassify: {
+        title: "Select components removed from held for sale",
+        help: "Select only the components being restored.",
+        field: "selected",
+      },
+    };
+
+    return map[t] || null;
+  }
+
+  function renderComponentEventInputs(cfg, component, componentId) {
+    if (cfg.field === "estimate") {
+      return `
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">
+              Useful life months
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              class="w-full border rounded px-3 py-2"
+              data-sm-component-life="${componentId}"
+              placeholder="${
+                component.useful_life_months
+                  ? esc(component.useful_life_months)
+                  : ""
+              }"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">
+              Residual value
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              class="w-full border rounded px-3 py-2"
+              data-sm-component-residual="${componentId}"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">
+              Depreciation method
+            </label>
+            <select
+              class="w-full border rounded px-3 py-2"
+              data-sm-component-method="${componentId}"
+            >
+              <option value="">No change</option>
+              <option value="SL">Straight-line</option>
+              <option value="RB">Reducing balance</option>
+              <option value="UOP">Units of production</option>
+              <option value="APP">Not depreciated</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }
+
+    if (cfg.field === "selected") {
+      return `
+        <div class="text-xs text-slate-500">
+          Tick <strong>Affected</strong> above to include this component.
+        </div>
+      `;
+    }
+
+    return `
+      <div>
+        <label class="block text-xs text-slate-500 mb-1">
+          ${esc(cfg.label || "Amount")}
+        </label>
+
+        <input
+          class="w-full border rounded px-3 py-2"
+          type="${esc(cfg.inputType || "number")}"
+          min="${esc(cfg.min ?? 0)}"
+          step="${esc(cfg.step || "0.01")}"
+          data-sm-component-value="${componentId}"
+          data-sm-component-field="${esc(cfg.field)}"
+          value=""
+        />
+      </div>
+    `;
+  }
+
+  function bindGroupComponentControls() {
+    document
+      .querySelectorAll("[data-sm-component-enabled]")
+      .forEach((checkbox) => {
+        const id = checkbox.dataset.smComponentEnabled;
+        const fields = document.querySelector(
+          `[data-sm-component-fields="${id}"]`
+        );
+
+        const sync = () => {
+          if (!fields) return;
+
+          fields.classList.toggle(
+            "opacity-50",
+            !checkbox.checked
+          );
+
+          fields
+            .querySelectorAll("input, select, textarea")
+            .forEach((control) => {
+              control.disabled = !checkbox.checked;
+            });
+
+          invalidateSmPreview();
+        };
+
+        checkbox.addEventListener("change", sync);
+        sync();
+      });
+
+    document
+      .querySelectorAll(
+        "[data-sm-component-fields] input, " +
+        "[data-sm-component-fields] select, " +
+        "[data-sm-component-fields] textarea"
+      )
+      .forEach((control) => {
+        control.addEventListener("input", invalidateSmPreview);
+        control.addEventListener("change", invalidateSmPreview);
+      });
+  }
+
+  function collectGroupComponentPayload(eventType) {
+    const t = String(eventType || "").trim().toLowerCase();
+    const cfg = componentEventConfig(t);
+    const components = {};
+
+    if (!selectedAssetIsComponentGroup() || !cfg) {
+      return components;
+    }
+
+    document
+      .querySelectorAll("[data-sm-group-component]")
+      .forEach((row) => {
+        const componentId = String(
+          row.dataset.smGroupComponent || ""
+        );
+
+        const enabled = !!row.querySelector(
+          `[data-sm-component-enabled="${componentId}"]`
+        )?.checked;
+
+        if (!componentId || !enabled) return;
+
+        const entry = {
+          asset_id: Number(componentId),
+          selected: true,
+        };
+
+        if (cfg.field === "estimate") {
+          const life = Number(
+            row.querySelector(
+              `[data-sm-component-life="${componentId}"]`
+            )?.value || 0
+          );
+
+          const residualRaw = row.querySelector(
+            `[data-sm-component-residual="${componentId}"]`
+          )?.value;
+
+          const method = String(
+            row.querySelector(
+              `[data-sm-component-method="${componentId}"]`
+            )?.value || ""
+          ).trim();
+
+          if (life > 0) {
+            entry.useful_life_months = life;
+          }
+
+          if (
+            residualRaw !== undefined &&
+            residualRaw !== null &&
+            residualRaw !== ""
+          ) {
+            entry.residual_value = Number(residualRaw);
+          }
+
+          if (method) {
+            entry.depreciation_method = method;
+          }
+        } else if (cfg.field !== "selected") {
+          const value = Number(
+            row.querySelector(
+              `[data-sm-component-value="${componentId}"]`
+            )?.value || 0
+          );
+
+          entry[cfg.field] = value;
+
+          // Compatibility with existing valuation backend.
+          if (cfg.field === "fair_value") {
+            entry.meta_json = {
+              fair_value: value,
+              reason:
+                $("smFairValueReason")?.value ||
+                $("smNotes")?.value ||
+                null,
+            };
+          }
+        }
+
+        components[componentId] = entry;
+      });
+
+    return components;
+  }
+
   function renderGroupFairValueFields() {
     const asset = selectedSmAsset();
+    const eventType = String($("smEventType")?.value || "")
+      .trim()
+      .toLowerCase();
+
     const singleWrap = $("smSingleFairValueWrap");
     const groupWrap = $("smGroupFairValueWrap");
 
     if (!singleWrap || !groupWrap) return;
 
     const isGroup = !!asset?.is_component_group;
-    const comps = Array.isArray(asset?.components) ? asset.components : [];
+    const comps = Array.isArray(asset?.components)
+      ? asset.components
+      : [];
 
-    singleWrap.classList.toggle("hidden", isGroup);
-    groupWrap.classList.toggle("hidden", !isGroup);
+    const cfg = componentEventConfig(eventType);
+    const needsComponentUI = isGroup && !!cfg;
+
+    groupWrap.classList.toggle("hidden", !needsComponentUI);
+
+    // Only hide the single-value valuation fields when the selected event
+    // is valuation-related and the asset is a component group.
+    const valuationEvent =
+      eventType === "revaluation" ||
+      eventType === "fair_value_valuation";
+
+    singleWrap.classList.toggle(
+      "hidden",
+      needsComponentUI && valuationEvent
+    );
 
     const fairValueInput = $("smFairValue");
     const reasonInput = $("smFairValueReason");
 
-    fairValueInput?.closest("div")?.classList.toggle("hidden", isGroup);
-    reasonInput?.closest("div")?.classList.toggle("hidden", isGroup);
+    fairValueInput
+      ?.closest("div")
+      ?.classList.toggle(
+        "hidden",
+        needsComponentUI && valuationEvent
+      );
 
-    if (!isGroup) {
+    reasonInput
+      ?.closest("div")
+      ?.classList.toggle(
+        "hidden",
+        needsComponentUI && valuationEvent
+      );
+
+    if (!needsComponentUI) {
       groupWrap.innerHTML = "";
       return;
     }
 
     groupWrap.innerHTML = `
-      <div class="text-xs text-slate-500">
-        This is a combined Land and Building asset. Enter fair value separately per component.
+      <div class="border rounded-lg p-3 bg-slate-50">
+        <div class="font-medium text-sm">
+          ${esc(cfg.title)}
+        </div>
+
+        <div class="text-xs text-slate-500 mt-1">
+          ${esc(cfg.help)}
+        </div>
+
+        <div class="space-y-3 mt-3">
+          ${comps.map((c) => {
+            const id = Number(c.id || c.asset_id || 0);
+            const name =
+              c.asset_name ||
+              c.name ||
+              `Component #${id}`;
+
+            const componentType =
+              c.component_type ||
+              c.asset_class ||
+              "";
+
+            const carrying = Number(
+              c.carrying_amount ??
+              c.nbv ??
+              c.cost_total ??
+              c.cost ??
+              0
+            );
+
+            const accumulatedDepreciation = Number(
+              c.accumulated_depreciation ??
+              c.acc_dep ??
+              0
+            );
+
+            return `
+              <div
+                class="border rounded-lg p-3 bg-white"
+                data-sm-group-component="${id}"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="font-medium text-sm">
+                      ${esc(name)}
+                    </div>
+
+                    <div class="text-xs text-slate-500 mt-1">
+                      ${esc(componentType || "Component")}
+                    </div>
+                  </div>
+
+                  <label class="inline-flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      data-sm-component-enabled="${id}"
+                      ${cfg.field === "selected" ? "" : "checked"}
+                    />
+                    <span>Affected</span>
+                  </label>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 text-xs">
+                  <div class="border rounded p-2 bg-slate-50">
+                    <div class="text-slate-500">Carrying amount</div>
+                    <div class="font-medium mt-1">
+                      ${fmtMoney2(carrying)}
+                    </div>
+                  </div>
+
+                  <div class="border rounded p-2 bg-slate-50">
+                    <div class="text-slate-500">Accumulated depreciation</div>
+                    <div class="font-medium mt-1">
+                      ${fmtMoney2(accumulatedDepreciation)}
+                    </div>
+                  </div>
+
+                  <div class="border rounded p-2 bg-slate-50">
+                    <div class="text-slate-500">Component type</div>
+                    <div class="font-medium mt-1">
+                      ${esc(componentType || "—")}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3" data-sm-component-fields="${id}">
+                  ${renderComponentEventInputs(cfg, c, id)}
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
       </div>
-
-      ${comps.map((c) => {
-        const id = Number(c.id || c.asset_id || 0);
-        const name = c.asset_name || c.name || `Component #${id}`;
-        const carrying = Number(c.carrying_amount ?? c.nbv ?? c.cost_total ?? c.cost ?? 0);
-
-        return `
-          <div class="border rounded-lg p-3 bg-slate-50" data-sm-group-component="${id}">
-            <div class="font-medium text-sm">${esc(name)}</div>
-            <div class="text-xs text-slate-500 mt-1">
-              Carrying amount before: ${fmtMoney2(carrying)}
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Fair value *</label>
-                <input
-                  class="w-full border rounded px-3 py-2"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  data-sm-component-fv="${id}"
-                  value=""
-                />
-              </div>
-
-              <div>
-                <label class="block text-xs text-slate-500 mb-1">Component type</label>
-                <input
-                  class="w-full border rounded px-3 py-2 bg-white"
-                  type="text"
-                  readonly
-                  value="${esc(c.component_type || c.asset_class || "")}"
-                />
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("")}
     `;
+
+    bindGroupComponentControls();
   }
 
   function assetStandardKey(asset) {
@@ -36817,6 +37294,41 @@ async function saveEditModal() {
     }
   }
 
+  function applyAddCostVatUI() {
+    const treatment = String(
+      $("smAddCostVatTreatment")?.value || "no_vat"
+    ).trim().toLowerCase();
+
+    const claimable =
+      String($("smAddCostVatClaimable")?.value || "false") === "true";
+
+    const hasVat = treatment !== "no_vat";
+
+    $("smAddCostVatRateWrap")?.classList.toggle("hidden", !hasVat);
+    $("smAddCostVatClaimableWrap")?.classList.toggle("hidden", !hasVat);
+    $("smAddCostVatRecoveryWrap")?.classList.toggle(
+      "hidden",
+      !hasVat || !claimable
+    );
+
+    if (!hasVat) {
+      if ($("smAddCostVatClaimable")) {
+        $("smAddCostVatClaimable").value = "false";
+      }
+
+      if ($("smAddCostVatRecoveryPercent")) {
+        $("smAddCostVatRecoveryPercent").value = "0";
+      }
+    } else if (claimable) {
+      if (
+        $("smAddCostVatRecoveryPercent") &&
+        !$("smAddCostVatRecoveryPercent").value
+      ) {
+        $("smAddCostVatRecoveryPercent").value = "100";
+      }
+    }
+  }
+
   async function loadSmPreview() {
     const msg = $("smPreviewMsg");
     const box = $("smPreviewLines");
@@ -36901,6 +37413,9 @@ async function saveEditModal() {
     $("smEstimateFields")?.classList.toggle("hidden", t !== "change_estimate");
     $("smHfsFields")?.classList.toggle("hidden", !t.startsWith("held_for_sale_"));
     $("smFairValueFields")?.classList.toggle("hidden", !(t === "revaluation" || t === "fair_value_valuation"));
+    if (t === "add_cost") {
+      applyAddCostVatUI();
+    }
     renderGroupFairValueFields();
   }
 
@@ -37110,6 +37625,57 @@ async function saveEditModal() {
     const asset = selectedSmAsset();
     const eventType = String($("smEventType")?.value || "").trim().toLowerCase();
 
+    const addCostImpact = $("smAddCostImpact");
+
+    if (addCostImpact) {
+      if (eventType !== "add_cost") {
+        addCostImpact.classList.add("hidden");
+        addCostImpact.innerHTML = "";
+      } else {
+        addCostImpact.classList.remove("hidden");
+
+        const treatment = String(
+          impact.vat_treatment || "no_vat"
+        );
+
+        const treatmentLabel = {
+          no_vat: "No VAT",
+          inclusive: "VAT inclusive",
+          exclusive: "VAT exclusive",
+        }[treatment] || treatment;
+
+        const cards = [
+          ["Entered amount", impact.entered_amount],
+          ["VAT treatment", treatmentLabel, true],
+          ["VAT rate", `${Number(impact.vat_rate_percent || 0)}%`, true],
+          ["Net excluding VAT", impact.net_excluding_vat],
+
+          ["Total VAT", impact.total_vat],
+          ["Recoverable VAT", impact.recoverable_vat],
+          ["Non-recoverable VAT", impact.non_recoverable_vat],
+          ["Settlement amount", impact.gross_settlement_amount],
+
+          ["Capitalised amount", impact.capitalized_amount],
+          ["Gross cost before", impact.gross_cost_before],
+          ["Gross cost after", impact.gross_cost_after],
+          ["Carrying increase", impact.delta],
+        ];
+
+        addCostImpact.innerHTML = cards.map(([label, value, isText]) => `
+          <div class="border rounded p-2 bg-slate-50">
+            <div class="text-xs text-slate-500">${esc(label)}</div>
+            <div class="font-medium mt-1">
+              ${
+                isText
+                  ? esc(value ?? "—")
+                  : fmtMoney2(value ?? 0)
+              }
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
     const assetCarrying =
       Number(asset?.carrying_amount ?? asset?.nbv ?? NaN);
 
@@ -37185,14 +37751,27 @@ async function saveEditModal() {
     box.innerHTML = lines.map((l) => {
       const acct = previewAccountLabel(l);
 
+      const lineDescription =
+        l.description ||
+        l.memo ||
+        "";
+
       return `
         <div class="grid grid-cols-12 px-2 py-2 text-sm">
           <div class="col-span-5">
             <div>${acct}</div>
-            ${l.memo ? `<div class="text-xs text-slate-500">${esc(l.memo)}</div>` : ""}
+            ${
+              lineDescription
+                ? `<div class="text-xs text-slate-500">${esc(lineDescription)}</div>`
+                : ""
+            }
           </div>
-          <div class="col-span-3 text-right">${Number(l.debit || 0) ? fmtMoney2(l.debit) : "—"}</div>
-          <div class="col-span-3 text-right">${Number(l.credit || 0) ? fmtMoney2(l.credit) : "—"}</div>
+          <div class="col-span-3 text-right">
+            ${Number(l.debit || 0) ? fmtMoney2(l.debit) : "—"}
+          </div>
+          <div class="col-span-3 text-right">
+            ${Number(l.credit || 0) ? fmtMoney2(l.credit) : "—"}
+          </div>
           <div class="col-span-1"></div>
         </div>
       `;
@@ -37239,6 +37818,18 @@ async function saveEditModal() {
 
     $("smFairValue").value = row?.meta_json?.fair_value ?? "";
     $("smFairValueReason").value = row?.meta_json?.reason ?? "";
+
+    $("smAddCostVatTreatment")?.addEventListener("change", () => {
+      applyAddCostVatUI();
+      invalidateSmPreview();
+      loadSmPreview().catch(() => {});
+    });
+
+    $("smAddCostVatClaimable")?.addEventListener("change", () => {
+      applyAddCostVatUI();
+      invalidateSmPreview();
+      loadSmPreview().catch(() => {});
+    });
 
     applySmTypeUI();
     refreshSmActionButtons();
@@ -37336,6 +37927,7 @@ async function saveEditModal() {
       return smPreviewState.result;
     }
 
+    validateGroupComponents(payload);
     return await loadSmPreview();
   }
 
@@ -37372,6 +37964,63 @@ async function saveEditModal() {
     }
   }
 
+  function validateGroupComponents(payload) {
+    if (!selectedAssetIsComponentGroup()) return;
+
+    const t = String(payload.event_type || "").toLowerCase();
+    const cfg = componentEventConfig(t);
+
+    if (!cfg) return;
+
+    const rows = Object.values(payload.components || {});
+
+    if (!rows.length) {
+      throw new Error(
+        "Select at least one affected component."
+      );
+    }
+
+    if (cfg.field === "estimate") {
+      const hasChange = rows.some((x) =>
+        Number(x?.useful_life_months || 0) > 0 ||
+        x?.residual_value !== undefined ||
+        !!x?.depreciation_method
+      );
+
+      if (!hasChange) {
+        throw new Error(
+          "Enter at least one estimate change for an affected component."
+        );
+      }
+
+      return;
+    }
+
+    if (cfg.field === "selected") {
+      return;
+    }
+
+    const hasPositiveValue = rows.some(
+      (x) => Number(x?.[cfg.field] || 0) > 0
+    );
+
+    if (!hasPositiveValue) {
+      throw new Error(
+        `Enter a positive ${cfg.label.toLowerCase()} for at least one component.`
+      );
+    }
+
+    const hasNegativeValue = rows.some(
+      (x) => Number(x?.[cfg.field] || 0) < 0
+    );
+
+    if (hasNegativeValue) {
+      throw new Error(
+        `${cfg.label} cannot be negative.`
+      );
+    }
+  }
+
   function smPayloadFromUI() {
     console.log("BANK SELECT DEBUG", {
       value: $("smCreditBankAccount")?.value,
@@ -37394,28 +38043,11 @@ async function saveEditModal() {
     if ($("smFairValue")?.value) {
       meta_json.fair_value = Number($("smFairValue").value);
     }
-    if (selectedAssetIsComponentGroup() && (t === "revaluation" || t === "fair_value_valuation")) {
-      const components = {};
 
-      document.querySelectorAll("[data-sm-component-fv]").forEach((el) => {
-        const componentId = String(el.dataset.smComponentFv || "");
-        const fairValue = Number(el.value || 0);
+    const components = collectGroupComponentPayload(t);
 
-        if (componentId) {
-          components[componentId] = {
-            fair_value: fairValue,
-            meta_json: {
-              fair_value: fairValue,
-              reason: $("smFairValueReason")?.value || null,
-            },
-          };
-        }
-      });
-
+    if (Object.keys(components).length) {
       meta_json.components = components;
-    }
-    if ($("smFairValueReason")?.value) {
-      meta_json.reason = $("smFairValueReason").value;
     }
 
     const base = {
@@ -37429,16 +38061,53 @@ async function saveEditModal() {
 
     if (t === "add_cost") {
       const asset = selectedSmAsset();
+
+      const vatTreatment = String(
+        $("smAddCostVatTreatment")?.value || "no_vat"
+      ).trim().toLowerCase();
+
+      const vatInputClaimable =
+        String($("smAddCostVatClaimable")?.value || "false") === "true";
+
+      const vatRatePercent =
+        vatTreatment === "no_vat"
+          ? 0
+          : Number($("smAddCostVatRate")?.value || 0);
+
+      const vatRecoveryPercent =
+        vatTreatment !== "no_vat" && vatInputClaimable
+          ? Number($("smAddCostVatRecoveryPercent")?.value || 100)
+          : 0;
+
       return {
         ...base,
-        amount: $("smAmount")?.value ? Number($("smAmount").value) : null,
+
+        amount: $("smAmount")?.value
+          ? Number($("smAmount").value)
+          : null,
+
         debit_account_code:
           asset?.asset_account_code ||
           asset?.cost_account_code ||
           asset?.gl_asset_code ||
           asset?.account_code ||
           null,
-        credit_account_code: $("smCreditBankAccount")?.value || null,
+
+        credit_account_code:
+          $("smCreditBankAccount")?.value || null,
+
+        vat_treatment: vatTreatment,
+        vat_rate_percent: vatRatePercent,
+        vat_input_claimable: vatInputClaimable,
+        vat_recovery_percent: vatRecoveryPercent,
+
+        meta_json: {
+          ...(base.meta_json || {}),
+          vat_treatment: vatTreatment,
+          vat_rate_percent: vatRatePercent,
+          vat_input_claimable: vatInputClaimable,
+          vat_recovery_percent: vatRecoveryPercent,
+        },
       };
     }
 
@@ -37454,6 +38123,8 @@ async function saveEditModal() {
     const id = Number($("smId")?.value || 0) || 0;
     const payload = smPayloadFromUI();
 
+    validateGroupComponents(payload);
+    
     if (!payload.event_date) throw new Error("Date is required");
     if (!payload.asset_id) throw new Error("Asset ID is required");
 
@@ -37733,6 +38404,10 @@ async function saveEditModal() {
       "smFairValueReason",
       "smHfsExpectedSale",
       "smHfsFvlcts",
+      "smAddCostVatTreatment",
+      "smAddCostVatRate",
+      "smAddCostVatClaimable",
+      "smAddCostVatRecoveryPercent",
     ];
 
     previewWatchIds.forEach((id) => {
@@ -40517,7 +41192,14 @@ async function saveEditModal() {
     driverDraftAccountCode: null,
     driverDraftAccountName: null,
     driverDraftValues: {},
+    workspaceActive: false,
 
+    planningMode: "manual",
+
+    driverDraftRows: [],
+
+    capexItems: [],
+    selectedCapexId: null,
     varianceRows: [],
     activeTab: "budgets",
     bound: false,
@@ -41118,27 +41800,34 @@ async function saveEditModal() {
 
   function rootHtml() {
     return `
-      <div class="page-head">
-        <div>
-          <h1>Budgeting & Forecasting</h1>
-          <p class="muted">Create budgets, forecast future months, and compare actual ledger results.</p>
-        </div>
-        <div class="actions">
-          <button id="bfRefreshBtn" class="btn">Refresh</button>
-          <button id="bfCreateBudgetBtn" class="btn primary">+ Create Budget</button>
-        </div>
-      </div>
+      <div id="bfModuleChrome">
+        <div class="page-head">
+          <div>
+            <h1>Budgeting & Forecasting</h1>
+            <p class="muted">
+              Create budgets, forecast future months, and compare actual ledger results.
+            </p>
+          </div>
 
-      <div class="tabs bf-tabs">
-        <button class="tab active" data-bf-tab="budgets">Budgets</button>
-        <button class="tab" data-bf-tab="forecast">Forecasts</button>
-        <button class="tab" data-bf-tab="variance">Variance</button>
-        <button class="tab" data-bf-tab="capex">Capital Expenditure</button>
-        <button class="tab" data-bf-tab="drivers">Drivers</button>
-        <button class="tab" data-bf-tab="imports">Imports</button>
-      </div>
+          <div class="actions">
+            <button id="bfRefreshBtn" class="btn">Refresh</button>
+            <button id="bfCreateBudgetBtn" class="btn primary">
+              + Create Budget
+            </button>
+          </div>
+        </div>
 
-      <div id="bfStatus" class="muted"></div>
+        <div class="tabs bf-tabs">
+          <button class="tab active" data-bf-tab="budgets">Budgets</button>
+          <button class="tab" data-bf-tab="forecast">Forecasts</button>
+          <button class="tab" data-bf-tab="variance">Variance</button>
+          <button class="tab" data-bf-tab="capex">Capital Expenditure</button>
+          <button class="tab" data-bf-tab="drivers">Drivers</button>
+          <button class="tab" data-bf-tab="imports">Imports</button>
+        </div>
+
+        <div id="bfStatus" class="muted"></div>
+      </div>
 
       <div id="bfBudgetsPane"></div>
       <div id="bfForecastPane" class="hidden"></div>
@@ -41146,9 +41835,27 @@ async function saveEditModal() {
       <div id="bfDriversPane" class="hidden"></div>
       <div id="bfImportsPane" class="hidden"></div>
       <div id="bfCapexPane" class="hidden"></div>
+
       <div id="bfModalHost"></div>
     `;
   }
+
+function setForecastWorkspaceActive(active) {
+  BF.workspaceActive = !!active;
+
+  const chrome = $("bfModuleChrome");
+  const root = $("bfRoot");
+
+  chrome?.classList.toggle("hidden", BF.workspaceActive);
+  root?.classList.toggle("bf-workspace-active", BF.workspaceActive);
+
+  if (BF.workspaceActive) {
+    window.scrollTo({
+      top: 0,
+      behavior: "instant",
+    });
+  }
+}
 
   function showTab(tab) {
     BF.activeTab = tab;
@@ -41333,27 +42040,717 @@ async function saveEditModal() {
     bindAccountDriverInputs();
   }
 
-  function calculateDriverAmount(type, quantity, rate) {
-    quantity = Number(quantity || 0);
-    rate = Number(rate || 0);
+  function bindGlobalDriverInputs() {
+    const syncAndRender = (
+      index,
+      rerender = false
+    ) => {
+      const driver =
+        BF.driverDraftRows[index];
 
-    if (type === "quantity_rate") {
-      return quantity * rate;
+      if (!driver) return;
+
+      if (rerender) {
+        renderCreateForecastWorkspace();
+        return;
+      }
+
+      Object.entries(driver.values || {})
+        .forEach(([month, row]) => {
+          row.amount =
+            calculateDriverAmount(
+              driver.driver_type,
+              row.basis,
+              row.rate
+            );
+
+          const result =
+            document.querySelector(
+              `[data-bf-driver-result="${index}|${month}"]`
+            );
+
+          if (result) {
+            result.textContent =
+              money(row.amount);
+          }
+        });
+    };
+
+    document
+      .querySelectorAll(
+        ".bf-driver-type-select"
+      )
+      .forEach((select) => {
+        select.addEventListener(
+          "change",
+          () => {
+            const index =
+              Number(
+                select.dataset.bfDriverIndex
+              );
+
+            BF.driverDraftRows[index]
+              .driver_type =
+                select.value;
+
+            syncAndRender(index, true);
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-group-select"
+      )
+      .forEach((select) => {
+        select.addEventListener(
+          "change",
+          () => {
+            const index =
+              Number(
+                select.dataset.bfDriverIndex
+              );
+
+            BF.driverDraftRows[index]
+              .driver_group =
+                select.value;
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-account-select"
+      )
+      .forEach((select) => {
+        select.addEventListener(
+          "change",
+          () => {
+            const index =
+              Number(
+                select.dataset.bfDriverIndex
+              );
+
+            BF.driverDraftRows[index]
+              .account_code =
+                select.value;
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-name-input"
+      )
+      .forEach((input) => {
+        input.addEventListener(
+          "input",
+          () => {
+            const index =
+              Number(
+                input.dataset.bfDriverIndex
+              );
+
+            BF.driverDraftRows[index]
+              .driver_name =
+                input.value;
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-default-basis"
+      )
+      .forEach((input) => {
+        input.addEventListener(
+          "change",
+          () => {
+            const index =
+              Number(
+                input.dataset.bfDriverIndex
+              );
+
+            const driver =
+              BF.driverDraftRows[index];
+
+            driver.default_basis =
+              Number(input.value || 0);
+
+            Object.values(driver.values)
+              .forEach((row) => {
+                row.basis =
+                  driver.default_basis;
+              });
+
+            syncAndRender(index, true);
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-default-rate"
+      )
+      .forEach((input) => {
+        input.addEventListener(
+          "change",
+          () => {
+            const index =
+              Number(
+                input.dataset.bfDriverIndex
+              );
+
+            const driver =
+              BF.driverDraftRows[index];
+
+            driver.default_rate =
+              Number(input.value || 0);
+
+            Object.values(driver.values)
+              .forEach((row) => {
+                row.rate =
+                  driver.default_rate;
+              });
+
+            syncAndRender(index, true);
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-month-basis"
+      )
+      .forEach((input) => {
+        input.addEventListener(
+          "input",
+          () => {
+            const index =
+              Number(
+                input.dataset.bfDriverIndex
+              );
+
+            const month =
+              input.dataset.bfDriverMonth;
+
+            BF.driverDraftRows[index]
+              .values[month].basis =
+                Number(input.value || 0);
+
+            syncAndRender(index);
+          }
+        );
+      });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-month-rate"
+      )
+      .forEach((input) => {
+        input.addEventListener(
+          "input",
+          () => {
+            const index =
+              Number(
+                input.dataset.bfDriverIndex
+              );
+
+            const month =
+              input.dataset.bfDriverMonth;
+
+            BF.driverDraftRows[index]
+              .values[month].rate =
+                Number(input.value || 0);
+
+            syncAndRender(index);
+          }
+        );
+      });
+  }
+
+  function calculateDriverAmount(
+    type,
+    basis,
+    rate
+  ) {
+    const numericBasis =
+      Number(basis || 0);
+
+    const numericRate =
+      Number(rate || 0);
+
+    switch (type) {
+      case "quantity_rate":
+        return numericBasis * numericRate;
+
+      case "revenue_percentage":
+        return numericBasis *
+          (numericRate / 100);
+
+      case "monthly_fixed":
+        return numericRate;
+
+      case "growth_percentage":
+        return numericBasis *
+          (1 + numericRate / 100);
+
+      default:
+        return 0;
+    }
+  }
+
+  function renderManualForecastGrid({
+    accounts,
+    grouped,
+    months,
+    sections,
+  }) {
+    function accountRows(groupKey) {
+      const rows = grouped[groupKey] || [];
+
+      if (!rows.length) {
+        return `
+          <tr>
+            <td colspan="${months.length + 2}" class="muted">
+              No accounts were classified into this section.
+            </td>
+          </tr>
+        `;
+      }
+
+      return rows.map((account) => {
+        const accountCode = bfAccountCode(account);
+
+        return `
+          <tr class="bf-planning-account-row">
+            <td class="bf-sticky-account">
+              <strong>${esc(
+                bfAccountName(account)
+              )}</strong>
+            </td>
+
+            ${months.map((month) => `
+              <td>
+                <input
+                  type="number"
+                  step="0.01"
+                  class="bf-forecast-cell bf-draft-forecast-cell"
+                  value="${esc(
+                    bfGetDraftValue(accountCode, month)
+                  )}"
+                  data-bf-account-code="${esc(accountCode)}"
+                  data-bf-month="${esc(month)}"
+                >
+              </td>
+            `).join("")}
+
+            <td
+              class="right bf-annual-total"
+              data-bf-draft-account-total="${esc(accountCode)}"
+            >
+              ${money(
+                bfDraftAnnualTotal(accountCode, months)
+              )}
+            </td>
+          </tr>
+        `;
+      }).join("");
     }
 
-    if (type === "monthly_fixed") {
-      return rate;
-    }
+    return `
+      <div class="bf-planning-grid-wrap">
+        <table class="bf-planning-grid">
+          <thead>
+            <tr>
+              <th class="bf-sticky-account">Account</th>
 
-    if (type === "revenue_percentage") {
-      return quantity * (rate / 100);
-    }
+              ${months.map((month) => `
+                <th>${esc(bfMonthLabel(month))}</th>
+              `).join("")}
 
-    if (type === "growth_percentage") {
-      return quantity * (1 + rate / 100);
-    }
+              <th>Total</th>
+            </tr>
+          </thead>
 
-    return quantity * rate;
+          <tbody>
+            ${sections.map((section) => `
+              <tr class="bf-section-title-row">
+                <td colspan="${months.length + 2}">
+                  <strong>${esc(section.title)}</strong>
+                  <small>${esc(section.description)}</small>
+                </td>
+              </tr>
+
+              ${accountRows(section.key)}
+
+              ${section.footer}
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderDriverForecastGrid({
+    grouped,
+    months,
+  }) {
+    const pnlAccounts = BF.draftForecastAccounts || [];
+
+    return `
+      <div class="bf-driver-workspace">
+        <div class="card">
+          <div class="section-head">
+            <div>
+              <h3>Driver-based Planning</h3>
+              <p class="muted">
+                Add operational assumptions that generate forecast amounts.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="btn primary"
+              data-bf-action="add-driver-row"
+            >
+              + Add Driver
+            </button>
+          </div>
+        </div>
+
+        <div class="bf-driver-list">
+          ${
+            BF.driverDraftRows.length
+              ? BF.driverDraftRows.map(
+                  (driver, index) =>
+                    renderDriverCard(
+                      driver,
+                      index,
+                      pnlAccounts,
+                      months
+                    )
+                ).join("")
+              : `
+                <div class="card empty-state">
+                  <h3>No forecast drivers added</h3>
+                  <p class="muted">
+                    Add a revenue, cost or expenditure driver to begin.
+                  </p>
+
+                  <button
+                    type="button"
+                    class="btn primary"
+                    data-bf-action="add-driver-row"
+                  >
+                    Add First Driver
+                  </button>
+                </div>
+              `
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  function addDriverDraftRow() {
+    const months =
+      BF.draftForecastMonths || [];
+
+    const values = {};
+
+    months.forEach((month) => {
+      values[month] = {
+        basis: 0,
+        rate: 0,
+        amount: 0,
+      };
+    });
+
+    BF.driverDraftRows.push({
+      temp_id:
+        `driver_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}`,
+
+      account_code: "",
+      driver_name: "",
+      driver_group: "revenue",
+      driver_type: "quantity_rate",
+
+      default_basis: 0,
+      default_rate: 0,
+
+      values,
+    });
+
+    renderCreateForecastWorkspace();
+  }
+
+  function renderDriverCard(
+    driver,
+    index,
+    accounts,
+    months
+  ) {
+    const type =
+      driver.driver_type || "quantity_rate";
+
+    const showBasis =
+      type !== "monthly_fixed";
+
+    const showRate =
+      type !== "monthly_fixed" ||
+      type === "monthly_fixed";
+
+    const basisLabel = {
+      quantity_rate: "Quantity",
+      revenue_percentage: "Revenue basis",
+      monthly_fixed: "Not used",
+      growth_percentage: "Prior amount",
+    }[type] || "Basis";
+
+    const rateLabel = {
+      quantity_rate: "Rate",
+      revenue_percentage: "Percentage",
+      monthly_fixed: "Fixed amount",
+      growth_percentage: "Growth %",
+    }[type] || "Rate";
+
+    return `
+      <article
+        class="card bf-driver-card"
+        data-bf-driver-index="${index}"
+      >
+        <div class="section-head">
+          <div>
+            <span class="bf-eyebrow">
+              Driver ${index + 1}
+            </span>
+
+            <h3>
+              ${esc(
+                driver.driver_name ||
+                "New Forecast Driver"
+              )}
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            class="btn small danger"
+            data-bf-remove-driver="${index}"
+          >
+            Remove
+          </button>
+        </div>
+
+        <div class="grid four">
+          <label>
+            Driver group
+            <select
+              class="bf-driver-group-select"
+              data-bf-driver-index="${index}"
+            >
+              <option value="revenue"
+                ${driver.driver_group === "revenue" ? "selected" : ""}>
+                Revenue Driver
+              </option>
+
+              <option value="cost_of_revenue"
+                ${driver.driver_group === "cost_of_revenue" ? "selected" : ""}>
+                Cost of Revenue Driver
+              </option>
+
+              <option value="operating_expenses"
+                ${driver.driver_group === "operating_expenses" ? "selected" : ""}>
+                Spending Driver
+              </option>
+
+              <option value="finance_costs"
+                ${driver.driver_group === "finance_costs" ? "selected" : ""}>
+                Finance Cost Driver
+              </option>
+            </select>
+          </label>
+
+          <label>
+            Target account
+            <select
+              class="bf-driver-account-select"
+              data-bf-driver-index="${index}"
+            >
+              <option value="">Select account</option>
+
+              ${accounts.map((account) => {
+                const code =
+                  bfAccountCode(account);
+
+                return `
+                  <option
+                    value="${esc(code)}"
+                    ${
+                      driver.account_code === code
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(bfAccountName(account))}
+                  </option>
+                `;
+              }).join("")}
+            </select>
+          </label>
+
+          <label>
+            Driver name
+            <input
+              class="bf-driver-name-input"
+              data-bf-driver-index="${index}"
+              value="${esc(driver.driver_name || "")}"
+              placeholder="e.g. Units sold × average price"
+            >
+          </label>
+
+          <label>
+            Driver type
+            <select
+              class="bf-driver-type-select"
+              data-bf-driver-index="${index}"
+            >
+              <option value="quantity_rate"
+                ${type === "quantity_rate" ? "selected" : ""}>
+                Quantity × Rate
+              </option>
+
+              <option value="revenue_percentage"
+                ${type === "revenue_percentage" ? "selected" : ""}>
+                Percentage of Revenue
+              </option>
+
+              <option value="monthly_fixed"
+                ${type === "monthly_fixed" ? "selected" : ""}>
+                Fixed Monthly Amount
+              </option>
+
+              <option value="growth_percentage"
+                ${type === "growth_percentage" ? "selected" : ""}>
+                Growth Percentage
+              </option>
+            </select>
+          </label>
+
+          ${
+            showBasis
+              ? `
+                <label>
+                  Default ${esc(basisLabel)}
+                  <input
+                    class="bf-driver-default-basis"
+                    data-bf-driver-index="${index}"
+                    type="number"
+                    step="0.0001"
+                    value="${esc(driver.default_basis || 0)}"
+                  >
+                </label>
+              `
+              : ""
+          }
+
+          ${
+            showRate
+              ? `
+                <label>
+                  Default ${esc(rateLabel)}
+                  <input
+                    class="bf-driver-default-rate"
+                    data-bf-driver-index="${index}"
+                    type="number"
+                    step="0.0001"
+                    value="${esc(driver.default_rate || 0)}"
+                  >
+                </label>
+              `
+              : ""
+          }
+        </div>
+
+        <div class="bf-planning-grid-wrap">
+          <table class="bf-planning-grid">
+            <thead>
+              <tr>
+                <th>Month</th>
+
+                ${
+                  showBasis
+                    ? `<th>${esc(basisLabel)}</th>`
+                    : ""
+                }
+
+                <th>${esc(rateLabel)}</th>
+                <th>Calculated Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${months.map((month) => {
+                const row =
+                  driver.values?.[month] || {
+                    basis: 0,
+                    rate: 0,
+                    amount: 0,
+                  };
+
+                return `
+                  <tr>
+                    <td>
+                      <strong>${esc(
+                        bfMonthLabel(month)
+                      )}</strong>
+                    </td>
+
+                    ${
+                      showBasis
+                        ? `
+                          <td>
+                            <input
+                              class="bf-driver-month-basis"
+                              data-bf-driver-index="${index}"
+                              data-bf-driver-month="${esc(month)}"
+                              type="number"
+                              step="0.0001"
+                              value="${esc(row.basis || 0)}"
+                            >
+                          </td>
+                        `
+                        : ""
+                    }
+
+                    <td>
+                      <input
+                        class="bf-driver-month-rate"
+                        data-bf-driver-index="${index}"
+                        data-bf-driver-month="${esc(month)}"
+                        type="number"
+                        step="0.0001"
+                        value="${esc(row.rate || 0)}"
+                      >
+                    </td>
+
+                    <td
+                      class="right"
+                      data-bf-driver-result="${index}|${esc(month)}"
+                    >
+                      ${money(row.amount || 0)}
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    `;
   }
 
   function renderCreateForecastWorkspace() {
@@ -41418,28 +42815,6 @@ async function saveEditModal() {
           <tr class="bf-planning-account-row">
             <td class="bf-sticky-account">
               <strong>${esc(bfAccountName(account))}</strong>
-
-              <div class="bf-account-planning-actions">
-                <select
-                  class="bf-planning-method"
-                  data-bf-method-account="${esc(accountCode)}"
-                >
-                  <option value="manual">Manual</option>
-                  <option value="driver_based">Driver-based</option>
-                  <option value="prior_year">Prior-year actual</option>
-                  <option value="growth">Growth percentage</option>
-                  <option value="average">Actual monthly average</option>
-                </select>
-
-                <button
-                  type="button"
-                  class="btn small"
-                  data-bf-open-driver-account="${esc(accountCode)}"
-                  data-bf-open-driver-name="${esc(bfAccountName(account))}"
-                >
-                  Drivers
-                </button>
-              </div>
             </td>
 
             ${months.map((month) => `
@@ -41448,7 +42823,9 @@ async function saveEditModal() {
                   type="number"
                   step="0.01"
                   class="bf-forecast-cell bf-draft-forecast-cell"
-                  value="${esc(bfGetDraftValue(accountCode, month))}"
+                  value="${esc(
+                    bfGetDraftValue(accountCode, month)
+                  )}"
                   data-bf-account-code="${esc(accountCode)}"
                   data-bf-month="${esc(month)}"
                 >
@@ -41459,7 +42836,9 @@ async function saveEditModal() {
               class="right bf-annual-total"
               data-bf-draft-account-total="${esc(accountCode)}"
             >
-              ${money(bfDraftAnnualTotal(accountCode, months))}
+              ${money(
+                bfDraftAnnualTotal(accountCode, months)
+              )}
             </td>
           </tr>
         `;
@@ -41591,6 +42970,40 @@ async function saveEditModal() {
               data-bf-action="create-version-workspace"
             >
               Save Forecast
+            </button>
+          </div>
+        </div>
+
+        <div class="bf-planning-mode-card">
+          <div>
+            <span class="bf-eyebrow">Forecast preparation method</span>
+            <h3>How would you like to prepare this forecast?</h3>
+            <p class="muted">
+              Use direct monthly input or calculate amounts from operational drivers.
+            </p>
+          </div>
+
+          <div class="bf-planning-mode-actions">
+            <button
+              type="button"
+              class="bf-mode-option ${
+                BF.planningMode === "manual" ? "active" : ""
+              }"
+              data-bf-action="planning-mode-manual"
+            >
+              <strong>Manual planning</strong>
+              <span>Enter monthly values by account.</span>
+            </button>
+
+            <button
+              type="button"
+              class="bf-mode-option ${
+                BF.planningMode === "driver_based" ? "active" : ""
+              }"
+              data-bf-action="planning-mode-driver"
+            >
+              <strong>Driver-based planning</strong>
+              <span>Use quantities, rates, percentages and growth assumptions.</span>
             </button>
           </div>
         </div>
@@ -41783,7 +43196,11 @@ async function saveEditModal() {
       </div>
     `;
 
-    bindDraftForecastGrid(grouped);
+    if (BF.planningMode === "manual") {
+      bindDraftForecastGrid(grouped);
+    } else {
+      bindGlobalDriverInputs();
+    }
     bindPlanningMethodSelectors();
   }
 
@@ -42565,23 +43982,30 @@ async function saveEditModal() {
   }
 
   async function openCreateVersionWorkspace(budgetId = null) {
-    BF.selectedBudgetId = Number(
-      budgetId ||
-      BF.selectedBudgetId ||
-      0
-    ) || null;
+    BF.selectedBudgetId =
+      Number(
+        budgetId ||
+        BF.selectedBudgetId ||
+        0
+      ) || null;
 
     BF.selectedBudget =
-      BF.selectedBudget ||
       BF.budgets.find(
-        (row) => Number(row.id) === Number(BF.selectedBudgetId)
+        (row) =>
+          Number(row.id) === Number(BF.selectedBudgetId)
       ) ||
+      BF.selectedBudget ||
       null;
 
     BF.forecastWorkspaceMode = "create";
+    BF.planningMode = "manual";
+
     BF.forecastDraftLines = {};
+    BF.draftForecastValues = {};
+    BF.driverDraftRows = [];
 
     showTab("forecast");
+    setForecastWorkspaceActive(true);
     setStatus("Preparing forecast workspace...");
 
     try {
@@ -42589,8 +44013,16 @@ async function saveEditModal() {
       renderCreateForecastWorkspace();
       setStatus("");
     } catch (error) {
-      console.error("[Forecast] failed to open workspace", error);
-      setStatus(error?.message || "Unable to load forecast workspace.", "error");
+      console.error(
+        "[Forecast] failed to open workspace",
+        error
+      );
+
+      setStatus(
+        error?.message ||
+          "Unable to load forecast workspace.",
+        "error"
+      );
     }
   }
 
@@ -42625,136 +44057,79 @@ async function saveEditModal() {
   }
 
   async function createVersionFromWorkspace() {
-    const name =
-      $("bfWorkspaceVersionName")?.value?.trim();
+    const payload =
+      buildForecastWorkspacePayload();
 
-    const versionType =
-      $("bfWorkspaceVersionType")?.value ||
-      "forecast";
+    const version =
+      payload.version;
 
-    const scenarioMode =
-      $("bfWorkspaceScenario")?.value ||
-      "base";
-
-    const customScenario =
-      $("bfWorkspaceScenarioName")?.value?.trim();
-
-    const actualsToDate =
-      $("bfWorkspaceActualsTo")?.value ||
-      null;
-
-    const periodStart =
-      $("bfWorkspacePeriodStart")?.value;
-
-    const periodEnd =
-      $("bfWorkspacePeriodEnd")?.value;
-
-    const currency =
-      $("bfWorkspaceCurrency")?.value?.trim() ||
-      companyCurrency();
-
-    if (!name) {
+    if (!version.name) {
       alert("Forecast name is required.");
       return;
     }
 
-    if (!periodStart || !periodEnd) {
-      alert("Forecast period start and end are required.");
+    if (
+      !version.period_start ||
+      !version.period_end
+    ) {
+      alert(
+        "Forecast start and end dates are required."
+      );
       return;
     }
-
-    if (periodEnd < periodStart) {
-      alert("Forecast period end cannot be before its start.");
-      return;
-    }
-
-    const scenarioName =
-      scenarioMode === "custom"
-        ? customScenario
-        : {
-            base: "Base Case",
-            best: "Best Case",
-            worst: "Worst Case",
-          }[scenarioMode];
 
     if (
-      scenarioMode === "custom" &&
-      !scenarioName
+      version.period_end <
+      version.period_start
     ) {
-      alert("Enter a custom scenario name.");
+      alert(
+        "Forecast end date cannot be before its start date."
+      );
       return;
     }
 
-    const lines = Array.from(
-      document.querySelectorAll(
-        "#bfForecastPane .bf-draft-forecast-cell"
-      )
-    )
-      .map((input) => ({
-        account_code:
-          input.dataset.bfAccountCode,
-
-        period_month:
-          input.dataset.bfMonth,
-
-        amount:
-          Number(input.value || 0),
-
-        source_type:
-          "manual",
-      }))
-      .filter(
-        (line) =>
-          line.account_code &&
-          line.period_month
+    if (
+      BF.planningMode ===
+        "driver_based" &&
+      !payload.drivers.length
+    ) {
+      alert(
+        "Add at least one complete forecast driver."
       );
+      return;
+    }
 
     try {
       setStatus("Creating forecast...");
 
-      const createResponse = await apiFetch(
-        ENDPOINTS.forecast.versions(cid()),
-        {
-          method: "POST",
-          body: JSON.stringify({
-            budget_id:
-              BF.selectedBudgetId || null,
+      const createResponse =
+        await apiFetch(
+          ENDPOINTS.forecast.versions(
+            cid()
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(version),
+          }
+        );
 
-            name,
-            version_type: versionType,
-            scenario_name: scenarioName,
-            actuals_to_date: actualsToDate,
-            period_start: periodStart,
-            period_end: periodEnd,
-            currency,
-
-            meta_json: {
-              presentation:
-                "management_profit_or_loss",
-
-              scenario_mode:
-                scenarioMode,
-            },
-          }),
-        }
-      );
-
-      const created = unwrap(createResponse);
+      const created =
+        unwrap(createResponse);
 
       if (!created?.id) {
         throw new Error(
-          "Forecast was created without returning an id."
+          "Forecast creation did not return an id."
         );
       }
 
       BF.selectedVersionId =
         Number(created.id);
 
-      setStatus(
-        `Saving ${lines.length} forecast values...`
-      );
+      if (payload.lines.length) {
+        setStatus(
+          `Saving ${payload.lines.length} forecast values...`
+        );
 
-      if (lines.length) {
         await apiFetch(
           ENDPOINTS.forecast.versionLines(
             cid(),
@@ -42762,15 +44137,51 @@ async function saveEditModal() {
           ),
           {
             method: "POST",
-            body: JSON.stringify({ lines }),
+            body: JSON.stringify({
+              lines: payload.lines,
+            }),
           }
         );
       }
 
-      BF.draftForecastValues = {};
-      BF.forecastWorkspaceMode = "edit";
+      if (payload.drivers.length) {
+        setStatus(
+          `Saving ${payload.drivers.length} driver assumptions...`
+        );
 
-      await openVersion(BF.selectedVersionId);
+        for (
+          const driver of
+          payload.drivers
+        ) {
+          await apiFetch(
+            ENDPOINTS.forecast.drivers(
+              cid()
+            ),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                ...driver,
+
+                version_id:
+                  BF.selectedVersionId,
+
+                budget_id:
+                  BF.selectedBudgetId ||
+                  null,
+              }),
+            }
+          );
+        }
+      }
+
+      BF.draftForecastValues = {};
+      BF.driverDraftRows = [];
+      BF.forecastWorkspaceMode =
+        "edit";
+
+      await openVersion(
+        BF.selectedVersionId
+      );
 
       setStatus(
         "Forecast created and saved.",
@@ -42778,13 +44189,13 @@ async function saveEditModal() {
       );
     } catch (error) {
       console.error(
-        "[Forecast] create/save failed",
+        "[Forecast] save failed",
         error
       );
 
       setStatus(
         error?.message ||
-          "Unable to create forecast.",
+          "Unable to save forecast.",
         "error"
       );
     }
@@ -43010,302 +44421,337 @@ async function saveEditModal() {
     renderVersionEditor();
   }
 
- async function renderVersionEditor() {
-  const el = $("bfForecastPane");
-  const version = BF.selectedVersion;
+  async function renderVersionEditor() {
+    const el = $("bfForecastPane");
+    const version = BF.selectedVersion;
 
-  if (!el || !version) return;
+    if (!el || !version) return;
 
-  await loadForecastCoa();
+    await loadForecastCoa();
 
-  const months = bfMonthsBetween(
-    version.period_start,
-    version.period_end
-  );
+    const months = bfMonthsBetween(
+      version.period_start,
+      version.period_end
+    );
 
-  const existingLines = version.lines || [];
+    const existingLines = version.lines || [];
 
-  const lineMap = new Map();
+    const lineMap = new Map();
 
-  for (const line of existingLines) {
-    const key = `${line.account_code}|${bfMonthKey(line.period_month)}`;
-    lineMap.set(key, line);
-  }
-
-  const grouped = Object.fromEntries(
-    bfPnlGroups().map((group) => [group.key, []])
-  );
-
-  for (const account of BF.coa.filter(bfIsForecastablePnlAccount)) {
-    const groupKey = bfPnlGroup(account);
-
-    if (grouped[groupKey]) {
-      grouped[groupKey].push(account);
-    } else {
-      grouped.unclassified.push(account);
+    for (const line of existingLines) {
+      const key = `${line.account_code}|${bfMonthKey(line.period_month)}`;
+      lineMap.set(key, line);
     }
-  }
 
-  for (const accounts of Object.values(grouped)) {
-    accounts.sort((a, b) =>
-      bfAccountCode(a).localeCompare(bfAccountCode(b))
+    const grouped = Object.fromEntries(
+      bfPnlGroups().map((group) => [group.key, []])
     );
-  }
 
-  function valueFor(accountCode, month) {
-    const line = lineMap.get(`${accountCode}|${month}`);
-    return line ? Number(line.amount || 0) : 0;
-  }
+    for (const account of BF.coa.filter(bfIsForecastablePnlAccount)) {
+      const groupKey = bfPnlGroup(account);
 
-  function sumGroup(groupKey, month) {
-    return (grouped[groupKey] || []).reduce(
-      (total, account) =>
-        total + valueFor(bfAccountCode(account), month),
-      0
-    );
-  }
+      if (grouped[groupKey]) {
+        grouped[groupKey].push(account);
+      } else {
+        grouped.unclassified.push(account);
+      }
+    }
 
-  function calculatedValue(type, month) {
-    const revenue = sumGroup("revenue", month);
-    const cost = sumGroup("cost_of_revenue", month);
-    const operatingExpenses = sumGroup("operating_expenses", month);
-    const otherIncome = sumGroup("other_income", month);
-    const financeCosts = sumGroup("finance_costs", month);
-    const tax = sumGroup("income_tax", month);
+    for (const accounts of Object.values(grouped)) {
+      accounts.sort((a, b) =>
+        bfAccountCode(a).localeCompare(bfAccountCode(b))
+      );
+    }
 
-    const grossProfit = revenue - cost;
-    const operatingProfit = grossProfit - operatingExpenses;
-    const profitBeforeTax =
-      operatingProfit + otherIncome - financeCosts;
-    const netProfit = profitBeforeTax - tax;
+    function valueFor(accountCode, month) {
+      const line = lineMap.get(`${accountCode}|${month}`);
+      return line ? Number(line.amount || 0) : 0;
+    }
 
-    return {
-      revenue,
-      cost,
-      grossProfit,
-      operatingExpenses,
-      operatingProfit,
-      otherIncome,
-      financeCosts,
-      profitBeforeTax,
-      tax,
-      netProfit,
-    }[type] || 0;
-  }
+    function sumGroup(groupKey, month) {
+      return (grouped[groupKey] || []).reduce(
+        (total, account) =>
+          total + valueFor(bfAccountCode(account), month),
+        0
+      );
+    }
 
-  function totalCell(type, month) {
-    return `
-      <td class="right bf-total-value">
-        ${money(calculatedValue(type, month))}
-      </td>
-    `;
-  }
+    function calculatedValue(type, month) {
+      const revenue = sumGroup("revenue", month);
+      const cost = sumGroup("cost_of_revenue", month);
+      const operatingExpenses = sumGroup("operating_expenses", month);
+      const otherIncome = sumGroup("other_income", month);
+      const financeCosts = sumGroup("finance_costs", month);
+      const tax = sumGroup("income_tax", month);
 
-  function accountRows(groupKey) {
-    const rows = grouped[groupKey] || [];
+      const grossProfit = revenue - cost;
+      const operatingProfit = grossProfit - operatingExpenses;
+      const profitBeforeTax =
+        operatingProfit + otherIncome - financeCosts;
+      const netProfit = profitBeforeTax - tax;
 
-    if (!rows.length) {
+      return {
+        revenue,
+        cost,
+        grossProfit,
+        operatingExpenses,
+        operatingProfit,
+        otherIncome,
+        financeCosts,
+        profitBeforeTax,
+        tax,
+        netProfit,
+      }[type] || 0;
+    }
+
+    function totalCell(type, month) {
       return `
-        <tr>
-          <td colspan="${months.length + 2}" class="muted">
-            No accounts are available in this section.
-          </td>
-        </tr>
+        <td class="right bf-total-value">
+          ${money(calculatedValue(type, month))}
+        </td>
       `;
     }
 
-    return rows
-      .map((account) => {
+    function accountRows(groupKey) {
+      const rows = grouped[groupKey] || [];
+
+      if (!rows.length) {
+        return `
+          <tr>
+            <td colspan="${months.length + 2}" class="muted">
+              No accounts are available in this section.
+            </td>
+          </tr>
+        `;
+      }
+
+      return rows.map((account) => {
         const accountCode = bfAccountCode(account);
-
-        const accountLines = months
-          .map((month) => lineMap.get(`${accountCode}|${month}`))
-          .filter(Boolean);
-
-        const savedMethod =
-          accountLines.find((line) => line.source_type)?.source_type ||
-          "manual";
 
         return `
           <tr class="bf-planning-account-row">
             <td class="bf-sticky-account">
               <strong>${esc(bfAccountName(account))}</strong>
-
-              <div class="bf-account-planning-actions">
-                <select
-                  class="bf-planning-method"
-                  data-bf-method-account="${esc(accountCode)}"
-                >
-                  <option value="manual" ${savedMethod === "manual" ? "selected" : ""}>
-                    Manual
-                  </option>
-
-                  <option value="driver_based" ${savedMethod === "driver_based" ? "selected" : ""}>
-                    Driver-based
-                  </option>
-
-                  <option value="prior_year" ${savedMethod === "prior_year" ? "selected" : ""}>
-                    Prior-year actual
-                  </option>
-
-                  <option value="growth" ${savedMethod === "growth" ? "selected" : ""}>
-                    Growth percentage
-                  </option>
-
-                  <option value="average" ${savedMethod === "average" ? "selected" : ""}>
-                    Actual monthly average
-                  </option>
-                </select>
-
-                <button
-                  type="button"
-                  class="btn small"
-                  data-bf-open-driver-account="${esc(accountCode)}"
-                  data-bf-open-driver-name="${esc(bfAccountName(account))}"
-                >
-                  Drivers
-                </button>
-              </div>
             </td>
 
-            ${months
-              .map((month) => {
-                const amount = valueFor(accountCode, month);
+            ${months.map((month) => `
+              <td>
+                <input
+                  type="number"
+                  step="0.01"
+                  class="bf-forecast-cell bf-draft-forecast-cell"
+                  value="${esc(
+                    bfGetDraftValue(accountCode, month)
+                  )}"
+                  data-bf-account-code="${esc(accountCode)}"
+                  data-bf-month="${esc(month)}"
+                >
+              </td>
+            `).join("")}
 
-                return `
-                  <td>
-                    <input
-                      class="bf-forecast-cell"
-                      type="number"
-                      step="0.01"
-                      value="${esc(amount)}"
-                      data-bf-account-code="${esc(accountCode)}"
-                      data-bf-month="${esc(month)}"
-                    >
-                  </td>
-                `;
-              })
-              .join("")}
-
-            <td class="right bf-annual-total">
+            <td
+              class="right bf-annual-total"
+              data-bf-draft-account-total="${esc(accountCode)}"
+            >
               ${money(
-                months.reduce(
-                  (total, month) =>
-                    total + valueFor(accountCode, month),
-                  0
-                )
+                bfDraftAnnualTotal(accountCode, months)
               )}
             </td>
           </tr>
         `;
-      })
-      .join("");
-  }
+      }).join("");
+    }
 
-  function calculatedRow(label, type, extraClass = "") {
-    const annual = months.reduce(
-      (total, month) =>
-        total + calculatedValue(type, month),
-      0
-    );
+    function calculatedRow(label, type, extraClass = "") {
+      const annual = months.reduce(
+        (total, month) =>
+          total + calculatedValue(type, month),
+        0
+      );
 
-    return `
-      <tr class="bf-calculation-row ${extraClass}">
-        <td class="bf-sticky-account">
-          <strong>${esc(label)}</strong>
-        </td>
+      return `
+        <tr class="bf-calculation-row ${extraClass}">
+          <td class="bf-sticky-account">
+            <strong>${esc(label)}</strong>
+          </td>
 
-        ${months
-          .map((month) => totalCell(type, month))
-          .join("")}
+          ${months
+            .map((month) => totalCell(type, month))
+            .join("")}
 
-        <td class="right">
-          <strong>${money(annual)}</strong>
-        </td>
-      </tr>
-    `;
-  }
+          <td class="right">
+            <strong>${money(annual)}</strong>
+          </td>
+        </tr>
+      `;
+    }
 
-  const sections = [
-    {
-      group: "revenue",
-      title: "Revenue",
-      footer: calculatedRow("Total Revenue", "revenue"),
-    },
-    {
-      group: "cost_of_revenue",
-      title: "Cost of Revenue",
-      footer: calculatedRow("Gross Profit", "grossProfit"),
-    },
-    {
-      group: "operating_expenses",
-      title: "Operating Expenses",
-      footer: calculatedRow(
-        "Operating Profit",
-        "operatingProfit"
-      ),
-    },
-    {
-      group: "other_income",
-      title: "Other Income",
-      footer: "",
-    },
-    {
-      group: "finance_costs",
-      title: "Finance Costs",
-      footer: calculatedRow(
-        "Profit Before Tax",
-        "profitBeforeTax"
-      ),
-    },
-    {
-      group: "income_tax",
-      title: "Estimated Income Tax Expense",
-      footer: calculatedRow(
-        "Forecast Net Profit",
-        "netProfit",
-        "bf-net-profit"
-      ),
-    },
-  ];
+    const sections = [
+      {
+        group: "revenue",
+        title: "Revenue",
+        footer: calculatedRow("Total Revenue", "revenue"),
+      },
+      {
+        group: "cost_of_revenue",
+        title: "Cost of Revenue",
+        footer: calculatedRow("Gross Profit", "grossProfit"),
+      },
+      {
+        group: "operating_expenses",
+        title: "Operating Expenses",
+        footer: calculatedRow(
+          "Operating Profit",
+          "operatingProfit"
+        ),
+      },
+      {
+        group: "other_income",
+        title: "Other Income",
+        footer: "",
+      },
+      {
+        group: "finance_costs",
+        title: "Finance Costs",
+        footer: calculatedRow(
+          "Profit Before Tax",
+          "profitBeforeTax"
+        ),
+      },
+      {
+        group: "income_tax",
+        title: "Estimated Income Tax Expense",
+        footer: calculatedRow(
+          "Forecast Net Profit",
+          "netProfit",
+          "bf-net-profit"
+        ),
+      },
+    ];
 
-  el.innerHTML = `
-    <div class="bf-workspace bf-version-workspace">
-      <div class="bf-workspace-header">
-        <div>
-          <button
-            type="button"
-            class="btn"
-            data-bf-action="back-versions"
-          >
-            ← Forecasts
-          </button>
+    el.innerHTML = `
+      <div class="bf-workspace bf-version-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="back-versions"
+            >
+              ← Forecasts
+            </button>
 
-          <div class="bf-workspace-title">
-            <span class="bf-eyebrow">
-              ${esc(version.scenario_name || "Forecast")}
-            </span>
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">
+                ${esc(version.scenario_name || "Forecast")}
+              </span>
 
-            <h2>${esc(version.name)}</h2>
+              <h2>${esc(version.name)}</h2>
 
-            <p class="muted">
-              ${esc(String(version.period_start).slice(0, 10))}
-              to
-              ${esc(String(version.period_end).slice(0, 10))}
-              · Actuals to
-              ${esc(String(version.actuals_to_date || "").slice(0, 10))}
-            </p>
+              <p class="muted">
+                ${esc(String(version.period_start).slice(0, 10))}
+                to
+                ${esc(String(version.period_end).slice(0, 10))}
+                · Actuals to
+                ${esc(String(version.actuals_to_date || "").slice(0, 10))}
+              </p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="refresh-version"
+            >
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              class="btn primary"
+              data-bf-action="save-version-grid"
+            >
+              Save Forecast
+            </button>
           </div>
         </div>
 
-        <div class="actions">
-          <button
-            type="button"
-            class="btn"
-            data-bf-action="refresh-version"
-          >
-            Refresh
-          </button>
+        <div class="bf-summary-strip">
+          <div>
+            <span>Scenario</span>
+            <strong>${esc(version.scenario_name || "Base Case")}</strong>
+          </div>
+
+          <div>
+            <span>Currency</span>
+            <strong>${esc(version.currency || companyCurrency())}</strong>
+          </div>
+
+          <div>
+            <span>Status</span>
+            <strong>${esc(version.status || "draft")}</strong>
+          </div>
+
+          <div>
+            <span>Forecast Net Profit</span>
+            <strong id="bfForecastNetProfitSummary">
+              ${money(
+                months.reduce(
+                  (total, month) =>
+                    total + calculatedValue("netProfit", month),
+                  0
+                )
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div class="bf-planning-grid-wrap">
+          <table class="bf-planning-grid">
+            <thead>
+              <tr>
+                <th class="bf-sticky-account">Account</th>
+
+                ${months
+                  .map(
+                    (month) => `
+                      <th>${esc(bfMonthLabel(month))}</th>
+                    `
+                  )
+                  .join("")}
+
+                <th>Total</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${sections
+                .map(
+                  (section) => `
+                    <tr class="bf-section-title-row">
+                      <td colspan="${months.length + 2}">
+                        ${esc(section.title)}
+                      </td>
+                    </tr>
+
+                    ${accountRows(section.group)}
+
+                    ${section.footer}
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bf-workspace-footer">
+          <div>
+            <strong>Management forecast</strong>
+            <p class="muted">
+              Amounts are saved by account and month. Totals are calculated automatically.
+            </p>
+          </div>
 
           <button
             type="button"
@@ -43316,97 +44762,11 @@ async function saveEditModal() {
           </button>
         </div>
       </div>
+    `;
 
-      <div class="bf-summary-strip">
-        <div>
-          <span>Scenario</span>
-          <strong>${esc(version.scenario_name || "Base Case")}</strong>
-        </div>
-
-        <div>
-          <span>Currency</span>
-          <strong>${esc(version.currency || companyCurrency())}</strong>
-        </div>
-
-        <div>
-          <span>Status</span>
-          <strong>${esc(version.status || "draft")}</strong>
-        </div>
-
-        <div>
-          <span>Forecast Net Profit</span>
-          <strong id="bfForecastNetProfitSummary">
-            ${money(
-              months.reduce(
-                (total, month) =>
-                  total + calculatedValue("netProfit", month),
-                0
-              )
-            )}
-          </strong>
-        </div>
-      </div>
-
-      <div class="bf-planning-grid-wrap">
-        <table class="bf-planning-grid">
-          <thead>
-            <tr>
-              <th class="bf-sticky-account">Account</th>
-
-              ${months
-                .map(
-                  (month) => `
-                    <th>${esc(bfMonthLabel(month))}</th>
-                  `
-                )
-                .join("")}
-
-              <th>Total</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            ${sections
-              .map(
-                (section) => `
-                  <tr class="bf-section-title-row">
-                    <td colspan="${months.length + 2}">
-                      ${esc(section.title)}
-                    </td>
-                  </tr>
-
-                  ${accountRows(section.group)}
-
-                  ${section.footer}
-                `
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="bf-workspace-footer">
-        <div>
-          <strong>Management forecast</strong>
-          <p class="muted">
-            Amounts are saved by account and month. Totals are calculated automatically.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          class="btn primary"
-          data-bf-action="save-version-grid"
-        >
-          Save Forecast
-        </button>
-      </div>
-    </div>
-  `;
-
-  bindForecastGridInputs();
-  bindPlanningMethodSelectors();
-}
+    bindForecastGridInputs();
+    bindPlanningMethodSelectors();
+  }
 
   function collectForecastGridLines() {
     return Array.from(
@@ -43725,6 +45085,171 @@ async function saveEditModal() {
     if (tab === "imports") await loadImports();
   }
 
+  function buildForecastWorkspacePayload() {
+    const scenarioMode =
+      $("bfWorkspaceScenario")?.value ||
+      "base";
+
+    const scenarioName =
+      scenarioMode === "custom"
+        ? $("bfWorkspaceScenarioName")
+            ?.value?.trim()
+        : {
+            base: "Base Case",
+            best: "Best Case",
+            worst: "Worst Case",
+          }[scenarioMode];
+
+    const version = {
+      budget_id:
+        BF.selectedBudgetId || null,
+
+      name:
+        $("bfWorkspaceVersionName")
+          ?.value?.trim(),
+
+      version_type:
+        $("bfWorkspaceVersionType")
+          ?.value ||
+        "forecast",
+
+      scenario_name:
+        scenarioName || null,
+
+      actuals_to_date:
+        $("bfWorkspaceActualsTo")
+          ?.value ||
+        null,
+
+      period_start:
+        $("bfWorkspacePeriodStart")
+          ?.value,
+
+      period_end:
+        $("bfWorkspacePeriodEnd")
+          ?.value,
+
+      currency:
+        $("bfWorkspaceCurrency")
+          ?.value?.trim() ||
+        companyCurrency(),
+
+      meta_json: {
+        presentation:
+          "management_profit_or_loss",
+
+        planning_mode:
+          BF.planningMode,
+      },
+    };
+
+    let lines = [];
+    let drivers = [];
+
+    if (BF.planningMode === "manual") {
+      lines = Array.from(
+        document.querySelectorAll(
+          "#bfForecastPane .bf-draft-forecast-cell"
+        )
+      ).map((input) => ({
+        account_code:
+          input.dataset.bfAccountCode,
+
+        period_month:
+          input.dataset.bfMonth,
+
+        amount:
+          Number(input.value || 0),
+
+        source_type:
+          "manual",
+
+        source_ref:
+          null,
+      }));
+    }
+
+    if (BF.planningMode === "driver_based") {
+      BF.driverDraftRows.forEach(
+        (driver) => {
+          Object.entries(
+            driver.values || {}
+          ).forEach(([month, value]) => {
+            drivers.push({
+              account_code:
+                driver.account_code,
+
+              driver_name:
+                driver.driver_name,
+
+              driver_group:
+                driver.driver_group,
+
+              driver_type:
+                driver.driver_type,
+
+              period_month:
+                month,
+
+              quantity:
+                Number(value.basis || 0),
+
+              rate:
+                Number(value.rate || 0),
+
+              amount:
+                Number(value.amount || 0),
+
+              formula_text:
+                driver.driver_type ===
+                "quantity_rate"
+                  ? "quantity * rate"
+                  : driver.driver_type ===
+                      "revenue_percentage"
+                    ? "basis * rate / 100"
+                    : driver.driver_type ===
+                        "growth_percentage"
+                      ? "basis * (1 + rate / 100)"
+                      : "fixed amount",
+            });
+
+            lines.push({
+              account_code:
+                driver.account_code,
+
+              period_month:
+                month,
+
+              amount:
+                Number(value.amount || 0),
+
+              source_type:
+                "driver_based",
+
+              source_ref:
+                driver.driver_name,
+            });
+          });
+        }
+      );
+    }
+
+    return {
+      version,
+      lines: lines.filter(
+        (line) =>
+          line.account_code &&
+          line.period_month
+      ),
+      drivers: drivers.filter(
+        (driver) =>
+          driver.account_code &&
+          driver.period_month &&
+          driver.driver_name
+      ),
+    };
+  }
+
   function bindEventsOnce() {
     if (BF.bound) return;
     BF.bound = true;
@@ -43746,6 +45271,19 @@ async function saveEditModal() {
           String(driverButton.dataset.bfOpenDriverAccount || "").trim(),
           String(driverButton.dataset.bfOpenDriverName || "").trim()
         );
+      }
+
+      const removeDriver =
+        t.closest?.("[data-bf-remove-driver]");
+
+      if (removeDriver) {
+        const index =
+          Number(
+            removeDriver.dataset.bfRemoveDriver
+          );
+
+        BF.driverDraftRows.splice(index, 1);
+        return renderCreateForecastWorkspace();
       }
 
       const action = t.dataset?.bfAction;
@@ -43778,6 +45316,25 @@ async function saveEditModal() {
           return openVersion(BF.selectedVersionId);
         }
       }
+      if (action === "planning-mode-manual") {
+        BF.planningMode = "manual";
+        return renderCreateForecastWorkspace();
+      }
+
+      if (action === "planning-mode-driver") {
+        BF.planningMode = "driver_based";
+
+        if (!BF.driverDraftRows.length) {
+          addDriverDraftRow();
+          return;
+        }
+
+        return renderCreateForecastWorkspace();
+      }
+
+      if (action === "add-driver-row") {
+        return addDriverDraftRow();
+      }
       if (action === "back-versions") return loadVersions();
       if (action === "add-forecast-line") return openForecastLineModal();
       if (action === "add-driver") return openDriverModal();
@@ -43798,7 +45355,18 @@ async function saveEditModal() {
 
         return openVersion(BF.selectedVersionId);
       }
+      if (
+        action === "cancel-create-version" ||
+        action === "back-versions"
+      ) {
+        setForecastWorkspaceActive(false);
 
+        BF.forecastWorkspaceMode = null;
+        BF.planningMode = "manual";
+        BF.driverDraftRows = [];
+
+        return loadVersions();
+      }
       if (t.id === "bfRefreshBtn") return onTab(BF.activeTab);
       if (t.id === "bfCreateBudgetBtn") return openCreateBudgetModal();
 
@@ -43848,19 +45416,25 @@ async function saveEditModal() {
 
   const payrollState = {
     settings: null,
+    schedule: null,
     calendars: [],
     employees: [],
     selectedEmployee: null,
+    selectedPaySetupEmployee: null,
     bound: false,
     runs: [],
     selectedRun: null,
     journalPreview: null,
+
     setup: {
+      departments: [],
+      positions: [],
       earning_types: [],
       deduction_types: [],
       contribution_types: [],
       benefit_types: [],
       leave_types: [],
+      gl_mappings: [],
     },
   };
 
@@ -43913,6 +45487,59 @@ async function saveEditModal() {
     if (el) el.textContent = value;
   }
 
+  function ordinalDay(day) {
+    const n = Number(day);
+
+    if ([11, 12, 13].includes(n % 100)) {
+      return `${n}th`;
+    }
+
+    switch (n % 10) {
+      case 1: return `${n}st`;
+      case 2: return `${n}nd`;
+      case 3: return `${n}rd`;
+      default: return `${n}th`;
+    }
+  }
+
+  function populatePayrollDaySelect(id) {
+    const el = $(id);
+    if (!el) return;
+
+    el.innerHTML = Array.from({ length: 31 }, (_, index) => {
+      const day = index + 1;
+
+      return `
+        <option value="${day}">
+          ${ordinalDay(day)} of month
+        </option>
+      `;
+    }).join("");
+  }
+
+  function initialisePayrollScheduleInputs() {
+    populatePayrollDaySelect("payrollPeriodStartDay");
+    populatePayrollDaySelect("payrollPeriodEndDay");
+
+    if ($("payrollPeriodStartDay")) {
+      $("payrollPeriodStartDay").value = "21";
+    }
+
+    if ($("payrollPeriodEndDay")) {
+      $("payrollPeriodEndDay").value = "20";
+    }
+
+    if ($("payrollPeriodEndOffset")) {
+      $("payrollPeriodEndOffset").value = "1";
+    }
+
+    if ($("payrollPaymentDayRule")) {
+      $("payrollPaymentDayRule").value = "day:25";
+    }
+
+    renderPayrollSchedulePreview();
+  }
+
   function renderPayrollRecentEmployees() {
     const el = document.getElementById("payrollRecentEmployees");
     if (!el) return;
@@ -43950,6 +45577,82 @@ async function saveEditModal() {
         ${esc(c.frequency)} | ${esc(c.period_start)} → ${esc(c.period_end)} | Pay ${esc(c.payment_date)}
       </option>
     `).join("");
+  }
+
+  function payrollPaymentRuleLabel(rule) {
+    if (!rule) return "Not configured";
+    if (rule === "last_day") return "Last day of month";
+    if (rule === "day_before_last") {
+      return "Day before last day of month";
+    }
+
+    if (rule.startsWith("day:")) {
+      return `${ordinalDay(Number(rule.split(":")[1]))} of month`;
+    }
+
+    return rule;
+  }
+
+  function renderPayrollSchedulePreview() {
+    const el = $("payrollSchedulePreview");
+    if (!el) return;
+
+    const frequency =
+      $("payrollScheduleFrequency")?.value || "monthly";
+
+    const startDay =
+      Number($("payrollPeriodStartDay")?.value || 1);
+
+    const endDay =
+      Number($("payrollPeriodEndDay")?.value || 31);
+
+    const endOffset =
+      Number($("payrollPeriodEndOffset")?.value || 0);
+
+    const paymentRule =
+      $("payrollPaymentDayRule")?.value || "";
+
+    const paymentOffset =
+      Number($("payrollPaymentMonthOffset")?.value || 0);
+
+    const endMonthLabel =
+      endOffset === 1 ? "the following month" : "the same month";
+
+    const paymentMonthLabel =
+      paymentOffset === 1
+        ? "the month after period end"
+        : paymentOffset === -1
+          ? "the month before period end"
+          : "the period-end month";
+
+    el.innerHTML = `
+      <div class="payroll-run-info-card">
+        <h4>Schedule preview</h4>
+
+        <div class="payroll-check-row">
+          <span>Frequency</span>
+          <strong>${esc(cap(frequency))}</strong>
+        </div>
+
+        <div class="payroll-check-row">
+          <span>Payroll range</span>
+          <strong>
+            ${esc(ordinalDay(startDay))}
+            to
+            ${esc(ordinalDay(endDay))}
+            of ${esc(endMonthLabel)}
+          </strong>
+        </div>
+
+        <div class="payroll-check-row">
+          <span>Payment</span>
+          <strong>
+            ${esc(payrollPaymentRuleLabel(paymentRule))}
+            in ${esc(paymentMonthLabel)}
+          </strong>
+        </div>
+      </div>
+    `;
   }
 
   async function loadPayrollRuns() {
@@ -44146,6 +45849,23 @@ async function saveEditModal() {
     }
   }
  
+  function payrollSetupPanelId(tab) {
+    const map = {
+      general: "payrollSetupPanelGeneral",
+      schedule: "payrollSetupPanelSchedule",
+      departments: "payrollSetupPanelDepartments",
+      positions: "payrollSetupPanelPositions",
+      earnings: "payrollSetupPanelEarnings",
+      deductions: "payrollSetupPanelDeductions",
+      contributions: "payrollSetupPanelContributions",
+      benefits: "payrollSetupPanelBenefits",
+      "employee-pay": "payrollSetupPanelEmployeePay",
+      mappings: "payrollSetupPanelMappings",
+    };
+
+    return map[tab];
+  }
+
   function switchPayrollSetupTab(tab) {
     document
       .querySelectorAll("[data-payroll-setup-tab]")
@@ -44156,19 +45876,22 @@ async function saveEditModal() {
         );
       });
 
-    [
-      "general",
-      "departments",
-      "positions",
-      "earnings",
-      "deductions",
-      "contributions",
-      "benefits",
-      "mappings"
-    ].forEach(name => {
-      $(`payrollSetupPanel${cap(name)}`)
-        ?.classList.toggle("hidden", name !== tab);
+    Object.values({
+      general: "payrollSetupPanelGeneral",
+      schedule: "payrollSetupPanelSchedule",
+      departments: "payrollSetupPanelDepartments",
+      positions: "payrollSetupPanelPositions",
+      earnings: "payrollSetupPanelEarnings",
+      deductions: "payrollSetupPanelDeductions",
+      contributions: "payrollSetupPanelContributions",
+      benefits: "payrollSetupPanelBenefits",
+      employeePay: "payrollSetupPanelEmployeePay",
+      mappings: "payrollSetupPanelMappings",
+    }).forEach(id => {
+      $(id)?.classList.add("hidden");
     });
+
+    $(payrollSetupPanelId(tab))?.classList.remove("hidden");
   }
 
   function renderPayrollJournalPreview(preview) {
@@ -44760,8 +46483,371 @@ async function saveEditModal() {
     );
   }
 
+  function renderPayrollDepartments() {
+    const departments =
+      payrollState.setup?.departments || [];
+
+    const list = $("payrollDepartmentsList");
+
+    if (list) {
+      list.innerHTML = departments.length
+        ? departments.map(department => `
+            <div class="payroll-mini-row">
+              <strong>${esc(department.name)}</strong>
+
+              <span>
+                ${Number(department.employee_count || 0)}
+                employee(s)
+              </span>
+
+              <button
+                type="button"
+                class="payroll-link"
+                data-payroll-edit-department="${esc(department.id)}"
+              >
+                Edit
+              </button>
+            </div>
+          `).join("")
+        : `<p class="payroll-muted">No departments created.</p>`;
+    }
+
+    const positionDepartment =
+      $("payrollPositionDepartmentId");
+
+    if (positionDepartment) {
+      const selected = positionDepartment.value;
+
+      positionDepartment.innerHTML = `
+        <option value="">Select department…</option>
+        ${departments.map(department => `
+          <option value="${esc(department.id)}">
+            ${esc(department.name)}
+          </option>
+        `).join("")}
+      `;
+
+      positionDepartment.value = selected;
+    }
+
+    const employeeFilter =
+      $("payrollEmployeeDepartmentFilter");
+
+    if (employeeFilter) {
+      const selected = employeeFilter.value;
+
+      employeeFilter.innerHTML = `
+        <option value="">All departments</option>
+        ${departments.map(department => `
+          <option value="${esc(department.id)}">
+            ${esc(department.name)}
+          </option>
+        `).join("")}
+      `;
+
+      employeeFilter.value = selected;
+    }
+  }
+
+  function renderPayrollPositions() {
+    const positions =
+      payrollState.setup?.positions || [];
+
+    const list = $("payrollPositionsList");
+    if (!list) return;
+
+    list.innerHTML = positions.length
+      ? positions.map(position => `
+          <div class="payroll-mini-row">
+            <strong>${esc(position.title)}</strong>
+            <span>
+              ${esc(position.department_name || "No department")}
+            </span>
+
+            <button
+              type="button"
+              class="payroll-link"
+              data-payroll-edit-position="${esc(position.id)}"
+            >
+              Edit
+            </button>
+          </div>
+        `).join("")
+      : `<p class="payroll-muted">No positions created.</p>`;
+  }
+
+  async function createPayrollDepartment() {
+    const companyId = cid();
+
+    const name =
+      $("payrollDepartmentName")?.value.trim();
+
+    if (!name) {
+      throw new Error("Enter a department name.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.departments(companyId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          is_active: true,
+        }),
+      }
+    );
+
+    $("payrollDepartmentName").value = "";
+
+    await payrollLoadAll();
+    switchPayrollTab("settings");
+    switchPayrollSetupTab("departments");
+
+    showPayrollStatus("Department added.", "success");
+  }
+
+  async function createPayrollPosition() {
+    const companyId = cid();
+
+    const title =
+      $("payrollPositionTitle")?.value.trim();
+
+    const departmentId =
+      Number($("payrollPositionDepartmentId")?.value || 0);
+
+    if (!title) {
+      throw new Error("Enter a position title.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.positions(companyId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          department_id: departmentId || null,
+          is_active: true,
+        }),
+      }
+    );
+
+    $("payrollPositionTitle").value = "";
+    $("payrollPositionDepartmentId").value = "";
+
+    await payrollLoadAll();
+    switchPayrollTab("settings");
+    switchPayrollSetupTab("positions");
+
+    showPayrollStatus("Position added.", "success");
+  }
+
+  async function createPayrollSetupRecord({
+    endpoint,
+    payload,
+    clearIds = [],
+    successMessage,
+    returnTab,
+  }) {
+    const companyId = cid();
+
+    await apiFetch(endpoint(companyId), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearIds.forEach(id => {
+      const el = $(id);
+      if (!el) return;
+
+      if (el.type === "checkbox") {
+        el.checked = false;
+      } else {
+        el.value = "";
+      }
+    });
+
+    await payrollLoadAll();
+    switchPayrollTab("settings");
+    switchPayrollSetupTab(returnTab);
+
+    showPayrollStatus(successMessage, "success");
+  }
+
+  async function createPayrollEarningType() {
+    const code =
+      $("payrollEarningCode")?.value.trim().toUpperCase();
+
+    const name =
+      $("payrollEarningName")?.value.trim();
+
+    if (!code || !name) {
+      throw new Error("Enter the earning code and name.");
+    }
+
+    await createPayrollSetupRecord({
+      endpoint: ENDPOINTS.payroll.earningTypes,
+
+      payload: {
+        code,
+        name,
+        expense_account_code:
+          $("payrollEarningGlAccount")?.value || null,
+        taxable:
+          !!$("payrollEarningTaxable")?.checked,
+        pensionable:
+          !!$("payrollEarningPensionable")?.checked,
+        is_active: true,
+      },
+
+      clearIds: [
+        "payrollEarningCode",
+        "payrollEarningName",
+        "payrollEarningGlAccount",
+      ],
+
+      successMessage: "Earning type added.",
+      returnTab: "earnings",
+    });
+  }
+
+  async function createPayrollDeductionType() {
+    const code =
+      $("payrollDeductionCode")?.value.trim().toUpperCase();
+
+    const name =
+      $("payrollDeductionName")?.value.trim();
+
+    if (!code || !name) {
+      throw new Error("Enter the deduction code and name.");
+    }
+
+    await createPayrollSetupRecord({
+      endpoint: ENDPOINTS.payroll.deductionTypes,
+
+      payload: {
+        code,
+        name,
+        liability_account_code:
+          $("payrollDeductionLiabilityAccount")?.value || null,
+        is_statutory:
+          !!$("payrollDeductionStatutory")?.checked,
+        is_active: true,
+      },
+
+      clearIds: [
+        "payrollDeductionCode",
+        "payrollDeductionName",
+        "payrollDeductionLiabilityAccount",
+        "payrollDeductionStatutory",
+      ],
+
+      successMessage: "Deduction type added.",
+      returnTab: "deductions",
+    });
+  }
+
+  async function createPayrollContributionType() {
+    const code =
+      $("payrollContributionCode")?.value
+        .trim()
+        .toUpperCase();
+
+    const name =
+      $("payrollContributionName")?.value.trim();
+
+    if (!code || !name) {
+      throw new Error(
+        "Enter the employer contribution code and name."
+      );
+    }
+
+    await createPayrollSetupRecord({
+      endpoint: ENDPOINTS.payroll.contributionTypes,
+
+      payload: {
+        code,
+        name,
+        expense_account_code:
+          $("payrollContributionExpenseAccount")?.value || null,
+        liability_account_code:
+          $("payrollContributionLiabilityAccount")?.value || null,
+        is_active: true,
+      },
+
+      clearIds: [
+        "payrollContributionCode",
+        "payrollContributionName",
+        "payrollContributionExpenseAccount",
+        "payrollContributionLiabilityAccount",
+      ],
+
+      successMessage: "Employer contribution type added.",
+      returnTab: "contributions",
+    });
+  }
+
+  async function createPayrollBenefitType() {
+    const code =
+      $("payrollBenefitTypeCode")?.value
+        .trim()
+        .toUpperCase();
+
+    const name =
+      $("payrollBenefitTypeName")?.value.trim();
+
+    if (!code || !name) {
+      throw new Error("Enter the benefit code and name.");
+    }
+
+    await createPayrollSetupRecord({
+      endpoint: ENDPOINTS.payroll.benefitTypes,
+
+      payload: {
+        code,
+        name,
+        benefit_category:
+          $("payrollBenefitTypeCategory")?.value,
+
+        earning_type_id:
+          Number(
+            $("payrollBenefitEarningTypeId")?.value || 0
+          ) || null,
+
+        deduction_type_id:
+          Number(
+            $("payrollBenefitDeductionTypeId")?.value || 0
+          ) || null,
+
+        contribution_type_id:
+          Number(
+            $("payrollBenefitContributionTypeId")?.value || 0
+          ) || null,
+
+        taxable:
+          !!$("payrollBenefitTypeTaxable")?.checked,
+
+        is_active: true,
+      },
+
+      clearIds: [
+        "payrollBenefitTypeCode",
+        "payrollBenefitTypeName",
+        "payrollBenefitEarningTypeId",
+        "payrollBenefitDeductionTypeId",
+        "payrollBenefitContributionTypeId",
+      ],
+
+      successMessage: "Benefit type added.",
+      returnTab: "benefits",
+    });
+  }
+
+
   function renderPayrollMasterSetup() {
     const setup = payrollState.setup || {};
+
+    renderPayrollDepartments();
+    renderPayrollPositions();
 
     renderPayrollSetupRows(
       "payrollEarningTypesList",
@@ -45104,29 +47190,93 @@ async function saveEditModal() {
     showPayrollStatus("Payroll settings saved.", "success");
   }
 
-  async function createPayrollCalendar() {
+  async function generatePayrollPeriods() {
+    const companyId = cid();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.generatePeriods(companyId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          periods: 12,
+        }),
+      }
+    );
+
+    payrollState.calendars = Array.isArray(res?.items)
+      ? res.items
+      : Array.isArray(res?.data)
+        ? res.data
+        : [];
+
+    renderPayrollCalendars();
+    renderPayrollRunCalendarSelect();
+
+    showPayrollStatus(
+      "Payroll periods generated successfully.",
+      "success"
+    );
+  }
+
+  async function savePayrollSchedule() {
     const companyId = cid();
 
     const payload = {
-      frequency: $("payrollCalFrequency").value,
-      period_start: $("payrollCalStart").value,
-      period_end: $("payrollCalEnd").value,
-      payment_date: $("payrollCalPaymentDate").value,
-      status: "open",
+      frequency:
+        $("payrollScheduleFrequency")?.value || "monthly",
+
+      period_start_day:
+        Number($("payrollPeriodStartDay")?.value || 1),
+
+      period_end_day:
+        Number($("payrollPeriodEndDay")?.value || 31),
+
+      period_end_month_offset:
+        Number($("payrollPeriodEndOffset")?.value || 0),
+
+      payment_day_rule:
+        $("payrollPaymentDayRule")?.value || "last_day",
+
+      payment_month_offset:
+        Number($("payrollPaymentMonthOffset")?.value || 0),
+
+      payment_adjustment:
+        $("payrollPaymentAdjustment")?.value || "none",
+
+      first_period_month:
+        $("payrollFirstPeriodMonth")?.value
+          ? `${$("payrollFirstPeriodMonth").value}-01`
+          : null,
+
+      is_active: true,
     };
 
-    await apiFetch(ENDPOINTS.payroll.calendars(companyId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    if (
+      payload.period_start_day < 1 ||
+      payload.period_start_day > 31
+    ) {
+      throw new Error("Period start day must be between 1 and 31.");
+    }
 
-    $("payrollCalStart").value = "";
-    $("payrollCalEnd").value = "";
-    $("payrollCalPaymentDate").value = "";
+    if (
+      payload.period_end_day < 1 ||
+      payload.period_end_day > 31
+    ) {
+      throw new Error("Period end day must be between 1 and 31.");
+    }
 
-    await payrollLoadAll();
-    switchPayrollTab("calendars");
-    showPayrollStatus("Payroll calendar created.", "success");
+    const res = await apiFetch(
+      ENDPOINTS.payroll.schedule(companyId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    payrollState.schedule = res?.data || payload;
+
+    renderPayrollSchedule();
+    showPayrollStatus("Pay schedule saved.", "success");
   }
 
   async function savePayrollEmployee() {
@@ -45489,6 +47639,71 @@ async function saveEditModal() {
         );
       }
     );
+
+    const runPayrollAction = handler => async () => {
+      try {
+        await handler();
+      } catch (error) {
+        showPayrollStatus(
+          error?.message || "The payroll action failed.",
+          "error"
+        );
+      }
+    };
+
+    $("payrollSaveScheduleBtn")?.addEventListener(
+      "click",
+      runPayrollAction(savePayrollSchedule)
+    );
+
+    $("payrollGeneratePeriodsBtn")?.addEventListener(
+      "click",
+      runPayrollAction(generatePayrollPeriods)
+    );
+
+    $("payrollAddDepartmentBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollDepartment)
+    );
+
+    $("payrollAddPositionBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollPosition)
+    );
+
+    $("payrollAddEarningTypeBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollEarningType)
+    );
+
+    $("payrollAddDeductionTypeBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollDeductionType)
+    );
+
+    $("payrollAddContributionTypeBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollContributionType)
+    );
+
+    $("payrollAddBenefitTypeBtn")?.addEventListener(
+      "click",
+      runPayrollAction(createPayrollBenefitType)
+    );
+
+    [
+      "payrollScheduleFrequency",
+      "payrollPeriodStartDay",
+      "payrollPeriodEndDay",
+      "payrollPeriodEndOffset",
+      "payrollPaymentDayRule",
+      "payrollPaymentMonthOffset",
+      "payrollPaymentAdjustment",
+      "payrollFirstPeriodMonth",
+    ].forEach(id => {
+      $(id)?.addEventListener("change", renderPayrollSchedulePreview);
+    });
+    initialisePayrollScheduleInputs();
   }
 
   window.bindPayrollScreen = async function bindPayrollScreen() {

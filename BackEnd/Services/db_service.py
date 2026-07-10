@@ -1180,6 +1180,85 @@ class DatabaseService:
                 except Exception:
                     pass
 
+    @staticmethod
+    def _payroll_add_months(value: date, months: int) -> date:
+        total = (
+            value.year * 12
+            + value.month
+            - 1
+            + int(months)
+        )
+
+        year = total // 12
+        month = total % 12 + 1
+
+        day = min(
+            value.day,
+            calendar.monthrange(year, month)[1],
+        )
+
+        return date(year, month, day)
+
+
+    @staticmethod
+    def _payroll_safe_month_day(
+        year: int,
+        month: int,
+        requested_day: int,
+    ) -> date:
+        final_day = calendar.monthrange(year, month)[1]
+
+        return date(
+            year,
+            month,
+            min(int(requested_day), final_day),
+        )
+
+
+    @staticmethod
+    def _payroll_payment_date(
+        base_month: date,
+        rule: str,
+    ) -> date:
+        year = base_month.year
+        month = base_month.month
+        final_day = calendar.monthrange(year, month)[1]
+
+        if rule == "last_day":
+            day = final_day
+        elif rule == "day_before_last":
+            day = max(1, final_day - 1)
+        elif str(rule or "").startswith("day:"):
+            day = int(str(rule).split(":", 1)[1])
+            day = min(day, final_day)
+        else:
+            raise ValueError("Invalid payment day rule")
+
+        return date(year, month, day)
+
+
+    @staticmethod
+    def _payroll_adjust_working_day(
+        value: date,
+        adjustment: str,
+    ) -> date:
+        if adjustment == "none":
+            return value
+
+        if adjustment == "previous_working_day":
+            while value.weekday() >= 5:
+                value -= timedelta(days=1)
+
+            return value
+
+        if adjustment == "next_working_day":
+            while value.weekday() >= 5:
+                value += timedelta(days=1)
+
+            return value
+
+        raise ValueError("Invalid payment adjustment")
+
     def execute_sql(
         self,
         sql: str,
@@ -5732,19 +5811,102 @@ class DatabaseService:
             payroll_start_date DATE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-            CONSTRAINT {schema}_payroll_settings_company_fk
-                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
-
-            CONSTRAINT {schema}_payroll_settings_tax_authority_fk
-                FOREIGN KEY (tax_authority_id) REFERENCES public.tax_authorities(id),
-
-            CONSTRAINT {schema}_payroll_settings_company_uniq
-                UNIQUE (company_id),
-
-            CONSTRAINT {schema}_payroll_settings_frequency_ck
-                CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
         );
+
+        ALTER TABLE {schema}.payroll_settings
+            ADD COLUMN IF NOT EXISTS period_start_day INT,
+            ADD COLUMN IF NOT EXISTS period_end_day INT,
+            ADD COLUMN IF NOT EXISTS period_end_month_offset INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payment_day_rule TEXT,
+            ADD COLUMN IF NOT EXISTS payment_month_offset INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payment_adjustment TEXT NOT NULL DEFAULT 'none',
+            ADD COLUMN IF NOT EXISTS calendar_generation_months INT NOT NULL DEFAULT 12;
+
+        CONSTRAINT {schema}_payroll_settings_company_fk
+            FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+
+        CONSTRAINT {schema}_payroll_settings_tax_authority_fk
+            FOREIGN KEY (tax_authority_id) REFERENCES public.tax_authorities(id),
+
+        CONSTRAINT {schema}_payroll_settings_company_uniq
+            UNIQUE (company_id),
+
+        CONSTRAINT {schema}_payroll_settings_frequency_ck
+            CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
+    
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_payroll_settings_period_start_day'
+                AND conrelid = '{schema}.payroll_settings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.payroll_settings
+                ADD CONSTRAINT chk_payroll_settings_period_start_day
+                CHECK (
+                    period_start_day IS NULL
+                    OR period_start_day BETWEEN 1 AND 31
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_payroll_settings_period_end_day'
+                AND conrelid = '{schema}.payroll_settings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.payroll_settings
+                ADD CONSTRAINT chk_payroll_settings_period_end_day
+                CHECK (
+                    period_end_day IS NULL
+                    OR period_end_day BETWEEN 1 AND 31
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_payroll_settings_payment_rule'
+                AND conrelid = '{schema}.payroll_settings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.payroll_settings
+                ADD CONSTRAINT chk_payroll_settings_payment_rule
+                CHECK (
+                    payment_day_rule IS NULL
+                    OR payment_day_rule = 'last_day'
+                    OR payment_day_rule = 'day_before_last'
+                    OR payment_day_rule ~ '^day:([1-9]|[12][0-9]|3[01])$'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'chk_payroll_settings_payment_adjustment'
+                AND conrelid = '{schema}.payroll_settings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.payroll_settings
+                ADD CONSTRAINT chk_payroll_settings_payment_adjustment
+                CHECK (
+                    payment_adjustment IN (
+                        'none',
+                        'previous_working_day',
+                        'next_working_day'
+                    )
+                );
+            END IF;
+        END
+        $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            uq_payroll_calendar_company_period
+        ON {schema}.payroll_pay_calendars (
+            company_id,
+            period_start,
+            period_end
+        );
+       
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_pay_calendars (
             id SERIAL PRIMARY KEY,
@@ -5865,6 +6027,22 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_earn_company_idx
             ON {schema}.payroll_earning_types(company_id);
+
+        ALTER TABLE {schema}.payroll_earning_types
+            ADD COLUMN IF NOT EXISTS expense_account_code TEXT;
+
+        ALTER TABLE {schema}.payroll_deduction_types
+            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
+
+        ALTER TABLE {schema}.payroll_employer_contribution_types
+            ADD COLUMN IF NOT EXISTS expense_account_code TEXT,
+            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
+
+        ALTER TABLE {schema}.payroll_benefit_types
+            ADD COLUMN IF NOT EXISTS earning_type_id INT,
+            ADD COLUMN IF NOT EXISTS deduction_type_id INT,
+            ADD COLUMN IF NOT EXISTS contribution_type_id INT,
+            ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT TRUE;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_deduction_types (
             id SERIAL PRIMARY KEY,
@@ -6542,37 +6720,127 @@ class DatabaseService:
             message TEXT
         );
         """)
+
         self.execute_ddl(f"""
-            CREATE TABLE IF NOT EXISTS {schema}.forecast_capex_items (
+        CREATE TABLE IF NOT EXISTS {schema}.forecast_capex_items (
             id SERIAL PRIMARY KEY,
+
             company_id INT NOT NULL,
-            version_id INT REFERENCES {schema}.forecast_versions(id) ON DELETE CASCADE,
-            budget_id INT REFERENCES {schema}.forecast_budgets(id) ON DELETE CASCADE,
+
+            version_id INT
+                REFERENCES {schema}.forecast_versions(id)
+                ON DELETE CASCADE,
+
+            budget_id INT
+                REFERENCES {schema}.forecast_budgets(id)
+                ON DELETE CASCADE,
 
             asset_name TEXT NOT NULL,
             asset_class TEXT,
             account_code TEXT,
 
             purchase_month DATE NOT NULL,
-            quantity NUMERIC(18,4) NOT NULL DEFAULT 1,
-            unit_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
-            total_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 1,
+
+            unit_cost NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            total_cost NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
 
             useful_life_months INT,
-            residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
-            depreciation_method TEXT DEFAULT 'straight_line',
 
-            funding_source TEXT DEFAULT 'cash',
-            loan_percentage NUMERIC(7,4) NOT NULL DEFAULT 0,
+            residual_value NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            depreciation_method TEXT
+                NOT NULL DEFAULT 'straight_line',
+
+            funding_source TEXT
+                NOT NULL DEFAULT 'cash',
+
+            loan_percentage NUMERIC(7,4)
+                NOT NULL DEFAULT 0,
 
             notes TEXT,
-            meta_json JSONB NOT NULL DEFAULT {{}}'::jsonb,
 
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            meta_json JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT now(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT now(),
+
+            CHECK (
+                version_id IS NOT NULL
+                OR budget_id IS NOT NULL
+            ),
+
+            CHECK (quantity >= 0),
+
+            CHECK (unit_cost >= 0),
+
+            CHECK (total_cost >= 0),
+
+            CHECK (
+                useful_life_months IS NULL
+                OR useful_life_months > 0
+            ),
+
+            CHECK (
+                loan_percentage >= 0
+                AND loan_percentage <= 100
+            ),
+
+            CHECK (
+                depreciation_method IN (
+                    'straight_line',
+                    'reducing_balance',
+                    'units_of_production',
+                    'none'
+                )
+            ),
+
+            CHECK (
+                funding_source IN (
+                    'cash',
+                    'loan',
+                    'lease',
+                    'vendor_finance',
+                    'mixed',
+                    'other'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_forecast_capex_company
+        ON {schema}.forecast_capex_items (
+            company_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_forecast_capex_version
+        ON {schema}.forecast_capex_items (
+            version_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_forecast_capex_budget
+        ON {schema}.forecast_capex_items (
+            budget_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_forecast_capex_purchase_month
+        ON {schema}.forecast_capex_items (
+            purchase_month
         );
         """)
-
 
 
         self.execute_ddl(f"""
@@ -81500,7 +81768,7 @@ class DatabaseService:
                     c.company_id,
                     c.id AS customer_id,
                     c.name AS customer_name,
-                    COALESCE(MAX(NULLIF(i.currency, '')), 'ZAR') AS currency,
+                    COALESCE(MAX(NULLIF(i.currency, '')), 'USD') AS currency,
                     COUNT(i.id) AS open_invoices_count,
                     MIN(i.invoice_date) AS oldest_invoice_date,
                     MIN(i.due_date) AS oldest_due_date,
@@ -81681,7 +81949,7 @@ class DatabaseService:
                 b.bank_name,
                 'bank',
                 CURRENT_DATE,
-                COALESCE(NULLIF(b.currency,''), 'ZAR'),
+                COALESCE(NULLIF(b.currency,''), 'USD'),
                 0,
                 0,
                 'classified',
@@ -81770,7 +82038,7 @@ class DatabaseService:
                     v.company_id,
                     v.id AS vendor_id,
                     v.name AS vendor_name,
-                    COALESCE(MAX(NULLIF(b.currency, '')), 'ZAR') AS currency,
+                    COALESCE(MAX(NULLIF(b.currency, '')), 'USD') AS currency,
                     COUNT(b.id) AS open_bills_count,
                     MIN(b.bill_date) AS oldest_bill_date,
                     MIN(b.due_date) AS oldest_due_date,
@@ -81912,23 +82180,36 @@ class DatabaseService:
 
         return row
 
-
-    def forecast_get_version_required(self, company_id: int, version_id: int) -> Dict[str, Any]:
+    def forecast_get_version(self, company_id: int, version_id: int) -> Optional[Dict[str, Any]]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
-        row = self.fetch_one(f"""
+        version = self.fetch_one(f"""
             SELECT *
             FROM {schema}.forecast_versions
-            WHERE company_id = %s AND id = %s
+            WHERE company_id=%s AND id=%s
             LIMIT 1;
         """, (int(company_id), int(version_id)))
 
-        if not row:
-            raise ValueError("Forecast version not found.")
+        if not version:
+            return None
 
-        return row
+        version["lines"] = self.fetch_all(f"""
+            SELECT
+                l.*,
+                c.name AS account_name,
+                c.section,
+                c.category
+            FROM {schema}.forecast_lines l
+            LEFT JOIN {schema}.coa c
+                ON c.company_id=l.company_id
+            AND c.code=l.account_code
+            WHERE l.company_id=%s
+            AND l.version_id=%s
+            ORDER BY l.period_month, l.account_code;
+        """, (int(company_id), int(version_id)))
 
+        return version
 
     def forecast_assert_editable(self, row: Dict[str, Any], label: str = "Record"):
         status = str(row.get("status") or "").lower()
@@ -81954,20 +82235,63 @@ class DatabaseService:
 
         return row
 
-
-    def forecast_delete_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
+    def forecast_upsert_budget_line(self, company_id: int, budget_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
         budget = self.forecast_get_budget_required(company_id, budget_id)
         self.forecast_assert_editable(budget, "Budget")
 
-        self.execute_sql(f"""
-            DELETE FROM {schema}.forecast_budgets
-            WHERE company_id = %s AND id = %s;
-        """, (int(company_id), int(budget_id)))
+        account_code = (payload.get("account_code") or "").strip()
+        period_month = payload.get("period_month")
 
-        return {"deleted": True, "id": int(budget_id)}
+        if not account_code:
+            raise ValueError("account_code is required.")
+        if not period_month:
+            raise ValueError("period_month is required.")
+
+        self.forecast_validate_account(company_id, account_code)
+
+        row = self.fetch_one(f"""
+            INSERT INTO {schema}.forecast_budget_lines (
+                company_id, budget_id, account_code, period_month,
+                amount, line_type, source_type, source_ref, notes, meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+            ON CONFLICT (budget_id, account_code, period_month)
+            DO UPDATE SET
+                amount = EXCLUDED.amount,
+                line_type = EXCLUDED.line_type,
+                source_type = EXCLUDED.source_type,
+                source_ref = EXCLUDED.source_ref,
+                notes = EXCLUDED.notes,
+                meta_json = EXCLUDED.meta_json,
+                updated_at = now()
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(budget_id),
+            account_code,
+            period_month,
+            payload.get("amount") or 0,
+            payload.get("line_type") or "manual",
+            payload.get("source_type"),
+            payload.get("source_ref"),
+            payload.get("notes"),
+            json.dumps(payload.get("meta_json") or {}),
+        ))
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_budget_line",
+            entity_id=row["id"],
+            action="upsert_budget_line",
+            actor_user_id=user_id,
+            after_json=row,
+            message=f"Upserted budget line {row['id']}",
+        )
+
+        return row
 
 
     def forecast_bulk_upsert_budget_lines(self, company_id: int, budget_id: int, lines: List[Dict[str, Any]], user_id: Optional[int] = None) -> Dict[str, Any]:
@@ -81988,19 +82312,32 @@ class DatabaseService:
         budget = self.forecast_get_budget_required(company_id, budget_id)
         self.forecast_assert_editable(budget, "Budget")
 
-        row = self.fetch_one(f"""
-            DELETE FROM {schema}.forecast_budget_lines
-            WHERE company_id = %s
-            AND budget_id = %s
-            AND id = %s
-            RETURNING *;
+        before = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_budget_lines
+            WHERE company_id=%s AND budget_id=%s AND id=%s
+            LIMIT 1;
         """, (int(company_id), int(budget_id), int(line_id)))
 
-        if not row:
+        if not before:
             raise ValueError("Budget line not found.")
 
-        return {"deleted": True, "id": int(line_id)}
+        self.execute_sql(f"""
+            DELETE FROM {schema}.forecast_budget_lines
+            WHERE company_id=%s AND budget_id=%s AND id=%s;
+        """, (int(company_id), int(budget_id), int(line_id)))
 
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_budget_line",
+            entity_id=line_id,
+            action="delete_budget_line",
+            actor_user_id=user_id,
+            before_json=before,
+            message=f"Deleted budget line {line_id}",
+        )
+
+        return {"deleted": True, "id": int(line_id)}
 
     def forecast_list_versions(self, company_id: int, budget_id: Optional[int] = None) -> List[Dict[str, Any]]:
         self.ensure_company_forecast(company_id)
@@ -82260,6 +82597,51 @@ class DatabaseService:
 
         return row
 
+    def forecast_update_budget(self, company_id: int, budget_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        before = self.forecast_get_budget_required(company_id, budget_id)
+        self.forecast_assert_editable(before, "Budget")
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.forecast_budgets
+            SET name = COALESCE(%s, name),
+                description = COALESCE(%s, description),
+                financial_year = COALESCE(%s, financial_year),
+                period_start = COALESCE(%s, period_start),
+                period_end = COALESCE(%s, period_end),
+                currency = COALESCE(%s, currency),
+                basis = COALESCE(%s, basis),
+                meta_json = COALESCE(%s::jsonb, meta_json),
+                updated_at = now()
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """, (
+            payload.get("name"),
+            payload.get("description"),
+            payload.get("financial_year"),
+            payload.get("period_start"),
+            payload.get("period_end"),
+            payload.get("currency"),
+            payload.get("basis"),
+            json.dumps(payload.get("meta_json")) if payload.get("meta_json") is not None else None,
+            int(company_id),
+            int(budget_id),
+        ))
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_budget",
+            entity_id=budget_id,
+            action="update_budget",
+            actor_user_id=user_id,
+            before_json=before,
+            after_json=row,
+            message=f"Updated budget {budget_id}",
+        )
+
+        return row
 
     def forecast_get_budget(self, company_id: int, budget_id: int) -> Optional[Dict[str, Any]]:
         self.ensure_company_forecast(company_id)
@@ -82292,90 +82674,40 @@ class DatabaseService:
 
         return budget
 
-
-    def forecast_upsert_budget_line(self, company_id: int, budget_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
-        self.ensure_company_forecast(company_id)
-        schema = self.company_schema(company_id)
-
-        account_code = (payload.get("account_code") or "").strip()
-        period_month = payload.get("period_month")
-
-        if not account_code:
-            raise ValueError("Account code is required.")
-        if not period_month:
-            raise ValueError("Period month is required.")
-
-        account = self.fetch_one(f"""
-            SELECT code
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND code = %s
-            AND posting = TRUE
-            LIMIT 1;
-        """, (int(company_id), account_code))
-
-        if not account:
-            raise ValueError(f"Invalid posting account code: {account_code}")
-
-        budget = self.fetch_one(f"""
-            SELECT id, status
-            FROM {schema}.forecast_budgets
-            WHERE company_id = %s AND id = %s
-            LIMIT 1;
-        """, (int(company_id), int(budget_id)))
-
-        if not budget:
-            raise ValueError("Budget not found.")
-
-        if budget.get("status") in ("approved", "locked"):
-            raise ValueError("Cannot edit an approved or locked budget.")
-
-        return self.fetch_one(f"""
-            INSERT INTO {schema}.forecast_budget_lines (
-                company_id, budget_id, account_code, period_month,
-                amount, line_type, source_type, source_ref, notes
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (budget_id, account_code, period_month)
-            DO UPDATE SET
-                amount = EXCLUDED.amount,
-                line_type = EXCLUDED.line_type,
-                source_type = EXCLUDED.source_type,
-                source_ref = EXCLUDED.source_ref,
-                notes = EXCLUDED.notes,
-                updated_at = now()
-            RETURNING *;
-        """, (
-            int(company_id),
-            int(budget_id),
-            account_code,
-            period_month,
-            payload.get("amount") or 0,
-            payload.get("line_type") or "manual",
-            payload.get("source_type"),
-            payload.get("source_ref"),
-            payload.get("notes"),
-        ))
-
-
     def forecast_submit_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
+        line_count = self.fetch_one(f"""
+            SELECT COUNT(*) AS cnt
+            FROM {schema}.forecast_budget_lines
+            WHERE company_id=%s AND budget_id=%s;
+        """, (int(company_id), int(budget_id)))
+
+        if int(line_count["cnt"] or 0) <= 0:
+            raise ValueError("Cannot submit a budget with no lines.")
+
         row = self.fetch_one(f"""
             UPDATE {schema}.forecast_budgets
-            SET status = 'submitted',
-                submitted_by = %s,
-                submitted_at = now(),
-                updated_at = now()
-            WHERE company_id = %s
-            AND id = %s
-            AND status = 'draft'
+            SET status='submitted',
+                submitted_by=%s,
+                submitted_at=now(),
+                updated_at=now()
+            WHERE company_id=%s
+            AND id=%s
+            AND status='draft'
             RETURNING *;
         """, (user_id, int(company_id), int(budget_id)))
 
         if not row:
             raise ValueError("Budget not found or cannot be submitted.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.forecast_approvals (
+                company_id, budget_id, action, action_by, comment
+            )
+            VALUES (%s,%s,'submitted',%s,%s);
+        """, (int(company_id), int(budget_id), user_id, "Budget submitted."))
 
         return row
 
@@ -82386,13 +82718,13 @@ class DatabaseService:
 
         row = self.fetch_one(f"""
             UPDATE {schema}.forecast_budgets
-            SET status = 'approved',
-                approved_by = %s,
-                approved_at = now(),
-                updated_at = now()
-            WHERE company_id = %s
-            AND id = %s
-            AND status IN ('draft', 'submitted')
+            SET status='approved',
+                approved_by=%s,
+                approved_at=now(),
+                updated_at=now()
+            WHERE company_id=%s
+            AND id=%s
+            AND status IN ('draft','submitted')
             RETURNING *;
         """, (user_id, int(company_id), int(budget_id)))
 
@@ -82409,43 +82741,80 @@ class DatabaseService:
         return row
 
 
+    def forecast_reopen_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None, comment: Optional[str] = None) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.forecast_budgets
+            SET status='draft',
+                locked_by=NULL,
+                locked_at=NULL,
+                updated_at=now()
+            WHERE company_id=%s
+            AND id=%s
+            AND status IN ('submitted','approved')
+            RETURNING *;
+        """, (int(company_id), int(budget_id)))
+
+        if not row:
+            raise ValueError("Budget not found or cannot be reopened.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.forecast_approvals (
+                company_id, budget_id, action, action_by, comment
+            )
+            VALUES (%s,%s,'reopened',%s,%s);
+        """, (int(company_id), int(budget_id), user_id, comment))
+
+        return row
+
+
     def forecast_lock_budget(self, company_id: int, budget_id: int, user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
         row = self.fetch_one(f"""
             UPDATE {schema}.forecast_budgets
-            SET status = 'locked',
-                locked_by = %s,
-                locked_at = now(),
-                updated_at = now()
-            WHERE company_id = %s
-            AND id = %s
-            AND status = 'approved'
+            SET status='locked',
+                locked_by=%s,
+                locked_at=now(),
+                updated_at=now()
+            WHERE company_id=%s
+            AND id=%s
+            AND status='approved'
             RETURNING *;
         """, (user_id, int(company_id), int(budget_id)))
 
         if not row:
-            raise ValueError("Budget not found or must be approved before locking.")
+            raise ValueError("Budget must be approved before locking.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.forecast_approvals (
+                company_id, budget_id, action, action_by, comment
+            )
+            VALUES (%s,%s,'locked',%s,%s);
+        """, (int(company_id), int(budget_id), user_id, "Budget locked."))
 
         return row
-
 
     def forecast_budget_vs_actual(self, company_id: int, budget_id: int) -> List[Dict[str, Any]]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
+        budget = self.forecast_get_budget_required(company_id, budget_id)
+
         return self.fetch_all(f"""
             WITH b AS (
                 SELECT
-                    l.company_id,
-                    l.account_code,
-                    l.period_month,
-                    SUM(l.amount) AS budget_amount
-                FROM {schema}.forecast_budget_lines l
-                WHERE l.company_id = %s
-                AND l.budget_id = %s
-                GROUP BY l.company_id, l.account_code, l.period_month
+                    company_id,
+                    account_code,
+                    period_month,
+                    SUM(amount) AS budget_amount
+                FROM {schema}.forecast_budget_lines
+                WHERE company_id=%s
+                AND budget_id=%s
+                GROUP BY company_id, account_code, period_month
             ),
             a AS (
                 SELECT
@@ -82454,7 +82823,8 @@ class DatabaseService:
                     date_trunc('month', date)::date AS period_month,
                     SUM(debit - credit) AS actual_amount
                 FROM {schema}.ledger
-                WHERE company_id = %s
+                WHERE company_id=%s
+                AND date BETWEEN %s AND %s
                 GROUP BY company_id, account, date_trunc('month', date)::date
             )
             SELECT
@@ -82467,7 +82837,7 @@ class DatabaseService:
                 COALESCE(a.actual_amount, 0) AS actual_amount,
                 COALESCE(a.actual_amount, 0) - COALESCE(b.budget_amount, 0) AS variance_amount,
                 CASE
-                    WHEN COALESCE(b.budget_amount, 0) = 0 THEN NULL
+                    WHEN COALESCE(b.budget_amount, 0)=0 THEN NULL
                     ELSE ROUND(
                         ((COALESCE(a.actual_amount, 0) - COALESCE(b.budget_amount, 0))
                         / NULLIF(ABS(b.budget_amount), 0)) * 100,
@@ -82476,14 +82846,20 @@ class DatabaseService:
                 END AS variance_pct
             FROM b
             LEFT JOIN a
-                ON a.company_id = b.company_id
-            AND a.account_code = b.account_code
-            AND a.period_month = b.period_month
+                ON a.company_id=b.company_id
+            AND a.account_code=b.account_code
+            AND a.period_month=b.period_month
             LEFT JOIN {schema}.coa c
-                ON c.company_id = b.company_id
-            AND c.code = b.account_code
+                ON c.company_id=b.company_id
+            AND c.code=b.account_code
             ORDER BY b.period_month, b.account_code;
-        """, (int(company_id), int(budget_id), int(company_id)))
+        """, (
+            int(company_id),
+            int(budget_id),
+            int(company_id),
+            budget["period_start"],
+            budget["period_end"],
+        ))
 
 
     def forecast_create_version(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
@@ -82494,27 +82870,1013 @@ class DatabaseService:
         if not name:
             raise ValueError("Forecast name is required.")
 
+        period_start = payload.get("period_start")
+        period_end = payload.get("period_end")
+
+        if not period_start:
+            raise ValueError("period_start is required.")
+        if not period_end:
+            raise ValueError("period_end is required.")
+
+        version_type = payload.get("version_type") or "forecast"
+        if version_type not in ("forecast", "scenario", "rolling", "year_end"):
+            raise ValueError("Invalid version_type.")
+
         row = self.fetch_one(f"""
             INSERT INTO {schema}.forecast_versions (
                 company_id, budget_id, name, version_type, scenario_name,
-                actuals_to_date, period_start, period_end, currency, status, created_by
+                actuals_to_date, period_start, period_end, currency,
+                status, created_by, meta_json
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft',%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'draft',%s,%s::jsonb)
             RETURNING *;
         """, (
             int(company_id),
             payload.get("budget_id"),
             name,
-            payload.get("version_type") or "forecast",
+            version_type,
             payload.get("scenario_name"),
             payload.get("actuals_to_date"),
-            payload.get("period_start"),
-            payload.get("period_end"),
+            period_start,
+            period_end,
             payload.get("currency"),
             user_id,
+            json.dumps(payload.get("meta_json") or {}),
         ))
 
         return row
+
+    # ============================================================
+    # Forecast / Budget helpers
+    # ============================================================
+
+    def _forecast_audit(
+        self,
+        company_id: int,
+        *,
+        entity_type: str,
+        entity_id: Optional[int],
+        action: str,
+        actor_user_id: Optional[int] = None,
+        before_json: Optional[dict] = None,
+        after_json: Optional[dict] = None,
+        message: Optional[str] = None,
+    ):
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.forecast_audit_events (
+                company_id, entity_type, entity_id, action,
+                actor_user_id, before_json, after_json, message
+            )
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s);
+        """, (
+            int(company_id),
+            entity_type,
+            entity_id,
+            action,
+            actor_user_id,
+            json.dumps(before_json or {}),
+            json.dumps(after_json or {}),
+            message,
+        ))
+
+
+    def forecast_validate_account(self, company_id: int, account_code: str) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT code, name, section, category, posting
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND code=%s
+            AND posting=TRUE
+            LIMIT 1;
+        """, (int(company_id), account_code))
+
+        if not row:
+            raise ValueError(f"Invalid posting account code: {account_code}")
+
+        return row
+
+    def forecast_get_version_required(self, company_id: int, version_id: int) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_versions
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(version_id)))
+
+        if not row:
+            raise ValueError("Forecast version not found.")
+
+        return row
+
+    def forecast_projected_full_year(self, company_id: int, version_id: int) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        version = self.forecast_get_version_required(company_id, version_id)
+
+        return self.fetch_all(f"""
+            WITH actuals AS (
+                SELECT
+                    company_id,
+                    account AS account_code,
+                    date_trunc('month', date)::date AS period_month,
+                    SUM(debit - credit) AS actual_amount
+                FROM {schema}.ledger
+                WHERE company_id=%s
+                AND date BETWEEN %s AND COALESCE(%s, %s)
+                GROUP BY company_id, account, date_trunc('month', date)::date
+            ),
+            fc AS (
+                SELECT
+                    company_id,
+                    account_code,
+                    period_month,
+                    SUM(amount) AS forecast_amount
+                FROM {schema}.forecast_lines
+                WHERE company_id=%s
+                AND version_id=%s
+                GROUP BY company_id, account_code, period_month
+            )
+            SELECT
+                COALESCE(a.account_code, fc.account_code) AS account_code,
+                c.name AS account_name,
+                c.section,
+                c.category,
+                COALESCE(SUM(a.actual_amount), 0) AS actual_ytd,
+                COALESCE(SUM(fc.forecast_amount), 0) AS forecast_remaining,
+                COALESCE(SUM(a.actual_amount), 0) + COALESCE(SUM(fc.forecast_amount), 0) AS projected_full_year
+            FROM actuals a
+            FULL OUTER JOIN fc
+                ON fc.company_id=a.company_id
+            AND fc.account_code=a.account_code
+            AND fc.period_month=a.period_month
+            LEFT JOIN {schema}.coa c
+                ON c.company_id=COALESCE(a.company_id, fc.company_id)
+            AND c.code=COALESCE(a.account_code, fc.account_code)
+            GROUP BY COALESCE(a.account_code, fc.account_code), c.name, c.section, c.category
+            ORDER BY COALESCE(a.account_code, fc.account_code);
+        """, (
+            int(company_id),
+            version["period_start"],
+            version.get("actuals_to_date"),
+            version["period_end"],
+            int(company_id),
+            int(version_id),
+        ))
+        
+    def forecast_assert_editable(self, row: Dict[str, Any], label: str = "Record"):
+        status = (row.get("status") or "").lower()
+        if status in ("approved", "locked"):
+            raise ValueError(f"Cannot edit {label.lower()} in status '{status}'.")
+
+
+    def forecast_validate_capex_parent(
+        self,
+        company_id: int,
+        *,
+        version_id: Optional[int] = None,
+        budget_id: Optional[int] = None,
+    ):
+        if not version_id and not budget_id:
+            raise ValueError(
+                "version_id or budget_id is required."
+            )
+
+        if version_id:
+            self.forecast_get_version_required(
+                company_id,
+                int(version_id),
+            )
+
+        if budget_id:
+            self.forecast_get_budget_required(
+                company_id,
+                int(budget_id),
+            )
+
+    def forecast_list_capex_items(
+        self,
+        company_id: int,
+        *,
+        version_id: Optional[int] = None,
+        budget_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        params = [int(company_id)]
+        where = [
+            "c.company_id = %s"
+        ]
+
+        if version_id:
+            where.append(
+                "c.version_id = %s"
+            )
+            params.append(int(version_id))
+
+        if budget_id:
+            where.append(
+                "c.budget_id = %s"
+            )
+            params.append(int(budget_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                c.*,
+
+                CASE
+                    WHEN c.funding_source = 'loan'
+                        THEN c.total_cost
+
+                    WHEN c.funding_source = 'mixed'
+                        THEN ROUND(
+                            c.total_cost *
+                            (c.loan_percentage / 100.0),
+                            2
+                        )
+
+                    ELSE 0
+                END AS estimated_loan_funding,
+
+                CASE
+                    WHEN c.funding_source = 'loan'
+                        THEN 0
+
+                    WHEN c.funding_source = 'mixed'
+                        THEN ROUND(
+                            c.total_cost *
+                            (
+                                1 -
+                                c.loan_percentage / 100.0
+                            ),
+                            2
+                        )
+
+                    ELSE c.total_cost
+                END AS estimated_cash_outflow
+
+            FROM {schema}.forecast_capex_items c
+
+            WHERE {' AND '.join(where)}
+
+            ORDER BY
+                c.purchase_month,
+                c.asset_name,
+                c.id;
+        """, tuple(params))
+
+    def forecast_create_capex_item(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        version_id = payload.get(
+            "version_id"
+        )
+        budget_id = payload.get(
+            "budget_id"
+        )
+
+        self.forecast_validate_capex_parent(
+            company_id,
+            version_id=version_id,
+            budget_id=budget_id,
+        )
+
+        asset_name = str(
+            payload.get("asset_name") or ""
+        ).strip()
+
+        if not asset_name:
+            raise ValueError(
+                "asset_name is required."
+            )
+
+        purchase_month = payload.get(
+            "purchase_month"
+        )
+
+        if not purchase_month:
+            raise ValueError(
+                "purchase_month is required."
+            )
+
+        quantity = Decimal(
+            str(payload.get("quantity") or 1)
+        )
+
+        unit_cost = Decimal(
+            str(payload.get("unit_cost") or 0)
+        )
+
+        total_cost = payload.get(
+            "total_cost"
+        )
+
+        if total_cost is None:
+            total_cost = (
+                quantity * unit_cost
+            )
+        else:
+            total_cost = Decimal(
+                str(total_cost)
+            )
+
+        useful_life_months = payload.get(
+            "useful_life_months"
+        )
+
+        if useful_life_months is not None:
+            useful_life_months = int(
+                useful_life_months
+            )
+
+        residual_value = Decimal(
+            str(
+                payload.get(
+                    "residual_value"
+                ) or 0
+            )
+        )
+
+        funding_source = str(
+            payload.get(
+                "funding_source"
+            ) or "cash"
+        ).strip().lower()
+
+        loan_percentage = Decimal(
+            str(
+                payload.get(
+                    "loan_percentage"
+                ) or 0
+            )
+        )
+
+        row = self.fetch_one(f"""
+            INSERT INTO
+                {schema}.forecast_capex_items
+            (
+                company_id,
+                version_id,
+                budget_id,
+
+                asset_name,
+                asset_class,
+                account_code,
+
+                purchase_month,
+                quantity,
+                unit_cost,
+                total_cost,
+
+                useful_life_months,
+                residual_value,
+                depreciation_method,
+
+                funding_source,
+                loan_percentage,
+
+                notes,
+                meta_json
+            )
+            VALUES (
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,
+                %s,%s::jsonb
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            version_id,
+            budget_id,
+
+            asset_name,
+            payload.get("asset_class"),
+            payload.get("account_code"),
+
+            purchase_month,
+            quantity,
+            unit_cost,
+            total_cost,
+
+            useful_life_months,
+            residual_value,
+            payload.get(
+                "depreciation_method"
+            ) or "straight_line",
+
+            funding_source,
+            loan_percentage,
+
+            payload.get("notes"),
+            json.dumps(
+                payload.get("meta_json") or {}
+            ),
+        ))
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_capex_item",
+            entity_id=row["id"],
+            action="create_capex_item",
+            actor_user_id=user_id,
+            after_json=row,
+            message=(
+                f"Created forecast capex item "
+                f"{row['id']}"
+            ),
+        )
+
+        return row
+
+    def forecast_update_capex_item(
+        self,
+        company_id: int,
+        capex_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        before = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_capex_items
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(capex_id),
+        ))
+
+        if not before:
+            raise ValueError(
+                "Capital expenditure item not found."
+            )
+
+        quantity = Decimal(
+            str(
+                payload.get(
+                    "quantity",
+                    before["quantity"],
+                )
+            )
+        )
+
+        unit_cost = Decimal(
+            str(
+                payload.get(
+                    "unit_cost",
+                    before["unit_cost"],
+                )
+            )
+        )
+
+        total_cost = payload.get(
+            "total_cost"
+        )
+
+        if total_cost is None:
+            total_cost = quantity * unit_cost
+
+        row = self.fetch_one(f"""
+            UPDATE
+                {schema}.forecast_capex_items
+
+            SET
+                asset_name = COALESCE(
+                    %s,
+                    asset_name
+                ),
+
+                asset_class = COALESCE(
+                    %s,
+                    asset_class
+                ),
+
+                account_code = COALESCE(
+                    %s,
+                    account_code
+                ),
+
+                purchase_month = COALESCE(
+                    %s,
+                    purchase_month
+                ),
+
+                quantity = %s,
+                unit_cost = %s,
+                total_cost = %s,
+
+                useful_life_months =
+                    COALESCE(
+                        %s,
+                        useful_life_months
+                    ),
+
+                residual_value =
+                    COALESCE(
+                        %s,
+                        residual_value
+                    ),
+
+                depreciation_method =
+                    COALESCE(
+                        %s,
+                        depreciation_method
+                    ),
+
+                funding_source =
+                    COALESCE(
+                        %s,
+                        funding_source
+                    ),
+
+                loan_percentage =
+                    COALESCE(
+                        %s,
+                        loan_percentage
+                    ),
+
+                notes = COALESCE(
+                    %s,
+                    notes
+                ),
+
+                meta_json = COALESCE(
+                    %s::jsonb,
+                    meta_json
+                ),
+
+                updated_at = now()
+
+            WHERE company_id = %s
+            AND id = %s
+
+            RETURNING *;
+        """, (
+            payload.get("asset_name"),
+            payload.get("asset_class"),
+            payload.get("account_code"),
+            payload.get("purchase_month"),
+
+            quantity,
+            unit_cost,
+            total_cost,
+
+            payload.get(
+                "useful_life_months"
+            ),
+
+            payload.get(
+                "residual_value"
+            ),
+
+            payload.get(
+                "depreciation_method"
+            ),
+
+            payload.get(
+                "funding_source"
+            ),
+
+            payload.get(
+                "loan_percentage"
+            ),
+
+            payload.get("notes"),
+
+            (
+                json.dumps(
+                    payload.get("meta_json")
+                )
+                if payload.get(
+                    "meta_json"
+                ) is not None
+                else None
+            ),
+
+            int(company_id),
+            int(capex_id),
+        ))
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_capex_item",
+            entity_id=capex_id,
+            action="update_capex_item",
+            actor_user_id=user_id,
+            before_json=before,
+            after_json=row,
+            message=(
+                f"Updated forecast capex item "
+                f"{capex_id}"
+            ),
+        )
+
+        return row
+
+    def forecast_update_capex_item(
+        self,
+        company_id: int,
+        capex_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        before = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_capex_items
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(capex_id),
+        ))
+
+        if not before:
+            raise ValueError(
+                "Capital expenditure item not found."
+            )
+
+        quantity = Decimal(
+            str(
+                payload.get(
+                    "quantity",
+                    before["quantity"],
+                )
+            )
+        )
+
+        unit_cost = Decimal(
+            str(
+                payload.get(
+                    "unit_cost",
+                    before["unit_cost"],
+                )
+            )
+        )
+
+        total_cost = payload.get(
+            "total_cost"
+        )
+
+        if total_cost is None:
+            total_cost = quantity * unit_cost
+
+        row = self.fetch_one(f"""
+            UPDATE
+                {schema}.forecast_capex_items
+
+            SET
+                asset_name = COALESCE(
+                    %s,
+                    asset_name
+                ),
+
+                asset_class = COALESCE(
+                    %s,
+                    asset_class
+                ),
+
+                account_code = COALESCE(
+                    %s,
+                    account_code
+                ),
+
+                purchase_month = COALESCE(
+                    %s,
+                    purchase_month
+                ),
+
+                quantity = %s,
+                unit_cost = %s,
+                total_cost = %s,
+
+                useful_life_months =
+                    COALESCE(
+                        %s,
+                        useful_life_months
+                    ),
+
+                residual_value =
+                    COALESCE(
+                        %s,
+                        residual_value
+                    ),
+
+                depreciation_method =
+                    COALESCE(
+                        %s,
+                        depreciation_method
+                    ),
+
+                funding_source =
+                    COALESCE(
+                        %s,
+                        funding_source
+                    ),
+
+                loan_percentage =
+                    COALESCE(
+                        %s,
+                        loan_percentage
+                    ),
+
+                notes = COALESCE(
+                    %s,
+                    notes
+                ),
+
+                meta_json = COALESCE(
+                    %s::jsonb,
+                    meta_json
+                ),
+
+                updated_at = now()
+
+            WHERE company_id = %s
+            AND id = %s
+
+            RETURNING *;
+        """, (
+            payload.get("asset_name"),
+            payload.get("asset_class"),
+            payload.get("account_code"),
+            payload.get("purchase_month"),
+
+            quantity,
+            unit_cost,
+            total_cost,
+
+            payload.get(
+                "useful_life_months"
+            ),
+
+            payload.get(
+                "residual_value"
+            ),
+
+            payload.get(
+                "depreciation_method"
+            ),
+
+            payload.get(
+                "funding_source"
+            ),
+
+            payload.get(
+                "loan_percentage"
+            ),
+
+            payload.get("notes"),
+
+            (
+                json.dumps(
+                    payload.get("meta_json")
+                )
+                if payload.get(
+                    "meta_json"
+                ) is not None
+                else None
+            ),
+
+            int(company_id),
+            int(capex_id),
+        ))
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_capex_item",
+            entity_id=capex_id,
+            action="update_capex_item",
+            actor_user_id=user_id,
+            before_json=before,
+            after_json=row,
+            message=(
+                f"Updated forecast capex item "
+                f"{capex_id}"
+            ),
+        )
+
+        return row
+
+    def forecast_delete_capex_item(
+        self,
+        company_id: int,
+        capex_id: int,
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            DELETE FROM
+                {schema}.forecast_capex_items
+
+            WHERE company_id = %s
+            AND id = %s
+
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(capex_id),
+        ))
+
+        if not row:
+            raise ValueError(
+                "Capital expenditure item not found."
+            )
+
+        self._forecast_audit(
+            company_id,
+            entity_type="forecast_capex_item",
+            entity_id=capex_id,
+            action="delete_capex_item",
+            actor_user_id=user_id,
+            before_json=row,
+            message=(
+                f"Deleted forecast capex item "
+                f"{capex_id}"
+            ),
+        )
+
+        return {
+            "deleted": True,
+            "id": int(capex_id),
+        }
+
+    def forecast_capex_impacts(
+        self,
+        company_id: int,
+        *,
+        version_id: Optional[int] = None,
+        budget_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        items = self.forecast_list_capex_items(
+            company_id,
+            version_id=version_id,
+            budget_id=budget_id,
+        )
+
+        monthly = {}
+
+        total_capex = Decimal("0")
+        total_cash = Decimal("0")
+        total_loan = Decimal("0")
+
+        for item in items:
+            purchase_month = str(
+                item["purchase_month"]
+            )[:7] + "-01"
+
+            total_cost = Decimal(
+                str(item.get("total_cost") or 0)
+            )
+
+            residual_value = Decimal(
+                str(
+                    item.get(
+                        "residual_value"
+                    ) or 0
+                )
+            )
+
+            useful_life = int(
+                item.get(
+                    "useful_life_months"
+                ) or 0
+            )
+
+            cash_outflow = Decimal(
+                str(
+                    item.get(
+                        "estimated_cash_outflow"
+                    ) or 0
+                )
+            )
+
+            loan_funding = Decimal(
+                str(
+                    item.get(
+                        "estimated_loan_funding"
+                    ) or 0
+                )
+            )
+
+            monthly_depreciation = (
+                (
+                    total_cost -
+                    residual_value
+                ) /
+                Decimal(useful_life)
+                if (
+                    useful_life > 0 and
+                    item.get(
+                        "depreciation_method"
+                    ) == "straight_line"
+                )
+                else Decimal("0")
+            )
+
+            total_capex += total_cost
+            total_cash += cash_outflow
+            total_loan += loan_funding
+
+            bucket = monthly.setdefault(
+                purchase_month,
+                {
+                    "period_month":
+                        purchase_month,
+
+                    "capex_additions":
+                        Decimal("0"),
+
+                    "cash_outflow":
+                        Decimal("0"),
+
+                    "loan_funding":
+                        Decimal("0"),
+
+                    "monthly_depreciation":
+                        Decimal("0"),
+                },
+            )
+
+            bucket["capex_additions"] += (
+                total_cost
+            )
+
+            bucket["cash_outflow"] += (
+                cash_outflow
+            )
+
+            bucket["loan_funding"] += (
+                loan_funding
+            )
+
+            bucket["monthly_depreciation"] += (
+                monthly_depreciation
+            )
+
+        monthly_rows = []
+
+        for value in monthly.values():
+            monthly_rows.append({
+                key: float(amount)
+                if isinstance(
+                    amount,
+                    Decimal,
+                )
+                else amount
+
+                for key, amount in
+                value.items()
+            })
+
+        monthly_rows.sort(
+            key=lambda row:
+                row["period_month"]
+        )
+
+        return {
+            "total_capex":
+                float(total_capex),
+
+            "total_cash_outflow":
+                float(total_cash),
+
+            "total_loan_funding":
+                float(total_loan),
+
+            "monthly":
+                monthly_rows,
+
+            "items":
+                items,
+        }
 
 
     # =========================
@@ -82641,9 +84003,19 @@ class DatabaseService:
 
             settings = self.payroll_settings_upsert(company_id, {
                 "default_frequency": "monthly",
-                "default_currency": company.get("currency") or "ZAR",
+                "default_currency": company.get("currency") or "USD",
                 "payroll_start_date": None,
                 "tax_authority_id": None,
+
+                "period_start_day": 21,
+                "period_end_day": 20,
+                "period_end_month_offset": 1,
+
+                "payment_day_rule": "day:25",
+                "payment_month_offset": 0,
+                "payment_adjustment": "previous_working_day",
+
+                "calendar_generation_months": 12,
                 "is_active": True,
             })
 
@@ -82659,36 +84031,236 @@ class DatabaseService:
         """, (int(company_id),))
 
     def payroll_setup_master(self, company_id: int) -> dict:
-        schema = self.company_schema(company_id)
         company_id = int(company_id)
+        schema = self.company_schema(company_id)
 
         return {
+            "departments": self.fetch_all(f"""
+                SELECT
+                    d.*,
+                    COUNT(e.id)::int AS employee_count
+                FROM {schema}.payroll_departments d
+                LEFT JOIN {schema}.payroll_employees e
+                    ON e.company_id = d.company_id
+                AND e.department_id = d.id
+                AND e.employment_status = 'active'
+                WHERE d.company_id=%s
+                GROUP BY d.id
+                ORDER BY d.name;
+            """, (company_id,)),
+
+            "positions": self.fetch_all(f"""
+                SELECT
+                    p.*,
+                    d.name AS department_name,
+                    COUNT(e.id)::int AS employee_count
+                FROM {schema}.payroll_positions p
+                LEFT JOIN {schema}.payroll_departments d
+                    ON d.id = p.department_id
+                AND d.company_id = p.company_id
+                LEFT JOIN {schema}.payroll_employees e
+                    ON e.company_id = p.company_id
+                AND e.position_id = p.id
+                AND e.employment_status = 'active'
+                WHERE p.company_id=%s
+                GROUP BY p.id, d.name
+                ORDER BY d.name NULLS LAST, p.title;
+            """, (company_id,)),
+
             "earning_types": self.fetch_all(f"""
-                SELECT * FROM {schema}.payroll_earning_types
+                SELECT *
+                FROM {schema}.payroll_earning_types
                 WHERE company_id=%s
                 ORDER BY code;
             """, (company_id,)),
+
             "deduction_types": self.fetch_all(f"""
-                SELECT * FROM {schema}.payroll_deduction_types
+                SELECT *
+                FROM {schema}.payroll_deduction_types
                 WHERE company_id=%s
                 ORDER BY code;
             """, (company_id,)),
+
             "contribution_types": self.fetch_all(f"""
-                SELECT * FROM {schema}.payroll_employer_contribution_types
+                SELECT *
+                FROM {schema}.payroll_employer_contribution_types
                 WHERE company_id=%s
                 ORDER BY code;
             """, (company_id,)),
+
             "benefit_types": self.fetch_all(f"""
-                SELECT * FROM {schema}.payroll_benefit_types
+                SELECT *
+                FROM {schema}.payroll_benefit_types
                 WHERE company_id=%s
                 ORDER BY code;
             """, (company_id,)),
+
             "leave_types": self.fetch_all(f"""
-                SELECT * FROM {schema}.payroll_leave_types
+                SELECT *
+                FROM {schema}.payroll_leave_types
                 WHERE company_id=%s
                 ORDER BY code;
+            """, (company_id,)),
+
+            "gl_mappings": self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.payroll_account_mappings
+                WHERE company_id=%s
+                ORDER BY mapping_key;
             """, (company_id,)),
         }
+
+    def payroll_calendars_generate(
+        self,
+        company_id: int,
+        periods: int = None,
+        from_month=None,
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        settings = self.payroll_settings_get(company_id) or {}
+
+        frequency = (
+            settings.get("default_frequency") or "monthly"
+        )
+
+        if frequency != "monthly":
+            raise ValueError(
+                "Automatic calendar generation currently supports "
+                "monthly payroll only"
+            )
+
+        start_day = settings.get("period_start_day")
+        end_day = settings.get("period_end_day")
+        end_offset = int(
+            settings.get("period_end_month_offset") or 0
+        )
+
+        payment_rule = settings.get("payment_day_rule")
+        payment_offset = int(
+            settings.get("payment_month_offset") or 0
+        )
+
+        adjustment = (
+            settings.get("payment_adjustment") or "none"
+        )
+
+        if not start_day or not end_day or not payment_rule:
+            raise ValueError(
+                "Complete the payroll schedule in Settings first"
+            )
+
+        periods = int(
+            periods
+            or settings.get("calendar_generation_months")
+            or 12
+        )
+
+        if periods < 1 or periods > 60:
+            raise ValueError(
+                "periods must be between 1 and 60"
+            )
+
+        if from_month:
+            if isinstance(from_month, str):
+                raw = from_month[:10]
+                anchor = date.fromisoformat(raw)
+            else:
+                anchor = from_month
+        elif settings.get("payroll_start_date"):
+            value = settings["payroll_start_date"]
+
+            if isinstance(value, str):
+                anchor = date.fromisoformat(value[:10])
+            else:
+                anchor = value
+        else:
+            today = date.today()
+            anchor = date(today.year, today.month, 1)
+
+        anchor = date(anchor.year, anchor.month, 1)
+
+        generated = []
+
+        for index in range(periods):
+            start_month = self._payroll_add_months(
+                anchor,
+                index,
+            )
+
+            period_start = self._payroll_safe_month_day(
+                start_month.year,
+                start_month.month,
+                int(start_day),
+            )
+
+            end_month = self._payroll_add_months(
+                start_month,
+                end_offset,
+            )
+
+            period_end = self._payroll_safe_month_day(
+                end_month.year,
+                end_month.month,
+                int(end_day),
+            )
+
+            if period_end < period_start:
+                raise ValueError(
+                    "Generated period end cannot be before "
+                    "period start"
+                )
+
+            payment_month = self._payroll_add_months(
+                date(
+                    period_end.year,
+                    period_end.month,
+                    1,
+                ),
+                payment_offset,
+            )
+
+            payment_date = self._payroll_payment_date(
+                payment_month,
+                payment_rule,
+            )
+
+            payment_date = self._payroll_adjust_working_day(
+                payment_date,
+                adjustment,
+            )
+
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_pay_calendars (
+                    company_id,
+                    frequency,
+                    period_start,
+                    period_end,
+                    payment_date,
+                    status
+                )
+                VALUES (%s,%s,%s,%s,%s,'open')
+                ON CONFLICT (
+                    company_id,
+                    period_start,
+                    period_end
+                )
+                DO UPDATE SET
+                    frequency = EXCLUDED.frequency,
+                    payment_date = EXCLUDED.payment_date
+                RETURNING *;
+            """, (
+                company_id,
+                frequency,
+                period_start,
+                period_end,
+                payment_date,
+            ))
+
+            generated.append(row)
+
+        return generated
 
 
     def payroll_employee_benefit_create(self, company_id: int, employee_id: int, data: dict):
@@ -82806,7 +84378,69 @@ class DatabaseService:
         """, (int(company_id), int(employee_id)))
 
     def payroll_settings_upsert(self, company_id: int, data: dict):
+        company_id = int(company_id)
         schema = self.company_schema(company_id)
+
+        period_start_day = data.get("period_start_day")
+        period_end_day = data.get("period_end_day")
+
+        if period_start_day not in (None, ""):
+            period_start_day = int(period_start_day)
+
+            if not 1 <= period_start_day <= 31:
+                raise ValueError(
+                    "period_start_day must be between 1 and 31"
+                )
+        else:
+            period_start_day = None
+
+        if period_end_day not in (None, ""):
+            period_end_day = int(period_end_day)
+
+            if not 1 <= period_end_day <= 31:
+                raise ValueError(
+                    "period_end_day must be between 1 and 31"
+                )
+        else:
+            period_end_day = None
+
+        payment_day_rule = (
+            str(data.get("payment_day_rule") or "").strip()
+            or None
+        )
+
+        if payment_day_rule:
+            valid_special_rules = {
+                "last_day",
+                "day_before_last",
+            }
+
+            if payment_day_rule not in valid_special_rules:
+                if not payment_day_rule.startswith("day:"):
+                    raise ValueError("Invalid payment_day_rule")
+
+                try:
+                    payment_day = int(
+                        payment_day_rule.split(":", 1)[1]
+                    )
+                except (TypeError, ValueError):
+                    raise ValueError("Invalid payment_day_rule")
+
+                if not 1 <= payment_day <= 31:
+                    raise ValueError(
+                        "Payment day must be between 1 and 31"
+                    )
+
+        payment_adjustment = (
+            data.get("payment_adjustment") or "none"
+        )
+
+        if payment_adjustment not in {
+            "none",
+            "previous_working_day",
+            "next_working_day",
+        }:
+            raise ValueError("Invalid payment_adjustment")
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_settings (
@@ -82815,23 +84449,79 @@ class DatabaseService:
                 default_frequency,
                 default_currency,
                 payroll_start_date,
+
+                period_start_day,
+                period_end_day,
+                period_end_month_offset,
+
+                payment_day_rule,
+                payment_month_offset,
+                payment_adjustment,
+
+                calendar_generation_months,
                 is_active
             )
-            VALUES (%s,%s,%s,%s,%s,COALESCE(%s, TRUE))
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,
+                COALESCE(%s, TRUE)
+            )
             ON CONFLICT (company_id)
             DO UPDATE SET
-                tax_authority_id = EXCLUDED.tax_authority_id,
-                default_frequency = EXCLUDED.default_frequency,
-                default_currency = EXCLUDED.default_currency,
-                payroll_start_date = EXCLUDED.payroll_start_date,
-                is_active = EXCLUDED.is_active
+                tax_authority_id =
+                    EXCLUDED.tax_authority_id,
+
+                default_frequency =
+                    EXCLUDED.default_frequency,
+
+                default_currency =
+                    EXCLUDED.default_currency,
+
+                payroll_start_date =
+                    EXCLUDED.payroll_start_date,
+
+                period_start_day =
+                    EXCLUDED.period_start_day,
+
+                period_end_day =
+                    EXCLUDED.period_end_day,
+
+                period_end_month_offset =
+                    EXCLUDED.period_end_month_offset,
+
+                payment_day_rule =
+                    EXCLUDED.payment_day_rule,
+
+                payment_month_offset =
+                    EXCLUDED.payment_month_offset,
+
+                payment_adjustment =
+                    EXCLUDED.payment_adjustment,
+
+                calendar_generation_months =
+                    EXCLUDED.calendar_generation_months,
+
+                is_active =
+                    EXCLUDED.is_active
             RETURNING *;
         """, (
-            int(company_id),
+            company_id,
             data.get("tax_authority_id"),
             data.get("default_frequency") or "monthly",
             data.get("default_currency"),
             data.get("payroll_start_date"),
+
+            period_start_day,
+            period_end_day,
+            int(data.get("period_end_month_offset") or 0),
+
+            payment_day_rule,
+            int(data.get("payment_month_offset") or 0),
+            payment_adjustment,
+
+            int(data.get("calendar_generation_months") or 12),
             data.get("is_active"),
         ))
 
@@ -83351,7 +85041,7 @@ class DatabaseService:
             "description": f"Payroll run {run['run_no']}",
             "source": "payroll_run",
             "source_id": int(payroll_run_id),
-            "currency": run.get("currency") or "ZAR",
+            "currency": run.get("currency") or "USD",
             "gross_amount": preview["debits"],
             "net_amount": preview["debits"],
             "vat_amount": 0,
@@ -83577,6 +85267,345 @@ class DatabaseService:
             "invalid_accounts": invalid_accounts,
         }
 
+    def payroll_departments_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.*,
+                COUNT(e.id)::int AS employee_count
+            FROM {schema}.payroll_departments d
+            LEFT JOIN {schema}.payroll_employees e
+                ON e.company_id = d.company_id
+            AND e.department_id = d.id
+            AND e.employment_status = 'active'
+            WHERE d.company_id=%s
+            GROUP BY d.id
+            ORDER BY d.name;
+        """, (int(company_id),))
+
+
+    def payroll_department_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        name = str(data.get("name") or "").strip()
+
+        if not name:
+            raise ValueError("Department name is required")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_departments (
+                company_id,
+                name,
+                is_active
+            )
+            VALUES (%s,%s,COALESCE(%s,TRUE))
+            RETURNING *;
+        """, (
+            int(company_id),
+            name,
+            data.get("is_active"),
+        ))
+
+    def payroll_departments_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.*,
+                COUNT(e.id)::int AS employee_count
+            FROM {schema}.payroll_departments d
+            LEFT JOIN {schema}.payroll_employees e
+                ON e.company_id = d.company_id
+            AND e.department_id = d.id
+            AND e.employment_status = 'active'
+            WHERE d.company_id=%s
+            GROUP BY d.id
+            ORDER BY d.name;
+        """, (int(company_id),))
+
+
+    def payroll_department_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        name = str(data.get("name") or "").strip()
+
+        if not name:
+            raise ValueError("Department name is required")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_departments (
+                company_id,
+                name,
+                is_active
+            )
+            VALUES (%s,%s,COALESCE(%s,TRUE))
+            RETURNING *;
+        """, (
+            int(company_id),
+            name,
+            data.get("is_active"),
+        ))
+
+    def payroll_earning_type_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        code = str(data.get("code") or "").strip().upper()
+        name = str(data.get("name") or "").strip()
+
+        if not code or not name:
+            raise ValueError(
+                "Earning code and name are required"
+            )
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_earning_types (
+                company_id,
+                code,
+                name,
+                taxable,
+                pensionable,
+                expense_account_code
+            )
+            VALUES (
+                %s,%s,%s,
+                COALESCE(%s,TRUE),
+                COALESCE(%s,FALSE),
+                %s
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            code,
+            name,
+            data.get("taxable"),
+            data.get("pensionable"),
+            data.get("expense_account_code"),
+        ))
+
+    def payroll_deduction_type_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        code = str(data.get("code") or "").strip().upper()
+        name = str(data.get("name") or "").strip()
+
+        if not code or not name:
+            raise ValueError(
+                "Deduction code and name are required"
+            )
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_deduction_types (
+                company_id,
+                code,
+                name,
+                is_statutory,
+                liability_account_code
+            )
+            VALUES (
+                %s,%s,%s,
+                COALESCE(%s,FALSE),
+                %s
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            code,
+            name,
+            data.get("is_statutory"),
+            data.get("liability_account_code"),
+        ))
+
+    def payroll_contribution_type_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        code = str(data.get("code") or "").strip().upper()
+        name = str(data.get("name") or "").strip()
+
+        if not code or not name:
+            raise ValueError(
+                "Contribution code and name are required"
+            )
+
+        return self.fetch_one(f"""
+            INSERT INTO
+                {schema}.payroll_employer_contribution_types (
+                    company_id,
+                    code,
+                    name,
+                    expense_account_code,
+                    liability_account_code
+                )
+            VALUES (%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            code,
+            name,
+            data.get("expense_account_code"),
+            data.get("liability_account_code"),
+        ))
+
+    def payroll_benefit_type_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        code = str(data.get("code") or "").strip().upper()
+        name = str(data.get("name") or "").strip()
+
+        category = (
+            data.get("benefit_category") or "allowance"
+        )
+
+        valid_categories = {
+            "allowance",
+            "deduction",
+            "employer_contribution",
+            "fringe_benefit",
+            "mixed",
+        }
+
+        if not code or not name:
+            raise ValueError(
+                "Benefit code and name are required"
+            )
+
+        if category not in valid_categories:
+            raise ValueError("Invalid benefit category")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_benefit_types (
+                company_id,
+                code,
+                name,
+                benefit_category,
+                earning_type_id,
+                deduction_type_id,
+                contribution_type_id,
+                taxable
+            )
+            VALUES (
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                COALESCE(%s,TRUE)
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            code,
+            name,
+            category,
+            data.get("earning_type_id"),
+            data.get("deduction_type_id"),
+            data.get("contribution_type_id"),
+            data.get("taxable"),
+        ))
+
+    def payroll_mappings_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_account_mappings
+            WHERE company_id=%s
+            ORDER BY mapping_key;
+        """, (int(company_id),))
+
+
+    def payroll_mappings_upsert(
+        self,
+        company_id: int,
+        mappings,
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        allowed_keys = {
+            "salary_expense",
+            "net_salary_payable",
+            "paye_payable",
+            "other_deductions_payable",
+            "employer_contribution_expense",
+        }
+
+        saved = []
+
+        for item in mappings or []:
+            mapping_key = str(
+                item.get("mapping_key") or ""
+            ).strip()
+
+            account_code = str(
+                item.get("gl_account_code") or ""
+            ).strip()
+
+            if mapping_key not in allowed_keys:
+                raise ValueError(
+                    f"Invalid payroll mapping key: {mapping_key}"
+                )
+
+            if not account_code:
+                raise ValueError(
+                    f"Account is required for {mapping_key}"
+                )
+
+            account = self.fetch_one(f"""
+                SELECT code, name, posting
+                FROM {schema}.coa
+                WHERE code=%s
+                LIMIT 1;
+            """, (account_code,))
+
+            if not account or not account.get("posting"):
+                raise ValueError(
+                    f"Invalid posting account: {account_code}"
+                )
+
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_account_mappings (
+                    company_id,
+                    mapping_key,
+                    gl_account_code
+                )
+                VALUES (%s,%s,%s)
+                ON CONFLICT (company_id, mapping_key)
+                DO UPDATE SET
+                    gl_account_code =
+                        EXCLUDED.gl_account_code
+                RETURNING *;
+            """, (
+                company_id,
+                mapping_key,
+                account_code,
+            ))
+
+            saved.append(row)
+
+        return saved
+    
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

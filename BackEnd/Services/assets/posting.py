@@ -1486,35 +1486,210 @@ def post_hfs_unclassify(
     return jid
 
 def _preview_add_cost(asset_row, payload, policy, ca_before, cur=None):
-    amt = float(payload.get("amount") or 0.0)
-    if amt <= 0:
+    entered_amount = D(payload.get("amount") or 0)
+    if entered_amount <= 0:
         raise ValueError("Amount must be > 0")
 
-    dr = (payload.get("debit_account_code") or asset_row.get("asset_account_code") or "").strip()
+    meta = payload.get("meta_json") or {}
+
+    vat_treatment = str(
+        payload.get("vat_treatment")
+        or meta.get("vat_treatment")
+        or "no_vat"
+    ).strip().lower()
+
+    vat_rate_percent = D(
+        payload.get("vat_rate_percent")
+        or meta.get("vat_rate_percent")
+        or 0
+    )
+
+    vat_recovery_percent = D(
+        payload.get("vat_recovery_percent")
+        or meta.get("vat_recovery_percent")
+        or 0
+    )
+
+    vat_input_claimable = bool(
+        payload.get("vat_input_claimable")
+        if payload.get("vat_input_claimable") is not None
+        else meta.get("vat_input_claimable", False)
+    )
+
+    if not vat_input_claimable:
+        vat_recovery_percent = D("0")
+
+    if vat_treatment not in {"no_vat", "inclusive", "exclusive"}:
+        raise ValueError(
+            "vat_treatment must be no_vat, inclusive or exclusive"
+        )
+
+    rate = vat_rate_percent / D("100")
+
+    recoverable_vat = D("0")
+    non_recoverable_vat = D("0")
+    total_vat = D("0")
+
+    if vat_treatment == "no_vat":
+        gross_amount = entered_amount
+        net_excluding_vat = entered_amount
+        capitalized_amount = entered_amount
+
+    elif vat_treatment == "inclusive":
+        if rate <= 0:
+            raise ValueError(
+                "VAT rate is required for VAT-inclusive add cost"
+            )
+
+        gross_amount = entered_amount
+        net_excluding_vat = gross_amount / (D("1") + rate)
+        total_vat = gross_amount - net_excluding_vat
+
+        recoverable_vat = (
+            total_vat
+            * vat_recovery_percent
+            / D("100")
+        )
+        non_recoverable_vat = total_vat - recoverable_vat
+
+        capitalized_amount = (
+            net_excluding_vat
+            + non_recoverable_vat
+        )
+
+    else:  # exclusive
+        if rate <= 0:
+            raise ValueError(
+                "VAT rate is required for VAT-exclusive add cost"
+            )
+
+        net_excluding_vat = entered_amount
+        total_vat = net_excluding_vat * rate
+        gross_amount = net_excluding_vat + total_vat
+
+        recoverable_vat = (
+            total_vat
+            * vat_recovery_percent
+            / D("100")
+        )
+        non_recoverable_vat = total_vat - recoverable_vat
+
+        capitalized_amount = (
+            net_excluding_vat
+            + non_recoverable_vat
+        )
+
+    entered_amount = _q2(entered_amount)
+    net_excluding_vat = _q2(net_excluding_vat)
+    total_vat = _q2(total_vat)
+    recoverable_vat = _q2(recoverable_vat)
+    non_recoverable_vat = _q2(non_recoverable_vat)
+    capitalized_amount = _q2(capitalized_amount)
+    gross_amount = _q2(gross_amount)
+
+    dr = (
+        payload.get("debit_account_code")
+        or asset_row.get("asset_account_code")
+        or ""
+    ).strip()
+
     cr = (payload.get("credit_account_code") or "").strip()
+
+    vat_account = (
+        payload.get("vat_account_code")
+        or meta.get("vat_account_code")
+        or ""
+    ).strip()
+
     if not dr:
         raise ValueError("Missing debit account code (asset)")
+
     if not cr:
         raise ValueError("Missing credit account code")
 
+    if recoverable_vat > 0 and not vat_account:
+        raise ValueError(
+            "Missing VAT input account for recoverable VAT"
+        )
+
     lines = [
-        {"account_code": dr, "debit": amt, "credit": 0.0},
-        {"account_code": cr, "debit": 0.0, "credit": amt},
+        {
+            "account_code": dr,
+            "description": "Capitalised additional asset cost",
+            "debit": float(capitalized_amount),
+            "credit": 0.0,
+        }
     ]
 
-    ca_after = ca_before + amt
+    if recoverable_vat > 0:
+        lines.append({
+            "account_code": vat_account,
+            "description": "Recoverable input VAT",
+            "debit": float(recoverable_vat),
+            "credit": 0.0,
+        })
 
-    schema = db_service.company_schema(int(asset_row["company_id"]))
+    lines.append({
+        "account_code": cr,
+        "description": "Bank / payable settlement",
+        "debit": 0.0,
+        "credit": float(gross_amount),
+    })
+
+    ca_before_dec = D(ca_before)
+    ca_after = ca_before_dec + capitalized_amount
+
+    gross_cost_before = D(
+        asset_row.get("cost")
+        or asset_row.get("opening_cost")
+        or 0
+    )
+    gross_cost_after = gross_cost_before + capitalized_amount
+
+    schema = db_service.company_schema(
+        int(asset_row["company_id"])
+    )
+
+    warnings = []
+
+    if vat_treatment != "no_vat" and vat_rate_percent <= 0:
+        warnings.append("VAT rate is missing.")
+
+    if not vat_input_claimable and total_vat > 0:
+        warnings.append(
+            "VAT is non-recoverable and has been capitalised."
+        )
 
     return {
-        "header": _preview_header(payload, memo="SM preview: add_cost"),
-        "lines": _attach_account_names(lines, schema=schema, cur=cur),
+        "header": _preview_header(
+            payload,
+            memo="SM preview: add_cost"
+        ),
+        "lines": _attach_account_names(
+            lines,
+            schema=schema,
+            cur=cur,
+        ),
         "impact": {
-            "carrying_amount_before": ca_before,
-            "carrying_amount_after": ca_after,
-            "delta": ca_after - ca_before,
+            "entered_amount": float(entered_amount),
+            "vat_treatment": vat_treatment,
+            "vat_rate_percent": float(vat_rate_percent),
+            "vat_recovery_percent": float(vat_recovery_percent),
+            "net_excluding_vat": float(net_excluding_vat),
+            "total_vat": float(total_vat),
+            "recoverable_vat": float(recoverable_vat),
+            "non_recoverable_vat": float(non_recoverable_vat),
+            "gross_settlement_amount": float(gross_amount),
+            "capitalized_amount": float(capitalized_amount),
+
+            "gross_cost_before": float(gross_cost_before),
+            "gross_cost_after": float(gross_cost_after),
+
+            "carrying_amount_before": float(ca_before_dec),
+            "carrying_amount_after": float(ca_after),
+            "delta": float(capitalized_amount),
         },
-        "warnings": [],
+        "warnings": warnings,
     }
 
 def assert_model_switch_allowed(asset_row: dict, target_model: str, policy: dict) -> None:

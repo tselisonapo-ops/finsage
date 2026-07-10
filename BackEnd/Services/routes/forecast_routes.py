@@ -512,3 +512,228 @@ def forecast_import_batches_list_or_create(company_id):
     except Exception as e:
         current_app.logger.exception("forecast create import batch failed")
         return _json_error(e, 400)
+
+@forecast_bp.route(
+    "/api/companies/<int:company_id>/forecast/capex",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def forecast_capex_list_or_create(
+    company_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        company_id,
+    )
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        deny = _require_planning_view(
+            payload
+        )
+        if deny:
+            return deny
+
+        try:
+            rows = (
+                db_service
+                .forecast_list_capex_items(
+                    company_id,
+
+                    version_id=
+                        request.args.get(
+                            "version_id",
+                            type=int,
+                        ),
+
+                    budget_id=
+                        request.args.get(
+                            "budget_id",
+                            type=int,
+                        ),
+                )
+            )
+
+            return jsonify({
+                "ok": True,
+                "data": rows,
+            })
+
+        except Exception as exc:
+            current_app.logger.exception(
+                "forecast list capex failed"
+            )
+            return _json_error(exc, 400)
+
+    deny = _require_planning_edit(
+        payload
+    )
+    if deny:
+        return deny
+
+    try:
+        body = (
+            request.get_json(
+                force=True,
+                silent=True,
+            ) or {}
+        )
+
+        row = (
+            db_service
+            .forecast_create_capex_item(
+                company_id,
+                body,
+                user_id=
+                    _actor_user_id(
+                        payload
+                    ),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 201
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "forecast create capex failed"
+        )
+        return _json_error(exc, 400)
+
+@forecast_bp.route(
+    "/api/companies/<int:company_id>/forecast/capex/<int:capex_id>",
+    methods=["PUT", "DELETE", "OPTIONS"],
+)
+@require_auth
+def forecast_capex_update_or_delete(
+    company_id,
+    capex_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        company_id,
+    )
+    if deny:
+        return deny
+
+    deny = _require_planning_edit(
+        payload
+    )
+    if deny:
+        return deny
+
+    try:
+        if request.method == "PUT":
+            body = (
+                request.get_json(
+                    force=True,
+                    silent=True,
+                ) or {}
+            )
+
+            row = (
+                db_service
+                .forecast_update_capex_item(
+                    company_id,
+                    capex_id,
+                    body,
+                    user_id=
+                        _actor_user_id(
+                            payload
+                        ),
+                )
+            )
+
+        else:
+            row = (
+                db_service
+                .forecast_delete_capex_item(
+                    company_id,
+                    capex_id,
+                    user_id=
+                        _actor_user_id(
+                            payload
+                        ),
+                )
+            )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        })
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "forecast capex action failed"
+        )
+        return _json_error(exc, 400)
+
+@forecast_bp.route(
+    "/api/companies/<int:company_id>/forecast/capex/impacts",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def forecast_capex_impacts_route(
+    company_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        company_id,
+    )
+    if deny:
+        return deny
+
+    deny = _require_planning_view(
+        payload
+    )
+    if deny:
+        return deny
+
+    try:
+        data = (
+            db_service
+            .forecast_capex_impacts(
+                company_id,
+
+                version_id=
+                    request.args.get(
+                        "version_id",
+                        type=int,
+                    ),
+
+                budget_id=
+                    request.args.get(
+                        "budget_id",
+                        type=int,
+                    ),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": data,
+        })
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "forecast capex impacts failed"
+        )
+        return _json_error(exc, 400)
