@@ -40494,10 +40494,17 @@ async function saveEditModal() {
     versions: [],
     drivers: [],
     imports: [],
+    coa: [],
+
     selectedBudgetId: null,
     selectedBudget: null,
+
     selectedVersionId: null,
     selectedVersion: null,
+
+    forecastDraftLines: {},
+    forecastWorkspaceMode: null,
+
     varianceRows: [],
     activeTab: "budgets",
     bound: false,
@@ -40541,6 +40548,233 @@ async function saveEditModal() {
       window.CURRENT_COMPANY?.functional_currency ||
       "LSL"
     );
+  }
+
+  async function loadForecastCoa() {
+    BF.cid = cid();
+
+    if (Array.isArray(BF.coa) && BF.coa.length) {
+      return BF.coa;
+    }
+
+    const res = await apiFetch(ENDPOINTS.coa(BF.cid));
+    const raw = unwrap(res);
+
+    BF.coa = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.accounts)
+        ? raw.accounts
+        : Array.isArray(raw?.data)
+          ? raw.data
+          : [];
+
+    return BF.coa;
+  }
+
+  function bfAccountCode(row) {
+    return String(
+      row?.code ||
+      row?.account_code ||
+      row?.gl_account_code ||
+      ""
+    ).trim();
+  }
+
+  function bfAccountName(row) {
+    return String(
+      row?.name ||
+      row?.account_name ||
+      row?.reporting_description ||
+      row?.description ||
+      bfAccountCode(row)
+    ).trim();
+  }
+
+  function bfTextKey(...values) {
+    return values
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .replace(/[_/-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function bfIsPostingAccount(row) {
+    return row?.posting !== false;
+  }
+
+  function bfPnlGroup(row) {
+    const key = bfTextKey(
+      row?.section,
+      row?.category,
+      row?.subcategory,
+      row?.role,
+      row?.code,
+      row?.name,
+      row?.reporting_description
+    );
+
+    if (
+      key.includes("income tax") ||
+      key.includes("tax expense") ||
+      key.includes("current tax") ||
+      key.includes("deferred tax")
+    ) {
+      return "income_tax";
+    }
+
+    if (
+      key.includes("finance cost") ||
+      key.includes("interest expense") ||
+      key.includes("borrowing cost")
+    ) {
+      return "finance_costs";
+    }
+
+    if (
+      key.includes("other income") ||
+      key.includes("finance income") ||
+      key.includes("interest income") ||
+      key.includes("investment income")
+    ) {
+      return "other_income";
+    }
+
+    if (
+      key.includes("cost of sales") ||
+      key.includes("cost of goods") ||
+      key.includes("cost of revenue") ||
+      key.includes("direct cost") ||
+      key.includes("cost of service") ||
+      key.includes("cost of services") ||
+      key.includes("cos")
+    ) {
+      return "cost_of_revenue";
+    }
+
+    if (
+      key.includes("revenue") ||
+      key.includes("sales") ||
+      key.includes("turnover") ||
+      key.includes("service income") ||
+      key.includes("operating income")
+    ) {
+      return "revenue";
+    }
+
+    if (
+      key.includes("expense") ||
+      key.includes("operating cost") ||
+      key.includes("administration") ||
+      key.includes("administrative") ||
+      key.includes("distribution") ||
+      key.includes("depreciation") ||
+      key.includes("amortisation") ||
+      key.includes("amortization") ||
+      key.includes("payroll") ||
+      key.includes("wages") ||
+      key.includes("salary")
+    ) {
+      return "operating_expenses";
+    }
+
+    return "unclassified";
+  }
+
+  function bfPnlGroups() {
+    return [
+      {
+        key: "revenue",
+        title: "Revenue",
+        description: "Sales, service income and operating revenue.",
+      },
+      {
+        key: "cost_of_revenue",
+        title: "Cost of Revenue",
+        description: "Cost of sales, cost of goods sold and direct service costs.",
+      },
+      {
+        key: "operating_expenses",
+        title: "Operating Expenses",
+        description: "Administrative, selling, payroll and other operating expenses.",
+      },
+      {
+        key: "other_income",
+        title: "Other Income",
+        description: "Interest income and other non-operating income.",
+      },
+      {
+        key: "finance_costs",
+        title: "Finance Costs",
+        description: "Loan interest and other financing costs.",
+      },
+      {
+        key: "income_tax",
+        title: "Estimated Income Tax Expense",
+        description: "Estimated current and deferred income tax expense.",
+      },
+      {
+        key: "unclassified",
+        title: "Other P&L Accounts",
+        description: "Accounts that could not be classified automatically.",
+      },
+    ];
+  }
+
+  function bfMonthKey(value) {
+    if (!value) return "";
+
+    const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return "";
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  }
+
+  function bfMonthLabel(value) {
+    const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+
+    if (Number.isNaN(d.getTime())) {
+      return String(value || "");
+    }
+
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      year: "2-digit",
+    });
+  }
+
+  function bfMonthsBetween(start, end) {
+    if (!start || !end) return [];
+
+    const first = new Date(`${String(start).slice(0, 10)}T00:00:00`);
+    const last = new Date(`${String(end).slice(0, 10)}T00:00:00`);
+
+    if (
+      Number.isNaN(first.getTime()) ||
+      Number.isNaN(last.getTime()) ||
+      first > last
+    ) {
+      return [];
+    }
+
+    const out = [];
+    let cursor = new Date(first.getFullYear(), first.getMonth(), 1);
+    const endMonth = new Date(last.getFullYear(), last.getMonth(), 1);
+
+    while (cursor <= endMonth) {
+      out.push(
+        `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-01`
+      );
+
+      cursor = new Date(
+        cursor.getFullYear(),
+        cursor.getMonth() + 1,
+        1
+      );
+    }
+
+    return out;
   }
 
   function fyGuess() {
@@ -41229,77 +41463,472 @@ async function saveEditModal() {
     `;
   }
 
-  function openCreateVersionModal(budgetId = null) {
-    const b = BF.selectedBudget || BF.budgets.find((x) => Number(x.id) === Number(budgetId));
+  async function openCreateVersionWorkspace(budgetId = null) {
+    BF.selectedBudgetId = Number(
+      budgetId ||
+      BF.selectedBudgetId ||
+      0
+    ) || null;
 
-    modal(
-      "Create Forecast Version",
-      `
-      <div class="grid two">
-        <label>Name
-          <input id="bfVersionName" value="${esc(b?.name ? b.name + " Forecast" : "Rolling Forecast")}">
-        </label>
+    BF.selectedBudget =
+      BF.selectedBudget ||
+      BF.budgets.find(
+        (row) => Number(row.id) === Number(BF.selectedBudgetId)
+      ) ||
+      null;
 
-        <label>Version type
-          <select id="bfVersionType">
-            <option value="forecast">Forecast</option>
-            <option value="rolling">Rolling</option>
-            <option value="year_end">Year-end</option>
-            <option value="scenario">Scenario</option>
-          </select>
-        </label>
+    BF.forecastWorkspaceMode = "create";
+    BF.forecastDraftLines = {};
 
-        <label>Scenario name
-          <input id="bfScenarioName" placeholder="Base case">
-        </label>
+    showTab("forecast");
+    setStatus("Preparing forecast workspace...");
 
-        <label>Actuals to date
-          <input id="bfActualsToDate" type="date" value="${todayIso()}">
-        </label>
+    try {
+      await loadForecastCoa();
+      renderCreateForecastWorkspace();
+      setStatus("");
+    } catch (error) {
+      console.error("[Forecast] failed to open workspace", error);
+      setStatus(error?.message || "Unable to load forecast workspace.", "error");
+    }
+  }
 
-        <label>Period start
-          <input id="bfVersionStart" type="date" value="${esc(String(b?.period_start || todayIso()).slice(0, 10))}">
-        </label>
+  function renderCreateForecastWorkspace() {
+    const el = $("bfForecastPane");
+    if (!el) return;
 
-        <label>Period end
-          <input id="bfVersionEnd" type="date" value="${esc(String(b?.period_end || todayIso()).slice(0, 10))}">
-        </label>
+    const budget = BF.selectedBudget || {};
 
-        <label>Currency
-          <input id="bfVersionCurrency" value="${esc(b?.currency || companyCurrency())}">
-        </label>
-      </div>
-      `,
-      `
-      <button class="btn" id="bfCancelModal">Cancel</button>
-      <button class="btn primary" id="bfSaveVersion">Create</button>
-      `
-    );
+    const defaultStart = String(
+      budget.period_start ||
+      `${fyGuess()}-01-01`
+    ).slice(0, 10);
 
-    $("bfCancelModal")?.addEventListener("click", closeModal);
-    $("bfSaveVersion")?.addEventListener("click", async () => {
-      const payload = {
-        budget_id: BF.selectedBudgetId || budgetId || null,
-        name: $("bfVersionName")?.value?.trim(),
-        version_type: $("bfVersionType")?.value || "forecast",
-        scenario_name: $("bfScenarioName")?.value?.trim() || null,
-        actuals_to_date: $("bfActualsToDate")?.value || null,
-        period_start: $("bfVersionStart")?.value,
-        period_end: $("bfVersionEnd")?.value,
-        currency: $("bfVersionCurrency")?.value?.trim() || companyCurrency(),
-      };
+    const defaultEnd = String(
+      budget.period_end ||
+      `${fyGuess()}-12-31`
+    ).slice(0, 10);
 
-      if (!payload.name) return alert("Forecast name is required.");
-
-      await apiFetch(ENDPOINTS.forecast.versions(cid()), {
-        method: "POST",
-        body: JSON.stringify(payload),
+    const accounts = (BF.coa || [])
+      .filter(bfIsPostingAccount)
+      .filter((row) => {
+        const group = bfPnlGroup(row);
+        return group !== "unclassified" || bfTextKey(row.section).includes("profit");
       });
 
-      closeModal();
-      showTab("forecast");
-      await loadVersions();
-    });
+    const grouped = Object.fromEntries(
+      bfPnlGroups().map((group) => [group.key, []])
+    );
+
+    for (const account of accounts) {
+      const groupKey = bfPnlGroup(account);
+
+      if (!grouped[groupKey]) {
+        grouped.unclassified.push(account);
+      } else {
+        grouped[groupKey].push(account);
+      }
+    }
+
+    for (const rows of Object.values(grouped)) {
+      rows.sort((a, b) =>
+        bfAccountCode(a).localeCompare(bfAccountCode(b))
+      );
+    }
+
+    el.innerHTML = `
+      <div class="bf-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="back-versions"
+            >
+              ← Back
+            </button>
+
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">Planning & Performance</span>
+              <h2>Create Forecast</h2>
+              <p class="muted">
+                Build an account-level forecast using a management profit or loss layout.
+              </p>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn"
+              data-bf-action="cancel-create-version"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              class="btn primary"
+              data-bf-action="create-version-workspace"
+            >
+              Create Forecast
+            </button>
+          </div>
+        </div>
+
+        <div class="bf-workspace-meta card">
+          <div class="section-head">
+            <div>
+              <h3>Forecast Details</h3>
+              <p class="muted">
+                Define the forecast period and scenario before entering amounts.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid four bf-meta-grid">
+            <label>
+              Forecast name
+              <input
+                id="bfWorkspaceVersionName"
+                value="${esc(
+                  budget.name
+                    ? `${budget.name} Forecast`
+                    : "Rolling Forecast"
+                )}"
+              >
+            </label>
+
+            <label>
+              Forecast type
+              <select id="bfWorkspaceVersionType">
+                <option value="forecast">Forecast</option>
+                <option value="rolling">Rolling Forecast</option>
+                <option value="year_end">Year-end Forecast</option>
+                <option value="scenario">Scenario</option>
+              </select>
+            </label>
+
+            <label>
+              Scenario
+              <select id="bfWorkspaceScenario">
+                <option value="base">Base Case</option>
+                <option value="best">Best Case</option>
+                <option value="worst">Worst Case</option>
+                <option value="custom">Custom Scenario</option>
+              </select>
+            </label>
+
+            <label>
+              Custom scenario name
+              <input
+                id="bfWorkspaceScenarioName"
+                placeholder="Optional"
+              >
+            </label>
+
+            <label>
+              Actuals to date
+              <input
+                id="bfWorkspaceActualsTo"
+                type="date"
+                value="${todayIso()}"
+              >
+            </label>
+
+            <label>
+              Period start
+              <input
+                id="bfWorkspacePeriodStart"
+                type="date"
+                value="${esc(defaultStart)}"
+              >
+            </label>
+
+            <label>
+              Period end
+              <input
+                id="bfWorkspacePeriodEnd"
+                type="date"
+                value="${esc(defaultEnd)}"
+              >
+            </label>
+
+            <label>
+              Currency
+              <input
+                id="bfWorkspaceCurrency"
+                value="${esc(budget.currency || companyCurrency())}"
+              >
+            </label>
+          </div>
+        </div>
+
+        <div class="bf-planning-toolbar card">
+          <div>
+            <h3>Profit or Loss Planning Structure</h3>
+            <p class="muted">
+              Accounts are grouped from your chart of accounts. The monthly grid
+              becomes available immediately after creating the forecast.
+            </p>
+          </div>
+
+          <div class="bf-toolbar-summary">
+            <div>
+              <span>Posting accounts</span>
+              <strong>${accounts.length}</strong>
+            </div>
+
+            <div>
+              <span>Linked budget</span>
+              <strong>${esc(budget.name || "None")}</strong>
+            </div>
+
+            <div>
+              <span>Currency</span>
+              <strong>${esc(budget.currency || companyCurrency())}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="bf-pnl-preview">
+          ${bfPnlGroups()
+            .map((group) => {
+              const rows = grouped[group.key] || [];
+
+              if (!rows.length && group.key === "unclassified") {
+                return "";
+              }
+
+              return `
+                <section class="bf-pnl-section">
+                  <div class="bf-pnl-section-head">
+                    <div>
+                      <h3>${esc(group.title)}</h3>
+                      <p>${esc(group.description)}</p>
+                    </div>
+
+                    <span class="bf-section-count">
+                      ${rows.length} account${rows.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div class="bf-account-preview-list">
+                    ${
+                      rows.length
+                        ? rows
+                            .map(
+                              (account) => `
+                                <div class="bf-account-preview-row">
+                                  <span class="bf-account-code">
+                                    ${esc(bfAccountCode(account))}
+                                  </span>
+
+                                  <span class="bf-account-name">
+                                    ${esc(bfAccountName(account))}
+                                  </span>
+
+                                  <span class="bf-account-category">
+                                    ${esc(
+                                      account.category ||
+                                      account.subcategory ||
+                                      group.title
+                                    )}
+                                  </span>
+                                </div>
+                              `
+                            )
+                            .join("")
+                        : `
+                          <div class="bf-account-empty">
+                            No accounts were classified into this section.
+                          </div>
+                        `
+                    }
+                  </div>
+
+                  ${
+                    group.key === "revenue"
+                      ? `
+                        <div class="bf-calculated-row">
+                          <strong>Total Revenue</strong>
+                          <span>Calculated from revenue accounts</span>
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    group.key === "cost_of_revenue"
+                      ? `
+                        <div class="bf-calculated-row">
+                          <strong>Gross Profit</strong>
+                          <span>Total Revenue less Cost of Revenue</span>
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    group.key === "operating_expenses"
+                      ? `
+                        <div class="bf-calculated-row">
+                          <strong>Operating Profit</strong>
+                          <span>Gross Profit less Operating Expenses</span>
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    group.key === "finance_costs"
+                      ? `
+                        <div class="bf-calculated-row">
+                          <strong>Profit Before Tax</strong>
+                          <span>Operating Profit plus Other Income less Finance Costs</span>
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    group.key === "income_tax"
+                      ? `
+                        <div class="bf-calculated-row bf-net-profit-row">
+                          <strong>Forecast Net Profit</strong>
+                          <span>Profit Before Tax less Estimated Income Tax</span>
+                        </div>
+                      `
+                      : ""
+                  }
+                </section>
+              `;
+            })
+            .join("")}
+        </div>
+
+        <div class="bf-workspace-footer">
+          <div>
+            <strong>Ready to start planning?</strong>
+            <p class="muted">
+              Create the forecast and then enter monthly values against each account.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="btn primary"
+            data-bf-action="create-version-workspace"
+          >
+            Create Forecast & Continue
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function createVersionFromWorkspace() {
+    const name = $("bfWorkspaceVersionName")?.value?.trim();
+    const versionType =
+      $("bfWorkspaceVersionType")?.value ||
+      "forecast";
+
+    const scenarioMode =
+      $("bfWorkspaceScenario")?.value ||
+      "base";
+
+    const customScenario =
+      $("bfWorkspaceScenarioName")?.value?.trim();
+
+    const periodStart =
+      $("bfWorkspacePeriodStart")?.value;
+
+    const periodEnd =
+      $("bfWorkspacePeriodEnd")?.value;
+
+    const actualsToDate =
+      $("bfWorkspaceActualsTo")?.value ||
+      null;
+
+    const currency =
+      $("bfWorkspaceCurrency")?.value?.trim() ||
+      companyCurrency();
+
+    if (!name) {
+      alert("Forecast name is required.");
+      return;
+    }
+
+    if (!periodStart || !periodEnd) {
+      alert("Forecast period start and end are required.");
+      return;
+    }
+
+    if (periodEnd < periodStart) {
+      alert("Forecast period end cannot be before the start date.");
+      return;
+    }
+
+    const scenarioName =
+      scenarioMode === "custom"
+        ? customScenario
+        : {
+            base: "Base Case",
+            best: "Best Case",
+            worst: "Worst Case",
+          }[scenarioMode];
+
+    if (scenarioMode === "custom" && !scenarioName) {
+      alert("Enter the custom scenario name.");
+      return;
+    }
+
+    const payload = {
+      budget_id: BF.selectedBudgetId || null,
+      name,
+      version_type: versionType,
+      scenario_name: scenarioName || null,
+      actuals_to_date: actualsToDate,
+      period_start: periodStart,
+      period_end: periodEnd,
+      currency,
+      meta_json: {
+        presentation: "management_profit_or_loss",
+        scenario_mode: scenarioMode,
+      },
+    };
+
+    try {
+      setStatus("Creating forecast...");
+
+      const res = await apiFetch(
+        ENDPOINTS.forecast.versions(cid()),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const created = unwrap(res);
+
+      if (!created?.id) {
+        throw new Error("The server did not return the new forecast id.");
+      }
+
+      BF.selectedVersionId = Number(created.id);
+      BF.selectedVersion = created;
+      BF.forecastWorkspaceMode = "edit";
+
+      await openVersion(BF.selectedVersionId);
+
+      setStatus("Forecast created.", "success");
+    } catch (error) {
+      console.error("[Forecast] create failed", error);
+      setStatus(
+        error?.message || "Unable to create forecast.",
+        "error"
+      );
+    }
   }
 
   async function openVersion(versionId) {
@@ -41309,53 +41938,436 @@ async function saveEditModal() {
     renderVersionEditor();
   }
 
-  function renderVersionEditor() {
-    const el = $("bfForecastPane");
-    const v = BF.selectedVersion;
-    if (!el || !v) return;
+ async function renderVersionEditor() {
+  const el = $("bfForecastPane");
+  const version = BF.selectedVersion;
 
-    const lines = v.lines || [];
+  if (!el || !version) return;
 
-    el.innerHTML = `
-      <div class="page-subhead">
+  await loadForecastCoa();
+
+  const months = bfMonthsBetween(
+    version.period_start,
+    version.period_end
+  );
+
+  const existingLines = version.lines || [];
+
+  const lineMap = new Map();
+
+  for (const line of existingLines) {
+    const key = `${line.account_code}|${bfMonthKey(line.period_month)}`;
+    lineMap.set(key, line);
+  }
+
+  const grouped = Object.fromEntries(
+    bfPnlGroups().map((group) => [group.key, []])
+  );
+
+  for (const account of BF.coa.filter(bfIsPostingAccount)) {
+    const groupKey = bfPnlGroup(account);
+
+    if (grouped[groupKey]) {
+      grouped[groupKey].push(account);
+    } else {
+      grouped.unclassified.push(account);
+    }
+  }
+
+  for (const accounts of Object.values(grouped)) {
+    accounts.sort((a, b) =>
+      bfAccountCode(a).localeCompare(bfAccountCode(b))
+    );
+  }
+
+  function valueFor(accountCode, month) {
+    const line = lineMap.get(`${accountCode}|${month}`);
+    return line ? Number(line.amount || 0) : 0;
+  }
+
+  function sumGroup(groupKey, month) {
+    return (grouped[groupKey] || []).reduce(
+      (total, account) =>
+        total + valueFor(bfAccountCode(account), month),
+      0
+    );
+  }
+
+  function calculatedValue(type, month) {
+    const revenue = sumGroup("revenue", month);
+    const cost = sumGroup("cost_of_revenue", month);
+    const operatingExpenses = sumGroup("operating_expenses", month);
+    const otherIncome = sumGroup("other_income", month);
+    const financeCosts = sumGroup("finance_costs", month);
+    const tax = sumGroup("income_tax", month);
+
+    const grossProfit = revenue - cost;
+    const operatingProfit = grossProfit - operatingExpenses;
+    const profitBeforeTax =
+      operatingProfit + otherIncome - financeCosts;
+    const netProfit = profitBeforeTax - tax;
+
+    return {
+      revenue,
+      cost,
+      grossProfit,
+      operatingExpenses,
+      operatingProfit,
+      otherIncome,
+      financeCosts,
+      profitBeforeTax,
+      tax,
+      netProfit,
+    }[type] || 0;
+  }
+
+  function totalCell(type, month) {
+    return `
+      <td class="right bf-total-value">
+        ${money(calculatedValue(type, month))}
+      </td>
+    `;
+  }
+
+  function accountRows(groupKey) {
+    const rows = grouped[groupKey] || [];
+
+    if (!rows.length) {
+      return `
+        <tr>
+          <td colspan="${months.length + 2}" class="muted">
+            No accounts are available in this section.
+          </td>
+        </tr>
+      `;
+    }
+
+    return rows
+      .map((account) => {
+        const accountCode = bfAccountCode(account);
+
+        return `
+          <tr class="bf-planning-account-row">
+            <td class="bf-sticky-account">
+              <strong>${esc(accountCode)}</strong>
+              <span>${esc(bfAccountName(account))}</span>
+            </td>
+
+            ${months
+              .map((month) => {
+                const amount = valueFor(accountCode, month);
+
+                return `
+                  <td>
+                    <input
+                      class="bf-forecast-cell"
+                      type="number"
+                      step="0.01"
+                      value="${esc(amount)}"
+                      data-bf-account-code="${esc(accountCode)}"
+                      data-bf-month="${esc(month)}"
+                    >
+                  </td>
+                `;
+              })
+              .join("")}
+
+            <td class="right bf-annual-total">
+              ${money(
+                months.reduce(
+                  (total, month) =>
+                    total + valueFor(accountCode, month),
+                  0
+                )
+              )}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function calculatedRow(label, type, extraClass = "") {
+    const annual = months.reduce(
+      (total, month) =>
+        total + calculatedValue(type, month),
+      0
+    );
+
+    return `
+      <tr class="bf-calculation-row ${extraClass}">
+        <td class="bf-sticky-account">
+          <strong>${esc(label)}</strong>
+        </td>
+
+        ${months
+          .map((month) => totalCell(type, month))
+          .join("")}
+
+        <td class="right">
+          <strong>${money(annual)}</strong>
+        </td>
+      </tr>
+    `;
+  }
+
+  const sections = [
+    {
+      group: "revenue",
+      title: "Revenue",
+      footer: calculatedRow("Total Revenue", "revenue"),
+    },
+    {
+      group: "cost_of_revenue",
+      title: "Cost of Revenue",
+      footer: calculatedRow("Gross Profit", "grossProfit"),
+    },
+    {
+      group: "operating_expenses",
+      title: "Operating Expenses",
+      footer: calculatedRow(
+        "Operating Profit",
+        "operatingProfit"
+      ),
+    },
+    {
+      group: "other_income",
+      title: "Other Income",
+      footer: "",
+    },
+    {
+      group: "finance_costs",
+      title: "Finance Costs",
+      footer: calculatedRow(
+        "Profit Before Tax",
+        "profitBeforeTax"
+      ),
+    },
+    {
+      group: "income_tax",
+      title: "Estimated Income Tax Expense",
+      footer: calculatedRow(
+        "Forecast Net Profit",
+        "netProfit",
+        "bf-net-profit"
+      ),
+    },
+  ];
+
+  el.innerHTML = `
+    <div class="bf-workspace bf-version-workspace">
+      <div class="bf-workspace-header">
         <div>
-          <h2>${esc(v.name)}</h2>
-          <p class="muted">${esc(v.version_type)} · ${esc(v.status)}</p>
+          <button
+            type="button"
+            class="btn"
+            data-bf-action="back-versions"
+          >
+            ← Forecasts
+          </button>
+
+          <div class="bf-workspace-title">
+            <span class="bf-eyebrow">
+              ${esc(version.scenario_name || "Forecast")}
+            </span>
+
+            <h2>${esc(version.name)}</h2>
+
+            <p class="muted">
+              ${esc(String(version.period_start).slice(0, 10))}
+              to
+              ${esc(String(version.period_end).slice(0, 10))}
+              · Actuals to
+              ${esc(String(version.actuals_to_date || "").slice(0, 10))}
+            </p>
+          </div>
         </div>
+
         <div class="actions">
-          <button class="btn" data-bf-action="back-versions">Back</button>
-          <button class="btn" data-bf-action="add-forecast-line">+ Add Forecast Line</button>
-          <button class="btn" data-bf-action="add-driver">+ Add Driver</button>
+          <button
+            type="button"
+            class="btn"
+            data-bf-action="refresh-version"
+          >
+            Refresh
+          </button>
+
+          <button
+            type="button"
+            class="btn primary"
+            data-bf-action="save-version-grid"
+          >
+            Save Forecast
+          </button>
         </div>
       </div>
 
-      <div class="card">
-        <table class="table">
+      <div class="bf-summary-strip">
+        <div>
+          <span>Scenario</span>
+          <strong>${esc(version.scenario_name || "Base Case")}</strong>
+        </div>
+
+        <div>
+          <span>Currency</span>
+          <strong>${esc(version.currency || companyCurrency())}</strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong>${esc(version.status || "draft")}</strong>
+        </div>
+
+        <div>
+          <span>Forecast Net Profit</span>
+          <strong id="bfForecastNetProfitSummary">
+            ${money(
+              months.reduce(
+                (total, month) =>
+                  total + calculatedValue("netProfit", month),
+                0
+              )
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="bf-planning-grid-wrap">
+        <table class="bf-planning-grid">
           <thead>
             <tr>
-              <th>Month</th>
-              <th>Account</th>
-              <th>Name</th>
-              <th class="right">Amount</th>
-              <th>Source</th>
+              <th class="bf-sticky-account">Account</th>
+
+              ${months
+                .map(
+                  (month) => `
+                    <th>${esc(bfMonthLabel(month))}</th>
+                  `
+                )
+                .join("")}
+
+              <th>Total</th>
             </tr>
           </thead>
+
           <tbody>
-            ${lines.length ? lines.map((l) => `
-              <tr>
-                <td>${esc(String(l.period_month || "").slice(0, 10))}</td>
-                <td>${esc(l.account_code)}</td>
-                <td>${esc(l.account_name || "")}</td>
-                <td class="right">${money(l.amount)}</td>
-                <td>${esc(l.source_type || "manual")}</td>
-              </tr>
-            `).join("") : `
-              <tr><td colspan="5" class="muted">No forecast lines yet.</td></tr>
-            `}
+            ${sections
+              .map(
+                (section) => `
+                  <tr class="bf-section-title-row">
+                    <td colspan="${months.length + 2}">
+                      ${esc(section.title)}
+                    </td>
+                  </tr>
+
+                  ${accountRows(section.group)}
+
+                  ${section.footer}
+                `
+              )
+              .join("")}
           </tbody>
         </table>
       </div>
-    `;
+
+      <div class="bf-workspace-footer">
+        <div>
+          <strong>Management forecast</strong>
+          <p class="muted">
+            Amounts are saved by account and month. Totals are calculated automatically.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          class="btn primary"
+          data-bf-action="save-version-grid"
+        >
+          Save Forecast
+        </button>
+      </div>
+    </div>
+  `;
+
+  bindForecastGridInputs();
+}
+
+  function collectForecastGridLines() {
+    return Array.from(
+      document.querySelectorAll(
+        "#bfForecastPane .bf-forecast-cell"
+      )
+    )
+      .map((input) => ({
+        account_code: String(
+          input.dataset.bfAccountCode || ""
+        ).trim(),
+
+        period_month: String(
+          input.dataset.bfMonth || ""
+        ).slice(0, 10),
+
+        amount: Number(input.value || 0),
+
+        source_type: "manual",
+      }))
+      .filter(
+        (line) =>
+          line.account_code &&
+          line.period_month
+      );
+  }
+
+  async function saveForecastGrid() {
+    if (!BF.selectedVersionId) {
+      alert("No forecast version is selected.");
+      return;
+    }
+
+    const lines = collectForecastGridLines();
+
+    if (!lines.length) {
+      alert("No forecast lines were found.");
+      return;
+    }
+
+    try {
+      setStatus(`Saving ${lines.length} forecast lines...`);
+
+      await apiFetch(
+        ENDPOINTS.forecast.versionLines(
+          cid(),
+          BF.selectedVersionId
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({ lines }),
+        }
+      );
+
+      setStatus("Forecast saved.", "success");
+
+      await openVersion(BF.selectedVersionId);
+    } catch (error) {
+      console.error("[Forecast] grid save failed", error);
+
+      setStatus(
+        error?.message || "Unable to save forecast.",
+        "error"
+      );
+    }
+  }
+
+  function bindForecastGridInputs() {
+    document
+      .querySelectorAll(
+        "#bfForecastPane .bf-forecast-cell"
+      )
+      .forEach((input) => {
+        input.addEventListener("input", () => {
+          input.classList.add("is-dirty");
+        });
+      });
   }
 
   function openForecastLineModal() {
@@ -41614,7 +42626,28 @@ async function saveEditModal() {
       if (action === "submit-budget") return submitBudget();
       if (action === "approve-budget") return approveBudget();
       if (action === "lock-budget") return lockBudget();
-      if (action === "create-version") return openCreateVersionModal(BF.selectedBudgetId);
+      if (action === "create-version") {
+        return openCreateVersionWorkspace(BF.selectedBudgetId);
+      }
+
+      if (action === "create-version-workspace") {
+        return createVersionFromWorkspace();
+      }
+
+      if (action === "cancel-create-version") {
+        BF.forecastWorkspaceMode = null;
+        return loadVersions();
+      }
+
+      if (action === "save-version-grid") {
+        return saveForecastGrid();
+      }
+
+      if (action === "refresh-version") {
+        if (BF.selectedVersionId) {
+          return openVersion(BF.selectedVersionId);
+        }
+      }
       if (action === "back-versions") return loadVersions();
       if (action === "add-forecast-line") return openForecastLineModal();
       if (action === "add-driver") return openDriverModal();
@@ -41711,6 +42744,8 @@ async function saveEditModal() {
     payrollState.setup = data.setup || payrollState.setup || {};
 
     renderPayrollSetupSelects();
+    renderPayrollMasterSetup();
+    renderPayrollSetupSelects();
     renderPayrollRunCalendarSelect();
     await loadPayrollRuns();
     renderPayrollSettings();
@@ -41767,8 +42802,17 @@ async function saveEditModal() {
 
   async function loadPayrollRuns() {
     const companyId = cid();
-    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId));
-    payrollState.runs = res?.items || [];
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.runs(companyId)
+    );
+
+    payrollState.runs = Array.isArray(res?.items)
+      ? res.items
+      : Array.isArray(res?.data)
+        ? res.data
+        : [];
+
     renderPayrollRuns();
     renderPayrollOverview();
   }
@@ -41777,69 +42821,604 @@ async function saveEditModal() {
     const el = $("payrollRunsList");
     if (!el) return;
 
-    const status = String($("payrollRunStatusFilter")?.value || "").toLowerCase();
-    let items = payrollState.runs || [];
+    const statusFilter = String(
+      $("payrollRunStatusFilter")?.value || ""
+    ).toLowerCase().trim();
 
-    if (status) {
-      items = items.filter(r => String(r.status || "").toLowerCase() === status);
+    let items = [...(payrollState.runs || [])];
+
+    if (statusFilter) {
+      items = items.filter(
+        run =>
+          String(run.status || "").toLowerCase() === statusFilter
+      );
     }
 
     if (!items.length) {
-      el.innerHTML = `<p class="payroll-muted">No payroll runs yet.</p>`;
+      const hasRuns = (payrollState.runs || []).length > 0;
+
+      el.innerHTML = hasRuns
+        ? `
+          <div class="payroll-empty-state">
+            <strong>No runs match this filter</strong>
+            <p>Change the status filter to All statuses.</p>
+            <button
+              type="button"
+              id="payrollClearRunFilterBtn"
+              class="payroll-secondary"
+            >
+              Clear filter
+            </button>
+          </div>
+        `
+        : `
+          <div class="payroll-empty-state">
+            <strong>No payroll runs yet</strong>
+            <p>Select a pay calendar and create your first payroll run.</p>
+          </div>
+        `;
+
+      $("payrollClearRunFilterBtn")?.addEventListener("click", () => {
+        $("payrollRunStatusFilter").value = "";
+        renderPayrollRuns();
+      });
+
       return;
     }
 
-    el.innerHTML = items.map(r => `
-      <div class="payroll-row" data-payroll-run-id="${esc(r.id)}">
-        <strong>${esc(r.run_no || "")}</strong>
-        <div>
-          <strong>${esc(r.period_start || "")} → ${esc(r.period_end || "")}</strong>
-          <div class="payroll-muted">Pay date: ${esc(r.payment_date || "")}</div>
+    el.innerHTML = items.map(run => `
+      <button
+        type="button"
+        class="payroll-run-row"
+        data-payroll-run-id="${esc(run.id)}"
+      >
+        <div class="payroll-run-main">
+          <div class="payroll-run-icon">PR</div>
+
+          <div>
+            <strong>${esc(run.run_no || `Payroll Run ${run.id}`)}</strong>
+
+            <div class="payroll-muted">
+              ${formatPayrollDate(run.period_start)}
+              →
+              ${formatPayrollDate(run.period_end)}
+            </div>
+          </div>
         </div>
-        <div>${esc(r.frequency || "—")}</div>
-        <span class="payroll-pill">${esc(r.status || "draft")}</span>
+
+        <div>
+          <span class="payroll-run-label">Payment date</span>
+          <strong>${formatPayrollDate(run.payment_date)}</strong>
+        </div>
+
+        <div>
+          <span class="payroll-run-label">Frequency</span>
+          <strong>${esc(cap(run.frequency || "—"))}</strong>
+        </div>
+
+        <span class="payroll-pill payroll-status-${esc(
+          String(run.status || "draft").toLowerCase()
+        )}">
+          ${esc(cap(run.status || "draft"))}
+        </span>
+
         <span class="payroll-arrow">›</span>
-      </div>
+      </button>
     `).join("");
 
     el.querySelectorAll("[data-payroll-run-id]").forEach(row => {
       row.addEventListener("click", async () => {
-        await openPayrollRun(Number(row.dataset.payrollRunId));
+        try {
+          await openPayrollRun(
+            Number(row.dataset.payrollRunId)
+          );
+        } catch (error) {
+          showPayrollStatus(error.message, "error");
+        }
       });
+    });
+  }
+
+  function formatPayrollDate(value) {
+    if (!value) return "—";
+
+    const raw = String(value).slice(0, 10);
+    const date = new Date(`${raw}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+      return raw;
+    }
+
+    return date.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
     });
   }
 
   async function createPayrollRun() {
     const companyId = cid();
     const calendarId = Number($("payrollRunCalendarId")?.value || 0);
-    if (!calendarId) throw new Error("Select a payroll calendar first.");
 
-    await apiFetch(ENDPOINTS.payroll.runs(companyId), {
+    if (!calendarId) {
+      throw new Error("Select a payroll calendar first.");
+    }
+
+    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId), {
       method: "POST",
-      body: JSON.stringify({ pay_calendar_id: calendarId }),
+      body: JSON.stringify({
+        pay_calendar_id: calendarId,
+      }),
     });
 
+    const createdRun = res?.data;
+
+    // Do not hide a newly-created draft run behind a status filter.
+    if ($("payrollRunStatusFilter")) {
+      $("payrollRunStatusFilter").value = "";
+    }
+
     await loadPayrollRuns();
+
+    if (createdRun?.id) {
+      await openPayrollRun(Number(createdRun.id));
+    }
+
+    switchPayrollTab("runs");
     showPayrollStatus("Payroll run created.", "success");
+  }
+
+  function switchPayrollRunTab(tab) {
+    document
+      .querySelectorAll("[data-payroll-run-tab]")
+      .forEach(btn => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.payrollRunTab === tab
+        );
+      });
+
+    ["overview", "employees", "journal", "posting"]
+      .forEach(name => {
+        $(`payrollRunPanel${cap(name)}`)
+          ?.classList.toggle("hidden", name !== tab);
+      });
+
+    if (
+      tab === "journal" &&
+      payrollState.selectedRun?.id
+    ) {
+      loadInlinePayrollJournal().catch(error => {
+        showPayrollStatus(error.message, "error");
+      });
+    }
+  }
+ 
+  function switchPayrollSetupTab(tab) {
+    document
+      .querySelectorAll("[data-payroll-setup-tab]")
+      .forEach(btn => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.payrollSetupTab === tab
+        );
+      });
+
+    [
+      "general",
+      "departments",
+      "positions",
+      "earnings",
+      "deductions",
+      "contributions",
+      "benefits",
+      "mappings"
+    ].forEach(name => {
+      $(`payrollSetupPanel${cap(name)}`)
+        ?.classList.toggle("hidden", name !== tab);
+    });
+  }
+
+  function renderPayrollJournalPreview(preview) {
+    const run = preview?.run || {};
+
+    const metaEl = $("payrollJournalPreviewMeta");
+
+    if (metaEl) {
+      metaEl.innerHTML = `
+        <div class="payroll-preview-meta">
+          <div>
+            <span>Payroll Run</span>
+            <strong>${esc(run.run_no || "")}</strong>
+          </div>
+
+          <div>
+            <span>Status</span>
+            <strong>${esc(cap(run.status || ""))}</strong>
+          </div>
+
+          <div>
+            <span>Payment Date</span>
+            <strong>${formatPayrollDate(run.payment_date)}</strong>
+          </div>
+
+          <div>
+            <span>Ready to Post</span>
+            <strong>${preview?.ready_to_post ? "Yes" : "No"}</strong>
+          </div>
+        </div>
+      `;
+    }
+
+    const issuesEl = $("payrollJournalPreviewIssues");
+    if (issuesEl) {
+      const missing = preview?.missing_mappings || [];
+      const invalid = preview?.invalid_accounts || [];
+
+      issuesEl.innerHTML = `
+        ${
+          missing.length
+            ? `<div class="notice error">
+                Missing mappings: ${esc(missing.join(", "))}
+              </div>`
+            : ""
+        }
+
+        ${
+          invalid.length
+            ? `<div class="notice error">
+                Invalid accounts: ${esc(invalid.join(", "))}
+              </div>`
+            : ""
+        }
+      `;
+    }
+
+    renderPayrollJournalTable(
+      $("payrollJournalPreviewLines"),
+      preview
+    );
+
+    if ($("payrollJournalPreviewPostBtn")) {
+      $("payrollJournalPreviewPostBtn").disabled =
+        !preview?.ready_to_post;
+    }
+  }
+
+  function renderPayrollJournalTable(container, preview) {
+    if (!container) return;
+
+    const lines = preview?.lines || [];
+    const run = preview?.run || {};
+
+    if (!lines.length) {
+      container.innerHTML = `
+        <div class="payroll-empty-state">
+          <strong>No journal preview available</strong>
+          <p>
+            ${esc(
+              preview?.reason ||
+              "Calculate payroll before generating the journal."
+            )}
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="payroll-journal-summary">
+        <div>
+          <span>Source</span>
+          <strong>payroll_run</strong>
+        </div>
+
+        <div>
+          <span>Source ID</span>
+          <strong>${esc(run.id || "")}</strong>
+        </div>
+
+        <div>
+          <span>Reference</span>
+          <strong>${esc(run.run_no || "")}</strong>
+        </div>
+
+        <div>
+          <span>Difference</span>
+          <strong>${money(preview.difference)}</strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="num">Debit</th>
+              <th class="num">Credit</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${lines.map(line => `
+              <tr>
+                <td>
+                  <strong>${esc(line.account_code || "")}</strong>
+                  <div class="payroll-muted">
+                    ${esc(line.account_name || "")}
+                  </div>
+                </td>
+
+                <td>${esc(line.description || "")}</td>
+
+                <td class="num">
+                  ${Number(line.debit || 0)
+                    ? money(line.debit)
+                    : "—"}
+                </td>
+
+                <td class="num">
+                  ${Number(line.credit || 0)
+                    ? money(line.credit)
+                    : "—"}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th colspan="2">Total</th>
+              <th class="num">${money(preview.debits)}</th>
+              <th class="num">${money(preview.credits)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="${
+        preview.ready_to_post
+          ? "notice success"
+          : "notice error"
+      } payroll-preview-result">
+        ${
+          preview.ready_to_post
+            ? "Journal is balanced and ready to post."
+            : esc(
+                preview.reason ||
+                "Journal is not ready to post."
+              )
+        }
+      </div>
+    `;
+  }
+
+  async function loadInlinePayrollJournal() {
+    const runId = payrollState.selectedRun?.id;
+    if (!runId) return;
+
+    const companyId = cid();
+    const container = $("payrollRunInlineJournal");
+
+    if (container) {
+      container.innerHTML = `
+        <p class="payroll-muted">Loading journal preview…</p>
+      `;
+    }
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.journalPreview(companyId, runId)
+    );
+
+    payrollState.journalPreview = res?.data || null;
+
+    renderPayrollJournalTable(
+      container,
+      payrollState.journalPreview
+    );
+}
+
+  function renderPayrollRunStatus(run) {
+    const status = String(run?.status || "draft").toLowerCase();
+
+    const steps = [
+      {
+        key: "draft",
+        label: "Run created",
+        complete: ["draft", "calculated", "approved", "posted"]
+          .includes(status),
+      },
+      {
+        key: "calculated",
+        label: "Payroll calculated",
+        complete: ["calculated", "approved", "posted"]
+          .includes(status),
+      },
+      {
+        key: "approved",
+        label: "Payroll approved",
+        complete: ["approved", "posted"].includes(status),
+      },
+      {
+        key: "posted",
+        label: "Journal posted",
+        complete: status === "posted",
+      },
+    ];
+
+    const statusEl = $("payrollRunProcessingStatus");
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <div class="payroll-process-steps">
+          ${steps.map(step => `
+            <div class="payroll-process-step ${
+              step.complete ? "complete" : ""
+            }">
+              <span>${step.complete ? "✓" : ""}</span>
+              <strong>${esc(step.label)}</strong>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    const checks = [
+      {
+        label: "Employees included",
+        ok: (run.employees || []).length > 0,
+      },
+      {
+        label: "Gross pay calculated",
+        ok: Number(run.gross_pay || 0) > 0,
+      },
+      {
+        label: "Net pay calculated",
+        ok: Number(run.net_pay || 0) >= 0,
+      },
+      {
+        label: "Journal posted",
+        ok: !!run.posted_journal_id,
+      },
+    ];
+
+    const checksEl = $("payrollRunChecks");
+    if (checksEl) {
+      checksEl.innerHTML = checks.map(check => `
+        <div class="payroll-check-row">
+          <span class="${
+            check.ok ? "payroll-check-ok" : "payroll-check-pending"
+          }">
+            ${check.ok ? "✓" : "•"}
+          </span>
+          <span>${esc(check.label)}</span>
+        </div>
+      `).join("");
+    }
+  }
+
+  function renderPayrollPostingControls(run) {
+    const status = String(run?.status || "draft").toLowerCase();
+    const isPosted = status === "posted";
+    const canPreview = ["calculated", "approved", "posted"]
+      .includes(status);
+    const canPost = ["calculated", "approved"]
+      .includes(status);
+
+    if ($("payrollCalculateRunBtn")) {
+      $("payrollCalculateRunBtn").disabled = isPosted;
+    }
+
+    if ($("payrollPreviewJournalBtn")) {
+      $("payrollPreviewJournalBtn").disabled = !canPreview;
+    }
+
+    if ($("payrollPostRunBtn")) {
+      $("payrollPostRunBtn").disabled = !canPost;
+      $("payrollPostRunBtn").classList.toggle(
+        "hidden",
+        isPosted
+      );
+    }
+
+    $("payrollReverseRunBtn")
+      ?.classList.toggle("hidden", !isPosted);
+
+    setTxt(
+      "payrollPostingMessage",
+      isPosted
+        ? `Payroll was posted to journal #${run.posted_journal_id || "—"}.`
+        : status === "draft"
+          ? "Calculate the payroll run before previewing or posting the journal."
+          : "Review the journal preview before posting payroll."
+    );
   }
 
   async function openPayrollRun(runId) {
     const companyId = cid();
-    const res = await apiFetch(ENDPOINTS.payroll.run(companyId, runId));
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.run(companyId, runId)
+    );
+
     const run = res?.data;
-    if (!run) return;
+    if (!run) {
+      throw new Error("Payroll run could not be loaded.");
+    }
 
     payrollState.selectedRun = run;
 
     $("payrollRunDetail")?.classList.remove("hidden");
-    setTxt("payrollRunTitle", run.run_no || "Payroll Run");
-    setTxt("payrollRunStatus", run.status || "draft");
+
+    setTxt(
+      "payrollRunTitle",
+      run.run_no || `Payroll Run ${run.id}`
+    );
+
+    setTxt(
+      "payrollRunPeriod",
+      `${formatPayrollDate(run.period_start)} — ${formatPayrollDate(run.period_end)}`
+    );
+
+    setTxt(
+      "payrollRunStatus",
+      cap(run.status || "draft")
+    );
+
+    setTxt(
+      "payrollRunCalendar",
+      cap(run.frequency || "—")
+    );
+
+    setTxt(
+      "payrollRunPaymentDate",
+      formatPayrollDate(run.payment_date)
+    );
+
+    setTxt(
+      "payrollRunEmployeeCount",
+      String((run.employees || []).length)
+    );
+
     setTxt("payrollRunGross", money(run.gross_pay));
-    setTxt("payrollRunDeductions", money(run.total_deductions));
-    setTxt("payrollRunEmployer", money(run.total_employer_contributions));
+    setTxt(
+      "payrollRunDeductions",
+      money(run.total_deductions)
+    );
+    setTxt(
+      "payrollRunEmployer",
+      money(run.total_employer_contributions)
+    );
     setTxt("payrollRunNet", money(run.net_pay));
 
     renderPayrollRunEmployees(run);
+    renderPayrollRunStatus(run);
+    renderPayrollPostingControls(run);
+
+    const journalLink = $("payrollRunJournalLink");
+    const noJournal = $("payrollRunNoJournal");
+
+    if (run.posted_journal_id) {
+      journalLink?.classList.remove("hidden");
+      noJournal?.classList.add("hidden");
+
+      if (journalLink) {
+        journalLink.textContent =
+          `Journal #${run.posted_journal_id}`;
+        journalLink.dataset.journalId =
+          String(run.posted_journal_id);
+      }
+    } else {
+      journalLink?.classList.add("hidden");
+      noJournal?.classList.remove("hidden");
+    }
+
+    switchPayrollRunTab("overview");
+
+    $("payrollRunDetail")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
   function renderPayrollRunEmployees(run) {
@@ -41979,9 +43558,116 @@ async function saveEditModal() {
 
   function renderPayrollSetupSelects() {
     const setup = payrollState.setup || {};
-    fillSelect("payBenefitTypeId", setup.benefit_types, x => `${x.code} — ${x.name}`);
-    fillSelect("payLeaveTypeId", setup.leave_types, x => `${x.code} — ${x.name}`);
-    fillSelect("payLoanDeductionTypeId", setup.deduction_types, x => `${x.code} — ${x.name}`);
+
+    fillSelect(
+      "payBenefitTypeId",
+      setup.benefit_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payLeaveTypeId",
+      setup.leave_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payLoanDeductionTypeId",
+      setup.deduction_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payRecurringEarningTypeId",
+      setup.earning_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payRecurringDeductionTypeId",
+      setup.deduction_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payrollBenefitEarningTypeId",
+      setup.earning_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payrollBenefitDeductionTypeId",
+      setup.deduction_types,
+      x => `${x.code} — ${x.name}`
+    );
+
+    fillSelect(
+      "payrollBenefitContributionTypeId",
+      setup.contribution_types,
+      x => `${x.code} — ${x.name}`
+    );
+  }
+
+  function renderPayrollMasterSetup() {
+    const setup = payrollState.setup || {};
+
+    renderPayrollSetupRows(
+      "payrollEarningTypesList",
+      setup.earning_types,
+      item => `
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${item.taxable ? "Taxable" : "Non-taxable"}</span>
+        <span>${item.pensionable ? "Pensionable" : "Not pensionable"}</span>
+      `
+    );
+
+    renderPayrollSetupRows(
+      "payrollDeductionTypesList",
+      setup.deduction_types,
+      item => `
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${item.is_statutory ? "Statutory" : "Voluntary"}</span>
+        <span>${esc(item.liability_account_code || "No GL mapping")}</span>
+      `
+    );
+
+    renderPayrollSetupRows(
+      "payrollContributionTypesList",
+      setup.contribution_types,
+      item => `
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${esc(item.expense_account_code || "No expense account")}</span>
+        <span>${esc(item.liability_account_code || "No liability account")}</span>
+      `
+    );
+
+    renderPayrollSetupRows(
+      "payrollBenefitTypesList",
+      setup.benefit_types,
+      item => `
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${esc(cap(item.benefit_category || ""))}</span>
+        <span>${item.taxable ? "Taxable" : "Non-taxable"}</span>
+      `
+    );
+  }
+
+  function renderPayrollSetupRows(id, items, contentFn) {
+    const el = $(id);
+    if (!el) return;
+
+    if (!(items || []).length) {
+      el.innerHTML = `
+        <p class="payroll-muted">No setup records found.</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = items.map(item => `
+      <div class="payroll-mini-row">
+        ${contentFn(item)}
+      </div>
+    `).join("");
   }
 
   function renderEmployeeSubrecords(e) {
@@ -42154,8 +43840,19 @@ async function saveEditModal() {
       btn.classList.toggle("active", btn.dataset.payrollEmpTab === tab);
     });
 
-    ["bio", "contract", "tax", "bank", "benefits", "leave", "loans"].forEach(name => {
-      $(`payrollEmpPanel${cap(name)}`)?.classList.toggle("hidden", name !== tab);
+    [
+      "bio",
+      "contract",
+      "earnings",
+      "deductions",
+      "tax",
+      "bank",
+      "benefits",
+      "leave",
+      "loans"
+    ].forEach(name => {
+      $(`payrollEmpPanel${cap(name)}`)
+        ?.classList.toggle("hidden", name !== tab);
     });
   }
 
@@ -42568,6 +44265,78 @@ async function saveEditModal() {
     $("payrollJournalPreviewClose")?.addEventListener("click", () => {
       $("payrollJournalPreviewModal")?.classList.add("hidden");
     });
+
+    document
+      .querySelectorAll("[data-payroll-run-tab]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => {
+          switchPayrollRunTab(
+            btn.dataset.payrollRunTab
+          );
+        });
+      });
+
+    document
+      .querySelectorAll("[data-payroll-setup-tab]")
+      .forEach(btn => {
+        btn.addEventListener("click", () => {
+          switchPayrollSetupTab(
+            btn.dataset.payrollSetupTab
+          );
+        });
+      });
+      
+    $("payrollBackToRunsBtn")?.addEventListener("click", () => {
+      payrollState.selectedRun = null;
+      $("payrollRunDetail")?.classList.add("hidden");
+
+      document
+        .querySelector("#payrollRunsList")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+    });
+
+    $("payrollRunRefreshPreviewBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          await loadInlinePayrollJournal();
+        } catch (error) {
+          showPayrollStatus(error.message, "error");
+        }
+      }
+    );
+
+    $("payrollJournalPreviewCancelBtn")?.addEventListener(
+      "click",
+      () => {
+        $("payrollJournalPreviewModal")
+          ?.classList.add("hidden");
+      }
+    );
+
+    $("payrollRunJournalLink")?.addEventListener(
+      "click",
+      () => {
+        const journalId =
+          $("payrollRunJournalLink")?.dataset.journalId;
+
+        if (!journalId) return;
+
+        // Replace with your existing Journal Desk navigation helper.
+        switchScreen?.("journal");
+
+        window.dispatchEvent(
+          new CustomEvent("finsage:open-journal", {
+            detail: {
+              journalId: Number(journalId),
+            },
+          })
+        );
+      }
+    );
   }
 
   window.bindPayrollScreen = async function bindPayrollScreen() {
@@ -42894,84 +44663,190 @@ async function saveEditModal() {
 
   window.openAdRecognitionRunModal = openAdRecognitionRunModal;
 
+  async function loadAdVendors() {
+    const cid = adCid();
+    const sel = $("adNewVendorId");
+    if (!sel || !cid) return [];
+
+    sel.innerHTML = `<option value="">Loading vendors...</option>`;
+
+    try {
+      let rows = [];
+
+      if (
+        Array.isArray(window.VENDORS_CACHE) &&
+        window.VENDORS_CACHE.length
+      ) {
+        rows = window.VENDORS_CACHE;
+      } else if (
+        Array.isArray(window.VENDORS) &&
+        window.VENDORS.length
+      ) {
+        rows = window.VENDORS;
+      } else {
+        const res = await apiFetch(
+          ENDPOINTS.vendors(cid),
+          { method: "GET" }
+        );
+
+        rows = Array.isArray(res)
+          ? res
+          : (
+              res?.vendors ||
+              res?.rows ||
+              res?.data ||
+              []
+            );
+      }
+
+      const clean = (rows || [])
+        .map((row) => ({
+          id: Number(row.id || row.vendor_id || 0),
+          name: String(
+            row.name ||
+            row.vendor_name ||
+            row.display_name ||
+            ""
+          ).trim(),
+        }))
+        .filter((row) => row.id > 0 && row.name);
+
+      sel.innerHTML = `
+        <option value="">Select vendor</option>
+        ${clean.map((row) => `
+          <option
+            value="${row.id}"
+            data-name="${escapeHtml(row.name)}"
+          >
+            ${escapeHtml(row.name)}
+          </option>
+        `).join("")}
+      `;
+
+      return clean;
+    } catch (error) {
+      console.warn("[AD] Failed to load vendors:", error);
+
+      sel.innerHTML = `
+        <option value="">No vendors available</option>
+      `;
+
+      return [];
+    }
+  }
+
+  async function applyAdSettlementMethod() {
+    const method = $("adNewSettlementMethod")?.value || "";
+
+    const bankWrap = $("adNewBankAccountWrap");
+    const vendorWrap = $("adNewVendorWrap");
+
+    const bankSelect = $("adNewSettlementAccount");
+    const vendorSelect = $("adNewVendorId");
+
+    const isBank = method === "cash_bank";
+    const isAP = method === "accounts_payable";
+
+    bankWrap?.classList.toggle("hidden", !isBank);
+    vendorWrap?.classList.toggle("hidden", !isAP);
+
+    if (bankSelect) {
+      bankSelect.required = isBank;
+
+      if (!isBank) {
+        bankSelect.value = "";
+      }
+    }
+
+    if (vendorSelect) {
+      vendorSelect.required = isAP;
+
+      if (!isAP) {
+        vendorSelect.value = "";
+      }
+    }
+
+    if (isBank) {
+      await loadAdBankAccounts();
+    }
+
+    if (isAP) {
+      await loadAdVendors();
+    }
+
+    scheduleAdPreview?.(window._AD_FINAL_CTX || {});
+  }
+
+  function adSettlementIsAP() {
+    return $("adNewSettlementMethod")?.value === "accounts_payable";
+  }
+
   async function loadAdBankAccounts() {
     const cid = adCid();
     const sel = $("adNewSettlementAccount");
-    if (!sel) return;
+    if (!sel || !cid) return [];
 
-    sel.innerHTML = `<option value="">Loading settlement accounts...</option>`;
-
-    const options = [];
+    sel.innerHTML = `<option value="">Loading bank / cash accounts...</option>`;
 
     try {
-      const res = await apiFetch(ENDPOINTS.bankAccounts(cid), { method: "GET" });
-      const banks = Array.isArray(res)
+      const res = await apiFetch(
+        ENDPOINTS.bankAccounts(cid),
+        { method: "GET" }
+      );
+
+      const rows = Array.isArray(res)
         ? res
-        : (res.accounts || res.rows || res.bank_accounts || []);
+        : (
+            res?.accounts ||
+            res?.rows ||
+            res?.bank_accounts ||
+            []
+          );
 
-      (banks || []).forEach((b) => {
-        const code =
-          b.account_code ||
-          b.coa_code ||
-          b.gl_account_code ||
-          b.code ||
-          "";
+      const clean = (rows || [])
+        .map((row) => {
+          const code =
+            row.gl_account_code ||
+            row.account_code ||
+            row.coa_code ||
+            row.code ||
+            "";
 
-        const name =
-          b.name ||
-          b.bank_name ||
-          b.account_name ||
-          code;
+          const name =
+            row.account_name ||
+            row.bank_name ||
+            row.name ||
+            code;
 
-        if (code) {
-          options.push({ code, name, group: "Bank / Cash" });
-        }
-      });
-    } catch (e) {
-      console.warn("[AD] bank accounts apiFetch failed", e);
+          return {
+            code: String(code || "").trim(),
+            name: String(name || "").trim(),
+          };
+        })
+        .filter((row) => row.code);
+
+      sel.innerHTML = `
+        <option value="">Select bank or cash account</option>
+        ${clean.map((row) => `
+          <option
+            value="${escapeHtml(row.code)}"
+            data-name="${escapeHtml(row.name)}"
+          >
+            ${escapeHtml(row.name)}
+          </option>
+        `).join("")}
+      `;
+
+      return clean;
+    } catch (error) {
+      console.warn("[AD] Failed to load bank accounts:", error);
+
+      sel.innerHTML = `
+        <option value="">No bank or cash accounts available</option>
+      `;
+
+      return [];
     }
-
-    const coa = Array.isArray(window.CURRENT_COA) ? window.CURRENT_COA : [];
-    coa.forEach((a) => {
-      const code = a.code || "";
-      const name = a.name || code;
-      const role = String(a.role || "").toLowerCase();
-      const category = String(a.category || "").toLowerCase();
-
-      const useful =
-        role.includes("cash") ||
-        role.includes("bank") ||
-        role.includes("accounts_payable") ||
-        role.includes("ap") ||
-        role.includes("accounts_receivable") ||
-        role.includes("ar") ||
-        role.includes("supplier") ||
-        role.includes("customer") ||
-        category.includes("current liabilities") ||
-        name.toLowerCase().includes("bank") ||
-        name.toLowerCase().includes("cash") ||
-        name.toLowerCase().includes("payable") ||
-        name.toLowerCase().includes("receivable") ||
-        name.toLowerCase().includes("clearing");
-
-      if (code && useful && !options.some((x) => x.code === code)) {
-        options.push({ code, name, group: "COA Contra Accounts" });
-      }
-    });
-
-    if (!options.length) {
-      sel.innerHTML = `<option value="">No settlement accounts found</option>`;
-      return;
-    }
-
-    sel.innerHTML = `
-      <option value="">Use default settlement role</option>
-      ${options.map((x) => `
-        <option value="${escapeHtml(x.code)}">
-          ${escapeHtml(x.name)}
-        </option>
-      `).join("")}
-    `;
   }
 
   function adSettlementIsAP() {
@@ -43056,9 +44931,25 @@ async function saveEditModal() {
                   </label>
 
                   <label class="text-sm">
-                    Settlement / Contra Account
+                    Settlement Method
+                    <select id="adNewSettlementMethod" class="input" required>
+                      <option value="">Select settlement method</option>
+                      <option value="cash_bank">Bank / Cash</option>
+                      <option value="accounts_payable">Accounts Payable</option>
+                    </select>
+                  </label>
+
+                  <label id="adNewBankAccountWrap" class="text-sm hidden">
+                    Bank / Cash Account
                     <select id="adNewSettlementAccount" class="input">
-                      <option value="">Loading settlement accounts...</option>
+                      <option value="">Select bank or cash account</option>
+                    </select>
+                  </label>
+
+                  <label id="adNewVendorWrap" class="text-sm hidden">
+                    Vendor
+                    <select id="adNewVendorId" class="input">
+                      <option value="">Select vendor</option>
                     </select>
                   </label>
 
@@ -43149,15 +45040,61 @@ async function saveEditModal() {
       document.getElementById("adModalCancelBtn")?.addEventListener("click", closeAdNewModal);
 
       document.getElementById("adPreviewBtn")?.addEventListener("click", async () => {
+        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+
+        if (!payload.settlement_method) {
+          return alert("Select Bank / Cash or Accounts Payable.");
+        }
+
+        if (
+          payload.settlement_method === "cash_bank" &&
+          !payload.settlement_account
+        ) {
+          return alert("Select the bank or cash account.");
+        }
+
+        if (
+          payload.settlement_method === "accounts_payable" &&
+          !payload.supplier_id
+        ) {
+          return alert("Select the vendor.");
+        }
+
         await refreshAdPreview(window._AD_FINAL_CTX || {});
       });
 
       document.getElementById("adSaveDraftBtn")?.addEventListener("click", async () => {
         const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
 
-        if (!payload.item_title) return alert("Item title is required.");
-        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
-        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+        if (!payload.item_title) {
+          return alert("Item title is required.");
+        }
+
+        if (!(payload.original_amount > 0)) {
+          return alert("Original amount must be greater than zero.");
+        }
+
+        if (!payload.start_date || !payload.end_date) {
+          return alert("Start date and end date are required.");
+        }
+
+        if (!payload.settlement_method) {
+          return alert("Select Bank / Cash or Accounts Payable.");
+        }
+
+        if (
+          payload.settlement_method === "cash_bank" &&
+          !payload.settlement_account
+        ) {
+          return alert("Select the bank or cash account.");
+        }
+
+        if (
+          payload.settlement_method === "accounts_payable" &&
+          !payload.supplier_id
+        ) {
+          return alert("Select the vendor.");
+        }
 
         await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
           method: "POST",
@@ -43168,53 +45105,206 @@ async function saveEditModal() {
         closeAdNewModal();
       });
 
-      document.getElementById("adNewItemForm")?.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      document
+        .getElementById("adNewItemForm")
+        ?.addEventListener("submit", async (e) => {
+          e.preventDefault();
 
-        const payload = adPayloadFromWizard(window._AD_FINAL_CTX || {});
+          const ctx = window._AD_FINAL_CTX || {};
+          const payload = adPayloadFromWizard(ctx);
 
-        if (!payload.item_title) return alert("Item title is required.");
-        if (!(payload.original_amount > 0)) return alert("Original amount must be greater than zero.");
-        if (!payload.start_date || !payload.end_date) return alert("Start date and end date are required.");
+          // --------------------------------------------------
+          // Core validation
+          // --------------------------------------------------
+          if (!payload.item_title) {
+            return alert("Item title is required.");
+          }
 
-        if (typeof adSettlementIsAP === "function" && adSettlementIsAP()) {
-          const saved = await apiFetch(ENDPOINTS.accrualDeferrals.items(adCid()), {
-            method: "POST",
-            body: JSON.stringify({
-              ...payload,
-              status: "draft",
-              source_flow: "ap_bill_pending",
-              initial_posting_status: "pending_ap_bill",
-            }),
-          });
+          if (!(payload.original_amount > 0)) {
+            return alert("Original amount must be greater than zero.");
+          }
 
-          localStorage.setItem("fs_ad_ap_bill_prefill", JSON.stringify({
-            source: "accrual_deferral",
-            item_id: saved?.item?.id,
-            item_title: payload.item_title,
-            bill_date: payload.transaction_date,
-            currency: payload.currency,
-            amount: payload.original_amount,
-            account_code: payload.balance_account || "",
-            account_role: payload.balance_account_role || "prepaid_expense",
-            description: payload.item_title,
-            reference: window._AD_FINAL_CTX?.journalRef || window._AD_FINAL_CTX?.journal_ref || "",
-          }));
+          if (!payload.transaction_date) {
+            return alert("Transaction date is required.");
+          }
 
-          closeAdNewModal();
-          await window.switchScreen?.("ap");
-          window.showToast?.("Draft saved. Complete the supplier bill in AP.", "info");
-          return;
-        }
+          if (!payload.start_date || !payload.end_date) {
+            return alert("Start date and end date are required.");
+          }
 
-        await apiFetch(ENDPOINTS.accrualDeferrals.createAndPost(adCid()), {
-          method: "POST",
-          body: JSON.stringify(payload),
+          if (!payload.settlement_method) {
+            return alert("Select Bank / Cash or Accounts Payable.");
+          }
+
+          if (
+            payload.settlement_method === "cash_bank" &&
+            !payload.settlement_account
+          ) {
+            return alert("Select the bank or cash account.");
+          }
+
+          if (
+            payload.settlement_method === "accounts_payable" &&
+            !payload.supplier_id
+          ) {
+            return alert("Select the vendor.");
+          }
+
+          const submitBtn = document.getElementById("adCreatePostBtn");
+          const originalBtnText = submitBtn?.textContent || "";
+
+          try {
+            if (submitBtn) {
+              submitBtn.disabled = true;
+              submitBtn.textContent =
+                payload.settlement_method === "accounts_payable"
+                  ? "Preparing AP Bill..."
+                  : "Posting Initial Recognition...";
+            }
+
+            // ==================================================
+            // ACCOUNTS PAYABLE FLOW
+            // Create only the accrual/deferral draft.
+            // AP will perform the initial GL posting.
+            // ==================================================
+            if (payload.settlement_method === "accounts_payable") {
+              const response = await apiFetch(
+                ENDPOINTS.accrualDeferrals.items(adCid()),
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    ...payload,
+                    status: "draft",
+                    approval_status: "draft",
+                    source_flow: "ap_bill_pending",
+                    initial_posting_status: "pending_ap_bill",
+                  }),
+                }
+              );
+
+              const item =
+                response?.item?.item ||
+                response?.item ||
+                response?.data?.item ||
+                response?.data ||
+                {};
+
+              const itemId = Number(
+                item?.id ||
+                response?.item_id ||
+                response?.id ||
+                0
+              );
+
+              if (!itemId) {
+                throw new Error(
+                  "The prepayment was saved, but no accrual/deferral item ID was returned."
+                );
+              }
+
+              const vendorId = Number(payload.supplier_id || 0);
+              if (!(vendorId > 0)) {
+                throw new Error("A valid vendor is required for the AP bill.");
+              }
+
+              const prefill = {
+                source: "accrual_deferral",
+
+                accrual_deferral_item_id: itemId,
+                item_id: itemId,
+
+                item_title: payload.item_title,
+                item_type: payload.item_type,
+
+                vendor_id: vendorId,
+                vendor_name: payload.supplier_name || "",
+
+                bill_date: payload.transaction_date,
+                currency: payload.currency,
+                amount: Number(payload.original_amount || 0),
+
+                /*
+                * The backend journal builder can resolve the balance
+                * account from accrual_deferral_item_id. account_code
+                * may therefore remain blank here.
+                */
+                account_code:
+                  item.balance_account ||
+                  payload.balance_account ||
+                  "",
+
+                account_role:
+                  item.balance_account_role ||
+                  payload.balance_account_role ||
+                  payload.item_type ||
+                  "prepaid_expense",
+
+                description: payload.item_title,
+
+                reference:
+                  ctx.journalRef ||
+                  ctx.journal_ref ||
+                  "",
+
+                notes: payload.notes || "",
+              };
+
+              localStorage.setItem(
+                "fs_ad_ap_bill_prefill",
+                JSON.stringify(prefill)
+              );
+
+              closeAdNewModal();
+
+              await window.switchScreen?.("ap");
+
+              window.showToast?.(
+                "Prepayment draft saved. Complete and post the vendor bill.",
+                "info"
+              );
+
+              return;
+            }
+
+            // ==================================================
+            // BANK / CASH FLOW
+            // This module posts the initial recognition.
+            // ==================================================
+            await apiFetch(
+              ENDPOINTS.accrualDeferrals.createAndPost(adCid()),
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  ...payload,
+                  status: "active",
+                  approval_status: "approved",
+                  source_flow: "cash_bank",
+                  initial_posting_status: "posted",
+                }),
+              }
+            );
+
+            await loadAccrualDeferrals();
+            closeAdNewModal();
+
+            window.showToast?.(
+              "Initial recognition posted successfully.",
+              "success"
+            );
+          } catch (error) {
+            console.error("[AD] create/post failed:", error);
+
+            window.showToast?.(
+              error?.message || "Failed to process the accrual or deferral item.",
+              "error"
+            );
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = originalBtnText;
+            }
+          }
         });
-
-        await loadAccrualDeferrals();
-        closeAdNewModal();
-      });
     }
 
     const handoffRaw = store?.get?.("fs_ad_redirect_context") || "";
@@ -43245,7 +45335,11 @@ async function saveEditModal() {
       $("adNewTitle").value = finalCtx.account.name;
     }
 
-    await loadAdBankAccounts();
+    if (!$("adNewSettlementMethod")?.value) {
+      $("adNewSettlementMethod").value = "cash_bank";
+    }
+
+    await applyAdSettlementMethod();
     applyAdTypeDefaults(finalCtx);
 
     if ($("adNewType") && $("adNewType").dataset.adTypeBound !== "1") {
@@ -43280,25 +45374,74 @@ async function saveEditModal() {
   window.openNewAccrualDeferralModal = openNewAccrualDeferralModal;
 
   function adPayloadFromWizard(ctx = {}) {
+    const settlementMethod =
+      $("adNewSettlementMethod")?.value || "";
+
+    const vendorSelect = $("adNewVendorId");
+    const vendorOption = vendorSelect?.selectedOptions?.[0];
+
+    const bankSelect = $("adNewSettlementAccount");
+    const bankOption = bankSelect?.selectedOptions?.[0];
+
     return {
       item_title: $("adNewTitle")?.value?.trim(),
       item_type: $("adNewType")?.value,
+
       transaction_date: $("adNewTransactionDate")?.value,
       start_date: $("adNewStartDate")?.value,
       end_date: $("adNewEndDate")?.value,
+
       original_amount: Number($("adNewAmount")?.value || 0),
-      currency: $("adNewCurrency")?.value || resolveCurrency?.() || "USD",
+      currency:
+        $("adNewCurrency")?.value ||
+        resolveCurrency?.() ||
+        "USD",
+
       frequency: $("adNewFrequency")?.value || "monthly",
 
-      balance_account_role: $("adNewBalanceAccountRole")?.value?.trim(),
-      recognition_account_role: $("adNewRecognitionRole")?.value?.trim(),
+      balance_account_role:
+        $("adNewBalanceAccountRole")?.value?.trim(),
+
+      recognition_account_role:
+        $("adNewRecognitionRole")?.value?.trim(),
+
       recognition_account: ctx.account?.code || "",
 
-      settlement_account: $("adNewSettlementAccount")?.value?.trim(),
-      settlement_role: $("adNewSettlementAccount")?.value ? "" : "cash_bank",
+      settlement_method: settlementMethod,
+
+      settlement_account:
+        settlementMethod === "cash_bank"
+          ? String(bankSelect?.value || "").trim()
+          : "",
+
+      settlement_account_name:
+        settlementMethod === "cash_bank"
+          ? String(bankOption?.dataset?.name || "").trim()
+          : "",
+
+      settlement_role:
+        settlementMethod === "accounts_payable"
+          ? "accounts_payable"
+          : "cash_bank",
+
+      counterparty_type:
+        settlementMethod === "accounts_payable"
+          ? "supplier"
+          : null,
+
+      supplier_id:
+        settlementMethod === "accounts_payable"
+          ? Number(vendorSelect?.value || 0) || null
+          : null,
+
+      supplier_name:
+        settlementMethod === "accounts_payable"
+          ? String(vendorOption?.dataset?.name || "").trim()
+          : "",
 
       recognition_method: "straight_line",
       status: "draft",
+
       notes: $("adNewNotes")?.value?.trim() || "",
     };
   }
@@ -70354,10 +72497,21 @@ function bindAP() {
         item_name: item,
         description: desc,
         account_code: acct || null,
+
+        accrual_deferral_item_id: (() => {
+          const value = Number(
+            row.dataset.accrualDeferralItemId || 0
+          );
+
+          return value > 0 ? value : null;
+        })(),
+
         quantity: qty,
         unit_price: price,
         vat_code: vatCode,
-        vat_rate: vatCode === "CUSTOM" ? customRate : getVatRateFromCode(vatCode),
+        vat_rate: vatCode === "CUSTOM"
+          ? customRate
+          : getVatRateFromCode(vatCode),
       };
     });
 
@@ -71034,16 +73188,29 @@ function bindAP() {
               if (linesBody) linesBody.innerHTML = "";
 
               window.addBillLine?.({
-                  item_name: prefill.item_title || "Prepaid Expense",
-                  description:
-                      prefill.description ||
-                      prefill.item_title ||
-                      "Prepaid Expense",
-                  quantity: 1,
-                  unit_price: Number(prefill.amount || 0),
-                  account_code: prefill.account_code || null,
-                  vat_code: "ZERO",
-                  vat_rate: 0,
+                item_name:
+                  prefill.item_title ||
+                  "Prepaid Expense",
+
+                description:
+                  prefill.description ||
+                  prefill.item_title ||
+                  "Prepaid Expense",
+
+                quantity: 1,
+                unit_price: Number(prefill.amount || 0),
+
+                account_code: prefill.account_code || null,
+
+                accrual_deferral_item_id:
+                  Number(
+                    prefill.accrual_deferral_item_id ||
+                    prefill.item_id ||
+                    0
+                  ) || null,
+
+                vat_code: "ZERO",
+                vat_rate: 0,
               });
 
               window.recalcBill?.({ force: true });

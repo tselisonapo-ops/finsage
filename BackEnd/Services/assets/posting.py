@@ -5029,8 +5029,33 @@ def upsert_carrying_snapshot(
         """), (company_id, asset_id))
         accum = Decimal((cur.fetchone() or {}).get("x") or 0)
 
-    ca = cost_total + reval_net - Decimal(accum) - Decimal(get_opening_impairment(cur, schema, company_id, asset_id)) - imp_net
+    opening_impairment = Decimal(
+        get_opening_impairment(cur, schema, company_id, asset_id) or 0
+    )
+
+    ca = (
+        cost_total
+        + reval_net
+        - Decimal(accum)
+        - opening_impairment
+        - imp_net
+    )
     ca = max(Decimal("0"), ca)
+
+    current_app.logger.warning("CARRY SNAPSHOT DEBUG %s", {
+        "company_id": int(company_id),
+        "asset_id": int(asset_id),
+        "as_at": str(as_at),
+        "source_event": source_event,
+        "cost_total": str(cost_total),
+        "reval_net": str(reval_net),
+        "imp_net": str(imp_net),
+        "opening_impairment": str(opening_impairment),
+        "accumulated_depreciation": str(accum),
+        "carrying_amount": str(ca),
+        "notes": notes,
+        "created_by": created_by,
+    })
 
     cur.execute(_q(schema, """
       INSERT INTO {schema}.asset_carrying_amount_history(

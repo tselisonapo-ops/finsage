@@ -2059,9 +2059,380 @@ html, body {
   }
 }
 
+#bfRoot .bf-workspace {
+  width: 100%;
+  min-height: calc(100vh - 150px);
+}
+
+#bfRoot .bf-workspace-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  background: rgba(245, 251, 253, 0.96);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #dbe7f3;
+}
+
+#bfRoot .bf-workspace-header > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+#bfRoot .bf-workspace-title h2 {
+  margin: 3px 0 5px;
+  font-size: 25px;
+}
+
+#bfRoot .bf-eyebrow {
+  display: block;
+  color: #008a96;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+#bfRoot .bf-workspace-meta,
+#bfRoot .bf-planning-toolbar {
+  margin-top: 18px;
+}
+
+#bfRoot .grid.four {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+#bfRoot .bf-planning-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+#bfRoot .bf-toolbar-summary,
+#bfRoot .bf-summary-strip {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#bfRoot .bf-toolbar-summary > div,
+#bfRoot .bf-summary-strip > div {
+  min-width: 130px;
+  padding: 11px 14px;
+  background: #f7fbff;
+  border: 1px solid #dce9f4;
+  border-radius: 12px;
+}
+
+#bfRoot .bf-toolbar-summary span,
+#bfRoot .bf-summary-strip span {
+  display: block;
+  margin-bottom: 4px;
+  color: #718096;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+#bfRoot .bf-pnl-preview {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+#bfRoot .bf-pnl-section {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dce7f1;
+  border-radius: 16px;
+  box-shadow: 0 7px 20px rgba(15, 42, 68, 0.05);
+}
+
+#bfRoot .bf-pnl-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 17px 19px;
+  background: linear-gradient(90deg, #f7fbff, #effcfc);
+  border-bottom: 1px solid #e2edf5;
+}
+
+#bfRoot .bf-pnl-section-head h3 {
+  margin: 0 0 3px;
+}
+
+#bfRoot .bf-pnl-section-head p {
+  margin: 0;
+  color: #6b7f91;
+  font-size: 12px;
+}
+
+#bfRoot .bf-section-count {
+  padding: 5px 9px;
+  background: #e7fafc;
+  color: #007e89;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#bfRoot .bf-account-preview-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+#bfRoot .bf-account-preview-row {
+  display: grid;
+  grid-template-columns: 160px minmax(220px, 1fr) 220px;
+  gap: 12px;
+  padding: 11px 18px;
+  border-bottom: 1px solid #edf3f8;
+}
+
+#bfRoot .bf-account-code {
+  color: #183650;
+  font-weight: 800;
+}
+
+#bfRoot .bf-account-name {
+  color: #334f68;
+}
+
+#bfRoot .bf-account-category {
+  color: #718096;
+  font-size: 12px;
+}
+
+#bfRoot .bf-account-empty {
+  padding: 20px;
+  color: #718096;
+}
+
+#bfRoot .bf-calculated-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: #f6fafc;
+  border-top: 1px solid #dce8f1;
+}
+
+#bfRoot .bf-net-profit-row {
+  color: #006d76;
+  background: #e8fbfc;
+}
+
+#bfRoot .bf-workspace-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: 20px;
+  padding: 15px 18px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #dbe7f3;
+  border-radius: 14px;
+  box-shadow: 0 -8px 24px rgba(15, 42, 68, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+#bfRoot .bf-summary-strip {
+  margin: 16px 0;
+}
+
+#bfRoot .bf-planning-grid-wrap {
+  width: 100%;
+  overflow: auto;
+  max-height: calc(100vh - 320px);
+  background: #fff;
+  border: 1px solid #dbe7f3;
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(15, 42, 68, 0.06);
+}
+
+#bfRoot .bf-planning-grid {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+#bfRoot .bf-planning-grid th,
+#bfRoot .bf-planning-grid td {
+  min-width: 118px;
+  padding: 9px;
+  background: #fff;
+  border-right: 1px solid #edf2f7;
+  border-bottom: 1px solid #edf2f7;
+}
+
+#bfRoot .bf-planning-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background: #edf7fb;
+  color: #36536b;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+#bfRoot .bf-planning-grid .bf-sticky-account {
+  position: sticky;
+  left: 0;
+  z-index: 12;
+  min-width: 290px;
+  max-width: 290px;
+  background: #fff;
+}
+
+#bfRoot .bf-planning-grid thead .bf-sticky-account {
+  z-index: 20;
+  background: #e7f4f8;
+}
+
+#bfRoot .bf-planning-account-row .bf-sticky-account strong,
+#bfRoot .bf-planning-account-row .bf-sticky-account span {
+  display: block;
+}
+
+#bfRoot .bf-planning-account-row .bf-sticky-account span {
+  margin-top: 3px;
+  color: #6b7f91;
+  font-size: 11px;
+}
+
+#bfRoot .bf-forecast-cell {
+  width: 105px;
+  padding: 8px;
+  text-align: right;
+  border: 1px solid #d7e3ed;
+  border-radius: 7px;
+}
+
+#bfRoot .bf-forecast-cell:focus {
+  outline: 2px solid rgba(0, 184, 200, 0.22);
+  border-color: #00aebb;
+}
+
+#bfRoot .bf-forecast-cell.is-dirty {
+  background: #fff9df;
+  border-color: #e4b834;
+}
+
+#bfRoot .bf-section-title-row td {
+  position: sticky;
+  left: 0;
+  padding: 11px 14px;
+  background: #dff6f8;
+  color: #006f78;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#bfRoot .bf-calculation-row td {
+  background: #f1f7fa;
+  font-weight: 800;
+}
+
+#bfRoot .bf-calculation-row .bf-sticky-account {
+  background: #eaf3f7;
+}
+
+#bfRoot .bf-calculation-row.bf-net-profit td {
+  background: #dff9f4;
+  color: #006b58;
+}
+
+#bfRoot .bf-annual-total {
+  background: #f7fafc !important;
+  font-weight: 800;
+}
+
+@media (max-width: 1100px) {
+  #bfRoot .grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #bfRoot .bf-account-preview-row {
+    grid-template-columns: 140px 1fr;
+  }
+
+  #bfRoot .bf-account-category {
+    display: none;
+  }
+}
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-setup-tabs,
+.payroll-run-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #f4f7fb;
+}
+
+.payroll-setup-tabs button,
+.payroll-run-tabs button {
+  border: 0;
+  background: transparent;
+  color: #667085;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.payroll-setup-tabs button.active,
+.payroll-run-tabs button.active {
+  background: #fff;
+  color: #0b56a0;
+  box-shadow: 0 3px 12px rgba(16, 24, 40, .08);
+}
+
+.payroll-inline-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.payroll-inline-form-3 {
+  grid-template-columns: 1fr 1fr auto;
+}
+
+.payroll-inline-form input,
+.payroll-inline-form select {
+  border: 1px solid #d0d7e2;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.payroll-check-label {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+}
+
+.payroll-check-label input {
+  width: auto;
+}
 
 #screen-payroll {
   padding: 24px 28px;
@@ -10504,57 +10875,502 @@ html, body {
             </div>
 
             <div id="payrollRunDetail" class="payroll-card hidden">
-              <div class="payroll-card-head">
-                <h3 id="payrollRunTitle">Payroll Run</h3>
-                <span id="payrollRunStatus" class="payroll-pill">draft</span>
+              <div class="payroll-run-header">
+                <div>
+                  <button
+                    id="payrollBackToRunsBtn"
+                    type="button"
+                    class="payroll-back-btn"
+                  >
+                    ← All payroll runs
+                  </button>
+
+                  <div class="payroll-run-title-row">
+                    <div>
+                      <h3 id="payrollRunTitle">Payroll Run</h3>
+                      <p id="payrollRunPeriod" class="payroll-muted">—</p>
+                    </div>
+
+                    <span id="payrollRunStatus" class="payroll-pill">
+                      Draft
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div class="payroll-kpis">
-                <div><span>Gross Pay</span><strong id="payrollRunGross">0.00</strong></div>
-                <div><span>Deductions</span><strong id="payrollRunDeductions">0.00</strong></div>
-                <div><span>Employer Cost</span><strong id="payrollRunEmployer">0.00</strong></div>
-                <div><span>Net Pay</span><strong id="payrollRunNet">0.00</strong></div>
+              <div class="payroll-run-summary">
+                <div>
+                  <span>Calendar</span>
+                  <strong id="payrollRunCalendar">—</strong>
+                </div>
+
+                <div>
+                  <span>Payment date</span>
+                  <strong id="payrollRunPaymentDate">—</strong>
+                </div>
+
+                <div>
+                  <span>Employees</span>
+                  <strong id="payrollRunEmployeeCount">0</strong>
+                </div>
+
+                <div>
+                  <span>Journal</span>
+                  <button
+                    id="payrollRunJournalLink"
+                    type="button"
+                    class="payroll-link hidden"
+                  >
+                    View journal
+                  </button>
+                  <strong id="payrollRunNoJournal">Not posted</strong>
+                </div>
               </div>
 
-              <div class="payroll-run-actions">
-                <button id="payrollCalculateRunBtn" class="payroll-secondary">Calculate</button>
-                <button id="payrollPreviewJournalBtn" class="payroll-secondary">Preview Journal</button>
-                <button id="payrollPostRunBtn" class="payroll-primary">Post Payroll</button>
+              <div class="payroll-kpis payroll-run-kpis">
+                <div>
+                  <span>Gross Pay</span>
+                  <strong id="payrollRunGross">0.00</strong>
+                </div>
+
+                <div>
+                  <span>Employee Deductions</span>
+                  <strong id="payrollRunDeductions">0.00</strong>
+                </div>
+
+                <div>
+                  <span>Employer Costs</span>
+                  <strong id="payrollRunEmployer">0.00</strong>
+                </div>
+
+                <div>
+                  <span>Net Pay</span>
+                  <strong id="payrollRunNet">0.00</strong>
+                </div>
               </div>
 
-              <h3>Employees</h3>
-              <div id="payrollRunEmployeesList"></div>
+              <div class="payroll-run-tabs">
+                <button
+                  type="button"
+                  class="active"
+                  data-payroll-run-tab="overview"
+                >
+                  Overview
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="employees"
+                >
+                  Employees
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="journal"
+                >
+                  Journal
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="posting"
+                >
+                  Posting
+                </button>
+              </div>
+
+              <div
+                id="payrollRunPanelOverview"
+                class="payroll-run-panel"
+              >
+                <div class="payroll-run-overview-grid">
+                  <div class="payroll-run-info-card">
+                    <h4>Processing status</h4>
+                    <div id="payrollRunProcessingStatus"></div>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Run checks</h4>
+                    <div id="payrollRunChecks"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                id="payrollRunPanelEmployees"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Employees</h3>
+                    <p class="payroll-muted">
+                      Employees and calculated payroll totals included in this run.
+                    </p>
+                  </div>
+                </div>
+
+                <div id="payrollRunEmployeesList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelJournal"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Journal</h3>
+                    <p class="payroll-muted">
+                      Accounting entry generated from this payroll run.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRunRefreshPreviewBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Preview
+                  </button>
+                </div>
+
+                <div id="payrollRunInlineJournal"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelPosting"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-posting-card">
+                  <div>
+                    <h3>Payroll posting</h3>
+                    <p id="payrollPostingMessage" class="payroll-muted">
+                      Calculate payroll before posting.
+                    </p>
+                  </div>
+
+                  <div class="payroll-run-actions">
+                    <button
+                      id="payrollCalculateRunBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Calculate Payroll
+                    </button>
+
+                    <button
+                      id="payrollPreviewJournalBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Preview Journal
+                    </button>
+
+                    <button
+                      id="payrollPostRunBtn"
+                      type="button"
+                      class="payroll-primary"
+                    >
+                      Post Payroll
+                    </button>
+
+                    <button
+                      id="payrollReverseRunBtn"
+                      type="button"
+                      class="payroll-danger hidden"
+                    >
+                      Reverse Payroll
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           <div id="payrollTabSettings" class="payroll-panel hidden">
+
             <div class="payroll-card">
-              <h3>Payroll Settings</h3>
-
-              <div class="form-grid">
-                <label>Default Frequency
-                  <select id="payrollDefaultFrequency">
-                    <option value="monthly">Monthly</option>
-                    <option value="fortnightly">Fortnightly</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
-                </label>
-
-                <label>Default Currency
-                  <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
-                </label>
-
-                <label>Tax Authority ID
-                  <input id="payrollTaxAuthorityId" type="number" placeholder="Optional">
-                </label>
-
-                <label>Payroll Start Date
-                  <input id="payrollStartDate" type="date">
-                </label>
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Payroll Setup</h3>
+                  <p class="payroll-muted">
+                    Configure payroll defaults, organisational structures, pay items,
+                    benefits and accounting mappings.
+                  </p>
+                </div>
               </div>
 
-              <button id="payrollSaveSettingsBtn" class="payroll-primary">Save Settings</button>
+              <div class="payroll-setup-tabs">
+                <button class="active" data-payroll-setup-tab="general">General</button>
+                <button data-payroll-setup-tab="departments">Departments</button>
+                <button data-payroll-setup-tab="positions">Positions</button>
+                <button data-payroll-setup-tab="earnings">Earnings</button>
+                <button data-payroll-setup-tab="deductions">Deductions</button>
+                <button data-payroll-setup-tab="contributions">Employer Contributions</button>
+                <button data-payroll-setup-tab="benefits">Benefit Types</button>
+                <button data-payroll-setup-tab="mappings">GL Mappings</button>
+              </div>
             </div>
+
+            <div id="payrollSetupPanelGeneral" class="payroll-setup-panel">
+              <div class="payroll-card">
+                <h3>General Payroll Settings</h3>
+
+                <div class="form-grid">
+                  <label>
+                    Default Frequency
+                    <select id="payrollDefaultFrequency">
+                      <option value="monthly">Monthly</option>
+                      <option value="fortnightly">Fortnightly</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Default Currency
+                    <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
+                  </label>
+
+                  <label>
+                    Tax Authority ID
+                    <input id="payrollTaxAuthorityId" type="number" placeholder="Optional">
+                  </label>
+
+                  <label>
+                    Payroll Start Date
+                    <input id="payrollStartDate" type="date">
+                  </label>
+                </div>
+
+                <button id="payrollSaveSettingsBtn" class="payroll-primary">
+                  Save General Settings
+                </button>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelDepartments" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Departments</h3>
+                    <p class="payroll-muted">Group employees by business function.</p>
+                  </div>
+                </div>
+
+                <div class="payroll-inline-form">
+                  <input id="payrollDepartmentName" placeholder="Department name">
+                  <button id="payrollAddDepartmentBtn" class="payroll-primary">
+                    Add Department
+                  </button>
+                </div>
+
+                <div id="payrollDepartmentsList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelPositions" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Positions</h3>
+
+                <div class="payroll-inline-form payroll-inline-form-3">
+                  <input id="payrollPositionTitle" placeholder="Position title">
+
+                  <select id="payrollPositionDepartmentId">
+                    <option value="">Select department…</option>
+                  </select>
+
+                  <button id="payrollAddPositionBtn" class="payroll-primary">
+                    Add Position
+                  </button>
+                </div>
+
+                <div id="payrollPositionsList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelEarnings" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Earning Types</h3>
+                <p class="payroll-muted">
+                  Define salary, overtime, bonus, commission and allowance categories.
+                </p>
+
+                <div class="form-grid">
+                  <label>
+                    Code
+                    <input id="payrollEarningCode" placeholder="OVERTIME">
+                  </label>
+
+                  <label>
+                    Name
+                    <input id="payrollEarningName" placeholder="Overtime">
+                  </label>
+
+                  <label>
+                    Expense Account
+                    <select id="payrollEarningGlAccount"></select>
+                  </label>
+
+                  <label class="payroll-check-label">
+                    <input id="payrollEarningTaxable" type="checkbox" checked>
+                    Taxable
+                  </label>
+
+                  <label class="payroll-check-label">
+                    <input id="payrollEarningPensionable" type="checkbox" checked>
+                    Pensionable
+                  </label>
+                </div>
+
+                <button id="payrollAddEarningTypeBtn" class="payroll-primary">
+                  Add Earning Type
+                </button>
+
+                <div id="payrollEarningTypesList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelDeductions" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Deduction Types</h3>
+                <p class="payroll-muted">
+                  Define PAYE, pension, medical aid, union fees, loans and other deductions.
+                </p>
+
+                <div class="form-grid">
+                  <label>
+                    Code
+                    <input id="payrollDeductionCode" placeholder="PENSION_EMP">
+                  </label>
+
+                  <label>
+                    Name
+                    <input id="payrollDeductionName" placeholder="Employee Pension">
+                  </label>
+
+                  <label>
+                    Liability Account
+                    <select id="payrollDeductionLiabilityAccount"></select>
+                  </label>
+
+                  <label class="payroll-check-label">
+                    <input id="payrollDeductionStatutory" type="checkbox">
+                    Statutory deduction
+                  </label>
+                </div>
+
+                <button id="payrollAddDeductionTypeBtn" class="payroll-primary">
+                  Add Deduction Type
+                </button>
+
+                <div id="payrollDeductionTypesList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelContributions" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Employer Contribution Types</h3>
+
+                <div class="form-grid">
+                  <label>
+                    Code
+                    <input id="payrollContributionCode" placeholder="PENSION_ER">
+                  </label>
+
+                  <label>
+                    Name
+                    <input id="payrollContributionName" placeholder="Employer Pension">
+                  </label>
+
+                  <label>
+                    Expense Account
+                    <select id="payrollContributionExpenseAccount"></select>
+                  </label>
+
+                  <label>
+                    Liability Account
+                    <select id="payrollContributionLiabilityAccount"></select>
+                  </label>
+                </div>
+
+                <button id="payrollAddContributionTypeBtn" class="payroll-primary">
+                  Add Contribution Type
+                </button>
+
+                <div id="payrollContributionTypesList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelBenefits" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Benefit Types</h3>
+
+                <div class="form-grid">
+                  <label>
+                    Code
+                    <input id="payrollBenefitTypeCode" placeholder="MEDICAL">
+                  </label>
+
+                  <label>
+                    Name
+                    <input id="payrollBenefitTypeName" placeholder="Medical Aid">
+                  </label>
+
+                  <label>
+                    Category
+                    <select id="payrollBenefitTypeCategory">
+                      <option value="allowance">Allowance</option>
+                      <option value="deduction">Deduction</option>
+                      <option value="employer_contribution">Employer Contribution</option>
+                      <option value="fringe_benefit">Fringe Benefit</option>
+                      <option value="mixed">Mixed</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Linked Earning
+                    <select id="payrollBenefitEarningTypeId"></select>
+                  </label>
+
+                  <label>
+                    Linked Deduction
+                    <select id="payrollBenefitDeductionTypeId"></select>
+                  </label>
+
+                  <label>
+                    Linked Employer Contribution
+                    <select id="payrollBenefitContributionTypeId"></select>
+                  </label>
+
+                  <label class="payroll-check-label">
+                    <input id="payrollBenefitTypeTaxable" type="checkbox" checked>
+                    Taxable benefit
+                  </label>
+                </div>
+
+                <button id="payrollAddBenefitTypeBtn" class="payroll-primary">
+                  Add Benefit Type
+                </button>
+
+                <div id="payrollBenefitTypesList" class="payroll-sublist"></div>
+              </div>
+            </div>
+
+            <div id="payrollSetupPanelMappings" class="payroll-setup-panel hidden">
+              <div class="payroll-card">
+                <h3>Payroll GL Mappings</h3>
+                <p class="payroll-muted">
+                  These accounts are used to build the payroll journal preview.
+                </p>
+
+                <div id="payrollMappingsList"></div>
+
+                <button id="payrollSaveMappingsBtn" class="payroll-primary">
+                  Save GL Mappings
+                </button>
+              </div>
+            </div>
+
           </div>
 
           <div id="payrollTabReports" class="payroll-panel hidden">
@@ -10582,6 +11398,8 @@ html, body {
             <button class="tab" data-payroll-emp-tab="benefits">Benefits</button>
             <button class="tab" data-payroll-emp-tab="leave">Leave</button>
             <button class="tab" data-payroll-emp-tab="loans">Loans & Advances</button>
+            <button class="tab" data-payroll-emp-tab="earnings">Earnings</button>
+            <button class="tab" data-payroll-emp-tab="deductions">Deductions</button>
           </div>
 
           <input id="payrollEditingEmployeeId" type="hidden">
@@ -10634,6 +11452,104 @@ html, body {
               <label>Effective From <input id="payContractFrom" type="date"></label>
             </div>
             <button id="payrollSaveContractBtn" class="btn primary">Save Contract</button>
+          </div>
+
+          <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden">
+            <div class="payroll-section-head">
+              <div>
+                <h3>Recurring Earnings</h3>
+                <p class="payroll-muted">
+                  Add allowances, commission, overtime or other recurring pay items.
+                </p>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <label>
+                Earning Type
+                <select id="payRecurringEarningTypeId"></select>
+              </label>
+
+              <label>
+                Amount
+                <input id="payRecurringEarningAmount" type="number" step="0.01">
+              </label>
+
+              <label>
+                Quantity
+                <input id="payRecurringEarningQuantity" type="number" step="0.0001" value="1">
+              </label>
+
+              <label>
+                Rate
+                <input id="payRecurringEarningRate" type="number" step="0.0001">
+              </label>
+
+              <label>
+                Effective From
+                <input id="payRecurringEarningFrom" type="date">
+              </label>
+
+              <label>
+                Effective To
+                <input id="payRecurringEarningTo" type="date">
+              </label>
+
+              <label>
+                Notes
+                <input id="payRecurringEarningNotes">
+              </label>
+            </div>
+
+            <button id="payrollSaveRecurringEarningBtn" class="payroll-primary">
+              Add Recurring Earning
+            </button>
+
+            <div id="payrollRecurringEarningsList" class="payroll-sublist"></div>
+          </div>
+
+          <div id="payrollEmpPanelDeductions" class="payroll-emp-panel hidden">
+            <div class="payroll-section-head">
+              <div>
+                <h3>Recurring Deductions</h3>
+                <p class="payroll-muted">
+                  Add pension, medical aid, union fees and other recurring deductions.
+                </p>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <label>
+                Deduction Type
+                <select id="payRecurringDeductionTypeId"></select>
+              </label>
+
+              <label>
+                Amount
+                <input id="payRecurringDeductionAmount" type="number" step="0.01">
+              </label>
+
+              <label>
+                Effective From
+                <input id="payRecurringDeductionFrom" type="date">
+              </label>
+
+              <label>
+                Effective To
+                <input id="payRecurringDeductionTo" type="date">
+              </label>
+
+              <label>
+                Notes
+                <input id="payRecurringDeductionNotes">
+              </label>
+            </div>
+
+            <button id="payrollSaveRecurringDeductionBtn" class="payroll-primary">
+              Add Recurring Deduction
+            </button>
+
+            <div id="payrollRecurringDeductionsList" class="payroll-sublist"></div>
           </div>
 
           <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden">
@@ -10720,29 +11636,55 @@ html, body {
             <button id="payrollSaveLoanBtn" class="payroll-primary">Save Loan / Advance</button>
             <div id="payrollLoansList" class="payroll-sublist"></div>
           </div>
-
-          <div id="payrollJournalPreviewModal" class="modal hidden">
-            <div class="modal-card large">
-              <div class="modal-head">
-                <h3>Payroll Journal Preview</h3>
-                <button id="payrollJournalPreviewClose" class="icon-btn">×</button>
-              </div>
-
-              <div class="payroll-emp-panel">
-                <div id="payrollJournalPreviewMeta"></div>
-                <div id="payrollJournalPreviewIssues"></div>
-                <div id="payrollJournalPreviewLines"></div>
-
-                <div class="payroll-run-actions">
-                  <button id="payrollJournalPreviewPostBtn" class="payroll-primary">Post Payroll</button>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
+      <!-- Journal modal must be outside employee modal -->
+      <div id="payrollJournalPreviewModal" class="modal hidden">
+        <div class="modal-card large payroll-journal-modal-card">
+          <div class="modal-head">
+            <div>
+              <h3>Payroll Journal Preview</h3>
+              <p class="payroll-muted">
+                Review the accounting entry before posting payroll.
+              </p>
+            </div>
 
+            <button
+              id="payrollJournalPreviewClose"
+              class="icon-btn"
+              type="button"
+              aria-label="Close journal preview"
+            >
+              ×
+            </button>
+          </div>
+
+          <div class="payroll-journal-preview-body">
+            <div id="payrollJournalPreviewMeta"></div>
+            <div id="payrollJournalPreviewIssues"></div>
+            <div id="payrollJournalPreviewLines"></div>
+          </div>
+
+          <div class="payroll-modal-footer">
+            <button
+              id="payrollJournalPreviewCancelBtn"
+              type="button"
+              class="payroll-secondary dark"
+            >
+              Close
+            </button>
+
+            <button
+              id="payrollJournalPreviewPostBtn"
+              type="button"
+              class="payroll-primary"
+            >
+              Post Payroll
+            </button>
+          </div>
+        </div>
+      </div>
 
       <section id="screen-fixedassets" class="screen">
         <div class="card p-4">
