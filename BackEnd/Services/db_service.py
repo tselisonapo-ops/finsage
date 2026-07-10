@@ -85605,7 +85605,74 @@ class DatabaseService:
             saved.append(row)
 
         return saved
-    
+
+    def payroll_positions_list(self, company_id: int):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                p.*,
+                d.name AS department_name,
+                COUNT(e.id)::int AS employee_count
+            FROM {schema}.payroll_positions p
+            LEFT JOIN {schema}.payroll_departments d
+                ON d.id = p.department_id
+            AND d.company_id = p.company_id
+            LEFT JOIN {schema}.payroll_employees e
+                ON e.company_id = p.company_id
+            AND e.position_id = p.id
+            AND e.employment_status = 'active'
+            WHERE p.company_id=%s
+            GROUP BY p.id, d.name
+            ORDER BY d.name NULLS LAST, p.title;
+        """, (int(company_id),))
+
+
+    def payroll_position_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        title = str(data.get("title") or "").strip()
+        department_id = data.get("department_id")
+
+        if not title:
+            raise ValueError("Position title is required")
+
+        if department_id:
+            department = self.fetch_one(f"""
+                SELECT id
+                FROM {schema}.payroll_departments
+                WHERE company_id=%s
+                AND id=%s
+                LIMIT 1;
+            """, (
+                company_id,
+                int(department_id),
+            ))
+
+            if not department:
+                raise ValueError("Department not found")
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_positions (
+                company_id,
+                department_id,
+                title,
+                is_active
+            )
+            VALUES (%s,%s,%s,COALESCE(%s,TRUE))
+            RETURNING *;
+        """, (
+            company_id,
+            int(department_id) if department_id else None,
+            title,
+            data.get("is_active"),
+        ))
+
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
        # self.ensure_company_schema(company_id)

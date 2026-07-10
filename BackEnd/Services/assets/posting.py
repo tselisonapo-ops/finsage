@@ -1337,10 +1337,35 @@ def create_impairment_from_sm(cur, company_id: int, sm: dict, asset: dict) -> in
 
     et = (sm.get("event_type") or "").strip().lower()
     if et == "impairment_loss":
-        rec = Decimal(str(meta.get("recoverable_amount") or 0))
-        if rec <= 0:
-            raise ValueError("impairment_loss requires meta_json.recoverable_amount > 0")
-        imp_amt = max(Decimal("0"), ca_before - rec)
+        direct_amount = Decimal(str(
+            sm.get("amount")
+            or meta.get("impairment_amount")
+            or meta.get("amount")
+            or 0
+        ))
+
+        rec = Decimal(str(
+            meta.get("recoverable_amount") or 0
+        ))
+
+        if direct_amount > 0:
+            imp_amt = direct_amount
+            rec = max(Decimal("0"), ca_before - imp_amt)
+
+        elif rec > 0:
+            imp_amt = max(Decimal("0"), ca_before - rec)
+
+        else:
+            raise ValueError(
+                "impairment_loss requires impairment amount "
+                "or recoverable amount"
+            )
+
+        if imp_amt > ca_before:
+            raise ValueError(
+                "Impairment loss cannot exceed carrying amount"
+            )
+
         rev_amt = Decimal("0")
 
     elif et == "impairment_reversal":
@@ -1484,6 +1509,18 @@ def post_subsequent_measurement(
 
     et = (sm.get("event_type") or "").strip().lower()
 
+    if bool(asset.get("is_component_group")):
+        return post_group_subsequent_measurement(
+            cur,
+            company_id,
+            sm,
+            asset,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
+
     if et == "add_cost":
         jid = post_sm_add_cost(
             cur,
@@ -1544,6 +1581,18 @@ def post_subsequent_measurement(
             engagement_id=engagement_id,
         )
 
+    elif et in ("transfer_ppe_to_ip", "transfer_ip_to_ppe"):
+        jid = post_sm_transfer(
+            cur,
+            company_id,
+            sm,
+            asset,
+            user=user,
+            approved_via=approved_via,
+            engagement_company_id=engagement_company_id,
+            engagement_id=engagement_id,
+        )
+
     elif et == "change_estimate":
         chg_id = create_estimate_change_from_sm(cur, company_id, sm, asset)
         jid = None
@@ -1561,6 +1610,1663 @@ def post_subsequent_measurement(
     """), (jid, jid, company_id, sm_id))
 
     return int(jid or 0)
+def _sm_meta(sm: dict) -> dict:
+    meta = sm.get("meta_json") or {}
+
+    if isinstance(meta, str):
+        import json
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+
+    return meta if isinstance(meta, dict) else {}
+
+
+def _group_component_amount(values: dict, event_type: str) -> Decimal:
+    et = str(event_type or "").strip().lower()
+
+    if et == "add_cost":
+        raw = values.get("allocation_amount")
+    elif et == "impairment_loss":
+        raw = values.get("impairment_amount")
+    elif et == "impairment_reversal":
+        raw = values.get("reversal_amount")
+    else:
+        raw = 0
+
+    return _q2(Decimal(str(raw or 0)))
+
+def post_group_sm_add_cost(
+    cur,
+    company_id: int,
+    sm: dict,
+    group_asset: dict,
+    selected: list[tuple[dict, dict]],
+    *,
+    user=None,
+) -> int:
+    schema = company_schema(company_id)
+    meta = _sm_meta(sm)
+
+    entered_amount = _q2(
+        Decimal(str(sm.get("amount") or 0))
+    )
+
+    if entered_amount <= 0:
+        raise ValueError("Group add-cost amount must be greater than zero.")
+
+    # Use the same VAT calculation as preview.
+    preview = _preview_add_cost(
+        group_asset,
+        {
+            **dict(sm),
+            "meta_json": meta,
+        },
+        company_asset_rules(company_id),
+        _asset_carrying_amount(group_asset),
+        cur=cur,
+    )
+
+    impact = preview.get("impact") or {}
+
+    capitalized_amount = _q2(
+        Decimal(str(impact.get("capitalized_amount") or 0))
+    )
+
+    recoverable_vat = _q2(
+        Decimal(str(impact.get("recoverable_vat") or 0))
+    )
+
+    settlement_amount = _q2(
+        Decimal(str(
+            impact.get("gross_settlement_amount")
+            or entered_amount
+        ))
+    )
+
+    if capitalized_amount <= 0:
+        raise ValueError("Calculated capitalised amount must be greater than zero.")
+
+    allocation_total = Decimal("0.00")
+
+    for component, values in selected:
+        allocation = _group_component_amount(
+            values,
+            "add_cost",
+        )
+
+        if allocation < 0:
+            raise ValueError(
+                f"Add-cost allocation cannot be negative for "
+                f"{component.get('asset_name') or component['id']}."
+            )
+
+        allocation_total += allocation
+
+    allocation_total = _q2(allocation_total)
+
+    if allocation_total != capitalized_amount:
+        raise ValueError(
+            "Component allocation does not equal the capitalised amount. "
+            f"Allocated={allocation_total}, "
+            f"capitalised={capitalized_amount}."
+        )
+
+    credit_account = (
+        sm.get("credit_account_code")
+        or meta.get("credit_account_code")
+        or ""
+    ).strip()
+
+    if not credit_account:
+        raise ValueError("Credit account is required for group add-cost.")
+
+    controls = _get_company_controls(cur, company_id)
+    vat_input_code = (
+        meta.get("vat_account_code")
+        or sm.get("vat_account_code")
+        or controls.get("vat_input_code")
+        or ""
+    ).strip()
+
+    if recoverable_vat > 0 and not vat_input_code:
+        vat_input_code = _pick_coa_by_keywords(
+            cur,
+            schema,
+            ["vat input", "input vat"],
+            "BS_CA_1410",
+        )
+
+    if recoverable_vat > 0 and not vat_input_code:
+        raise ValueError("Input VAT account is required.")
+
+    ccy = get_company_currency(cur, company_id)
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        sm["event_date"],
+        None,
+        (
+            f"Group asset cost addition: "
+            f"{group_asset.get('asset_code')} - "
+            f"{group_asset.get('asset_name')}"
+        ),
+        ccy,
+        "asset_add_cost",
+        sm["id"],
+    )
+
+    affected_ids = []
+
+    for component, values in selected:
+        allocation = _group_component_amount(
+            values,
+            "add_cost",
+        )
+
+        if allocation <= 0:
+            continue
+
+        component_id = int(component["id"])
+        affected_ids.append(component_id)
+
+        account_code = (
+            component.get("asset_account_code")
+            or ""
+        ).strip()
+
+        if not account_code:
+            raise ValueError(
+                f"Component {component_id} is missing asset_account_code."
+            )
+
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            account_code,
+            (
+                f"Capitalise additional cost – "
+                f"{component.get('asset_name') or component_id}"
+            ),
+            allocation,
+            0,
+            "asset_add_cost",
+            sm["id"],
+        )
+
+    if recoverable_vat > 0:
+        add_line(
+            cur,
+            schema,
+            company_id,
+            jid,
+            vat_input_code,
+            "Recoverable input VAT",
+            recoverable_vat,
+            0,
+            "asset_add_cost",
+            sm["id"],
+        )
+
+    add_line(
+        cur,
+        schema,
+        company_id,
+        jid,
+        credit_account,
+        "Bank / payable settlement",
+        0,
+        settlement_amount,
+        "asset_add_cost",
+        sm["id"],
+    )
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=sm["event_date"],
+        ref=f"ASM-GROUP-COST-{sm['id']}",
+    )
+
+    # Store individual component movements so get_cost_total()
+    # can detect each component's posted add-cost.
+    for component, values in selected:
+        allocation = _group_component_amount(
+            values,
+            "add_cost",
+        )
+
+        if allocation <= 0:
+            continue
+
+        component_id = int(component["id"])
+
+        cur.execute(_q(schema, """
+            INSERT INTO {schema}.asset_subsequent_measurements(
+                company_id,
+                asset_id,
+                event_date,
+                event_type,
+                amount,
+                debit_account_code,
+                credit_account_code,
+                notes,
+                status,
+                posted_journal_id,
+                posted_at,
+                meta_json,
+                created_by,
+                created_at
+            )
+            VALUES (
+                %s,%s,%s,'add_cost',
+                %s,%s,%s,
+                %s,'posted',%s,NOW(),
+                %s,%s,NOW()
+            )
+        """), (
+            company_id,
+            component_id,
+            sm["event_date"],
+            allocation,
+            component.get("asset_account_code"),
+            credit_account,
+            sm.get("notes"),
+            jid,
+            psycopg2.extras.Json({
+                "group_sm_id": int(sm["id"]),
+                "group_asset_id": int(group_asset["id"]),
+                "allocation_amount": float(allocation),
+                "vat_allocated_at_parent": True,
+            }),
+            (user or {}).get("id"),
+        ))
+
+        # Synchronise component gross cost.
+        cur.execute(_q(schema, """
+            UPDATE {schema}.assets a
+            SET cost =
+                COALESCE((
+                    SELECT SUM(x.net_amount)
+                    FROM {schema}.asset_acquisitions x
+                    WHERE x.company_id=a.company_id
+                      AND x.asset_id=a.id
+                      AND x.status='posted'
+                ), COALESCE(a.opening_cost, a.cost, 0))
+                +
+                COALESCE((
+                    SELECT SUM(s.amount)
+                    FROM {schema}.asset_subsequent_measurements s
+                    WHERE s.company_id=a.company_id
+                      AND s.asset_id=a.id
+                      AND s.event_type='add_cost'
+                      AND s.status='posted'
+                ), 0),
+                updated_at=NOW()
+            WHERE a.company_id=%s
+              AND a.id=%s
+        """), (
+            company_id,
+            component_id,
+        ))
+
+        upsert_carrying_snapshot(
+            cur,
+            company_id,
+            component_id,
+            as_at=sm["event_date"],
+            source_event="add_cost",
+            created_by=(user or {}).get("id"),
+        )
+
+    return int(jid)
+
+def post_group_sm_impairment(
+    cur,
+    company_id: int,
+    sm: dict,
+    group_asset: dict,
+    selected: list[tuple[dict, dict]],
+    *,
+    user=None,
+    approved_via=None,
+) -> int:
+    schema = company_schema(company_id)
+
+    event_type = (
+        sm.get("event_type") or ""
+    ).strip().lower()
+
+    if event_type not in {
+        "impairment_loss",
+        "impairment_reversal",
+    }:
+        raise ValueError(
+            f"Unsupported group impairment event '{event_type}'."
+        )
+
+    total_amount = Decimal("0.00")
+
+    for component, values in selected:
+        amount = _group_component_amount(
+            values,
+            event_type,
+        )
+
+        if amount < 0:
+            raise ValueError(
+                f"Impairment amount cannot be negative for "
+                f"{component.get('asset_name') or component['id']}."
+            )
+
+        if amount > 0:
+            total_amount += amount
+
+    total_amount = _q2(total_amount)
+
+    if total_amount <= 0:
+        raise ValueError(
+            "Enter an impairment amount for at least one component."
+        )
+
+    ccy = get_company_currency(cur, company_id)
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        sm["event_date"],
+        None,
+        (
+            f"Group impairment: "
+            f"{group_asset.get('asset_code')} - "
+            f"{group_asset.get('asset_name')}"
+        ),
+        ccy,
+        "asset_impairment",
+        sm["id"],
+    )
+
+    for component, values in selected:
+        amount = _group_component_amount(
+            values,
+            event_type,
+        )
+
+        if amount <= 0:
+            continue
+
+        component_id = int(component["id"])
+        ca_before = Decimal(str(
+            _asset_carrying_amount(component)
+        ))
+
+        if event_type == "impairment_loss":
+            if amount > ca_before:
+                raise ValueError(
+                    f"Impairment loss for "
+                    f"{component.get('asset_name') or component_id} "
+                    f"cannot exceed its carrying amount."
+                )
+
+            loss_code, accum_code = resolve_impairment_accounts(
+                cur,
+                schema,
+                company_id,
+                component,
+            )
+
+            if not loss_code:
+                raise ValueError(
+                    f"Missing impairment loss account for component {component_id}."
+                )
+
+            # Prefer accumulated impairment contra-account.
+            credit_code = (
+                accum_code
+                or component.get("asset_account_code")
+                or ""
+            ).strip()
+
+            if not credit_code:
+                raise ValueError(
+                    f"Missing impairment credit account for component {component_id}."
+                )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                loss_code,
+                f"Impairment loss – {component.get('asset_name')}",
+                amount,
+                0,
+                "asset_impairment",
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                credit_code,
+                f"Accumulated impairment – {component.get('asset_name')}",
+                0,
+                amount,
+                "asset_impairment",
+                sm["id"],
+            )
+
+            impairment_amount = amount
+            reversal_amount = Decimal("0.00")
+            recoverable_amount = max(
+                Decimal("0.00"),
+                ca_before - amount,
+            )
+
+        else:
+            asset_code = (
+                component.get("asset_account_code")
+                or ""
+            ).strip()
+
+            reversal_code = (
+                component.get("impairment_reversal_account_code")
+                or coa_by_role(
+                    cur,
+                    schema,
+                    "impairment_reversal_income",
+                )
+                or ""
+            ).strip()
+
+            if not asset_code:
+                raise ValueError(
+                    f"Missing asset account for component {component_id}."
+                )
+
+            if not reversal_code:
+                raise ValueError(
+                    f"Missing impairment reversal account for component {component_id}."
+                )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                asset_code,
+                f"Reverse impairment – {component.get('asset_name')}",
+                amount,
+                0,
+                "asset_impairment",
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                reversal_code,
+                f"Impairment reversal income – {component.get('asset_name')}",
+                0,
+                amount,
+                "asset_impairment",
+                sm["id"],
+            )
+
+            impairment_amount = Decimal("0.00")
+            reversal_amount = amount
+            recoverable_amount = ca_before + amount
+
+        cur.execute(_q(schema, """
+            INSERT INTO {schema}.asset_impairments(
+                company_id,
+                asset_id,
+                impairment_date,
+                carrying_amount_before,
+                recoverable_amount,
+                impairment_amount,
+                reversal_amount,
+                reason,
+                notes,
+                status,
+                posted_journal_id,
+                posted_at,
+                created_at
+            )
+            VALUES (
+                %s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                'posted',%s,NOW(),NOW()
+            )
+        """), (
+            company_id,
+            component_id,
+            sm["event_date"],
+            ca_before,
+            recoverable_amount,
+            impairment_amount,
+            reversal_amount,
+            (_sm_meta(sm).get("reason")),
+            sm.get("notes"),
+            jid,
+        ))
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=sm["event_date"],
+        ref=f"ASM-GROUP-IMP-{sm['id']}",
+    )
+
+    for component, values in selected:
+        amount = _group_component_amount(
+            values,
+            event_type,
+        )
+
+        if amount <= 0:
+            continue
+
+        upsert_carrying_snapshot(
+            cur,
+            company_id,
+            int(component["id"]),
+            as_at=sm["event_date"],
+            source_event="impairment",
+            created_by=(user or {}).get("id"),
+        )
+
+    return int(jid)
+
+def post_group_sm_estimate_change(
+    cur,
+    company_id: int,
+    sm: dict,
+    selected: list[tuple[dict, dict]],
+    *,
+    user=None,
+) -> int:
+    schema = company_schema(company_id)
+
+    created = 0
+
+    for component, values in selected:
+        new_life = values.get("useful_life_months")
+        new_residual = values.get("residual_value")
+        new_method = values.get("depreciation_method")
+
+        has_change = (
+            new_life not in (None, "", 0, "0")
+            or new_residual not in (None, "")
+            or bool(str(new_method or "").strip())
+        )
+
+        if not has_change:
+            continue
+
+        old_life = component.get("useful_life_months")
+        old_residual = component.get("residual_value")
+        old_method = component.get("depreciation_method")
+
+        parts = []
+
+        if (
+            new_life not in (None, "", 0, "0")
+            and int(new_life) != int(old_life or 0)
+        ):
+            parts.append("useful_life")
+
+        if (
+            new_residual not in (None, "")
+            and Decimal(str(new_residual))
+            != Decimal(str(old_residual or 0))
+        ):
+            parts.append("residual_value")
+
+        if (
+            str(new_method or "").strip()
+            and str(new_method).strip()
+            != str(old_method or "").strip()
+        ):
+            parts.append("method")
+
+        if not parts:
+            continue
+
+        change_type = (
+            "mixed"
+            if len(parts) > 1
+            else parts[0]
+        )
+
+        cur.execute(_q(schema, """
+            INSERT INTO {schema}.asset_estimate_changes(
+                company_id,
+                asset_id,
+                effective_date,
+                change_type,
+                reason,
+                notes,
+                old_useful_life_months,
+                new_useful_life_months,
+                old_residual_value,
+                new_residual_value,
+                old_depreciation_method,
+                new_depreciation_method,
+                status,
+                created_by,
+                created_at
+            )
+            VALUES (
+                %s,%s,%s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,
+                'posted',%s,NOW()
+            )
+        """), (
+            company_id,
+            int(component["id"]),
+            sm["event_date"],
+            change_type,
+            _sm_meta(sm).get("reason"),
+            sm.get("notes"),
+            old_life,
+            (
+                int(new_life)
+                if new_life not in (None, "", 0, "0")
+                else old_life
+            ),
+            old_residual,
+            (
+                Decimal(str(new_residual))
+                if new_residual not in (None, "")
+                else old_residual
+            ),
+            old_method,
+            (
+                str(new_method).strip()
+                if str(new_method or "").strip()
+                else old_method
+            ),
+            (user or {}).get("id"),
+        ))
+
+        cur.execute(_q(schema, """
+            UPDATE {schema}.assets
+            SET useful_life_months=COALESCE(%s, useful_life_months),
+                residual_value=COALESCE(%s, residual_value),
+                depreciation_method=COALESCE(%s, depreciation_method),
+                updated_at=NOW()
+            WHERE company_id=%s
+              AND id=%s
+        """), (
+            (
+                int(new_life)
+                if new_life not in (None, "", 0, "0")
+                else None
+            ),
+            (
+                Decimal(str(new_residual))
+                if new_residual not in (None, "")
+                else None
+            ),
+            (
+                str(new_method).strip()
+                if str(new_method or "").strip()
+                else None
+            ),
+            company_id,
+            int(component["id"]),
+        ))
+
+        created += 1
+
+    if created <= 0:
+        raise ValueError(
+            "No valid component estimate changes were supplied."
+        )
+
+    return 0
+
+def post_group_sm_hfs(
+    cur,
+    company_id: int,
+    sm: dict,
+    group_asset: dict,
+    selected: list[tuple[dict, dict]],
+    *,
+    user=None,
+    approved_via=None,
+) -> int:
+    schema = company_schema(company_id)
+
+    event_type = (
+        sm.get("event_type") or ""
+    ).strip().lower()
+
+    ccy = get_company_currency(cur, company_id)
+
+    source = (
+        "asset_hfs"
+        if event_type == "held_for_sale_classify"
+        else "asset_hfs_reversal"
+    )
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        sm["event_date"],
+        None,
+        (
+            f"Group held-for-sale movement: "
+            f"{group_asset.get('asset_code')} - "
+            f"{group_asset.get('asset_name')}"
+        ),
+        ccy,
+        source,
+        sm["id"],
+    )
+
+    processed = 0
+
+    for component, values in selected:
+        component_id = int(component["id"])
+
+        asset_code = (
+            component.get("asset_account_code")
+            or ""
+        ).strip()
+
+        hfs_code = (
+            component.get("held_for_sale_account_code")
+            or ""
+        ).strip()
+
+        if not asset_code or not hfs_code:
+            raise ValueError(
+                f"Component {component_id} is missing PPE or HFS account mapping."
+            )
+
+        if event_type == "held_for_sale_classify":
+            carrying = Decimal(str(
+                _asset_carrying_amount(component)
+            ))
+
+            if carrying <= 0:
+                continue
+
+            component_meta = values.get("meta_json") or values
+
+            fair_value_less_costs = Decimal(str(
+                component_meta.get("fair_value_less_costs")
+                or carrying
+            ))
+
+            impairment = max(
+                Decimal("0.00"),
+                carrying - fair_value_less_costs,
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                hfs_code,
+                f"Move to HFS – {component.get('asset_name')}",
+                carrying,
+                0,
+                source,
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                asset_code,
+                f"Remove from PPE – {component.get('asset_name')}",
+                0,
+                carrying,
+                source,
+                sm["id"],
+            )
+
+            if impairment > 0:
+                loss_code = (
+                    component.get("impairment_loss_account_code")
+                    or ""
+                ).strip()
+
+                if not loss_code:
+                    raise ValueError(
+                        f"Missing impairment loss account for component {component_id}."
+                    )
+
+                add_line(
+                    cur, schema, company_id,
+                    jid,
+                    loss_code,
+                    f"HFS impairment – {component.get('asset_name')}",
+                    impairment,
+                    0,
+                    source,
+                    sm["id"],
+                )
+
+                add_line(
+                    cur, schema, company_id,
+                    jid,
+                    hfs_code,
+                    f"Reduce HFS carrying amount – {component.get('asset_name')}",
+                    0,
+                    impairment,
+                    source,
+                    sm["id"],
+                )
+
+            cur.execute(_q(schema, """
+                INSERT INTO {schema}.asset_held_for_sale(
+                    company_id,
+                    asset_id,
+                    classification_date,
+                    carrying_amount,
+                    fair_value_less_costs,
+                    impairment_on_classification,
+                    status,
+                    posted_journal_id,
+                    posted_at,
+                    created_at
+                )
+                VALUES (
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    'active',%s,NOW(),NOW()
+                )
+            """), (
+                company_id,
+                component_id,
+                sm["event_date"],
+                carrying,
+                fair_value_less_costs,
+                impairment,
+                jid,
+            ))
+
+            new_status = "held_for_sale"
+
+        else:
+            cur.execute(_q(schema, """
+                SELECT *
+                FROM {schema}.asset_held_for_sale
+                WHERE company_id=%s
+                  AND asset_id=%s
+                  AND status='active'
+                ORDER BY id DESC
+                LIMIT 1
+                FOR UPDATE
+            """), (
+                company_id,
+                component_id,
+            ))
+
+            hfs = fetchone(cur)
+
+            if not hfs:
+                raise ValueError(
+                    f"No active HFS classification for component {component_id}."
+                )
+
+            carrying = Decimal(str(
+                hfs.get("carrying_amount") or 0
+            ))
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                asset_code,
+                f"Return to PPE – {component.get('asset_name')}",
+                carrying,
+                0,
+                source,
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                hfs_code,
+                f"Remove from HFS – {component.get('asset_name')}",
+                0,
+                carrying,
+                source,
+                sm["id"],
+            )
+
+            cur.execute(_q(schema, """
+                UPDATE {schema}.asset_held_for_sale
+                SET status='reversed'
+                WHERE company_id=%s
+                  AND id=%s
+            """), (
+                company_id,
+                int(hfs["id"]),
+            ))
+
+            new_status = "active"
+
+        cur.execute(_q(schema, """
+            UPDATE {schema}.assets
+            SET status=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+              AND id=%s
+        """), (
+            new_status,
+            company_id,
+            component_id,
+        ))
+
+        processed += 1
+
+    if processed <= 0:
+        raise ValueError("No component HFS movements were posted.")
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=sm["event_date"],
+        ref=f"ASM-GROUP-HFS-{sm['id']}",
+    )
+
+    return int(jid)
+
+def post_group_sm_transfer(
+    cur,
+    company_id: int,
+    sm: dict,
+    group_asset: dict,
+    selected: list[tuple[dict, dict]],
+    *,
+    user=None,
+) -> int:
+    schema = company_schema(company_id)
+    meta = _sm_meta(sm)
+
+    event_type = (
+        sm.get("event_type") or ""
+    ).strip().lower()
+
+    if event_type not in {
+        "transfer_ppe_to_ip",
+        "transfer_ip_to_ppe",
+    }:
+        raise ValueError(
+            f"Unsupported group transfer event '{event_type}'."
+        )
+
+    destination_account = (
+        meta.get("dest_account_code")
+        or meta.get("investment_property_account_code")
+        or ""
+    ).strip()
+
+    if not destination_account:
+        policy = company_asset_rules(company_id)
+        destination_account = (
+            (policy.get("posting") or {}).get(
+                "investment_property_account"
+            )
+            or ""
+        ).strip()
+
+    if not destination_account:
+        raise ValueError(
+            "Investment property account is required for transfer."
+        )
+
+    ccy = get_company_currency(cur, company_id)
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        sm["event_date"],
+        None,
+        (
+            f"Group property transfer: "
+            f"{group_asset.get('asset_code')} - "
+            f"{group_asset.get('asset_name')}"
+        ),
+        ccy,
+        "asset_transfer",
+        sm["id"],
+    )
+
+    processed = 0
+
+    for component, values in selected:
+        component_id = int(component["id"])
+
+        carrying = Decimal(str(
+            _asset_carrying_amount(component)
+        ))
+
+        if carrying <= 0:
+            continue
+
+        ppe_account = (
+            component.get("asset_account_code")
+            or ""
+        ).strip()
+
+        component_ip_account = (
+            values.get("dest_account_code")
+            or destination_account
+        ).strip()
+
+        if not ppe_account:
+            raise ValueError(
+                f"Component {component_id} is missing asset_account_code."
+            )
+
+        if event_type == "transfer_ppe_to_ip":
+            add_line(
+                cur, schema, company_id,
+                jid,
+                component_ip_account,
+                f"Transfer to investment property – {component.get('asset_name')}",
+                carrying,
+                0,
+                "asset_transfer",
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                ppe_account,
+                f"Remove from PPE – {component.get('asset_name')}",
+                0,
+                carrying,
+                "asset_transfer",
+                sm["id"],
+            )
+
+            new_standard = "ias40"
+            new_basis = (
+                meta.get("target_measurement_basis")
+                or "fair_value"
+            )
+
+        else:
+            add_line(
+                cur, schema, company_id,
+                jid,
+                ppe_account,
+                f"Transfer to PPE – {component.get('asset_name')}",
+                carrying,
+                0,
+                "asset_transfer",
+                sm["id"],
+            )
+
+            add_line(
+                cur, schema, company_id,
+                jid,
+                component_ip_account,
+                f"Remove from investment property – {component.get('asset_name')}",
+                0,
+                carrying,
+                "asset_transfer",
+                sm["id"],
+            )
+
+            new_standard = "ias16"
+            new_basis = (
+                meta.get("target_measurement_basis")
+                or "cost"
+            )
+
+        cur.execute(_q(schema, """
+            UPDATE {schema}.assets
+            SET accounting_standard=%s,
+                measurement_basis=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+              AND id=%s
+        """), (
+            new_standard,
+            new_basis,
+            company_id,
+            component_id,
+        ))
+
+        processed += 1
+
+    if processed <= 0:
+        raise ValueError("No component transfer was posted.")
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=sm["event_date"],
+        ref=f"ASM-GROUP-TRANSFER-{sm['id']}",
+    )
+
+    return int(jid)
+
+def post_group_subsequent_measurement(
+    cur,
+    company_id: int,
+    sm: dict,
+    group_asset: dict,
+    *,
+    user=None,
+    approved_via=None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
+) -> int:
+    """
+    Post a subsequent measurement against selected components of a
+    component-group asset.
+
+    Supported here:
+      - add_cost
+      - impairment_loss
+      - impairment_reversal
+      - change_estimate
+      - held_for_sale_classify
+      - held_for_sale_unclassify
+      - transfer_ppe_to_ip
+      - transfer_ip_to_ppe
+
+    Revaluation and fair_value_valuation continue through the dedicated
+    two-step valuation/revaluation workflow.
+    """
+    schema = company_schema(company_id)
+
+    if not bool(group_asset.get("is_component_group")):
+        raise ValueError("Selected asset is not a component group.")
+
+    event_type = str(
+        sm.get("event_type") or ""
+    ).strip().lower()
+
+    if event_type in {"revaluation", "fair_value_valuation"}:
+        raise ValueError(
+            f"{event_type} must use the dedicated valuation workflow."
+        )
+
+    supported = {
+        "add_cost",
+        "impairment_loss",
+        "impairment_reversal",
+        "change_estimate",
+        "held_for_sale_classify",
+        "held_for_sale_unclassify",
+        "transfer_ppe_to_ip",
+        "transfer_ip_to_ppe",
+    }
+
+    if event_type not in supported:
+        raise ValueError(
+            f"Unsupported group subsequent measurement event_type "
+            f"'{event_type}'"
+        )
+
+    raw_meta = sm.get("meta_json") or {}
+    if isinstance(raw_meta, str):
+        try:
+            import json
+            raw_meta = json.loads(raw_meta)
+        except Exception:
+            raw_meta = {}
+
+    component_inputs = (
+        raw_meta.get("components")
+        or sm.get("components")
+        or {}
+    )
+
+    if not isinstance(component_inputs, dict) or not component_inputs:
+        raise ValueError("Select at least one affected component.")
+
+    # ---------------------------------------------------------
+    # Resolve selected component IDs
+    # ---------------------------------------------------------
+    selected_ids: list[int] = []
+
+    for raw_id, raw_values in component_inputs.items():
+        values = raw_values if isinstance(raw_values, dict) else {}
+
+        if values.get("selected") is False:
+            continue
+
+        try:
+            component_id = int(
+                values.get("asset_id")
+                or raw_id
+                or 0
+            )
+        except (TypeError, ValueError):
+            component_id = 0
+
+        if component_id > 0:
+            selected_ids.append(component_id)
+
+    selected_ids = sorted(set(selected_ids))
+
+    if not selected_ids:
+        raise ValueError("Select at least one affected component.")
+
+    # ---------------------------------------------------------
+    # Load and validate components
+    # ---------------------------------------------------------
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id=%s
+          AND parent_asset_id=%s
+          AND is_component=TRUE
+          AND id = ANY(%s)
+        ORDER BY id
+        FOR UPDATE
+    """), (
+        company_id,
+        int(group_asset["id"]),
+        selected_ids,
+    ))
+
+    components = cur.fetchall() or []
+
+    found_ids = {
+        int(row["id"])
+        for row in components
+    }
+
+    missing_ids = sorted(
+        set(selected_ids) - found_ids
+    )
+
+    if missing_ids:
+        raise ValueError(
+            f"Invalid or unrelated component IDs: {missing_ids}"
+        )
+
+    selected: list[tuple[dict, dict]] = []
+
+    for component in components:
+        component_id = int(component["id"])
+
+        values = (
+            component_inputs.get(str(component_id))
+            or component_inputs.get(component_id)
+            or {}
+        )
+
+        if not isinstance(values, dict):
+            values = {}
+
+        selected.append((component, values))
+
+    if not selected:
+        raise ValueError("No valid affected components were found.")
+
+    ccy = get_company_currency(cur, company_id)
+    created_by = (
+        int((user or {}).get("id") or 0)
+        or None
+    )
+
+    # ---------------------------------------------------------
+    # Dispatch group event
+    # ---------------------------------------------------------
+    if event_type == "add_cost":
+        jid = post_group_sm_add_cost(
+            cur,
+            company_id,
+            sm,
+            group_asset,
+            selected,
+            user=user,
+        )
+
+    elif event_type in {
+        "impairment_loss",
+        "impairment_reversal",
+    }:
+        jid = post_group_sm_impairment(
+            cur,
+            company_id,
+            sm,
+            group_asset,
+            selected,
+            user=user,
+            approved_via=approved_via,
+        )
+
+    elif event_type == "change_estimate":
+        jid = post_group_sm_estimate_change(
+            cur,
+            company_id,
+            sm,
+            selected,
+            user=user,
+        )
+
+    elif event_type in {
+        "held_for_sale_classify",
+        "held_for_sale_unclassify",
+    }:
+        jid = post_group_sm_hfs(
+            cur,
+            company_id,
+            sm,
+            group_asset,
+            selected,
+            user=user,
+            approved_via=approved_via,
+        )
+
+    elif event_type in {
+        "transfer_ppe_to_ip",
+        "transfer_ip_to_ppe",
+    }:
+        jid = post_group_sm_transfer(
+            cur,
+            company_id,
+            sm,
+            group_asset,
+            selected,
+            user=user,
+        )
+
+    else:
+        raise ValueError(
+            f"No group posting handler for '{event_type}'"
+        )
+
+    # ---------------------------------------------------------
+    # Mark parent SM posted
+    # ---------------------------------------------------------
+    component_ids = [
+        int(component["id"])
+        for component, _ in selected
+    ]
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.asset_subsequent_measurements
+        SET status='posted',
+            posted_journal_id=%s,
+            posted_at=CASE
+                WHEN %s IS NULL THEN posted_at
+                ELSE NOW()
+            END,
+            meta_json =
+                COALESCE(meta_json, '{}'::jsonb)
+                || %s::jsonb,
+            updated_at=NOW(),
+            updated_by_user_id=%s
+        WHERE company_id=%s
+          AND id=%s
+    """), (
+        int(jid) if jid else None,
+        int(jid) if jid else None,
+        psycopg2.extras.Json({
+            "posted_component_ids": component_ids,
+            "group_posted": True,
+        }),
+        created_by,
+        company_id,
+        int(sm["id"]),
+    ))
+
+    # ---------------------------------------------------------
+    # Engagement activity
+    # ---------------------------------------------------------
+    if engagement_company_id and engagement_id:
+        total_amount = Decimal("0")
+
+        for _, values in selected:
+            if event_type == "add_cost":
+                total_amount += Decimal(str(
+                    values.get("allocation_amount") or 0
+                ))
+            elif event_type == "impairment_loss":
+                total_amount += Decimal(str(
+                    values.get("impairment_amount") or 0
+                ))
+            elif event_type == "impairment_reversal":
+                total_amount += Decimal(str(
+                    values.get("reversal_amount") or 0
+                ))
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=sm["event_date"],
+            module_name="ppe",
+            event_type=event_type,
+            reference_no=f"ASM-GROUP-{sm['id']}",
+            description=(
+                f"Group subsequent measurement posted: "
+                f"{group_asset.get('asset_code') or sm['asset_id']}"
+            ),
+            prepared_by_user_id=created_by,
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(_q2(total_amount)),
+            currency_code=ccy,
+            source_table="asset_subsequent_measurements",
+            source_id=int(sm["id"]),
+            notes=(
+                f"Posted against components "
+                f"{', '.join(map(str, component_ids))}"
+            ),
+            created_by_user_id=created_by,
+            updated_by_user_id=created_by,
+        )
+
+    return int(jid or 0)
+
+def post_sm_transfer(
+    cur,
+    company_id: int,
+    sm: dict,
+    asset: dict,
+    *,
+    user=None,
+    engagement_company_id=None,
+    engagement_id=None,
+) -> int:
+    schema = company_schema(company_id)
+
+    et = (sm.get("event_type") or "").strip().lower()
+    if et not in ("transfer_ppe_to_ip", "transfer_ip_to_ppe"):
+        raise ValueError(f"Unsupported transfer event_type '{et}'")
+
+    meta = sm.get("meta_json") or {}
+
+    ppe_account = (
+        asset.get("asset_account_code") or ""
+    ).strip()
+
+    ip_account = (
+        meta.get("dest_account_code")
+        or meta.get("investment_property_account_code")
+        or ""
+    ).strip()
+
+    if not ppe_account:
+        raise ValueError("Asset is missing asset_account_code")
+
+    if not ip_account:
+        raise ValueError(
+            "Investment property account is required for transfer"
+        )
+
+    transfer_amount = Decimal(str(
+        meta.get("transfer_amount")
+        or asset.get("carrying_amount")
+        or asset.get("nbv")
+        or 0
+    ))
+
+    if transfer_amount <= 0:
+        raise ValueError("Transfer carrying amount must be greater than zero")
+
+    ccy = get_company_currency(cur, company_id)
+
+    jid = create_journal(
+        cur,
+        schema,
+        company_id,
+        sm["event_date"],
+        None,
+        (
+            f"Transfer PPE to investment property: "
+            f"{asset['asset_code']} - {asset['asset_name']}"
+            if et == "transfer_ppe_to_ip"
+            else
+            f"Transfer investment property to PPE: "
+            f"{asset['asset_code']} - {asset['asset_name']}"
+        ),
+        ccy,
+        "asset_transfer",
+        sm["id"],
+    )
+
+    if et == "transfer_ppe_to_ip":
+        add_line(
+            cur, schema, company_id,
+            jid,
+            ip_account,
+            "Transfer to investment property",
+            transfer_amount,
+            0,
+            "asset_transfer",
+            sm["id"],
+        )
+
+        add_line(
+            cur, schema, company_id,
+            jid,
+            ppe_account,
+            "Remove from PPE",
+            0,
+            transfer_amount,
+            "asset_transfer",
+            sm["id"],
+        )
+
+        new_basis = "fair_value" if meta.get(
+            "target_measurement_basis"
+        ) == "fair_value" else "cost"
+
+        new_standard = "ias40"
+
+    else:
+        add_line(
+            cur, schema, company_id,
+            jid,
+            ppe_account,
+            "Transfer back to PPE",
+            transfer_amount,
+            0,
+            "asset_transfer",
+            sm["id"],
+        )
+
+        add_line(
+            cur, schema, company_id,
+            jid,
+            ip_account,
+            "Remove from investment property",
+            0,
+            transfer_amount,
+            "asset_transfer",
+            sm["id"],
+        )
+
+        new_basis = (
+            meta.get("target_measurement_basis")
+            or "cost"
+        )
+        new_standard = "ias16"
+
+    finalize_journal(cur, schema, company_id, jid)
+
+    _post_journal_to_ledger_and_tb(
+        cur,
+        schema,
+        company_id,
+        jid,
+        je_date=sm["event_date"],
+        ref=f"ASM-TRANSFER-{sm['id']}",
+    )
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.assets
+        SET measurement_basis=%s,
+            accounting_standard=%s,
+            updated_at=NOW()
+        WHERE company_id=%s
+          AND id=%s
+    """), (
+        new_basis,
+        new_standard,
+        company_id,
+        int(sm["asset_id"]),
+    ))
+
+    if engagement_company_id and engagement_id:
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=sm["event_date"],
+            module_name="ppe",
+            event_type=et,
+            reference_no=f"ASM-TRANSFER-{sm['id']}",
+            description=(
+                f"Asset transfer posted for "
+                f"{asset.get('asset_code') or sm['asset_id']}"
+            ),
+            prepared_by_user_id=(user or {}).get("id"),
+            reviewer_user_id=None,
+            status="posted",
+            amount=float(transfer_amount),
+            currency_code=ccy,
+            source_table="asset_subsequent_measurements",
+            source_id=int(sm["id"]),
+            notes=f"Asset transfer posted to journal {jid}",
+            created_by_user_id=(user or {}).get("id"),
+            updated_by_user_id=(user or {}).get("id"),
+        )
+
+    return jid
 
 def _account_by_role(cur, schema: str, company_id: int, *roles: str) -> str | None:
     if not cur or not schema or not roles:

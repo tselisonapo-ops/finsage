@@ -41248,6 +41248,16 @@ async function saveEditModal() {
     varianceRows: [],
     activeTab: "budgets",
     bound: false,
+      workspaceForm: {
+        name: "",
+        versionType: "forecast",
+        scenario: "base",
+        customScenario: "",
+        actualsToDate: "",
+        periodStart: "",
+        periodEnd: "",
+        currency: "",
+      },
   };
 
   const $ = (id) => document.getElementById(id);
@@ -41296,6 +41306,522 @@ async function saveEditModal() {
     },
   ];
 
+  const BF_INDUSTRY_REVENUE_DRIVERS = {
+    "Professional Services": [
+      "billable_hours_rate",
+      "contracts_monthly_fee",
+      "projects_contract_value_completion",
+      "fixed_monthly",
+    ],
+
+    "Management Services": [
+      "contracts_monthly_fee",
+      "billable_hours_rate",
+      "customers_average_spend",
+      "fixed_monthly",
+    ],
+
+    "Banking & Financial Services": [
+      "customers_average_spend",
+      "transactions_average_value",
+      "subscriptions_arpu",
+      "fixed_monthly",
+    ],
+
+    "Body Corporate": [
+      "memberships_fee",
+      "fixed_monthly",
+    ],
+
+    "Property Management": [
+      "contracts_monthly_fee",
+      "rooms_occupancy_rate",
+      "percentage_of_revenue",
+      "fixed_monthly",
+    ],
+
+    "Call Center": [
+      "billable_hours_rate",
+      "contracts_monthly_fee",
+      "transactions_average_value",
+    ],
+
+    "IT & Technology": [
+      "subscriptions_arpu",
+      "billable_hours_rate",
+      "contracts_monthly_fee",
+      "quantity_rate",
+    ],
+
+    "Engineering & Technical": [
+      "projects_contract_value_completion",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "Construction": [
+      "projects_contract_value_completion",
+      "quantity_rate",
+      "fixed_monthly",
+    ],
+
+    "Mining": [
+      "tonnes_price",
+      "production_volume_price",
+      "quantity_rate",
+    ],
+
+    "Transport": [
+      "deliveries_fee",
+      "seats_load_factor_fare",
+      "quantity_rate",
+    ],
+
+    "Logistics & Transport": [
+      "deliveries_fee",
+      "quantity_rate",
+      "contracts_monthly_fee",
+    ],
+
+    "Private School": [
+      "students_fee",
+      "fixed_monthly",
+      "quantity_rate",
+    ],
+
+    "Public School": [
+      "students_fee",
+      "fixed_monthly",
+      "quantity_rate",
+    ],
+
+    "College / Training Center": [
+      "students_fee",
+      "quantity_rate",
+      "contracts_monthly_fee",
+    ],
+
+    "Education & Training": [
+      "students_fee",
+      "quantity_rate",
+      "contracts_monthly_fee",
+    ],
+
+    "Tutoring Services": [
+      "students_fee",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "Clubs & Associations": [
+      "memberships_fee",
+      "customers_average_spend",
+      "quantity_rate",
+    ],
+
+    "Private Healthcare": [
+      "patients_average_bill",
+      "quantity_rate",
+      "contracts_monthly_fee",
+    ],
+
+    "NPO Healthcare": [
+      "patients_average_bill",
+      "fixed_monthly",
+      "quantity_rate",
+    ],
+
+    "Retail & Wholesale": [
+      "units_price",
+      "transactions_average_value",
+      "customers_average_spend",
+    ],
+
+    "Car Dealership": [
+      "vehicles_margin",
+      "transactions_average_value",
+      "contracts_monthly_fee",
+    ],
+
+    "Restaurant": [
+      "customers_average_spend",
+      "transactions_average_value",
+      "units_price",
+    ],
+
+    "Hospitality": [
+      "rooms_occupancy_rate",
+      "customers_average_spend",
+      "quantity_rate",
+    ],
+
+    "Automotive Services": [
+      "billable_hours_rate",
+      "customers_average_spend",
+      "quantity_rate",
+    ],
+
+    "Security Services": [
+      "contracts_monthly_fee",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "Telecommunications": [
+      "subscriptions_arpu",
+      "transactions_average_value",
+      "quantity_rate",
+    ],
+
+    "Manufacturing": [
+      "production_volume_price",
+      "units_price",
+      "contracts_monthly_fee",
+    ],
+
+    "Agriculture": [
+      "hectares_yield_price",
+      "production_volume_price",
+      "units_price",
+    ],
+
+    "Personal Care & Beauty Services": [
+      "customers_average_spend",
+      "billable_hours_rate",
+      "units_price",
+    ],
+
+    "Health & Fitness": [
+      "memberships_fee",
+      "customers_average_spend",
+      "billable_hours_rate",
+    ],
+
+    "Personal Trainer": [
+      "billable_hours_rate",
+      "memberships_fee",
+      "customers_average_spend",
+    ],
+
+    "Cleaning Services": [
+      "contracts_monthly_fee",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "Architecture": [
+      "projects_contract_value_completion",
+      "billable_hours_rate",
+      "fixed_monthly",
+    ],
+
+    "Interior Design": [
+      "projects_contract_value_completion",
+      "quantity_rate",
+      "billable_hours_rate",
+    ],
+
+    "Graphic Design": [
+      "projects_contract_value_completion",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "Advertising Agency": [
+      "projects_contract_value_completion",
+      "contracts_monthly_fee",
+      "percentage_of_revenue",
+    ],
+
+    "Creative Studio": [
+      "projects_contract_value_completion",
+      "billable_hours_rate",
+      "quantity_rate",
+    ],
+
+    "General Business": [
+      "units_price",
+      "customers_average_spend",
+      "contracts_monthly_fee",
+      "billable_hours_rate",
+      "fixed_monthly",
+    ],
+  };
+
+  const BF_DRIVER_DEFINITIONS = {
+    quantity_rate: {
+      label: "Quantity × Rate",
+      description: "Units sold or delivered multiplied by the price per unit.",
+      basisLabel: "Quantity",
+      rateLabel: "Rate per unit",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    customers_average_spend: {
+      label: "Customers × Average Spend",
+      description: "Number of customers multiplied by average spend per customer.",
+      basisLabel: "Customers",
+      rateLabel: "Average spend",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    contracts_monthly_fee: {
+      label: "Contracts × Monthly Fee",
+      description: "Active contracts multiplied by the recurring monthly charge.",
+      basisLabel: "Active contracts",
+      rateLabel: "Monthly fee",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    billable_hours_rate: {
+      label: "Billable Hours × Hourly Rate",
+      description: "Chargeable service hours multiplied by the billing rate.",
+      basisLabel: "Billable hours",
+      rateLabel: "Hourly rate",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    students_fee: {
+      label: "Students × Fee",
+      description: "Enrolled students multiplied by the fee per student.",
+      basisLabel: "Students",
+      rateLabel: "Fee per student",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    patients_average_bill: {
+      label: "Patients × Average Bill",
+      description: "Patient visits multiplied by the average bill per visit.",
+      basisLabel: "Patient visits",
+      rateLabel: "Average bill",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    rooms_occupancy_rate: {
+      label: "Rooms × Occupancy × Average Rate",
+      description: "Available room nights multiplied by occupancy and room rate.",
+      basisLabel: "Available room nights",
+      rateLabel: "Average room rate",
+      thirdLabel: "Occupancy %",
+      basisVisible: true,
+      rateVisible: true,
+      thirdVisible: true,
+      formula: ({ basis, rate, factor }) =>
+        basis * (factor / 100) * rate,
+    },
+
+    seats_load_factor_fare: {
+      label: "Capacity × Load Factor × Fare",
+      description: "Available capacity multiplied by utilisation and average fare.",
+      basisLabel: "Available capacity",
+      rateLabel: "Average fare",
+      thirdLabel: "Load factor %",
+      basisVisible: true,
+      rateVisible: true,
+      thirdVisible: true,
+      formula: ({ basis, rate, factor }) =>
+        basis * (factor / 100) * rate,
+    },
+
+    deliveries_fee: {
+      label: "Deliveries × Fee",
+      description: "Completed deliveries multiplied by average delivery charge.",
+      basisLabel: "Deliveries",
+      rateLabel: "Average delivery fee",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    memberships_fee: {
+      label: "Members × Membership Fee",
+      description: "Paying members multiplied by membership fee.",
+      basisLabel: "Paying members",
+      rateLabel: "Membership fee",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    subscriptions_arpu: {
+      label: "Subscribers × ARPU",
+      description: "Subscribers multiplied by average revenue per user.",
+      basisLabel: "Subscribers",
+      rateLabel: "Average revenue per user",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    projects_contract_value_completion: {
+      label: "Contract Value × Completion %",
+      description: "Project or contract value multiplied by expected completion.",
+      basisLabel: "Contract value",
+      rateLabel: "Completion %",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * (rate / 100),
+    },
+
+    hectares_yield_price: {
+      label: "Area × Yield × Price",
+      description: "Planted area multiplied by expected yield and selling price.",
+      basisLabel: "Hectares / area",
+      rateLabel: "Price per unit",
+      thirdLabel: "Yield per area",
+      basisVisible: true,
+      rateVisible: true,
+      thirdVisible: true,
+      formula: ({ basis, rate, factor }) =>
+        basis * factor * rate,
+    },
+
+    production_volume_price: {
+      label: "Production Volume × Selling Price",
+      description: "Expected production quantity multiplied by selling price.",
+      basisLabel: "Production volume",
+      rateLabel: "Selling price",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    tonnes_price: {
+      label: "Tonnes Produced × Price",
+      description: "Saleable tonnes multiplied by expected commodity price.",
+      basisLabel: "Saleable tonnes",
+      rateLabel: "Price per tonne",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    vehicles_margin: {
+      label: "Vehicles Sold × Revenue per Vehicle",
+      description: "Vehicles sold multiplied by expected selling price.",
+      basisLabel: "Vehicles sold",
+      rateLabel: "Average selling price",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    transactions_average_value: {
+      label: "Transactions × Average Value",
+      description: "Expected transactions multiplied by average transaction value.",
+      basisLabel: "Transactions",
+      rateLabel: "Average transaction value",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * rate,
+    },
+
+    fixed_monthly: {
+      label: "Fixed Monthly Amount",
+      description: "Use the same or separately entered amount each month.",
+      basisLabel: "",
+      rateLabel: "Monthly amount",
+      basisVisible: false,
+      rateVisible: true,
+      formula: ({ rate }) => rate,
+    },
+
+    percentage_of_revenue: {
+      label: "Percentage of Revenue",
+      description: "Calculate the amount as a percentage of forecast revenue.",
+      basisLabel: "Revenue basis",
+      rateLabel: "Percentage",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * (rate / 100),
+    },
+
+    prior_value_growth: {
+      label: "Prior Value + Growth %",
+      description: "Apply a growth percentage to a prior-period amount.",
+      basisLabel: "Prior amount",
+      rateLabel: "Growth %",
+      basisVisible: true,
+      rateVisible: true,
+      formula: ({ basis, rate }) => basis * (1 + rate / 100),
+    },
+  };
+
+  BF_DRIVER_DEFINITIONS.units_price = {
+    ...BF_DRIVER_DEFINITIONS.quantity_rate,
+    label: "Units × Selling Price",
+    basisLabel: "Units",
+    rateLabel: "Selling price per unit",
+  };
+
+  function bfCurrentIndustry() {
+    return String(
+      window.CURRENT_COMPANY?.sub_industry ||
+      window.CURRENT_COMPANY?.subIndustry ||
+      window.CURRENT_COMPANY?.industry ||
+      window.CURRENT_COMPANY?.industry_name ||
+      "General Business"
+    ).trim();
+  }
+
+  function bfRevenueDriverTypes() {
+    const industry = bfCurrentIndustry();
+
+    return (
+      BF_INDUSTRY_REVENUE_DRIVERS[industry] ||
+      BF_INDUSTRY_REVENUE_DRIVERS["General Business"]
+    );
+  }
+
+  function bfDriverTypesForGroup(group) {
+    if (group === "revenue") {
+      return bfRevenueDriverTypes();
+    }
+
+    if (group === "cost_of_revenue") {
+      return [
+        "quantity_rate",
+        "percentage_of_revenue",
+        "prior_value_growth",
+        "fixed_monthly",
+      ];
+    }
+
+    if (group === "operating_expenses") {
+      return [
+        "fixed_monthly",
+        "percentage_of_revenue",
+        "quantity_rate",
+        "prior_value_growth",
+      ];
+    }
+
+    if (group === "finance_costs") {
+      return [
+        "fixed_monthly",
+        "prior_value_growth",
+        "percentage_of_revenue",
+      ];
+    }
+
+    return [
+      "quantity_rate",
+      "fixed_monthly",
+    ];
+  }
+
   function esc(v) {
     return String(v ?? "")
       .replaceAll("&", "&amp;")
@@ -41321,8 +41847,63 @@ async function saveEditModal() {
     });
   }
 
+  function bfPad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function bfToInputDate(value, fallback = "") {
+    if (!value) return fallback;
+
+    const raw = String(value).trim();
+
+    // YYYY-MM-DD or an ISO timestamp.
+    let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+
+    if (match) {
+      return `${match[1]}-${bfPad2(match[2])}-${bfPad2(match[3])}`;
+    }
+
+    // YYYY/MM/DD
+    match = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+
+    if (match) {
+      return `${match[1]}-${bfPad2(match[2])}-${bfPad2(match[3])}`;
+    }
+
+    // DD/MM/YYYY — use this because your application appears to use
+    // day/month/year in several displayed dates.
+    match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+    if (match) {
+      return `${match[3]}-${bfPad2(match[2])}-${bfPad2(match[1])}`;
+    }
+
+    const parsed = new Date(raw);
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return [
+        parsed.getFullYear(),
+        bfPad2(parsed.getMonth() + 1),
+        bfPad2(parsed.getDate()),
+      ].join("-");
+    }
+
+    console.warn("[Forecast] Invalid date value:", value);
+    return fallback;
+  }
+
+  function bfTodayInputDate() {
+    const now = new Date();
+
+    return [
+      now.getFullYear(),
+      bfPad2(now.getMonth() + 1),
+      bfPad2(now.getDate()),
+    ].join("-");
+  }
+
   function todayIso() {
-    return new Date().toISOString().slice(0, 10);
+    return bfTodayInputDate();
   }
 
   function companyCurrency() {
@@ -41330,7 +41911,7 @@ async function saveEditModal() {
       window.resolveCurrency?.() ||
       window.CURRENT_COMPANY?.currency ||
       window.CURRENT_COMPANY?.functional_currency ||
-      "LSL"
+      "USD"
     );
   }
 
@@ -41516,48 +42097,63 @@ async function saveEditModal() {
     return false;
   }
 
-  function applyPlanningMethodToAccount(accountCode, method) {
-    const inputs = document.querySelectorAll(
-      `#bfForecastPane .bf-forecast-cell[data-bf-account-code="${CSS.escape(accountCode)}"]`
-    );
+  function captureForecastWorkspaceForm() {
+    BF.workspaceForm = {
+      name:
+        $("bfWorkspaceVersionName")?.value?.trim() ||
+        BF.workspaceForm?.name ||
+        "",
 
-    const isDriverBased = method === "driver_based";
+      versionType:
+        $("bfWorkspaceVersionType")?.value ||
+        BF.workspaceForm?.versionType ||
+        "forecast",
 
-    inputs.forEach((input) => {
-      input.readOnly = isDriverBased;
-      input.classList.toggle("is-driver-controlled", isDriverBased);
-    });
+      scenario:
+        $("bfWorkspaceScenario")?.value ||
+        BF.workspaceForm?.scenario ||
+        "base",
+
+      customScenario:
+        $("bfWorkspaceScenarioName")?.value?.trim() ||
+        "",
+
+      actualsToDate:
+        bfToInputDate(
+          $("bfWorkspaceActualsTo")?.value,
+          BF.workspaceForm?.actualsToDate || bfTodayInputDate()
+        ),
+
+      periodStart:
+        bfToInputDate(
+          $("bfWorkspacePeriodStart")?.value,
+          BF.workspaceForm?.periodStart || ""
+        ),
+
+      periodEnd:
+        bfToInputDate(
+          $("bfWorkspacePeriodEnd")?.value,
+          BF.workspaceForm?.periodEnd || ""
+        ),
+
+      currency:
+        $("bfWorkspaceCurrency")?.value?.trim() ||
+        BF.workspaceForm?.currency ||
+        companyCurrency(),
+    };
   }
 
-  function bindPlanningMethodSelectors() {
+  function captureVisibleManualForecastValues() {
     document
-      .querySelectorAll("#bfForecastPane .bf-planning-method")
-      .forEach((select) => {
-        const accountCode =
-          String(select.dataset.bfMethodAccount || "").trim();
-
-        applyPlanningMethodToAccount(
-          accountCode,
-          select.value
+      .querySelectorAll(
+        "#bfForecastPane .bf-draft-forecast-cell"
+      )
+      .forEach((input) => {
+        bfSetDraftValue(
+          input.dataset.bfAccountCode,
+          input.dataset.bfMonth,
+          input.value
         );
-
-        select.addEventListener("change", () => {
-          applyPlanningMethodToAccount(
-            accountCode,
-            select.value
-          );
-
-          if (select.value === "driver_based") {
-            const account = BF.coa.find(
-              (row) => bfAccountCode(row) === accountCode
-            );
-
-            openAccountDriverWorkspace(
-              accountCode,
-              bfAccountName(account)
-            );
-          }
-        });
       });
   }
 
@@ -41942,149 +42538,6 @@ function setForecastWorkspaceActive(active) {
     if (host) host.innerHTML = "";
   }
 
-  function openAccountDriverWorkspace(accountCode, accountName) {
-    BF.driverDraftAccountCode = accountCode;
-    BF.driverDraftAccountName = accountName;
-    BF.driverDraftValues = {};
-
-    const el = $("bfForecastPane");
-    if (!el) return;
-
-    const months =
-      BF.draftForecastMonths?.length
-        ? BF.draftForecastMonths
-        : bfMonthsBetween(
-            BF.selectedVersion?.period_start,
-            BF.selectedVersion?.period_end
-          );
-
-    el.innerHTML = `
-      <div class="bf-workspace">
-        <div class="bf-workspace-header">
-          <div>
-            <button
-              type="button"
-              class="btn"
-              data-bf-action="back-from-driver"
-            >
-              ← Back to Forecast
-            </button>
-
-            <div class="bf-workspace-title">
-              <span class="bf-eyebrow">Driver-based Planning</span>
-              <h2>${esc(accountName)}</h2>
-              <p class="muted">
-                Define the calculation that will generate monthly forecast amounts.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="btn primary"
-            data-bf-action="apply-account-driver"
-          >
-            Apply Driver
-          </button>
-        </div>
-
-        <div class="card">
-          <div class="grid four">
-            <label>
-              Driver name
-              <input
-                id="bfAccountDriverName"
-                value="${esc(accountName)} driver"
-              >
-            </label>
-
-            <label>
-              Driver type
-              <select id="bfAccountDriverType">
-                <option value="quantity_rate">Quantity × Rate</option>
-                <option value="revenue_percentage">Percentage of Revenue</option>
-                <option value="monthly_fixed">Fixed Monthly Amount</option>
-                <option value="growth_percentage">Growth Percentage</option>
-              </select>
-            </label>
-
-            <label>
-              Default quantity
-              <input
-                id="bfAccountDriverDefaultQty"
-                type="number"
-                step="0.0001"
-                value="0"
-              >
-            </label>
-
-            <label>
-              Default rate
-              <input
-                id="bfAccountDriverDefaultRate"
-                type="number"
-                step="0.0001"
-                value="0"
-              >
-            </label>
-          </div>
-        </div>
-
-        <div class="bf-planning-grid-wrap">
-          <table class="bf-planning-grid">
-            <thead>
-              <tr>
-                <th>Month</th>
-                <th>Quantity / Basis</th>
-                <th>Rate / Percentage</th>
-                <th>Calculated Amount</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              ${months.map((month) => `
-                <tr>
-                  <td>
-                    <strong>${esc(bfMonthLabel(month))}</strong>
-                  </td>
-
-                  <td>
-                    <input
-                      class="bf-driver-qty"
-                      type="number"
-                      step="0.0001"
-                      value="0"
-                      data-bf-driver-month="${esc(month)}"
-                    >
-                  </td>
-
-                  <td>
-                    <input
-                      class="bf-driver-rate"
-                      type="number"
-                      step="0.0001"
-                      value="0"
-                      data-bf-driver-month="${esc(month)}"
-                    >
-                  </td>
-
-                  <td
-                    class="right"
-                    data-bf-driver-amount="${esc(month)}"
-                  >
-                    0.00
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-
-    bindAccountDriverInputs();
-  }
-
   function bindGlobalDriverInputs() {
     const syncAndRender = (
       index,
@@ -42106,7 +42559,8 @@ function setForecastWorkspaceActive(active) {
             calculateDriverAmount(
               driver.driver_type,
               row.basis,
-              row.rate
+              row.rate,
+              row.factor
             );
 
           const result =
@@ -42122,45 +42576,55 @@ function setForecastWorkspaceActive(active) {
     };
 
     document
-      .querySelectorAll(
-        ".bf-driver-type-select"
-      )
+      .querySelectorAll(".bf-driver-type-select")
       .forEach((select) => {
-        select.addEventListener(
-          "change",
-          () => {
-            const index =
-              Number(
-                select.dataset.bfDriverIndex
-              );
+        select.addEventListener("change", () => {
+          captureForecastWorkspaceForm();
 
-            BF.driverDraftRows[index]
-              .driver_type =
-                select.value;
+          const index = Number(
+            select.dataset.bfDriverIndex
+          );
 
-            syncAndRender(index, true);
-          }
-        );
+          const driver = BF.driverDraftRows[index];
+
+          if (!driver) return;
+
+          driver.driver_type = select.value;
+
+          renderCreateForecastWorkspace();
+        });
       });
 
     document
-      .querySelectorAll(
-        ".bf-driver-group-select"
-      )
+      .querySelectorAll(".bf-driver-group-select")
       .forEach((select) => {
-        select.addEventListener(
-          "change",
-          () => {
-            const index =
-              Number(
-                select.dataset.bfDriverIndex
-              );
+        select.addEventListener("change", () => {
+          captureForecastWorkspaceForm();
 
-            BF.driverDraftRows[index]
-              .driver_group =
-                select.value;
+          const index = Number(
+            select.dataset.bfDriverIndex
+          );
+
+          const driver = BF.driverDraftRows[index];
+
+          if (!driver) return;
+
+          driver.driver_group = select.value;
+
+          const allowedTypes =
+            bfDriverTypesForGroup(select.value);
+
+          if (
+            !allowedTypes.includes(
+              driver.driver_type
+            )
+          ) {
+            driver.driver_type =
+              allowedTypes[0];
           }
-        );
+
+          renderCreateForecastWorkspace();
+        });
       });
 
     document
@@ -42265,6 +42729,37 @@ function setForecastWorkspaceActive(active) {
 
     document
       .querySelectorAll(
+        ".bf-driver-default-factor"
+      )
+      .forEach((input) => {
+        input.addEventListener("change", () => {
+          captureForecastWorkspaceForm();
+
+          const index = Number(
+            input.dataset.bfDriverIndex
+          );
+
+          const driver =
+            BF.driverDraftRows[index];
+
+          if (!driver) return;
+
+          driver.default_factor =
+            Number(input.value || 0);
+
+          Object.values(
+            driver.values || {}
+          ).forEach((row) => {
+            row.factor =
+              driver.default_factor;
+          });
+
+          renderCreateForecastWorkspace();
+        });
+      });
+
+    document
+      .querySelectorAll(
         ".bf-driver-month-basis"
       )
       .forEach((input) => {
@@ -42312,41 +42807,128 @@ function setForecastWorkspaceActive(active) {
           }
         );
       });
+
+    document
+      .querySelectorAll(
+        ".bf-driver-month-factor"
+      )
+      .forEach((input) => {
+        input.addEventListener("input", () => {
+          const index = Number(
+            input.dataset.bfDriverIndex
+          );
+
+          const month =
+            input.dataset.bfDriverMonth;
+
+          const driver =
+            BF.driverDraftRows[index];
+
+          if (!driver?.values?.[month]) {
+            return;
+          }
+
+          driver.values[month].factor =
+            Number(input.value || 0);
+
+          syncAndRender(index);
+        });
+      });
   }
 
   function calculateDriverAmount(
     type,
     basis,
-    rate
+    rate,
+    factor = 0
   ) {
-    const numericBasis =
-      Number(basis || 0);
+    const definition =
+      BF_DRIVER_DEFINITIONS[type] ||
+      BF_DRIVER_DEFINITIONS.quantity_rate;
 
-    const numericRate =
-      Number(rate || 0);
+    const values = {
+      basis: Number(basis || 0),
+      rate: Number(rate || 0),
+      factor: Number(factor || 0),
+    };
 
-    switch (type) {
-      case "quantity_rate":
-        return numericBasis * numericRate;
+    try {
+      return Number(
+        definition.formula(values) || 0
+      );
+    } catch (error) {
+      console.error(
+        "[Forecast] driver calculation failed",
+        {
+          type,
+          values,
+          error,
+        }
+      );
 
-      case "revenue_percentage":
-        return numericBasis *
-          (numericRate / 100);
-
-      case "monthly_fixed":
-        return numericRate;
-
-      case "growth_percentage":
-        return numericBasis *
-          (1 + numericRate / 100);
-
-      default:
-        return 0;
+      return 0;
     }
   }
 
+  function bindForecastWorkspaceMeta() {
+    const ids = [
+      "bfWorkspaceVersionName",
+      "bfWorkspaceVersionType",
+      "bfWorkspaceScenario",
+      "bfWorkspaceScenarioName",
+      "bfWorkspaceActualsTo",
+      "bfWorkspaceCurrency",
+    ];
+
+    ids.forEach((id) => {
+      $(id)?.addEventListener("change", captureForecastWorkspaceForm);
+      $(id)?.addEventListener("input", captureForecastWorkspaceForm);
+    });
+
+    $("bfWorkspacePeriodStart")?.addEventListener("change", () => {
+      captureForecastWorkspaceForm();
+
+      const start = bfToInputDate(
+        BF.workspaceForm.periodStart
+      );
+
+      const end = bfToInputDate(
+        BF.workspaceForm.periodEnd
+      );
+
+      if (!start || !end) return;
+
+      if (end < start) {
+        alert("Period end cannot be before period start.");
+        return;
+      }
+
+      renderCreateForecastWorkspace();
+    });
+
+    $("bfWorkspacePeriodEnd")?.addEventListener("change", () => {
+      captureForecastWorkspaceForm();
+
+      const start = bfToInputDate(
+        BF.workspaceForm.periodStart
+      );
+
+      const end = bfToInputDate(
+        BF.workspaceForm.periodEnd
+      );
+
+      if (!start || !end) return;
+
+      if (end < start) {
+        alert("Period end cannot be before period start.");
+        return;
+      }
+
+      renderCreateForecastWorkspace();
+    });
+  }
+
   function renderManualForecastGrid({
-    accounts,
     grouped,
     months,
     sections,
@@ -42370,15 +42952,14 @@ function setForecastWorkspaceActive(active) {
         return `
           <tr class="bf-planning-account-row">
             <td class="bf-sticky-account">
-              <strong>${esc(
-                bfAccountName(account)
-              )}</strong>
+              <strong>${esc(bfAccountName(account))}</strong>
             </td>
 
             ${months.map((month) => `
               <td>
                 <input
                   type="number"
+                  inputmode="decimal"
                   step="0.01"
                   class="bf-forecast-cell bf-draft-forecast-cell"
                   value="${esc(
@@ -42386,6 +42967,9 @@ function setForecastWorkspaceActive(active) {
                   )}"
                   data-bf-account-code="${esc(accountCode)}"
                   data-bf-month="${esc(month)}"
+                  aria-label="${esc(
+                    `${bfAccountName(account)} ${bfMonthLabel(month)}`
+                  )}"
                 >
               </td>
             `).join("")}
@@ -42408,7 +42992,9 @@ function setForecastWorkspaceActive(active) {
         <table class="bf-planning-grid">
           <thead>
             <tr>
-              <th class="bf-sticky-account">Account</th>
+              <th class="bf-sticky-account">
+                Account
+              </th>
 
               ${months.map((month) => `
                 <th>${esc(bfMonthLabel(month))}</th>
@@ -42429,7 +43015,7 @@ function setForecastWorkspaceActive(active) {
 
               ${accountRows(section.key)}
 
-              ${section.footer}
+              ${section.footer || ""}
             `).join("")}
           </tbody>
         </table>
@@ -42499,6 +43085,8 @@ function setForecastWorkspaceActive(active) {
   }
 
   function addDriverDraftRow() {
+    captureForecastWorkspaceForm();
+
     const months =
       BF.draftForecastMonths || [];
 
@@ -42508,9 +43096,12 @@ function setForecastWorkspaceActive(active) {
       values[month] = {
         basis: 0,
         rate: 0,
+        factor: 0,
         amount: 0,
       };
     });
+
+    const group = "revenue";
 
     BF.driverDraftRows.push({
       temp_id:
@@ -42520,11 +43111,14 @@ function setForecastWorkspaceActive(active) {
 
       account_code: "",
       driver_name: "",
-      driver_group: "revenue",
-      driver_type: "quantity_rate",
+      driver_group: group,
+
+      driver_type:
+        bfDriverTypesForGroup(group)[0],
 
       default_basis: 0,
       default_rate: 0,
+      default_factor: 0,
 
       values,
     });
@@ -42538,29 +43132,38 @@ function setForecastWorkspaceActive(active) {
     accounts,
     months
   ) {
+    const allowedDriverTypes =
+      bfDriverTypesForGroup(
+        driver.driver_group || "revenue"
+      );
+
     const type =
-      driver.driver_type || "quantity_rate";
+      driver.driver_type ||
+      allowedDriverTypes[0] ||
+      "quantity_rate";
+
+    const definition =
+      BF_DRIVER_DEFINITIONS[type] ||
+      BF_DRIVER_DEFINITIONS.quantity_rate;
 
     const showBasis =
-      type !== "monthly_fixed";
+      definition.basisVisible !== false;
 
     const showRate =
-      type !== "monthly_fixed" ||
-      type === "monthly_fixed";
+      definition.rateVisible !== false;
 
-    const basisLabel = {
-      quantity_rate: "Quantity",
-      revenue_percentage: "Revenue basis",
-      monthly_fixed: "Not used",
-      growth_percentage: "Prior amount",
-    }[type] || "Basis";
+    const showFactor =
+      definition.thirdVisible === true;
 
-    const rateLabel = {
-      quantity_rate: "Rate",
-      revenue_percentage: "Percentage",
-      monthly_fixed: "Fixed amount",
-      growth_percentage: "Growth %",
-    }[type] || "Rate";
+    const basisLabel =
+      definition.basisLabel || "Basis";
+
+    const rateLabel =
+      definition.rateLabel || "Rate";
+
+    const factorLabel =
+      definition.thirdLabel ||
+      "Additional factor";
 
     return `
       <article
@@ -42593,27 +43196,52 @@ function setForecastWorkspaceActive(active) {
         <div class="grid four">
           <label>
             Driver group
+
             <select
               class="bf-driver-group-select"
               data-bf-driver-index="${index}"
             >
-              <option value="revenue"
-                ${driver.driver_group === "revenue" ? "selected" : ""}>
+              <option
+                value="revenue"
+                ${
+                  driver.driver_group === "revenue"
+                    ? "selected"
+                    : ""
+                }
+              >
                 Revenue Driver
               </option>
 
-              <option value="cost_of_revenue"
-                ${driver.driver_group === "cost_of_revenue" ? "selected" : ""}>
+              <option
+                value="cost_of_revenue"
+                ${
+                  driver.driver_group === "cost_of_revenue"
+                    ? "selected"
+                    : ""
+                }
+              >
                 Cost of Revenue Driver
               </option>
 
-              <option value="operating_expenses"
-                ${driver.driver_group === "operating_expenses" ? "selected" : ""}>
+              <option
+                value="operating_expenses"
+                ${
+                  driver.driver_group === "operating_expenses"
+                    ? "selected"
+                    : ""
+                }
+              >
                 Spending Driver
               </option>
 
-              <option value="finance_costs"
-                ${driver.driver_group === "finance_costs" ? "selected" : ""}>
+              <option
+                value="finance_costs"
+                ${
+                  driver.driver_group === "finance_costs"
+                    ? "selected"
+                    : ""
+                }
+              >
                 Finance Cost Driver
               </option>
             </select>
@@ -42621,68 +43249,89 @@ function setForecastWorkspaceActive(active) {
 
           <label>
             Target account
+
             <select
               class="bf-driver-account-select"
               data-bf-driver-index="${index}"
             >
-              <option value="">Select account</option>
+              <option value="">
+                Select account
+              </option>
 
-              ${accounts.map((account) => {
-                const code =
-                  bfAccountCode(account);
+              ${accounts
+                .map((account) => {
+                  const code =
+                    bfAccountCode(account);
 
-                return `
-                  <option
-                    value="${esc(code)}"
-                    ${
-                      driver.account_code === code
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${esc(bfAccountName(account))}
-                  </option>
-                `;
-              }).join("")}
+                  return `
+                    <option
+                      value="${esc(code)}"
+                      ${
+                        driver.account_code === code
+                          ? "selected"
+                          : ""
+                      }
+                    >
+                      ${esc(
+                        bfAccountName(account)
+                      )}
+                    </option>
+                  `;
+                })
+                .join("")}
             </select>
           </label>
 
           <label>
             Driver name
+
             <input
               class="bf-driver-name-input"
               data-bf-driver-index="${index}"
-              value="${esc(driver.driver_name || "")}"
+              value="${esc(
+                driver.driver_name || ""
+              )}"
               placeholder="e.g. Units sold × average price"
             >
           </label>
 
           <label>
             Driver type
+
             <select
               class="bf-driver-type-select"
               data-bf-driver-index="${index}"
             >
-              <option value="quantity_rate"
-                ${type === "quantity_rate" ? "selected" : ""}>
-                Quantity × Rate
-              </option>
+              ${allowedDriverTypes
+                .map((driverType) => {
+                  const item =
+                    BF_DRIVER_DEFINITIONS[
+                      driverType
+                    ];
 
-              <option value="revenue_percentage"
-                ${type === "revenue_percentage" ? "selected" : ""}>
-                Percentage of Revenue
-              </option>
+                  if (!item) return "";
 
-              <option value="monthly_fixed"
-                ${type === "monthly_fixed" ? "selected" : ""}>
-                Fixed Monthly Amount
-              </option>
-
-              <option value="growth_percentage"
-                ${type === "growth_percentage" ? "selected" : ""}>
-                Growth Percentage
-              </option>
+                  return `
+                    <option
+                      value="${esc(driverType)}"
+                      ${
+                        type === driverType
+                          ? "selected"
+                          : ""
+                      }
+                    >
+                      ${esc(item.label)}
+                    </option>
+                  `;
+                })
+                .join("")}
             </select>
+
+            <small class="muted">
+              ${esc(
+                definition.description || ""
+              )}
+            </small>
           </label>
 
           ${
@@ -42690,12 +43339,15 @@ function setForecastWorkspaceActive(active) {
               ? `
                 <label>
                   Default ${esc(basisLabel)}
+
                   <input
                     class="bf-driver-default-basis"
                     data-bf-driver-index="${index}"
                     type="number"
                     step="0.0001"
-                    value="${esc(driver.default_basis || 0)}"
+                    value="${esc(
+                      driver.default_basis || 0
+                    )}"
                   >
                 </label>
               `
@@ -42707,12 +43359,35 @@ function setForecastWorkspaceActive(active) {
               ? `
                 <label>
                   Default ${esc(rateLabel)}
+
                   <input
                     class="bf-driver-default-rate"
                     data-bf-driver-index="${index}"
                     type="number"
                     step="0.0001"
-                    value="${esc(driver.default_rate || 0)}"
+                    value="${esc(
+                      driver.default_rate || 0
+                    )}"
+                  >
+                </label>
+              `
+              : ""
+          }
+
+          ${
+            showFactor
+              ? `
+                <label>
+                  Default ${esc(factorLabel)}
+
+                  <input
+                    class="bf-driver-default-factor"
+                    data-bf-driver-index="${index}"
+                    type="number"
+                    step="0.0001"
+                    value="${esc(
+                      driver.default_factor || 0
+                    )}"
                   >
                 </label>
               `
@@ -42732,65 +43407,112 @@ function setForecastWorkspaceActive(active) {
                     : ""
                 }
 
-                <th>${esc(rateLabel)}</th>
+                ${
+                  showRate
+                    ? `<th>${esc(rateLabel)}</th>`
+                    : ""
+                }
+
+                ${
+                  showFactor
+                    ? `<th>${esc(factorLabel)}</th>`
+                    : ""
+                }
+
                 <th>Calculated Amount</th>
               </tr>
             </thead>
 
             <tbody>
-              ${months.map((month) => {
-                const row =
-                  driver.values?.[month] || {
-                    basis: 0,
-                    rate: 0,
-                    amount: 0,
-                  };
+              ${months
+                .map((month) => {
+                  const row =
+                    driver.values?.[month] || {
+                      basis: 0,
+                      rate: 0,
+                      factor: 0,
+                      amount: 0,
+                    };
 
-                return `
-                  <tr>
-                    <td>
-                      <strong>${esc(
-                        bfMonthLabel(month)
-                      )}</strong>
-                    </td>
+                  return `
+                    <tr>
+                      <td>
+                        <strong>
+                          ${esc(
+                            bfMonthLabel(month)
+                          )}
+                        </strong>
+                      </td>
 
-                    ${
-                      showBasis
-                        ? `
-                          <td>
-                            <input
-                              class="bf-driver-month-basis"
-                              data-bf-driver-index="${index}"
-                              data-bf-driver-month="${esc(month)}"
-                              type="number"
-                              step="0.0001"
-                              value="${esc(row.basis || 0)}"
-                            >
-                          </td>
-                        `
-                        : ""
-                    }
+                      ${
+                        showBasis
+                          ? `
+                            <td>
+                              <input
+                                class="bf-driver-month-basis"
+                                data-bf-driver-index="${index}"
+                                data-bf-driver-month="${esc(month)}"
+                                type="number"
+                                step="0.0001"
+                                value="${esc(
+                                  row.basis || 0
+                                )}"
+                              >
+                            </td>
+                          `
+                          : ""
+                      }
 
-                    <td>
-                      <input
-                        class="bf-driver-month-rate"
-                        data-bf-driver-index="${index}"
-                        data-bf-driver-month="${esc(month)}"
-                        type="number"
-                        step="0.0001"
-                        value="${esc(row.rate || 0)}"
+                      ${
+                        showRate
+                          ? `
+                            <td>
+                              <input
+                                class="bf-driver-month-rate"
+                                data-bf-driver-index="${index}"
+                                data-bf-driver-month="${esc(month)}"
+                                type="number"
+                                step="0.0001"
+                                value="${esc(
+                                  row.rate || 0
+                                )}"
+                              >
+                            </td>
+                          `
+                          : ""
+                      }
+
+                      ${
+                        showFactor
+                          ? `
+                            <td>
+                              <input
+                                class="bf-driver-month-factor"
+                                data-bf-driver-index="${index}"
+                                data-bf-driver-month="${esc(month)}"
+                                type="number"
+                                step="0.0001"
+                                value="${esc(
+                                  row.factor || 0
+                                )}"
+                              >
+                            </td>
+                          `
+                          : ""
+                      }
+
+                      <td
+                        class="right"
+                        data-bf-driver-result="${index}|${esc(month)}"
                       >
-                    </td>
-
-                    <td
-                      class="right"
-                      data-bf-driver-result="${index}|${esc(month)}"
-                    >
-                      ${money(row.amount || 0)}
-                    </td>
-                  </tr>
-                `;
-              }).join("")}
+                        ${money(
+                          row.amount || 0
+                        )}
+                      </td>
+                    </tr>
+                  `;
+                })
+                .join("")}
             </tbody>
           </table>
         </div>
@@ -42804,15 +43526,22 @@ function setForecastWorkspaceActive(active) {
 
     const budget = BF.selectedBudget || {};
 
-    const defaultStart = String(
-      budget.period_start || `${fyGuess()}-01-01`
-    ).slice(0, 10);
+    const savedForm = BF.workspaceForm || {};
 
-    const defaultEnd = String(
-      budget.period_end || `${fyGuess()}-12-31`
-    ).slice(0, 10);
+    const defaultStart = bfToInputDate(
+      savedForm.periodStart || budget.period_start,
+      `${fyGuess()}-01-01`
+    );
 
-    const months = bfMonthsBetween(defaultStart, defaultEnd);
+    const defaultEnd = bfToInputDate(
+      savedForm.periodEnd || budget.period_end,
+      `${fyGuess()}-12-31`
+    );
+
+    const months = bfMonthsBetween(
+      defaultStart,
+      defaultEnd
+    );
 
     const accounts = (BF.coa || [])
       .filter(bfIsForecastablePnlAccount);
@@ -43069,9 +43798,12 @@ function setForecastWorkspaceActive(active) {
               <input
                 id="bfWorkspaceVersionName"
                 value="${esc(
-                  budget.name
-                    ? `${budget.name} Forecast`
-                    : "Rolling Forecast"
+                  savedForm.name ||
+                  (
+                    budget.name
+                      ? `${budget.name} Forecast`
+                      : "Rolling Forecast"
+                  )
                 )}"
               >
             </label>
@@ -43100,6 +43832,7 @@ function setForecastWorkspaceActive(active) {
               Custom scenario name
               <input
                 id="bfWorkspaceScenarioName"
+                value="${esc(savedForm.customScenario || "")}"
                 placeholder="Optional"
               >
             </label>
@@ -43109,33 +43842,43 @@ function setForecastWorkspaceActive(active) {
               <input
                 id="bfWorkspaceActualsTo"
                 type="date"
-                value="${todayIso()}"
+                value="${esc(
+                  bfToInputDate(
+                    savedForm.actualsToDate ||
+                    budget.actuals_to_date,
+                    bfTodayInputDate()
+                  )
+                )}"
               >
             </label>
 
             <label>
               Period start
-              <input
-                id="bfWorkspacePeriodStart"
-                type="date"
-                value="${esc(defaultStart)}"
-              >
+                <input
+                  id="bfWorkspacePeriodStart"
+                  type="date"
+                  value="${esc(defaultStart)}"
+                >
             </label>
 
             <label>
               Period end
-              <input
-                id="bfWorkspacePeriodEnd"
-                type="date"
-                value="${esc(defaultEnd)}"
-              >
+                <input
+                  id="bfWorkspacePeriodEnd"
+                  type="date"
+                  value="${esc(defaultEnd)}"
+                >
             </label>
 
             <label>
               Currency
               <input
                 id="bfWorkspaceCurrency"
-                value="${esc(budget.currency || companyCurrency())}"
+                value="${esc(
+                  savedForm.currency ||
+                  budget.currency ||
+                  companyCurrency()
+                )}"
               >
             </label>
           </div>
@@ -43222,151 +43965,23 @@ function setForecastWorkspaceActive(active) {
       </div>
     `;
 
+    if ($("bfWorkspaceVersionType")) {
+      $("bfWorkspaceVersionType").value =
+        savedForm.versionType || "forecast";
+    }
+
+    if ($("bfWorkspaceScenario")) {
+      $("bfWorkspaceScenario").value =
+        savedForm.scenario || "base";
+    }
+
+    bindForecastWorkspaceMeta();
+
     if (BF.planningMode === "manual") {
       bindDraftForecastGrid(grouped);
     } else {
       bindGlobalDriverInputs();
     }
-    bindPlanningMethodSelectors();
-  }
-
-  function bindAccountDriverInputs() {
-    const recalculate = () => {
-      const type =
-        $("bfAccountDriverType")?.value ||
-        "quantity_rate";
-
-      const defaultQty =
-        Number($("bfAccountDriverDefaultQty")?.value || 0);
-
-      const defaultRate =
-        Number($("bfAccountDriverDefaultRate")?.value || 0);
-
-      document
-        .querySelectorAll("[data-bf-driver-amount]")
-        .forEach((cell) => {
-          const month = cell.dataset.bfDriverAmount;
-
-          const qtyInput = document.querySelector(
-            `.bf-driver-qty[data-bf-driver-month="${month}"]`
-          );
-
-          const rateInput = document.querySelector(
-            `.bf-driver-rate[data-bf-driver-month="${month}"]`
-          );
-
-          const quantity =
-            qtyInput?.value === ""
-              ? defaultQty
-              : Number(qtyInput?.value || 0);
-
-          const rate =
-            rateInput?.value === ""
-              ? defaultRate
-              : Number(rateInput?.value || 0);
-
-          const amount =
-            calculateDriverAmount(type, quantity, rate);
-
-          BF.driverDraftValues[month] = {
-            quantity,
-            rate,
-            amount,
-          };
-
-          cell.textContent = money(amount);
-        });
-    };
-
-    document
-      .querySelectorAll(
-        "#bfForecastPane .bf-driver-qty, #bfForecastPane .bf-driver-rate"
-      )
-      .forEach((input) => {
-        input.addEventListener("input", recalculate);
-      });
-
-    $("bfAccountDriverType")?.addEventListener("change", recalculate);
-    $("bfAccountDriverDefaultQty")?.addEventListener("input", recalculate);
-    $("bfAccountDriverDefaultRate")?.addEventListener("input", recalculate);
-
-    recalculate();
-  }
-
-  function applyAccountDriverToDraft() {
-    const accountCode = BF.driverDraftAccountCode;
-
-    if (!accountCode) {
-      alert("No account is selected.");
-      return;
-    }
-
-    for (const [month, values] of Object.entries(BF.driverDraftValues || {})) {
-      bfSetDraftValue(
-        accountCode,
-        month,
-        values.amount
-      );
-    }
-
-    renderCreateForecastWorkspace();
-  }
-
-  async function saveAccountDriverToVersion() {
-    const accountCode = BF.driverDraftAccountCode;
-
-    const driverName =
-      $("bfAccountDriverName")?.value?.trim() ||
-      `${BF.driverDraftAccountName} driver`;
-
-    const driverType =
-      $("bfAccountDriverType")?.value ||
-      "quantity_rate";
-
-    const driverRows = Object.entries(
-      BF.driverDraftValues || {}
-    );
-
-    for (const [month, values] of driverRows) {
-      await apiFetch(
-        ENDPOINTS.forecast.drivers(cid()),
-        {
-          method: "POST",
-          body: JSON.stringify({
-            version_id: BF.selectedVersionId,
-            budget_id: BF.selectedBudgetId,
-            account_code: accountCode,
-            driver_name: driverName,
-            driver_type: driverType,
-            quantity: values.quantity,
-            rate: values.rate,
-            amount: values.amount,
-            period_month: month,
-          }),
-        }
-      );
-    }
-
-    const lines = driverRows.map(([month, values]) => ({
-      account_code: accountCode,
-      period_month: month,
-      amount: values.amount,
-      source_type: "driver_based",
-      source_ref: driverName,
-    }));
-
-    await apiFetch(
-      ENDPOINTS.forecast.versionLines(
-        cid(),
-        BF.selectedVersionId
-      ),
-      {
-        method: "POST",
-        body: JSON.stringify({ lines }),
-      }
-    );
-
-    await openVersion(BF.selectedVersionId);
   }
 
   function renderCapexPlanner() {
@@ -44025,7 +44640,16 @@ function setForecastWorkspaceActive(active) {
 
     BF.forecastWorkspaceMode = "create";
     BF.planningMode = "manual";
-
+    BF.workspaceForm = {
+      name: "",
+      versionType: "forecast",
+      scenario: "base",
+      customScenario: "",
+      actualsToDate: "",
+      periodStart: "",
+      periodEnd: "",
+      currency: "",
+    };
     BF.forecastDraftLines = {};
     BF.draftForecastValues = {};
     BF.driverDraftRows = [];
@@ -44340,16 +44964,6 @@ function setForecastWorkspaceActive(active) {
           recalculateDraftForecastGrid(grouped);
         });
       });
-
-    $("bfWorkspacePeriodStart")?.addEventListener(
-      "change",
-      refreshDraftForecastPeriod
-    );
-
-    $("bfWorkspacePeriodEnd")?.addEventListener(
-      "change",
-      refreshDraftForecastPeriod
-    );
   }
 
 
@@ -44791,7 +45405,6 @@ function setForecastWorkspaceActive(active) {
     `;
 
     bindForecastGridInputs();
-    bindPlanningMethodSelectors();
   }
 
   function collectForecastGridLines() {
@@ -45227,16 +45840,27 @@ function setForecastWorkspaceActive(active) {
                 Number(value.amount || 0),
 
               formula_text:
-                driver.driver_type ===
-                "quantity_rate"
-                  ? "quantity * rate"
-                  : driver.driver_type ===
-                      "revenue_percentage"
-                    ? "basis * rate / 100"
-                    : driver.driver_type ===
-                        "growth_percentage"
-                      ? "basis * (1 + rate / 100)"
-                      : "fixed amount",
+                BF_DRIVER_DEFINITIONS[
+                  driver.driver_type
+                ]?.label ||
+                driver.driver_type,
+
+              meta_json: {
+                driver_group:
+                  driver.driver_group,
+
+                industry:
+                  bfCurrentIndustry(),
+
+                factor:
+                  Number(value.factor || 0),
+
+                definition:
+                  BF_DRIVER_DEFINITIONS[
+                    driver.driver_type
+                  ]?.label ||
+                  driver.driver_type,
+              },
             });
 
             lines.push({
@@ -45290,15 +45914,6 @@ function setForecastWorkspaceActive(active) {
         return;
       }
 
-      const driverButton = t.closest?.("[data-bf-open-driver-account]");
-
-      if (driverButton) {
-        return openAccountDriverWorkspace(
-          String(driverButton.dataset.bfOpenDriverAccount || "").trim(),
-          String(driverButton.dataset.bfOpenDriverName || "").trim()
-        );
-      }
-
       const removeDriver =
         t.closest?.("[data-bf-remove-driver]");
 
@@ -45343,16 +45958,21 @@ function setForecastWorkspaceActive(active) {
         }
       }
       if (action === "planning-mode-manual") {
+        captureForecastWorkspaceForm();
+
         BF.planningMode = "manual";
+
         return renderCreateForecastWorkspace();
       }
 
       if (action === "planning-mode-driver") {
+        captureForecastWorkspaceForm();
+        captureVisibleManualForecastValues();
+
         BF.planningMode = "driver_based";
 
         if (!BF.driverDraftRows.length) {
-          addDriverDraftRow();
-          return;
+          return addDriverDraftRow();
         }
 
         return renderCreateForecastWorkspace();
@@ -45365,14 +45985,6 @@ function setForecastWorkspaceActive(active) {
       if (action === "add-forecast-line") return openForecastLineModal();
       if (action === "add-driver") return openDriverModal();
       if (action === "refresh-imports") return loadImports();
-
-      if (action === "apply-account-driver") {
-        if (BF.forecastWorkspaceMode === "create") {
-          return applyAccountDriverToDraft();
-        }
-
-        return saveAccountDriverToVersion();
-      }
 
       if (action === "back-from-driver") {
         if (BF.forecastWorkspaceMode === "create") {
@@ -45407,12 +46019,6 @@ function setForecastWorkspaceActive(active) {
         return;
       }
 
-      if (t.dataset?.bfOpenDriverAccount) {
-        return openAccountDriverWorkspace(
-          t.dataset.bfOpenDriverAccount,
-          t.dataset.bfOpenDriverName || ""
-        );
-      }
       if (t.dataset?.bfEditLine) return openBudgetLineModal(Number(t.dataset.bfEditLine));
       if (t.dataset?.bfDeleteLine) return deleteBudgetLine(Number(t.dataset.bfDeleteLine));
       if (t.dataset?.bfOpenVersion) return openVersion(Number(t.dataset.bfOpenVersion));
@@ -47219,27 +47825,36 @@ function setForecastWorkspaceActive(active) {
   async function generatePayrollPeriods() {
     const companyId = cid();
 
+    if (!companyId) {
+      throw new Error("No active company selected.");
+    }
+
+    const firstPeriodMonth =
+      $("payrollFirstPeriodMonth")?.value || "";
+
     const res = await apiFetch(
-      ENDPOINTS.payroll.generatePeriods(companyId),
+      ENDPOINTS.payroll.generateCalendars(companyId),
       {
         method: "POST",
         body: JSON.stringify({
           periods: 12,
+          from_month: firstPeriodMonth
+            ? `${firstPeriodMonth}-01`
+            : null,
         }),
       }
     );
 
     payrollState.calendars = Array.isArray(res?.items)
       ? res.items
-      : Array.isArray(res?.data)
-        ? res.data
-        : [];
+      : [];
 
     renderPayrollCalendars();
     renderPayrollRunCalendarSelect();
+    renderPayrollOverview();
 
     showPayrollStatus(
-      "Payroll periods generated successfully.",
+      `${payrollState.calendars.length} payroll periods generated.`,
       "success"
     );
   }
@@ -47247,8 +47862,15 @@ function setForecastWorkspaceActive(active) {
   async function savePayrollSchedule() {
     const companyId = cid();
 
+    if (!companyId) {
+      throw new Error("No active company selected.");
+    }
+
+    const firstPeriodMonth =
+      $("payrollFirstPeriodMonth")?.value || "";
+
     const payload = {
-      frequency:
+      default_frequency:
         $("payrollScheduleFrequency")?.value || "monthly",
 
       period_start_day:
@@ -47269,10 +47891,21 @@ function setForecastWorkspaceActive(active) {
       payment_adjustment:
         $("payrollPaymentAdjustment")?.value || "none",
 
-      first_period_month:
-        $("payrollFirstPeriodMonth")?.value
-          ? `${$("payrollFirstPeriodMonth").value}-01`
+      payroll_start_date:
+        firstPeriodMonth
+          ? `${firstPeriodMonth}-01`
           : null,
+
+      calendar_generation_months: 12,
+
+      // Preserve the existing general settings.
+      default_currency:
+        payrollState.settings?.default_currency ||
+        window.CURRENT_COMPANY?.currency ||
+        null,
+
+      tax_authority_id:
+        payrollState.settings?.tax_authority_id || null,
 
       is_active: true,
     };
@@ -47281,28 +47914,40 @@ function setForecastWorkspaceActive(active) {
       payload.period_start_day < 1 ||
       payload.period_start_day > 31
     ) {
-      throw new Error("Period start day must be between 1 and 31.");
+      throw new Error(
+        "Period start day must be between 1 and 31."
+      );
     }
 
     if (
       payload.period_end_day < 1 ||
       payload.period_end_day > 31
     ) {
-      throw new Error("Period end day must be between 1 and 31.");
+      throw new Error(
+        "Period end day must be between 1 and 31."
+      );
     }
 
     const res = await apiFetch(
-      ENDPOINTS.payroll.schedule(companyId),
+      ENDPOINTS.payroll.settings(companyId),
       {
         method: "POST",
         body: JSON.stringify(payload),
       }
     );
 
-    payrollState.schedule = res?.data || payload;
+    payrollState.settings = res?.data || {
+      ...(payrollState.settings || {}),
+      ...payload,
+    };
 
-    renderPayrollSchedule();
-    showPayrollStatus("Pay schedule saved.", "success");
+    renderPayrollSettings();
+    renderPayrollSchedulePreview();
+
+    showPayrollStatus(
+      "Pay schedule saved.",
+      "success"
+    );
   }
 
   async function savePayrollEmployee() {
