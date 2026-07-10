@@ -39146,7 +39146,12 @@ async function saveEditModal() {
           <div class="mt-1 text-xs text-slate-500">${escapeHtml(loan.lender_name || "—")}</div>
           <div class="mt-2 flex items-center justify-between text-xs">
             <span class="text-slate-500">${escapeHtml(loan.loan_reference || "")}</span>
-            <span class="font-semibold text-slate-700">${money(loan.outstanding_principal || 0, loan.currency || "USD")}</span>
+            <span class="font-semibold text-slate-700">
+              ${money(
+                loan.outstanding_principal || 0,
+                resolveLoanCurrency(loan.currency)
+              )}
+            </span>
           </div>
         </button>
       `;
