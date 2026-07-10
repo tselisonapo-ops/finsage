@@ -43178,38 +43178,19 @@ function setForecastWorkspaceActive(active) {
 
         ${
           accounts.length
-            ? `
-              <div class="bf-planning-grid-wrap">
-                <table class="bf-planning-grid">
-                  <thead>
-                    <tr>
-                      <th class="bf-sticky-account">Account</th>
-
-                      ${months.map((month) => `
-                        <th>${esc(bfMonthLabel(month))}</th>
-                      `).join("")}
-
-                      <th>Total</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    ${sections.map((section) => `
-                      <tr class="bf-section-title-row">
-                        <td colspan="${months.length + 2}">
-                          <strong>${esc(section.title)}</strong>
-                          <small>${esc(section.description)}</small>
-                        </td>
-                      </tr>
-
-                      ${accountRows(section.key)}
-
-                      ${section.footer}
-                    `).join("")}
-                  </tbody>
-                </table>
-              </div>
-            `
+            ? (
+                BF.planningMode === "manual"
+                  ? renderManualForecastGrid({
+                      accounts,
+                      grouped,
+                      months,
+                      sections,
+                    })
+                  : renderDriverForecastGrid({
+                      grouped,
+                      months,
+                    })
+              )
             : `
               <div class="card empty-state">
                 <h3>No posting P&amp;L accounts found</h3>
