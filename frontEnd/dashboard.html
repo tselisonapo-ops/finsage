@@ -13555,15 +13555,20 @@ html, body {
 
                   <!-- ADD COST -->
                   <div id="smAddCostFields" class="border rounded p-3">
-                    <div class="font-medium">Add cost</div>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                      <div
-                        id="smAddCostImpact"
-                        class="hidden grid grid-cols-1 md:grid-cols-4 gap-2 mb-3"
-                      ></div>
+                    <div class="flex items-start justify-between gap-3">
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Amount</label>
+                        <div class="font-medium">Add cost</div>
+                        <div class="text-xs text-slate-500 mt-1">
+                          Capitalise qualifying expenditure and record any recoverable VAT.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Amount *
+                        </label>
                         <input
                           id="smAmount"
                           class="w-full border rounded px-3 py-2"
@@ -13571,10 +13576,15 @@ html, body {
                           step="0.01"
                           min="0"
                         />
+                        <div class="text-xs text-slate-400 mt-1">
+                          Enter the invoice amount according to the VAT treatment selected below.
+                        </div>
                       </div>
 
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Selected asset</label>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Selected asset
+                        </label>
                         <input
                           id="smDebitAssetLabel"
                           class="w-full border rounded px-3 py-2 bg-slate-50"
@@ -13584,103 +13594,345 @@ html, body {
                         />
                       </div>
 
-                      <div class="sm:col-span-2">
-                        <label class="block text-xs text-slate-500 mb-1">Bank account</label>
-                        <select id="smCreditBankAccount" class="w-full border rounded px-3 py-2">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Bank account *
+                        </label>
+                        <select
+                          id="smCreditBankAccount"
+                          class="w-full border rounded px-3 py-2"
+                        >
                           <option value="">Select bank account…</option>
                         </select>
                       </div>
 
-                      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3">
-                        <div>
-                          <label class="block text-xs text-slate-500 mb-1">
-                            VAT treatment
-                          </label>
-                          <select
-                            id="smAddCostVatTreatment"
-                            class="w-full border rounded px-3 py-2"
-                          >
-                            <option value="no_vat">No VAT</option>
-                            <option value="inclusive">VAT inclusive</option>
-                            <option value="exclusive">VAT exclusive</option>
-                          </select>
-                        </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Supplier
+                        </label>
+                        <input
+                          id="smAddCostSupplier"
+                          class="w-full border rounded px-3 py-2"
+                          type="text"
+                          placeholder="Optional supplier name"
+                        />
+                      </div>
 
-                        <div id="smAddCostVatRateWrap" class="hidden">
-                          <label class="block text-xs text-slate-500 mb-1">
-                            VAT rate %
-                          </label>
-                          <input
-                            id="smAddCostVatRate"
-                            type="number"
-                            min="0"
-                            step="0.0001"
-                            class="w-full border rounded px-3 py-2"
-                            value="15"
-                          />
-                        </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Invoice number
+                        </label>
+                        <input
+                          id="smAddCostInvoiceNo"
+                          class="w-full border rounded px-3 py-2"
+                          type="text"
+                          placeholder="Optional invoice reference"
+                        />
+                      </div>
 
-                        <div id="smAddCostVatClaimableWrap" class="hidden">
-                          <label class="block text-xs text-slate-500 mb-1">
-                            Input VAT
-                          </label>
-                          <select
-                            id="smAddCostVatClaimable"
-                            class="w-full border rounded px-3 py-2"
-                          >
-                            <option value="false">Not claimable</option>
-                            <option value="true">Claimable</option>
-                          </select>
-                        </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          VAT treatment
+                        </label>
+                        <select
+                          id="smAddCostVatTreatment"
+                          class="w-full border rounded px-3 py-2"
+                        >
+                          <option value="inclusive" selected>VAT inclusive</option>
+                          <option value="exclusive">VAT exclusive</option>
+                          <option value="no_vat">No VAT</option>
+                        </select>
+                      </div>
 
-                        <div id="smAddCostVatRecoveryWrap" class="hidden">
-                          <label class="block text-xs text-slate-500 mb-1">
-                            Recovery %
-                          </label>
-                          <input
-                            id="smAddCostVatRecoveryPercent"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                            class="w-full border rounded px-3 py-2"
-                            value="100"
-                          />
-                        </div>
+                      <div id="smAddCostVatRateWrap">
+                        <label class="block text-xs text-slate-500 mb-1">
+                          VAT rate %
+                        </label>
+                        <input
+                          id="smAddCostVatRate"
+                          type="number"
+                          min="0"
+                          step="0.0001"
+                          class="w-full border rounded px-3 py-2"
+                          value="15"
+                        />
+                      </div>
+
+                      <div id="smAddCostVatClaimableWrap">
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Input VAT
+                        </label>
+                        <select
+                          id="smAddCostVatClaimable"
+                          class="w-full border rounded px-3 py-2"
+                        >
+                          <option value="true" selected>Claimable</option>
+                          <option value="false">Not claimable</option>
+                        </select>
+                      </div>
+
+                      <div id="smAddCostVatRecoveryWrap">
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Recovery %
+                        </label>
+                        <input
+                          id="smAddCostVatRecoveryPercent"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          class="w-full border rounded px-3 py-2"
+                          value="100"
+                        />
                       </div>
                     </div>
 
-                    <div class="mt-2 text-xs text-slate-500">
-                      Debit will use the selected asset account automatically. Credit will use the selected bank account.
+                    <div
+                      id="smAddCostImpact"
+                      class="hidden grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 mt-4"
+                    ></div>
+
+                    <div class="mt-3 text-xs text-slate-500">
+                      The asset account is selected automatically. The credit uses the selected bank account.
                     </div>
                   </div>
 
                   <!-- CHANGE ESTIMATE -->
                   <div id="smEstimateFields" class="border rounded p-3 hidden mt-3">
-                    <div class="font-medium">Change estimate</div>
+                    <div class="font-medium">Change accounting estimate</div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <div class="text-xs text-slate-500 mt-1">
+                      Changes are applied prospectively. No journal is posted immediately.
+                    </div>
+
+                    <div
+                      id="smEstimateCurrent"
+                      class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 text-xs"
+                    ></div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Useful life (months)</label>
-                        <input id="smLife" class="w-full border rounded px-3 py-2" type="number" min="0" />
+                        <label class="block text-xs text-slate-500 mb-1">
+                          New useful life (months)
+                        </label>
+                        <input
+                          id="smLife"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          min="1"
+                        />
                       </div>
 
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Residual value</label>
-                        <input id="smResidual" class="w-full border rounded px-3 py-2" type="number" step="0.01" min="0" />
+                        <label class="block text-xs text-slate-500 mb-1">
+                          New residual value
+                        </label>
+                        <input
+                          id="smResidual"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
                       </div>
 
                       <div class="sm:col-span-2">
-                        <label class="block text-xs text-slate-500 mb-1">Depreciation method</label>
-                        <select id="smMethod" class="w-full border rounded px-3 py-2">
-                          <option value="">(no change)</option>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          New depreciation method
+                        </label>
+                        <select
+                          id="smMethod"
+                          class="w-full border rounded px-3 py-2"
+                        >
+                          <option value="">No change</option>
                           <option value="SL">Straight-line</option>
                           <option value="RB">Reducing balance</option>
                           <option value="UOP">Units of production</option>
                         </select>
                       </div>
+
+                      <div class="sm:col-span-2">
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Reason for change *
+                        </label>
+                        <textarea
+                          id="smEstimateReason"
+                          class="w-full border rounded px-3 py-2"
+                          rows="2"
+                          placeholder="Explain the new information or revised expectation"
+                        ></textarea>
+                      </div>
                     </div>
                   </div>
+
+                  <!-- IMPAIRMENT -->
+                  <div id="smImpairmentFields" class="border rounded p-3 hidden mt-3">
+                    <div class="font-medium" id="smImpairmentTitle">
+                      Impairment testing
+                    </div>
+
+                    <div class="text-xs text-slate-500 mt-1" id="smImpairmentHelp">
+                      Compare the asset carrying amount with its recoverable amount.
+                    </div>
+
+                    <div
+                      id="smImpairmentCurrent"
+                      class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 text-xs"
+                    ></div>
+
+                    <div
+                      id="smImpairmentLossInputs"
+                      class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"
+                    >
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Recoverable amount *
+                        </label>
+                        <input
+                          id="smRecoverableAmount"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
+                        <div class="text-xs text-slate-400 mt-1">
+                          Recoverable amount is the higher of value in use and fair value less costs of disposal.
+                        </div>
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Recoverable amount basis *
+                        </label>
+                        <select
+                          id="smRecoverableBasis"
+                          class="w-full border rounded px-3 py-2"
+                        >
+                          <option value="">Select basis…</option>
+                          <option value="value_in_use">Value in use</option>
+                          <option value="fair_value_less_costs">
+                            Fair value less costs of disposal
+                          </option>
+                        </select>
+                      </div>
+
+                      <div id="smValueInUseFields" class="hidden sm:col-span-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Discount rate %
+                            </label>
+                            <input
+                              id="smDiscountRate"
+                              class="w-full border rounded px-3 py-2"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                            />
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Growth rate %
+                            </label>
+                            <input
+                              id="smGrowthRate"
+                              class="w-full border rounded px-3 py-2"
+                              type="number"
+                              step="0.01"
+                            />
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Cash-flow period
+                            </label>
+                            <input
+                              id="smCashFlowPeriod"
+                              class="w-full border rounded px-3 py-2"
+                              type="number"
+                              min="1"
+                              step="1"
+                              placeholder="Years"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div id="smFvlcdFields" class="hidden sm:col-span-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Fair value
+                            </label>
+                            <input
+                              id="smImpairmentFairValue"
+                              class="w-full border rounded px-3 py-2"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
+
+                          <div>
+                            <label class="block text-xs text-slate-500 mb-1">
+                              Costs of disposal
+                            </label>
+                            <input
+                              id="smCostsOfDisposal"
+                              class="w-full border rounded px-3 py-2"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      id="smImpairmentReversalInputs"
+                      class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"
+                    >
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Reversal amount *
+                        </label>
+                        <input
+                          id="smImpairmentReversalAmount"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Revised recoverable amount
+                        </label>
+                        <input
+                          id="smReversalRecoverableAmount"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="mt-3">
+                      <label class="block text-xs text-slate-500 mb-1">
+                        Impairment reason *
+                      </label>
+                      <textarea
+                        id="smImpairmentReason"
+                        class="w-full border rounded px-3 py-2"
+                        rows="2"
+                        placeholder="Damage, obsolescence, reduced demand, market decline, fire, etc."
+                      ></textarea>
+                    </div>
+                  </div>                
 
                   <!-- FAIR VALUE / REVALUATION -->
                   <div id="smFairValueFields" class="border rounded p-3 hidden mt-3">
@@ -13705,15 +13957,98 @@ html, body {
                   <div id="smHfsFields" class="border rounded p-3 hidden mt-3">
                     <div class="font-medium">Held for sale</div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">Expected sale date</label>
-                        <input id="smHfsExpectedSale" class="w-full border rounded px-3 py-2" type="date" />
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Expected sale date
+                        </label>
+                        <input
+                          id="smHfsExpectedSale"
+                          class="w-full border rounded px-3 py-2"
+                          type="date"
+                        />
                       </div>
 
                       <div>
-                        <label class="block text-xs text-slate-500 mb-1">FV less costs to sell</label>
-                        <input id="smHfsFvlcts" class="w-full border rounded px-3 py-2" type="number" step="0.01" min="0" />
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Market value
+                        </label>
+                        <input
+                          id="smHfsMarketValue"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Costs to sell
+                        </label>
+                        <input
+                          id="smHfsCostsToSell"
+                          class="w-full border rounded px-3 py-2"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Fair value less costs to sell
+                        </label>
+                        <input
+                          id="smHfsFvlcts"
+                          class="w-full border rounded px-3 py-2 bg-slate-50"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          readonly
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- TRANSFERS -->
+                  <div id="smTransferFields" class="border rounded p-3 hidden mt-3">
+                    <div class="font-medium" id="smTransferTitle">
+                      Property transfer
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Reason for change in use *
+                        </label>
+                        <textarea
+                          id="smTransferReason"
+                          class="w-full border rounded px-3 py-2"
+                          rows="2"
+                          placeholder="Describe the evidence of change in use"
+                        ></textarea>
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-1">
+                          Measurement basis after transfer
+                        </label>
+                        <select
+                          id="smTransferBasis"
+                          class="w-full border rounded px-3 py-2"
+                        >
+                          <option value="">Use policy default</option>
+                          <option value="cost">Cost</option>
+                          <option value="fair_value">Fair value</option>
+                          <option value="revaluation">Revaluation</option>
+                        </select>
+                      </div>
+
+                      <div class="sm:col-span-2">
+                        <div class="border rounded p-3 bg-slate-50 text-xs text-slate-600">
+                          The transfer is initially previewed using the current carrying amount.
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -561,8 +561,18 @@ def api_payroll_runs(company_id: int):
         if not body.get("pay_calendar_id"):
             return jsonify({"ok": False, "error": "pay_calendar_id is required"}), 400
 
-        out = db_service.payroll_run_create(company_id, int(body["pay_calendar_id"]))
-        return jsonify({"ok": True, "data": out}), 201
+        out = db_service.payroll_run_create(
+            company_id,
+            int(body["pay_calendar_id"]),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+            "already_existed": bool(
+                out.get("already_existed")
+            ),
+        }), 200 if out.get("already_existed") else 201
     except Exception as e:
         current_app.logger.exception("payroll_run_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400

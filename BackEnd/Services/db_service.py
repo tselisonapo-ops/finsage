@@ -725,6 +725,17 @@ def _normalize_coa_rows_codes(
 
     return out
 
+COUNTRY_TAX_AUTHORITY_CODES = {
+    "South Africa": "SARS",
+    "ZA": "SARS",
+    "RSA": "SARS",
+
+    "Lesotho": "RSL",
+    "LS": "RSL",
+
+    "Botswana": "BURS",
+    "BW": "BURS",
+}
 
 # ------------------------------------------------------------
 # Minimal bucket inference for COA normalization only
@@ -1096,6 +1107,15 @@ def _tb_dr_cr(r: Dict[str, Any]) -> Tuple[float, float]:
     return float(r.get("debit") or 0.0), float(r.get("credit") or 0.0)
 
 
+def _payroll_decimal(value) -> Decimal:
+    return Decimal(str(value or 0))
+
+
+def _payroll_money(value) -> Decimal:
+    return _payroll_decimal(value).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
 
 class DatabaseService:
     """
@@ -2338,6 +2358,97 @@ class DatabaseService:
 
             CONSTRAINT ck_tax_allowance_method
             CHECK (method IN ('WDV','SL','IMMEDIATE','CUSTOM'))
+        );
+
+        CREATE TABLE IF NOT EXISTS public.payroll_tax_regimes (
+            id SERIAL PRIMARY KEY,
+            authority_code TEXT NOT NULL,
+            country_code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_payroll_tax_regime
+                UNIQUE (authority_code, country_code)
+        );
+
+        CREATE TABLE IF NOT EXISTS public.payroll_tax_years (
+            id SERIAL PRIMARY KEY,
+            regime_id INT NOT NULL
+                REFERENCES public.payroll_tax_regimes(id)
+                ON DELETE CASCADE,
+
+            tax_year_label TEXT NOT NULL,
+            effective_from DATE NOT NULL,
+            effective_to DATE NOT NULL,
+
+            calculation_basis TEXT NOT NULL DEFAULT 'annualised',
+            source_reference TEXT,
+            source_verified_at TIMESTAMPTZ,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_payroll_tax_year
+                UNIQUE (regime_id, effective_from, effective_to),
+
+            CONSTRAINT chk_payroll_tax_year_dates
+                CHECK (effective_to >= effective_from),
+
+            CONSTRAINT chk_payroll_tax_basis
+                CHECK (
+                    calculation_basis IN (
+                        'annualised',
+                        'monthly_table',
+                        'periodic_table'
+                    )
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.payroll_tax_brackets (
+            id SERIAL PRIMARY KEY,
+            tax_year_id INT NOT NULL
+                REFERENCES public.payroll_tax_years(id)
+                ON DELETE CASCADE,
+
+            residency_status TEXT NOT NULL DEFAULT 'resident',
+            lower_bound NUMERIC(18,2) NOT NULL,
+            upper_bound NUMERIC(18,2),
+
+            base_tax NUMERIC(18,2) NOT NULL DEFAULT 0,
+            marginal_rate NUMERIC(9,6) NOT NULL,
+            excess_over NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            sort_order INT NOT NULL,
+
+            CONSTRAINT uq_payroll_tax_bracket
+                UNIQUE (
+                    tax_year_id,
+                    residency_status,
+                    sort_order
+                ),
+
+            CONSTRAINT chk_payroll_tax_bracket_bounds
+                CHECK (
+                    upper_bound IS NULL
+                    OR upper_bound >= lower_bound
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.payroll_tax_parameters (
+            id SERIAL PRIMARY KEY,
+            tax_year_id INT NOT NULL
+                REFERENCES public.payroll_tax_years(id)
+                ON DELETE CASCADE,
+
+            parameter_key TEXT NOT NULL,
+            numeric_value NUMERIC(18,6),
+            text_value TEXT,
+            json_value JSONB,
+
+            CONSTRAINT uq_payroll_tax_parameter
+                UNIQUE (tax_year_id, parameter_key)
         );
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
@@ -5898,14 +6009,6 @@ class DatabaseService:
             END IF;
         END
         $$;
-
-        CREATE UNIQUE INDEX IF NOT EXISTS
-            uq_payroll_calendar_company_period
-        ON {schema}.payroll_pay_calendars (
-            company_id,
-            period_start,
-            period_end
-        );
        
         CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_employee_number_seq
         START WITH 1
@@ -5945,6 +6048,14 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_cal_status_idx
             ON {schema}.payroll_pay_calendars(company_id, status);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            uq_payroll_calendar_company_period
+        ON {schema}.payroll_pay_calendars (
+            company_id,
+            period_start,
+            period_end
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_departments (
             id SERIAL PRIMARY KEY,
@@ -6037,18 +6148,6 @@ class DatabaseService:
         ALTER TABLE {schema}.payroll_earning_types
             ADD COLUMN IF NOT EXISTS expense_account_code TEXT;
 
-        ALTER TABLE {schema}.payroll_deduction_types
-            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
-
-        ALTER TABLE {schema}.payroll_employer_contribution_types
-            ADD COLUMN IF NOT EXISTS expense_account_code TEXT,
-            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
-
-        ALTER TABLE {schema}.payroll_benefit_types
-            ADD COLUMN IF NOT EXISTS earning_type_id INT,
-            ADD COLUMN IF NOT EXISTS deduction_type_id INT,
-            ADD COLUMN IF NOT EXISTS contribution_type_id INT,
-            ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT TRUE;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_deduction_types (
             id SERIAL PRIMARY KEY,
@@ -6059,6 +6158,9 @@ class DatabaseService:
             is_statutory BOOLEAN NOT NULL DEFAULT FALSE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            ALTER TABLE {schema}.payroll_deduction_types
+            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
 
             CONSTRAINT {schema}_payroll_ded_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -6082,6 +6184,10 @@ class DatabaseService:
             liability_account_code TEXT,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            ALTER TABLE {schema}.payroll_employer_contribution_types
+                ADD COLUMN IF NOT EXISTS expense_account_code TEXT,
+                ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
 
             CONSTRAINT {schema}_payroll_cont_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -6193,6 +6299,53 @@ class DatabaseService:
             effective_to DATE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
+            ALTER TABLE {schema}.payroll_employee_tax_profiles
+                ADD COLUMN IF NOT EXISTS residency_status TEXT
+                    NOT NULL DEFAULT 'resident',
+
+                ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+
+                ADD COLUMN IF NOT EXISTS medical_scheme_members INT
+                    NOT NULL DEFAULT 0,
+
+                ADD COLUMN IF NOT EXISTS directive_number TEXT,
+
+                ADD COLUMN IF NOT EXISTS directive_rate NUMERIC(9,6),
+
+                ADD COLUMN IF NOT EXISTS additional_tax_amount NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+
+                ADD COLUMN IF NOT EXISTS tax_calculation_method TEXT
+                    NOT NULL DEFAULT 'standard';
+
+            ALTER TABLE {schema}.payroll_employee_tax_profiles
+                DROP CONSTRAINT IF EXISTS
+                    chk_payroll_tax_residency;
+
+            ALTER TABLE {schema}.payroll_employee_tax_profiles
+                ADD CONSTRAINT chk_payroll_tax_residency
+                CHECK (
+                    residency_status IN (
+                        'resident',
+                        'non_resident'
+                    )
+                );
+
+            ALTER TABLE {schema}.payroll_employee_tax_profiles
+                DROP CONSTRAINT IF EXISTS
+                    chk_payroll_tax_calculation_method;
+
+            ALTER TABLE {schema}.payroll_employee_tax_profiles
+                ADD CONSTRAINT chk_payroll_tax_calculation_method
+                CHECK (
+                    tax_calculation_method IN (
+                        'standard',
+                        'directive',
+                        'manual',
+                        'exempt'
+                    )
+                );
+
             CONSTRAINT {schema}_payroll_tax_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6253,6 +6406,13 @@ class DatabaseService:
             taxable BOOLEAN NOT NULL DEFAULT TRUE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+            ALTER TABLE {schema}.payroll_benefit_types
+                ADD COLUMN IF NOT EXISTS earning_type_id INT,
+                ADD COLUMN IF NOT EXISTS deduction_type_id INT,
+                ADD COLUMN IF NOT EXISTS contribution_type_id INT,
+                ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT TRUE;
+
 
             CONSTRAINT {schema}_payroll_benefit_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -6513,6 +6673,36 @@ class DatabaseService:
             net_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'draft',
 
+            ALTER TABLE {schema}.payroll_run_employees
+                ADD COLUMN IF NOT EXISTS pay_setup_id BIGINT,
+                ADD COLUMN IF NOT EXISTS taxable_income NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS paye NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS employer_cost NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS tax_authority_code TEXT,
+                ADD COLUMN IF NOT EXISTS tax_year_label TEXT,
+                ADD COLUMN IF NOT EXISTS calculation_status TEXT
+                    NOT NULL DEFAULT 'calculated',
+                ADD COLUMN IF NOT EXISTS calculation_message TEXT;
+
+            ALTER TABLE {schema}.payroll_run_lines
+                ADD COLUMN IF NOT EXISTS item_type TEXT,
+                ADD COLUMN IF NOT EXISTS item_id BIGINT,
+                ADD COLUMN IF NOT EXISTS code TEXT,
+                ADD COLUMN IF NOT EXISTS quantity NUMERIC(18,4),
+                ADD COLUMN IF NOT EXISTS rate NUMERIC(18,4),
+                ADD COLUMN IF NOT EXISTS percentage NUMERIC(18,4),
+                ADD COLUMN IF NOT EXISTS taxable BOOLEAN
+                    NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS pensionable BOOLEAN
+                    NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS source_type TEXT,
+                ADD COLUMN IF NOT EXISTS source_id BIGINT,
+                ADD COLUMN IF NOT EXISTS metadata JSONB
+                    NOT NULL DEFAULT '{{}}'::jsonb;
+
             CONSTRAINT {schema}_payroll_run_emp_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6527,6 +6717,18 @@ class DatabaseService:
 
             CONSTRAINT {schema}_payroll_run_emp_uniq
                 UNIQUE(company_id, payroll_run_id, employee_id)
+        
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                uq_payroll_run_line_source
+            ON {schema}.payroll_run_lines (
+                company_id,
+                payroll_run_id,
+                run_employee_id,
+                line_type,
+                COALESCE(item_type, ''),
+                COALESCE(item_id, 0),
+                COALESCE(code, '')
+            );
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_run_lines (
@@ -85416,219 +85618,610 @@ class DatabaseService:
         return {r["mapping_key"]: r["gl_account_code"] for r in rows}
 
 
-    def payroll_run_create(self, company_id: int, pay_calendar_id: int) -> dict:
+    def payroll_run_create(
+        self,
+        company_id: int,
+        pay_calendar_id: int,
+    ) -> dict:
+        company_id = int(company_id)
+        pay_calendar_id = int(pay_calendar_id)
+
         schema = self.company_schema(company_id)
+
+        existing = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s
+            AND pay_calendar_id=%s
+            LIMIT 1;
+        """, (
+            company_id,
+            pay_calendar_id,
+        ))
+
+        if existing:
+            existing["already_existed"] = True
+            return existing
 
         cal = self.fetch_one(f"""
             SELECT *
             FROM {schema}.payroll_pay_calendars
-            WHERE company_id=%s AND id=%s
+            WHERE company_id=%s
+            AND id=%s
             LIMIT 1;
-        """, (int(company_id), int(pay_calendar_id)))
+        """, (
+            company_id,
+            pay_calendar_id,
+        ))
 
         if not cal:
             raise ValueError("Pay calendar not found")
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_runs (
-                company_id, pay_calendar_id, run_no,
-                period_start, period_end, payment_date, status
+                company_id,
+                pay_calendar_id,
+                run_no,
+                period_start,
+                period_end,
+                payment_date,
+                status
             )
             VALUES (
                 %s,%s,
-                'PAY-' || %s || '-' || to_char(%s::date, 'YYYYMM'),
-                %s,%s,%s,
-                'draft'
+                'PAY-' || %s || '-'
+                    || to_char(%s::date, 'YYYYMM'),
+                %s,%s,%s,'draft'
             )
             RETURNING *;
         """, (
-            int(company_id),
-            int(pay_calendar_id),
-            int(company_id),
-            cal["period_start"],
+            company_id,
+            pay_calendar_id,
+            company_id,
+            cal["period_end"],
             cal["period_start"],
             cal["period_end"],
             cal["payment_date"],
         ))
 
+    def payroll_run_calculate(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+    ) -> dict:
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
 
-    def payroll_run_calculate(self, company_id: int, payroll_run_id: int) -> dict:
         schema = self.company_schema(company_id)
 
         run = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.payroll_runs
-            WHERE company_id=%s AND id=%s
+            SELECT r.*, c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id=r.pay_calendar_id
+            AND c.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.id=%s
             LIMIT 1;
-        """, (int(company_id), int(payroll_run_id)))
+        """, (
+            company_id,
+            payroll_run_id,
+        ))
 
         if not run:
             raise ValueError("Payroll run not found")
 
         if run["status"] == "posted":
-            raise ValueError("Posted payroll cannot be recalculated")
+            raise ValueError(
+                "Posted payroll cannot be recalculated"
+            )
+
+        tax_context = self.payroll_company_tax_context(
+            company_id,
+            run["payment_date"],
+        )
 
         self.execute_sql(f"""
             DELETE FROM {schema}.payroll_run_lines
-            WHERE company_id=%s AND payroll_run_id=%s;
+            WHERE company_id=%s
+            AND payroll_run_id=%s;
 
             DELETE FROM {schema}.payroll_run_employees
-            WHERE company_id=%s AND payroll_run_id=%s;
+            WHERE company_id=%s
+            AND payroll_run_id=%s;
         """, (
-            int(company_id), int(payroll_run_id),
-            int(company_id), int(payroll_run_id),
+            company_id,
+            payroll_run_id,
+            company_id,
+            payroll_run_id,
         ))
 
         employees = self.fetch_all(f"""
-            SELECT e.*, c.id AS contract_id, c.basic_salary
+            SELECT e.*
             FROM {schema}.payroll_employees e
-            JOIN {schema}.payroll_employee_contracts c
-            ON c.employee_id = e.id
-            AND c.company_id = e.company_id
-            AND c.is_active = TRUE
             WHERE e.company_id=%s
             AND e.employment_status='active'
             AND e.start_date <= %s
-            AND (e.termination_date IS NULL OR e.termination_date >= %s)
-            ORDER BY e.id;
-        """, (int(company_id), run["period_end"], run["period_start"]))
+            AND (
+                e.termination_date IS NULL
+                OR e.termination_date >= %s
+            )
+            ORDER BY e.employee_no;
+        """, (
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ))
 
         totals = {
-            "gross": 0.0,
-            "deductions": 0.0,
-            "employer": 0.0,
-            "net": 0.0,
+            "gross": Decimal("0"),
+            "deductions": Decimal("0"),
+            "employer": Decimal("0"),
+            "net": Decimal("0"),
         }
 
-        for emp in employees:
-            basic = float(emp.get("basic_salary") or 0)
-            gross = basic
-            deductions = 0.0
-            employer = 0.0
+        calculated_count = 0
+        skipped = []
 
-            # Simple starter PAYE placeholder. Later replace with country rules.
-            paye = 0.0
+        for employee in employees:
+            employee_id = int(employee["id"])
 
-            # Loans
-            loans = self.fetch_all(f"""
+            setup = self.payroll_employee_pay_setup_for_period(
+                company_id,
+                employee_id,
+                run["period_end"],
+            )
+
+            if not setup:
+                skipped.append({
+                    "employee_id": employee_id,
+                    "employee_no": employee["employee_no"],
+                    "reason": "No effective pay setup",
+                })
+                continue
+
+            tax_profile = self.fetch_one(f"""
                 SELECT *
-                FROM {schema}.payroll_employee_loans
+                FROM {schema}.payroll_employee_tax_profiles
                 WHERE company_id=%s
                 AND employee_id=%s
-                AND status='active'
-                AND start_date <= %s;
-            """, (int(company_id), int(emp["id"]), run["period_end"]))
-
-            loan_ded = sum(float(x.get("repayment_amount") or 0) for x in loans)
-
-            deductions += paye + loan_ded
-            net = gross - deductions
-
-            run_emp = self.fetch_one(f"""
-                INSERT INTO {schema}.payroll_run_employees (
-                    company_id, payroll_run_id, employee_id, contract_id,
-                    basic_pay, gross_pay, total_deductions,
-                    employer_contributions, net_pay, status
+                AND effective_from <= %s
+                AND (
+                    effective_to IS NULL
+                    OR effective_to >= %s
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'calculated')
+                ORDER BY effective_from DESC, id DESC
+                LIMIT 1;
+            """, (
+                company_id,
+                employee_id,
+                run["payment_date"],
+                run["payment_date"],
+            )) or {
+                "residency_status": "resident",
+                "paye_exempt": False,
+            }
+
+            pay_basis = setup["pay_basis"]
+
+            if pay_basis == "monthly":
+                basic = _payroll_money(
+                    setup.get("fixed_basic_amount")
+                )
+            elif pay_basis in {
+                "hourly",
+                "daily",
+                "quantity",
+            }:
+                basic = _payroll_money(
+                    _payroll_decimal(
+                        setup.get("standard_quantity")
+                    )
+                    * _payroll_decimal(setup.get("rate"))
+                )
+            else:
+                basic = Decimal("0")
+
+            earning_lines = []
+            deduction_lines = []
+            benefit_lines = []
+            contribution_lines = []
+
+            # Basic earning is controlled by the setup header.
+            if basic > 0:
+                earning_lines.append({
+                    "item_type": "earning",
+                    "item_id":
+                        setup.get("basic_earning_type_id"),
+                    "code": "BASIC",
+                    "name": "Basic Salary",
+                    "amount": basic,
+                    "quantity":
+                        setup.get("standard_quantity"),
+                    "rate": setup.get("rate"),
+                    "taxable": True,
+                    "pensionable": True,
+                    "source_type": "pay_setup",
+                    "source_id": setup["id"],
+                })
+
+            for item in setup.get("items", []):
+                # Avoid duplicating BASIC when it appears as both
+                # the header basic earning and a checked item.
+                if (
+                    item.get("item_type") == "earning"
+                    and item.get("code") == "BASIC"
+                ):
+                    continue
+
+                amount = self.payroll_setup_item_amount(
+                    item,
+                    basic,
+                )
+
+                if item["calculation_method"] == "manual":
+                    continue
+
+                line = {
+                    **item,
+                    "amount": amount,
+                    "source_type": "pay_setup_item",
+                    "source_id": item["id"],
+                }
+
+                if item["item_type"] == "earning":
+                    earning_lines.append(line)
+                elif item["item_type"] == "deduction":
+                    # PAYE is calculated by the tax engine below.
+                    if item.get("code") != "PAYE":
+                        deduction_lines.append(line)
+                elif item["item_type"] == "benefit":
+                    benefit_lines.append(line)
+                elif item["item_type"] == "contribution":
+                    contribution_lines.append(line)
+
+            gross = sum(
+                (
+                    _payroll_decimal(line["amount"])
+                    for line in earning_lines
+                ),
+                Decimal("0"),
+            )
+
+            taxable_benefits = sum(
+                (
+                    _payroll_decimal(line["amount"])
+                    for line in benefit_lines
+                    if line.get("taxable")
+                ),
+                Decimal("0"),
+            )
+
+            taxable_earnings = sum(
+                (
+                    _payroll_decimal(line["amount"])
+                    for line in earning_lines
+                    if line.get("taxable")
+                ),
+                Decimal("0"),
+            )
+
+            taxable_income = (
+                taxable_earnings
+                + taxable_benefits
+            )
+
+            if setup.get("tax_treatment") == "manual":
+                paye = _payroll_money(
+                    setup.get("manual_paye_amount")
+                )
+
+                tax_result = {
+                    "paye": paye,
+                    "authority_code":
+                        tax_context["authority_code"],
+                    "tax_year_label":
+                        tax_context["tax_year_label"],
+                    "method": "manual",
+                }
+
+            elif setup.get("tax_treatment") == "exempt":
+                paye = Decimal("0.00")
+
+                tax_result = {
+                    "paye": paye,
+                    "authority_code":
+                        tax_context["authority_code"],
+                    "tax_year_label":
+                        tax_context["tax_year_label"],
+                    "method": "exempt",
+                }
+
+            else:
+                tax_result = self.payroll_calculate_paye(
+                    tax_context=tax_context,
+                    taxable_income=taxable_income,
+                    frequency=run["frequency"],
+                    tax_profile=tax_profile,
+                )
+
+                paye = _payroll_decimal(
+                    tax_result["paye"]
+                )
+
+            employee_deductions = sum(
+                (
+                    _payroll_decimal(line["amount"])
+                    for line in deduction_lines
+                ),
+                Decimal("0"),
+            )
+
+            employer_contributions = sum(
+                (
+                    _payroll_decimal(line["amount"])
+                    for line in contribution_lines
+                ),
+                Decimal("0"),
+            )
+
+            total_deductions = (
+                employee_deductions
+                + paye
+            )
+
+            net_pay = gross - total_deductions
+
+            employer_cost = (
+                gross
+                + employer_contributions
+            )
+
+            run_employee = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_run_employees (
+                    company_id,
+                    payroll_run_id,
+                    employee_id,
+                    pay_setup_id,
+                    gross_pay,
+                    taxable_income,
+                    total_deductions,
+                    paye,
+                    employer_contributions,
+                    employer_cost,
+                    net_pay,
+                    tax_authority_code,
+                    tax_year_label,
+                    calculation_status
+                )
+                VALUES (
+                    %s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,'calculated'
+                )
                 RETURNING *;
             """, (
-                int(company_id),
-                int(payroll_run_id),
-                int(emp["id"]),
-                emp.get("contract_id"),
-                basic,
-                gross,
-                deductions,
-                employer,
-                net,
+                company_id,
+                payroll_run_id,
+                employee_id,
+                setup["id"],
+                _payroll_money(gross),
+                _payroll_money(taxable_income),
+                _payroll_money(total_deductions),
+                _payroll_money(paye),
+                _payroll_money(employer_contributions),
+                _payroll_money(employer_cost),
+                _payroll_money(net_pay),
+                tax_result["authority_code"],
+                tax_result["tax_year_label"],
             ))
 
-            self.fetch_one(f"""
-                INSERT INTO {schema}.payroll_run_lines (
-                    company_id, payroll_run_id, run_employee_id, employee_id,
-                    line_type, description, amount
+            all_lines = (
+                [
+                    ("earning", line)
+                    for line in earning_lines
+                ]
+                + [
+                    ("benefit", line)
+                    for line in benefit_lines
+                ]
+                + [
+                    ("deduction", line)
+                    for line in deduction_lines
+                ]
+                + [
+                    ("employer_contribution", line)
+                    for line in contribution_lines
+                ]
+            )
+
+            all_lines.append((
+                "tax",
+                {
+                    "item_type": "deduction",
+                    "item_id": None,
+                    "code": "PAYE",
+                    "name": "PAYE",
+                    "amount": paye,
+                    "taxable": False,
+                    "pensionable": False,
+                    "source_type": "tax_engine",
+                    "source_id": None,
+                },
+            ))
+
+            for line_type, line in all_lines:
+                amount = _payroll_money(
+                    line.get("amount")
                 )
-                VALUES (%s,%s,%s,%s,'earning','Basic Salary',%s)
-                RETURNING *;
-            """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], basic))
 
-            if paye > 0:
+                if amount <= 0:
+                    continue
+
                 self.fetch_one(f"""
                     INSERT INTO {schema}.payroll_run_lines (
-                        company_id, payroll_run_id, run_employee_id, employee_id,
-                        line_type, description, amount
+                        company_id,
+                        payroll_run_id,
+                        run_employee_id,
+                        employee_id,
+                        line_type,
+                        item_type,
+                        item_id,
+                        code,
+                        description,
+                        quantity,
+                        rate,
+                        percentage,
+                        amount,
+                        taxable,
+                        pensionable,
+                        source_type,
+                        source_id,
+                        metadata
                     )
-                    VALUES (%s,%s,%s,%s,'tax','PAYE',%s)
-                    RETURNING *;
-                """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], paye))
-
-            if loan_ded > 0:
-                self.fetch_one(f"""
-                    INSERT INTO {schema}.payroll_run_lines (
-                        company_id, payroll_run_id, run_employee_id, employee_id,
-                        line_type, description, amount
+                    VALUES (
+                        %s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,
+                        %s,%s,%s,%s,%s::jsonb
                     )
-                    VALUES (%s,%s,%s,%s,'deduction','Employee loan repayment',%s)
                     RETURNING *;
-                """, (int(company_id), int(payroll_run_id), run_emp["id"], emp["id"], loan_ded))
+                """, (
+                    company_id,
+                    payroll_run_id,
+                    run_employee["id"],
+                    employee_id,
+                    line_type,
+                    line.get("item_type"),
+                    line.get("item_id"),
+                    line.get("code"),
+                    line.get("name")
+                    or line.get("description"),
+                    line.get("quantity"),
+                    line.get("rate"),
+                    line.get("percentage"),
+                    amount,
+                    bool(line.get("taxable")),
+                    bool(line.get("pensionable")),
+                    line.get("source_type"),
+                    line.get("source_id"),
+                    "{}",
+                ))
 
             totals["gross"] += gross
-            totals["deductions"] += deductions
-            totals["employer"] += employer
-            totals["net"] += net
+            totals["deductions"] += total_deductions
+            totals["employer"] += employer_contributions
+            totals["net"] += net_pay
 
-        out = self.fetch_one(f"""
+            calculated_count += 1
+
+        self.fetch_one(f"""
             UPDATE {schema}.payroll_runs
-            SET status='calculated',
+            SET
+                status='calculated',
                 gross_pay=%s,
                 total_deductions=%s,
                 total_employer_contributions=%s,
                 net_pay=%s
-            WHERE company_id=%s AND id=%s
+            WHERE company_id=%s
+            AND id=%s
             RETURNING *;
         """, (
-            totals["gross"],
-            totals["deductions"],
-            totals["employer"],
-            totals["net"],
-            int(company_id),
-            int(payroll_run_id),
+            _payroll_money(totals["gross"]),
+            _payroll_money(totals["deductions"]),
+            _payroll_money(totals["employer"]),
+            _payroll_money(totals["net"]),
+            company_id,
+            payroll_run_id,
         ))
 
-        return self.payroll_run_get(company_id, payroll_run_id)
+        result = self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
 
+        result["calculated_employee_count"] = (
+            calculated_count
+        )
 
-    def payroll_run_get(self, company_id: int, payroll_run_id: int) -> dict:
+        result["skipped_employees"] = skipped
+
+        return result
+
+    def payroll_run_get(
+        self,
+        company_id: int,
+        payroll_run_id: int,
+    ) -> dict:
+        company_id = int(company_id)
+        payroll_run_id = int(payroll_run_id)
+
         schema = self.company_schema(company_id)
 
         run = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.payroll_runs
-            WHERE company_id=%s AND id=%s
+            SELECT r.*, c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id=r.pay_calendar_id
+            AND c.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.id=%s
             LIMIT 1;
-        """, (int(company_id), int(payroll_run_id)))
+        """, (
+            company_id,
+            payroll_run_id,
+        ))
 
         if not run:
             return None
 
-        run["employees"] = self.fetch_all(f"""
-            SELECT re.*, e.employee_no, e.first_name, e.last_name
+        employees = self.fetch_all(f"""
+            SELECT
+                re.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name
             FROM {schema}.payroll_run_employees re
-            JOIN {schema}.payroll_employees e ON e.id = re.employee_id
-            WHERE re.company_id=%s AND re.payroll_run_id=%s
+            JOIN {schema}.payroll_employees e
+            ON e.id=re.employee_id
+            AND e.company_id=re.company_id
+            WHERE re.company_id=%s
+            AND re.payroll_run_id=%s
             ORDER BY e.employee_no;
-        """, (int(company_id), int(payroll_run_id)))
+        """, (
+            company_id,
+            payroll_run_id,
+        ))
 
-        run["lines"] = self.fetch_all(f"""
+        lines = self.fetch_all(f"""
             SELECT *
             FROM {schema}.payroll_run_lines
-            WHERE company_id=%s AND payroll_run_id=%s
+            WHERE company_id=%s
+            AND payroll_run_id=%s
             ORDER BY run_employee_id, id;
-        """, (int(company_id), int(payroll_run_id)))
+        """, (
+            company_id,
+            payroll_run_id,
+        ))
+
+        by_employee = {}
+
+        for line in lines:
+            by_employee.setdefault(
+                int(line["run_employee_id"]),
+                [],
+            ).append(line)
+
+        for employee in employees:
+            employee["lines"] = by_employee.get(
+                int(employee["id"]),
+                [],
+            )
+
+        run["employees"] = employees
+        run["lines"] = lines
 
         return run
-
 
     def payroll_runs_list(self, company_id: int):
         schema = self.company_schema(company_id)
@@ -86923,6 +87516,811 @@ class DatabaseService:
         ))
 
         return setup
+
+    def payroll_seed_sars_2027(self):
+        regime = self.fetch_one("""
+            SELECT id
+            FROM public.payroll_tax_regimes
+            WHERE authority_code='SARS'
+            AND country_code='ZA'
+            LIMIT 1;
+        """)
+
+        if not regime:
+            raise ValueError("SARS tax regime is missing")
+
+        tax_year = self.fetch_one("""
+            INSERT INTO public.payroll_tax_years (
+                regime_id,
+                tax_year_label,
+                effective_from,
+                effective_to,
+                calculation_basis,
+                source_reference,
+                source_verified_at,
+                is_active
+            )
+            VALUES (
+                %s,
+                '2027',
+                DATE '2026-03-01',
+                DATE '2027-02-28',
+                'annualised',
+                'SARS 2027 employer tax guide',
+                NOW(),
+                TRUE
+            )
+            ON CONFLICT (
+                regime_id,
+                effective_from,
+                effective_to
+            )
+            DO UPDATE SET
+                tax_year_label=EXCLUDED.tax_year_label,
+                source_reference=EXCLUDED.source_reference,
+                source_verified_at=NOW(),
+                is_active=TRUE
+            RETURNING id;
+        """, (regime["id"],))
+
+        year_id = int(tax_year["id"])
+
+        self.execute_sql("""
+            DELETE FROM public.payroll_tax_brackets
+            WHERE tax_year_id=%s;
+        """, (year_id,))
+
+        brackets = [
+            (1, 0,       245100,  0,      0.18, 0),
+            (2, 245100,  383100,  44118,  0.26, 245100),
+            (3, 383100,  530200,  79998,  0.31, 383100),
+            (4, 530200,  695800,  125599, 0.36, 530200),
+            (5, 695800,  887000,  185215, 0.39, 695800),
+            (6, 887000,  1878600, 259783, 0.41, 887000),
+            (7, 1878600, None,    666339, 0.45, 1878600),
+        ]
+
+        for (
+            order,
+            lower,
+            upper,
+            base,
+            rate,
+            excess,
+        ) in brackets:
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_brackets (
+                    tax_year_id,
+                    residency_status,
+                    lower_bound,
+                    upper_bound,
+                    base_tax,
+                    marginal_rate,
+                    excess_over,
+                    sort_order
+                )
+                VALUES (%s,'resident',%s,%s,%s,%s,%s,%s);
+            """, (
+                year_id,
+                lower,
+                upper,
+                base,
+                rate,
+                excess,
+                order,
+            ))
+
+        parameters = {
+            "primary_rebate": 17820,
+            "secondary_rebate": 9765,
+            "tertiary_rebate": 3249,
+
+            "threshold_under_65": 99000,
+            "threshold_65_to_74": 153250,
+            "threshold_75_plus": 171300,
+
+            "medical_credit_taxpayer": 376,
+            "medical_credit_first_dependant": 376,
+            "medical_credit_additional_dependant": 254,
+
+            "tax_periods_monthly": 12,
+            "tax_periods_fortnightly": 26,
+            "tax_periods_weekly": 52,
+        }
+
+        for key, value in parameters.items():
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_parameters (
+                    tax_year_id,
+                    parameter_key,
+                    numeric_value
+                )
+                VALUES (%s,%s,%s)
+                ON CONFLICT (tax_year_id, parameter_key)
+                DO UPDATE SET numeric_value=EXCLUDED.numeric_value;
+            """, (
+                year_id,
+                key,
+                value,
+            ))
+
+    def payroll_seed_rsl_2027(self):
+        regime = self.fetch_one("""
+            SELECT id
+            FROM public.payroll_tax_regimes
+            WHERE authority_code='RSL'
+            AND country_code='LS'
+            LIMIT 1;
+        """)
+
+        if not regime:
+            raise ValueError("RSL tax regime is missing")
+
+        tax_year = self.fetch_one("""
+            INSERT INTO public.payroll_tax_years (
+                regime_id,
+                tax_year_label,
+                effective_from,
+                effective_to,
+                calculation_basis,
+                source_reference,
+                source_verified_at,
+                is_active
+            )
+            VALUES (
+                %s,
+                '2026/27',
+                DATE '2026-04-01',
+                DATE '2027-03-31',
+                'monthly_table',
+                'RSL 2026/27 employment income guide',
+                NOW(),
+                TRUE
+            )
+            ON CONFLICT (
+                regime_id,
+                effective_from,
+                effective_to
+            )
+            DO UPDATE SET
+                source_reference=EXCLUDED.source_reference,
+                source_verified_at=NOW(),
+                is_active=TRUE
+            RETURNING id;
+        """, (regime["id"],))
+
+        year_id = int(tax_year["id"])
+
+        self.execute_sql("""
+            DELETE FROM public.payroll_tax_brackets
+            WHERE tax_year_id=%s;
+        """, (year_id,))
+
+        # Monthly brackets.
+        brackets = [
+            (1, 0,    6480, 0,    0.20, 0),
+            (2, 6480, None, 1296, 0.30, 6480),
+        ]
+
+        for (
+            order,
+            lower,
+            upper,
+            base,
+            rate,
+            excess,
+        ) in brackets:
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_brackets (
+                    tax_year_id,
+                    residency_status,
+                    lower_bound,
+                    upper_bound,
+                    base_tax,
+                    marginal_rate,
+                    excess_over,
+                    sort_order
+                )
+                VALUES (%s,'resident',%s,%s,%s,%s,%s,%s);
+            """, (
+                year_id,
+                lower,
+                upper,
+                base,
+                rate,
+                excess,
+                order,
+            ))
+
+        parameters = {
+            "monthly_tax_credit": 1020,
+            "monthly_no_tax_threshold": 5100,
+            "tax_periods_monthly": 12,
+        }
+
+        for key, value in parameters.items():
+            self.execute_sql("""
+                INSERT INTO public.payroll_tax_parameters (
+                    tax_year_id,
+                    parameter_key,
+                    numeric_value
+                )
+                VALUES (%s,%s,%s)
+                ON CONFLICT (tax_year_id, parameter_key)
+                DO UPDATE SET numeric_value=EXCLUDED.numeric_value;
+            """, (
+                year_id,
+                key,
+                value,
+            ))
+
+    def payroll_company_tax_context(
+        self,
+        company_id: int,
+        payment_date,
+    ):
+        company_id = int(company_id)
+
+        company = self.fetch_one("""
+            SELECT
+                id,
+                country,
+                currency
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """, (company_id,)) or {}
+
+        country = str(
+            company.get("country") or ""
+        ).strip().lower()
+
+        country_code_map = {
+            "south africa": "ZA",
+            "rsa": "ZA",
+            "za": "ZA",
+
+            "lesotho": "LS",
+            "ls": "LS",
+
+            "botswana": "BW",
+            "bw": "BW",
+        }
+
+        country_code = country_code_map.get(country)
+
+        if not country_code:
+            raise ValueError(
+                f"Unsupported payroll country: "
+                f"{company.get('country') or 'not configured'}"
+            )
+
+        payment_date = (
+            date.fromisoformat(str(payment_date)[:10])
+            if not isinstance(payment_date, date)
+            else payment_date
+        )
+
+        row = self.fetch_one("""
+            SELECT
+                r.authority_code,
+                r.country_code,
+                r.currency,
+                y.id AS tax_year_id,
+                y.tax_year_label,
+                y.calculation_basis,
+                y.effective_from,
+                y.effective_to
+            FROM public.payroll_tax_regimes r
+            JOIN public.payroll_tax_years y
+            ON y.regime_id=r.id
+            AND y.is_active=TRUE
+            WHERE r.country_code=%s
+            AND r.is_active=TRUE
+            AND %s BETWEEN y.effective_from
+                        AND y.effective_to
+            ORDER BY y.effective_from DESC
+            LIMIT 1;
+        """, (
+            country_code,
+            payment_date,
+        ))
+
+        if not row:
+            raise ValueError(
+                f"No active payroll tax table exists for "
+                f"{country_code} on {payment_date}"
+            )
+
+        return row
+
+    def payroll_tax_brackets(
+        self,
+        tax_year_id: int,
+        residency_status: str = "resident",
+    ):
+        return self.fetch_all("""
+            SELECT *
+            FROM public.payroll_tax_brackets
+            WHERE tax_year_id=%s
+            AND residency_status=%s
+            ORDER BY sort_order;
+        """, (
+            int(tax_year_id),
+            residency_status,
+        ))
+
+
+    def payroll_tax_parameters(
+        self,
+        tax_year_id: int,
+    ):
+        rows = self.fetch_all("""
+            SELECT
+                parameter_key,
+                numeric_value,
+                text_value,
+                json_value
+            FROM public.payroll_tax_parameters
+            WHERE tax_year_id=%s;
+        """, (int(tax_year_id),))
+
+        return {
+            row["parameter_key"]:
+                row.get("numeric_value")
+                if row.get("numeric_value") is not None
+                else row.get("text_value")
+                if row.get("text_value") is not None
+                else row.get("json_value")
+            for row in rows
+        }
+
+
+    def payroll_progressive_tax(
+        self,
+        taxable_amount,
+        brackets,
+    ):
+        taxable_amount = _payroll_decimal(taxable_amount)
+
+        selected = None
+
+        for bracket in brackets:
+            lower = _payroll_decimal(
+                bracket.get("lower_bound")
+            )
+
+            upper = bracket.get("upper_bound")
+
+            if taxable_amount >= lower and (
+                upper is None
+                or taxable_amount
+                <= _payroll_decimal(upper)
+            ):
+                selected = bracket
+                break
+
+        if not selected:
+            return Decimal("0.00")
+
+        base_tax = _payroll_decimal(
+            selected.get("base_tax")
+        )
+
+        excess_over = _payroll_decimal(
+            selected.get("excess_over")
+        )
+
+        rate = _payroll_decimal(
+            selected.get("marginal_rate")
+        )
+
+        return _payroll_money(
+            base_tax
+            + max(
+                Decimal("0"),
+                taxable_amount - excess_over,
+            ) * rate
+        )
+
+    def payroll_calculate_paye(
+        self,
+        *,
+        tax_context: dict,
+        taxable_income,
+        frequency: str,
+        tax_profile: dict,
+    ):
+        authority = tax_context["authority_code"]
+
+        if tax_profile.get("paye_exempt"):
+            return {
+                "paye": Decimal("0.00"),
+                "annualised_taxable_income": Decimal("0.00"),
+                "authority_code": authority,
+                "tax_year_label":
+                    tax_context["tax_year_label"],
+                "method": "exempt",
+            }
+
+        if authority == "SARS":
+            return self.payroll_calculate_sars_paye(
+                tax_context=tax_context,
+                taxable_income=taxable_income,
+                frequency=frequency,
+                tax_profile=tax_profile,
+            )
+
+        if authority == "RSL":
+            return self.payroll_calculate_rsl_paye(
+                tax_context=tax_context,
+                taxable_income=taxable_income,
+                frequency=frequency,
+                tax_profile=tax_profile,
+            )
+
+        if authority == "BURS":
+            return self.payroll_calculate_burs_paye(
+                tax_context=tax_context,
+                taxable_income=taxable_income,
+                frequency=frequency,
+                tax_profile=tax_profile,
+            )
+
+        raise ValueError(
+            f"No PAYE calculator exists for {authority}"
+        )
+
+    def payroll_calculate_sars_paye(
+        self,
+        *,
+        tax_context,
+        taxable_income,
+        frequency,
+        tax_profile,
+    ):
+        factors = {
+            "monthly": Decimal("12"),
+            "fortnightly": Decimal("26"),
+            "weekly": Decimal("52"),
+        }
+
+        factor = factors.get(frequency)
+
+        if not factor:
+            raise ValueError(
+                f"Unsupported SARS payroll frequency: {frequency}"
+            )
+
+        taxable_period = _payroll_decimal(taxable_income)
+        annual_taxable = taxable_period * factor
+
+        brackets = self.payroll_tax_brackets(
+            tax_context["tax_year_id"],
+            tax_profile.get("residency_status")
+            or "resident",
+        )
+
+        parameters = self.payroll_tax_parameters(
+            tax_context["tax_year_id"]
+        )
+
+        annual_tax = self.payroll_progressive_tax(
+            annual_taxable,
+            brackets,
+        )
+
+        dob = tax_profile.get("date_of_birth")
+        age = 0
+
+        if dob:
+            dob = (
+                date.fromisoformat(str(dob)[:10])
+                if not isinstance(dob, date)
+                else dob
+            )
+
+            year_end = tax_context["effective_to"]
+
+            if not isinstance(year_end, date):
+                year_end = date.fromisoformat(
+                    str(year_end)[:10]
+                )
+
+            age = (
+                year_end.year
+                - dob.year
+                - (
+                    (year_end.month, year_end.day)
+                    < (dob.month, dob.day)
+                )
+            )
+
+        rebate = _payroll_decimal(
+            parameters.get("primary_rebate")
+        )
+
+        if age >= 65:
+            rebate += _payroll_decimal(
+                parameters.get("secondary_rebate")
+            )
+
+        if age >= 75:
+            rebate += _payroll_decimal(
+                parameters.get("tertiary_rebate")
+            )
+
+        annual_tax = max(
+            Decimal("0"),
+            annual_tax - rebate,
+        )
+
+        members = int(
+            tax_profile.get("medical_scheme_members")
+            or 0
+        )
+
+        monthly_medical_credit = Decimal("0")
+
+        if members >= 1:
+            monthly_medical_credit += _payroll_decimal(
+                parameters.get(
+                    "medical_credit_taxpayer"
+                )
+            )
+
+        if members >= 2:
+            monthly_medical_credit += _payroll_decimal(
+                parameters.get(
+                    "medical_credit_first_dependant"
+                )
+            )
+
+        if members > 2:
+            monthly_medical_credit += (
+                _payroll_decimal(
+                    parameters.get(
+                        "medical_credit_additional_dependant"
+                    )
+                )
+                * Decimal(members - 2)
+            )
+
+        annual_tax = max(
+            Decimal("0"),
+            annual_tax
+            - monthly_medical_credit * Decimal("12"),
+        )
+
+        paye = _payroll_money(
+            annual_tax / factor
+        )
+
+        paye += _payroll_money(
+            tax_profile.get("additional_tax_amount")
+            or 0
+        )
+
+        return {
+            "paye": paye,
+            "annualised_taxable_income":
+                _payroll_money(annual_taxable),
+            "authority_code": "SARS",
+            "tax_year_label":
+                tax_context["tax_year_label"],
+            "method": "annualised",
+        }
+
+    def payroll_calculate_rsl_paye(
+        self,
+        *,
+        tax_context,
+        taxable_income,
+        frequency,
+        tax_profile,
+    ):
+        if frequency != "monthly":
+            raise ValueError(
+                "RSL automatic PAYE currently supports "
+                "monthly payroll only"
+            )
+
+        taxable = _payroll_decimal(taxable_income)
+
+        brackets = self.payroll_tax_brackets(
+            tax_context["tax_year_id"],
+            tax_profile.get("residency_status")
+            or "resident",
+        )
+
+        parameters = self.payroll_tax_parameters(
+            tax_context["tax_year_id"]
+        )
+
+        tax_before_credit = self.payroll_progressive_tax(
+            taxable,
+            brackets,
+        )
+
+        credit = Decimal("0")
+
+        if (
+            tax_profile.get("residency_status")
+            or "resident"
+        ) == "resident":
+            credit = _payroll_decimal(
+                parameters.get("monthly_tax_credit")
+            )
+
+        paye = max(
+            Decimal("0"),
+            tax_before_credit - credit,
+        )
+
+        paye += _payroll_decimal(
+            tax_profile.get("additional_tax_amount")
+            or 0
+        )
+
+        return {
+            "paye": _payroll_money(paye),
+            "annualised_taxable_income":
+                _payroll_money(taxable * 12),
+            "authority_code": "RSL",
+            "tax_year_label":
+                tax_context["tax_year_label"],
+            "method": "monthly_table",
+        }
+
+    def payroll_calculate_burs_paye(
+        self,
+        *,
+        tax_context,
+        taxable_income,
+        frequency,
+        tax_profile,
+    ):
+        brackets = self.payroll_tax_brackets(
+            tax_context["tax_year_id"],
+            tax_profile.get("residency_status")
+            or "resident",
+        )
+
+        if not brackets:
+            raise ValueError(
+                "The applicable Botswana BURS PAYE table "
+                "has not yet been verified and activated."
+            )
+
+        raise NotImplementedError(
+            "BURS PAYE calculation is not yet activated."
+        )
+
+    def payroll_employee_pay_setup_for_period(
+        self,
+        company_id: int,
+        employee_id: int,
+        period_end,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+
+        schema = self.company_schema(company_id)
+
+        setup = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_pay_setups
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND is_active=TRUE
+            AND effective_from <= %s
+            AND (
+                effective_to IS NULL
+                OR effective_to >= %s
+            )
+            ORDER BY effective_from DESC, id DESC
+            LIMIT 1;
+        """, (
+            company_id,
+            employee_id,
+            period_end,
+            period_end,
+        ))
+
+        if not setup:
+            return None
+
+        setup["items"] = self.fetch_all(f"""
+            SELECT
+                i.*,
+
+                COALESCE(
+                    et.code,
+                    dt.code,
+                    bt.code,
+                    ct.code
+                ) AS code,
+
+                COALESCE(
+                    et.name,
+                    dt.name,
+                    bt.name,
+                    ct.name
+                ) AS name,
+
+                COALESCE(et.taxable, bt.taxable, FALSE)
+                    AS taxable,
+
+                COALESCE(et.pensionable, FALSE)
+                    AS pensionable
+
+            FROM {schema}.payroll_employee_pay_setup_items i
+
+            LEFT JOIN {schema}.payroll_earning_types et
+            ON i.item_type='earning'
+            AND et.id=i.item_id
+
+            LEFT JOIN {schema}.payroll_deduction_types dt
+            ON i.item_type='deduction'
+            AND dt.id=i.item_id
+
+            LEFT JOIN {schema}.payroll_benefit_types bt
+            ON i.item_type='benefit'
+            AND bt.id=i.item_id
+
+            LEFT JOIN
+                {schema}.payroll_employer_contribution_types ct
+            ON i.item_type='contribution'
+            AND ct.id=i.item_id
+
+            WHERE i.company_id=%s
+            AND i.pay_setup_id=%s
+            AND i.is_active=TRUE
+
+            ORDER BY i.item_type, i.id;
+        """, (
+            company_id,
+            int(setup["id"]),
+        ))
+
+        return setup
+
+    def payroll_setup_item_amount(
+        self,
+        item: dict,
+        gross_base,
+    ):
+        method = (
+            item.get("calculation_method")
+            or "fixed_amount"
+        )
+
+        if method == "fixed_amount":
+            return _payroll_money(
+                item.get("amount")
+            )
+
+        if method == "percentage":
+            return _payroll_money(
+                _payroll_decimal(gross_base)
+                * _payroll_decimal(
+                    item.get("percentage")
+                )
+                / Decimal("100")
+            )
+
+        if method == "quantity_rate":
+            return _payroll_money(
+                _payroll_decimal(item.get("quantity"))
+                * _payroll_decimal(item.get("rate"))
+            )
+
+        if method == "manual":
+            return Decimal("0.00")
+
+        raise ValueError(
+            f"Unsupported calculation method: {method}"
+        ) 
 
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:

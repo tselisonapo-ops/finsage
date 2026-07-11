@@ -37314,11 +37314,11 @@ async function saveEditModal() {
 
   function applyAddCostVatUI() {
     const treatment = String(
-      $("smAddCostVatTreatment")?.value || "no_vat"
+      $("smAddCostVatTreatment")?.value || "inclusive"
     ).trim().toLowerCase();
 
     const claimable =
-      String($("smAddCostVatClaimable")?.value || "false") === "true";
+      String($("smAddCostVatClaimable")?.value || "true") === "true";
 
     const hasVat = treatment !== "no_vat";
 
@@ -37337,13 +37337,129 @@ async function saveEditModal() {
       if ($("smAddCostVatRecoveryPercent")) {
         $("smAddCostVatRecoveryPercent").value = "0";
       }
-    } else if (claimable) {
-      if (
-        $("smAddCostVatRecoveryPercent") &&
-        !$("smAddCostVatRecoveryPercent").value
-      ) {
+    } else {
+      if (!$("smAddCostVatRate")?.value) {
+        $("smAddCostVatRate").value = "15";
+      }
+
+      if (claimable && !$("smAddCostVatRecoveryPercent")?.value) {
         $("smAddCostVatRecoveryPercent").value = "100";
       }
+    }
+  }
+
+  function applyImpairmentUI() {
+    const t = String(
+      $("smEventType")?.value || ""
+    ).trim().toLowerCase();
+
+    const isLoss = t === "impairment_loss";
+    const isReversal = t === "impairment_reversal";
+
+    $("smImpairmentLossInputs")?.classList.toggle("hidden", !isLoss);
+    $("smImpairmentReversalInputs")?.classList.toggle(
+      "hidden",
+      !isReversal
+    );
+
+    if ($("smImpairmentTitle")) {
+      $("smImpairmentTitle").textContent = isReversal
+        ? "Impairment reversal"
+        : "Impairment testing";
+    }
+
+    if ($("smImpairmentHelp")) {
+      $("smImpairmentHelp").textContent = isReversal
+        ? "Reverse a previous impairment only to the permitted recoverable amount."
+        : "Compare carrying amount with the recoverable amount.";
+    }
+
+    applyRecoverableBasisUI();
+  }
+
+
+  function applyRecoverableBasisUI() {
+    const basis = String(
+      $("smRecoverableBasis")?.value || ""
+    ).trim().toLowerCase();
+
+    $("smValueInUseFields")?.classList.toggle(
+      "hidden",
+      basis !== "value_in_use"
+    );
+
+    $("smFvlcdFields")?.classList.toggle(
+      "hidden",
+      basis !== "fair_value_less_costs"
+    );
+  }
+
+
+  function calculateHfsFairValueLessCosts() {
+    const marketValue = Number(
+      $("smHfsMarketValue")?.value || 0
+    );
+
+    const sellingCosts = Number(
+      $("smHfsCostsToSell")?.value || 0
+    );
+
+    const result = Math.max(0, marketValue - sellingCosts);
+
+    if ($("smHfsFvlcts")) {
+      $("smHfsFvlcts").value =
+        marketValue > 0 ? result.toFixed(2) : "";
+    }
+  }
+
+
+  function renderSmCurrentValues() {
+    const asset = selectedSmAsset();
+
+    const carrying = Number(
+      asset?.carrying_amount ??
+      asset?.nbv ??
+      0
+    );
+
+    const cost = Number(
+      asset?.cost ??
+      asset?.opening_cost ??
+      0
+    );
+
+    const accumulatedDepreciation = Number(
+      asset?.accumulated_depreciation ??
+      asset?.acc_dep ??
+      asset?.opening_accum_dep ??
+      0
+    );
+
+    const cards = `
+      <div class="border rounded p-2 bg-slate-50">
+        <div class="text-slate-400">Cost</div>
+        <div class="font-medium mt-1">${fmtMoney2(cost)}</div>
+      </div>
+
+      <div class="border rounded p-2 bg-slate-50">
+        <div class="text-slate-400">Accumulated depreciation</div>
+        <div class="font-medium mt-1">
+          ${fmtMoney2(accumulatedDepreciation)}
+        </div>
+      </div>
+
+      <div class="border rounded p-2 bg-slate-50">
+        <div class="text-slate-400">Carrying amount</div>
+        <div class="font-medium mt-1">${fmtMoney2(carrying)}</div>
+      </div>
+    `;
+
+    if ($("smEstimateCurrent")) {
+      $("smEstimateCurrent").innerHTML = cards;
+    }
+
+    if ($("smImpairmentCurrent")) {
+      $("smImpairmentCurrent").innerHTML = cards;
     }
   }
 
@@ -37425,16 +37541,142 @@ async function saveEditModal() {
   }
 
   function applySmTypeUI() {
-    const t = String($("smEventType")?.value || "add_cost");
+    const t = String(
+      $("smEventType")?.value || "add_cost"
+    ).trim().toLowerCase();
 
-    $("smAddCostFields")?.classList.toggle("hidden", t !== "add_cost");
-    $("smEstimateFields")?.classList.toggle("hidden", t !== "change_estimate");
-    $("smHfsFields")?.classList.toggle("hidden", !t.startsWith("held_for_sale_"));
-    $("smFairValueFields")?.classList.toggle("hidden", !(t === "revaluation" || t === "fair_value_valuation"));
+    $("smAddCostFields")?.classList.toggle(
+      "hidden",
+      t !== "add_cost"
+    );
+
+    $("smEstimateFields")?.classList.toggle(
+      "hidden",
+      t !== "change_estimate"
+    );
+
+    $("smImpairmentFields")?.classList.toggle(
+      "hidden",
+      !["impairment_loss", "impairment_reversal"].includes(t)
+    );
+
+    $("smHfsFields")?.classList.toggle(
+      "hidden",
+      !t.startsWith("held_for_sale_")
+    );
+
+    $("smFairValueFields")?.classList.toggle(
+      "hidden",
+      !["revaluation", "fair_value_valuation"].includes(t)
+    );
+
+    $("smTransferFields")?.classList.toggle(
+      "hidden",
+      !["transfer_ppe_to_ip", "transfer_ip_to_ppe"].includes(t)
+    );
+
     if (t === "add_cost") {
       applyAddCostVatUI();
     }
+
+    if (
+      t === "impairment_loss" ||
+      t === "impairment_reversal"
+    ) {
+      applyImpairmentUI();
+    }
+
+    if ($("smTransferTitle")) {
+      $("smTransferTitle").textContent =
+        t === "transfer_ppe_to_ip"
+          ? "Transfer PPE to investment property"
+          : "Transfer investment property to PPE";
+    }
+
+    renderSmCurrentValues();
     renderGroupFairValueFields();
+    prefillSmFieldsFromAsset();
+  }
+
+  function setSmValue(id, value = "") {
+    const el = $(id);
+    if (el) el.value = value;
+  }
+
+
+  function clearSmTransactionFields({
+    keepDate = true,
+    keepType = true,
+    keepAsset = true,
+  } = {}) {
+    const currentDate = $("smEventDate")?.value || "";
+    const currentType = $("smEventType")?.value || "add_cost";
+    const currentAssetId = $("smAssetId")?.value || "";
+    const currentAssetSearch = $("smAssetSearch")?.value || "";
+
+    [
+      "smAmount",
+      "smCreditBankAccount",
+      "smAddCostSupplier",
+      "smAddCostInvoiceNo",
+
+      "smLife",
+      "smResidual",
+      "smMethod",
+      "smEstimateReason",
+
+      "smRecoverableAmount",
+      "smRecoverableBasis",
+      "smDiscountRate",
+      "smGrowthRate",
+      "smCashFlowPeriod",
+      "smImpairmentFairValue",
+      "smCostsOfDisposal",
+      "smImpairmentReversalAmount",
+      "smReversalRecoverableAmount",
+      "smImpairmentReason",
+
+      "smFairValue",
+      "smFairValueReason",
+
+      "smHfsExpectedSale",
+      "smHfsMarketValue",
+      "smHfsCostsToSell",
+      "smHfsFvlcts",
+
+      "smTransferReason",
+      "smTransferBasis",
+
+      "smNotes",
+    ].forEach((id) => setSmValue(id, ""));
+
+    setSmValue("smAddCostVatTreatment", "inclusive");
+    setSmValue("smAddCostVatRate", "15");
+    setSmValue("smAddCostVatClaimable", "true");
+    setSmValue("smAddCostVatRecoveryPercent", "100");
+
+    $("smGroupFairValueWrap")?.replaceChildren();
+
+    if (keepDate) {
+      setSmValue("smEventDate", currentDate);
+    }
+
+    if (keepType) {
+      setSmValue("smEventType", currentType);
+    }
+
+    if (keepAsset) {
+      setSmValue("smAssetId", currentAssetId);
+      setSmValue("smAssetSearch", currentAssetSearch);
+    }
+
+    setMsg($("smFormMsg"), "", "info");
+    clearSmPreview();
+    invalidateSmPreview();
+
+    applySmTypeUI();
+    applyAddCostVatUI();
+    applyImpairmentUI();
   }
 
   // =========================================================
@@ -37490,6 +37732,12 @@ async function saveEditModal() {
 
     $("smAssetId").value = id ? String(id) : "";
 
+    clearSmTransactionFields({
+      keepDate: true,
+      keepType: true,
+      keepAsset: true,
+    });
+
     const search = $("smAssetSearch");
     if (search) search.value = a ? assetName(a) : "";
 
@@ -37501,7 +37749,9 @@ async function saveEditModal() {
     }
 
     renderAssetMeta(a);
+    renderSmCurrentValues();
     renderGroupFairValueFields();
+    prefillSmFieldsFromAsset();
 
     if (
       a &&
@@ -37868,10 +38118,37 @@ async function saveEditModal() {
   }
 
   function closeSmModal() {
+    clearSmTransactionFields({
+      keepDate: false,
+      keepType: false,
+      keepAsset: false,
+    });
+
+    SELECTED_SM_ASSET = null;
+
+    setSmValue("smId", "");
+    setSmValue("smEventDate", "");
+    setSmValue("smEventType", "add_cost");
+    setSmValue("smAssetId", "");
+    setSmValue("smAssetSearch", "");
+
+    if ($("smAssetSelected")) {
+      $("smAssetSelected").textContent = "No asset selected";
+    }
+
+    if ($("smAssetMeta")) {
+      $("smAssetMeta").textContent =
+        "Select an asset on the left to view details.";
+    }
+
+    if ($("smRevalBadge")) {
+      $("smRevalBadge").innerHTML = "";
+    }
+
     $("smModal")?.classList.add("hidden");
   }
 
-    async function searchValuers(q) {
+  async function searchValuers(q) {
     const { valuationValuers } = EP();
     const out = await api(valuationValuers({ q, limit: 20 }));
     return out?.items || out?.data || [];
@@ -37916,6 +38193,78 @@ async function saveEditModal() {
     return JSON.stringify(payload || {});
   }
 
+  function prefillSmFieldsFromAsset() {
+    const asset = selectedSmAsset();
+    if (!asset) return;
+
+    const eventType = String(
+      $("smEventType")?.value || ""
+    ).trim().toLowerCase();
+
+    const carryingAmount = Number(
+      asset.carrying_amount ??
+      asset.nbv ??
+      asset.carrying_value ??
+      0
+    );
+
+    if (eventType === "change_estimate") {
+      if ($("smLife") && !$("smLife").value) {
+        $("smLife").placeholder =
+          asset.useful_life_months
+            ? String(asset.useful_life_months)
+            : "";
+      }
+
+      if ($("smResidual") && !$("smResidual").value) {
+        $("smResidual").placeholder =
+          asset.residual_value != null
+            ? String(asset.residual_value)
+            : "";
+      }
+
+      if ($("smMethod")) {
+        $("smMethod").dataset.currentMethod =
+          asset.depreciation_method || "";
+      }
+    }
+
+    if (eventType === "impairment_loss") {
+      if ($("smRecoverableAmount")) {
+        $("smRecoverableAmount").placeholder =
+          carryingAmount > 0
+            ? `Below ${carryingAmount.toFixed(2)} if impaired`
+            : "";
+      }
+    }
+
+    if (eventType === "impairment_reversal") {
+      if ($("smReversalRecoverableAmount")) {
+        $("smReversalRecoverableAmount").placeholder =
+          carryingAmount > 0
+            ? carryingAmount.toFixed(2)
+            : "";
+      }
+    }
+
+    if (
+      eventType === "revaluation" ||
+      eventType === "fair_value_valuation"
+    ) {
+      if (
+        !selectedAssetIsComponentGroup() &&
+        $("smFairValue") &&
+        !$("smFairValue").value
+      ) {
+        $("smFairValue").value =
+          carryingAmount > 0
+            ? String(carryingAmount)
+            : "";
+      }
+    }
+
+    renderSmCurrentValues();
+  }
 
   async function ensurePreviewIsCurrent() {
     const payload = smPayloadFromUI();
@@ -38040,27 +38389,11 @@ async function saveEditModal() {
   }
 
   function smPayloadFromUI() {
-    console.log("BANK SELECT DEBUG", {
-      value: $("smCreditBankAccount")?.value,
-      selectedIndex: $("smCreditBankAccount")?.selectedIndex,
-      selectedText: $("smCreditBankAccount")?.selectedOptions?.[0]?.textContent,
-      selectedOption: $("smCreditBankAccount")?.selectedOptions?.[0],
-    });
-
-    const t = String($("smEventType")?.value || "add_cost");
+    const t = String(
+      $("smEventType")?.value || "add_cost"
+    ).trim().toLowerCase();
 
     const meta_json = {};
-
-    if ($("smHfsExpectedSale")?.value) {
-      meta_json.expected_sale_date = $("smHfsExpectedSale").value;
-    }
-    if ($("smHfsFvlcts")?.value) {
-      meta_json.fair_value_less_costs = Number($("smHfsFvlcts").value);
-    }
-
-    if ($("smFairValue")?.value) {
-      meta_json.fair_value = Number($("smFairValue").value);
-    }
 
     const components = collectGroupComponentPayload(t);
 
@@ -38068,41 +38401,165 @@ async function saveEditModal() {
       meta_json.components = components;
     }
 
+    if ($("smFairValue")?.value) {
+      meta_json.fair_value =
+        Number($("smFairValue").value);
+    }
+
+    if ($("smFairValueReason")?.value) {
+      meta_json.reason =
+        $("smFairValueReason").value;
+    }
+
+    if (t === "change_estimate") {
+      meta_json.reason =
+        $("smEstimateReason")?.value || null;
+    }
+
+    if (t === "impairment_loss") {
+      meta_json.recoverable_amount =
+        $("smRecoverableAmount")?.value
+          ? Number($("smRecoverableAmount").value)
+          : null;
+
+      meta_json.recoverable_amount_basis =
+        $("smRecoverableBasis")?.value || null;
+
+      meta_json.discount_rate_percent =
+        $("smDiscountRate")?.value
+          ? Number($("smDiscountRate").value)
+          : null;
+
+      meta_json.growth_rate_percent =
+        $("smGrowthRate")?.value
+          ? Number($("smGrowthRate").value)
+          : null;
+
+      meta_json.cash_flow_period_years =
+        $("smCashFlowPeriod")?.value
+          ? Number($("smCashFlowPeriod").value)
+          : null;
+
+      meta_json.fair_value =
+        $("smImpairmentFairValue")?.value
+          ? Number($("smImpairmentFairValue").value)
+          : null;
+
+      meta_json.costs_of_disposal =
+        $("smCostsOfDisposal")?.value
+          ? Number($("smCostsOfDisposal").value)
+          : null;
+
+      meta_json.reason =
+        $("smImpairmentReason")?.value || null;
+    }
+
+    if (t === "impairment_reversal") {
+      meta_json.reversal_amount =
+        $("smImpairmentReversalAmount")?.value
+          ? Number($("smImpairmentReversalAmount").value)
+          : null;
+
+      meta_json.recoverable_amount =
+        $("smReversalRecoverableAmount")?.value
+          ? Number($("smReversalRecoverableAmount").value)
+          : null;
+
+      meta_json.reason =
+        $("smImpairmentReason")?.value || null;
+    }
+
+    if (t === "held_for_sale_classify") {
+      meta_json.expected_sale_date =
+        $("smHfsExpectedSale")?.value || null;
+
+      meta_json.market_value =
+        $("smHfsMarketValue")?.value
+          ? Number($("smHfsMarketValue").value)
+          : null;
+
+      meta_json.costs_to_sell =
+        $("smHfsCostsToSell")?.value
+          ? Number($("smHfsCostsToSell").value)
+          : 0;
+
+      meta_json.fair_value_less_costs =
+        $("smHfsFvlcts")?.value
+          ? Number($("smHfsFvlcts").value)
+          : null;
+    }
+
+    if (
+      t === "transfer_ppe_to_ip" ||
+      t === "transfer_ip_to_ppe"
+    ) {
+      meta_json.reason =
+        $("smTransferReason")?.value || null;
+
+      meta_json.target_measurement_basis =
+        $("smTransferBasis")?.value || null;
+    }
+
     const base = {
-      event_date: $("smEventDate")?.value || null,
+      event_date:
+        $("smEventDate")?.value || null,
+
       event_type: t,
-      asset_id: Number($("smAssetId")?.value || 0) || null,
-      notes: $("smNotes")?.value || null,
-      meta_json: Object.keys(meta_json).length ? meta_json : null,
-      components: meta_json.components || null,
+
+      asset_id:
+        Number($("smAssetId")?.value || 0) || null,
+
+      notes:
+        $("smNotes")?.value || null,
+
+      meta_json:
+        Object.keys(meta_json).length
+          ? meta_json
+          : null,
+
+      components:
+        Object.keys(components).length
+          ? components
+          : null,
     };
 
     if (t === "add_cost") {
       const asset = selectedSmAsset();
 
       const vatTreatment = String(
-        $("smAddCostVatTreatment")?.value || "no_vat"
+        $("smAddCostVatTreatment")?.value ||
+        "inclusive"
       ).trim().toLowerCase();
 
       const vatInputClaimable =
-        String($("smAddCostVatClaimable")?.value || "false") === "true";
+        String(
+          $("smAddCostVatClaimable")?.value ||
+          "true"
+        ) === "true";
 
       const vatRatePercent =
         vatTreatment === "no_vat"
           ? 0
-          : Number($("smAddCostVatRate")?.value || 0);
+          : Number(
+              $("smAddCostVatRate")?.value || 0
+            );
 
       const vatRecoveryPercent =
-        vatTreatment !== "no_vat" && vatInputClaimable
-          ? Number($("smAddCostVatRecoveryPercent")?.value || 100)
+        vatTreatment !== "no_vat" &&
+        vatInputClaimable
+          ? Number(
+              $("smAddCostVatRecoveryPercent")?.value ||
+              100
+            )
           : 0;
 
       return {
         ...base,
 
-        amount: $("smAmount")?.value
-          ? Number($("smAmount").value)
-          : null,
+        amount:
+          $("smAmount")?.value
+            ? Number($("smAmount").value)
+            : null,
 
         debit_account_code:
           asset?.asset_account_code ||
@@ -38121,19 +38578,65 @@ async function saveEditModal() {
 
         meta_json: {
           ...(base.meta_json || {}),
+
           vat_treatment: vatTreatment,
           vat_rate_percent: vatRatePercent,
           vat_input_claimable: vatInputClaimable,
           vat_recovery_percent: vatRecoveryPercent,
+
+          supplier_name:
+            $("smAddCostSupplier")?.value || null,
+
+          vendor_invoice_no:
+            $("smAddCostInvoiceNo")?.value || null,
         },
+      };
+    }
+
+    if (t === "impairment_loss") {
+      const carrying = Number(
+        selectedSmAsset()?.carrying_amount ??
+        selectedSmAsset()?.nbv ??
+        0
+      );
+
+      const recoverableAmount =
+        Number(
+          meta_json.recoverable_amount || 0
+        );
+
+      return {
+        ...base,
+        amount:
+          carrying > recoverableAmount
+            ? carrying - recoverableAmount
+            : 0,
+      };
+    }
+
+    if (t === "impairment_reversal") {
+      return {
+        ...base,
+        amount:
+          Number(meta_json.reversal_amount || 0),
       };
     }
 
     return {
       ...base,
-      useful_life_months: $("smLife")?.value ? Number($("smLife").value) : null,
-      residual_value: $("smResidual")?.value ? Number($("smResidual").value) : null,
-      depreciation_method: $("smMethod")?.value || null,
+
+      useful_life_months:
+        $("smLife")?.value
+          ? Number($("smLife").value)
+          : null,
+
+      residual_value:
+        $("smResidual")?.value !== ""
+          ? Number($("smResidual").value)
+          : null,
+
+      depreciation_method:
+        $("smMethod")?.value || null,
     };
   }
 
@@ -38412,20 +38915,44 @@ async function saveEditModal() {
     const previewWatchIds = [
       "smEventDate",
       "smEventType",
+
       "smAmount",
       "smCreditBankAccount",
-      "smLife",
-      "smResidual",
-      "smMethod",
-      "smNotes",
-      "smFairValue",
-      "smFairValueReason",
-      "smHfsExpectedSale",
-      "smHfsFvlcts",
+      "smAddCostSupplier",
+      "smAddCostInvoiceNo",
       "smAddCostVatTreatment",
       "smAddCostVatRate",
       "smAddCostVatClaimable",
       "smAddCostVatRecoveryPercent",
+
+      "smLife",
+      "smResidual",
+      "smMethod",
+      "smEstimateReason",
+
+      "smRecoverableAmount",
+      "smRecoverableBasis",
+      "smDiscountRate",
+      "smGrowthRate",
+      "smCashFlowPeriod",
+      "smImpairmentFairValue",
+      "smCostsOfDisposal",
+      "smImpairmentReversalAmount",
+      "smReversalRecoverableAmount",
+      "smImpairmentReason",
+
+      "smFairValue",
+      "smFairValueReason",
+
+      "smHfsExpectedSale",
+      "smHfsMarketValue",
+      "smHfsCostsToSell",
+      "smHfsFvlcts",
+
+      "smTransferReason",
+      "smTransferBasis",
+
+      "smNotes",
     ];
 
     previewWatchIds.forEach((id) => {
@@ -38433,6 +38960,40 @@ async function saveEditModal() {
         invalidateSmPreview();
       });
       $(id)?.addEventListener("change", () => {
+        invalidateSmPreview();
+      });
+    });
+
+    $("smAddCostVatTreatment")?.addEventListener(
+      "change",
+      () => {
+        applyAddCostVatUI();
+        invalidateSmPreview();
+      }
+    );
+
+    $("smAddCostVatClaimable")?.addEventListener(
+      "change",
+      () => {
+        applyAddCostVatUI();
+        invalidateSmPreview();
+      }
+    );
+
+    $("smRecoverableBasis")?.addEventListener(
+      "change",
+      () => {
+        applyRecoverableBasisUI();
+        invalidateSmPreview();
+      }
+    );
+
+    [
+      "smHfsMarketValue",
+      "smHfsCostsToSell",
+    ].forEach((id) => {
+      $(id)?.addEventListener("input", () => {
+        calculateHfsFairValueLessCosts();
         invalidateSmPreview();
       });
     });
@@ -39291,22 +39852,152 @@ async function saveEditModal() {
     renderAssetList(rows);
   }
 
-  function ensurePreviewIsCurrent() {
+  async function ensurePreviewIsCurrent() {
     const payload = smPayloadFromUI();
     const hash = smPreviewHash(payload);
-    const t = String(payload?.event_type || "").trim().toLowerCase();
 
-    if (t !== "revaluation" && t !== "fair_value_valuation") {
-      return;
+    if (!payload.asset_id) {
+      throw new Error("Asset is required");
     }
 
-    if (!smPreviewState.ok) {
-      throw new Error("Run preview before continuing.");
+    if (!payload.event_date) {
+      throw new Error("Date is required");
     }
 
-    if (smPreviewState.payloadHash !== hash) {
-      throw new Error("Preview is outdated. Run preview again before continuing.");
+    if (!payload.event_type) {
+      throw new Error("Type is required");
     }
+
+    if (selectedAssetIsComponentGroup()) {
+      validateGroupComponents(payload);
+    }
+
+    if (payload.event_type === "add_cost") {
+      if (!(Number(payload.amount) > 0)) {
+        throw new Error("Amount must be greater than 0");
+      }
+
+      if (!payload.credit_account_code) {
+        throw new Error("Bank account is required");
+      }
+
+      if (
+        payload.vat_treatment !== "no_vat" &&
+        !(Number(payload.vat_rate_percent) > 0)
+      ) {
+        throw new Error("VAT rate must be greater than 0");
+      }
+    }
+
+    if (payload.event_type === "change_estimate") {
+      const hasChange =
+        Number(payload.useful_life_months || 0) > 0 ||
+        payload.residual_value !== null ||
+        !!payload.depreciation_method;
+
+      if (!hasChange) {
+        throw new Error(
+          "Enter at least one estimate change"
+        );
+      }
+
+      if (!payload?.meta_json?.reason) {
+        throw new Error(
+          "Reason for estimate change is required"
+        );
+      }
+    }
+
+    if (payload.event_type === "impairment_loss") {
+      if (
+        !(Number(
+          payload?.meta_json?.recoverable_amount || 0
+        ) > 0)
+      ) {
+        throw new Error(
+          "Recoverable amount must be greater than 0"
+        );
+      }
+
+      if (!payload?.meta_json?.recoverable_amount_basis) {
+        throw new Error(
+          "Select the recoverable amount basis"
+        );
+      }
+
+      if (!payload?.meta_json?.reason) {
+        throw new Error(
+          "Impairment reason is required"
+        );
+      }
+    }
+
+    if (payload.event_type === "impairment_reversal") {
+      if (
+        !(Number(
+          payload?.meta_json?.reversal_amount || 0
+        ) > 0)
+      ) {
+        throw new Error(
+          "Reversal amount must be greater than 0"
+        );
+      }
+
+      if (!payload?.meta_json?.reason) {
+        throw new Error(
+          "Impairment reversal reason is required"
+        );
+      }
+    }
+
+    if (
+      payload.event_type === "revaluation" ||
+      payload.event_type === "fair_value_valuation"
+    ) {
+      if (!selectedAssetIsComponentGroup()) {
+        if (
+          !(Number(
+            payload?.meta_json?.fair_value || 0
+          ) > 0)
+        ) {
+          throw new Error(
+            "Fair value must be greater than 0"
+          );
+        }
+      }
+    }
+
+    if (payload.event_type === "held_for_sale_classify") {
+      if (
+        !(Number(
+          payload?.meta_json?.fair_value_less_costs || 0
+        ) > 0)
+      ) {
+        throw new Error(
+          "Fair value less costs to sell must be greater than 0"
+        );
+      }
+    }
+
+    if (
+      payload.event_type === "transfer_ppe_to_ip" ||
+      payload.event_type === "transfer_ip_to_ppe"
+    ) {
+      if (!payload?.meta_json?.reason) {
+        throw new Error(
+          "Reason for the change in use is required"
+        );
+      }
+    }
+
+    if (
+      smPreviewState.ok &&
+      smPreviewState.payloadHash === hash
+    ) {
+      return smPreviewState.result;
+    }
+
+    return await loadSmPreview();
   }
 
   function renderAssetList(rows) {
@@ -42596,49 +43287,197 @@ async function saveEditModal() {
     return true;
   }
 
-  function bfMonthKey(value) {
-    if (!value) return "";
+  function bfDisplayDate(value) {
+    const date = bfParseDate(value);
 
-    const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return "";
+    if (!date) {
+      return "";
+    }
 
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    return date.toLocaleDateString(
+      undefined,
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
   }
 
-  function bfMonthLabel(value) {
-    const d = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  function bfParseDate(value) {
+    if (!value) {
+      return null;
+    }
 
-    if (Number.isNaN(d.getTime())) {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime())
+        ? null
+        : new Date(
+            value.getFullYear(),
+            value.getMonth(),
+            value.getDate()
+          );
+    }
+
+    const raw = String(value).trim();
+
+    if (!raw) {
+      return null;
+    }
+
+    /*
+    * Handle database/input dates:
+    * 2026-05-01
+    * 2026-05-01T00:00:00
+    * 2026/05/01
+    */
+    let match = raw.match(
+      /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/
+    );
+
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+
+      const parsed = new Date(
+        year,
+        month - 1,
+        day
+      );
+
+      return Number.isNaN(parsed.getTime())
+        ? null
+        : parsed;
+    }
+
+    /*
+    * Handle displayed DD/MM/YYYY values.
+    */
+    match = raw.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
+    );
+
+    if (match) {
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+
+      const parsed = new Date(
+        year,
+        month - 1,
+        day
+      );
+
+      return Number.isNaN(parsed.getTime())
+        ? null
+        : parsed;
+    }
+
+    /*
+    * Handles Flask/PostgreSQL JSON dates such as:
+    * Fri, 01 May 2026 00:00:00 GMT
+    */
+    const parsed = new Date(raw);
+
+    if (Number.isNaN(parsed.getTime())) {
+      console.warn(
+        "[Forecast] Could not parse date:",
+        value
+      );
+
+      return null;
+    }
+
+    return new Date(
+      parsed.getUTCFullYear(),
+      parsed.getUTCMonth(),
+      parsed.getUTCDate()
+    );
+  }
+
+
+  function bfMonthKey(value) {
+    const date = bfParseDate(value);
+
+    if (!date) {
+      return "";
+    }
+
+    return [
+      date.getFullYear(),
+      String(
+        date.getMonth() + 1
+      ).padStart(2, "0"),
+      "01",
+    ].join("-");
+  }
+
+
+  function bfMonthLabel(value) {
+    const date = bfParseDate(value);
+
+    if (!date) {
       return String(value || "");
     }
 
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      year: "2-digit",
-    });
+    return date.toLocaleDateString(
+      undefined,
+      {
+        month: "short",
+        year: "2-digit",
+      }
+    );
   }
 
-  function bfMonthsBetween(start, end) {
-    if (!start || !end) return [];
 
-    const first = new Date(`${String(start).slice(0, 10)}T00:00:00`);
-    const last = new Date(`${String(end).slice(0, 10)}T00:00:00`);
+  function bfMonthsBetween(start, end) {
+    const firstDate =
+      bfParseDate(start);
+
+    const lastDate =
+      bfParseDate(end);
 
     if (
-      Number.isNaN(first.getTime()) ||
-      Number.isNaN(last.getTime()) ||
-      first > last
+      !firstDate ||
+      !lastDate
     ) {
       return [];
     }
 
-    const out = [];
-    let cursor = new Date(first.getFullYear(), first.getMonth(), 1);
-    const endMonth = new Date(last.getFullYear(), last.getMonth(), 1);
+    const first = new Date(
+      firstDate.getFullYear(),
+      firstDate.getMonth(),
+      1
+    );
 
-    while (cursor <= endMonth) {
-      out.push(
-        `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-01`
+    const last = new Date(
+      lastDate.getFullYear(),
+      lastDate.getMonth(),
+      1
+    );
+
+    if (first > last) {
+      return [];
+    }
+
+    const months = [];
+
+    let cursor = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      1
+    );
+
+    while (cursor <= last) {
+      months.push(
+        [
+          cursor.getFullYear(),
+          String(
+            cursor.getMonth() + 1
+          ).padStart(2, "0"),
+          "01",
+        ].join("-")
       );
 
       cursor = new Date(
@@ -42648,7 +43487,7 @@ async function saveEditModal() {
       );
     }
 
-    return out;
+    return months;
   }
 
   function fyGuess() {
@@ -46574,11 +47413,11 @@ async function saveEditModal() {
               <h2>${esc(version.name)}</h2>
 
               <p class="muted">
-                ${esc(String(version.period_start).slice(0, 10))}
+                ${esc(bfDisplayDate(version.period_start))}
                 to
-                ${esc(String(version.period_end).slice(0, 10))}
+                ${esc(bfDisplayDate(version.period_end))}
                 · Actuals to
-                ${esc(String(version.actuals_to_date || "").slice(0, 10))}
+                ${esc(bfDisplayDate(version.actuals_to_date))}
               </p>
             </div>
           </div>
