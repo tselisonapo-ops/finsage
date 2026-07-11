@@ -5907,6 +5907,12 @@ class DatabaseService:
             period_end
         );
        
+        CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_employee_number_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1
+        NO MAXVALUE
+        CACHE 1;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_pay_calendars (
             id SERIAL PRIMARY KEY,
@@ -84619,20 +84625,42 @@ class DatabaseService:
         return emp
 
 
-    def payroll_employee_create(self, company_id: int, data: dict):
+    def payroll_employee_create(
+        self,
+        company_id: int,
+        data: dict,
+    ):
+        company_id = int(company_id)
         schema = self.company_schema(company_id)
+
+        employee_no = self.payroll_generate_employee_no(
+            company_id
+        )
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_employees (
-                company_id, employee_no, first_name, last_name, email, phone,
-                id_number, passport_number, tax_number,
-                department_id, position_id, start_date, employment_status
+                company_id,
+                employee_no,
+                first_name,
+                last_name,
+                email,
+                phone,
+                id_number,
+                passport_number,
+                tax_number,
+                department_id,
+                position_id,
+                start_date,
+                employment_status
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s
+            )
             RETURNING *;
         """, (
-            int(company_id),
-            data.get("employee_no"),
+            company_id,
+            employee_no,
             data.get("first_name"),
             data.get("last_name"),
             data.get("email"),
@@ -84651,10 +84679,18 @@ class DatabaseService:
         schema = self.company_schema(company_id)
 
         allowed = [
-            "employee_no", "first_name", "last_name", "email", "phone",
-            "id_number", "passport_number", "tax_number",
-            "department_id", "position_id", "start_date",
-            "termination_date", "employment_status"
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "id_number",
+            "passport_number",
+            "tax_number",
+            "department_id",
+            "position_id",
+            "start_date",
+            "termination_date",
+            "employment_status",
         ]
 
         sets = []
@@ -85362,8 +85398,16 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-        code = str(data.get("code") or "").strip().upper()
-        name = str(data.get("name") or "").strip()
+        code = self.payroll_generate_setup_code(
+            company_id,
+            "earning",
+        )
+        name = str(
+            data.get("name") or ""
+        ).strip()
+
+        if not name:
+            raise ValueError("Earning name is required")
 
         if not code or not name:
             raise ValueError(
@@ -85402,7 +85446,10 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-        code = str(data.get("code") or "").strip().upper()
+        code = self.payroll_generate_setup_code(
+            company_id,
+            "deduction",
+        )
         name = str(data.get("name") or "").strip()
 
         if not code or not name:
@@ -85439,7 +85486,10 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-        code = str(data.get("code") or "").strip().upper()
+        code = self.payroll_generate_setup_code(
+            company_id,
+            "contribution",
+        )
         name = str(data.get("name") or "").strip()
 
         if not code or not name:
@@ -85466,6 +85516,73 @@ class DatabaseService:
             data.get("liability_account_code"),
         ))
 
+    def migrate_payroll_employee_number_sequence(
+        self,
+        company_id: int,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        self.execute_sql(f"""
+            CREATE SEQUENCE IF NOT EXISTS
+                {schema}.payroll_employee_number_seq
+            START WITH 1
+            INCREMENT BY 1
+            MINVALUE 1
+            NO MAXVALUE
+            CACHE 1;
+        """)
+
+        result = self.fetch_one(f"""
+            WITH existing_numbers AS (
+                SELECT
+                    MAX(
+                        CASE
+                            WHEN employee_no IS NULL
+                                OR BTRIM(employee_no) = ''
+                            THEN NULL
+
+                            ELSE (
+                                NULLIF(
+                                    RIGHT(
+                                        regexp_replace(
+                                            employee_no,
+                                            '[^0-9]',
+                                            '',
+                                            'g'
+                                        ),
+                                        8
+                                    ),
+                                    ''
+                                )
+                            )::bigint
+                        END
+                    ) AS maximum_sequence,
+                    COUNT(*)::bigint AS employee_count
+                FROM {schema}.payroll_employees
+                WHERE company_id = %s
+            )
+            SELECT setval(
+                '{schema}.payroll_employee_number_seq',
+                GREATEST(
+                    COALESCE(maximum_sequence, 0),
+                    1
+                ),
+                employee_count > 0
+            ) AS sequence_value
+            FROM existing_numbers;
+        """, (company_id,))
+
+        return {
+            "ok": True,
+            "company_id": company_id,
+            "sequence_value": (
+                result.get("sequence_value")
+                if result
+                else None
+            ),
+        }
+
     def payroll_benefit_type_create(
         self,
         company_id: int,
@@ -85473,7 +85590,10 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-        code = str(data.get("code") or "").strip().upper()
+        code = self.payroll_generate_setup_code(
+            company_id,
+            "benefit",
+        )
         name = str(data.get("name") or "").strip()
 
         category = (
@@ -85672,6 +85792,205 @@ class DatabaseService:
             title,
             data.get("is_active"),
         ))
+
+    def payroll_generate_employee_no(
+        self,
+        company_id: int,
+    ) -> str:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT nextval(
+                '{schema}.payroll_employee_number_seq'
+            ) AS sequence_no;
+        """)
+
+        sequence_no = int(row["sequence_no"])
+
+        if company_id > 999999:
+            raise ValueError(
+                "Company ID is too large for the employee number format"
+            )
+
+        if sequence_no > 99999999:
+            raise ValueError(
+                "Employee sequence has exceeded eight digits"
+            )
+
+        return (
+            f"{company_id:06d}-"
+            f"{sequence_no:08d}"
+        )
+
+    def payroll_generate_setup_code(
+        self,
+        company_id: int,
+        item_type: str,
+    ) -> str:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        config = {
+            "earning": (
+                "EARN",
+                "payroll_earning_code_seq",
+            ),
+            "deduction": (
+                "DED",
+                "payroll_deduction_code_seq",
+            ),
+            "contribution": (
+                "CONT",
+                "payroll_contribution_code_seq",
+            ),
+            "benefit": (
+                "BEN",
+                "payroll_benefit_code_seq",
+            ),
+        }
+
+        if item_type not in config:
+            raise ValueError(
+                f"Unsupported payroll item type: {item_type}"
+            )
+
+        prefix, sequence_name = config[item_type]
+
+        row = self.fetch_one(f"""
+            SELECT nextval(
+                '{schema}.{sequence_name}'
+            ) AS sequence_no;
+        """)
+
+        sequence_no = int(row["sequence_no"])
+
+        return f"{prefix}-{sequence_no:04d}"
+
+    def _payroll_setup_update(
+        self,
+        company_id: int,
+        table_name: str,
+        item_id: int,
+        data: dict,
+        allowed_fields: list,
+    ):
+        company_id = int(company_id)
+        item_id = int(item_id)
+        schema = self.company_schema(company_id)
+
+        sets = []
+        params = []
+
+        for field in allowed_fields:
+            if field not in data:
+                continue
+
+            sets.append(f"{field}=%s")
+            params.append(data.get(field))
+
+        if not sets:
+            return self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.{table_name}
+                WHERE company_id=%s
+                AND id=%s
+                LIMIT 1;
+            """, (
+                company_id,
+                item_id,
+            ))
+
+        params.extend([
+            company_id,
+            item_id,
+        ])
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.{table_name}
+            SET
+                {", ".join(sets)}
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """, tuple(params))
+
+    def payroll_earning_type_update(
+        self,
+        company_id: int,
+        item_id: int,
+        data: dict,
+    ):
+        return self._payroll_setup_update(
+            company_id,
+            "payroll_earning_types",
+            item_id,
+            data,
+            [
+                "name",
+                "expense_account_code",
+                "taxable",
+                "pensionable",
+                "is_active",
+            ],
+        )
+
+    def payroll_deduction_type_update(
+        self,
+        company_id: int,
+        item_id: int,
+        data: dict,
+    ):
+        return self._payroll_setup_update(
+            company_id,
+            "payroll_deduction_types",
+            item_id,
+            data,
+            [
+                "name",
+                "liability_account_code",
+                "is_statutory",
+                "is_active",
+            ],
+        )
+
+    def payroll_contribution_type_update(
+        self,
+        company_id: int,
+        item_id: int,
+        data: dict,
+    ):
+        return self._payroll_setup_update(
+            company_id,
+            "payroll_employer_contribution_types",
+            item_id,
+            data,
+            [
+                "name",
+                "expense_account_code",
+                "liability_account_code",
+                "is_active",
+            ],
+        )
+
+    def payroll_benefit_type_update(
+        self,
+        company_id: int,
+        item_id: int,
+        data: dict,
+    ):
+        return self._payroll_setup_update(
+            company_id,
+            "payroll_benefit_types",
+            item_id,
+            data,
+            [
+                "name",
+                "benefit_category",
+                "taxable",
+                "is_active",
+            ],
+        )
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

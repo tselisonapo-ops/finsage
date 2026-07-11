@@ -1499,6 +1499,24 @@ const ENDPOINTS = {
 
     glDiagnostics: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/gl-diagnostics`,
+  
+    earningType: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/earning-types/${encodeURIComponent(itemId)}`,
+
+    deductionType: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/deduction-types/${encodeURIComponent(itemId)}`,
+
+    contributionType: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/contribution-types/${encodeURIComponent(itemId)}`,
+
+    benefitType: (companyId, itemId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/setup/benefit-types/${encodeURIComponent(itemId)}`,
+  
+    employeePaySetup: (
+      companyId,
+      employeeId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`,
   },
 
   forecast: {
@@ -46082,11 +46100,6 @@ function setForecastWorkspaceActive(active) {
     el.classList.toggle("hidden", !msg);
   }
 
-  async function payrollApi(url, options) {
-    const res = await apiFetch(url, options);
-    return res?.data ?? res?.items ?? res;
-  }
-
   async function payrollLoadAll() {
     const companyId = cid();
     if (!companyId) return;
@@ -46103,7 +46116,6 @@ function setForecastWorkspaceActive(active) {
 
     renderPayrollSetupSelects();
     renderPayrollMasterSetup();
-    renderPayrollSetupSelects();
     renderPayrollRunCalendarSelect();
     await loadPayrollRuns();
     renderPayrollSettings();
@@ -46978,75 +46990,6 @@ function setForecastWorkspaceActive(active) {
     $("payrollJournalPreviewModal")?.classList.remove("hidden");
   }
 
-  function renderPayrollJournalPreview(preview) {
-    const metaEl = $("payrollJournalPreviewMeta");
-    const issuesEl = $("payrollJournalPreviewIssues");
-    const linesEl = $("payrollJournalPreviewLines");
-
-    const run = preview?.run || {};
-
-    if (metaEl) {
-      metaEl.innerHTML = `
-        <div class="payroll-preview-meta">
-          <div><span>Run</span><strong>${esc(run.run_no || "")}</strong></div>
-          <div><span>Status</span><strong>${esc(run.status || "")}</strong></div>
-          <div><span>Payment Date</span><strong>${esc(run.payment_date || "")}</strong></div>
-          <div><span>Ready</span><strong>${preview?.ready_to_post ? "Yes" : "No"}</strong></div>
-        </div>
-      `;
-    }
-
-    if (issuesEl) {
-      const missing = preview?.missing_mappings || [];
-      const invalid = preview?.invalid_accounts || [];
-
-      issuesEl.innerHTML = `
-        ${missing.length ? `<div class="notice error">Missing mappings: ${esc(missing.join(", "))}</div>` : ""}
-        ${invalid.length ? `<div class="notice error">Invalid accounts: ${esc(invalid.join(", "))}</div>` : ""}
-        ${preview?.difference ? `<div class="notice error">Difference: ${money(preview.difference)}</div>` : ""}
-      `;
-    }
-
-    if (linesEl) {
-      const lines = preview?.lines || [];
-
-      linesEl.innerHTML = `
-        <table class="payroll-preview-table">
-          <thead>
-            <tr>
-              <th>Account</th>
-              <th>Description</th>
-              <th class="num">Debit</th>
-              <th class="num">Credit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lines.map(ln => `
-              <tr>
-                <td>
-                  <strong>${esc(ln.account_code || "")}</strong>
-                  <div class="payroll-muted">${esc(ln.account_name || "")}</div>
-                </td>
-                <td>${esc(ln.description || "")}</td>
-                <td class="num">${money(ln.debit)}</td>
-                <td class="num">${money(ln.credit)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th colspan="2">Total</th>
-              <th class="num">${money(preview?.debits)}</th>
-              <th class="num">${money(preview?.credits)}</th>
-            </tr>
-          </tfoot>
-        </table>
-      `;
-    }
-
-    $("payrollJournalPreviewPostBtn").disabled = !preview?.ready_to_post;
-  }
-
   async function postSelectedPayrollRun() {
     const companyId = cid();
     const runId = payrollState.selectedRun?.id;
@@ -47063,8 +47006,502 @@ function setForecastWorkspaceActive(active) {
     showPayrollStatus("Payroll posted successfully.", "success");
   }
 
+  function collectPayrollPaySetupItems() {
+    return Array.from(
+      document.querySelectorAll(
+        "[data-pay-choice-type]:checked"
+      )
+    ).map(checkbox => {
+      const type =
+        checkbox.dataset.payChoiceType;
+
+      const itemId =
+        Number(checkbox.dataset.payChoiceId);
+
+      const key = `${type}-${itemId}`;
+
+      const method =
+        document.querySelector(
+          `[data-pay-choice-method="${key}"]`
+        )?.value || "fixed_amount";
+
+      const amount =
+        Number(
+          document.querySelector(
+            `[data-pay-choice-amount="${key}"]`
+          )?.value || 0
+        );
+
+      return {
+        item_type: type,
+        item_id: itemId,
+        calculation_method: method,
+        amount,
+      };
+    });
+  }
+
+  async function savePayrollEmployeePaySetup() {
+    const companyId = cid();
+
+    const employeeId = Number(
+      $("payrollPaySetupEmployeeId")?.value || 0
+    );
+
+    if (!employeeId) {
+      throw new Error("Select an employee.");
+    }
+
+    const payBasis =
+      $("payrollPayBasis")?.value || "monthly";
+
+    const payload = {
+      employee_id: employeeId,
+
+      pay_basis: payBasis,
+
+      basic_earning_type_id:
+        Number(
+          $("payrollBasicEarningTypeId")?.value || 0
+        ) || null,
+
+      fixed_basic_amount:
+        payBasis === "monthly"
+          ? Number(
+              $("payrollPayBasicAmount")?.value || 0
+            )
+          : 0,
+
+      standard_quantity:
+        ["hourly", "daily", "quantity"].includes(
+          payBasis
+        )
+          ? Number(
+              $("payrollPayStandardQuantity")
+                ?.value || 0
+            )
+          : null,
+
+      rate:
+        ["hourly", "daily", "quantity"].includes(
+          payBasis
+        )
+          ? Number(
+              $("payrollPayRate")?.value || 0
+            )
+          : null,
+
+      tax_treatment:
+        $("payrollPayTaxTreatment")?.value ||
+        "standard",
+
+      manual_paye_amount:
+        $("payrollPayTaxTreatment")?.value ===
+        "manual"
+          ? Number(
+              $("payrollManualPayeAmount")
+                ?.value || 0
+            )
+          : null,
+
+      effective_from:
+        $("payrollPaySetupEffectiveFrom")
+          ?.value || null,
+
+      items: collectPayrollPaySetupItems(),
+    };
+
+    await apiFetch(
+      ENDPOINTS.payroll.employeePaySetup(
+        companyId,
+        employeeId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    showPayrollStatus(
+      "Employee pay setup saved.",
+      "success"
+    );
+  }
+
+  function payrollSetupCollection(type) {
+    const map = {
+      earning:
+        payrollState.setup?.earning_types || [],
+
+      deduction:
+        payrollState.setup?.deduction_types || [],
+
+      contribution:
+        payrollState.setup?.contribution_types || [],
+
+      benefit:
+        payrollState.setup?.benefit_types || [],
+    };
+
+    return map[type] || [];
+  }
+
+  function findPayrollSetupItem(type, id) {
+    return payrollSetupCollection(type).find(
+      item => Number(item.id) === Number(id)
+    ) || null;
+  }
+
+  function payrollPostingAccounts() {
+    const rows =
+      window.COA_CACHE ||
+      window.COMPANY_COA ||
+      window.CHART_OF_ACCOUNTS ||
+      [];
+
+    return (Array.isArray(rows) ? rows : [])
+      .filter(account => account.posting !== false);
+  }
+
+  function fillPayrollAccountSelect(
+    selectId,
+    selectedCode = "",
+  ) {
+    const el = $(selectId);
+    if (!el) return;
+
+    const accounts = payrollPostingAccounts();
+
+    el.innerHTML = `
+      <option value="">Select account…</option>
+
+      ${accounts.map(account => `
+        <option
+          value="${esc(account.code)}"
+          ${
+            String(account.code) ===
+            String(selectedCode)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(account.code)} — ${esc(account.name)}
+        </option>
+      `).join("")}
+    `;
+  }
+
+  function setPayrollEditorFieldVisibility(type) {
+    const isEarning = type === "earning";
+    const isDeduction = type === "deduction";
+    const isContribution = type === "contribution";
+    const isBenefit = type === "benefit";
+
+    $("payrollSetupEditorExpenseWrap")
+      ?.classList.toggle(
+        "hidden",
+        !(isEarning || isContribution)
+      );
+
+    $("payrollSetupEditorLiabilityWrap")
+      ?.classList.toggle(
+        "hidden",
+        !(isDeduction || isContribution)
+      );
+
+    $("payrollSetupEditorCategoryWrap")
+      ?.classList.toggle(
+        "hidden",
+        !isBenefit
+      );
+
+    $("payrollSetupEditorTaxableWrap")
+      ?.classList.toggle(
+        "hidden",
+        !(isEarning || isBenefit)
+      );
+
+    $("payrollSetupEditorPensionableWrap")
+      ?.classList.toggle(
+        "hidden",
+        !isEarning
+      );
+
+    $("payrollSetupEditorStatutoryWrap")
+      ?.classList.toggle(
+        "hidden",
+        !isDeduction
+      );
+  }
+
+  function payrollSetupTypeLabel(type) {
+    const labels = {
+      earning: "Earning Type",
+      deduction: "Deduction Type",
+      contribution: "Employer Contribution",
+      benefit: "Benefit Type",
+    };
+
+    return labels[type] || "Payroll Setup Item";
+  }
+
+  function openPayrollSetupEditor(type, id) {
+    const item = findPayrollSetupItem(type, id);
+
+    if (!item) {
+      showPayrollStatus(
+        "The selected payroll setup item could not be found.",
+        "error"
+      );
+      return;
+    }
+
+    $("payrollSetupEditorType").value = type;
+    $("payrollSetupEditorId").value = String(item.id);
+
+    $("payrollSetupEditorTitle").textContent =
+      `Edit ${payrollSetupTypeLabel(type)}`;
+
+    $("payrollSetupEditorSubtitle").textContent =
+      `${item.code || ""} — ${item.name || ""}`;
+
+    $("payrollSetupEditorCode").value =
+      item.code || "";
+
+    $("payrollSetupEditorName").value =
+      item.name || "";
+
+    $("payrollSetupEditorTaxable").checked =
+      !!item.taxable;
+
+    $("payrollSetupEditorPensionable").checked =
+      !!item.pensionable;
+
+    $("payrollSetupEditorStatutory").checked =
+      !!item.is_statutory;
+
+    $("payrollSetupEditorActive").checked =
+      item.is_active !== false;
+
+    $("payrollSetupEditorCategory").value =
+      item.benefit_category || "allowance";
+
+    fillPayrollAccountSelect(
+      "payrollSetupEditorExpenseAccount",
+      item.expense_account_code || ""
+    );
+
+    fillPayrollAccountSelect(
+      "payrollSetupEditorLiabilityAccount",
+      item.liability_account_code || ""
+    );
+
+    setPayrollEditorFieldVisibility(type);
+
+    $("payrollSetupEditorModal")
+      ?.classList.remove("hidden");
+  }
+
+  function closePayrollSetupEditor() {
+    $("payrollSetupEditorModal")
+      ?.classList.add("hidden");
+
+    $("payrollSetupEditorType").value = "";
+    $("payrollSetupEditorId").value = "";
+  }
+
+  function payrollSetupItemEndpoint(
+    type,
+    companyId,
+    itemId,
+  ) {
+    const resolvers = {
+      earning:
+        ENDPOINTS.payroll.earningType,
+
+      deduction:
+        ENDPOINTS.payroll.deductionType,
+
+      contribution:
+        ENDPOINTS.payroll.contributionType,
+
+      benefit:
+        ENDPOINTS.payroll.benefitType,
+    };
+
+    const resolver = resolvers[type];
+
+    if (typeof resolver !== "function") {
+      throw new Error(
+        `Unsupported payroll setup type: ${type}`
+      );
+    }
+
+    return resolver(companyId, itemId);
+  }
+
+  function buildPayrollSetupEditorPayload(type) {
+    const name =
+      $("payrollSetupEditorName")?.value.trim();
+
+    if (!name) {
+      throw new Error("Name is required.");
+    }
+
+    const common = {
+      name,
+      is_active:
+        !!$("payrollSetupEditorActive")?.checked,
+    };
+
+    if (type === "earning") {
+      return {
+        ...common,
+
+        expense_account_code:
+          $("payrollSetupEditorExpenseAccount")
+            ?.value || null,
+
+        taxable:
+          !!$("payrollSetupEditorTaxable")
+            ?.checked,
+
+        pensionable:
+          !!$("payrollSetupEditorPensionable")
+            ?.checked,
+      };
+    }
+
+    if (type === "deduction") {
+      return {
+        ...common,
+
+        liability_account_code:
+          $("payrollSetupEditorLiabilityAccount")
+            ?.value || null,
+
+        is_statutory:
+          !!$("payrollSetupEditorStatutory")
+            ?.checked,
+      };
+    }
+
+    if (type === "contribution") {
+      return {
+        ...common,
+
+        expense_account_code:
+          $("payrollSetupEditorExpenseAccount")
+            ?.value || null,
+
+        liability_account_code:
+          $("payrollSetupEditorLiabilityAccount")
+            ?.value || null,
+      };
+    }
+
+    if (type === "benefit") {
+      return {
+        ...common,
+
+        benefit_category:
+          $("payrollSetupEditorCategory")
+            ?.value || "allowance",
+
+        taxable:
+          !!$("payrollSetupEditorTaxable")
+            ?.checked,
+      };
+    }
+
+    throw new Error(
+      `Unsupported payroll setup type: ${type}`
+    );
+  }
+
+  async function savePayrollSetupEditor() {
+    const companyId = cid();
+
+    const type =
+      $("payrollSetupEditorType")?.value;
+
+    const itemId =
+      Number(
+        $("payrollSetupEditorId")?.value || 0
+      );
+
+    if (!companyId) {
+      throw new Error("No active company selected.");
+    }
+
+    if (!type || !itemId) {
+      throw new Error(
+        "No payroll setup item is selected."
+      );
+    }
+
+    const payload =
+      buildPayrollSetupEditorPayload(type);
+
+    const endpoint =
+      payrollSetupItemEndpoint(
+        type,
+        companyId,
+        itemId,
+      );
+
+    await apiFetch(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+
+    closePayrollSetupEditor();
+
+    await payrollLoadAll();
+
+    switchPayrollTab("settings");
+
+    const tabByType = {
+      earning: "earnings",
+      deduction: "deductions",
+      contribution: "contributions",
+      benefit: "benefits",
+    };
+
+    switchPayrollSetupTab(
+      tabByType[type] || "general"
+    );
+
+    showPayrollStatus(
+      `${payrollSetupTypeLabel(type)} updated.`,
+      "success"
+    );
+  }
+
   function renderPayrollSetupSelects() {
     const setup = payrollState.setup || {};
+
+    fillSelect(
+      "payrollPaySetupEmployeeId",
+      payrollState.employees,
+      employee => {
+        const name = [
+          employee.first_name,
+          employee.last_name,
+        ].filter(Boolean).join(" ");
+
+        return (
+          `${employee.employee_no || "No number"} — ` +
+          `${name || "Unnamed employee"}`
+        );
+      }
+    );
+
+    fillSelect(
+      "payrollBasicEarningTypeId",
+      setup.earning_types,
+      item => `${item.code} — ${item.name}`
+    );
 
     fillSelect(
       "payBenefitTypeId",
@@ -47113,6 +47550,8 @@ function setForecastWorkspaceActive(active) {
       setup.contribution_types,
       x => `${x.code} — ${x.name}`
     );
+
+    renderEmployeePaySetupChoices();
   }
 
   function renderPayrollDepartments() {
@@ -47306,33 +47745,32 @@ function setForecastWorkspaceActive(active) {
   }
 
   async function createPayrollEarningType() {
-    const code =
-      $("payrollEarningCode")?.value.trim().toUpperCase();
-
     const name =
       $("payrollEarningName")?.value.trim();
 
-    if (!code || !name) {
-      throw new Error("Enter the earning code and name.");
+    if (!name) {
+      throw new Error("Enter the earning name.");
     }
 
     await createPayrollSetupRecord({
       endpoint: ENDPOINTS.payroll.earningTypes,
 
       payload: {
-        code,
         name,
+
         expense_account_code:
           $("payrollEarningGlAccount")?.value || null,
+
         taxable:
           !!$("payrollEarningTaxable")?.checked,
+
         pensionable:
           !!$("payrollEarningPensionable")?.checked,
+
         is_active: true,
       },
 
       clearIds: [
-        "payrollEarningCode",
         "payrollEarningName",
         "payrollEarningGlAccount",
       ],
@@ -47474,6 +47912,265 @@ function setForecastWorkspaceActive(active) {
     });
   }
 
+  function renderEmployeePaySetupChoices() {
+    renderPaySetupChoiceGroup({
+      containerId: "payrollPaySetupEarnings",
+      type: "earning",
+      items:
+        payrollState.setup?.earning_types || [],
+    });
+
+    renderPaySetupChoiceGroup({
+      containerId: "payrollPaySetupDeductions",
+      type: "deduction",
+      items:
+        payrollState.setup?.deduction_types || [],
+    });
+
+    renderPaySetupChoiceGroup({
+      containerId: "payrollPaySetupBenefits",
+      type: "benefit",
+      items:
+        payrollState.setup?.benefit_types || [],
+    });
+
+    renderPaySetupChoiceGroup({
+      containerId:
+        "payrollPaySetupContributions",
+
+      type: "contribution",
+
+      items:
+        payrollState.setup?.contribution_types || [],
+    });
+  }
+
+  function updatePayrollPayeFields() {
+    const treatment =
+      $("payrollPayTaxTreatment")?.value ||
+      "standard";
+
+    $("payrollManualPayeWrap")
+      ?.classList.toggle(
+        "hidden",
+        treatment !== "manual"
+      );
+
+    if (
+      treatment !== "manual" &&
+      $("payrollManualPayeAmount")
+    ) {
+      $("payrollManualPayeAmount").value = "";
+    }
+  }
+
+  function updatePayrollPayBasisFields() {
+    const basis =
+      $("payrollPayBasis")?.value || "monthly";
+
+    const amountWrap =
+      $("payrollPayBasicAmountWrap");
+
+    const quantityWrap =
+      $("payrollPayQuantityWrap");
+
+    const rateWrap =
+      $("payrollPayRateWrap");
+
+    const quantityLabel =
+      $("payrollPayQuantityLabel");
+
+    const rateLabel =
+      $("payrollPayRateLabel");
+
+    amountWrap?.classList.toggle(
+      "hidden",
+      basis !== "monthly"
+    );
+
+    quantityWrap?.classList.toggle(
+      "hidden",
+      !["hourly", "daily", "quantity"].includes(
+        basis
+      )
+    );
+
+    rateWrap?.classList.toggle(
+      "hidden",
+      !["hourly", "daily", "quantity"].includes(
+        basis
+      )
+    );
+
+    if (quantityLabel) {
+      quantityLabel.textContent =
+        basis === "hourly"
+          ? "Standard Hours"
+          : basis === "daily"
+            ? "Standard Days"
+            : basis === "quantity"
+              ? "Standard Quantity"
+              : "Standard Quantity";
+    }
+
+    if (rateLabel) {
+      rateLabel.textContent =
+        basis === "hourly"
+          ? "Hourly Rate"
+          : basis === "daily"
+            ? "Daily Rate"
+            : basis === "quantity"
+              ? "Rate per Unit"
+              : "Rate";
+    }
+
+    const basicEarningWrap =
+      $("payrollBasicEarningTypeId")
+        ?.closest("label");
+
+    basicEarningWrap?.classList.toggle(
+      "hidden",
+      basis === "commission_only"
+    );
+
+    if (basis === "commission_only") {
+      if ($("payrollPayBasicAmount")) {
+        $("payrollPayBasicAmount").value = "";
+      }
+
+      if ($("payrollPayStandardQuantity")) {
+        $("payrollPayStandardQuantity").value = "";
+      }
+
+      if ($("payrollPayRate")) {
+        $("payrollPayRate").value = "";
+      }
+    }
+  }
+
+  function renderPaySetupChoiceGroup({
+    containerId,
+    type,
+    items,
+  }) {
+    const el = $(containerId);
+    if (!el) return;
+
+    if (!items.length) {
+      el.innerHTML = `
+        <p class="payroll-muted">
+          No available items.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML = items.map(item => `
+      <div
+        class="payroll-pay-choice"
+        data-pay-choice-row="${esc(type)}-${esc(item.id)}"
+      >
+        <label class="payroll-pay-choice-head">
+          <input
+            type="checkbox"
+            data-pay-choice-type="${esc(type)}"
+            data-pay-choice-id="${esc(item.id)}"
+          >
+
+          <span>
+            <strong>${esc(item.name)}</strong>
+            <small>${esc(item.code)}</small>
+          </span>
+        </label>
+
+        <div
+          class="payroll-pay-choice-details hidden"
+          data-pay-choice-details="${esc(type)}-${esc(item.id)}"
+        >
+          <label>
+            Calculation
+            <select
+              data-pay-choice-method="${esc(type)}-${esc(item.id)}"
+            >
+              <option value="fixed_amount">
+                Fixed amount
+              </option>
+
+              <option value="percentage">
+                Percentage
+              </option>
+
+              <option value="quantity_rate">
+                Quantity × rate
+              </option>
+
+              <option value="manual">
+                Manual each run
+              </option>
+            </select>
+          </label>
+
+          <label>
+            Amount
+            <input
+              type="number"
+              step="0.01"
+              data-pay-choice-amount="${esc(type)}-${esc(item.id)}"
+            >
+          </label>
+        </div>
+      </div>
+    `).join("");
+
+    el.querySelectorAll(
+      "[data-pay-choice-type]"
+    ).forEach(checkbox => {
+      checkbox.addEventListener("change", () => {
+        const key =
+          `${checkbox.dataset.payChoiceType}-` +
+          `${checkbox.dataset.payChoiceId}`;
+
+        el.querySelector(
+          `[data-pay-choice-details="${key}"]`
+        )?.classList.toggle(
+          "hidden",
+          !checkbox.checked
+        );
+      });
+    });
+  }
+
+  function renderPayrollSetupRows(
+    containerId,
+    items,
+    contentFn,
+    itemType,
+  ) {
+    const el = $(containerId);
+    if (!el) return;
+
+    if (!(items || []).length) {
+      el.innerHTML = `
+        <p class="payroll-muted">
+          No setup records found.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML = items.map(item => `
+      <button
+        type="button"
+        class="payroll-mini-row payroll-setup-row"
+        data-payroll-setup-type="${esc(itemType)}"
+        data-payroll-setup-id="${esc(item.id)}"
+      >
+        ${contentFn(item)}
+
+        <span class="payroll-arrow">›</span>
+      </button>
+    `).join("");
+  }
 
   function renderPayrollMasterSetup() {
     const setup = payrollState.setup || {};
@@ -47485,59 +48182,94 @@ function setForecastWorkspaceActive(active) {
       "payrollEarningTypesList",
       setup.earning_types,
       item => `
-        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
-        <span>${item.taxable ? "Taxable" : "Non-taxable"}</span>
-        <span>${item.pensionable ? "Pensionable" : "Not pensionable"}</span>
-      `
+        <strong>
+          ${esc(item.code)} — ${esc(item.name)}
+        </strong>
+
+        <span>
+          ${item.taxable ? "Taxable" : "Non-taxable"}
+        </span>
+
+        <span>
+          ${
+            item.pensionable
+              ? "Pensionable"
+              : "Not pensionable"
+          }
+        </span>
+      `,
+      "earning"
     );
 
     renderPayrollSetupRows(
       "payrollDeductionTypesList",
       setup.deduction_types,
       item => `
-        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
-        <span>${item.is_statutory ? "Statutory" : "Voluntary"}</span>
-        <span>${esc(item.liability_account_code || "No GL mapping")}</span>
-      `
+        <strong>
+          ${esc(item.code)} — ${esc(item.name)}
+        </strong>
+
+        <span>
+          ${
+            item.is_statutory
+              ? "Statutory"
+              : "Voluntary"
+          }
+        </span>
+
+        <span>
+          ${esc(
+            item.liability_account_code ||
+            "No GL mapping"
+          )}
+        </span>
+      `,
+      "deduction"
     );
 
     renderPayrollSetupRows(
       "payrollContributionTypesList",
       setup.contribution_types,
       item => `
-        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
-        <span>${esc(item.expense_account_code || "No expense account")}</span>
-        <span>${esc(item.liability_account_code || "No liability account")}</span>
-      `
+        <strong>
+          ${esc(item.code)} — ${esc(item.name)}
+        </strong>
+
+        <span>
+          ${esc(
+            item.expense_account_code ||
+            "No expense account"
+          )}
+        </span>
+
+        <span>
+          ${esc(
+            item.liability_account_code ||
+            "No liability account"
+          )}
+        </span>
+      `,
+      "contribution"
     );
 
     renderPayrollSetupRows(
       "payrollBenefitTypesList",
       setup.benefit_types,
       item => `
-        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
-        <span>${esc(cap(item.benefit_category || ""))}</span>
-        <span>${item.taxable ? "Taxable" : "Non-taxable"}</span>
-      `
+        <strong>
+          ${esc(item.code)} — ${esc(item.name)}
+        </strong>
+
+        <span>
+          ${esc(cap(item.benefit_category || ""))}
+        </span>
+
+        <span>
+          ${item.taxable ? "Taxable" : "Non-taxable"}
+        </span>
+      `,
+      "benefit"
     );
-  }
-
-  function renderPayrollSetupRows(id, items, contentFn) {
-    const el = $(id);
-    if (!el) return;
-
-    if (!(items || []).length) {
-      el.innerHTML = `
-        <p class="payroll-muted">No setup records found.</p>
-      `;
-      return;
-    }
-
-    el.innerHTML = items.map(item => `
-      <div class="payroll-mini-row">
-        ${contentFn(item)}
-      </div>
-    `).join("");
   }
 
   function renderEmployeeSubrecords(e) {
@@ -47738,12 +48470,36 @@ function setForecastWorkspaceActive(active) {
 
   function clearPayrollEmployeeForm() {
     [
-      "payrollEditingEmployeeId", "payEmpNo", "payFirstName", "payLastName", "payEmail", "payPhone",
-      "payIdNumber", "payPassportNumber", "payTaxNumber", "payStartDate",
-      "payBasicSalary", "payHourlyRate", "payNormalHours", "payContractFrom",
-      "payTaxProfileAuthorityId", "payTaxProfileNumber", "payTaxEffectiveFrom",
-      "payBankName", "payBankAccountName", "payBankAccountNumber", "payBankBranchCode"
-    ].forEach(id => { if ($(id)) $(id).value = ""; });
+      "payrollEditingEmployeeId",
+      "payFirstName",
+      "payLastName",
+      "payEmail",
+      "payPhone",
+      "payIdNumber",
+      "payPassportNumber",
+      "payTaxNumber",
+      "payStartDate",
+      "payBasicSalary",
+      "payHourlyRate",
+      "payNormalHours",
+      "payContractFrom",
+      "payTaxProfileAuthorityId",
+      "payTaxProfileNumber",
+      "payTaxEffectiveFrom",
+      "payBankName",
+      "payBankAccountName",
+      "payBankAccountNumber",
+      "payBankBranchCode",
+    ].forEach(id => {
+      if ($(id)) {
+        $(id).value = "";
+      }
+    });
+
+    if ($("payEmpNo")) {
+      $("payEmpNo").value =
+        "Generated after saving";
+    }
 
     $("payEmploymentStatus").value = "active";
     $("payContractType").value = "permanent";
@@ -47955,7 +48711,6 @@ function setForecastWorkspaceActive(active) {
     const employeeId = Number($("payrollEditingEmployeeId").value || 0);
 
     const payload = {
-      employee_no: $("payEmpNo").value.trim(),
       first_name: $("payFirstName").value.trim(),
       last_name: $("payLastName").value.trim(),
       email: $("payEmail").value.trim() || null,
@@ -47980,6 +48735,14 @@ function setForecastWorkspaceActive(active) {
       });
       $("payrollEditingEmployeeId").value = res?.data?.id || "";
     }
+
+    const created = res?.data || {};
+
+    $("payrollEditingEmployeeId").value =
+      created.id || "";
+
+    $("payEmpNo").value =
+      created.employee_no || "";
 
     await payrollLoadAll();
     switchPayrollTab("employees");
@@ -48140,6 +48903,14 @@ function setForecastWorkspaceActive(active) {
       openPayrollEmployeeModal("create");
     });
 
+    $("payrollSaveEmployeePaySetupBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          savePayrollEmployeePaySetup
+        )
+      );
+
     $("payrollEmployeeModalClose")?.addEventListener("click", closePayrollEmployeeModal);
 
     $("payrollSaveSettingsBtn")?.addEventListener("click", async () => {
@@ -48239,6 +49010,19 @@ function setForecastWorkspaceActive(active) {
       $("payrollJournalPreviewModal")?.classList.add("hidden");
     });
 
+    $("payrollPayBasis")?.addEventListener(
+      "change",
+      updatePayrollPayBasisFields
+    );
+
+    $("payrollPayTaxTreatment")?.addEventListener(
+      "change",
+      updatePayrollPayeFields
+    );
+
+    updatePayrollPayBasisFields();
+    updatePayrollPayeFields();
+
     document
       .querySelectorAll("[data-payroll-run-tab]")
       .forEach(btn => {
@@ -48259,6 +49043,57 @@ function setForecastWorkspaceActive(active) {
         });
       });
       
+    document.addEventListener("click", event => {
+      const row = event.target.closest(
+        "[data-payroll-setup-id]"
+      );
+
+      if (!row) return;
+
+      const payrollScreen =
+        row.closest("#screen-payroll");
+
+      if (!payrollScreen) return;
+
+      const type =
+        row.dataset.payrollSetupType;
+
+      const itemId =
+        Number(row.dataset.payrollSetupId || 0);
+
+      if (!type || !itemId) return;
+
+      openPayrollSetupEditor(type, itemId);
+    });
+
+    $("payrollSetupEditorClose")
+      ?.addEventListener(
+        "click",
+        closePayrollSetupEditor
+      );
+
+    $("payrollSetupEditorCancel")
+      ?.addEventListener(
+        "click",
+        closePayrollSetupEditor
+      );
+
+    $("payrollSetupEditorSave")
+      ?.addEventListener(
+        "click",
+        async () => {
+          try {
+            await savePayrollSetupEditor();
+          } catch (error) {
+            showPayrollStatus(
+              error?.message ||
+              "Payroll setup update failed.",
+              "error"
+            );
+          }
+        }
+      );
+
     $("payrollBackToRunsBtn")?.addEventListener("click", () => {
       payrollState.selectedRun = null;
       $("payrollRunDetail")?.classList.add("hidden");
@@ -48702,48 +49537,25 @@ function setForecastWorkspaceActive(active) {
   window.openAdRecognitionRunModal = openAdRecognitionRunModal;
 
   async function loadAdVendors() {
-    const cid = adCid();
     const sel = $("adNewVendorId");
-    if (!sel || !cid) return [];
+    if (!sel) return [];
 
     sel.innerHTML = `<option value="">Loading vendors...</option>`;
 
     try {
-      let rows = [];
+      const rows =
+        typeof window.fetchVendorsFromBackend === "function"
+          ? await window.fetchVendorsFromBackend(false)
+          : await fetchVendorsFromBackend(false);
 
-      if (
-        Array.isArray(window.VENDORS_CACHE) &&
-        window.VENDORS_CACHE.length
-      ) {
-        rows = window.VENDORS_CACHE;
-      } else if (
-        Array.isArray(window.VENDORS) &&
-        window.VENDORS.length
-      ) {
-        rows = window.VENDORS;
-      } else {
-        const res = await apiFetch(
-          ENDPOINTS.vendors(cid),
-          { method: "GET" }
-        );
-
-        rows = Array.isArray(res)
-          ? res
-          : (
-              res?.vendors ||
-              res?.rows ||
-              res?.data ||
-              []
-            );
-      }
-
-      const clean = (rows || [])
+      const clean = (Array.isArray(rows) ? rows : [])
         .map((row) => ({
           id: Number(row.id || row.vendor_id || 0),
           name: String(
             row.name ||
             row.vendor_name ||
             row.display_name ||
+            row.company_name ||
             ""
           ).trim(),
         }))
@@ -48790,6 +49602,7 @@ function setForecastWorkspaceActive(active) {
 
     if (bankSelect) {
       bankSelect.required = isBank;
+      bankSelect.disabled = !isBank;
 
       if (!isBank) {
         bankSelect.value = "";
@@ -48798,6 +49611,7 @@ function setForecastWorkspaceActive(active) {
 
     if (vendorSelect) {
       vendorSelect.required = isAP;
+      vendorSelect.disabled = !isAP;
 
       if (!isAP) {
         vendorSelect.value = "";
@@ -48806,11 +49620,20 @@ function setForecastWorkspaceActive(active) {
 
     if (isBank) {
       await loadAdBankAccounts();
-    }
-
-    if (isAP) {
+    } else if (isAP) {
       await loadAdVendors();
     }
+
+    const submitBtn = $("adCreatePostBtn");
+
+    if (submitBtn) {
+      submitBtn.textContent = isAP
+        ? "Save & Continue to AP Bill"
+        : "Create & Post Initial Recognition";
+    }
+
+    renderAdJournalPreview(null);
+    renderAdSchedulePreview([]);
 
     scheduleAdPreview?.(window._AD_FINAL_CTX || {});
   }
@@ -48841,27 +49664,38 @@ function setForecastWorkspaceActive(active) {
             []
           );
 
-      const clean = (rows || [])
-        .map((row) => {
-          const code =
-            row.gl_account_code ||
-            row.account_code ||
-            row.coa_code ||
-            row.code ||
-            "";
+        const clean = (rows || [])
+          .map((row) => {
+            const code = String(
+              row.gl_account_code ||
+              row.account_code ||
+              row.ledger_account_code ||
+              row.coa_code ||
+              ""
+            ).trim();
 
-          const name =
-            row.account_name ||
-            row.bank_name ||
-            row.name ||
-            code;
+            const name = String(
+              row.account_name ||
+              row.bank_account_name ||
+              row.bank_name ||
+              row.name ||
+              row.display_name ||
+              ""
+            ).trim();
 
-          return {
-            code: String(code || "").trim(),
-            name: String(name || "").trim(),
-          };
-        })
-        .filter((row) => row.code);
+            const number = String(
+              row.account_number ||
+              row.bank_account_number ||
+              ""
+            ).trim();
+
+            return {
+              code,
+              name: name || number || code,
+              number,
+            };
+          })
+          .filter((row) => row.code);
 
       sel.innerHTML = `
         <option value="">Select bank or cash account</option>
@@ -48870,7 +49704,11 @@ function setForecastWorkspaceActive(active) {
             value="${escapeHtml(row.code)}"
             data-name="${escapeHtml(row.name)}"
           >
-            ${escapeHtml(row.name)}
+            ${escapeHtml(
+              row.number
+                ? `${row.name} • ${row.number}`
+                : row.name
+            )}
           </option>
         `).join("")}
       `;
@@ -48885,19 +49723,6 @@ function setForecastWorkspaceActive(active) {
 
       return [];
     }
-  }
-
-  function adSettlementIsAP() {
-    const sel = $("adNewSettlementAccount");
-    const opt = sel?.selectedOptions?.[0];
-    const txt = `${opt?.textContent || ""} ${sel?.value || ""}`.toLowerCase();
-
-    return (
-      txt.includes("accounts payable") ||
-      txt.includes("trade payable") ||
-      txt.includes("payables") ||
-      txt.includes("supplier")
-    );
   }
 
   async function openNewAccrualDeferralModal(ctx = {}) {
@@ -48972,7 +49797,7 @@ function setForecastWorkspaceActive(active) {
                     Settlement Method
                     <select id="adNewSettlementMethod" class="input" required>
                       <option value="">Select settlement method</option>
-                      <option value="cash_bank">Bank / Cash</option>
+                     <option value="cash_bank">Bank Account</option>
                       <option value="accounts_payable">Accounts Payable</option>
                     </select>
                   </label>
@@ -49373,11 +50198,40 @@ function setForecastWorkspaceActive(active) {
       $("adNewTitle").value = finalCtx.account.name;
     }
 
-    if (!$("adNewSettlementMethod")?.value) {
-      $("adNewSettlementMethod").value = "cash_bank";
+    const settlementMethodEl = $("adNewSettlementMethod");
+
+    if (
+      settlementMethodEl &&
+      settlementMethodEl.dataset.adSettlementBound !== "1"
+    ) {
+      settlementMethodEl.dataset.adSettlementBound = "1";
+
+      settlementMethodEl.addEventListener("change", async () => {
+        await applyAdSettlementMethod();
+      });
     }
 
-    await applyAdSettlementMethod();
+    /*
+    * Leave the settlement method unselected for a new modal.
+    * The user must explicitly choose Bank/Cash or Accounts Payable.
+    */
+    if (settlementMethodEl) {
+      settlementMethodEl.value = "";
+    }
+
+    $("adNewBankAccountWrap")?.classList.add("hidden");
+    $("adNewVendorWrap")?.classList.add("hidden");
+
+    if ($("adNewSettlementAccount")) {
+      $("adNewSettlementAccount").required = false;
+      $("adNewSettlementAccount").disabled = true;
+    }
+
+    if ($("adNewVendorId")) {
+      $("adNewVendorId").required = false;
+      $("adNewVendorId").disabled = true;
+    }
+
     applyAdTypeDefaults(finalCtx);
 
     if ($("adNewType") && $("adNewType").dataset.adTypeBound !== "1") {
@@ -49388,15 +50242,17 @@ function setForecastWorkspaceActive(active) {
       });
     }
 
-    [
-      "adNewTitle",
-      "adNewAmount",
-      "adNewTransactionDate",
-      "adNewStartDate",
-      "adNewEndDate",
-      "adNewFrequency",
-      "adNewSettlementAccount",
-    ].forEach((id) => {
+      [
+        "adNewTitle",
+        "adNewAmount",
+        "adNewTransactionDate",
+        "adNewStartDate",
+        "adNewEndDate",
+        "adNewFrequency",
+        "adNewSettlementMethod",
+        "adNewSettlementAccount",
+        "adNewVendorId",
+      ].forEach((id) => {
       const el = $(id);
       if (el && el.dataset.adPreviewBound !== "1") {
         el.dataset.adPreviewBound = "1";
@@ -78266,6 +79122,7 @@ async function fetchVendorsFromBackend(includeInactive = false) {
   window.VENDORS_CACHE = Array.isArray(rows) ? rows : [];
   return window.VENDORS_CACHE;
 }
+window.fetchVendorsFromBackend = fetchVendorsFromBackend;
 
 function normalizeVendorLabel(s) {
   return String(s || "").trim();

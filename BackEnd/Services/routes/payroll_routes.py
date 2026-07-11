@@ -28,6 +28,46 @@ def _payroll_company_guard(company_id: int):
         db_service=db_service,
     )
 
+def _payroll_setup_patch_response(
+    company_id: int,
+    item_id: int,
+    update_method,
+    log_name: str,
+):
+    user_id = _jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        out = update_method(
+            int(company_id),
+            int(item_id),
+            _payroll_body(),
+        )
+
+        if not out:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll setup item not found",
+            }), 404
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(log_name)
+
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400
+    
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/settings", methods=["GET", "POST", "PATCH", "OPTIONS"])
 @require_auth
 def api_payroll_settings(company_id: int):
@@ -167,7 +207,7 @@ def api_payroll_employees(company_id: int):
 
     try:
         body = _payroll_body()
-        required = ["employee_no", "first_name", "last_name", "start_date"]
+        required = ["first_name", "last_name", "start_date"]
         missing = [k for k in required if not body.get(k)]
         if missing:
             return jsonify({"ok": False, "error": f"Missing required fields: {', '.join(missing)}"}), 400
@@ -1031,3 +1071,95 @@ def api_payroll_gl_mappings(company_id: int):
             "ok": False,
             "error": str(e),
         }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/earning-types/<int:item_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_earning_type_update(
+    company_id: int,
+    item_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    return _payroll_setup_patch_response(
+        company_id,
+        item_id,
+        db_service.payroll_earning_type_update,
+        "payroll_earning_type_update failed",
+    )
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/deduction-types/<int:item_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_deduction_type_update(
+    company_id: int,
+    item_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    return _payroll_setup_patch_response(
+        company_id,
+        item_id,
+        db_service.payroll_deduction_type_update,
+        "payroll_deduction_type_update failed",
+    )
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/contribution-types/<int:item_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_contribution_type_update(
+    company_id: int,
+    item_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    return _payroll_setup_patch_response(
+        company_id,
+        item_id,
+        db_service.payroll_contribution_type_update,
+        "payroll_contribution_type_update failed",
+    )
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/setup/benefit-types/<int:item_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_benefit_type_update(
+    company_id: int,
+    item_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    return _payroll_setup_patch_response(
+        company_id,
+        item_id,
+        db_service.payroll_benefit_type_update,
+        "payroll_benefit_type_update failed",
+    )

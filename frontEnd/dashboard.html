@@ -2522,6 +2522,13 @@ html, body {
   grid-template-columns: 1fr 1fr auto;
 }
 
+#payEmpNo[readonly],
+.payroll-code-input[readonly] {
+  background: #f4f7fb;
+  color: #526174;
+  cursor: not-allowed;
+}
+
 .payroll-inline-form input,
 .payroll-inline-form select {
   border: 1px solid #d0d7e2;
@@ -11402,7 +11409,7 @@ html, body {
                     <select id="payrollBasicEarningTypeId"></select>
                   </label>
 
-                  <label>
+                  <label id="payrollPayBasicAmountWrap">
                     Fixed Basic Amount
                     <input
                       id="payrollPayBasicAmount"
@@ -11411,8 +11418,11 @@ html, body {
                     >
                   </label>
 
-                  <label>
-                    Standard Quantity
+                  <label id="payrollPayQuantityWrap">
+                    <span id="payrollPayQuantityLabel">
+                      Standard Quantity
+                    </span>
+
                     <input
                       id="payrollPayStandardQuantity"
                       type="number"
@@ -11420,8 +11430,11 @@ html, body {
                     >
                   </label>
 
-                  <label>
-                    Rate
+                  <label id="payrollPayRateWrap">
+                    <span id="payrollPayRateLabel">
+                      Rate
+                    </span>
+
                     <input
                       id="payrollPayRate"
                       type="number"
@@ -11438,8 +11451,9 @@ html, body {
                     </select>
                   </label>
 
-                  <label>
+                  <label id="payrollManualPayeWrap">
                     Manual PAYE Amount
+
                     <input
                       id="payrollManualPayeAmount"
                       type="number"
@@ -11559,7 +11573,12 @@ html, body {
                 <div class="form-grid">
                   <label>
                     Code
-                    <input id="payrollEarningCode" placeholder="OVERTIME">
+                    <input
+                      id="payrollEarningCode"
+                      class="payroll-code-input"
+                      value="Generated automatically"
+                      readonly
+                    >
                   </label>
 
                   <label>
@@ -11601,7 +11620,12 @@ html, body {
                 <div class="form-grid">
                   <label>
                     Code
-                    <input id="payrollDeductionCode" placeholder="PENSION_EMP">
+                    <input
+                      id="payrollDeductionCode"
+                      class="payroll-code-input"
+                      value="Generated automatically"
+                      readonly
+                    >
                   </label>
 
                   <label>
@@ -11635,7 +11659,12 @@ html, body {
                 <div class="form-grid">
                   <label>
                     Code
-                    <input id="payrollContributionCode" placeholder="PENSION_ER">
+                    <input
+                      id="payrollContributionCode"
+                      class="payroll-code-input"
+                      value="Generated automatically"
+                      readonly
+                    >
                   </label>
 
                   <label>
@@ -11669,7 +11698,12 @@ html, body {
                 <div class="form-grid">
                   <label>
                     Code
-                    <input id="payrollBenefitTypeCode" placeholder="MEDICAL">
+                    <input
+                      id="payrollBenefitTypeCode"
+                      class="payroll-code-input"
+                      value="Generated automatically"
+                      readonly
+                    >
                   </label>
 
                   <label>
@@ -11744,6 +11778,167 @@ html, body {
         </div>
       </section>
 
+      <div id="payrollSetupEditorModal" class="modal hidden">
+        <div class="modal-card">
+          <div class="modal-head">
+            <div>
+              <h3 id="payrollSetupEditorTitle">
+                Edit Payroll Setup
+              </h3>
+
+              <p
+                id="payrollSetupEditorSubtitle"
+                class="payroll-muted"
+              ></p>
+            </div>
+
+            <button
+              id="payrollSetupEditorClose"
+              type="button"
+              class="icon-btn"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+
+          <input
+            id="payrollSetupEditorType"
+            type="hidden"
+          >
+
+          <input
+            id="payrollSetupEditorId"
+            type="hidden"
+          >
+
+          <div class="form-grid">
+            <label>
+              Code
+              <input
+                id="payrollSetupEditorCode"
+                type="text"
+                readonly
+              >
+            </label>
+
+            <label>
+              Name
+              <input
+                id="payrollSetupEditorName"
+                type="text"
+              >
+            </label>
+
+            <label
+              id="payrollSetupEditorExpenseWrap"
+              class="hidden"
+            >
+              Expense Account
+              <select id="payrollSetupEditorExpenseAccount">
+              </select>
+            </label>
+
+            <label
+              id="payrollSetupEditorLiabilityWrap"
+              class="hidden"
+            >
+              Liability Account
+              <select id="payrollSetupEditorLiabilityAccount">
+              </select>
+            </label>
+
+            <label
+              id="payrollSetupEditorCategoryWrap"
+              class="hidden"
+            >
+              Category
+              <select id="payrollSetupEditorCategory">
+                <option value="allowance">
+                  Allowance
+                </option>
+
+                <option value="deduction">
+                  Deduction
+                </option>
+
+                <option value="employer_contribution">
+                  Employer Contribution
+                </option>
+
+                <option value="fringe_benefit">
+                  Fringe Benefit
+                </option>
+
+                <option value="mixed">
+                  Mixed
+                </option>
+              </select>
+            </label>
+
+            <label
+              id="payrollSetupEditorTaxableWrap"
+              class="payroll-check-label hidden"
+            >
+              <input
+                id="payrollSetupEditorTaxable"
+                type="checkbox"
+              >
+              Taxable
+            </label>
+
+            <label
+              id="payrollSetupEditorPensionableWrap"
+              class="payroll-check-label hidden"
+            >
+              <input
+                id="payrollSetupEditorPensionable"
+                type="checkbox"
+              >
+              Pensionable
+            </label>
+
+            <label
+              id="payrollSetupEditorStatutoryWrap"
+              class="payroll-check-label hidden"
+            >
+              <input
+                id="payrollSetupEditorStatutory"
+                type="checkbox"
+              >
+              Statutory deduction
+            </label>
+
+            <label class="payroll-check-label">
+              <input
+                id="payrollSetupEditorActive"
+                type="checkbox"
+                checked
+              >
+              Active
+            </label>
+          </div>
+
+          <div class="payroll-run-actions">
+            <button
+              id="payrollSetupEditorCancel"
+              type="button"
+              class="payroll-secondary dark"
+            >
+              Cancel
+            </button>
+
+            <button
+              id="payrollSetupEditorSave"
+              type="button"
+              class="payroll-primary"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div id="payrollEmployeeModal" class="modal hidden">
         <div class="modal-card large">
           <div class="modal-head">
@@ -11767,7 +11962,7 @@ html, body {
 
           <div id="payrollEmpPanelBio" class="payroll-emp-panel">
             <div class="form-grid">
-              <label>Employee No <input id="payEmpNo"></label>
+              <label>Employee Number <input id="payEmpNo" type="text" readonly placeholder="Generated after saving"></label>
               <label>First Name <input id="payFirstName"></label>
               <label>Last Name <input id="payLastName"></label>
               <label>Email <input id="payEmail" type="email"></label>
