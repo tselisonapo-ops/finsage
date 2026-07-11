@@ -1163,3 +1163,123 @@ def api_payroll_benefit_type_update(
         db_service.payroll_benefit_type_update,
         "payroll_benefit_type_update failed",
     )
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/employees/"
+    "<int:employee_id>/pay-setup",
+    methods=["GET", "POST", "PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_employee_pay_setup(
+    company_id: int,
+    employee_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+
+    if deny:
+        return deny
+
+    company_id = int(company_id)
+    employee_id = int(employee_id)
+
+    try:
+        employee = db_service.payroll_employee_get(
+            company_id,
+            employee_id,
+        )
+
+        if not employee:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll employee not found",
+            }), 404
+
+        if request.method == "GET":
+            out = db_service.payroll_employee_pay_setup_get(
+                company_id,
+                employee_id,
+            )
+
+            return jsonify({
+                "ok": True,
+                "data": out or {},
+            }), 200
+
+        user_id = _jwt_user_id()
+
+        if not user_id:
+            return jsonify({
+                "ok": False,
+                "error": "AUTH|missing_user_id",
+            }), 401
+
+        body = _payroll_body()
+
+        required = [
+            "pay_basis",
+            "effective_from",
+        ]
+
+        missing = [
+            field
+            for field in required
+            if not body.get(field)
+        ]
+
+        if missing:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "Missing required fields: "
+                    + ", ".join(missing)
+                ),
+            }), 400
+
+        out = db_service.payroll_employee_pay_setup_upsert(
+            company_id,
+            employee_id,
+            body,
+        )
+
+        try:
+            db_service.audit_log(
+                company_id,
+                actor_user_id=user_id,
+                module="payroll",
+                action="upsert_employee_pay_setup",
+                severity="info",
+                entity_type="payroll_employee_pay_setup",
+                entity_id=str(out.get("id"))
+                if out.get("id")
+                else None,
+                entity_ref=str(employee_id),
+                before_json={},
+                after_json=out,
+                message=(
+                    "Updated employee payroll remuneration setup"
+                ),
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed in "
+                "api_payroll_employee_pay_setup"
+            )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "api_payroll_employee_pay_setup failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400

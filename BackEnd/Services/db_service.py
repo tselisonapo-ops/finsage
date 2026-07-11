@@ -6567,6 +6567,139 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_run_lines_run_idx
             ON {schema}.payroll_run_lines(company_id, payroll_run_id);
+
+        CREATE TABLE IF NOT EXISTS
+            {schema}.payroll_employee_pay_setups (
+                id BIGSERIAL PRIMARY KEY,
+                company_id INT NOT NULL,
+                employee_id BIGINT NOT NULL,
+
+                pay_basis TEXT NOT NULL DEFAULT 'monthly',
+                basic_earning_type_id BIGINT,
+
+                fixed_basic_amount NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+
+                standard_quantity NUMERIC(18,4),
+                rate NUMERIC(18,4),
+
+                tax_treatment TEXT
+                    NOT NULL DEFAULT 'standard',
+
+                manual_paye_amount NUMERIC(18,2),
+
+                effective_from DATE NOT NULL,
+                effective_to DATE,
+
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+                created_at TIMESTAMPTZ
+                    NOT NULL DEFAULT NOW(),
+
+                updated_at TIMESTAMPTZ
+                    NOT NULL DEFAULT NOW(),
+
+                CONSTRAINT uq_payroll_employee_pay_setup
+                    UNIQUE (
+                        company_id,
+                        employee_id,
+                        effective_from
+                    ),
+
+                CONSTRAINT chk_payroll_pay_basis
+                    CHECK (
+                        pay_basis IN (
+                            'monthly',
+                            'hourly',
+                            'daily',
+                            'quantity',
+                            'commission_only'
+                        )
+                    ),
+
+                CONSTRAINT chk_payroll_tax_treatment
+                    CHECK (
+                        tax_treatment IN (
+                            'standard',
+                            'manual',
+                            'exempt'
+                        )
+                    )
+            );
+
+        CREATE TABLE IF NOT EXISTS
+            {schema}.payroll_employee_pay_setup_items (
+                id BIGSERIAL PRIMARY KEY,
+
+                company_id INT NOT NULL,
+                pay_setup_id BIGINT NOT NULL,
+                employee_id BIGINT NOT NULL,
+
+                item_type TEXT NOT NULL,
+                item_id BIGINT NOT NULL,
+
+                calculation_method TEXT
+                    NOT NULL DEFAULT 'fixed_amount',
+
+                amount NUMERIC(18,2)
+                    NOT NULL DEFAULT 0,
+
+                percentage NUMERIC(18,4),
+                quantity NUMERIC(18,4),
+                rate NUMERIC(18,4),
+                calculated_amount NUMERIC(18,2),
+
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+                created_at TIMESTAMPTZ
+                    NOT NULL DEFAULT NOW(),
+
+                updated_at TIMESTAMPTZ
+                    NOT NULL DEFAULT NOW(),
+
+                CONSTRAINT uq_payroll_pay_setup_item
+                    UNIQUE (
+                        company_id,
+                        pay_setup_id,
+                        item_type,
+                        item_id
+                    ),
+
+                CONSTRAINT chk_payroll_pay_setup_item_type
+                    CHECK (
+                        item_type IN (
+                            'earning',
+                            'deduction',
+                            'benefit',
+                            'contribution'
+                        )
+                    ),
+
+                CONSTRAINT chk_payroll_pay_setup_calc_method
+                    CHECK (
+                        calculation_method IN (
+                            'fixed_amount',
+                            'percentage',
+                            'quantity_rate',
+                            'manual'
+                        )
+                    )
+            );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_payroll_employee_pay_setups_employee
+        ON {schema}.payroll_employee_pay_setups (
+            company_id,
+            employee_id,
+            effective_from DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            idx_payroll_employee_pay_setup_items_setup
+        ON {schema}.payroll_employee_pay_setup_items (
+            company_id,
+            pay_setup_id
+        );
         """)
 
     def ensure_company_forecast(self, company_id: int):
@@ -80520,6 +80653,135 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
+    def _ad_account_code(self, value) -> str:
+        """
+        Normalize an account resolver result into an account-code string.
+
+        Supports:
+        - "BS_CA_1730"
+        - {"code": "BS_CA_1730"}
+        - {"account_code": "BS_CA_1730"}
+        - {"posting_code": "BS_CA_1730"}
+        """
+        if value is None:
+            return ""
+
+        if isinstance(value, str):
+            return value.strip()
+
+        if isinstance(value, dict):
+            return str(
+                value.get("posting_code")
+                or value.get("account_code")
+                or value.get("code")
+                or ""
+            ).strip()
+
+        if isinstance(value, (tuple, list)):
+            for candidate in value:
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+
+        return str(value or "").strip()
+
+    def accrual_deferral_resolve_ap_control(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        settings = self.get_company_account_settings(
+            company_id,
+            cur=cur,
+        ) or {}
+
+        raw = str(
+            settings.get("ap_control_code")
+            or ""
+        ).strip()
+
+        if not raw:
+            raise ValueError(
+                "AP control account is not configured in "
+                "company_account_settings.ap_control_code"
+            )
+
+        row = self.get_account_row_for_posting(
+            company_id,
+            raw,
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                f"AP control account '{raw}' was not found in the company COA"
+            )
+
+        # Your existing get_account_row_for_posting usage treats row[1]
+        # as the resolved posting code.
+        if isinstance(row, dict):
+            posting_code = str(
+                row.get("posting_code")
+                or row.get("account_code")
+                or row.get("code")
+                or raw
+            ).strip()
+
+            account_name = str(
+                row.get("name")
+                or row.get("account_name")
+                or "Accounts Payable"
+            ).strip()
+        else:
+            posting_code = str(
+                row[1] if len(row) > 1 else raw
+            ).strip()
+
+            account_name = str(
+                row[2] if len(row) > 2 and row[2] else "Accounts Payable"
+            ).strip()
+
+        if not posting_code:
+            raise ValueError(
+                f"Resolved AP posting code is blank for '{raw}'"
+            )
+
+        return {
+            "code": posting_code,
+            "name": account_name or "Accounts Payable",
+            "role": "accounts_payable",
+        }
+
+    def accrual_deferral_account_name(
+        self,
+        company_id: int,
+        account_code: str,
+        *,
+        cur=None,
+    ) -> str:
+        schema = self.company_schema(company_id)
+
+        code = str(account_code or "").strip()
+        if not code:
+            return ""
+
+        row = self.fetch_one(
+            f"""
+            SELECT code, name
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND code = %s
+            LIMIT 1
+            """,
+            (int(company_id), code),
+            cur=cur,
+        )
+
+        return str(
+            (row or {}).get("name")
+            or code
+        ).strip()
+
         # ---------------------------------------------------------
         # Local helpers
         # ---------------------------------------------------------
@@ -86333,134 +86595,335 @@ class DatabaseService:
             ],
         )
 
-    def _ad_account_code(self, value) -> str:
-        """
-        Normalize an account resolver result into an account-code string.
-
-        Supports:
-        - "BS_CA_1730"
-        - {"code": "BS_CA_1730"}
-        - {"account_code": "BS_CA_1730"}
-        - {"posting_code": "BS_CA_1730"}
-        """
-        if value is None:
-            return ""
-
-        if isinstance(value, str):
-            return value.strip()
-
-        if isinstance(value, dict):
-            return str(
-                value.get("posting_code")
-                or value.get("account_code")
-                or value.get("code")
-                or ""
-            ).strip()
-
-        if isinstance(value, (tuple, list)):
-            for candidate in value:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-
-        return str(value or "").strip()
-
-    def accrual_deferral_resolve_ap_control(
+    def payroll_employee_pay_setup_upsert(
         self,
         company_id: int,
-        *,
-        cur=None,
-    ) -> dict:
-        settings = self.get_company_account_settings(
-            company_id,
-            cur=cur,
-        ) or {}
+        employee_id: int,
+        data: dict,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
 
-        raw = str(
-            settings.get("ap_control_code")
-            or ""
-        ).strip()
-
-        if not raw:
-            raise ValueError(
-                "AP control account is not configured in "
-                "company_account_settings.ap_control_code"
-            )
-
-        row = self.get_account_row_for_posting(
-            company_id,
-            raw,
-            cur=cur,
-        )
-
-        if not row:
-            raise ValueError(
-                f"AP control account '{raw}' was not found in the company COA"
-            )
-
-        # Your existing get_account_row_for_posting usage treats row[1]
-        # as the resolved posting code.
-        if isinstance(row, dict):
-            posting_code = str(
-                row.get("posting_code")
-                or row.get("account_code")
-                or row.get("code")
-                or raw
-            ).strip()
-
-            account_name = str(
-                row.get("name")
-                or row.get("account_name")
-                or "Accounts Payable"
-            ).strip()
-        else:
-            posting_code = str(
-                row[1] if len(row) > 1 else raw
-            ).strip()
-
-            account_name = str(
-                row[2] if len(row) > 2 and row[2] else "Accounts Payable"
-            ).strip()
-
-        if not posting_code:
-            raise ValueError(
-                f"Resolved AP posting code is blank for '{raw}'"
-            )
-
-        return {
-            "code": posting_code,
-            "name": account_name or "Accounts Payable",
-            "role": "accounts_payable",
-        }
-
-    def accrual_deferral_account_name(
-        self,
-        company_id: int,
-        account_code: str,
-        *,
-        cur=None,
-    ) -> str:
         schema = self.company_schema(company_id)
 
-        code = str(account_code or "").strip()
-        if not code:
-            return ""
+        pay_basis = str(
+            data.get("pay_basis") or "monthly"
+        ).strip().lower()
 
-        row = self.fetch_one(
-            f"""
-            SELECT code, name
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND code = %s
-            LIMIT 1
-            """,
-            (int(company_id), code),
-            cur=cur,
+        valid_pay_bases = {
+            "monthly",
+            "hourly",
+            "daily",
+            "quantity",
+            "commission_only",
+        }
+
+        if pay_basis not in valid_pay_bases:
+            raise ValueError("Invalid pay_basis")
+
+        effective_from = data.get("effective_from")
+
+        if not effective_from:
+            raise ValueError("effective_from is required")
+
+        tax_treatment = str(
+            data.get("tax_treatment") or "standard"
+        ).strip().lower()
+
+        if tax_treatment not in {
+            "standard",
+            "manual",
+            "exempt",
+        }:
+            raise ValueError("Invalid tax_treatment")
+
+        basic_earning_type_id = (
+            int(data["basic_earning_type_id"])
+            if data.get("basic_earning_type_id")
+            else None
         )
 
-        return str(
-            (row or {}).get("name")
-            or code
-        ).strip()
+        fixed_basic_amount = float(
+            data.get("fixed_basic_amount") or 0
+        )
+
+        standard_quantity = (
+            float(data["standard_quantity"])
+            if data.get("standard_quantity")
+            not in (None, "")
+            else None
+        )
+
+        rate = (
+            float(data["rate"])
+            if data.get("rate") not in (None, "")
+            else None
+        )
+
+        manual_paye_amount = (
+            float(data["manual_paye_amount"])
+            if data.get("manual_paye_amount")
+            not in (None, "")
+            else None
+        )
+
+        items = data.get("items") or []
+
+        if not isinstance(items, list):
+            raise ValueError("items must be an array")
+
+        setup = self.fetch_one(f"""
+            INSERT INTO
+                {schema}.payroll_employee_pay_setups (
+                    company_id,
+                    employee_id,
+                    pay_basis,
+                    basic_earning_type_id,
+                    fixed_basic_amount,
+                    standard_quantity,
+                    rate,
+                    tax_treatment,
+                    manual_paye_amount,
+                    effective_from,
+                    is_active
+                )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,TRUE
+            )
+            ON CONFLICT (
+                company_id,
+                employee_id,
+                effective_from
+            )
+            DO UPDATE SET
+                pay_basis =
+                    EXCLUDED.pay_basis,
+
+                basic_earning_type_id =
+                    EXCLUDED.basic_earning_type_id,
+
+                fixed_basic_amount =
+                    EXCLUDED.fixed_basic_amount,
+
+                standard_quantity =
+                    EXCLUDED.standard_quantity,
+
+                rate =
+                    EXCLUDED.rate,
+
+                tax_treatment =
+                    EXCLUDED.tax_treatment,
+
+                manual_paye_amount =
+                    EXCLUDED.manual_paye_amount,
+
+                is_active = TRUE,
+                updated_at = NOW()
+            RETURNING *;
+        """, (
+            company_id,
+            employee_id,
+            pay_basis,
+            basic_earning_type_id,
+            fixed_basic_amount,
+            standard_quantity,
+            rate,
+            tax_treatment,
+            manual_paye_amount,
+            effective_from,
+        ))
+
+        pay_setup_id = int(setup["id"])
+
+        # Replace the active assignment set with the submitted set.
+        self.execute_sql(f"""
+            UPDATE
+                {schema}.payroll_employee_pay_setup_items
+            SET
+                is_active = FALSE,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND pay_setup_id = %s;
+        """, (
+            company_id,
+            pay_setup_id,
+        ))
+
+        saved_items = []
+
+        for item in items:
+            item_type = str(
+                item.get("item_type") or ""
+            ).strip().lower()
+
+            if item_type not in {
+                "earning",
+                "deduction",
+                "benefit",
+                "contribution",
+            }:
+                raise ValueError(
+                    f"Invalid payroll item type: {item_type}"
+                )
+
+            item_id = int(item.get("item_id") or 0)
+
+            if not item_id:
+                raise ValueError(
+                    "Every selected payroll item requires item_id"
+                )
+
+            calculation_method = str(
+                item.get("calculation_method")
+                or "fixed_amount"
+            ).strip().lower()
+
+            if calculation_method not in {
+                "fixed_amount",
+                "percentage",
+                "quantity_rate",
+                "manual",
+            }:
+                raise ValueError(
+                    "Invalid calculation_method"
+                )
+
+            amount = float(item.get("amount") or 0)
+
+            percentage = (
+                float(item["percentage"])
+                if item.get("percentage") not in (None, "")
+                else None
+            )
+
+            quantity = (
+                float(item["quantity"])
+                if item.get("quantity") not in (None, "")
+                else None
+            )
+
+            item_rate = (
+                float(item["rate"])
+                if item.get("rate") not in (None, "")
+                else None
+            )
+
+            calculated_amount = (
+                float(item["calculated_amount"])
+                if item.get("calculated_amount")
+                not in (None, "")
+                else None
+            )
+
+            row = self.fetch_one(f"""
+                INSERT INTO
+                    {schema}.payroll_employee_pay_setup_items (
+                        company_id,
+                        pay_setup_id,
+                        employee_id,
+                        item_type,
+                        item_id,
+                        calculation_method,
+                        amount,
+                        percentage,
+                        quantity,
+                        rate,
+                        calculated_amount,
+                        is_active
+                    )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,TRUE
+                )
+                ON CONFLICT (
+                    company_id,
+                    pay_setup_id,
+                    item_type,
+                    item_id
+                )
+                DO UPDATE SET
+                    calculation_method =
+                        EXCLUDED.calculation_method,
+
+                    amount =
+                        EXCLUDED.amount,
+
+                    percentage =
+                        EXCLUDED.percentage,
+
+                    quantity =
+                        EXCLUDED.quantity,
+
+                    rate =
+                        EXCLUDED.rate,
+
+                    calculated_amount =
+                        EXCLUDED.calculated_amount,
+
+                    is_active = TRUE,
+                    updated_at = NOW()
+                RETURNING *;
+            """, (
+                company_id,
+                pay_setup_id,
+                employee_id,
+                item_type,
+                item_id,
+                calculation_method,
+                amount,
+                percentage,
+                quantity,
+                item_rate,
+                calculated_amount,
+            ))
+
+            saved_items.append(row)
+
+        setup["items"] = saved_items
+
+        return setup
+
+    def payroll_employee_pay_setup_get(
+        self,
+        company_id: int,
+        employee_id: int,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+
+        schema = self.company_schema(company_id)
+
+        setup = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_pay_setups
+            WHERE company_id = %s
+            AND employee_id = %s
+            AND is_active = TRUE
+            ORDER BY effective_from DESC, id DESC
+            LIMIT 1;
+        """, (
+            company_id,
+            employee_id,
+        ))
+
+        if not setup:
+            return None
+
+        setup["items"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_pay_setup_items
+            WHERE company_id = %s
+            AND pay_setup_id = %s
+            AND is_active = TRUE
+            ORDER BY item_type, id;
+        """, (
+            company_id,
+            int(setup["id"]),
+        ))
+
+        return setup
+
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
