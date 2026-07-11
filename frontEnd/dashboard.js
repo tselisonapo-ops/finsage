@@ -47195,18 +47195,33 @@ function bindEventsOnce() {
     async (e) => {
       const t = e.target;
 
-      if (!t) return;
-
-      const tab =
-        t.dataset?.bfTab;
-
-      if (tab) {
-        await onTab(tab);
+      if (!(t instanceof Element)) {
         return;
       }
 
+      /*
+      * Use closest() because users may click a <strong>, <span>,
+      * icon or any other element inside the actual button.
+      */
+      const tabButton =
+        t.closest("[data-bf-tab]");
+
+      if (tabButton) {
+        const tab =
+          tabButton.dataset.bfTab;
+
+        if (tab) {
+          await onTab(tab);
+        }
+
+        return;
+      }
+
+      const actionButton =
+        t.closest("[data-bf-action]");
+
       const action =
-        t.dataset?.bfAction;
+        actionButton?.dataset?.bfAction || "";
 
       if (
         action ===
@@ -47438,24 +47453,44 @@ function bindEventsOnce() {
         }
       }
       if (action === "planning-mode-manual") {
+        if (BF.planningMode === "manual") {
+          return;
+        }
+
         captureForecastWorkspaceForm();
+
+        /*
+        * Save the current driver work before leaving driver mode.
+        */
+        saveForecastDraftLocally({
+          silent: true,
+        });
 
         BF.planningMode = "manual";
 
-        return renderCreateForecastWorkspace();
+        renderCreateForecastWorkspace();
+        return;
       }
 
       if (action === "planning-mode-driver") {
+        if (BF.planningMode === "driver_based") {
+          return;
+        }
+
         captureForecastWorkspaceForm();
         captureVisibleManualForecastValues();
 
+        /*
+        * Save manual entries before replacing the grid.
+        */
+        saveForecastDraftLocally({
+          silent: true,
+        });
+
         BF.planningMode = "driver_based";
 
-        if (!BF.driverDraftRows.length) {
-          return addDriverDraftRow();
-        }
-
-        return renderCreateForecastWorkspace();
+        renderCreateForecastWorkspace();
+        return;
       }
 
       if (action === "add-driver-row") {
