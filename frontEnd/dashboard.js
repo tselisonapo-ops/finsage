@@ -49827,57 +49827,119 @@ function bindEventsOnce() {
     });
   }
 
-  function switchPayrollTab(tab) {
-    const mainTabs =
-      document.querySelector(".payroll-tabs");
+  function switchPayrollTab(tab, options = {}) {
+    const {
+      scroll = true,
+    } = options;
+
+    const validTabs = new Set([
+      "overview",
+      "employees",
+      "calendars",
+      "runs",
+      "reports",
+      "settings",
+    ]);
+
+    if (!validTabs.has(tab)) {
+      console.warn("Unknown payroll tab:", tab);
+      tab = "overview";
+    }
 
     const isDashboard = tab === "overview";
 
+    const heroActions =
+      document.querySelector(
+        "#screen-payroll .payroll-hero-actions"
+      );
+
+    heroActions?.classList.toggle(
+      "hidden",
+      !isDashboard
+    );
+
+    const mainTabs =
+      document.querySelector(
+        "#screen-payroll .payroll-tabs"
+      );
+
+    const hero =
+      document.querySelector(
+        "#screen-payroll .payroll-hero"
+      );
+
+    hero?.classList.toggle(
+      "payroll-compact-hero",
+      !isDashboard
+    );
+
+    /*
+    * Dashboard:
+    *   show the top payroll navigation.
+    *
+    * Employees / Calendars / Runs / Reports / Settings:
+    *   hide the top navigation and use the Back button.
+    */
     mainTabs?.classList.toggle(
       "payroll-main-nav-hidden",
       !isDashboard
     );
 
     document
-      .querySelectorAll("[data-payroll-tab]")
-      .forEach(btn => {
-        btn.classList.toggle(
+      .querySelectorAll(
+        "#screen-payroll [data-payroll-tab]"
+      )
+      .forEach(button => {
+        button.classList.toggle(
           "active",
-          btn.dataset.payrollTab === tab
+          button.dataset.payrollTab === tab
         );
       });
 
-    [
-      "overview",
-      "employees",
-      "calendars",
-      "runs",
-      "settings",
-      "reports",
-    ].forEach(name => {
-      $(`payrollTab${cap(name)}`)
-        ?.classList.toggle(
-          "hidden",
-          name !== tab
-        );
-    });
-
-    const activePanelMap = {
+    const panelMap = {
       overview: "payrollTabOverview",
       employees: "payrollTabEmployees",
       calendars: "payrollTabCalendars",
       runs: "payrollTabRuns",
-      settings: "payrollTabSettings",
       reports: "payrollTabReports",
+      settings: "payrollTabSettings",
     };
 
-    const panel =
-      $(activePanelMap[tab]);
+    Object.entries(panelMap).forEach(
+      ([name, panelId]) => {
+        $(panelId)?.classList.toggle(
+          "hidden",
+          name !== tab
+        );
+      }
+    );
 
-    panel?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+    /*
+    * Make the selected workspace move upward.
+    * The tab row disappears, so the active panel occupies that space.
+    */
+    document
+      .querySelector(
+        "#screen-payroll .payroll-shell"
+      )
+      ?.classList.toggle(
+        "payroll-workspace-open",
+        !isDashboard
+      );
+
+    if (scroll) {
+      const target =
+        isDashboard
+          ? $("payrollTabOverview")
+          : $(panelMap[tab]);
+
+      requestAnimationFrame(() => {
+        target?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
   }
 
   function switchPayrollEmpTab(tab) {
@@ -50349,23 +50411,60 @@ function bindEventsOnce() {
 
     try {
 
-    document.querySelectorAll("[data-payroll-tab]").forEach(btn => {
-      btn.addEventListener("click", () => switchPayrollTab(btn.dataset.payrollTab));
-    });
+    const payrollScreen =
+      $("screen-payroll");
+
+    payrollScreen?.addEventListener(
+      "click",
+      event => {
+        const mainTabButton =
+          event.target.closest(
+            "[data-payroll-tab]"
+          );
+
+        if (mainTabButton) {
+          event.preventDefault();
+
+          switchPayrollTab(
+            mainTabButton.dataset.payrollTab
+          );
+
+          return;
+        }
+
+        const gotoButton =
+          event.target.closest(
+            "[data-payroll-goto]"
+          );
+
+        if (gotoButton) {
+          event.preventDefault();
+
+          switchPayrollTab(
+            gotoButton.dataset.payrollGoto
+          );
+
+          return;
+        }
+
+        const backButton =
+          event.target.closest(
+            "[data-payroll-back-dashboard]"
+          );
+
+        if (backButton) {
+          event.preventDefault();
+
+          switchPayrollTab("overview");
+
+          return;
+        }
+      }
+    );
 
     document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn => {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
-
-    document
-      .querySelectorAll(
-        "[data-payroll-back-dashboard]"
-      )
-      .forEach(button => {
-        button.addEventListener("click", () => {
-          switchPayrollTab("overview");
-        });
-      });
       
     $("payrollRefreshBtn")?.addEventListener("click", payrollLoadAll);
 

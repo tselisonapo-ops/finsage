@@ -80513,54 +80513,389 @@ class DatabaseService:
                 conn.rollback()
                 raise
 
-    def accrual_deferral_build_item_preview_from_payload(self, company_id: int, payload: dict):
-        item_type = payload.get("item_type") or "prepaid_expense"
-        amount = float(payload.get("original_amount") or 0)
-        currency = (payload.get("currency") or self.company_currency(company_id) or "USD").upper()
+    def accrual_deferral_build_item_preview_from_payload(
+        self,
+        company_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
 
-        if amount <= 0:
-            raise ValueError("original_amount must be greater than zero")
+        # ---------------------------------------------------------
+        # Local helpers
+        # ---------------------------------------------------------
+        def _account_code(value) -> str:
+            """
+            Normalize account values returned in different shapes.
 
-        balance_role = payload.get("balance_account_role") or item_type
-        recognition_role = payload.get("recognition_account_role")
-        settlement_role = payload.get("settlement_role") or "cash_bank"
+            Supports:
+            - "BS_CA_1487"
+            - {"code": "BS_CA_1487"}
+            - {"account_code": "BS_CA_1487"}
+            - {"posting_code": "BS_CA_1487"}
+            """
+            if value is None:
+                return ""
 
-        balance_account = (
-            payload.get("balance_account")
-            or self.accrual_deferral_account_by_role(company_id, balance_role)["code"]
+            if isinstance(value, str):
+                return value.strip()
+
+            if isinstance(value, dict):
+                return str(
+                    value.get("posting_code")
+                    or value.get("account_code")
+                    or value.get("code")
+                    or ""
+                ).strip()
+
+            if isinstance(value, (list, tuple)):
+                for candidate in value:
+                    if isinstance(candidate, str) and candidate.strip():
+                        return candidate.strip()
+
+            return str(value or "").strip()
+
+        def _account_name(account_code: str, fallback: str = "") -> str:
+            code = _account_code(account_code)
+
+            if not code:
+                return fallback or ""
+
+            # company COA normally lives inside the company schema
+            row = self.fetch_one(
+                f"""
+                SELECT code, name
+                FROM {schema}.coa
+                WHERE code = %s
+                LIMIT 1
+                """,
+                (code,),
+            ) or {}
+
+            return str(
+                row.get("name")
+                or fallback
+                or code
+            ).strip()
+
+        def _resolve_role(role: str, *, fallback_name: str = "") -> dict:
+            role = str(role or "").strip()
+
+            if not role:
+                raise ValueError("Account role is required")
+
+            resolved = self.accrual_deferral_account_by_role(
+                company_id,
+                role,
+            )
+
+            code = _account_code(resolved)
+
+            if not code:
+                raise ValueError(
+                    f"Missing COA role mapping: {role}"
+                )
+
+            if isinstance(resolved, dict):
+                name = str(
+                    resolved.get("name")
+                    or resolved.get("account_name")
+                    or ""
+                ).strip()
+            else:
+                name = ""
+
+            return {
+                "code": code,
+                "name": (
+                    name
+                    or _account_name(code, fallback_name)
+                    or fallback_name
+                    or code
+                ),
+                "role": role,
+            }
+
+        def _resolve_ap_control() -> dict:
+            settings = self.get_company_account_settings(
+                company_id
+            ) or {}
+
+            raw = str(
+                settings.get("ap_control_code")
+                or ""
+            ).strip()
+
+            if not raw:
+                raise ValueError(
+                    "AP control account is not configured in "
+                    "company_account_settings.ap_control_code"
+                )
+
+            posting_row = self.get_account_row_for_posting(
+                company_id,
+                raw,
+            )
+
+            if not posting_row:
+                raise ValueError(
+                    f"AP control account '{raw}' was not found in the company COA"
+                )
+
+            if isinstance(posting_row, dict):
+                code = _account_code(posting_row) or raw
+
+                name = str(
+                    posting_row.get("name")
+                    or posting_row.get("account_name")
+                    or ""
+                ).strip()
+            else:
+                code = str(
+                    posting_row[1]
+                    if len(posting_row) > 1 and posting_row[1]
+                    else raw
+                ).strip()
+
+                name = str(
+                    posting_row[2]
+                    if len(posting_row) > 2 and posting_row[2]
+                    else ""
+                ).strip()
+
+            if not code:
+                raise ValueError(
+                    f"Resolved AP posting code is blank for '{raw}'"
+                )
+
+            return {
+                "code": code,
+                "name": (
+                    name
+                    or _account_name(code, "Accounts Payable")
+                    or "Accounts Payable"
+                ),
+                "role": "accounts_payable",
+            }
+
+        # ---------------------------------------------------------
+        # Core payload
+        # ---------------------------------------------------------
+        item_type = str(
+            payload.get("item_type")
+            or "prepaid_expense"
+        ).strip().lower()
+
+        item_title = str(
+            payload.get("item_title")
+            or "Accrual/Deferral"
+        ).strip()
+
+        amount = round(
+            float(payload.get("original_amount") or 0),
+            2,
         )
 
-        recognition_account = payload.get("recognition_account")
-        if not recognition_account and recognition_role:
-            recognition_account = self.accrual_deferral_account_by_role(company_id, recognition_role)["code"]
+        currency = str(
+            payload.get("currency")
+            or self.company_currency(company_id)
+            or "USD"
+        ).strip().upper()
 
-        settlement_account = payload.get("settlement_account")
-        if not settlement_account:
-            settlement_account = self.accrual_deferral_account_by_role(company_id, settlement_role)["code"]
+        settlement_method = str(
+            payload.get("settlement_method")
+            or ""
+        ).strip().lower()
 
-        if item_type in ("prepaid_expense", "deferred_expense", "accrued_income"):
-            lines = [
-                {"account_code": balance_account, "debit": amount, "credit": 0},
-                {"account_code": settlement_account, "debit": 0, "credit": amount},
-            ]
-        elif item_type in ("deferred_income", "accrued_expense"):
-            lines = [
-                {"account_code": settlement_account, "debit": amount, "credit": 0},
-                {"account_code": balance_account, "debit": 0, "credit": amount},
-            ]
+        if amount <= 0:
+            raise ValueError(
+                "original_amount must be greater than zero"
+            )
+
+        if settlement_method not in {
+            "cash_bank",
+            "accounts_payable",
+        }:
+            raise ValueError(
+                "settlement_method must be cash_bank or accounts_payable"
+            )
+
+        # ---------------------------------------------------------
+        # Balance account
+        # ---------------------------------------------------------
+        balance_role = str(
+            payload.get("balance_account_role")
+            or item_type
+        ).strip()
+
+        supplied_balance = _account_code(
+            payload.get("balance_account")
+        )
+
+        if supplied_balance:
+            balance_account = {
+                "code": supplied_balance,
+                "name": _account_name(
+                    supplied_balance,
+                    balance_role.replace("_", " ").title(),
+                ),
+                "role": balance_role,
+            }
         else:
-            raise ValueError(f"Unsupported item_type: {item_type}")
+            balance_account = _resolve_role(
+                balance_role,
+                fallback_name=balance_role.replace("_", " ").title(),
+            )
 
-        total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
-        total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
+        # ---------------------------------------------------------
+        # Recognition account
+        # ---------------------------------------------------------
+        recognition_role = str(
+            payload.get("recognition_account_role")
+            or ""
+        ).strip()
 
-        schedule = self.accrual_deferral_schedule_preview_from_payload(company_id, payload)
+        supplied_recognition = _account_code(
+            payload.get("recognition_account")
+        )
+
+        recognition_account = None
+
+        if supplied_recognition:
+            recognition_account = {
+                "code": supplied_recognition,
+                "name": _account_name(
+                    supplied_recognition,
+                    recognition_role.replace("_", " ").title()
+                    if recognition_role
+                    else "Recognition Account",
+                ),
+                "role": recognition_role or None,
+            }
+
+        elif recognition_role:
+            recognition_account = _resolve_role(
+                recognition_role,
+                fallback_name=recognition_role.replace("_", " ").title(),
+            )
+
+        # ---------------------------------------------------------
+        # Settlement / contra account
+        # ---------------------------------------------------------
+        if settlement_method == "accounts_payable":
+            settlement_account = _resolve_ap_control()
+
+        else:
+            supplied_settlement = _account_code(
+                payload.get("settlement_account")
+            )
+
+            if not supplied_settlement:
+                raise ValueError(
+                    "Select the company bank account"
+                )
+
+            supplied_name = str(
+                payload.get("settlement_account_name")
+                or ""
+            ).strip()
+
+            settlement_account = {
+                "code": supplied_settlement,
+                "name": (
+                    supplied_name
+                    or _account_name(
+                        supplied_settlement,
+                        "Bank Account",
+                    )
+                    or "Bank Account"
+                ),
+                "role": "cash_bank",
+            }
+
+        # ---------------------------------------------------------
+        # Initial-recognition journal lines
+        # ---------------------------------------------------------
+        if item_type in {
+            "prepaid_expense",
+            "deferred_expense",
+            "accrued_income",
+        }:
+            lines = [
+                {
+                    "account_code": balance_account["code"],
+                    "account_name": balance_account["name"],
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": item_title,
+                },
+                {
+                    "account_code": settlement_account["code"],
+                    "account_name": settlement_account["name"],
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": item_title,
+                },
+            ]
+
+        elif item_type in {
+            "deferred_income",
+            "accrued_expense",
+        }:
+            lines = [
+                {
+                    "account_code": settlement_account["code"],
+                    "account_name": settlement_account["name"],
+                    "debit": amount,
+                    "credit": 0.0,
+                    "description": item_title,
+                },
+                {
+                    "account_code": balance_account["code"],
+                    "account_name": balance_account["name"],
+                    "debit": 0.0,
+                    "credit": amount,
+                    "description": item_title,
+                },
+            ]
+
+        else:
+            raise ValueError(
+                f"Unsupported item_type: {item_type}"
+            )
+
+        total_debit = round(
+            sum(float(line.get("debit") or 0) for line in lines),
+            2,
+        )
+
+        total_credit = round(
+            sum(float(line.get("credit") or 0) for line in lines),
+            2,
+        )
+
+        schedule = self.accrual_deferral_schedule_preview_from_payload(
+            company_id,
+            payload,
+        )
+
+        journal_ref = str(
+            payload.get("journal_ref")
+            or payload.get("reference")
+            or "AD-INIT-DRAFT"
+        ).strip()
+
+        warnings = []
+
+        if settlement_method == "accounts_payable":
+            warnings.append(
+                "Initial recognition will be posted through the Accounts Payable bill workflow."
+            )
 
         return {
             "journal": {
                 "date": payload.get("transaction_date"),
-                "ref": "AD-INIT-DRAFT",
-                "description": f"Initial recognition - {payload.get('item_title') or 'Accrual/Deferral'}",
+                "ref": journal_ref,
+                "description": f"Initial recognition - {item_title}",
                 "source": "accrual_deferral_initial",
                 "source_id": None,
                 "module_name": "accrual_deferrals",
@@ -80569,16 +80904,22 @@ class DatabaseService:
                 "total_debit": total_debit,
                 "total_credit": total_credit,
                 "balanced": total_debit == total_credit,
+                "posting_route": (
+                    "accounts_payable"
+                    if settlement_method == "accounts_payable"
+                    else "accrual_deferrals"
+                ),
             },
+
             "accounts": {
                 "settlement": settlement_account,
                 "balance": balance_account,
                 "recognition": recognition_account,
             },
-            "schedule_preview": schedule,
-            "warnings": [],
-        }
 
+            "schedule_preview": schedule,
+            "warnings": warnings,
+        }
 
     def accrual_deferral_schedule_preview_from_payload(self, company_id: int, payload: dict):
         start = _date(payload.get("start_date"))
@@ -85991,6 +86332,135 @@ class DatabaseService:
                 "is_active",
             ],
         )
+
+    def _ad_account_code(self, value) -> str:
+        """
+        Normalize an account resolver result into an account-code string.
+
+        Supports:
+        - "BS_CA_1730"
+        - {"code": "BS_CA_1730"}
+        - {"account_code": "BS_CA_1730"}
+        - {"posting_code": "BS_CA_1730"}
+        """
+        if value is None:
+            return ""
+
+        if isinstance(value, str):
+            return value.strip()
+
+        if isinstance(value, dict):
+            return str(
+                value.get("posting_code")
+                or value.get("account_code")
+                or value.get("code")
+                or ""
+            ).strip()
+
+        if isinstance(value, (tuple, list)):
+            for candidate in value:
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+
+        return str(value or "").strip()
+
+    def accrual_deferral_resolve_ap_control(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        settings = self.get_company_account_settings(
+            company_id,
+            cur=cur,
+        ) or {}
+
+        raw = str(
+            settings.get("ap_control_code")
+            or ""
+        ).strip()
+
+        if not raw:
+            raise ValueError(
+                "AP control account is not configured in "
+                "company_account_settings.ap_control_code"
+            )
+
+        row = self.get_account_row_for_posting(
+            company_id,
+            raw,
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                f"AP control account '{raw}' was not found in the company COA"
+            )
+
+        # Your existing get_account_row_for_posting usage treats row[1]
+        # as the resolved posting code.
+        if isinstance(row, dict):
+            posting_code = str(
+                row.get("posting_code")
+                or row.get("account_code")
+                or row.get("code")
+                or raw
+            ).strip()
+
+            account_name = str(
+                row.get("name")
+                or row.get("account_name")
+                or "Accounts Payable"
+            ).strip()
+        else:
+            posting_code = str(
+                row[1] if len(row) > 1 else raw
+            ).strip()
+
+            account_name = str(
+                row[2] if len(row) > 2 and row[2] else "Accounts Payable"
+            ).strip()
+
+        if not posting_code:
+            raise ValueError(
+                f"Resolved AP posting code is blank for '{raw}'"
+            )
+
+        return {
+            "code": posting_code,
+            "name": account_name or "Accounts Payable",
+            "role": "accounts_payable",
+        }
+
+    def accrual_deferral_account_name(
+        self,
+        company_id: int,
+        account_code: str,
+        *,
+        cur=None,
+    ) -> str:
+        schema = self.company_schema(company_id)
+
+        code = str(account_code or "").strip()
+        if not code:
+            return ""
+
+        row = self.fetch_one(
+            f"""
+            SELECT code, name
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND code = %s
+            LIMIT 1
+            """,
+            (int(company_id), code),
+            cur=cur,
+        )
+
+        return str(
+            (row or {}).get("name")
+            or code
+        ).strip()
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
