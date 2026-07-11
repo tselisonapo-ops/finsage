@@ -44422,7 +44422,7 @@ async function saveEditModal() {
             >
               Delete Driver
             </button>
-          </div>>
+          </div>
         </div>
 
         <div class="grid four">
@@ -44995,6 +44995,7 @@ async function saveEditModal() {
               </button>
             </div>
           </div>
+        </div>
 
         <div class="bf-planning-mode-card">
           <div>
