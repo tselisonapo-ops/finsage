@@ -42718,22 +42718,57 @@ async function saveEditModal() {
     `;
   }
 
-function setForecastWorkspaceActive(active) {
-  BF.workspaceActive = !!active;
+  function setForecastWorkspaceActive(active) {
+    BF.workspaceActive = !!active;
 
-  const chrome = $("bfModuleChrome");
-  const root = $("bfRoot");
+    const chrome = $("bfModuleChrome");
+    const root = $("bfRoot");
 
-  chrome?.classList.toggle("hidden", BF.workspaceActive);
-  root?.classList.toggle("bf-workspace-active", BF.workspaceActive);
+    chrome?.classList.toggle("hidden", BF.workspaceActive);
+    root?.classList.toggle("bf-workspace-active", BF.workspaceActive);
 
-  if (BF.workspaceActive) {
-    window.scrollTo({
-      top: 0,
-      behavior: "instant",
-    });
+    if (BF.workspaceActive) {
+      window.scrollTo({
+        top: 0,
+        behavior: "instant",
+      });
+    }
   }
-}
+
+  function bfGroupedDriverDrafts() {
+    const groups = {
+      revenue: {},
+      cost_of_revenue: {},
+      operating_expenses: {},
+      other_income: {},
+      finance_costs: {},
+      income_tax: {},
+    };
+
+    (BF.driverDraftRows || []).forEach((driver, index) => {
+      const groupKey =
+        driver.driver_group || "revenue";
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {};
+      }
+
+      const accountCode =
+        String(driver.account_code || "").trim() ||
+        "__unassigned__";
+
+      if (!groups[groupKey][accountCode]) {
+        groups[groupKey][accountCode] = [];
+      }
+
+      groups[groupKey][accountCode].push({
+        driver,
+        index,
+      });
+    });
+
+    return groups;
+  }
 
   function showTab(tab) {
     BF.activeTab = tab;
@@ -43439,8 +43474,50 @@ function setForecastWorkspaceActive(active) {
     grouped,
     months,
   }) {
-    const pnlAccounts =
+    const accounts =
       BF.draftForecastAccounts || [];
+
+    const driverGroups =
+      bfGroupedDriverDrafts();
+
+    const sections = [
+      {
+        key: "revenue",
+        title: "Revenue Drivers",
+        description:
+          "Operational assumptions that generate sales and service income.",
+      },
+      {
+        key: "cost_of_revenue",
+        title: resolveCostOfRevenueTitle() + " Drivers",
+        description:
+          "Direct costs linked to products, services and revenue generation.",
+      },
+      {
+        key: "operating_expenses",
+        title: "Spending Drivers",
+        description:
+          "Payroll, administration, selling and operating expenditure assumptions.",
+      },
+      {
+        key: "other_income",
+        title: "Other Income Drivers",
+        description:
+          "Interest income and other non-operating income assumptions.",
+      },
+      {
+        key: "finance_costs",
+        title: "Finance Cost Drivers",
+        description:
+          "Loan interest, lease interest and other financing assumptions.",
+      },
+      {
+        key: "income_tax",
+        title: "Income Tax Drivers",
+        description:
+          "Estimated income tax based on forecast taxable profit.",
+      },
+    ];
 
     return `
       <div class="bf-driver-workspace">
@@ -43449,52 +43526,81 @@ function setForecastWorkspaceActive(active) {
             <div>
               <h3>Driver-based Planning</h3>
               <p class="muted">
-                Build operational assumptions and review the resulting
-                management profit or loss forecast.
+                Add drivers directly within each management profit or loss section.
               </p>
             </div>
 
-            <button
-              type="button"
-              class="btn primary"
-              data-bf-action="add-driver-row"
-            >
-              + Add Driver
-            </button>
+            <span class="bf-draft-save-status">
+              Changes are automatically saved locally.
+            </span>
           </div>
         </div>
 
-        <div class="bf-driver-list">
-          ${
-            BF.driverDraftRows.length
-              ? BF.driverDraftRows
-                  .map((driver, index) =>
-                    renderDriverCard(
-                      driver,
-                      index,
-                      pnlAccounts,
-                      months
-                    )
-                  )
-                  .join("")
-              : `
-                <div class="card empty-state">
-                  <h3>No forecast drivers added</h3>
+        <div class="bf-driver-sections">
+          ${sections.map((section) => {
+            const sectionDrivers =
+              driverGroups[section.key] || {};
 
-                  <p class="muted">
-                    Add a revenue, cost or expenditure driver to begin.
-                  </p>
+            const accountEntries =
+              Object.entries(sectionDrivers);
+
+            return `
+              <section class="card bf-driver-section">
+                <div class="bf-driver-section-header">
+                  <div>
+                    <span class="bf-eyebrow">
+                      Management Profit or Loss
+                    </span>
+
+                    <h3>${esc(section.title)}</h3>
+
+                    <p class="muted">
+                      ${esc(section.description)}
+                    </p>
+                  </div>
 
                   <button
                     type="button"
                     class="btn primary"
-                    data-bf-action="add-driver-row"
+                    data-bf-add-driver-group="${esc(section.key)}"
                   >
-                    Add First Driver
+                    + Add Driver
                   </button>
                 </div>
-              `
-          }
+
+                <div class="bf-driver-section-body">
+                  ${
+                    accountEntries.length
+                      ? accountEntries.map(
+                          ([accountCode, entries]) =>
+                            renderDriverAccountGroup({
+                              sectionKey: section.key,
+                              accountCode,
+                              entries,
+                              accounts,
+                              months,
+                            })
+                        ).join("")
+                      : `
+                        <div class="bf-driver-section-empty">
+                          <p>
+                            No ${esc(section.title.toLowerCase())} added.
+                          </p>
+
+                          <button
+                            type="button"
+                            class="btn"
+                            data-bf-add-driver-group="${esc(section.key)}"
+                          >
+                            Add First Driver
+                          </button>
+                        </div>
+                      `
+                  }
+                </div>
+              </section>
+            `;
+          }).join("")}
         </div>
 
         <div
@@ -43503,9 +43609,177 @@ function setForecastWorkspaceActive(active) {
         >
           ${renderDriverStatementTemplate({
             months,
-            accounts: pnlAccounts,
+            accounts,
           })}
         </div>
+      </div>
+    `;
+  }
+
+  function renderInlineDriverRow(
+    driver,
+    index,
+    accounts,
+    months,
+    newest = false
+  ) {
+    const expanded =
+      driver.expanded !== false &&
+      (
+        newest ||
+        driver.expanded === true ||
+        !driver.driver_name
+      );
+
+    const definition =
+      BF_DRIVER_DEFINITIONS[
+        driver.driver_type
+      ] ||
+      BF_DRIVER_DEFINITIONS.quantity_rate;
+
+    const annualTotal =
+      months.reduce(
+        (total, month) =>
+          total +
+          Number(
+            driver.values?.[month]?.amount || 0
+          ),
+        0
+      );
+
+    if (!expanded) {
+      return `
+        <div class="bf-driver-summary-row">
+          <div>
+            <strong>
+              ${esc(driver.driver_name || "Unnamed driver")}
+            </strong>
+
+            <span>
+              ${esc(definition.label || driver.driver_type)}
+            </span>
+          </div>
+
+          <strong>${money(annualTotal)}</strong>
+
+          <div class="actions">
+            <button
+              type="button"
+              class="btn small"
+              data-bf-expand-driver="${index}"
+            >
+              Edit
+            </button>
+
+            <button
+              type="button"
+              class="btn small danger"
+              data-bf-remove-driver="${index}"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="bf-inline-driver-editor">
+        ${renderDriverCard(
+          driver,
+          index,
+          accounts,
+          months
+        )}
+
+        <div class="bf-inline-driver-footer">
+          <span>
+            Driver total:
+            <strong>${money(annualTotal)}</strong>
+          </span>
+
+          <button
+            type="button"
+            class="btn"
+            data-bf-collapse-driver="${index}"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDriverAccountGroup({
+    sectionKey,
+    accountCode,
+    entries,
+    accounts,
+    months,
+  }) {
+    const account =
+      accounts.find(
+        (row) =>
+          bfAccountCode(row) === accountCode
+      );
+
+    const accountName =
+      accountCode === "__unassigned__"
+        ? "Driver setup required"
+        : bfAccountName(account) || accountCode;
+
+    const accountTotal =
+      accountCode === "__unassigned__"
+        ? 0
+        : bfDriverAccountAnnualAmount(
+            accountCode,
+            months
+          );
+
+    return `
+      <div class="bf-driver-account-group">
+        <div class="bf-driver-account-header">
+          <div>
+            <h4>${esc(accountName)}</h4>
+
+            <span>
+              ${entries.length}
+              driver${entries.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div class="bf-driver-account-total">
+            <span>Forecast total</span>
+            <strong>${money(accountTotal)}</strong>
+          </div>
+        </div>
+
+        <div class="bf-driver-account-list">
+          ${entries.map(({ driver, index }, position) =>
+            renderInlineDriverRow(
+              driver,
+              index,
+              accounts,
+              months,
+              position === entries.length - 1
+            )
+          ).join("")}
+        </div>
+
+        ${
+          accountCode !== "__unassigned__"
+            ? `
+              <button
+                type="button"
+                class="btn small"
+                data-bf-add-driver-group="${esc(sectionKey)}"
+                data-bf-add-driver-account="${esc(accountCode)}"
+              >
+                + Add another driver for ${esc(accountName)}
+              </button>
+            `
+            : ""
+        }
       </div>
     `;
   }
@@ -44009,13 +44283,12 @@ function setForecastWorkspaceActive(active) {
       });
   }
 
-  function addDriverDraftRow() {
+  function addDriverDraftRow({
+    group = "revenue",
+    accountCode = "",
+  } = {}) {
     captureForecastWorkspaceForm();
 
-    /*
-    * Preserve all existing drivers before
-    * adding the next driver.
-    */
     saveForecastDraftLocally({
       silent: true,
     });
@@ -44034,8 +44307,13 @@ function setForecastWorkspaceActive(active) {
       };
     });
 
-    const group =
-      "revenue";
+    /*
+    * Collapse existing drivers before opening
+    * the newly added driver.
+    */
+    BF.driverDraftRows.forEach((driver) => {
+      driver.expanded = false;
+    });
 
     BF.driverDraftRows.push({
       temp_id:
@@ -44043,9 +44321,13 @@ function setForecastWorkspaceActive(active) {
           .toString(36)
           .slice(2)}`,
 
-      account_code: "",
+      account_code:
+        accountCode || "",
+
       driver_name: "",
-      driver_group: group,
+
+      driver_group:
+        group,
 
       driver_type:
         bfDriverTypesForGroup(group)[0] ||
@@ -44055,12 +44337,11 @@ function setForecastWorkspaceActive(active) {
       default_rate: 0,
       default_factor: 0,
 
+      expanded: true,
+
       values,
     });
 
-    /*
-    * Save the newly created driver container.
-    */
     saveForecastDraftLocally({
       silent: true,
     });
@@ -44136,20 +44417,12 @@ function setForecastWorkspaceActive(active) {
           <div class="actions">
             <button
               type="button"
-              class="btn small"
-              data-bf-save-driver="${index}"
-            >
-              Save Driver Draft
-            </button>
-
-            <button
-              type="button"
               class="btn small danger"
               data-bf-remove-driver="${index}"
             >
-              Remove
+              Delete Driver
             </button>
-          </div>
+          </div>>
         </div>
 
         <div class="grid four">
@@ -47011,21 +47284,34 @@ function bindEventsOnce() {
       /*
        * Keep your driver remove block after it.
        */
-      const removeDriver =
-        t.closest?.(
-          "[data-bf-remove-driver]"
-        );
+      const removeDriverButton =
+        t.closest?.("[data-bf-remove-driver]");
 
-      if (removeDriver) {
+      if (removeDriverButton) {
         const index =
           Number(
-            removeDriver
-              .dataset
-              .bfRemoveDriver
+            removeDriverButton.dataset.bfRemoveDriver
           );
 
-        BF.driverDraftRows
-          .splice(index, 1);
+        const driver =
+          BF.driverDraftRows[index];
+
+        if (!driver) return;
+
+        const confirmed =
+          confirm(
+            `Delete the driver "${
+              driver.driver_name ||
+              "Unnamed driver"
+            }"?`
+          );
+
+        if (!confirmed) return;
+
+        BF.driverDraftRows.splice(
+          index,
+          1
+        );
 
         saveForecastDraftLocally({
           silent: true,
@@ -47036,6 +47322,80 @@ function bindEventsOnce() {
         return;
       }
 
+      const addDriverButton =
+        t.closest?.("[data-bf-add-driver-group]");
+
+      if (addDriverButton) {
+        const group =
+          String(
+            addDriverButton.dataset.bfAddDriverGroup ||
+            "revenue"
+          );
+
+        const accountCode =
+          String(
+            addDriverButton.dataset.bfAddDriverAccount ||
+            ""
+          );
+
+        return addDriverDraftRow({
+          group,
+          accountCode,
+        });
+      }
+
+      const collapseDriverButton =
+        t.closest?.("[data-bf-collapse-driver]");
+
+      if (collapseDriverButton) {
+        const index =
+          Number(
+            collapseDriverButton.dataset.bfCollapseDriver
+          );
+
+        const driver =
+          BF.driverDraftRows[index];
+
+        if (!driver) return;
+
+        if (!driver.account_code) {
+          alert("Select a target account.");
+          return;
+        }
+
+        if (!driver.driver_name?.trim()) {
+          alert("Enter a driver name.");
+          return;
+        }
+
+        driver.expanded = false;
+
+        saveForecastDraftLocally({
+          silent: true,
+        });
+
+        return renderCreateForecastWorkspace();
+      }
+
+
+      const expandDriverButton =
+        t.closest?.("[data-bf-expand-driver]");
+
+      if (expandDriverButton) {
+        const index =
+          Number(
+            expandDriverButton.dataset.bfExpandDriver
+          );
+
+        BF.driverDraftRows.forEach(
+          (driver, driverIndex) => {
+            driver.expanded =
+              driverIndex === index;
+          }
+        );
+
+        return renderCreateForecastWorkspace();
+      }
       // keep the rest of your action checks below
       if (
         action ===
