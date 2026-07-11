@@ -41276,6 +41276,10 @@ async function saveEditModal() {
         periodEnd: "",
         currency: "",
       },
+
+    draftSaveTimer: null,
+    draftLastSavedAt: null,
+    draftStorageVersion: 1,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -42175,6 +42179,221 @@ async function saveEditModal() {
       });
   }
 
+  function bfForecastDraftStorageKey() {
+    const companyId =
+      Number(BF.cid || cid() || 0);
+
+    const budgetId =
+      Number(BF.selectedBudgetId || 0);
+
+    return [
+      "finsage",
+      "forecast-draft",
+      `company-${companyId}`,
+      `budget-${budgetId || "none"}`,
+    ].join(":");
+  }
+
+
+  function bfBuildLocalForecastDraft() {
+    captureForecastWorkspaceForm();
+
+    if (BF.planningMode === "manual") {
+      captureVisibleManualForecastValues();
+    }
+
+    return {
+      storage_version:
+        BF.draftStorageVersion || 1,
+
+      saved_at:
+        new Date().toISOString(),
+
+      company_id:
+        Number(BF.cid || cid() || 0),
+
+      budget_id:
+        BF.selectedBudgetId || null,
+
+      planning_mode:
+        BF.planningMode || "manual",
+
+      workspace_form: {
+        ...(BF.workspaceForm || {}),
+      },
+
+      manual_values: {
+        ...(BF.draftForecastValues || {}),
+      },
+
+      driver_rows:
+        JSON.parse(
+          JSON.stringify(
+            BF.driverDraftRows || []
+          )
+        ),
+    };
+  }
+
+
+  function saveForecastDraftLocally({
+    silent = false,
+  } = {}) {
+    try {
+      const key =
+        bfForecastDraftStorageKey();
+
+      const draft =
+        bfBuildLocalForecastDraft();
+
+      localStorage.setItem(
+        key,
+        JSON.stringify(draft)
+      );
+
+      BF.draftLastSavedAt =
+        draft.saved_at;
+
+      updateForecastDraftStatus();
+
+      if (!silent) {
+        setStatus(
+          "Forecast draft saved locally.",
+          "success"
+        );
+      }
+
+      return draft;
+    } catch (error) {
+      console.error(
+        "[Forecast] local draft save failed",
+        error
+      );
+
+      if (!silent) {
+        setStatus(
+          "Unable to save the local forecast draft.",
+          "error"
+        );
+      }
+
+      return null;
+    }
+  }
+
+
+  function scheduleForecastDraftSave(
+    delay = 500
+  ) {
+    clearTimeout(
+      BF.draftSaveTimer
+    );
+
+    BF.draftSaveTimer =
+      setTimeout(() => {
+        saveForecastDraftLocally({
+          silent: true,
+        });
+      }, delay);
+  }
+
+
+  function loadForecastDraftLocally() {
+    try {
+      const key =
+        bfForecastDraftStorageKey();
+
+      const raw =
+        localStorage.getItem(key);
+
+      if (!raw) {
+        return null;
+      }
+
+      const draft =
+        JSON.parse(raw);
+
+      if (
+        Number(draft.company_id || 0) !==
+        Number(BF.cid || cid() || 0)
+      ) {
+        return null;
+      }
+
+      BF.planningMode =
+        draft.planning_mode ||
+        "manual";
+
+      BF.workspaceForm = {
+        ...BF.workspaceForm,
+        ...(draft.workspace_form || {}),
+      };
+
+      BF.draftForecastValues = {
+        ...(draft.manual_values || {}),
+      };
+
+      BF.driverDraftRows =
+        Array.isArray(draft.driver_rows)
+          ? draft.driver_rows
+          : [];
+
+      BF.draftLastSavedAt =
+        draft.saved_at || null;
+
+      return draft;
+    } catch (error) {
+      console.error(
+        "[Forecast] local draft load failed",
+        error
+      );
+
+      return null;
+    }
+  }
+
+
+  function clearForecastDraftLocally() {
+    try {
+      localStorage.removeItem(
+        bfForecastDraftStorageKey()
+      );
+    } catch (error) {
+      console.warn(
+        "[Forecast] failed to remove local draft",
+        error
+      );
+    }
+
+    BF.draftLastSavedAt = null;
+  }
+
+
+  function updateForecastDraftStatus() {
+    const status =
+      $("bfDraftSaveStatus");
+
+    if (!status) return;
+
+    if (!BF.draftLastSavedAt) {
+      status.textContent =
+        "Not yet saved locally.";
+
+      return;
+    }
+
+    const saved =
+      new Date(BF.draftLastSavedAt);
+
+    status.textContent =
+      `Draft saved locally at ${
+        saved.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      }`;
+  }
+
   function bfPnlGroup(row) {
     const code = bfAccountCode(row).toUpperCase();
 
@@ -42594,44 +42813,81 @@ function setForecastWorkspaceActive(active) {
       updateDriverStatementTemplate();
     };
 
-    document
-      .querySelectorAll(".bf-driver-type-select")
-      .forEach((select) => {
-        select.addEventListener("change", () => {
+  document
+    .querySelectorAll(
+      ".bf-driver-type-select"
+    )
+    .forEach((select) => {
+      select.addEventListener(
+        "change",
+        () => {
           captureForecastWorkspaceForm();
 
-          const index = Number(
-            select.dataset.bfDriverIndex
-          );
+          const index =
+            Number(
+              select.dataset.bfDriverIndex
+            );
 
-          const driver = BF.driverDraftRows[index];
+          const driver =
+            BF.driverDraftRows[index];
 
           if (!driver) return;
 
-          driver.driver_type = select.value;
+          driver.driver_type =
+            select.value;
+
+          Object.values(
+            driver.values || {}
+          ).forEach((row) => {
+            row.amount =
+              calculateDriverAmount(
+                driver.driver_type,
+                row.basis,
+                row.rate,
+                row.factor
+              );
+          });
+
+          saveForecastDraftLocally({
+            silent: true,
+          });
 
           renderCreateForecastWorkspace();
-        });
-      });
+        }
+      );
+    });
 
-    document
-      .querySelectorAll(".bf-driver-group-select")
-      .forEach((select) => {
-        select.addEventListener("change", () => {
+  document
+    .querySelectorAll(
+      ".bf-driver-group-select"
+    )
+    .forEach((select) => {
+      select.addEventListener(
+        "change",
+        () => {
           captureForecastWorkspaceForm();
 
-          const index = Number(
-            select.dataset.bfDriverIndex
-          );
+          const index =
+            Number(
+              select.dataset.bfDriverIndex
+            );
 
-          const driver = BF.driverDraftRows[index];
+          const driver =
+            BF.driverDraftRows[index];
 
           if (!driver) return;
 
-          driver.driver_group = select.value;
+          /*
+          * Amounts remain positive.
+          * Only their P&L classification changes.
+          */
+          driver.driver_group =
+            select.value;
 
           const allowedTypes =
-            bfDriverTypesForGroup(select.value);
+            bfDriverTypesForGroup(
+              select.value
+            );
 
           if (
             !allowedTypes.includes(
@@ -42639,58 +42895,101 @@ function setForecastWorkspaceActive(active) {
             )
           ) {
             driver.driver_type =
-              allowedTypes[0];
+              allowedTypes[0] ||
+              "quantity_rate";
           }
+
+          /*
+          * Clear an account that no longer belongs
+          * to the newly selected group.
+          */
+          const selectedAccount =
+            bfFindForecastAccount(
+              driver.account_code
+            );
+
+          if (
+            selectedAccount &&
+            bfPnlGroup(
+              selectedAccount
+            ) !== driver.driver_group
+          ) {
+            driver.account_code = "";
+          }
+
+          Object.values(
+            driver.values || {}
+          ).forEach((row) => {
+            row.amount =
+              calculateDriverAmount(
+                driver.driver_type,
+                row.basis,
+                row.rate,
+                row.factor
+              );
+          });
+
+          saveForecastDraftLocally({
+            silent: true,
+          });
 
           renderCreateForecastWorkspace();
-        });
-      });
+        }
+      );
+    });
 
-      document
-        .querySelectorAll(
-          ".bf-driver-account-select"
-        )
-        .forEach((select) => {
-          select.addEventListener(
-            "change",
-            () => {
-              const index =
-                Number(
-                  select.dataset.bfDriverIndex
-                );
+  document
+    .querySelectorAll(
+      ".bf-driver-account-select"
+    )
+    .forEach((select) => {
+      select.addEventListener(
+        "change",
+        () => {
+          const index =
+            Number(
+              select.dataset.bfDriverIndex
+            );
 
-              const driver =
-                BF.driverDraftRows[index];
+          const driver =
+            BF.driverDraftRows[index];
 
-              if (!driver) return;
+          if (!driver) return;
 
-              driver.account_code =
-                select.value;
+          driver.account_code =
+            select.value;
 
-              updateDriverStatementTemplate();
-            }
-          );
-        });
+          updateDriverStatementTemplate();
+          scheduleForecastDraftSave();
+        }
+      );
+    });
 
-    document
-      .querySelectorAll(
-        ".bf-driver-name-input"
-      )
-      .forEach((input) => {
-        input.addEventListener(
-          "input",
-          () => {
-            const index =
-              Number(
-                input.dataset.bfDriverIndex
-              );
+  document
+    .querySelectorAll(
+      ".bf-driver-name-input"
+    )
+    .forEach((input) => {
+      input.addEventListener(
+        "input",
+        () => {
+          const index =
+            Number(
+              input.dataset.bfDriverIndex
+            );
 
-            BF.driverDraftRows[index]
-              .driver_name =
-                input.value;
-          }
-        );
-      });
+          const driver =
+            BF.driverDraftRows[index];
+
+          if (!driver) return;
+
+          driver.driver_name =
+            input.value;
+
+          scheduleForecastDraftSave();
+        }
+      );
+    });
 
     document
       .querySelectorAll(
@@ -42804,6 +43103,7 @@ function setForecastWorkspaceActive(active) {
                 Number(input.value || 0);
 
             syncAndRender(index);
+            scheduleForecastDraftSave();
           }
         );
       });
@@ -42829,6 +43129,7 @@ function setForecastWorkspaceActive(active) {
                 Number(input.value || 0);
 
             syncAndRender(index);
+            scheduleForecastDraftSave();
           }
         );
       });
@@ -42857,6 +43158,7 @@ function setForecastWorkspaceActive(active) {
             Number(input.value || 0);
 
           syncAndRender(index);
+          scheduleForecastDraftSave();
         });
       });
 
@@ -42890,15 +43192,26 @@ function setForecastWorkspaceActive(active) {
       BF_DRIVER_DEFINITIONS.quantity_rate;
 
     const values = {
-      basis: Number(basis || 0),
-      rate: Number(rate || 0),
-      factor: Number(factor || 0),
+      basis: Math.abs(Number(basis || 0)),
+      rate: Math.abs(Number(rate || 0)),
+      factor: Math.abs(Number(factor || 0)),
     };
 
     try {
-      return Number(
-        definition.formula(values) || 0
-      );
+      const calculated =
+        Number(definition.formula(values) || 0);
+
+      /*
+      * Forecast inputs use natural positive values.
+      *
+      * Revenue      = positive
+      * Cost         = positive
+      * Expense      = positive
+      * Finance cost = positive
+      *
+      * The management P&L subtracts costs and expenses.
+      */
+      return Math.abs(calculated);
     } catch (error) {
       console.error(
         "[Forecast] driver calculation failed",
@@ -42924,51 +43237,107 @@ function setForecastWorkspaceActive(active) {
     ];
 
     ids.forEach((id) => {
-      $(id)?.addEventListener("change", captureForecastWorkspaceForm);
-      $(id)?.addEventListener("input", captureForecastWorkspaceForm);
+      const element = $(id);
+
+      if (!element) return;
+
+      const saveMeta = () => {
+        captureForecastWorkspaceForm();
+        scheduleForecastDraftSave();
+      };
+
+      element.addEventListener(
+        "change",
+        saveMeta
+      );
+
+      element.addEventListener(
+        "input",
+        saveMeta
+      );
     });
 
-    $("bfWorkspacePeriodStart")?.addEventListener("change", () => {
-      captureForecastWorkspaceForm();
+    $("bfWorkspacePeriodStart")
+      ?.addEventListener("change", () => {
+        captureForecastWorkspaceForm();
 
-      const start = bfToInputDate(
-        BF.workspaceForm.periodStart
-      );
+        const start = bfToInputDate(
+          BF.workspaceForm.periodStart
+        );
 
-      const end = bfToInputDate(
-        BF.workspaceForm.periodEnd
-      );
+        const end = bfToInputDate(
+          BF.workspaceForm.periodEnd
+        );
 
-      if (!start || !end) return;
+        if (!start || !end) {
+          return;
+        }
 
-      if (end < start) {
-        alert("Period end cannot be before period start.");
-        return;
-      }
+        if (end < start) {
+          alert(
+            "Period end cannot be before period start."
+          );
 
-      renderCreateForecastWorkspace();
-    });
+          return;
+        }
 
-    $("bfWorkspacePeriodEnd")?.addEventListener("change", () => {
-      captureForecastWorkspaceForm();
+        /*
+        * Save all current work before rerendering
+        * the forecast workspace with new months.
+        */
+        if (
+          BF.planningMode === "manual"
+        ) {
+          captureVisibleManualForecastValues();
+        }
 
-      const start = bfToInputDate(
-        BF.workspaceForm.periodStart
-      );
+        saveForecastDraftLocally({
+          silent: true,
+        });
 
-      const end = bfToInputDate(
-        BF.workspaceForm.periodEnd
-      );
+        renderCreateForecastWorkspace();
+      });
 
-      if (!start || !end) return;
+    $("bfWorkspacePeriodEnd")
+      ?.addEventListener("change", () => {
+        captureForecastWorkspaceForm();
 
-      if (end < start) {
-        alert("Period end cannot be before period start.");
-        return;
-      }
+        const start = bfToInputDate(
+          BF.workspaceForm.periodStart
+        );
 
-      renderCreateForecastWorkspace();
-    });
+        const end = bfToInputDate(
+          BF.workspaceForm.periodEnd
+        );
+
+        if (!start || !end) {
+          return;
+        }
+
+        if (end < start) {
+          alert(
+            "Period end cannot be before period start."
+          );
+
+          return;
+        }
+
+        /*
+        * Save all current work before rerendering
+        * the forecast workspace with new months.
+        */
+        if (
+          BF.planningMode === "manual"
+        ) {
+          captureVisibleManualForecastValues();
+        }
+
+        saveForecastDraftLocally({
+          silent: true,
+        });
+
+        renderCreateForecastWorkspace();
+      });
   }
 
   function renderManualForecastGrid({
@@ -43640,9 +44009,16 @@ function setForecastWorkspaceActive(active) {
       });
   }
 
-
   function addDriverDraftRow() {
     captureForecastWorkspaceForm();
+
+    /*
+    * Preserve all existing drivers before
+    * adding the next driver.
+    */
+    saveForecastDraftLocally({
+      silent: true,
+    });
 
     const months =
       BF.draftForecastMonths || [];
@@ -43658,7 +44034,8 @@ function setForecastWorkspaceActive(active) {
       };
     });
 
-    const group = "revenue";
+    const group =
+      "revenue";
 
     BF.driverDraftRows.push({
       temp_id:
@@ -43671,13 +44048,21 @@ function setForecastWorkspaceActive(active) {
       driver_group: group,
 
       driver_type:
-        bfDriverTypesForGroup(group)[0],
+        bfDriverTypesForGroup(group)[0] ||
+        "quantity_rate",
 
       default_basis: 0,
       default_rate: 0,
       default_factor: 0,
 
       values,
+    });
+
+    /*
+    * Save the newly created driver container.
+    */
+    saveForecastDraftLocally({
+      silent: true,
     });
 
     renderCreateForecastWorkspace();
@@ -43748,13 +44133,23 @@ function setForecastWorkspaceActive(active) {
             </h3>
           </div>
 
-          <button
-            type="button"
-            class="btn small danger"
-            data-bf-remove-driver="${index}"
-          >
-            Remove
-          </button>
+          <div class="actions">
+            <button
+              type="button"
+              class="btn small"
+              data-bf-save-driver="${index}"
+            >
+              Save Driver Draft
+            </button>
+
+            <button
+              type="button"
+              class="btn small danger"
+              data-bf-remove-driver="${index}"
+            >
+              Remove
+            </button>
+          </div>
         </div>
 
         <div class="grid four">
@@ -44293,24 +44688,40 @@ function setForecastWorkspaceActive(active) {
             </div>
           </div>
 
-          <div class="actions">
-            <button
-              type="button"
-              class="btn"
-              data-bf-action="cancel-create-version"
+          <div class="bf-workspace-save-area">
+            <span
+              id="bfDraftSaveStatus"
+              class="bf-draft-save-status"
             >
-              Cancel
-            </button>
+              Not yet saved locally.
+            </span>
 
-            <button
-              type="button"
-              class="btn primary"
-              data-bf-action="create-version-workspace"
-            >
-              Save Forecast
-            </button>
+            <div class="actions">
+              <button
+                type="button"
+                class="btn"
+                data-bf-action="save-local-draft"
+              >
+                Save Draft
+              </button>
+
+              <button
+                type="button"
+                class="btn"
+                data-bf-action="cancel-create-version"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                class="btn primary"
+                data-bf-action="create-version-workspace"
+              >
+                Save Forecast
+              </button>
+            </div>
           </div>
-        </div>
 
         <div class="bf-planning-mode-card">
           <div>
@@ -44546,6 +44957,7 @@ function setForecastWorkspaceActive(active) {
     } else {
       bindGlobalDriverInputs();
     }
+    updateForecastDraftStatus();
   }
 
   function renderCapexPlanner() {
@@ -45186,7 +45598,11 @@ function setForecastWorkspaceActive(active) {
     `;
   }
 
-  async function openCreateVersionWorkspace(budgetId = null) {
+  async function openCreateVersionWorkspace(
+    budgetId = null
+  ) {
+    BF.cid = cid();
+
     BF.selectedBudgetId =
       Number(
         budgetId ||
@@ -45197,13 +45613,18 @@ function setForecastWorkspaceActive(active) {
     BF.selectedBudget =
       BF.budgets.find(
         (row) =>
-          Number(row.id) === Number(BF.selectedBudgetId)
+          Number(row.id) ===
+          Number(BF.selectedBudgetId)
       ) ||
       BF.selectedBudget ||
       null;
 
-    BF.forecastWorkspaceMode = "create";
-    BF.planningMode = "manual";
+    BF.forecastWorkspaceMode =
+      "create";
+
+    BF.planningMode =
+      "manual";
+
     BF.workspaceForm = {
       name: "",
       versionType: "forecast",
@@ -45214,18 +45635,33 @@ function setForecastWorkspaceActive(active) {
       periodEnd: "",
       currency: "",
     };
+
     BF.forecastDraftLines = {};
     BF.draftForecastValues = {};
     BF.driverDraftRows = [];
 
+    /*
+    * Restore any unfinished draft belonging
+    * to this company and selected budget.
+    */
+    loadForecastDraftLocally();
+
     showTab("forecast");
     setForecastWorkspaceActive(true);
-    setStatus("Preparing forecast workspace...");
 
     try {
       await loadForecastCoa();
+
       renderCreateForecastWorkspace();
-      setStatus("");
+
+      if (BF.draftLastSavedAt) {
+        setStatus(
+          "Your locally saved forecast draft was restored.",
+          "success"
+        );
+      } else {
+        setStatus("");
+      }
     } catch (error) {
       console.error(
         "[Forecast] failed to open workspace",
@@ -45393,6 +45829,8 @@ function setForecastWorkspaceActive(active) {
       BF.forecastWorkspaceMode =
         "edit";
 
+      clearForecastDraftLocally();
+
       await openVersion(
         BF.selectedVersionId
       );
@@ -45510,25 +45948,34 @@ function setForecastWorkspaceActive(active) {
         "#bfForecastPane .bf-draft-forecast-cell"
       )
       .forEach((input) => {
-        input.addEventListener("input", () => {
-          const accountCode =
-            input.dataset.bfAccountCode;
+        input.addEventListener(
+          "input",
+          () => {
+            const accountCode =
+              input.dataset.bfAccountCode;
 
-          const month =
-            input.dataset.bfMonth;
+            const month =
+              input.dataset.bfMonth;
 
-          bfSetDraftValue(
-            accountCode,
-            month,
-            input.value
-          );
+            bfSetDraftValue(
+              accountCode,
+              month,
+              input.value
+            );
 
-          input.classList.add("is-dirty");
+            input.classList.add(
+              "is-dirty"
+            );
 
-          recalculateDraftForecastGrid(grouped);
-        });
+            recalculateDraftForecastGrid(
+              grouped
+            );
+
+            scheduleForecastDraftSave();
+          }
+        );
       });
-  }
+    }
 
 
   function refreshDraftForecastPeriod() {
@@ -46464,34 +46911,142 @@ function setForecastWorkspaceActive(active) {
     };
   }
 
-  function bindEventsOnce() {
-    if (BF.bound) return;
-    BF.bound = true;
+function bindEventsOnce() {
+  if (BF.bound) return;
 
-    document.addEventListener("click", async (e) => {
+  BF.bound = true;
+
+  document.addEventListener(
+    "click",
+    async (e) => {
       const t = e.target;
+
       if (!t) return;
 
-      const tab = t.dataset?.bfTab;
+      const tab =
+        t.dataset?.bfTab;
+
       if (tab) {
         await onTab(tab);
         return;
       }
 
+      const action =
+        t.dataset?.bfAction;
+
+      if (
+        action ===
+        "save-local-draft"
+      ) {
+        saveForecastDraftLocally();
+        return;
+      }
+
+      /*
+       * Save one driver draft locally.
+       * PLACE THE BLOCK HERE.
+       */
+      const saveDriverButton =
+        t.closest?.(
+          "[data-bf-save-driver]"
+        );
+
+      if (saveDriverButton) {
+        const index =
+          Number(
+            saveDriverButton
+              .dataset
+              .bfSaveDriver
+          );
+
+        const driver =
+          BF.driverDraftRows[index];
+
+        if (!driver) {
+          return;
+        }
+
+        if (
+          !driver.driver_name
+            ?.trim()
+        ) {
+          alert(
+            "Enter a driver name before saving the draft."
+          );
+
+          return;
+        }
+
+        if (
+          !driver.account_code
+        ) {
+          alert(
+            "Select a target account before saving the driver draft."
+          );
+
+          return;
+        }
+
+        saveForecastDraftLocally();
+
+        saveDriverButton
+          .textContent =
+            "Saved";
+
+        setTimeout(() => {
+          if (
+            document.body.contains(
+              saveDriverButton
+            )
+          ) {
+            saveDriverButton
+              .textContent =
+                "Save Driver Draft";
+          }
+        }, 1500);
+
+        return;
+      }
+
+      /*
+       * Keep your driver remove block after it.
+       */
       const removeDriver =
-        t.closest?.("[data-bf-remove-driver]");
+        t.closest?.(
+          "[data-bf-remove-driver]"
+        );
 
       if (removeDriver) {
         const index =
           Number(
-            removeDriver.dataset.bfRemoveDriver
+            removeDriver
+              .dataset
+              .bfRemoveDriver
           );
 
-        BF.driverDraftRows.splice(index, 1);
-        return renderCreateForecastWorkspace();
+        BF.driverDraftRows
+          .splice(index, 1);
+
+        saveForecastDraftLocally({
+          silent: true,
+        });
+
+        renderCreateForecastWorkspace();
+
+        return;
       }
 
-      const action = t.dataset?.bfAction;
+      // keep the rest of your action checks below
+      if (
+        action ===
+        "create-budget"
+      ) {
+        return openCreateBudgetModal();
+      }
+
+      if (action === "save-local-draft") {
+        return saveForecastDraftLocally();
+      }
       if (action === "create-budget") return openCreateBudgetModal();
       if (action === "back-budgets") return loadBudgets();
       if (action === "add-budget-line") return openBudgetLineModal();
@@ -47572,19 +48127,103 @@ function setForecastWorkspaceActive(active) {
         )?.value || "fixed_amount";
 
       const amount =
-        Number(
-          document.querySelector(
-            `[data-pay-choice-amount="${key}"]`
-          )?.value || 0
-        );
+        method === "fixed_amount"
+          ? Number(
+              document.querySelector(
+                `[data-pay-choice-amount="${key}"]`
+              )?.value || 0
+            )
+          : 0;
+
+      const percentage =
+        method === "percentage"
+          ? Number(
+              document.querySelector(
+                `[data-pay-choice-percent="${key}"]`
+              )?.value || 0
+            )
+          : null;
+
+      const quantity =
+        method === "quantity_rate"
+          ? Number(
+              document.querySelector(
+                `[data-pay-choice-quantity="${key}"]`
+              )?.value || 0
+            )
+          : null;
+
+      const rate =
+        method === "quantity_rate"
+          ? Number(
+              document.querySelector(
+                `[data-pay-choice-rate="${key}"]`
+              )?.value || 0
+            )
+          : null;
+
+      const calculatedAmount =
+        method === "quantity_rate"
+          ? Number(
+              document.querySelector(
+                `[data-pay-choice-total="${key}"]`
+              )?.value || 0
+            )
+          : method === "fixed_amount"
+            ? amount
+            : null;
 
       return {
         item_type: type,
         item_id: itemId,
         calculation_method: method,
         amount,
+        percentage,
+        quantity,
+        rate,
+        calculated_amount: calculatedAmount,
       };
     });
+  }
+
+  function validatePayrollPaySetupItems(items) {
+    for (const item of items) {
+      if (
+        item.calculation_method === "fixed_amount" &&
+        Number(item.amount || 0) < 0
+      ) {
+        throw new Error(
+          "Fixed payroll amounts cannot be negative."
+        );
+      }
+
+      if (
+        item.calculation_method === "percentage" &&
+        Number(item.percentage || 0) <= 0
+      ) {
+        throw new Error(
+          "Enter a percentage for every percentage-based item."
+        );
+      }
+
+      if (
+        item.calculation_method === "quantity_rate" &&
+        Number(item.quantity || 0) <= 0
+      ) {
+        throw new Error(
+          "Enter hours or quantity for every quantity-based item."
+        );
+      }
+
+      if (
+        item.calculation_method === "quantity_rate" &&
+        Number(item.rate || 0) <= 0
+      ) {
+        throw new Error(
+          "Enter a rate for every quantity-based item."
+        );
+      }
+    }
   }
 
   async function savePayrollEmployeePaySetup() {
@@ -47600,6 +48239,11 @@ function setForecastWorkspaceActive(active) {
 
     const payBasis =
       $("payrollPayBasis")?.value || "monthly";
+
+    const selectedItems =
+      collectPayrollPaySetupItems();
+
+    validatePayrollPaySetupItems(selectedItems);
 
     const payload = {
       employee_id: employeeId,
@@ -47654,7 +48298,7 @@ function setForecastWorkspaceActive(active) {
         $("payrollPaySetupEffectiveFrom")
           ?.value || null,
 
-      items: collectPayrollPaySetupItems(),
+      items: selectedItems,
     };
 
     await apiFetch(
@@ -47846,6 +48490,20 @@ function setForecastWorkspaceActive(active) {
 
     $("payrollSetupEditorModal")
       ?.classList.remove("hidden");
+
+    requestAnimationFrame(() => {
+      const modal =
+        $("payrollSetupEditorModal");
+
+      const card =
+        modal?.querySelector(".modal-card");
+
+      if (card) {
+        card.scrollTop = 0;
+      }
+
+      $("payrollSetupEditorName")?.focus();
+    });
   }
 
   function closePayrollSetupEditor() {
@@ -48602,7 +49260,7 @@ function setForecastWorkspaceActive(active) {
     const el = $(containerId);
     if (!el) return;
 
-    if (!items.length) {
+    if (!Array.isArray(items) || !items.length) {
       el.innerHTML = `
         <p class="payroll-muted">
           No available items.
@@ -48611,62 +49269,142 @@ function setForecastWorkspaceActive(active) {
       return;
     }
 
-    el.innerHTML = items.map(item => `
-      <div
-        class="payroll-pay-choice"
-        data-pay-choice-row="${esc(type)}-${esc(item.id)}"
-      >
-        <label class="payroll-pay-choice-head">
-          <input
-            type="checkbox"
-            data-pay-choice-type="${esc(type)}"
-            data-pay-choice-id="${esc(item.id)}"
-          >
+    el.innerHTML = items.map(item => {
+      const key = `${type}-${item.id}`;
 
-          <span>
-            <strong>${esc(item.name)}</strong>
-            <small>${esc(item.code)}</small>
-          </span>
-        </label>
-
+      return `
         <div
-          class="payroll-pay-choice-details hidden"
-          data-pay-choice-details="${esc(type)}-${esc(item.id)}"
+          class="payroll-pay-choice"
+          data-pay-choice-row="${esc(key)}"
         >
-          <label>
-            Calculation
-            <select
-              data-pay-choice-method="${esc(type)}-${esc(item.id)}"
-            >
-              <option value="fixed_amount">
-                Fixed amount
-              </option>
-
-              <option value="percentage">
-                Percentage
-              </option>
-
-              <option value="quantity_rate">
-                Quantity × rate
-              </option>
-
-              <option value="manual">
-                Manual each run
-              </option>
-            </select>
-          </label>
-
-          <label>
-            Amount
+          <label class="payroll-pay-choice-head">
             <input
-              type="number"
-              step="0.01"
-              data-pay-choice-amount="${esc(type)}-${esc(item.id)}"
+              type="checkbox"
+              data-pay-choice-type="${esc(type)}"
+              data-pay-choice-id="${esc(item.id)}"
             >
+
+            <span class="payroll-pay-choice-title">
+              <strong>${esc(item.name)}</strong>
+              <small>${esc(item.code)}</small>
+            </span>
           </label>
+
+          <div
+            class="payroll-pay-choice-details hidden"
+            data-pay-choice-details="${esc(key)}"
+          >
+            <label>
+              Calculation Method
+
+              <select
+                data-pay-choice-method="${esc(key)}"
+              >
+                <option value="fixed_amount">
+                  Fixed amount
+                </option>
+
+                <option value="percentage">
+                  Percentage
+                </option>
+
+                <option value="quantity_rate">
+                  Quantity × rate
+                </option>
+
+                <option value="manual">
+                  Manual each run
+                </option>
+              </select>
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap"
+              data-pay-fixed-wrap="${esc(key)}"
+            >
+              Amount
+
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                data-pay-choice-amount="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
+              data-pay-percent-wrap="${esc(key)}"
+            >
+              Percentage
+
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                data-pay-choice-percent="${esc(key)}"
+                placeholder="0.00"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
+              data-pay-quantity-wrap="${esc(key)}"
+            >
+              Hours / Quantity
+
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                data-pay-choice-quantity="${esc(key)}"
+                placeholder="0.0000"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap hidden"
+              data-pay-rate-wrap="${esc(key)}"
+            >
+              Rate
+
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                data-pay-choice-rate="${esc(key)}"
+                placeholder="0.0000"
+              >
+            </label>
+
+            <label
+              class="payroll-pay-input-wrap payroll-pay-result-field hidden"
+              data-pay-total-wrap="${esc(key)}"
+            >
+              Calculated Total
+
+              <input
+                type="number"
+                step="0.01"
+                data-pay-choice-total="${esc(key)}"
+                value="0.00"
+                readonly
+              >
+            </label>
+
+            <div
+              class="payroll-pay-input-wrap hidden"
+              data-pay-manual-wrap="${esc(key)}"
+            >
+              <div class="notice info">
+                Amount will be entered during each payroll run.
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
 
     el.querySelectorAll(
       "[data-pay-choice-type]"
@@ -48676,14 +49414,130 @@ function setForecastWorkspaceActive(active) {
           `${checkbox.dataset.payChoiceType}-` +
           `${checkbox.dataset.payChoiceId}`;
 
-        el.querySelector(
+        const details = el.querySelector(
           `[data-pay-choice-details="${key}"]`
-        )?.classList.toggle(
+        );
+
+        details?.classList.toggle(
           "hidden",
           !checkbox.checked
         );
+
+        if (checkbox.checked) {
+          updatePayChoiceMethodFields(key, el);
+        }
       });
     });
+
+    el.querySelectorAll(
+      "[data-pay-choice-method]"
+    ).forEach(select => {
+      select.addEventListener("change", () => {
+        const key =
+          select.dataset.payChoiceMethod;
+
+        updatePayChoiceMethodFields(key, el);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-pay-choice-quantity], [data-pay-choice-rate]"
+    ).forEach(input => {
+      input.addEventListener("input", () => {
+        const key =
+          input.dataset.payChoiceQuantity ||
+          input.dataset.payChoiceRate;
+
+        calculatePayChoiceTotal(key, el);
+      });
+    });
+  }
+
+  function togglePayChoiceWrap(
+    container,
+    selector,
+    show,
+  ) {
+    container
+      ?.querySelector(selector)
+      ?.classList.toggle("hidden", !show);
+  }
+
+  function updatePayChoiceMethodFields(
+    key,
+    container = document,
+  ) {
+    const method =
+      container.querySelector(
+        `[data-pay-choice-method="${key}"]`
+      )?.value || "fixed_amount";
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-fixed-wrap="${key}"]`,
+      method === "fixed_amount"
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-percent-wrap="${key}"]`,
+      method === "percentage"
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-quantity-wrap="${key}"]`,
+      method === "quantity_rate"
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-rate-wrap="${key}"]`,
+      method === "quantity_rate"
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-total-wrap="${key}"]`,
+      method === "quantity_rate"
+    );
+
+    togglePayChoiceWrap(
+      container,
+      `[data-pay-manual-wrap="${key}"]`,
+      method === "manual"
+    );
+
+    if (method === "quantity_rate") {
+      calculatePayChoiceTotal(key, container);
+    }
+  }
+
+  function calculatePayChoiceTotal(
+    key,
+    container = document,
+  ) {
+    const quantity = Number(
+      container.querySelector(
+        `[data-pay-choice-quantity="${key}"]`
+      )?.value || 0
+    );
+
+    const rate = Number(
+      container.querySelector(
+        `[data-pay-choice-rate="${key}"]`
+      )?.value || 0
+    );
+
+    const total = quantity * rate;
+
+    const totalInput = container.querySelector(
+      `[data-pay-choice-total="${key}"]`
+    );
+
+    if (totalInput) {
+      totalInput.value = total.toFixed(2);
+    }
   }
 
   function renderPayrollSetupRows(
@@ -48974,12 +49828,55 @@ function setForecastWorkspaceActive(active) {
   }
 
   function switchPayrollTab(tab) {
-    document.querySelectorAll("[data-payroll-tab]").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.payrollTab === tab);
+    const mainTabs =
+      document.querySelector(".payroll-tabs");
+
+    const isDashboard = tab === "overview";
+
+    mainTabs?.classList.toggle(
+      "payroll-main-nav-hidden",
+      !isDashboard
+    );
+
+    document
+      .querySelectorAll("[data-payroll-tab]")
+      .forEach(btn => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.payrollTab === tab
+        );
+      });
+
+    [
+      "overview",
+      "employees",
+      "calendars",
+      "runs",
+      "settings",
+      "reports",
+    ].forEach(name => {
+      $(`payrollTab${cap(name)}`)
+        ?.classList.toggle(
+          "hidden",
+          name !== tab
+        );
     });
 
-    ["overview", "employees", "calendars", "runs", "settings", "reports"].forEach(name => {
-      $(`payrollTab${cap(name)}`)?.classList.toggle("hidden", name !== tab);
+    const activePanelMap = {
+      overview: "payrollTabOverview",
+      employees: "payrollTabEmployees",
+      calendars: "payrollTabCalendars",
+      runs: "payrollTabRuns",
+      settings: "payrollTabSettings",
+      reports: "payrollTabReports",
+    };
+
+    const panel =
+      $(activePanelMap[tab]);
+
+    panel?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
     });
   }
 
@@ -49460,6 +50357,16 @@ function setForecastWorkspaceActive(active) {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
 
+    document
+      .querySelectorAll(
+        "[data-payroll-back-dashboard]"
+      )
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          switchPayrollTab("overview");
+        });
+      });
+      
     $("payrollRefreshBtn")?.addEventListener("click", payrollLoadAll);
 
     $("payrollAddEmployeeBtn")?.addEventListener("click", () => {

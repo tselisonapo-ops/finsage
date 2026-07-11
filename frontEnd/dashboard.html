@@ -2243,6 +2243,24 @@ html, body {
   border-bottom: 1px solid #edf3f8;
 }
 
+#bfRoot .bf-workspace-save-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+#bfRoot .bf-draft-save-status {
+  color: #687d8f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#bfRoot .bf-driver-card .section-head .actions {
+  display: flex;
+  gap: 7px;
+}
+
 #bfRoot .bf-account-code {
   color: #183650;
   font-weight: 800;
@@ -2915,6 +2933,345 @@ html, body {
 @media (max-width: 800px) {
   .payroll-mini-row {
     grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   EMPLOYEE PAY SETUP
+   ========================================================= */
+
+#payrollSetupPanelEmployeePay .payroll-card {
+  overflow: visible;
+}
+
+.payroll-pay-setup-header {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 24px;
+}
+
+.payroll-pay-section {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e6edf5;
+}
+
+.payroll-pay-section > h4 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: #082e58;
+}
+
+.payroll-pay-choice-list {
+  display: grid;
+  gap: 12px;
+}
+
+.payroll-pay-choice {
+  border: 1px solid #dbe5ef;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.payroll-pay-choice:has(
+  [data-pay-choice-type]:checked
+) {
+  border-color: #13bfc2;
+  background: #f7ffff;
+  box-shadow: 0 5px 18px rgba(8, 46, 88, 0.07);
+}
+
+.payroll-pay-choice-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.payroll-pay-choice-head input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: #11bfc4;
+}
+
+.payroll-pay-choice-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.payroll-pay-choice-title strong {
+  font-size: 14px;
+  color: #082e58;
+}
+
+.payroll-pay-choice-title small {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #738197;
+}
+
+.payroll-pay-choice-details {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.2fr)
+    minmax(130px, 1fr)
+    minmax(130px, 1fr)
+    minmax(130px, 1fr);
+  gap: 14px;
+  align-items: end;
+  padding: 15px 16px 17px;
+  border-top: 1px solid #e3edf3;
+  background: #f8fbfd;
+}
+
+.payroll-pay-choice-details.hidden {
+  display: none !important;
+}
+
+.payroll-pay-choice-details label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #14395e;
+}
+
+.payroll-pay-choice-details input,
+.payroll-pay-choice-details select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #cbd9e7;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #082e58;
+  font-size: 13px;
+}
+
+.payroll-pay-choice-details input:focus,
+.payroll-pay-choice-details select:focus {
+  outline: none;
+  border-color: #12bcc1;
+  box-shadow: 0 0 0 3px rgba(18, 188, 193, 0.12);
+}
+
+.payroll-pay-result-field input {
+  background: #edf4f8;
+  font-weight: 800;
+  color: #082e58;
+}
+
+.payroll-pay-input-wrap.hidden {
+  display: none !important;
+}
+
+@media (max-width: 1200px) {
+  .payroll-pay-setup-header {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
+  }
+
+  .payroll-pay-choice-details {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .payroll-pay-setup-header,
+  .payroll-pay-choice-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+.payroll-section-navigation {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.payroll-section-navigation h3 {
+  margin: 0;
+}
+
+.payroll-main-nav-hidden {
+  display: none !important;
+}
+
+.payroll-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid #ccd9e6;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #08345f;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.payroll-back-btn:hover {
+  border-color: #12bfc3;
+  background: #f2ffff;
+}
+
+/* =========================================================
+   PAYROLL MODALS
+   ========================================================= */
+
+#payrollEmployeeModal,
+#payrollSetupEditorModal,
+#payrollJournalPreviewModal {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 28px;
+  overflow-y: auto;
+  background: rgba(7, 25, 44, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+#payrollEmployeeModal.hidden,
+#payrollSetupEditorModal.hidden,
+#payrollJournalPreviewModal.hidden {
+  display: none !important;
+}
+
+#payrollEmployeeModal .modal-card,
+#payrollSetupEditorModal .modal-card,
+#payrollJournalPreviewModal .modal-card {
+  position: relative;
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 56px);
+  margin: auto;
+  overflow-y: auto;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 22px 70px rgba(5, 26, 48, 0.28);
+}
+
+#payrollEmployeeModal .modal-card.large {
+  width: min(1280px, 100%);
+}
+
+#payrollEmployeeModal .modal-head,
+#payrollSetupEditorModal .modal-head,
+#payrollJournalPreviewModal .modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid #e4ebf2;
+  background: #ffffff;
+}
+
+#payrollEmployeeModal .form-grid,
+#payrollSetupEditorModal .form-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 20px 22px;
+}
+
+#payrollEmployeeModal .tabs {
+  position: sticky;
+  top: 70px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 12px 22px;
+  border-bottom: 1px solid #e4ebf2;
+  background: #f8fafc;
+}
+
+@media (max-width: 900px) {
+  #payrollEmployeeModal .form-grid,
+  #payrollSetupEditorModal .form-grid {
+    grid-template-columns:
+      repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  #payrollEmployeeModal,
+  #payrollSetupEditorModal,
+  #payrollJournalPreviewModal {
+    padding: 10px;
+  }
+
+  #payrollEmployeeModal .form-grid,
+  #payrollSetupEditorModal .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.payroll-sublist {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.payroll-setup-row {
+  display: grid;
+  grid-template-columns:
+    minmax(250px, 2fr)
+    minmax(120px, 1fr)
+    minmax(150px, 1fr)
+    28px;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 58px;
+  padding: 12px 16px;
+  border: 1px solid #dce6ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #102f50;
+  text-align: left;
+  cursor: pointer;
+}
+
+.payroll-setup-row:hover {
+  border-color: #13bcc1;
+  background: #f8ffff;
+}
+
+.payroll-setup-row .payroll-arrow {
+  justify-self: end;
+}
+
+@media (max-width: 760px) {
+  .payroll-setup-row {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-setup-row .payroll-arrow {
+    display: none;
   }
 }
   </style>
@@ -10894,6 +11251,44 @@ html, body {
               </div>
             </div>
 
+            <div class="payroll-dashboard-actions" aria-label="Payroll shortcuts">
+              <button
+                type="button"
+                class="payroll-dashboard-action"
+                data-payroll-goto="employees"
+              >
+                <strong>Manage Employees</strong>
+                <span>Employee profiles, contracts and payment details</span>
+              </button>
+
+              <button
+                type="button"
+                class="payroll-dashboard-action"
+                data-payroll-goto="calendars"
+              >
+                <strong>View Calendars</strong>
+                <span>Generated payroll periods and payment dates</span>
+              </button>
+
+              <button
+                type="button"
+                class="payroll-dashboard-action"
+                data-payroll-goto="runs"
+              >
+                <strong>Payroll Runs</strong>
+                <span>Calculate, review and post payroll</span>
+              </button>
+
+              <button
+                type="button"
+                class="payroll-dashboard-action"
+                data-payroll-goto="settings"
+              >
+                <strong>Payroll Settings</strong>
+                <span>Schedules, pay items and GL mappings</span>
+              </button>
+            </div>
+
             <div class="payroll-card">
               <div class="payroll-card-head">
                 <h3>Recent Employees</h3>
@@ -10905,6 +11300,20 @@ html, body {
           </div>
 
           <div id="payrollTabEmployees" class="payroll-panel hidden">
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Employees</h3>
+                <p class="payroll-muted">Manage employee profiles and payroll records.</p>
+              </div>
+            </div>
             <div class="payroll-card">
               <div class="payroll-card-head">
                 <h3>Employees</h3>
@@ -10932,41 +11341,57 @@ html, body {
           </div>
 
           <div id="payrollTabCalendars" class="payroll-panel hidden">
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Payroll Calendars</h3>
+                <p class="payroll-muted">Review payroll periods generated from the saved pay schedule.</p>
+              </div>
+            </div>
             <div class="payroll-card">
-              <h3>Create Pay Calendar</h3>
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Generated Payroll Periods</h3>
+                  <p class="payroll-muted">
+                    These periods are generated from Settings → Pay Schedule.
+                  </p>
+                </div>
 
-              <div class="form-grid">
-                <label>Frequency
-                  <select id="payrollCalFrequency">
-                    <option value="monthly">Monthly</option>
-                    <option value="fortnightly">Fortnightly</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
-                </label>
-
-                <label>Period Start
-                  <input id="payrollCalStart" type="date">
-                </label>
-
-                <label>Period End
-                  <input id="payrollCalEnd" type="date">
-                </label>
-
-                <label>Payment Date
-                  <input id="payrollCalPaymentDate" type="date">
-                </label>
+                <button
+                  type="button"
+                  class="payroll-secondary dark"
+                  data-payroll-goto="settings"
+                >
+                  Manage Pay Schedule
+                </button>
               </div>
 
-              <button id="payrollCreateCalendarBtn" class="payroll-primary">Create Calendar</button>
-            </div>
-
-            <div class="payroll-card">
-              <h3>Calendars</h3>
               <div id="payrollCalendarsList"></div>
             </div>
           </div>
 
           <div id="payrollTabRuns" class="payroll-panel hidden">
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Payroll Runs</h3>
+                <p class="payroll-muted">Create, calculate, review and post payroll runs.</p>
+              </div>
+            </div>
             <div class="payroll-card">
               <div class="payroll-card-head">
                 <h3>Payroll Runs</h3>
@@ -11201,6 +11626,20 @@ html, body {
           </div>
 
           <div id="payrollTabSettings" class="payroll-panel hidden">
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Payroll Settings</h3>
+                <p class="payroll-muted">Configure schedules, structures, pay items and accounting mappings.</p>
+              </div>
+            </div>
 
             <div class="payroll-card">
               <div class="payroll-card-head">
@@ -11385,7 +11824,7 @@ html, body {
                   </div>
                 </div>
 
-                <div class="form-grid">
+                <div class="payroll-pay-setup-header">
                   <label>
                     Employee
                     <select id="payrollPaySetupEmployeeId">
@@ -11418,7 +11857,19 @@ html, body {
                     >
                   </label>
 
-                  <label id="payrollPayQuantityWrap">
+                  <label>
+                    PAYE Treatment
+                    <select id="payrollPayTaxTreatment">
+                      <option value="standard">Standard PAYE</option>
+                      <option value="manual">Manual PAYE Input</option>
+                      <option value="exempt">PAYE Exempt</option>
+                    </select>
+                  </label>
+
+                  <label
+                    id="payrollPayQuantityWrap"
+                    class="hidden"
+                  >
                     <span id="payrollPayQuantityLabel">
                       Standard Quantity
                     </span>
@@ -11430,7 +11881,10 @@ html, body {
                     >
                   </label>
 
-                  <label id="payrollPayRateWrap">
+                  <label
+                    id="payrollPayRateWrap"
+                    class="hidden"
+                  >
                     <span id="payrollPayRateLabel">
                       Rate
                     </span>
@@ -11442,16 +11896,10 @@ html, body {
                     >
                   </label>
 
-                  <label>
-                    PAYE Treatment
-                    <select id="payrollPayTaxTreatment">
-                      <option value="standard">Standard PAYE</option>
-                      <option value="manual">Manual PAYE Input</option>
-                      <option value="exempt">PAYE Exempt</option>
-                    </select>
-                  </label>
-
-                  <label id="payrollManualPayeWrap">
+                  <label
+                    id="payrollManualPayeWrap"
+                    class="hidden"
+                  >
                     Manual PAYE Amount
 
                     <input
@@ -11463,59 +11911,48 @@ html, body {
 
                   <label>
                     Effective From
-                    <input id="payrollPaySetupEffectiveFrom" type="date">
+                    <input
+                      id="payrollPaySetupEffectiveFrom"
+                      type="date"
+                    >
                   </label>
                 </div>
 
-                <div class="payroll-run-overview-grid">
-                  <div class="payroll-run-info-card">
-                    <h4>Recurring Earnings</h4>
-                    <div id="payrollPaySetupEarnings"></div>
-                    <button
-                      id="payrollPaySetupAddEarningBtn"
-                      type="button"
-                      class="payroll-secondary dark"
-                    >
-                      + Add Earning
-                    </button>
-                  </div>
+                <section class="payroll-pay-section">
+                  <h4>Recurring Earnings</h4>
 
-                  <div class="payroll-run-info-card">
-                    <h4>Recurring Deductions</h4>
-                    <div id="payrollPaySetupDeductions"></div>
-                    <button
-                      id="payrollPaySetupAddDeductionBtn"
-                      type="button"
-                      class="payroll-secondary dark"
-                    >
-                      + Add Deduction
-                    </button>
-                  </div>
+                  <div
+                    id="payrollPaySetupEarnings"
+                    class="payroll-pay-choice-list"
+                  ></div>
+                </section>
 
-                  <div class="payroll-run-info-card">
-                    <h4>Benefits</h4>
-                    <div id="payrollPaySetupBenefits"></div>
-                    <button
-                      id="payrollPaySetupAddBenefitBtn"
-                      type="button"
-                      class="payroll-secondary dark"
-                    >
-                      + Add Benefit
-                    </button>
-                  </div>
+                <section class="payroll-pay-section">
+                  <h4>Recurring Deductions</h4>
 
-                  <div class="payroll-run-info-card">
-                    <h4>Employer Contributions</h4>
-                    <div id="payrollPaySetupContributions"></div>
-                    <button
-                      id="payrollPaySetupAddContributionBtn"
-                      type="button"
-                      class="payroll-secondary dark"
-                    >
-                      + Add Employer Contribution
-                    </button>
-                  </div>
-                </div>
+                  <div
+                    id="payrollPaySetupDeductions"
+                    class="payroll-pay-choice-list"
+                  ></div>
+                </section>
+
+                <section class="payroll-pay-section">
+                  <h4>Benefits</h4>
+
+                  <div
+                    id="payrollPaySetupBenefits"
+                    class="payroll-pay-choice-list"
+                  ></div>
+                </section>
+
+                <section class="payroll-pay-section">
+                  <h4>Employer Contributions</h4>
+
+                  <div
+                    id="payrollPaySetupContributions"
+                    class="payroll-pay-choice-list"
+                  ></div>
+                </section>
 
                 <button id="payrollSaveEmployeePaySetupBtn" class="payroll-primary">
                   Save Employee Pay Setup
@@ -11769,6 +12206,20 @@ html, body {
           </div>
 
           <div id="payrollTabReports" class="payroll-panel hidden">
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Payroll Reports</h3>
+                <p class="payroll-muted">Review payslips, payroll costs and statutory outputs.</p>
+              </div>
+            </div>
             <div class="payroll-card">
               <h3>Payroll Reports</h3>
               <p class="payroll-muted">Payslips, employee cost summaries and statutory reports will appear here.</p>
