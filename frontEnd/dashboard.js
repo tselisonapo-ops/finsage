@@ -42591,6 +42591,7 @@ function setForecastWorkspaceActive(active) {
               money(row.amount);
           }
         });
+      updateDriverStatementTemplate();
     };
 
     document
@@ -42645,25 +42646,31 @@ function setForecastWorkspaceActive(active) {
         });
       });
 
-    document
-      .querySelectorAll(
-        ".bf-driver-account-select"
-      )
-      .forEach((select) => {
-        select.addEventListener(
-          "change",
-          () => {
-            const index =
-              Number(
-                select.dataset.bfDriverIndex
-              );
+      document
+        .querySelectorAll(
+          ".bf-driver-account-select"
+        )
+        .forEach((select) => {
+          select.addEventListener(
+            "change",
+            () => {
+              const index =
+                Number(
+                  select.dataset.bfDriverIndex
+                );
 
-            BF.driverDraftRows[index]
-              .account_code =
+              const driver =
+                BF.driverDraftRows[index];
+
+              if (!driver) return;
+
+              driver.account_code =
                 select.value;
-          }
-        );
-      });
+
+              updateDriverStatementTemplate();
+            }
+          );
+        });
 
     document
       .querySelectorAll(
@@ -42852,6 +42859,24 @@ function setForecastWorkspaceActive(active) {
           syncAndRender(index);
         });
       });
+
+      BF.driverDraftRows.forEach(
+        (driver, index) => {
+          Object.values(
+            driver.values || {}
+          ).forEach((row) => {
+            row.amount =
+              calculateDriverAmount(
+                driver.driver_type,
+                row.basis,
+                row.rate,
+                row.factor
+              );
+          });
+
+          syncAndRender(index);
+        }
+      );
   }
 
   function calculateDriverAmount(
@@ -43045,7 +43070,8 @@ function setForecastWorkspaceActive(active) {
     grouped,
     months,
   }) {
-    const pnlAccounts = BF.draftForecastAccounts || [];
+    const pnlAccounts =
+      BF.draftForecastAccounts || [];
 
     return `
       <div class="bf-driver-workspace">
@@ -43054,7 +43080,8 @@ function setForecastWorkspaceActive(active) {
             <div>
               <h3>Driver-based Planning</h3>
               <p class="muted">
-                Add operational assumptions that generate forecast amounts.
+                Build operational assumptions and review the resulting
+                management profit or loss forecast.
               </p>
             </div>
 
@@ -43071,18 +43098,20 @@ function setForecastWorkspaceActive(active) {
         <div class="bf-driver-list">
           ${
             BF.driverDraftRows.length
-              ? BF.driverDraftRows.map(
-                  (driver, index) =>
+              ? BF.driverDraftRows
+                  .map((driver, index) =>
                     renderDriverCard(
                       driver,
                       index,
                       pnlAccounts,
                       months
                     )
-                ).join("")
+                  )
+                  .join("")
               : `
                 <div class="card empty-state">
                   <h3>No forecast drivers added</h3>
+
                   <p class="muted">
                     Add a revenue, cost or expenditure driver to begin.
                   </p>
@@ -43098,9 +43127,519 @@ function setForecastWorkspaceActive(active) {
               `
           }
         </div>
+
+        <div
+          id="bfDriverStatementHost"
+          class="bf-driver-statement-host"
+        >
+          ${renderDriverStatementTemplate({
+            months,
+            accounts: pnlAccounts,
+          })}
+        </div>
       </div>
     `;
   }
+
+  function bfFindForecastAccount(accountCode) {
+    const wanted =
+      String(accountCode || "").trim();
+
+    return (
+      BF.draftForecastAccounts || []
+    ).find(
+      (account) =>
+        bfAccountCode(account) === wanted
+    ) || null;
+  }
+
+
+  function bfDriverAccountMonthAmount(
+    accountCode,
+    month
+  ) {
+    return (
+      BF.driverDraftRows || []
+    ).reduce((total, driver) => {
+      if (
+        String(driver.account_code || "").trim() !==
+        String(accountCode || "").trim()
+      ) {
+        return total;
+      }
+
+      const row =
+        driver.values?.[month];
+
+      return (
+        total +
+        Number(row?.amount || 0)
+      );
+    }, 0);
+  }
+
+
+  function bfDriverAccountAnnualAmount(
+    accountCode,
+    months
+  ) {
+    return months.reduce(
+      (total, month) =>
+        total +
+        bfDriverAccountMonthAmount(
+          accountCode,
+          month
+        ),
+      0
+    );
+  }
+
+
+  function bfDriverSelectedAccounts() {
+    const selectedCodes =
+      new Set(
+        (BF.driverDraftRows || [])
+          .map((driver) =>
+            String(
+              driver.account_code || ""
+            ).trim()
+          )
+          .filter(Boolean)
+      );
+
+    return (
+      BF.draftForecastAccounts || []
+    ).filter((account) =>
+      selectedCodes.has(
+        bfAccountCode(account)
+      )
+    );
+  }
+
+
+  function bfDriverGroupAccounts(groupKey) {
+    return bfDriverSelectedAccounts()
+      .filter(
+        (account) =>
+          bfPnlGroup(account) === groupKey
+      )
+      .sort((a, b) =>
+        bfAccountName(a).localeCompare(
+          bfAccountName(b)
+        )
+      );
+  }
+
+
+  function bfDriverGroupMonthTotal(
+    groupKey,
+    month
+  ) {
+    return bfDriverGroupAccounts(
+      groupKey
+    ).reduce(
+      (total, account) =>
+        total +
+        bfDriverAccountMonthAmount(
+          bfAccountCode(account),
+          month
+        ),
+      0
+    );
+  }
+
+
+  function bfDriverStatementValue(
+    calculation,
+    month
+  ) {
+    const revenue =
+      bfDriverGroupMonthTotal(
+        "revenue",
+        month
+      );
+
+    const costOfRevenue =
+      bfDriverGroupMonthTotal(
+        "cost_of_revenue",
+        month
+      );
+
+    const operatingExpenses =
+      bfDriverGroupMonthTotal(
+        "operating_expenses",
+        month
+      );
+
+    const otherIncome =
+      bfDriverGroupMonthTotal(
+        "other_income",
+        month
+      );
+
+    const financeCosts =
+      bfDriverGroupMonthTotal(
+        "finance_costs",
+        month
+      );
+
+    const incomeTax =
+      bfDriverGroupMonthTotal(
+        "income_tax",
+        month
+      );
+
+    const grossProfit =
+      revenue - costOfRevenue;
+
+    const operatingProfit =
+      grossProfit - operatingExpenses;
+
+    const profitBeforeTax =
+      operatingProfit +
+      otherIncome -
+      financeCosts;
+
+    const netProfit =
+      profitBeforeTax -
+      incomeTax;
+
+    const results = {
+      revenue,
+      cost_of_revenue: costOfRevenue,
+      gross_profit: grossProfit,
+      operating_expenses: operatingExpenses,
+      operating_profit: operatingProfit,
+      other_income: otherIncome,
+      finance_costs: financeCosts,
+      profit_before_tax: profitBeforeTax,
+      income_tax: incomeTax,
+      net_profit: netProfit,
+    };
+
+    return Number(
+      results[calculation] || 0
+    );
+  }
+
+  function renderDriverStatementTemplate({
+    months,
+    accounts,
+  }) {
+    const selectedAccounts =
+      bfDriverSelectedAccounts();
+
+    if (!selectedAccounts.length) {
+      return `
+        <div class="card empty-state">
+          <h3>Management statement preview</h3>
+
+          <p class="muted">
+            Select a target account on a driver to build the
+            profit or loss statement.
+          </p>
+        </div>
+      `;
+    }
+
+    const sections = [
+      {
+        key: "revenue",
+        title: "Revenue",
+        subtotalLabel: "Total Revenue",
+        calculation: "revenue",
+      },
+      {
+        key: "cost_of_revenue",
+        title: resolveCostOfRevenueTitle(),
+        subtotalLabel: "Gross Profit",
+        calculation: "gross_profit",
+      },
+      {
+        key: "operating_expenses",
+        title: "Operating Expenses",
+        subtotalLabel: "Operating Profit",
+        calculation: "operating_profit",
+      },
+      {
+        key: "other_income",
+        title: "Other Income",
+        subtotalLabel: null,
+        calculation: null,
+      },
+      {
+        key: "finance_costs",
+        title: "Finance Costs",
+        subtotalLabel: "Profit Before Tax",
+        calculation: "profit_before_tax",
+      },
+      {
+        key: "income_tax",
+        title: "Estimated Income Tax Expense",
+        subtotalLabel: "Forecast Net Profit",
+        calculation: "net_profit",
+        final: true,
+      },
+    ];
+
+    function accountRows(groupKey) {
+      const rows =
+        bfDriverGroupAccounts(groupKey);
+
+      if (!rows.length) {
+        return "";
+      }
+
+      return rows
+        .map((account) => {
+          const accountCode =
+            bfAccountCode(account);
+
+          const linkedDrivers =
+            (BF.driverDraftRows || [])
+              .filter(
+                (driver) =>
+                  String(
+                    driver.account_code || ""
+                  ).trim() === accountCode
+              );
+
+          return `
+            <tr class="bf-driver-statement-account">
+              <td class="bf-sticky-account">
+                <strong>
+                  ${esc(
+                    bfAccountName(account)
+                  )}
+                </strong>
+
+                <small>
+                  ${linkedDrivers.length}
+                  driver${
+                    linkedDrivers.length === 1
+                      ? ""
+                      : "s"
+                  }
+                </small>
+              </td>
+
+              ${months
+                .map(
+                  (month) => `
+                    <td class="right">
+                      ${money(
+                        bfDriverAccountMonthAmount(
+                          accountCode,
+                          month
+                        )
+                      )}
+                    </td>
+                  `
+                )
+                .join("")}
+
+              <td class="right bf-annual-total">
+                ${money(
+                  bfDriverAccountAnnualAmount(
+                    accountCode,
+                    months
+                  )
+                )}
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    function subtotalRow(
+      label,
+      calculation,
+      final = false
+    ) {
+      const annual =
+        months.reduce(
+          (total, month) =>
+            total +
+            bfDriverStatementValue(
+              calculation,
+              month
+            ),
+          0
+        );
+
+      return `
+        <tr class="
+          bf-driver-statement-subtotal
+          ${final ? "bf-net-profit" : ""}
+        ">
+          <td class="bf-sticky-account">
+            <strong>${esc(label)}</strong>
+          </td>
+
+          ${months
+            .map(
+              (month) => `
+                <td class="right">
+                  <strong>
+                    ${money(
+                      bfDriverStatementValue(
+                        calculation,
+                        month
+                      )
+                    )}
+                  </strong>
+                </td>
+              `
+            )
+            .join("")}
+
+          <td class="right">
+            <strong>
+              ${money(annual)}
+            </strong>
+          </td>
+        </tr>
+      `;
+    }
+
+    const visibleSections =
+      sections.filter(
+        (section) =>
+          bfDriverGroupAccounts(
+            section.key
+          ).length ||
+          section.subtotalLabel
+      );
+
+    return `
+      <div class="card bf-driver-statement-card">
+        <div class="section-head">
+          <div>
+            <span class="bf-eyebrow">
+              Forecast output
+            </span>
+
+            <h3>
+              Management Profit or Loss
+            </h3>
+
+            <p class="muted">
+              Calculated from the selected driver target accounts.
+            </p>
+          </div>
+
+          <div class="bf-driver-statement-summary">
+            <span>Forecast Net Profit</span>
+
+            <strong>
+              ${money(
+                months.reduce(
+                  (total, month) =>
+                    total +
+                    bfDriverStatementValue(
+                      "net_profit",
+                      month
+                    ),
+                  0
+                )
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div class="bf-planning-grid-wrap">
+          <table class="
+            bf-planning-grid
+            bf-driver-statement-table
+          ">
+            <thead>
+              <tr>
+                <th class="bf-sticky-account">
+                  Account
+                </th>
+
+                ${months
+                  .map(
+                    (month) => `
+                      <th>
+                        ${esc(
+                          bfMonthLabel(month)
+                        )}
+                      </th>
+                    `
+                  )
+                  .join("")}
+
+                <th>Total</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${visibleSections
+                .map((section) => {
+                  const rows =
+                    accountRows(
+                      section.key
+                    );
+
+                  return `
+                    <tr class="bf-section-title-row">
+                      <td colspan="${
+                        months.length + 2
+                      }">
+                        ${esc(section.title)}
+                      </td>
+                    </tr>
+
+                    ${
+                      rows ||
+                      `
+                        <tr class="bf-driver-empty-section">
+                          <td colspan="${
+                            months.length + 2
+                          }">
+                            No selected accounts in this section.
+                          </td>
+                        </tr>
+                      `
+                    }
+
+                    ${
+                      section.subtotalLabel
+                        ? subtotalRow(
+                            section.subtotalLabel,
+                            section.calculation,
+                            section.final === true
+                          )
+                        : ""
+                    }
+                  `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function updateDriverStatementTemplate() {
+    const host =
+      $("bfDriverStatementHost");
+
+    if (!host) return;
+
+    host.innerHTML =
+      renderDriverStatementTemplate({
+        months:
+          BF.draftForecastMonths || [],
+
+        accounts:
+          BF.draftForecastAccounts || [],
+      });
+  }
+
 
   function addDriverDraftRow() {
     captureForecastWorkspaceForm();
@@ -43182,6 +43721,13 @@ function setForecastWorkspaceActive(active) {
     const factorLabel =
       definition.thirdLabel ||
       "Additional factor";
+
+    const groupAccounts =
+      (accounts || []).filter(
+        (account) =>
+          bfPnlGroup(account) ===
+          driver.driver_group
+      );
 
     return `
       <article
@@ -43276,7 +43822,7 @@ function setForecastWorkspaceActive(active) {
                 Select account
               </option>
 
-              ${accounts
+              ${groupAccounts
                 .map((account) => {
                   const code =
                     bfAccountCode(account);
@@ -48884,9 +49430,27 @@ function setForecastWorkspaceActive(active) {
     showPayrollStatus("Loan / advance saved.", "success");
   }
 
+  function runPayrollAction(handler) {
+    return async function payrollActionHandler(event) {
+      event?.preventDefault?.();
+
+      try {
+        await handler(event);
+      } catch (error) {
+        console.error("Payroll action failed:", error);
+
+        showPayrollStatus(
+          error?.message || "The payroll action failed.",
+          "error"
+        );
+      }
+    };
+  }
+
   function bindPayrollEventsOnce() {
     if (payrollState.bound) return;
-    payrollState.bound = true;
+
+    try {
 
     document.querySelectorAll("[data-payroll-tab]").forEach(btn => {
       btn.addEventListener("click", () => switchPayrollTab(btn.dataset.payrollTab));
@@ -49146,17 +49710,6 @@ function setForecastWorkspaceActive(active) {
       }
     );
 
-    const runPayrollAction = handler => async () => {
-      try {
-        await handler();
-      } catch (error) {
-        showPayrollStatus(
-          error?.message || "The payroll action failed.",
-          "error"
-        );
-      }
-    };
-
     $("payrollSaveScheduleBtn")?.addEventListener(
       "click",
       runPayrollAction(savePayrollSchedule)
@@ -49197,19 +49750,35 @@ function setForecastWorkspaceActive(active) {
       runPayrollAction(createPayrollBenefitType)
     );
 
-    [
-      "payrollScheduleFrequency",
-      "payrollPeriodStartDay",
-      "payrollPeriodEndDay",
-      "payrollPeriodEndOffset",
-      "payrollPaymentDayRule",
-      "payrollPaymentMonthOffset",
-      "payrollPaymentAdjustment",
-      "payrollFirstPeriodMonth",
-    ].forEach(id => {
-      $(id)?.addEventListener("change", renderPayrollSchedulePreview);
-    });
-    initialisePayrollScheduleInputs();
+      [
+        "payrollScheduleFrequency",
+        "payrollPeriodStartDay",
+        "payrollPeriodEndDay",
+        "payrollPeriodEndOffset",
+        "payrollPaymentDayRule",
+        "payrollPaymentMonthOffset",
+        "payrollPaymentAdjustment",
+        "payrollFirstPeriodMonth",
+      ].forEach(id => {
+        $(id)?.addEventListener(
+          "change",
+          renderPayrollSchedulePreview
+        );
+      });
+
+      initialisePayrollScheduleInputs();
+
+      payrollState.bound = true;
+    } catch (error) {
+      payrollState.bound = false;
+
+      console.error(
+        "Payroll event binding failed:",
+        error
+      );
+
+      throw error;
+    }
   }
 
   window.bindPayrollScreen = async function bindPayrollScreen() {
