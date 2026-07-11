@@ -1517,6 +1517,18 @@ const ENDPOINTS = {
       employeeId
     ) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/pay-setup`,
+  
+    taxContext: (companyId, paymentDate = "") => {
+      const params = new URLSearchParams();
+
+      if (paymentDate) {
+        params.set("payment_date", paymentDate);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-context${qs ? `?${qs}` : ""}`;
+    },  
   },
 
   forecast: {
@@ -50698,6 +50710,26 @@ function bindEventsOnce() {
       ?.classList.toggle("hidden", !show);
   }
 
+  function updatePayrollTaxMethodFields() {
+    const method =
+      $("payTaxCalculationMethod")?.value || "standard";
+
+    const showDirective =
+      method === "directive";
+
+    $("payTaxDirectiveNumberWrap")
+      ?.classList.toggle(
+        "hidden",
+        !showDirective
+      );
+
+    $("payTaxDirectiveRateWrap")
+      ?.classList.toggle(
+        "hidden",
+        !showDirective
+      );
+  }
+
   function updatePayChoiceMethodFields(
     key,
     container = document,
@@ -51226,6 +51258,11 @@ function bindEventsOnce() {
       "payTaxProfileAuthorityId",
       "payTaxProfileNumber",
       "payTaxEffectiveFrom",
+      "payTaxDateOfBirth",
+      "payTaxDirectiveNumber",
+      "payTaxDirectiveRate",
+      "payTaxAdditionalAmount",
+      "payTaxEffectiveTo",
       "payBankName",
       "payBankAccountName",
       "payBankAccountNumber",
@@ -51246,6 +51283,23 @@ function bindEventsOnce() {
     $("paySalaryType").value = "monthly";
     $("payBankAccountType").value = "";
     $("payPayeExempt").checked = false;
+    if ($("payTaxResidencyStatus")) {
+      $("payTaxResidencyStatus").value = "resident";
+    }
+
+    if ($("payTaxMedicalMembers")) {
+      $("payTaxMedicalMembers").value = "0";
+    }
+
+    if ($("payTaxCalculationMethod")) {
+      $("payTaxCalculationMethod").value = "standard";
+    }
+
+    if ($("payTaxAdditionalAmount")) {
+      $("payTaxAdditionalAmount").value = "0";
+    }
+
+    updatePayrollCountryTaxFields();
     $("payBankPrimary").checked = true;
   }
 
@@ -51279,11 +51333,24 @@ function bindEventsOnce() {
     $("payContractFrom").value = contract.effective_from || e.start_date || "";
 
     const tax = (e.tax_profiles || [])[0] || {};
+
     $("payTaxProfileAuthorityId").value = tax.tax_authority_id || "";
     $("payTaxProfileNumber").value = tax.tax_number || e.tax_number || "";
+    $("payTaxResidencyStatus").value = tax.residency_status || "resident";
+    $("payTaxDateOfBirth").value = tax.date_of_birth || "";
+    $("payTaxMedicalMembers").value = tax.medical_scheme_members || 0;
+    $("payTaxCalculationMethod").value =
+      tax.tax_calculation_method ||
+      (tax.paye_exempt ? "exempt" : "standard");
+    $("payTaxDirectiveNumber").value = tax.directive_number || "";
+    $("payTaxDirectiveRate").value = tax.directive_rate || "";
+    $("payTaxAdditionalAmount").value = tax.additional_tax_amount || 0;
     $("payTaxEffectiveFrom").value = tax.effective_from || e.start_date || "";
+    $("payTaxEffectiveTo").value = tax.effective_to || "";
     $("payPayeExempt").checked = !!tax.paye_exempt;
 
+    updatePayrollCountryTaxFields();
+    updatePayrollTaxMethodFields();
     const bank = (e.bank_accounts || [])[0] || {};
     $("payBankName").value = bank.bank_name || "";
     $("payBankAccountName").value = bank.account_name || "";
@@ -51514,22 +51581,90 @@ function bindEventsOnce() {
 
   async function savePayrollTaxProfile() {
     const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
+    const employeeId = Number($("payrollEditingEmployeeId")?.value || 0);
+
+    if (!employeeId) {
+      throw new Error("Save employee first.");
+    }
+
+    const method = $("payTaxCalculationMethod")?.value || "standard";
 
     const payload = {
-      tax_authority_id: $("payTaxProfileAuthorityId").value ? Number($("payTaxProfileAuthorityId").value) : null,
-      tax_number: $("payTaxProfileNumber").value.trim() || null,
-      paye_exempt: $("payPayeExempt").checked,
-      effective_from: $("payTaxEffectiveFrom").value,
+      tax_authority_id: Number($("payTaxProfileAuthorityId")?.value || 0) || null,
+      tax_number: $("payTaxProfileNumber")?.value.trim() || null,
+      paye_exempt: $("payPayeExempt")?.checked || method === "exempt",
+      residency_status: $("payTaxResidencyStatus")?.value || "resident",
+      date_of_birth: $("payTaxDateOfBirth")?.value || null,
+      medical_scheme_members: Number($("payTaxMedicalMembers")?.value || 0),
+      tax_calculation_method: method,
+      directive_number: method === "directive"
+        ? $("payTaxDirectiveNumber")?.value.trim() || null
+        : null,
+      directive_rate: method === "directive" && $("payTaxDirectiveRate")?.value
+        ? Number($("payTaxDirectiveRate").value)
+        : null,
+      additional_tax_amount: Number($("payTaxAdditionalAmount")?.value || 0),
+      effective_from: $("payTaxEffectiveFrom")?.value || null,
+      effective_to: $("payTaxEffectiveTo")?.value || null,
     };
 
-    await apiFetch(ENDPOINTS.payroll.taxProfiles(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    if (!payload.effective_from) {
+      throw new Error("Tax profile effective date is required.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.taxProfiles(companyId, employeeId),
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    await openPayrollEmployee(employeeId);
 
     showPayrollStatus("Tax profile saved.", "success");
+  }
+
+  function updatePayrollTaxMethodFields() {
+    const method = $("payTaxCalculationMethod")?.value || "standard";
+    const directive = method === "directive";
+    const exempt = method === "exempt";
+
+    $("payTaxDirectiveNumberWrap")?.classList.toggle("hidden", !directive);
+    $("payTaxDirectiveRateWrap")?.classList.toggle("hidden", !directive);
+
+    if ($("payPayeExempt")) {
+      $("payPayeExempt").checked = exempt;
+    }
+  }
+
+  function updatePayrollCountryTaxFields() {
+    const country = String(
+      window.CURRENT_COMPANY?.country ||
+      window.CURRENT_COMPANY_COUNTRY ||
+      ""
+    ).trim().toUpperCase();
+
+    const isSouthAfrica = ["ZA", "RSA", "SOUTH AFRICA"].includes(country);
+
+    $("payTaxDobWrap")?.classList.toggle("hidden", !isSouthAfrica);
+    $("payTaxMedicalWrap")?.classList.toggle("hidden", !isSouthAfrica);
+
+    const directiveOption = $("payTaxCalculationMethod")
+      ?.querySelector('option[value="directive"]');
+
+    if (directiveOption) {
+      directiveOption.disabled = !isSouthAfrica;
+    }
+
+    if (
+      !isSouthAfrica &&
+      $("payTaxCalculationMethod")?.value === "directive"
+    ) {
+      $("payTaxCalculationMethod").value = "standard";
+    }
+
+    updatePayrollTaxMethodFields();
   }
 
   async function savePayrollBankAccount() {
@@ -51715,7 +51850,10 @@ function bindEventsOnce() {
           savePayrollEmployeePaySetup
         )
       );
-
+    $("payTaxCalculationMethod")?.addEventListener(
+      "change",
+      updatePayrollTaxMethodFields
+    );
     $("payrollEmployeeModalClose")?.addEventListener("click", closePayrollEmployeeModal);
 
     $("payrollSaveSettingsBtn")?.addEventListener("click", async () => {
@@ -51780,6 +51918,12 @@ function bindEventsOnce() {
     document.querySelectorAll("[data-payroll-goto]").forEach(btn => {
       btn.addEventListener("click", () => switchPayrollTab(btn.dataset.payrollGoto));
     });
+
+    $("payTaxCalculationMethod")
+      ?.addEventListener(
+        "change",
+        updatePayrollTaxMethodFields
+      );
 
     $("payrollEmployeeSearch")?.addEventListener("input", renderPayrollEmployees);
     $("payrollEmployeeDepartmentFilter")?.addEventListener("change", renderPayrollEmployees);

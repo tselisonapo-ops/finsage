@@ -2928,6 +2928,13 @@ html, body {
   font-weight: 800;
 }
 
+#payTaxDirectiveNumberWrap.hidden,
+#payTaxDirectiveRateWrap.hidden,
+#payTaxDobWrap.hidden,
+#payTaxMedicalWrap.hidden,
+#payTaxResidencyWrap.hidden{
+    display:none!important;
+}
 /* ---------- Employee Rows ---------- */
 
 .payroll-row {
@@ -12937,12 +12944,64 @@ html, body {
 
           <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden">
             <div class="form-grid">
-              <label>Tax Authority ID <input id="payTaxProfileAuthorityId" type="number"></label>
-              <label>Tax Number <input id="payTaxProfileNumber"></label>
-              <label>Effective From <input id="payTaxEffectiveFrom" type="date"></label>
-              <label><input id="payPayeExempt" type="checkbox"> PAYE Exempt</label>
+              <label>Tax Authority<select id="payTaxProfileAuthorityId"></select></label>
+              <label>Tax Number<input id="payTaxProfileNumber"></label>
+
+              <label id="payTaxResidencyWrap">
+                Residency Status
+                <select id="payTaxResidencyStatus">
+                  <option value="resident">Resident</option>
+                  <option value="non_resident">Non-resident</option>
+                </select>
+              </label>
+
+              <label id="payTaxDobWrap">
+                Date of Birth
+                <input id="payTaxDateOfBirth" type="date">
+              </label>
+
+              <label id="payTaxMedicalWrap">
+                Medical Scheme Members
+                <input id="payTaxMedicalMembers" type="number" min="0" step="1" value="0">
+              </label>
+
+              <label>
+                Tax Calculation
+                <select id="payTaxCalculationMethod">
+                  <option value="standard">Standard PAYE</option>
+                  <option value="directive">Tax Directive</option>
+                  <option value="manual">Manual PAYE</option>
+                  <option value="exempt">Exempt</option>
+                </select>
+              </label>
+
+              <label id="payTaxDirectiveNumberWrap" class="hidden">
+                Directive Number
+                <input id="payTaxDirectiveNumber">
+              </label>
+
+              <label id="payTaxDirectiveRateWrap" class="hidden">
+                Directive Rate
+                <input id="payTaxDirectiveRate" type="number" min="0" step="0.0001">
+              </label>
+
+              <label>
+                Additional PAYE
+                <input id="payTaxAdditionalAmount" type="number" min="0" step="0.01" value="0">
+              </label>
+
+              <label>Effective From<input id="payTaxEffectiveFrom" type="date"></label>
+              <label>Effective To<input id="payTaxEffectiveTo" type="date"></label>
+
+              <label class="payroll-check-label">
+                <input id="payPayeExempt" type="checkbox">
+                PAYE Exempt
+              </label>
             </div>
-            <button id="payrollSaveTaxBtn" class="btn primary">Save Tax Profile</button>
+
+            <button id="payrollSaveTaxProfileBtn" class="payroll-primary">
+              Save Tax Profile
+            </button>
           </div>
 
           <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden">
