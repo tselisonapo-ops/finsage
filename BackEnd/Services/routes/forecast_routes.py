@@ -129,6 +129,51 @@ def forecast_budgets_list_or_create(company_id):
     except Exception as e:
         current_app.logger.exception("forecast create budget failed")
         return _json_error(e, 400)
+@forecast_bp.route(
+    "/api/companies/<int:company_id>/forecast/budgets/<int:budget_id>/lines",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def forecast_budget_lines(company_id, budget_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        deny = _require_planning_view(payload)
+        if deny:
+            return deny
+
+        try:
+            rows = db_service.forecast_list_budget_lines(company_id, budget_id)
+            return jsonify({"ok": True, "data": rows})
+        except Exception as e:
+            current_app.logger.exception("forecast list budget lines failed")
+            return _json_error(e, 400)
+
+    deny = _require_planning_edit(payload)
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+
+        rows = db_service.forecast_bulk_upsert_budget_lines(
+            company_id,
+            budget_id,
+            body.get("lines") or [],
+            user_id=_actor_user_id(payload),
+        )
+
+        return jsonify({"ok": True, "data": rows})
+    except Exception as e:
+        current_app.logger.exception("forecast save budget lines failed")
+        return _json_error(e, 400)
 
 
 @forecast_bp.route("/api/companies/<int:company_id>/forecast/budgets/<int:budget_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])

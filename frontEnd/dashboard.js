@@ -46150,6 +46150,27 @@ async function saveEditModal() {
         </table>
       </div>
     `;
+
+  $("bfCapexRows").innerHTML = rows.length
+    ? rows.map(item => `
+        <tr>
+          <td>${esc(item.asset_name)}</td>
+          <td>${esc(item.asset_class || "—")}</td>
+          <td>${esc(bfMonthLabel(item.purchase_month))}</td>
+          <td class="right">${Number(item.quantity || 0)}</td>
+          <td class="right">${money(item.unit_cost)}</td>
+          <td class="right">${money(item.total_cost)}</td>
+          <td>${item.useful_life_months || "—"} months</td>
+          <td>${esc(item.funding_source || "cash")}</td>
+        </tr>
+      `).join("")
+    : `
+        <tr>
+          <td colspan="8" class="muted">
+            No capital expenditure items have been added.
+          </td>
+        </tr>
+      `;
   }
 
   async function loadBudgets() {
@@ -46857,6 +46878,21 @@ async function saveEditModal() {
     BF.draftForecastValues[key] = Number(value || 0);
   }
 
+  async function loadCapexItems() {
+    showTab("capex");
+    setStatus("Loading capital expenditure...");
+
+    const res = await apiFetch(
+      ENDPOINTS.forecast.capex(cid(), {
+        version_id: BF.selectedVersionId,
+        budget_id: BF.selectedBudgetId,
+      })
+    );
+
+    BF.capexItems = unwrap(res) || [];
+    renderCapexPlanner();
+    setStatus("");
+  }
 
   function bfDraftGroupTotal(accounts, month) {
     return accounts.reduce((total, account) => {
@@ -48112,6 +48148,99 @@ async function saveEditModal() {
       });
   }
 
+  function openCapexItemForm() {
+    const el = $("bfCapexPane");
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="bf-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button class="btn" data-bf-action="back-capex">
+              ← Capital Expenditure
+            </button>
+
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">Capital Planning</span>
+              <h2>Add Capital Item</h2>
+              <p class="muted">Plan an asset purchase and its funding.</p>
+            </div>
+          </div>
+
+          <button class="btn primary" data-bf-action="save-capex-item">
+            Save Capital Item
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="grid four">
+            <label>
+              Asset / Project
+              <input id="bfCapexAssetName">
+            </label>
+
+            <label>
+              Asset class
+              <input id="bfCapexAssetClass">
+            </label>
+
+            <label>
+              Purchase month
+              <input id="bfCapexPurchaseMonth" type="date">
+            </label>
+
+            <label>
+              Quantity
+              <input id="bfCapexQuantity" type="number" step="0.01" value="1">
+            </label>
+
+            <label>
+              Unit cost
+              <input id="bfCapexUnitCost" type="number" step="0.01" value="0">
+            </label>
+
+            <label>
+              Useful life in months
+              <input id="bfCapexUsefulLife" type="number" value="60">
+            </label>
+
+            <label>
+              Residual value
+              <input id="bfCapexResidualValue" type="number" step="0.01" value="0">
+            </label>
+
+            <label>
+              Funding source
+              <select id="bfCapexFundingSource">
+                <option value="cash">Cash</option>
+                <option value="loan">Loan</option>
+                <option value="lease">Lease</option>
+                <option value="vendor_finance">Vendor finance</option>
+                <option value="mixed">Mixed</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+
+            <label>
+              Loan percentage
+              <input id="bfCapexLoanPercentage" type="number" step="0.01" value="0">
+            </label>
+
+            <label>
+              Depreciation method
+              <select id="bfCapexDepreciationMethod">
+                <option value="straight_line">Straight line</option>
+                <option value="reducing_balance">Reducing balance</option>
+                <option value="units_of_production">Units of production</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function openForecastLineModal() {
     modal(
       "Add Forecast Line",
@@ -48329,6 +48458,49 @@ async function saveEditModal() {
         </table>
       </div>
     `;
+  }
+
+  async function saveCapexItem() {
+    const quantity = Number($("bfCapexQuantity")?.value || 0);
+    const unitCost = Number($("bfCapexUnitCost")?.value || 0);
+
+    const body = {
+      version_id: BF.selectedVersionId || null,
+      budget_id: BF.selectedBudgetId || null,
+      asset_name: $("bfCapexAssetName")?.value.trim(),
+      asset_class: $("bfCapexAssetClass")?.value.trim() || null,
+      purchase_month: $("bfCapexPurchaseMonth")?.value,
+      quantity,
+      unit_cost: unitCost,
+      total_cost: quantity * unitCost,
+      useful_life_months: Number($("bfCapexUsefulLife")?.value || 0) || null,
+      residual_value: Number($("bfCapexResidualValue")?.value || 0),
+      depreciation_method: $("bfCapexDepreciationMethod")?.value,
+      funding_source: $("bfCapexFundingSource")?.value,
+      loan_percentage: Number($("bfCapexLoanPercentage")?.value || 0),
+    };
+
+    if (!body.asset_name) {
+      alert("Asset or project name is required.");
+      return;
+    }
+
+    if (!body.purchase_month) {
+      alert("Purchase month is required.");
+      return;
+    }
+
+    if (!body.version_id && !body.budget_id) {
+      alert("Open a budget or forecast before adding capital expenditure.");
+      return;
+    }
+
+    await apiFetch(ENDPOINTS.forecast.capex(cid()), {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    await loadCapexItems();
   }
 
   async function onTab(tab) {
@@ -48775,7 +48947,16 @@ function bindEventsOnce() {
       if (action === "create-version") {
         return openCreateVersionWorkspace(BF.selectedBudgetId);
       }
+      if (action === "add-capex-item") {
+        return openCapexItemForm();
+      }
+      if (action === "save-capex-item") {
+        return saveCapexItem();
+      }
 
+      if (action === "back-capex") {
+        return loadCapexItems();
+      }
       if (action === "save-budget-grid") {
         return saveBudgetGrid();
       }
@@ -49359,7 +49540,7 @@ function bindEventsOnce() {
     return map[tab];
   }
 
-  function switchPayrollSetupTab(tab) {
+  async function switchPayrollSetupTab(tab) {
     document
       .querySelectorAll("[data-payroll-setup-tab]")
       .forEach(btn => {
@@ -49369,22 +49550,39 @@ function bindEventsOnce() {
         );
       });
 
-    Object.values({
-      general: "payrollSetupPanelGeneral",
-      schedule: "payrollSetupPanelSchedule",
-      departments: "payrollSetupPanelDepartments",
-      positions: "payrollSetupPanelPositions",
-      earnings: "payrollSetupPanelEarnings",
-      deductions: "payrollSetupPanelDeductions",
-      contributions: "payrollSetupPanelContributions",
-      benefits: "payrollSetupPanelBenefits",
-      employeePay: "payrollSetupPanelEmployeePay",
-      mappings: "payrollSetupPanelMappings",
-    }).forEach(id => {
+    [
+      "payrollSetupPanelGeneral",
+      "payrollSetupPanelSchedule",
+      "payrollSetupPanelDepartments",
+      "payrollSetupPanelPositions",
+      "payrollSetupPanelEarnings",
+      "payrollSetupPanelDeductions",
+      "payrollSetupPanelContributions",
+      "payrollSetupPanelBenefits",
+      "payrollSetupPanelEmployeePay",
+      "payrollSetupPanelMappings",
+    ].forEach(id => {
       $(id)?.classList.add("hidden");
     });
 
-    $(payrollSetupPanelId(tab))?.classList.remove("hidden");
+    $(payrollSetupPanelId(tab))
+      ?.classList.remove("hidden");
+
+    if (tab === "general") {
+      await loadPayrollSettings();
+    }
+
+    if (tab === "employee-pay") {
+      renderPayrollSetupSelects();
+
+      const employeeId = Number(
+        $("payrollPaySetupEmployeeId")?.value || 0
+      );
+
+      if (employeeId) {
+        await loadPayrollEmployeePaySetup(employeeId);
+      }
+    }
   }
 
   function renderPayrollJournalPreview(preview) {
@@ -51576,32 +51774,79 @@ function bindEventsOnce() {
     }
   }
 
+  function renderPayrollTaxAuthoritySelects() {
+    const items = payrollState.taxAuthorities || [];
+
+    const options = items.map(item => `
+      <option value="${esc(item.id)}">
+        ${esc(item.code)} — ${esc(item.name)}
+      </option>
+    `).join("");
+
+    const companySelect = $("payrollTaxAuthorityId");
+
+    if (companySelect) {
+      const selected =
+        payrollState.settings?.tax_authority_id || "";
+
+      companySelect.innerHTML = `
+        <option value="">Select tax authority…</option>
+        ${options}
+      `;
+
+      companySelect.value = String(selected || "");
+    }
+
+    const employeeSelect =
+      $("payTaxProfileAuthorityId");
+
+    if (employeeSelect) {
+      const selected =
+        employeeSelect.value ||
+        payrollState.settings?.tax_authority_id ||
+        "";
+
+      employeeSelect.innerHTML = `
+        <option value="">Use company default…</option>
+        ${options}
+      `;
+
+      employeeSelect.value = String(selected || "");
+    }
+  }
+
   function renderPayrollSettings() {
-    const s = payrollState.settings || {};
+    const settings = payrollState.settings || {};
 
     if ($("payrollDefaultFrequency")) {
       $("payrollDefaultFrequency").value =
-        s.default_frequency || "monthly";
+        settings.default_frequency || "monthly";
     }
 
     if ($("payrollDefaultCurrency")) {
       $("payrollDefaultCurrency").value =
-        s.default_currency ||
+        settings.default_currency ||
         window.CURRENT_COMPANY?.currency ||
         "";
     }
 
-    renderPayrollTaxAuthoritySelects();
-
-    if ($("payrollTaxAuthorityId")) {
-      $("payrollTaxAuthorityId").value =
-        String(s.tax_authority_id || "");
-    }
-
     if ($("payrollStartDate")) {
       $("payrollStartDate").value =
-        s.payroll_start_date || "";
+        settings.payroll_start_date || "";
     }
+
+    renderPayrollTaxAuthoritySelects();
+  }
+
+  async function loadPayrollSettings() {
+    const companyId = cid();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.settings(companyId)
+    );
+
+    payrollState.settings = res?.data || {};
+    renderPayrollSettings();
   }
 
   function renderPayrollCalendars() {
@@ -51625,6 +51870,138 @@ function bindEventsOnce() {
         </div>
       </div>
     `).join("");
+  }
+
+  async function loadPayrollEmployeePaySetup(employeeId) {
+    const companyId = cid();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.employeePaySetup(
+        companyId,
+        employeeId
+      )
+    );
+
+    const setup = res?.data || null;
+
+    payrollState.selectedPaySetupEmployee =
+      setup;
+
+    clearPayrollPaySetupSelections();
+
+    if (!setup?.id) {
+      updatePayrollPayBasisFields();
+      updatePayrollPayeFields();
+      return;
+    }
+
+    $("payrollPayBasis").value =
+      setup.pay_basis || "monthly";
+
+    $("payrollBasicEarningTypeId").value =
+      setup.basic_earning_type_id || "";
+
+    $("payrollPayBasicAmount").value =
+      setup.fixed_basic_amount || "";
+
+    $("payrollPayStandardQuantity").value =
+      setup.standard_quantity || "";
+
+    $("payrollPayRate").value =
+      setup.rate || "";
+
+    $("payrollPayTaxTreatment").value =
+      setup.tax_treatment || "standard";
+
+    $("payrollManualPayeAmount").value =
+      setup.manual_paye_amount || "";
+
+    $("payrollPaySetupEffectiveFrom").value =
+      setup.effective_from || "";
+
+    for (const item of setup.items || []) {
+      applyPayrollPaySetupItem(item);
+    }
+
+    updatePayrollPayBasisFields();
+    updatePayrollPayeFields();
+  }
+
+  function clearPayrollPaySetupSelections() {
+    document
+      .querySelectorAll("[data-pay-choice-type]")
+      .forEach(checkbox => {
+        checkbox.checked = false;
+
+        const key =
+          `${checkbox.dataset.payChoiceType}-` +
+          `${checkbox.dataset.payChoiceId}`;
+
+        document
+          .querySelector(
+            `[data-pay-choice-details="${key}"]`
+          )
+          ?.classList.add("hidden");
+      });
+  }
+
+  function applyPayrollPaySetupItem(item) {
+    const key =
+      `${item.item_type}-${item.item_id}`;
+
+    const checkbox = document.querySelector(
+      `[data-pay-choice-type="${item.item_type}"]` +
+      `[data-pay-choice-id="${item.item_id}"]`
+    );
+
+    if (!checkbox) return;
+
+    checkbox.checked = true;
+
+    document
+      .querySelector(
+        `[data-pay-choice-details="${key}"]`
+      )
+      ?.classList.remove("hidden");
+
+    const method = document.querySelector(
+      `[data-pay-choice-method="${key}"]`
+    );
+
+    if (method) {
+      method.value =
+        item.calculation_method || "fixed_amount";
+    }
+
+    const amount = document.querySelector(
+      `[data-pay-choice-amount="${key}"]`
+    );
+
+    if (amount) amount.value = item.amount || "";
+
+    const percentage = document.querySelector(
+      `[data-pay-choice-percent="${key}"]`
+    );
+
+    if (percentage) {
+      percentage.value = item.percentage || "";
+    }
+
+    const quantity = document.querySelector(
+      `[data-pay-choice-quantity="${key}"]`
+    );
+
+    if (quantity) {
+      quantity.value = item.quantity || "";
+    }
+
+    const rate = document.querySelector(
+      `[data-pay-choice-rate="${key}"]`
+    );
+
+    if (rate) rate.value = item.rate || "";
+
+    updatePayChoiceMethodFields(key);
   }
 
   function renderPayrollEmployees() {
@@ -52586,12 +52963,15 @@ function bindEventsOnce() {
 
     document
       .querySelectorAll("[data-payroll-setup-tab]")
-      .forEach(btn => {
-        btn.addEventListener("click", () => {
-          switchPayrollSetupTab(
-            btn.dataset.payrollSetupTab
-          );
-        });
+      .forEach(button => {
+        button.addEventListener(
+          "click",
+          runPayrollAction(() =>
+            switchPayrollSetupTab(
+              button.dataset.payrollSetupTab
+            )
+          )
+        );
       });
       
     document.addEventListener("click", event => {
@@ -52643,6 +53023,25 @@ function bindEventsOnce() {
             );
           }
         }
+      );
+
+    $("payrollPaySetupEmployeeId")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(async () => {
+          const employeeId = Number(
+            $("payrollPaySetupEmployeeId")?.value || 0
+          );
+
+          if (!employeeId) {
+            clearPayrollPaySetupSelections();
+            return;
+          }
+
+          await loadPayrollEmployeePaySetup(
+            employeeId
+          );
+        })
       );
 
     $("payrollBackToRunsBtn")?.addEventListener("click", () => {

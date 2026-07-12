@@ -83474,7 +83474,7 @@ class DatabaseService:
 
                     DATE_TRUNC(
                         'month',
-                        j.journal_date
+                        j.date
                     )::date AS period_month,
 
                     SUM(
@@ -83490,15 +83490,15 @@ class DatabaseService:
                 AND j.company_id = jl.company_id
 
                 WHERE jl.company_id = %s
-                AND j.journal_date >= %s::date
-                AND j.journal_date <= %s::date
+                AND j.date >= %s::date
+                AND j.date <= %s::date
                 AND COALESCE(j.status, '') = 'posted'
 
                 GROUP BY
                     jl.account_code,
                     DATE_TRUNC(
                         'month',
-                        j.journal_date
+                        j.date
                     )::date
             ),
 
@@ -85119,6 +85119,23 @@ class DatabaseService:
             WHERE company_id=%s
             LIMIT 1;
         """, (int(company_id),))
+
+    def payroll_tax_authorities_list(self):
+        return self.fetch_all("""
+            SELECT
+                ta.id,
+                ta.code,
+                ta.name,
+                r.country_code,
+                r.currency,
+                r.is_active
+            FROM public.tax_authorities ta
+            LEFT JOIN public.payroll_tax_regimes r
+            ON UPPER(r.authority_code) = UPPER(ta.code)
+            WHERE COALESCE(r.is_active, TRUE) = TRUE
+            AND UPPER(ta.code) IN ('SARS', 'RSL', 'BURS')
+            ORDER BY ta.name;
+        """)
 
     def payroll_setup_master(self, company_id: int) -> dict:
         company_id = int(company_id)
