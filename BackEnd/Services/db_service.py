@@ -82919,6 +82919,46 @@ class DatabaseService:
             ORDER BY created_at DESC, id DESC;
         """, tuple(params))
 
+    def forecast_list_budget_lines(self, company_id: int, budget_id: int):
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+
+        budget = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(budget_id),
+        ))
+
+        if not budget:
+            raise ValueError("Budget not found.")
+
+        return self.fetch_all(f"""
+            SELECT
+                bl.*,
+                COALESCE(
+                    c.name,
+                    c.account_name,
+                    c.description,
+                    bl.account_code
+                ) AS account_name
+            FROM {schema}.forecast_budget_lines bl
+            LEFT JOIN {schema}.coa c
+            ON c.code = bl.account_code
+            WHERE bl.company_id = %s
+            AND bl.budget_id = %s
+            ORDER BY
+                bl.period_month,
+                bl.account_code,
+                bl.id;
+        """, (
+            int(company_id),
+            int(budget_id),
+        ))
 
     def forecast_get_budget_required(self, company_id: int, budget_id: int) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)

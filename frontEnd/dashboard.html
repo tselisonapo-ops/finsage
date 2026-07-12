@@ -2637,6 +2637,44 @@ html, body {
   cursor: pointer;
 }
 
+.payroll-tax-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.payroll-tax-context-grid > div {
+  min-height: 82px;
+  padding: 14px 16px;
+  border: 1px solid #dbe5ef;
+  border-radius: 12px;
+  background: #f8fbfd;
+}
+
+.payroll-tax-context-grid span {
+  display: block;
+  margin-bottom: 7px;
+  color: #708096;
+  font-size: 12px;
+}
+
+.payroll-tax-context-grid strong {
+  color: #082f57;
+  font-size: 15px;
+}
+
+@media (max-width: 900px) {
+  .payroll-tax-context-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .payroll-tax-context-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .payroll-setup-tabs button.active,
 .payroll-run-tabs button.active {
   background: #fff;
@@ -12065,7 +12103,7 @@ html, body {
 
                   <label>
                     Default Currency
-                    <input id="payrollDefaultCurrency" placeholder="LSL / ZAR / USD">
+                    <input id="payrollDefaultCurrency" readonly>
                   </label>
 
                   <label>
@@ -12084,6 +12122,55 @@ html, body {
                 <button id="payrollSaveSettingsBtn" class="payroll-primary">
                   Save General Settings
                 </button>
+              </div>
+
+              <div class="payroll-card">
+                <div class="payroll-card-head">
+                  <div>
+                    <h3>Active Payroll Tax Engine</h3>
+                    <p class="payroll-muted">
+                      Tax rules are selected from the company country, tax authority and payment date.
+                    </p>
+                  </div>
+
+                  <button id="payrollRefreshTaxContextBtn" type="button" class="payroll-secondary dark">
+                    Refresh Tax Engine
+                  </button>
+                </div>
+
+                <div id="payrollTaxContextStatus" class="notice hidden"></div>
+
+                <div class="payroll-tax-context-grid">
+                  <div>
+                    <span>Company Country</span>
+                    <strong id="payrollTaxCountry">—</strong>
+                  </div>
+
+                  <div>
+                    <span>Tax Authority</span>
+                    <strong id="payrollTaxContextAuthority">—</strong>
+                  </div>
+
+                  <div>
+                    <span>Tax Year</span>
+                    <strong id="payrollTaxYear">—</strong>
+                  </div>
+
+                  <div>
+                    <span>Calculation Basis</span>
+                    <strong id="payrollTaxBasis">—</strong>
+                  </div>
+
+                  <div>
+                    <span>Effective From</span>
+                    <strong id="payrollTaxEffectiveFrom">—</strong>
+                  </div>
+
+                  <div>
+                    <span>Effective To</span>
+                    <strong id="payrollTaxEffectiveTo">—</strong>
+                  </div>
+                </div>
               </div>
             </div>
 

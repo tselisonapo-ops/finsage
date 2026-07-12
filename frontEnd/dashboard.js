@@ -49543,10 +49543,10 @@ function bindEventsOnce() {
   async function switchPayrollSetupTab(tab) {
     document
       .querySelectorAll("[data-payroll-setup-tab]")
-      .forEach(btn => {
-        btn.classList.toggle(
+      .forEach(button => {
+        button.classList.toggle(
           "active",
-          btn.dataset.payrollSetupTab === tab
+          button.dataset.payrollSetupTab === tab
         );
       });
 
@@ -49565,8 +49565,8 @@ function bindEventsOnce() {
       $(id)?.classList.add("hidden");
     });
 
-    $(payrollSetupPanelId(tab))
-      ?.classList.remove("hidden");
+    const panelId = payrollSetupPanelId(tab);
+    $(panelId)?.classList.remove("hidden");
 
     if (tab === "general") {
       await loadPayrollSettings();
@@ -51846,7 +51846,78 @@ function bindEventsOnce() {
     );
 
     payrollState.settings = res?.data || {};
+
     renderPayrollSettings();
+    await loadPayrollTaxContext();
+  }
+
+  async function loadPayrollTaxContext(paymentDate = "") {
+    const companyId = cid();
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.taxContext(
+        companyId,
+        paymentDate
+      )
+    );
+
+    const context = res?.data || {};
+
+    setTxt(
+      "payrollTaxCountry",
+      context.country ||
+      context.country_code ||
+      window.CURRENT_COMPANY?.country ||
+      "—"
+    );
+
+    setTxt(
+      "payrollTaxContextAuthority",
+      context.authority_code ||
+      context.authority_name ||
+      "—"
+    );
+
+    setTxt(
+      "payrollTaxYear",
+      context.tax_year_label || "—"
+    );
+
+    setTxt(
+      "payrollTaxBasis",
+      context.calculation_basis
+        ? String(context.calculation_basis)
+            .replaceAll("_", " ")
+        : "—"
+    );
+
+    setTxt(
+      "payrollTaxEffectiveFrom",
+      formatPayrollDate(context.effective_from)
+    );
+
+    setTxt(
+      "payrollTaxEffectiveTo",
+      formatPayrollDate(context.effective_to)
+    );
+
+    const status = $("payrollTaxContextStatus");
+
+    if (status) {
+      const hasContext =
+        !!context.tax_year_id ||
+        !!context.tax_year_label;
+
+      status.textContent = hasContext
+        ? "Payroll tax engine is configured."
+        : "No active payroll tax year was found for this company.";
+
+      status.className = hasContext
+        ? "notice success"
+        : "notice warning";
+
+      status.classList.remove("hidden");
+    }
   }
 
   function renderPayrollCalendars() {
@@ -52789,6 +52860,14 @@ function bindEventsOnce() {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
       
+    $("payrollRefreshTaxContextBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(async () => {
+          await loadPayrollTaxContext();
+        })
+      );
+
     $("payrollRefreshBtn")?.addEventListener("click", payrollLoadAll);
 
     $("payrollAddEmployeeBtn")?.addEventListener("click", () => {
@@ -52966,11 +53045,11 @@ function bindEventsOnce() {
       .forEach(button => {
         button.addEventListener(
           "click",
-          runPayrollAction(() =>
-            switchPayrollSetupTab(
+          runPayrollAction(async () => {
+            await switchPayrollSetupTab(
               button.dataset.payrollSetupTab
-            )
-          )
+            );
+          })
         );
       });
       

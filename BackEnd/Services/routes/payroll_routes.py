@@ -1293,3 +1293,42 @@ def api_payroll_employee_pay_setup(
             "ok": False,
             "error": str(error),
         }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-context",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_context(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        payment_date = (
+            request.args.get("payment_date")
+            or None
+        )
+
+        out = db_service.payroll_company_tax_context(
+            int(company_id),
+            payment_date,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "api_payroll_tax_context failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400

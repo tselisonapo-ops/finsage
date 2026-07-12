@@ -129,6 +129,7 @@ def forecast_budgets_list_or_create(company_id):
     except Exception as e:
         current_app.logger.exception("forecast create budget failed")
         return _json_error(e, 400)
+    
 @forecast_bp.route(
     "/api/companies/<int:company_id>/forecast/budgets/<int:budget_id>/lines",
     methods=["GET", "POST", "OPTIONS"],
@@ -150,10 +151,19 @@ def forecast_budget_lines(company_id, budget_id):
             return deny
 
         try:
-            rows = db_service.forecast_list_budget_lines(company_id, budget_id)
-            return jsonify({"ok": True, "data": rows})
+            rows = db_service.forecast_list_budget_lines(
+                company_id,
+                budget_id,
+            )
+
+            return jsonify({
+                "ok": True,
+                "data": rows,
+            })
         except Exception as e:
-            current_app.logger.exception("forecast list budget lines failed")
+            current_app.logger.exception(
+                "forecast list budget lines failed"
+            )
             return _json_error(e, 400)
 
     deny = _require_planning_edit(payload)
@@ -170,12 +180,16 @@ def forecast_budget_lines(company_id, budget_id):
             user_id=_actor_user_id(payload),
         )
 
-        return jsonify({"ok": True, "data": rows})
+        return jsonify({
+            "ok": True,
+            "data": rows,
+        })
     except Exception as e:
-        current_app.logger.exception("forecast save budget lines failed")
+        current_app.logger.exception(
+            "forecast save budget lines failed"
+        )
         return _json_error(e, 400)
-
-
+    
 @forecast_bp.route("/api/companies/<int:company_id>/forecast/budgets/<int:budget_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])
 @require_auth
 def forecast_budget_get_update_delete(company_id, budget_id):
