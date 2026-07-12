@@ -3695,6 +3695,248 @@ html, body {
   margin: 0;
   font-size: 20px;
 }
+
+.payroll-pay-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.payroll-pay-builder {
+  min-width: 0;
+}
+
+.payroll-payslip-preview-card {
+  position: sticky;
+  top: 18px;
+  padding: 18px;
+  border: 1px solid #dce6ef;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 32px rgba(8, 46, 88, 0.08);
+}
+
+.payroll-preview-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.payroll-preview-heading h3 {
+  margin: 0;
+  color: #082f57;
+}
+
+.payroll-preview-heading p {
+  margin: 4px 0 0;
+  color: #748398;
+  font-size: 12px;
+}
+
+.payroll-estimate-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #dff9f8;
+  color: #07878a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.payroll-payslip-paper {
+  overflow: hidden;
+  border: 1px solid #d9e3ed;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.payroll-payslip-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid #e4ebf2;
+}
+
+.payroll-payslip-company {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+}
+
+.payroll-payslip-logo {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #082f57;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.payroll-payslip-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
+.payroll-payslip-company strong,
+.payroll-payslip-company small {
+  display: block;
+}
+
+.payroll-payslip-company small {
+  margin-top: 3px;
+  color: #748398;
+  font-size: 10px;
+}
+
+.payroll-payslip-title {
+  text-align: right;
+}
+
+.payroll-payslip-title strong {
+  display: block;
+  color: #082f57;
+  font-size: 18px;
+}
+
+.payroll-payslip-title span {
+  color: #748398;
+  font-size: 10px;
+}
+
+.payroll-payslip-employee-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e4ebf2;
+  background: #f8fbfd;
+}
+
+.payroll-payslip-employee-grid span,
+.payroll-payslip-employee-grid small {
+  display: block;
+  color: #748398;
+  font-size: 10px;
+}
+
+.payroll-payslip-employee-grid strong {
+  display: block;
+  margin: 4px 0 2px;
+  color: #082f57;
+  font-size: 12px;
+}
+
+.payroll-payslip-section {
+  padding: 0 18px;
+}
+
+.payroll-payslip-section-title,
+.payroll-preview-line,
+.payroll-payslip-total,
+.payroll-payslip-employer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.payroll-payslip-section-title {
+  padding: 14px 0 9px;
+  color: #173c60;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.payroll-preview-line {
+  padding: 8px 0;
+  border-top: 1px solid #edf1f5;
+  color: #3c526a;
+  font-size: 11px;
+}
+
+.payroll-preview-line small {
+  display: block;
+  margin-top: 2px;
+  color: #8a98a9;
+}
+
+.payroll-payslip-total {
+  padding: 12px 0;
+  border-top: 1px solid #dfe7ef;
+  font-size: 12px;
+}
+
+.payroll-payslip-total-positive {
+  color: #16823c;
+}
+
+.payroll-payslip-total-negative {
+  color: #d03d3d;
+}
+
+.payroll-payslip-net {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding: 18px;
+  background: #082f57;
+  color: #fff;
+}
+
+.payroll-payslip-net span {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.payroll-payslip-net strong {
+  font-size: 23px;
+}
+
+.payroll-payslip-employer {
+  padding: 13px 18px;
+  color: #3d5269;
+  font-size: 11px;
+}
+
+.payroll-preview-note {
+  margin: 12px 2px 0;
+  color: #8290a1;
+  font-size: 10px;
+}
+
+.payroll-pay-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding: 14px 0;
+  background: rgba(247, 250, 252, 0.94);
+  backdrop-filter: blur(5px);
+}
+
+@media (max-width: 1150px) {
+  .payroll-pay-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-payslip-preview-card {
+    position: static;
+  }
+}
+
+@media (max-width: 650px) {
+  .payroll-payslip-employee-grid {
+    grid-template-columns: 1fr;
+  }
+}
   </style>
 
 </head>
@@ -12286,149 +12528,196 @@ html, body {
             </div>
 
             <div id="payrollSetupPanelEmployeePay" class="payroll-setup-panel hidden">
-              <div class="payroll-card">
-                <div class="payroll-card-head">
-                  <div>
+              <div class="payroll-pay-workspace">
+
+                <div class="payroll-pay-builder">
+                  <div class="payroll-card">
                     <h3>Employee Pay Setup</h3>
                     <p class="payroll-muted">
                       Assign recurring remuneration, benefits, deductions and tax treatment.
                     </p>
+
+                    <div class="payroll-pay-setup-header">
+                      <label>
+                        Employee
+                        <select id="payrollPaySetupEmployeeId">
+                          <option value="">Select employee…</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Pay Basis
+                        <select id="payrollPayBasis">
+                          <option value="monthly">Monthly Salary</option>
+                          <option value="hourly">Hours × Rate</option>
+                          <option value="daily">Days × Rate</option>
+                          <option value="quantity">Quantity × Rate</option>
+                          <option value="commission_only">Commission Only</option>
+                        </select>
+                      </label>
+
+                      <label id="payrollBasicEarningWrap">
+                        Basic Earning
+                        <select id="payrollBasicEarningTypeId">
+                          <option value="">Select…</option>
+                        </select>
+                      </label>
+
+                      <label id="payrollPayBasicAmountWrap">
+                        Fixed Basic Amount
+                        <input id="payrollPayBasicAmount" type="number" min="0" step="0.01">
+                      </label>
+
+                      <label>
+                        PAYE Treatment
+                        <select id="payrollPayTaxTreatment">
+                          <option value="standard">Standard PAYE</option>
+                          <option value="manual">Manual PAYE</option>
+                          <option value="exempt">PAYE Exempt</option>
+                        </select>
+                      </label>
+
+                      <label id="payrollPayQuantityWrap" class="hidden">
+                        <span id="payrollPayQuantityLabel">Standard Quantity</span>
+                        <input id="payrollPayStandardQuantity" type="number" min="0" step="0.0001">
+                      </label>
+
+                      <label id="payrollPayRateWrap" class="hidden">
+                        <span id="payrollPayRateLabel">Rate</span>
+                        <input id="payrollPayRate" type="number" min="0" step="0.0001">
+                      </label>
+
+                      <label id="payrollManualPayeWrap" class="hidden">
+                        Manual PAYE Amount
+                        <input id="payrollManualPayeAmount" type="number" min="0" step="0.01">
+                      </label>
+
+                      <label>
+                        Effective From
+                        <input id="payrollPaySetupEffectiveFrom" type="date">
+                      </label>
+                    </div>
+                  </div>
+
+                  <section class="payroll-pay-section">
+                    <h4>Recurring Earnings</h4>
+                    <div id="payrollPaySetupEarnings" class="payroll-pay-choice-list"></div>
+                  </section>
+
+                  <section class="payroll-pay-section">
+                    <h4>Recurring Deductions</h4>
+                    <div id="payrollPaySetupDeductions" class="payroll-pay-choice-list"></div>
+                  </section>
+
+                  <section class="payroll-pay-section">
+                    <h4>Benefits</h4>
+                    <div id="payrollPaySetupBenefits" class="payroll-pay-choice-list"></div>
+                  </section>
+
+                  <section class="payroll-pay-section">
+                    <h4>Employer Contributions</h4>
+                    <div id="payrollPaySetupContributions" class="payroll-pay-choice-list"></div>
+                  </section>
+
+                  <div class="payroll-pay-save-bar">
+                    <button id="payrollSaveEmployeePaySetupBtn" class="payroll-primary" type="button">
+                      Save Employee Pay Setup
+                    </button>
                   </div>
                 </div>
 
-                <div class="payroll-pay-setup-header">
-                  <label>
-                    Employee
-                    <select id="payrollPaySetupEmployeeId">
-                      <option value="">Select employee…</option>
-                    </select>
-                  </label>
+                <aside class="payroll-payslip-preview-card">
+                  <div class="payroll-preview-heading">
+                    <div>
+                      <h3>Payslip Preview</h3>
+                      <p>Estimated from the current setup.</p>
+                    </div>
 
-                  <label>
-                    Pay Basis
-                    <select id="payrollPayBasis">
-                      <option value="monthly">Monthly Salary</option>
-                      <option value="hourly">Hours × Rate</option>
-                      <option value="daily">Days × Rate</option>
-                      <option value="quantity">Quantity × Rate</option>
-                      <option value="commission_only">Commission Only</option>
-                    </select>
-                  </label>
+                    <span class="payroll-estimate-badge">Estimated</span>
+                  </div>
 
-                  <label>
-                    Basic Earning
-                    <select id="payrollBasicEarningTypeId"></select>
-                  </label>
+                  <div class="payroll-payslip-paper">
+                    <div class="payroll-payslip-top">
+                      <div class="payroll-payslip-company">
+                        <div class="payroll-payslip-logo">
+                          <img id="payrollPreviewCompanyLogo" alt="" class="hidden">
+                          <span id="payrollPreviewLogoFallback">F</span>
+                        </div>
 
-                  <label id="payrollPayBasicAmountWrap">
-                    Fixed Basic Amount
-                    <input
-                      id="payrollPayBasicAmount"
-                      type="number"
-                      step="0.01"
-                    >
-                  </label>
+                        <div>
+                          <strong id="payrollPreviewCompanyName">Company</strong>
+                          <small id="payrollPreviewCompanyDetails">Payroll preview</small>
+                        </div>
+                      </div>
 
-                  <label>
-                    PAYE Treatment
-                    <select id="payrollPayTaxTreatment">
-                      <option value="standard">Standard PAYE</option>
-                      <option value="manual">Manual PAYE Input</option>
-                      <option value="exempt">PAYE Exempt</option>
-                    </select>
-                  </label>
+                      <div class="payroll-payslip-title">
+                        <strong>PAYSLIP</strong>
+                        <span id="payrollPreviewPeriod">Current setup</span>
+                      </div>
+                    </div>
 
-                  <label
-                    id="payrollPayQuantityWrap"
-                    class="hidden"
-                  >
-                    <span id="payrollPayQuantityLabel">
-                      Standard Quantity
-                    </span>
+                    <div class="payroll-payslip-employee-grid">
+                      <div>
+                        <span>Employee</span>
+                        <strong id="payrollPreviewEmployeeName">Select employee</strong>
+                        <small id="payrollPreviewEmployeeNo">—</small>
+                      </div>
 
-                    <input
-                      id="payrollPayStandardQuantity"
-                      type="number"
-                      step="0.0001"
-                    >
-                  </label>
+                      <div>
+                        <span>Pay Basis</span>
+                        <strong id="payrollPreviewPayBasis">Monthly Salary</strong>
+                      </div>
 
-                  <label
-                    id="payrollPayRateWrap"
-                    class="hidden"
-                  >
-                    <span id="payrollPayRateLabel">
-                      Rate
-                    </span>
+                      <div>
+                        <span>Effective From</span>
+                        <strong id="payrollPreviewEffectiveFrom">—</strong>
+                      </div>
+                    </div>
 
-                    <input
-                      id="payrollPayRate"
-                      type="number"
-                      step="0.0001"
-                    >
-                  </label>
+                    <div class="payroll-payslip-section">
+                      <div class="payroll-payslip-section-title">
+                        <strong>Earnings</strong>
+                        <span>Amount</span>
+                      </div>
 
-                  <label
-                    id="payrollManualPayeWrap"
-                    class="hidden"
-                  >
-                    Manual PAYE Amount
+                      <div id="payrollPreviewEarnings"></div>
 
-                    <input
-                      id="payrollManualPayeAmount"
-                      type="number"
-                      step="0.01"
-                    >
-                  </label>
+                      <div class="payroll-payslip-total payroll-payslip-total-positive">
+                        <strong>Gross Pay</strong>
+                        <strong id="payrollPreviewGross">0.00</strong>
+                      </div>
+                    </div>
 
-                  <label>
-                    Effective From
-                    <input
-                      id="payrollPaySetupEffectiveFrom"
-                      type="date"
-                    >
-                  </label>
-                </div>
+                    <div class="payroll-payslip-section">
+                      <div class="payroll-payslip-section-title">
+                        <strong>Deductions</strong>
+                        <span>Amount</span>
+                      </div>
 
-                <section class="payroll-pay-section">
-                  <h4>Recurring Earnings</h4>
+                      <div id="payrollPreviewDeductions"></div>
 
-                  <div
-                    id="payrollPaySetupEarnings"
-                    class="payroll-pay-choice-list"
-                  ></div>
-                </section>
+                      <div class="payroll-payslip-total payroll-payslip-total-negative">
+                        <strong>Total Deductions</strong>
+                        <strong id="payrollPreviewDeductionsTotal">0.00</strong>
+                      </div>
+                    </div>
 
-                <section class="payroll-pay-section">
-                  <h4>Recurring Deductions</h4>
+                    <div class="payroll-payslip-net">
+                      <span>NET PAY</span>
+                      <strong id="payrollPreviewNet">0.00</strong>
+                    </div>
 
-                  <div
-                    id="payrollPaySetupDeductions"
-                    class="payroll-pay-choice-list"
-                  ></div>
-                </section>
+                    <div class="payroll-payslip-employer">
+                      <span>Employer Contributions</span>
+                      <strong id="payrollPreviewEmployerTotal">0.00</strong>
+                    </div>
+                  </div>
 
-                <section class="payroll-pay-section">
-                  <h4>Benefits</h4>
+                  <p class="payroll-preview-note">
+                    Final amounts may change during payroll calculation.
+                  </p>
+                </aside>
 
-                  <div
-                    id="payrollPaySetupBenefits"
-                    class="payroll-pay-choice-list"
-                  ></div>
-                </section>
-
-                <section class="payroll-pay-section">
-                  <h4>Employer Contributions</h4>
-
-                  <div
-                    id="payrollPaySetupContributions"
-                    class="payroll-pay-choice-list"
-                  ></div>
-                </section>
-
-                <button id="payrollSaveEmployeePaySetupBtn" class="payroll-primary">
-                  Save Employee Pay Setup
-                </button>
               </div>
             </div>
 

@@ -83520,7 +83520,6 @@ class DatabaseService:
                 WHERE jl.company_id = %s
                 AND j.date >= %s::date
                 AND j.date <= %s::date
-                AND COALESCE(j.status, '') = 'posted'
 
                 GROUP BY
                     jl.account_code,
@@ -83563,35 +83562,24 @@ class DatabaseService:
 
             SELECT
                 c.account_code,
-
-                COALESCE(
-                    coa.name,
-                    coa.account_name,
-                    c.account_code
-                ) AS account_name,
-
+                COALESCE(coa.name, c.account_code) AS account_name,
                 coa.section,
                 coa.category,
                 coa.role,
-
                 c.period_month,
                 c.planned_amount,
 
                 CASE
-                    WHEN UPPER(c.account_code)
-                        LIKE 'PL_REV%%'
-                    OR UPPER(c.account_code)
-                        LIKE 'PL_OI%%'
+                    WHEN UPPER(c.account_code) LIKE 'PL_REV%%'
+                    OR UPPER(c.account_code) LIKE 'PL_OI%%'
                     THEN c.raw_actual_amount
-
                     ELSE ABS(c.raw_actual_amount)
-                END::numeric(18,2)
-                    AS actual_amount
+                END::numeric(18,2) AS actual_amount
 
             FROM combined c
 
             LEFT JOIN {schema}.coa coa
-                ON coa.code = c.account_code
+            ON coa.code = c.account_code
 
             ORDER BY
                 c.period_month,
@@ -88081,19 +88069,41 @@ class DatabaseService:
     def payroll_company_tax_context(
         self,
         company_id: int,
-        payment_date,
+        payment_date=None,
     ):
         company_id = int(company_id)
 
         company = self.fetch_one("""
             SELECT
-                id,
-                country,
-                currency
-            FROM public.companies
-            WHERE id=%s
+                c.id,
+                c.country,
+                c.currency,
+                ps.payroll_start_date,
+                ps.tax_authority_id
+            FROM public.companies c
+            LEFT JOIN company_{company_id}.payroll_settings ps
+            ON ps.company_id = c.id
+            WHERE c.id = %s
             LIMIT 1;
-        """, (company_id,)) or {}
+        """.format(
+            company_id=company_id
+        ), (
+            company_id,
+        )) or {}
+
+        resolved_date = (
+            payment_date
+            or company.get("payroll_start_date")
+            or date.today()
+        )
+
+        if isinstance(resolved_date, datetime):
+            resolved_date = resolved_date.date()
+
+        elif not isinstance(resolved_date, date):
+            resolved_date = date.fromisoformat(
+                str(resolved_date)[:10]
+            )
 
         country = str(
             company.get("country") or ""
@@ -88119,11 +88129,16 @@ class DatabaseService:
                 f"{company.get('country') or 'not configured'}"
             )
 
-        payment_date = (
-            date.fromisoformat(str(payment_date)[:10])
-            if not isinstance(payment_date, date)
-            else payment_date
-        )
+        if payment_date in (None, "", "None"):
+            payment_date = date.today()
+
+        elif isinstance(payment_date, datetime):
+            payment_date = payment_date.date()
+
+        elif not isinstance(payment_date, date):
+            payment_date = date.fromisoformat(
+                str(payment_date)[:10]
+            )
 
         row = self.fetch_one("""
             SELECT
@@ -88137,17 +88152,23 @@ class DatabaseService:
                 y.effective_to
             FROM public.payroll_tax_regimes r
             JOIN public.payroll_tax_years y
-            ON y.regime_id=r.id
-            AND y.is_active=TRUE
-            WHERE r.country_code=%s
-            AND r.is_active=TRUE
+            ON y.regime_id = r.id
+            AND y.is_active = TRUE
+            LEFT JOIN public.tax_authorities ta
+            ON UPPER(ta.code) = UPPER(r.authority_code)
+            WHERE r.is_active = TRUE
+            AND (
+                ta.id = %s
+                OR %s IS NULL
+            )
             AND %s BETWEEN y.effective_from
                         AND y.effective_to
             ORDER BY y.effective_from DESC
             LIMIT 1;
         """, (
-            country_code,
-            payment_date,
+            company.get("tax_authority_id"),
+            company.get("tax_authority_id"),
+            resolved_date,
         ))
 
         if not row:

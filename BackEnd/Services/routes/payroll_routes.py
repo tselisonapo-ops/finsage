@@ -1320,7 +1320,21 @@ def api_payroll_tax_context(company_id: int):
 
         return jsonify({
             "ok": True,
-            "data": out,
+            "data": out or {},
+        }), 200
+
+    except ValueError as error:
+        current_app.logger.warning(
+            "Payroll tax context unavailable: %s",
+            error,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": {
+                "configured": False,
+                "message": str(error),
+            },
         }), 200
 
     except Exception as error:

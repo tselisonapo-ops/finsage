@@ -49267,6 +49267,29 @@ function bindEventsOnce() {
     return rule;
   }
 
+  function payrollToInputDate(value) {
+    if (!value) return "";
+
+    const raw = String(value).trim();
+
+    // Already yyyy-MM-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return raw;
+    }
+
+    const date = new Date(raw);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
   function renderPayrollSchedulePreview() {
     const el = $("payrollSchedulePreview");
     if (!el) return;
@@ -51167,6 +51190,7 @@ function bindEventsOnce() {
     ) {
       $("payrollManualPayeAmount").value = "";
     }
+    renderPayrollPayslipPreview();
   }
 
   function updatePayrollPayBasisFields() {
@@ -51593,6 +51617,301 @@ function bindEventsOnce() {
     `).join("");
   }
 
+  function payrollPreviewMoney(value) {
+    const currency =
+      payrollState.settings?.default_currency ||
+      window.CURRENT_COMPANY?.currency ||
+      "ZAR";
+
+    return new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+    }).format(Number(value || 0));
+  }
+
+  function payrollPreviewSelectedEmployee() {
+    const employeeId = Number(
+      $("payrollPaySetupEmployeeId")?.value || 0
+    );
+
+    return (payrollState.employees || []).find(
+      employee => Number(employee.id) === employeeId
+    ) || null;
+  }
+
+  function payrollPreviewItemAmount(key, method) {
+    if (method === "fixed_amount") {
+      return Number(
+        document.querySelector(
+          `[data-pay-choice-amount="${key}"]`
+        )?.value || 0
+      );
+    }
+
+    if (method === "quantity_rate") {
+      const quantity = Number(
+        document.querySelector(
+          `[data-pay-choice-quantity="${key}"]`
+        )?.value || 0
+      );
+
+      const rate = Number(
+        document.querySelector(
+          `[data-pay-choice-rate="${key}"]`
+        )?.value || 0
+      );
+
+      return quantity * rate;
+    }
+
+    if (method === "percentage") {
+      const percentage = Number(
+        document.querySelector(
+          `[data-pay-choice-percent="${key}"]`
+        )?.value || 0
+      );
+
+      return payrollPreviewBasicPay() * percentage / 100;
+    }
+
+    return 0;
+  }
+
+  function payrollPreviewBasicPay() {
+    const basis = $("payrollPayBasis")?.value || "monthly";
+
+    if (basis === "monthly") {
+      return Number(
+        $("payrollPayBasicAmount")?.value || 0
+      );
+    }
+
+    if (["hourly", "daily", "quantity"].includes(basis)) {
+      const quantity = Number(
+        $("payrollPayStandardQuantity")?.value || 0
+      );
+
+      const rate = Number(
+        $("payrollPayRate")?.value || 0
+      );
+
+      return quantity * rate;
+    }
+
+    return 0;
+  }
+
+  function collectPayrollPreviewLines(type) {
+    return Array.from(
+      document.querySelectorAll(
+        `[data-pay-choice-type="${type}"]:checked`
+      )
+    ).map(checkbox => {
+      const itemId = Number(checkbox.dataset.payChoiceId);
+      const key = `${type}-${itemId}`;
+
+      const method =
+        document.querySelector(
+          `[data-pay-choice-method="${key}"]`
+        )?.value || "fixed_amount";
+
+      const setupListMap = {
+        earning: payrollState.setup?.earning_types || [],
+        deduction: payrollState.setup?.deduction_types || [],
+        benefit: payrollState.setup?.benefit_types || [],
+        contribution: payrollState.setup?.contribution_types || [],
+      };
+
+      const item = setupListMap[type].find(
+        row => Number(row.id) === itemId
+      ) || {};
+
+      return {
+        id: itemId,
+        code: item.code || "",
+        name: item.name || "Payroll Item",
+        method,
+        amount: payrollPreviewItemAmount(key, method),
+      };
+    });
+  }
+
+  function renderPayrollPreviewLines(containerId, lines) {
+    const container = $(containerId);
+    if (!container) return;
+
+    if (!lines.length) {
+      container.innerHTML = `
+        <div class="payroll-preview-line">
+          <span>No items selected</span>
+          <strong>${payrollPreviewMoney(0)}</strong>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = lines.map(line => `
+      <div class="payroll-preview-line">
+        <span>
+          ${esc(line.name)}
+          <small>${esc(line.code)}</small>
+        </span>
+
+        <strong>
+          ${payrollPreviewMoney(line.amount)}
+        </strong>
+      </div>
+    `).join("");
+  }
+
+  function renderPayrollPayslipPreview() {
+    const employee = payrollPreviewSelectedEmployee();
+
+    const employeeName = employee
+      ? [employee.first_name, employee.last_name]
+          .filter(Boolean)
+          .join(" ")
+      : "Select employee";
+
+    setTxt("payrollPreviewEmployeeName", employeeName || "Select employee");
+    setTxt("payrollPreviewEmployeeNo", employee?.employee_no || "—");
+
+    const payBasisLabels = {
+      monthly: "Monthly Salary",
+      hourly: "Hours × Rate",
+      daily: "Days × Rate",
+      quantity: "Quantity × Rate",
+      commission_only: "Commission Only",
+    };
+
+    setTxt(
+      "payrollPreviewPayBasis",
+      payBasisLabels[$("payrollPayBasis")?.value] || "Monthly Salary"
+    );
+
+    setTxt(
+      "payrollPreviewEffectiveFrom",
+      $("payrollPaySetupEffectiveFrom")?.value
+        ? formatPayrollDate($("payrollPaySetupEffectiveFrom").value)
+        : "—"
+    );
+
+    const company = window.CURRENT_COMPANY || {};
+
+    setTxt(
+      "payrollPreviewCompanyName",
+      company.name || "Company"
+    );
+
+    setTxt(
+      "payrollPreviewCompanyDetails",
+      [
+        company.company_reg_no
+          ? `Reg No: ${company.company_reg_no}`
+          : "",
+        company.vat
+          ? `VAT No: ${company.vat}`
+          : "",
+      ].filter(Boolean).join(" | ") || "Payroll preview"
+    );
+
+    const companyLogo = $("payrollPreviewCompanyLogo");
+    const logoFallback = $("payrollPreviewLogoFallback");
+
+    if (companyLogo && company.logo_url) {
+      companyLogo.src = company.logo_url;
+      companyLogo.classList.remove("hidden");
+      logoFallback?.classList.add("hidden");
+    } else {
+      companyLogo?.classList.add("hidden");
+      logoFallback?.classList.remove("hidden");
+    }
+
+    const earnings = collectPayrollPreviewLines("earning")
+      .filter(line => line.code !== "BASIC");
+
+    const deductions = collectPayrollPreviewLines("deduction");
+    const benefits = collectPayrollPreviewLines("benefit");
+    const contributions = collectPayrollPreviewLines("contribution");
+
+    const basicPay = payrollPreviewBasicPay();
+
+    const basicEarning = {
+      code: "BASIC",
+      name: $("payrollBasicEarningTypeId")
+        ?.selectedOptions?.[0]?.textContent?.trim() || "Basic Salary",
+      amount: basicPay,
+    };
+
+    const earningLines = basicPay > 0
+      ? [basicEarning, ...earnings]
+      : earnings;
+
+    const taxableBenefits = benefits.reduce(
+      (total, line) => total + Number(line.amount || 0),
+      0
+    );
+
+    const grossPay =
+      earningLines.reduce(
+        (total, line) => total + Number(line.amount || 0),
+        0
+      ) + taxableBenefits;
+
+    let manualPaye = 0;
+
+    if ($("payrollPayTaxTreatment")?.value === "manual") {
+      manualPaye = Number(
+        $("payrollManualPayeAmount")?.value || 0
+      );
+    }
+
+    const deductionLines = [...deductions];
+
+    if (manualPaye > 0) {
+      deductionLines.push({
+        code: "PAYE",
+        name: "PAYE",
+        amount: manualPaye,
+      });
+    }
+
+    const totalDeductions = deductionLines.reduce(
+      (total, line) => total + Number(line.amount || 0),
+      0
+    );
+
+    const employerTotal = contributions.reduce(
+      (total, line) => total + Number(line.amount || 0),
+      0
+    );
+
+    const netPay = grossPay - totalDeductions;
+
+    renderPayrollPreviewLines(
+      "payrollPreviewEarnings",
+      earningLines
+    );
+
+    renderPayrollPreviewLines(
+      "payrollPreviewDeductions",
+      deductionLines
+    );
+
+    setTxt("payrollPreviewGross", payrollPreviewMoney(grossPay));
+    setTxt(
+      "payrollPreviewDeductionsTotal",
+      payrollPreviewMoney(totalDeductions)
+    );
+    setTxt("payrollPreviewNet", payrollPreviewMoney(netPay));
+    setTxt(
+      "payrollPreviewEmployerTotal",
+      payrollPreviewMoney(employerTotal)
+    );
+    renderPayrollPayslipPreview();
+  }
+
   function renderPayrollMasterSetup() {
     const setup = payrollState.setup || {};
 
@@ -51832,7 +52151,9 @@ function bindEventsOnce() {
 
     if ($("payrollStartDate")) {
       $("payrollStartDate").value =
-        settings.payroll_start_date || "";
+        payrollToInputDate(
+          settings.payroll_start_date
+        );
     }
 
     renderPayrollTaxAuthoritySelects();
@@ -51865,7 +52186,6 @@ function bindEventsOnce() {
 
     setTxt(
       "payrollTaxCountry",
-      context.country ||
       context.country_code ||
       window.CURRENT_COMPANY?.country ||
       "—"
@@ -51873,14 +52193,12 @@ function bindEventsOnce() {
 
     setTxt(
       "payrollTaxContextAuthority",
-      context.authority_code ||
-      context.authority_name ||
-      "—"
+      context.authority_code || "—"
     );
 
     setTxt(
       "payrollTaxYear",
-      context.tax_year_label || "—"
+      context.tax_year_label || "Not configured"
     );
 
     setTxt(
@@ -51893,26 +52211,34 @@ function bindEventsOnce() {
 
     setTxt(
       "payrollTaxEffectiveFrom",
-      formatPayrollDate(context.effective_from)
+      context.effective_from
+        ? formatPayrollDate(context.effective_from)
+        : "—"
     );
 
     setTxt(
       "payrollTaxEffectiveTo",
-      formatPayrollDate(context.effective_to)
+      context.effective_to
+        ? formatPayrollDate(context.effective_to)
+        : "—"
     );
 
-    const status = $("payrollTaxContextStatus");
+    const status =
+      $("payrollTaxContextStatus");
 
     if (status) {
-      const hasContext =
-        !!context.tax_year_id ||
+      const configured =
+        context.configured !== false &&
         !!context.tax_year_label;
 
-      status.textContent = hasContext
+      status.textContent = configured
         ? "Payroll tax engine is configured."
-        : "No active payroll tax year was found for this company.";
+        : (
+            context.message ||
+            "No active payroll tax year is configured."
+          );
 
-      status.className = hasContext
+      status.className = configured
         ? "notice success"
         : "notice warning";
 
@@ -51996,6 +52322,7 @@ function bindEventsOnce() {
 
     updatePayrollPayBasisFields();
     updatePayrollPayeFields();
+    renderPayrollPayslipPreview();
   }
 
   function clearPayrollPaySetupSelections() {
@@ -53053,6 +53380,54 @@ function bindEventsOnce() {
         );
       });
       
+    [
+      "payrollPaySetupEmployeeId",
+      "payrollPayBasis",
+      "payrollBasicEarningTypeId",
+      "payrollPayBasicAmount",
+      "payrollPayStandardQuantity",
+      "payrollPayRate",
+      "payrollPayTaxTreatment",
+      "payrollManualPayeAmount",
+      "payrollPaySetupEffectiveFrom",
+    ].forEach(id => {
+      $(id)?.addEventListener(
+        "input",
+        renderPayrollPayslipPreview
+      );
+
+      $(id)?.addEventListener(
+        "change",
+        renderPayrollPayslipPreview
+      );
+    });
+
+  $("payrollSetupPanelEmployeePay")
+    ?.addEventListener("input", event => {
+      if (
+        event.target.matches(
+          "[data-pay-choice-amount], " +
+          "[data-pay-choice-percent], " +
+          "[data-pay-choice-quantity], " +
+          "[data-pay-choice-rate]"
+        )
+      ) {
+        renderPayrollPayslipPreview();
+      }
+    });
+
+  $("payrollSetupPanelEmployeePay")
+    ?.addEventListener("change", event => {
+      if (
+        event.target.matches(
+          "[data-pay-choice-type], " +
+          "[data-pay-choice-method]"
+        )
+      ) {
+        renderPayrollPayslipPreview();
+      }
+    });
+
     document.addEventListener("click", event => {
       const row = event.target.closest(
         "[data-payroll-setup-id]"
