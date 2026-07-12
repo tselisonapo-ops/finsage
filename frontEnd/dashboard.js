@@ -51909,7 +51909,6 @@ function bindEventsOnce() {
       "payrollPreviewEmployerTotal",
       payrollPreviewMoney(employerTotal)
     );
-    renderPayrollPayslipPreview();
   }
 
   function renderPayrollMasterSetup() {
