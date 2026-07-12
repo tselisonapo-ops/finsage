@@ -737,3 +737,59 @@ def forecast_capex_impacts_route(
             "forecast capex impacts failed"
         )
         return _json_error(exc, 400)
+    
+@forecast_bp.route(
+    "/api/companies/<int:company_id>/forecast/budgets/<int:budget_id>/variance",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def forecast_budget_variance_route(company_id, budget_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(payload, company_id)
+    if deny:
+        return deny
+
+    deny = _require_planning_view(payload)
+    if deny:
+        return deny
+
+    try:
+        period_start = (
+            request.args.get("period_start") or ""
+        ).strip() or None
+
+        period_end = (
+            request.args.get("period_end") or ""
+        ).strip() or None
+
+        version_id = request.args.get(
+            "version_id",
+            type=int,
+        )
+
+        data = db_service.forecast_budget_variance(
+            company_id=company_id,
+            budget_id=budget_id,
+            version_id=version_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": data,
+        })
+
+    except ValueError as exc:
+        return _json_error(exc, 400)
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "forecast budget variance failed"
+        )
+
+        return _json_error(exc, 500)

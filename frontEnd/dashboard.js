@@ -1560,6 +1560,23 @@ const ENDPOINTS = {
     variance: (cid, budgetId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/forecast/budgets/${encodeURIComponent(budgetId)}/variance`,
 
+    budgetVariance: (companyId, budgetId, options = {}) => {
+      const params = new URLSearchParams();
+
+      if (options.version_id)
+        params.set("version_id", options.version_id);
+
+      if (options.period_start)
+        params.set("period_start", options.period_start);
+
+      if (options.period_end)
+        params.set("period_end", options.period_end);
+
+      const query = params.toString();
+
+      return `${API_BASE}/api/companies/${companyId}/forecast/budgets/${budgetId}/variance${query ? `?${query}` : ""}`;
+    },
+
     versions: (cid, opts = {}) => {
       const params = new URLSearchParams();
       if (opts.budget_id) params.set("budget_id", opts.budget_id);
@@ -46570,11 +46587,24 @@ async function saveEditModal() {
 
   async function loadVariance(budgetId) {
     BF.selectedBudgetId = Number(budgetId);
+
     showTab("variance");
     setStatus("Loading budget vs actual...");
 
-    const res = await apiFetch(ENDPOINTS.forecast.variance(cid(), budgetId));
-    BF.varianceRows = unwrap(res) || [];
+    const res = await apiFetch(
+      ENDPOINTS.forecast.budgetVariance(
+        cid(),
+        budgetId,
+        {
+          version_id: BF.selectedVersionId,
+          period_start: BF.selectedVersion?.period_start,
+          period_end: BF.selectedVersion?.period_end,
+        }
+      )
+    );
+
+    BF.varianceRows = unwrap(res)?.rows || [];
+
     renderVariance();
 
     setStatus("");
@@ -47223,13 +47253,56 @@ async function saveEditModal() {
       bfPnlGroups().map((group) => [group.key, []])
     );
 
-    for (const account of BF.coa.filter(bfIsForecastablePnlAccount)) {
-      const groupKey = bfPnlGroup(account);
+    const usedAccountCodes =
+      new Set(
+        existingLines
+          .filter((line) => {
+            const amount =
+              Number(line.amount || 0);
+
+            return Math.abs(amount) > 0.004;
+          })
+          .map((line) =>
+            String(
+              line.account_code || ""
+            ).trim()
+          )
+          .filter(Boolean)
+      );
+
+    for (
+      const account of
+      BF.coa.filter(
+        bfIsForecastablePnlAccount
+      )
+    ) {
+      const accountCode =
+        bfAccountCode(account);
+
+      /*
+      * Saved forecast view:
+      * show only accounts having at least one
+      * non-zero forecast line.
+      */
+      if (
+        !usedAccountCodes.has(
+          accountCode
+        )
+      ) {
+        continue;
+      }
+
+      const groupKey =
+        bfPnlGroup(account);
 
       if (grouped[groupKey]) {
-        grouped[groupKey].push(account);
+        grouped[groupKey].push(
+          account
+        );
       } else {
-        grouped.unclassified.push(account);
+        grouped.unclassified.push(
+          account
+        );
       }
     }
 
@@ -48417,6 +48490,7 @@ function bindEventsOnce() {
     schedule: null,
     calendars: [],
     employees: [],
+    taxAuthorities: [],
     selectedEmployee: null,
     selectedPaySetupEmployee: null,
     bound: false,
@@ -48434,7 +48508,7 @@ function bindEventsOnce() {
       leave_types: [],
       gl_mappings: [],
     },
-  };
+};
 
   function cid() {
     return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
@@ -48460,6 +48534,11 @@ function bindEventsOnce() {
     payrollState.settings = data.settings || {};
     payrollState.calendars = data.calendars || [];
     payrollState.employees = data.employees || [];
+    payrollState.taxAuthorities =
+      data.tax_authorities ||
+      data.authorities ||
+      data.setup?.tax_authorities ||
+      [];
     payrollState.setup = data.setup || payrollState.setup || {};
 
     renderPayrollSetupSelects();
@@ -48470,7 +48549,8 @@ function bindEventsOnce() {
     renderPayrollCalendars();
     renderPayrollEmployees();
     renderPayrollOverview();
-
+    updatePayrollCountryTaxFields();
+    updatePayrollTaxMethodFields();
     showPayrollStatus("");
   }
 
@@ -50002,7 +50082,62 @@ function bindEventsOnce() {
       x => `${x.code} — ${x.name}`
     );
 
+    renderPayrollTaxAuthoritySelects();
     renderEmployeePaySetupChoices();
+  }
+
+  function renderPayrollTaxAuthoritySelects() {
+    const authorities =
+      payrollState.taxAuthorities || [];
+
+    const selectedSettingsAuthority =
+      payrollState.settings?.tax_authority_id || "";
+
+    const options = authorities.map(authority => {
+      const label =
+        authority.code && authority.name
+          ? `${authority.code} — ${authority.name}`
+          : authority.name ||
+            authority.code ||
+            `Authority ${authority.id}`;
+
+      return `
+        <option value="${esc(authority.id)}">
+          ${esc(label)}
+        </option>
+      `;
+    }).join("");
+
+    const settingsSelect =
+      $("payrollTaxAuthorityId");
+
+    if (settingsSelect) {
+      settingsSelect.innerHTML = `
+        <option value="">Select tax authority…</option>
+        ${options}
+      `;
+
+      settingsSelect.value =
+        String(selectedSettingsAuthority || "");
+    }
+
+    const employeeSelect =
+      $("payTaxProfileAuthorityId");
+
+    if (employeeSelect) {
+      const currentValue =
+        employeeSelect.value ||
+        selectedSettingsAuthority ||
+        "";
+
+      employeeSelect.innerHTML = `
+        <option value="">Use company default…</option>
+        ${options}
+      `;
+
+      employeeSelect.value =
+        String(currentValue || "");
+    }
   }
 
   function renderPayrollDepartments() {
@@ -51022,10 +51157,30 @@ function bindEventsOnce() {
 
   function renderPayrollSettings() {
     const s = payrollState.settings || {};
-    $("payrollDefaultFrequency").value = s.default_frequency || "monthly";
-    $("payrollDefaultCurrency").value = s.default_currency || window.CURRENT_COMPANY?.currency || "";
-    $("payrollTaxAuthorityId").value = s.tax_authority_id || "";
-    $("payrollStartDate").value = s.payroll_start_date || "";
+
+    if ($("payrollDefaultFrequency")) {
+      $("payrollDefaultFrequency").value =
+        s.default_frequency || "monthly";
+    }
+
+    if ($("payrollDefaultCurrency")) {
+      $("payrollDefaultCurrency").value =
+        s.default_currency ||
+        window.CURRENT_COMPANY?.currency ||
+        "";
+    }
+
+    renderPayrollTaxAuthoritySelects();
+
+    if ($("payrollTaxAuthorityId")) {
+      $("payrollTaxAuthorityId").value =
+        String(s.tax_authority_id || "");
+    }
+
+    if ($("payrollStartDate")) {
+      $("payrollStartDate").value =
+        s.payroll_start_date || "";
+    }
   }
 
   function renderPayrollCalendars() {
@@ -51885,10 +52040,36 @@ function bindEventsOnce() {
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
-    $("payrollSaveTaxBtn")?.addEventListener("click", async () => {
-      try { await savePayrollTaxProfile(); }
-      catch (e) { showPayrollStatus(e.message, "error"); }
-    });
+    $("payrollSaveTaxProfileBtn")?.addEventListener(
+      "click",
+      runPayrollAction(savePayrollTaxProfile)
+    );
+
+    $("payTaxCalculationMethod")?.addEventListener(
+      "change",
+      updatePayrollTaxMethodFields
+    );
+
+    $("payPayeExempt")?.addEventListener(
+      "change",
+      () => {
+        if (
+          $("payPayeExempt")?.checked &&
+          $("payTaxCalculationMethod")
+        ) {
+          $("payTaxCalculationMethod").value = "exempt";
+        }
+
+        if (
+          !$("payPayeExempt")?.checked &&
+          $("payTaxCalculationMethod")?.value === "exempt"
+        ) {
+          $("payTaxCalculationMethod").value = "standard";
+        }
+
+        updatePayrollTaxMethodFields();
+      }
+    );
 
     $("payrollSaveBankBtn")?.addEventListener("click", async () => {
       try { await savePayrollBankAccount(); }

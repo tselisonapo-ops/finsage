@@ -80873,148 +80873,10 @@ class DatabaseService:
     ):
         schema = self.company_schema(company_id)
 
-    def _ad_account_code(self, value) -> str:
-        """
-        Normalize an account resolver result into an account-code string.
-
-        Supports:
-        - "BS_CA_1730"
-        - {"code": "BS_CA_1730"}
-        - {"account_code": "BS_CA_1730"}
-        - {"posting_code": "BS_CA_1730"}
-        """
-        if value is None:
-            return ""
-
-        if isinstance(value, str):
-            return value.strip()
-
-        if isinstance(value, dict):
-            return str(
-                value.get("posting_code")
-                or value.get("account_code")
-                or value.get("code")
-                or ""
-            ).strip()
-
-        if isinstance(value, (tuple, list)):
-            for candidate in value:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-
-        return str(value or "").strip()
-
-    def accrual_deferral_resolve_ap_control(
-        self,
-        company_id: int,
-        *,
-        cur=None,
-    ) -> dict:
-        settings = self.get_company_account_settings(
-            company_id,
-            cur=cur,
-        ) or {}
-
-        raw = str(
-            settings.get("ap_control_code")
-            or ""
-        ).strip()
-
-        if not raw:
-            raise ValueError(
-                "AP control account is not configured in "
-                "company_account_settings.ap_control_code"
-            )
-
-        row = self.get_account_row_for_posting(
-            company_id,
-            raw,
-            cur=cur,
-        )
-
-        if not row:
-            raise ValueError(
-                f"AP control account '{raw}' was not found in the company COA"
-            )
-
-        # Your existing get_account_row_for_posting usage treats row[1]
-        # as the resolved posting code.
-        if isinstance(row, dict):
-            posting_code = str(
-                row.get("posting_code")
-                or row.get("account_code")
-                or row.get("code")
-                or raw
-            ).strip()
-
-            account_name = str(
-                row.get("name")
-                or row.get("account_name")
-                or "Accounts Payable"
-            ).strip()
-        else:
-            posting_code = str(
-                row[1] if len(row) > 1 else raw
-            ).strip()
-
-            account_name = str(
-                row[2] if len(row) > 2 and row[2] else "Accounts Payable"
-            ).strip()
-
-        if not posting_code:
-            raise ValueError(
-                f"Resolved AP posting code is blank for '{raw}'"
-            )
-
-        return {
-            "code": posting_code,
-            "name": account_name or "Accounts Payable",
-            "role": "accounts_payable",
-        }
-
-    def accrual_deferral_account_name(
-        self,
-        company_id: int,
-        account_code: str,
-        *,
-        cur=None,
-    ) -> str:
-        schema = self.company_schema(company_id)
-
-        code = str(account_code or "").strip()
-        if not code:
-            return ""
-
-        row = self.fetch_one(
-            f"""
-            SELECT code, name
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND code = %s
-            LIMIT 1
-            """,
-            (int(company_id), code),
-            cur=cur,
-        )
-
-        return str(
-            (row or {}).get("name")
-            or code
-        ).strip()
-
         # ---------------------------------------------------------
         # Local helpers
         # ---------------------------------------------------------
-        def _account_code(value) -> str:
-            """
-            Normalize account values returned in different shapes.
-
-            Supports:
-            - "BS_CA_1487"
-            - {"code": "BS_CA_1487"}
-            - {"account_code": "BS_CA_1487"}
-            - {"posting_code": "BS_CA_1487"}
-            """
+        def account_code(value) -> str:
             if value is None:
                 return ""
 
@@ -81029,20 +80891,19 @@ class DatabaseService:
                     or ""
                 ).strip()
 
-            if isinstance(value, (list, tuple)):
+            if isinstance(value, (tuple, list)):
                 for candidate in value:
                     if isinstance(candidate, str) and candidate.strip():
                         return candidate.strip()
 
             return str(value or "").strip()
 
-        def _account_name(account_code: str, fallback: str = "") -> str:
-            code = _account_code(account_code)
+        def account_name(code: str, fallback: str = "") -> str:
+            code = account_code(code)
 
             if not code:
                 return fallback or ""
 
-            # company COA normally lives inside the company schema
             row = self.fetch_one(
                 f"""
                 SELECT code, name
@@ -81059,7 +80920,7 @@ class DatabaseService:
                 or code
             ).strip()
 
-        def _resolve_role(role: str, *, fallback_name: str = "") -> dict:
+        def resolve_role(role: str, fallback_name: str = "") -> dict:
             role = str(role or "").strip()
 
             if not role:
@@ -81070,12 +80931,12 @@ class DatabaseService:
                 role,
             )
 
-            code = _account_code(resolved)
+            code = account_code(resolved)
 
             if not code:
-                raise ValueError(
-                    f"Missing COA role mapping: {role}"
-                )
+                raise ValueError(f"Missing COA role mapping: {role}")
+
+            name = ""
 
             if isinstance(resolved, dict):
                 name = str(
@@ -81083,24 +80944,20 @@ class DatabaseService:
                     or resolved.get("account_name")
                     or ""
                 ).strip()
-            else:
-                name = ""
 
             return {
                 "code": code,
                 "name": (
                     name
-                    or _account_name(code, fallback_name)
+                    or account_name(code, fallback_name)
                     or fallback_name
                     or code
                 ),
                 "role": role,
             }
 
-        def _resolve_ap_control() -> dict:
-            settings = self.get_company_account_settings(
-                company_id
-            ) or {}
+        def resolve_ap_control() -> dict:
+            settings = self.get_company_account_settings(company_id) or {}
 
             raw = str(
                 settings.get("ap_control_code")
@@ -81124,7 +80981,7 @@ class DatabaseService:
                 )
 
             if isinstance(posting_row, dict):
-                code = _account_code(posting_row) or raw
+                code = account_code(posting_row) or raw
 
                 name = str(
                     posting_row.get("name")
@@ -81153,14 +81010,14 @@ class DatabaseService:
                 "code": code,
                 "name": (
                     name
-                    or _account_name(code, "Accounts Payable")
+                    or account_name(code, "Accounts Payable")
                     or "Accounts Payable"
                 ),
                 "role": "accounts_payable",
             }
 
         # ---------------------------------------------------------
-        # Core payload
+        # Main payload
         # ---------------------------------------------------------
         item_type = str(
             payload.get("item_type")
@@ -81189,9 +81046,7 @@ class DatabaseService:
         ).strip().lower()
 
         if amount <= 0:
-            raise ValueError(
-                "original_amount must be greater than zero"
-            )
+            raise ValueError("original_amount must be greater than zero")
 
         if settlement_method not in {
             "cash_bank",
@@ -81202,6 +81057,18 @@ class DatabaseService:
             )
 
         # ---------------------------------------------------------
+        # Validate dates before generating schedule
+        # ---------------------------------------------------------
+        start_date = _date(payload.get("start_date"))
+        end_date = _date(payload.get("end_date"))
+
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required")
+
+        if end_date < start_date:
+            raise ValueError("end_date cannot be before start_date")
+
+        # ---------------------------------------------------------
         # Balance account
         # ---------------------------------------------------------
         balance_role = str(
@@ -81209,23 +81076,23 @@ class DatabaseService:
             or item_type
         ).strip()
 
-        supplied_balance = _account_code(
+        supplied_balance = account_code(
             payload.get("balance_account")
         )
 
         if supplied_balance:
             balance_account = {
                 "code": supplied_balance,
-                "name": _account_name(
+                "name": account_name(
                     supplied_balance,
                     balance_role.replace("_", " ").title(),
                 ),
                 "role": balance_role,
             }
         else:
-            balance_account = _resolve_role(
+            balance_account = resolve_role(
                 balance_role,
-                fallback_name=balance_role.replace("_", " ").title(),
+                balance_role.replace("_", " ").title(),
             )
 
         # ---------------------------------------------------------
@@ -81236,7 +81103,7 @@ class DatabaseService:
             or ""
         ).strip()
 
-        supplied_recognition = _account_code(
+        supplied_recognition = account_code(
             payload.get("recognition_account")
         )
 
@@ -81245,38 +81112,38 @@ class DatabaseService:
         if supplied_recognition:
             recognition_account = {
                 "code": supplied_recognition,
-                "name": _account_name(
+                "name": account_name(
                     supplied_recognition,
-                    recognition_role.replace("_", " ").title()
-                    if recognition_role
-                    else "Recognition Account",
+                    (
+                        recognition_role.replace("_", " ").title()
+                        if recognition_role
+                        else "Recognition Account"
+                    ),
                 ),
                 "role": recognition_role or None,
             }
 
         elif recognition_role:
-            recognition_account = _resolve_role(
+            recognition_account = resolve_role(
                 recognition_role,
-                fallback_name=recognition_role.replace("_", " ").title(),
+                recognition_role.replace("_", " ").title(),
             )
 
         # ---------------------------------------------------------
-        # Settlement / contra account
+        # Settlement account
         # ---------------------------------------------------------
         if settlement_method == "accounts_payable":
-            settlement_account = _resolve_ap_control()
+            settlement_account = resolve_ap_control()
 
         else:
-            supplied_settlement = _account_code(
+            supplied_settlement = account_code(
                 payload.get("settlement_account")
             )
 
             if not supplied_settlement:
-                raise ValueError(
-                    "Select the company bank account"
-                )
+                raise ValueError("Select the company bank account")
 
-            supplied_name = str(
+            supplied_settlement_name = str(
                 payload.get("settlement_account_name")
                 or ""
             ).strip()
@@ -81284,18 +81151,17 @@ class DatabaseService:
             settlement_account = {
                 "code": supplied_settlement,
                 "name": (
-                    supplied_name
-                    or _account_name(
+                    supplied_settlement_name
+                    or account_name(
                         supplied_settlement,
                         "Bank Account",
                     )
-                    or "Bank Account"
                 ),
                 "role": "cash_bank",
             }
 
         # ---------------------------------------------------------
-        # Initial-recognition journal lines
+        # Initial journal
         # ---------------------------------------------------------
         if item_type in {
             "prepaid_expense",
@@ -81341,9 +81207,7 @@ class DatabaseService:
             ]
 
         else:
-            raise ValueError(
-                f"Unsupported item_type: {item_type}"
-            )
+            raise ValueError(f"Unsupported item_type: {item_type}")
 
         total_debit = round(
             sum(float(line.get("debit") or 0) for line in lines),
@@ -81385,20 +81249,18 @@ class DatabaseService:
                 "lines": lines,
                 "total_debit": total_debit,
                 "total_credit": total_credit,
-                "balanced": total_debit == total_credit,
+                "balanced": round(total_debit, 2) == round(total_credit, 2),
                 "posting_route": (
                     "accounts_payable"
                     if settlement_method == "accounts_payable"
                     else "accrual_deferrals"
                 ),
             },
-
             "accounts": {
                 "settlement": settlement_account,
                 "balance": balance_account,
                 "recognition": recognition_account,
             },
-
             "schedule_preview": schedule,
             "warnings": warnings,
         }
@@ -83425,6 +83287,340 @@ class DatabaseService:
         ))
 
         return row
+
+    def forecast_budget_variance(
+        self,
+        company_id: int,
+        budget_id: int,
+        version_id: Optional[int] = None,
+        period_start: Optional[str] = None,
+        period_end: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+
+        schema = self.company_schema(company_id)
+
+        budget = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.forecast_budgets
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(budget_id),
+        ))
+
+        if not budget:
+            raise ValueError("Budget not found.")
+
+        start_date = (
+            period_start
+            or str(budget["period_start"])[:10]
+        )
+
+        end_date = (
+            period_end
+            or str(budget["period_end"])[:10]
+        )
+
+        if version_id:
+            planned_source_sql = f"""
+                SELECT
+                    fl.account_code,
+                    DATE_TRUNC(
+                        'month',
+                        fl.period_month
+                    )::date AS period_month,
+                    SUM(fl.amount)::numeric(18,2)
+                        AS planned_amount
+
+                FROM {schema}.forecast_lines fl
+
+                INNER JOIN {schema}.forecast_versions fv
+                    ON fv.id = fl.version_id
+                AND fv.company_id = fl.company_id
+
+                WHERE fl.company_id = %s
+                AND fl.version_id = %s
+                AND fl.period_month >= %s::date
+                AND fl.period_month <= %s::date
+
+                GROUP BY
+                    fl.account_code,
+                    DATE_TRUNC(
+                        'month',
+                        fl.period_month
+                    )::date
+            """
+
+            planned_params = (
+                int(company_id),
+                int(version_id),
+                start_date,
+                end_date,
+            )
+
+            comparison_type = "forecast_vs_actual"
+
+        else:
+            planned_source_sql = f"""
+                SELECT
+                    fbl.account_code,
+                    DATE_TRUNC(
+                        'month',
+                        fbl.period_month
+                    )::date AS period_month,
+                    SUM(fbl.amount)::numeric(18,2)
+                        AS planned_amount
+
+                FROM {schema}.forecast_budget_lines fbl
+
+                WHERE fbl.company_id = %s
+                AND fbl.budget_id = %s
+                AND fbl.period_month >= %s::date
+                AND fbl.period_month <= %s::date
+
+                GROUP BY
+                    fbl.account_code,
+                    DATE_TRUNC(
+                        'month',
+                        fbl.period_month
+                    )::date
+            """
+
+            planned_params = (
+                int(company_id),
+                int(budget_id),
+                start_date,
+                end_date,
+            )
+
+            comparison_type = "budget_vs_actual"
+
+        rows = self.fetch_all(f"""
+            WITH planned AS (
+                {planned_source_sql}
+            ),
+
+            actual AS (
+                SELECT
+                    jl.account_code,
+
+                    DATE_TRUNC(
+                        'month',
+                        j.journal_date
+                    )::date AS period_month,
+
+                    SUM(
+                        COALESCE(jl.credit, 0)
+                        -
+                        COALESCE(jl.debit, 0)
+                    )::numeric(18,2) AS raw_actual_amount
+
+                FROM {schema}.journal_lines jl
+
+                INNER JOIN {schema}.journal j
+                    ON j.id = jl.journal_id
+                AND j.company_id = jl.company_id
+
+                WHERE jl.company_id = %s
+                AND j.journal_date >= %s::date
+                AND j.journal_date <= %s::date
+                AND COALESCE(j.status, '') = 'posted'
+
+                GROUP BY
+                    jl.account_code,
+                    DATE_TRUNC(
+                        'month',
+                        j.journal_date
+                    )::date
+            ),
+
+            combined AS (
+                SELECT
+                    COALESCE(
+                        p.account_code,
+                        a.account_code
+                    ) AS account_code,
+
+                    COALESCE(
+                        p.period_month,
+                        a.period_month
+                    ) AS period_month,
+
+                    COALESCE(
+                        p.planned_amount,
+                        0
+                    )::numeric(18,2)
+                        AS planned_amount,
+
+                    COALESCE(
+                        a.raw_actual_amount,
+                        0
+                    )::numeric(18,2)
+                        AS raw_actual_amount
+
+                FROM planned p
+
+                FULL OUTER JOIN actual a
+                    ON a.account_code = p.account_code
+                AND a.period_month = p.period_month
+            )
+
+            SELECT
+                c.account_code,
+
+                COALESCE(
+                    coa.name,
+                    coa.account_name,
+                    c.account_code
+                ) AS account_name,
+
+                coa.section,
+                coa.category,
+                coa.role,
+
+                c.period_month,
+                c.planned_amount,
+
+                CASE
+                    WHEN UPPER(c.account_code)
+                        LIKE 'PL_REV%%'
+                    OR UPPER(c.account_code)
+                        LIKE 'PL_OI%%'
+                    THEN c.raw_actual_amount
+
+                    ELSE ABS(c.raw_actual_amount)
+                END::numeric(18,2)
+                    AS actual_amount
+
+            FROM combined c
+
+            LEFT JOIN {schema}.coa coa
+                ON coa.code = c.account_code
+
+            ORDER BY
+                c.period_month,
+                c.account_code;
+        """, (
+            *planned_params,
+            int(company_id),
+            start_date,
+            end_date,
+        ))
+
+        output_rows = []
+
+        for row in rows:
+            planned = float(
+                row.get("planned_amount") or 0
+            )
+
+            actual = float(
+                row.get("actual_amount") or 0
+            )
+
+            variance = actual - planned
+
+            variance_percent = (
+                variance / abs(planned) * 100
+                if planned != 0
+                else None
+            )
+
+            classification = self._forecast_variance_classification(
+                account_code=row.get("account_code"),
+                section=row.get("section"),
+                category=row.get("category"),
+                planned_amount=planned,
+                actual_amount=actual,
+            )
+
+            output_rows.append({
+                **row,
+                "planned_amount": planned,
+                "actual_amount": actual,
+                "variance_amount": variance,
+                "variance_percent": variance_percent,
+                "variance_classification": classification,
+            })
+
+        return {
+            "budget": budget,
+            "version_id": version_id,
+            "comparison_type": comparison_type,
+            "period_start": start_date,
+            "period_end": end_date,
+            "rows": output_rows,
+        }
+    
+    def _forecast_variance_classification(
+        self,
+        account_code: str,
+        section: Optional[str],
+        category: Optional[str],
+        planned_amount: float,
+        actual_amount: float,
+    ) -> str:
+        code = str(account_code or "").upper()
+
+        section_key = str(
+            section or ""
+        ).strip().lower()
+
+        category_key = str(
+            category or ""
+        ).strip().lower()
+
+        variance = actual_amount - planned_amount
+
+        is_income = (
+            code.startswith("PL_REV_")
+            or code.startswith("PL_OI_")
+            or section_key == "income"
+            or category_key in {
+                "revenue",
+                "service revenue",
+                "sales revenue",
+                "other income",
+            }
+        )
+
+        is_cost_or_expense = (
+            code.startswith("PL_COS_")
+            or code.startswith("PL_COGS_")
+            or code.startswith("PL_OPEX_")
+            or code.startswith("PL_FIN_")
+            or code.startswith("PL_TAX_")
+            or section_key in {
+                "expense",
+                "adjustment",
+            }
+        )
+
+        if abs(variance) < 0.005:
+            return "on_target"
+
+        if is_income:
+            return (
+                "favourable"
+                if variance > 0
+                else "unfavourable"
+            )
+
+        if is_cost_or_expense:
+            return (
+                "favourable"
+                if variance < 0
+                else "unfavourable"
+            )
+
+        return (
+            "favourable"
+            if variance > 0
+            else "unfavourable"
+        )
 
     def forecast_update_budget(self, company_id: int, budget_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
