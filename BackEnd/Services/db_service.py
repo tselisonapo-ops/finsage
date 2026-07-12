@@ -82938,23 +82938,11 @@ class DatabaseService:
             raise ValueError("Budget not found.")
 
         return self.fetch_all(f"""
-            SELECT
-                bl.*,
-                COALESCE(
-                    c.name,
-                    c.account_name,
-                    c.description,
-                    bl.account_code
-                ) AS account_name
-            FROM {schema}.forecast_budget_lines bl
-            LEFT JOIN {schema}.coa c
-            ON c.code = bl.account_code
-            WHERE bl.company_id = %s
-            AND bl.budget_id = %s
-            ORDER BY
-                bl.period_month,
-                bl.account_code,
-                bl.id;
+            SELECT *
+            FROM {schema}.forecast_budget_lines
+            WHERE company_id = %s
+            AND budget_id = %s
+            ORDER BY period_month, account_code, id;
         """, (
             int(company_id),
             int(budget_id),
