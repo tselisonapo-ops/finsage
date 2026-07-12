@@ -80479,24 +80479,74 @@ class DatabaseService:
             "entries": entries,
         }
 
-    def accrual_deferral_account_by_role(self, company_id: int, role: str):
+    def accrual_deferral_account_by_role(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        account_purpose: str = "primary",
+    ):
         schema = self.company_schema(company_id)
 
-        row = self.fetch_one(f"""
-            SELECT code, name, role, section, category
+        role = str(role or "").strip().lower()
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                code,
+                name,
+                role,
+                section,
+                category,
+                subcategory
             FROM {schema}.coa
             WHERE company_id = %s
             AND posting = TRUE
-            AND lower(coalesce(role,'')) = lower(%s)
-            ORDER BY id
+            AND lower(coalesce(role, '')) = %s
+            ORDER BY
+                CASE
+                    /*
+                    * For the Accruals & Deferrals module, prefer
+                    * the general prepaid-expense control account.
+                    */
+                    WHEN %s = 'prepaid_expense'
+                    AND (
+                        lower(coalesce(name, '')) IN (
+                            'prepaid expense',
+                            'prepaid expenses'
+                        )
+                        OR lower(coalesce(subcategory, '')) = 'prepayments'
+                    )
+                    THEN 0
+
+                    /*
+                    * Supplier advances are valid accounts, but they
+                    * should not be the default prepaid-expense control.
+                    */
+                    WHEN %s = 'prepaid_expense'
+                    AND (
+                        lower(coalesce(name, '')) LIKE '%%supplier advance%%'
+                        OR lower(coalesce(name, '')) LIKE '%%vendor prepayment%%'
+                    )
+                    THEN 20
+
+                    ELSE 10
+                END,
+                id
             LIMIT 1
-        """, (int(company_id), role))
+            """,
+            (
+                int(company_id),
+                role,
+                role,
+                role,
+            ),
+        )
 
         if not row:
             raise ValueError(f"Missing COA role mapping: {role}")
 
         return row
-
 
     def accrual_deferral_build_initial_preview(self, company_id: int, item_id: int, payload=None):
         payload = payload or {}
@@ -81143,21 +81193,26 @@ class DatabaseService:
             if not supplied_settlement:
                 raise ValueError("Select the company bank account")
 
-            supplied_settlement_name = str(
+            bank_account_display_name = str(
                 payload.get("settlement_account_name")
                 or ""
             ).strip()
 
+            gl_account_name = account_name(
+                supplied_settlement,
+                "Cash & Bank",
+            )
+
             settlement_account = {
                 "code": supplied_settlement,
-                "name": (
-                    supplied_settlement_name
-                    or account_name(
-                        supplied_settlement,
-                        "Bank Account",
-                    )
-                ),
+
+                # Journal preview must show the linked GL account name.
+                "name": gl_account_name,
+
                 "role": "cash_bank",
+
+                # Keep the actual bank-account name only as supporting metadata.
+                "bank_account_name": bank_account_display_name,
             }
 
         # ---------------------------------------------------------
@@ -81260,6 +81315,16 @@ class DatabaseService:
                 "settlement": settlement_account,
                 "balance": balance_account,
                 "recognition": recognition_account,
+
+                "bank_account": (
+                    {
+                        "name": settlement_account.get("bank_account_name"),
+                        "gl_account_code": settlement_account.get("code"),
+                        "gl_account_name": settlement_account.get("name"),
+                    }
+                    if settlement_method == "cash_bank"
+                    else None
+                ),
             },
             "schedule_preview": schedule,
             "warnings": warnings,

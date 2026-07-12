@@ -41961,6 +41961,7 @@ async function saveEditModal() {
 
     selectedBudgetId: null,
     selectedBudget: null,
+    budgetLines: [],
 
     selectedVersionId: null,
     selectedVersion: null,
@@ -46327,11 +46328,20 @@ async function saveEditModal() {
   }
 
   async function openBudget(budgetId) {
-    setStatus("Opening budget...");
-    const res = await apiFetch(ENDPOINTS.forecast.budget(cid(), budgetId));
     BF.selectedBudgetId = Number(budgetId);
-    BF.selectedBudget = unwrap(res);
-    renderBudgetEditor();
+
+    showTab("budgets");
+    setStatus("Loading budget...");
+
+    const [budgetRes, linesRes] = await Promise.all([
+      apiFetch(ENDPOINTS.forecast.budget(cid(), budgetId)),
+      apiFetch(ENDPOINTS.forecast.budgetLines(cid(), budgetId)),
+    ]);
+
+    BF.selectedBudget = unwrap(budgetRes);
+    BF.budgetLines = unwrap(linesRes) || [];
+
+    await renderBudgetStatement();
     setStatus("");
   }
 
@@ -47227,6 +47237,421 @@ async function saveEditModal() {
     renderVersionEditor();
   }
 
+  async function renderBudgetStatement() {
+    const el = $("bfBudgetsPane");
+    const budget = BF.selectedBudget;
+
+    if (!el || !budget) return;
+
+    await loadForecastCoa();
+
+    const months = bfMonthsBetween(
+      budget.period_start,
+      budget.period_end
+    );
+
+    const editable = String(budget.status || "").toLowerCase() === "draft";
+    const lineMap = new Map();
+
+    for (const line of BF.budgetLines || []) {
+      const key = `${line.account_code}|${bfMonthKey(line.period_month)}`;
+      lineMap.set(key, line);
+    }
+
+    const grouped = Object.fromEntries(
+      bfPnlGroups().map(group => [group.key, []])
+    );
+
+    const used = new Set(
+      (BF.budgetLines || [])
+        .filter(line => Number(line.amount))
+        .map(line => String(line.account_code || "").trim())
+    );
+
+    for (const account of BF.coa.filter(bfIsForecastablePnlAccount)) {
+      const code = bfAccountCode(account);
+
+      if (!editable && !used.has(code)) continue;
+
+      const group = bfPnlGroup(account);
+      (grouped[group] || grouped.unclassified).push(account);
+    }
+
+    Object.values(grouped).forEach(rows => {
+      rows.sort((a, b) => bfAccountCode(a).localeCompare(bfAccountCode(b)));
+    });
+
+    function valueFor(accountCode, month) {
+      return Number(lineMap.get(`${accountCode}|${month}`)?.amount || 0);
+    }
+
+    function groupTotal(group, month) {
+      return (grouped[group] || []).reduce(
+        (total, account) => total + valueFor(bfAccountCode(account), month),
+        0
+      );
+    }
+
+    function calculatedValue(type, month) {
+      const revenue = groupTotal("revenue", month);
+      const cost = groupTotal("cost_of_revenue", month);
+      const expenses = groupTotal("operating_expenses", month);
+      const otherIncome = groupTotal("other_income", month);
+      const financeCosts = groupTotal("finance_costs", month);
+      const tax = groupTotal("income_tax", month);
+
+      const grossProfit = revenue - cost;
+      const operatingProfit = grossProfit - expenses;
+      const profitBeforeTax = operatingProfit + otherIncome - financeCosts;
+      const netProfit = profitBeforeTax - tax;
+
+      return {
+        revenue,
+        grossProfit,
+        operatingProfit,
+        profitBeforeTax,
+        netProfit,
+      }[type] || 0;
+    }
+
+    function accountRows(group) {
+      const rows = grouped[group] || [];
+
+      if (!rows.length) {
+        return `
+          <tr>
+            <td colspan="${months.length + 2}" class="muted">
+              No budget values in this section.
+            </td>
+          </tr>
+        `;
+      }
+
+      return rows.map(account => {
+        const code = bfAccountCode(account);
+
+        return `
+          <tr class="bf-planning-account-row">
+            <td class="bf-sticky-account">
+              <strong>${esc(bfAccountName(account))}</strong>
+            </td>
+
+            ${months.map(month => {
+              const amount = valueFor(code, month);
+
+              return editable
+                ? `
+                  <td>
+                    <input
+                      type="number"
+                      step="0.01"
+                      class="bf-budget-cell"
+                      value="${esc(amount)}"
+                      data-bf-budget-account="${esc(code)}"
+                      data-bf-budget-month="${esc(month)}"
+                    >
+                  </td>
+                `
+                : `
+                  <td class="right">
+                    ${money(amount)}
+                  </td>
+                `;
+            }).join("")}
+
+            <td class="right bf-annual-total">
+              ${money(
+                months.reduce(
+                  (total, month) => total + valueFor(code, month),
+                  0
+                )
+              )}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function calculatedRow(label, type, final = false) {
+      return `
+        <tr class="bf-calculation-row ${final ? "bf-net-profit" : ""}">
+          <td class="bf-sticky-account">
+            <strong>${esc(label)}</strong>
+          </td>
+
+          ${months.map(month => `
+            <td class="right" data-bf-budget-total="${type}|${month}">
+              <strong>${money(calculatedValue(type, month))}</strong>
+            </td>
+          `).join("")}
+
+          <td class="right" data-bf-budget-annual="${type}">
+            <strong>
+              ${money(
+                months.reduce(
+                  (total, month) => total + calculatedValue(type, month),
+                  0
+                )
+              )}
+            </strong>
+          </td>
+        </tr>
+      `;
+    }
+
+    const sections = [
+      {
+        group: "revenue",
+        title: "Revenue",
+        footer: calculatedRow("Total Revenue", "revenue"),
+      },
+      {
+        group: "cost_of_revenue",
+        title: resolveCostOfRevenueTitle(),
+        footer: calculatedRow("Gross Profit", "grossProfit"),
+      },
+      {
+        group: "operating_expenses",
+        title: "Operating Expenses",
+        footer: calculatedRow("Operating Profit", "operatingProfit"),
+      },
+      {
+        group: "other_income",
+        title: "Other Income",
+        footer: "",
+      },
+      {
+        group: "finance_costs",
+        title: "Finance Costs",
+        footer: calculatedRow("Profit Before Tax", "profitBeforeTax"),
+      },
+      {
+        group: "income_tax",
+        title: "Estimated Income Tax Expense",
+        footer: calculatedRow("Budgeted Net Profit", "netProfit", true),
+      },
+    ];
+
+    el.innerHTML = `
+      <div class="bf-workspace">
+        <div class="bf-workspace-header">
+          <div>
+            <button class="btn" data-bf-action="back-budgets">
+              ← Budgets
+            </button>
+
+            <div class="bf-workspace-title">
+              <span class="bf-eyebrow">Budget</span>
+              <h2>${esc(budget.name)}</h2>
+              <p class="muted">
+                ${esc(bfDisplayDate(budget.period_start))}
+                to
+                ${esc(bfDisplayDate(budget.period_end))}
+              </p>
+            </div>
+          </div>
+
+          <div class="actions">
+            ${editable ? `
+              <button class="btn primary" data-bf-action="save-budget-grid">
+                Save Budget
+              </button>
+
+              <button class="btn" data-bf-action="submit-budget">
+                Submit
+              </button>
+            ` : ""}
+
+            ${budget.status === "submitted" ? `
+              <button class="btn primary" data-bf-action="approve-budget">
+                Approve
+              </button>
+            ` : ""}
+
+            ${budget.status === "approved" ? `
+              <button class="btn danger" data-bf-action="lock-budget">
+                Lock
+              </button>
+            ` : ""}
+          </div>
+        </div>
+
+        <div class="bf-summary-strip">
+          <div>
+            <span>Status</span>
+            <strong>${esc(budget.status || "draft")}</strong>
+          </div>
+
+          <div>
+            <span>Financial Year</span>
+            <strong>${esc(budget.financial_year || "")}</strong>
+          </div>
+
+          <div>
+            <span>Currency</span>
+            <strong>${esc(budget.currency || companyCurrency())}</strong>
+          </div>
+
+          <div>
+            <span>Budgeted Net Profit</span>
+            <strong id="bfBudgetNetProfit">
+              ${money(
+                months.reduce(
+                  (total, month) => total + calculatedValue("netProfit", month),
+                  0
+                )
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div class="bf-planning-grid-wrap">
+          <table class="bf-planning-grid">
+            <thead>
+              <tr>
+                <th class="bf-sticky-account">Account</th>
+
+                ${months.map(month => `
+                  <th>${esc(bfMonthLabel(month))}</th>
+                `).join("")}
+
+                <th>Total</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${sections.map(section => `
+                <tr class="bf-section-title-row">
+                  <td colspan="${months.length + 2}">
+                    ${esc(section.title)}
+                  </td>
+                </tr>
+
+                ${accountRows(section.group)}
+                ${section.footer}
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bf-workspace-footer">
+          <div>
+            <strong>
+              ${editable ? "Editable budget draft" : "Read-only budget"}
+            </strong>
+
+            <p class="muted">
+              ${editable
+                ? "Enter monthly amounts and save the budget."
+                : `This budget is ${esc(budget.status)} and cannot be edited.`
+              }
+            </p>
+          </div>
+
+          ${editable ? `
+            <button class="btn primary" data-bf-action="save-budget-grid">
+              Save Budget
+            </button>
+          ` : `
+            <span class="pill">${esc(budget.status)}</span>
+          `}
+        </div>
+      </div>
+    `;
+
+    if (editable) bindBudgetGridInputs(grouped, months);
+  }
+
+  function bindBudgetGridInputs(grouped, months) {
+    document.querySelectorAll(".bf-budget-cell").forEach(input => {
+      input.addEventListener("input", () => {
+        input.classList.add("is-dirty");
+        recalculateBudgetGrid(grouped, months);
+      });
+    });
+  }
+
+  function recalculateBudgetGrid(grouped, months) {
+    const valueFor = (accountCode, month) => Number(
+      document.querySelector(
+        `.bf-budget-cell[data-bf-budget-account="${CSS.escape(accountCode)}"][data-bf-budget-month="${month}"]`
+      )?.value || 0
+    );
+
+    const groupTotal = (group, month) =>
+      (grouped[group] || []).reduce(
+        (total, account) => total + valueFor(bfAccountCode(account), month),
+        0
+      );
+
+    const result = (type, month) => {
+      const revenue = groupTotal("revenue", month);
+      const cost = groupTotal("cost_of_revenue", month);
+      const expenses = groupTotal("operating_expenses", month);
+      const otherIncome = groupTotal("other_income", month);
+      const financeCosts = groupTotal("finance_costs", month);
+      const tax = groupTotal("income_tax", month);
+
+      const grossProfit = revenue - cost;
+      const operatingProfit = grossProfit - expenses;
+      const profitBeforeTax = operatingProfit + otherIncome - financeCosts;
+
+      return {
+        revenue,
+        grossProfit,
+        operatingProfit,
+        profitBeforeTax,
+        netProfit: profitBeforeTax - tax,
+      }[type] || 0;
+    };
+
+    document.querySelectorAll("[data-bf-budget-total]").forEach(cell => {
+      const [type, month] = cell.dataset.bfBudgetTotal.split("|");
+      cell.innerHTML = `<strong>${money(result(type, month))}</strong>`;
+    });
+
+    document.querySelectorAll("[data-bf-budget-annual]").forEach(cell => {
+      const type = cell.dataset.bfBudgetAnnual;
+      const total = months.reduce((sum, month) => sum + result(type, month), 0);
+
+      cell.innerHTML = `<strong>${money(total)}</strong>`;
+    });
+
+    const netProfit = months.reduce(
+      (total, month) => total + result("netProfit", month),
+      0
+    );
+
+    if ($("bfBudgetNetProfit")) {
+      $("bfBudgetNetProfit").textContent = money(netProfit);
+    }
+  }
+
+  async function saveBudgetGrid() {
+    const lines = Array.from(
+      document.querySelectorAll(".bf-budget-cell")
+    ).map(input => ({
+      account_code: input.dataset.bfBudgetAccount,
+      period_month: input.dataset.bfBudgetMonth,
+      amount: Number(input.value || 0),
+      line_type: "manual",
+      source_type: "manual",
+    }));
+
+    setStatus(`Saving ${lines.length} budget values...`);
+
+    await apiFetch(
+      ENDPOINTS.forecast.budgetLines(cid(), BF.selectedBudgetId),
+      {
+        method: "POST",
+        body: JSON.stringify({ lines }),
+      }
+    );
+
+    await openBudget(BF.selectedBudgetId);
+    setStatus("Budget saved.", "success");
+  }
+
   async function renderVersionEditor() {
     const el = $("bfForecastPane");
     const version = BF.selectedVersion;
@@ -47368,13 +47793,13 @@ async function saveEditModal() {
         return `
           <tr>
             <td colspan="${months.length + 2}" class="muted">
-              No accounts are available in this section.
+              No forecast values in this section.
             </td>
           </tr>
         `;
       }
 
-      return rows.map((account) => {
+      return rows.map(account => {
         const accountCode = bfAccountCode(account);
 
         return `
@@ -47383,27 +47808,18 @@ async function saveEditModal() {
               <strong>${esc(bfAccountName(account))}</strong>
             </td>
 
-            ${months.map((month) => `
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  class="bf-forecast-cell bf-draft-forecast-cell"
-                  value="${esc(
-                    bfGetDraftValue(accountCode, month)
-                  )}"
-                  data-bf-account-code="${esc(accountCode)}"
-                  data-bf-month="${esc(month)}"
-                >
+            ${months.map(month => `
+              <td class="right">
+                ${money(valueFor(accountCode, month))}
               </td>
             `).join("")}
 
-            <td
-              class="right bf-annual-total"
-              data-bf-draft-account-total="${esc(accountCode)}"
-            >
+            <td class="right bf-annual-total">
               ${money(
-                bfDraftAnnualTotal(accountCode, months)
+                months.reduce(
+                  (total, month) => total + valueFor(accountCode, month),
+                  0
+                )
               )}
             </td>
           </tr>
@@ -47516,13 +47932,19 @@ async function saveEditModal() {
               Refresh
             </button>
 
-            <button
-              type="button"
-              class="btn primary"
-              data-bf-action="save-version-grid"
-            >
-              Save Forecast
-            </button>
+            ${
+              version.status === "draft"
+                ? `
+                  <button
+                    type="button"
+                    class="btn primary"
+                    data-bf-action="edit-version"
+                  >
+                    Edit Forecast
+                  </button>
+                `
+                : ""
+            }
           </div>
         </div>
 
@@ -47602,13 +48024,9 @@ async function saveEditModal() {
             </p>
           </div>
 
-          <button
-            type="button"
-            class="btn primary"
-            data-bf-action="save-version-grid"
-          >
-            Save Forecast
-          </button>
+          <span class="pill">
+            ${esc(version.status || "draft")}
+          </span>
         </div>
       </div>
     `;
@@ -48358,6 +48776,9 @@ function bindEventsOnce() {
         return openCreateVersionWorkspace(BF.selectedBudgetId);
       }
 
+      if (action === "save-budget-grid") {
+        return saveBudgetGrid();
+      }
       if (action === "create-version-workspace") {
         return createVersionFromWorkspace();
       }
