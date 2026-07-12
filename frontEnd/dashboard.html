@@ -3937,6 +3937,729 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   BEGIN PAYROLL REDESIGN CSS
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 1. RUN DETAIL WRAPPER ─────────────────────────────── */
+#payrollRunDetail.payroll-card {
+  background: transparent;
+  padding: 0;
+  border: none;
+}
+
+/* ── 2. RUN HEADER BANNER ──────────────────────────────── */
+.payroll-run-header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #f8fafc;
+  padding: 28px 32px 24px;
+  border-radius: 14px 14px 0 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.payroll-run-header::before {
+  content: '';
+  position: absolute;
+  top: -60%;
+  right: -10%;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.payroll-run-header .payroll-back-btn {
+  color: #94a3b8;
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.2s;
+}
+
+.payroll-run-header .payroll-back-btn:hover {
+  color: #e2e8f0;
+}
+
+.payroll-run-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.payroll-run-title-row h3 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: #f1f5f9;
+  margin: 0 0 4px;
+}
+
+.payroll-run-title-row .payroll-muted,
+#payrollRunPeriod {
+  color: #94a3b8 !important;
+  font-size: 13px;
+  margin: 0;
+}
+
+/* Status pill — dark header variant */
+.payroll-run-header .payroll-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  margin-top: 4px;
+}
+
+.payroll-run-header .payroll-pill {
+  background: rgba(59,130,246,0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,0.25);
+}
+
+.payroll-run-header .payroll-pill.calculated {
+  background: rgba(245,158,11,0.15);
+  color: #fbbf24;
+  border-color: rgba(245,158,11,0.25);
+}
+
+.payroll-run-header .payroll-pill.approved {
+  background: rgba(16,185,129,0.15);
+  color: #34d399;
+  border-color: rgba(16,185,129,0.25);
+}
+
+.payroll-run-header .payroll-pill.posted {
+  background: rgba(16,185,129,0.2);
+  color: #6ee7b7;
+  border-color: rgba(16,185,129,0.3);
+}
+
+/* ── 3. RUN META BAR ───────────────────────────────────── */
+.payroll-run-meta-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 0;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.payroll-run-meta-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  border-right: 1px solid #f1f5f9;
+}
+
+.payroll-run-meta-item:last-child {
+  border-right: none;
+}
+
+.payroll-run-meta-item span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.payroll-run-meta-item strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.payroll-run-meta-item a,
+.payroll-run-meta-item .payroll-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b82f6;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.payroll-run-meta-item a:hover,
+.payroll-run-meta-item .payroll-link:hover {
+  text-decoration: underline;
+}
+
+/* ── 4. KPI CARDS ──────────────────────────────────────── */
+.payroll-run-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.payroll-run-kpis > div {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.payroll-run-kpis > div:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+/* Coloured left accent bar on each KPI */
+.payroll-run-kpis > div::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
+}
+
+.payroll-run-kpis > div:nth-child(1)::before { background: #3b82f6; }
+.payroll-run-kpis > div:nth-child(2)::before { background: #ef4444; }
+.payroll-run-kpis > div:nth-child(3)::before { background: #f59e0b; }
+.payroll-run-kpis > div:nth-child(4)::before { background: #10b981; }
+
+.payroll-run-kpis > div span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.payroll-run-kpis > div strong {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 5. RUN TABS ───────────────────────────────────────── */
+.payroll-run-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+
+.payroll-run-tabs button {
+  background: none;
+  border: none;
+  padding: 12px 24px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+  margin: 0;
+}
+
+.payroll-run-tabs button::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.payroll-run-tabs button:hover {
+  color: #334155;
+}
+
+.payroll-run-tabs button.active {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.payroll-run-tabs button.active::after {
+  background: #3b82f6;
+}
+
+/* ── 6. PROGRESS STEPPER ───────────────────────────────── */
+.payroll-process-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 8px 0;
+}
+
+.payroll-process-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  position: relative;
+}
+
+/* Connector line between steps */
+.payroll-process-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: calc(50% + 20px);
+  top: 15px;
+  width: calc(100% - 40px);
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 0;
+}
+
+.payroll-process-step:not(:last-child).complete::after {
+  background: #10b981;
+}
+
+.payroll-process-step .step-circle {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  z-index: 1;
+  transition: all 0.3s;
+}
+
+.payroll-process-step:not(.complete) .step-circle {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border: 2px solid #e2e8f0;
+}
+
+.payroll-process-step.complete .step-circle {
+  background: #10b981;
+  color: #ffffff;
+  border: 2px solid #10b981;
+  box-shadow: 0 0 0 4px rgba(16,185,129,0.15);
+}
+
+.payroll-process-step strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.payroll-process-step.complete strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+/* ── 7. RUN CHECKS ─────────────────────────────────────── */
+.payroll-run-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.payroll-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.payroll-check-item.ok {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.payroll-check-item.fail {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.payroll-check-item .check-icon {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payroll-check-item.ok .check-icon {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.payroll-check-item.fail .check-icon {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ── 8. JOURNAL PREVIEW ────────────────────────────────── */
+.payroll-journal-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.payroll-journal-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.payroll-journal-meta > div span {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+}
+
+.payroll-journal-meta > div strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* Journal table */
+.payroll-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.payroll-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.payroll-preview-table thead {
+  background: #f1f5f9;
+}
+
+.payroll-preview-table thead th {
+  padding: 12px 18px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #64748b;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.payroll-preview-table thead th.num {
+  text-align: right;
+}
+
+.payroll-preview-table tbody tr {
+  transition: background 0.15s;
+}
+
+.payroll-preview-table tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
+.payroll-preview-table tbody tr:hover {
+  background: #f0f7ff;
+}
+
+.payroll-preview-table tbody td {
+  padding: 12px 18px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: top;
+}
+
+.payroll-preview-table tbody td:first-child strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  letter-spacing: -0.3px;
+}
+
+.payroll-preview-table tbody td:first-child .payroll-muted {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.payroll-preview-table tbody td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+}
+
+/* Debit column — subtle blue tint */
+.payroll-preview-table tbody td.debit-col {
+  color: #1e40af;
+}
+
+/* Credit column — subtle red tint */
+.payroll-preview-table tbody td.credit-col {
+  color: #991b1b;
+}
+
+.payroll-preview-table tfoot {
+  background: #f8fafc;
+}
+
+.payroll-preview-table tfoot th {
+  padding: 14px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  border-top: 2px solid #e2e8f0;
+}
+
+.payroll-preview-table tfoot th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Journal result banner */
+.payroll-preview-result {
+  border-radius: 10px;
+  padding: 14px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payroll-preview-result.notice.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.payroll-preview-result.notice.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.payroll-preview-result.notice.success::before {
+  content: '\2713';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payroll-preview-result.notice.error::before {
+  content: '!';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Empty state for journal */
+.payroll-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: #94a3b8;
+}
+
+.payroll-empty-state strong {
+  display: block;
+  font-size: 15px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.payroll-empty-state p {
+  font-size: 13px;
+  margin: 0;
+}
+
+/* ── 9. POSTING SECTION ───────────────────────────────── */
+.payroll-posting-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 28px;
+}
+
+.payroll-posting-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.payroll-posting-card .payroll-muted {
+  font-size: 13px;
+}
+
+.payroll-run-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ── 10. SECTION HEAD ──────────────────────────────────── */
+.payroll-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.payroll-section-head h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 2px;
+}
+
+.payroll-section-head .payroll-muted {
+  font-size: 13px;
+  margin: 0;
+}
+
+/* ── 11. OVERVIEW GRID ─────────────────────────────────── */
+.payroll-run-overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.payroll-run-info-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.payroll-run-info-card h4 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
+  margin: 0 0 16px;
+}
+
+/* ── 12. JOURNAL PREVIEW MODAL ─────────────────────────── */
+.payroll-journal-modal-card {
+  max-width: 900px;
+  width: 95vw;
+}
+
+.payroll-journal-preview-body {
+  padding: 0 4px;
+}
+
+.payroll-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 24px;
+}
+
+/* ── 13. RESPONSIVE ───────────────────────────────────── */
+@media (max-width: 900px) {
+  .payroll-run-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .payroll-run-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-run-meta-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .payroll-process-step strong {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .payroll-run-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-run-header {
+    padding: 20px;
+  }
+
+  .payroll-run-meta-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-run-tabs button {
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+}
   </style>
 
 </head>
@@ -12075,7 +12798,9 @@ html, body {
               <div id="payrollRunsList"></div>
             </div>
 
+            <!-- PAYROLL RUN DETAIL — REPLACEMENT HTML START -->
             <div id="payrollRunDetail" class="payroll-card hidden">
+
               <div class="payroll-run-header">
                 <div>
                   <button
@@ -12083,13 +12808,13 @@ html, body {
                     type="button"
                     class="payroll-back-btn"
                   >
-                    ← All payroll runs
+                    &larr; All payroll runs
                   </button>
 
                   <div class="payroll-run-title-row">
                     <div>
                       <h3 id="payrollRunTitle">Payroll Run</h3>
-                      <p id="payrollRunPeriod" class="payroll-muted">—</p>
+                      <p id="payrollRunPeriod" class="payroll-muted">&mdash;</p>
                     </div>
 
                     <span id="payrollRunStatus" class="payroll-pill">
@@ -12099,23 +12824,23 @@ html, body {
                 </div>
               </div>
 
-              <div class="payroll-run-summary">
-                <div>
+              <div class="payroll-run-meta-bar">
+                <div class="payroll-run-meta-item">
                   <span>Calendar</span>
-                  <strong id="payrollRunCalendar">—</strong>
+                  <strong id="payrollRunCalendar">&mdash;</strong>
                 </div>
 
-                <div>
-                  <span>Payment date</span>
-                  <strong id="payrollRunPaymentDate">—</strong>
+                <div class="payroll-run-meta-item">
+                  <span>Payment Date</span>
+                  <strong id="payrollRunPaymentDate">&mdash;</strong>
                 </div>
 
-                <div>
+                <div class="payroll-run-meta-item">
                   <span>Employees</span>
                   <strong id="payrollRunEmployeeCount">0</strong>
                 </div>
 
-                <div>
+                <div class="payroll-run-meta-item">
                   <span>Journal</span>
                   <button
                     id="payrollRunJournalLink"

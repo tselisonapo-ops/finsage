@@ -49678,7 +49678,7 @@ function bindEventsOnce() {
     if (!container) return;
 
     const lines = preview?.lines || [];
-    const run = preview?.run || {};
+    const run   = preview?.run   || {};
 
     if (!lines.length) {
       container.innerHTML = `
@@ -49696,7 +49696,7 @@ function bindEventsOnce() {
     }
 
     container.innerHTML = `
-      <div class="payroll-journal-summary">
+      <div class="payroll-journal-meta">
         <div>
           <span>Source</span>
           <strong>payroll_run</strong>
@@ -49704,7 +49704,7 @@ function bindEventsOnce() {
 
         <div>
           <span>Source ID</span>
-          <strong>${esc(run.id || "")}</strong>
+          <strong>${esc(String(run.id || ""))}</strong>
         </div>
 
         <div>
@@ -49741,16 +49741,16 @@ function bindEventsOnce() {
 
                 <td>${esc(line.description || "")}</td>
 
-                <td class="num">
+                <td class="num debit-col">
                   ${Number(line.debit || 0)
                     ? money(line.debit)
-                    : "—"}
+                    : "&mdash;"}
                 </td>
 
-                <td class="num">
+                <td class="num credit-col">
                   ${Number(line.credit || 0)
                     ? money(line.credit)
-                    : "—"}
+                    : "&mdash;"}
                 </td>
               </tr>
             `).join("")}
@@ -49792,7 +49792,10 @@ function bindEventsOnce() {
 
     if (container) {
       container.innerHTML = `
-        <p class="payroll-muted">Loading journal preview…</p>
+        <div class="payroll-empty-state">
+          <strong>Loading journal preview&hellip;</strong>
+          <p>Fetching the latest journal data from the server.</p>
+        </div>
       `;
     }
 
@@ -49806,23 +49809,30 @@ function bindEventsOnce() {
       container,
       payrollState.journalPreview
     );
-}
+  }
 
   function renderPayrollRunStatus(run) {
     const status = String(run?.status || "draft").toLowerCase();
 
+    /* ── 1. Update the status pill ── */
+    const pill = $("payrollRunStatus");
+    if (pill) {
+      pill.className = "payroll-pill " + status;
+      pill.setAttribute("data-status", status);
+      pill.textContent = cap(status);
+    }
+
+    /* ── 2. Processing pipeline stepper ── */
     const steps = [
       {
         key: "draft",
         label: "Run created",
-        complete: ["draft", "calculated", "approved", "posted"]
-          .includes(status),
+        complete: ["draft", "calculated", "approved", "posted"].includes(status),
       },
       {
         key: "calculated",
         label: "Payroll calculated",
-        complete: ["calculated", "approved", "posted"]
-          .includes(status),
+        complete: ["calculated", "approved", "posted"].includes(status),
       },
       {
         key: "approved",
@@ -49840,11 +49850,9 @@ function bindEventsOnce() {
     if (statusEl) {
       statusEl.innerHTML = `
         <div class="payroll-process-steps">
-          ${steps.map(step => `
-            <div class="payroll-process-step ${
-              step.complete ? "complete" : ""
-            }">
-              <span>${step.complete ? "✓" : ""}</span>
+          ${steps.map((step, idx) => `
+            <div class="payroll-process-step ${step.complete ? "complete" : ""}">
+              <span class="step-circle">${step.complete ? "&#10003;" : (idx + 1)}</span>
               <strong>${esc(step.label)}</strong>
             </div>
           `).join("")}
@@ -49852,39 +49860,29 @@ function bindEventsOnce() {
       `;
     }
 
+    /* ── 3. Run checks ── */
     const checks = [
-      {
-        label: "Employees included",
-        ok: (run.employees || []).length > 0,
-      },
-      {
-        label: "Gross pay calculated",
-        ok: Number(run.gross_pay || 0) > 0,
-      },
-      {
-        label: "Net pay calculated",
-        ok: Number(run.net_pay || 0) >= 0,
-      },
-      {
-        label: "Journal posted",
-        ok: !!run.posted_journal_id,
-      },
+      { label: "Employees included",   ok: (run.employees || []).length > 0 },
+      { label: "Gross pay calculated",  ok: Number(run.gross_pay || 0) > 0 },
+      { label: "Net pay calculated",    ok: Number(run.net_pay || 0) >= 0 },
+      { label: "Journal posted",        ok: !!run.posted_journal_id },
     ];
 
     const checksEl = $("payrollRunChecks");
     if (checksEl) {
-      checksEl.innerHTML = checks.map(check => `
-        <div class="payroll-check-row">
-          <span class="${
-            check.ok ? "payroll-check-ok" : "payroll-check-pending"
-          }">
-            ${check.ok ? "✓" : "•"}
-          </span>
-          <span>${esc(check.label)}</span>
+      checksEl.innerHTML = `
+        <div class="payroll-run-checks">
+          ${checks.map(c => `
+            <div class="payroll-check-item ${c.ok ? "ok" : "fail"}">
+              <span class="check-icon">${c.ok ? "&#10003;" : "&#10005;"}</span>
+              ${esc(c.label)}
+            </div>
+          `).join("")}
         </div>
-      `).join("");
+      `;
     }
   }
+
 
   function renderPayrollPostingControls(run) {
     const status = String(run?.status || "draft").toLowerCase();
@@ -51765,6 +51763,323 @@ function bindEventsOnce() {
     `).join("");
   }
 
+  const SARS_FALLBACK_BRACKETS = [
+    { from: 0,        to: 247500,  rate: 0.18, base: 0 },
+    { from: 247500,   to: 384000,  rate: 0.26, base: 44550 },
+    { from: 384000,   to: 531600,  rate: 0.31, base: 80100 },
+    { from: 531600,   to: 697000,  rate: 0.36, base: 125826 },
+    { from: 697000,   to: 882000,  rate: 0.39, base: 185326 },
+    { from: 882000,   to: 1893600, rate: 0.41, base: 257541 },
+    { from: 1893600,  to: null,    rate: 0.45, base: 672037 },
+  ];
+
+  /**
+   * Hardcoded Lesotho RSL brackets — fallback.
+   * Aligned with seed_payroll_tax.sql.
+   */
+  const RSL_FALLBACK_BRACKETS = [
+    { from: 0,       to: 84000,  rate: 0.00, base: 0 },
+    { from: 84000,   to: 156000, rate: 0.20, base: 0 },
+    { from: 156000,  to: 252000, rate: 0.30, base: 14400 },
+    { from: 252000,  to: null,   rate: 0.35, base: 43200 },
+  ];
+
+  /**
+   * Hardcoded Botswana BURS brackets — fallback.
+   * Aligned with seed_payroll_tax.sql.
+   */
+  const BURS_FALLBACK_BRACKETS = [
+    { from: 0,       to: 48000,  rate: 0.00, base: 0 },
+    { from: 48000,   to: 84000,  rate: 0.05, base: 0 },
+    { from: 84000,   to: 120000, rate: 0.125, base: 1800 },
+    { from: 120000,  to: 156000, rate: 0.1875, base: 6300 },
+    { from: 156000,  to: 192000, rate: 0.25, base: 13050 },
+    { from: 192000,  to: null,   rate: 0.30, base: 22050 },
+  ];
+
+  /**
+   * Normalise a bracket row to the simple format { from, to, rate, base }.
+   *
+   * Handles BOTH your DB column names AND the simple format, so it
+   * works regardless of whether your API transforms the data or
+   * returns raw DB rows.
+   *
+   * DB format:  { lower_bound, upper_bound, base_tax, marginal_rate, excess_over }
+   * Simple:     { from, to, rate, base }
+   */
+  function normaliseBracket(raw) {
+    return {
+      from:   Number(raw.from   ?? raw.lower_bound  ?? 0),
+      to:     raw.to     ?? raw.upper_bound  ?? null,
+      rate:   Number(raw.rate   ?? raw.marginal_rate ?? 0),
+      base:   Number(raw.base   ?? raw.base_tax     ?? 0),
+      excess: Number(raw.excess ?? raw.excess_over  ?? raw.from ?? raw.lower_bound ?? 0),
+    };
+  }
+
+  /**
+   * Calculate annual tax from normalised brackets.
+   *
+   * For each bracket:
+   *   tax = base + (taxable_income - excess) × rate
+   *
+   * @param {number} annualTaxable
+   * @param {Array}  rawBrackets  — array of bracket objects (either format)
+   * @returns {number} annual tax before rebates
+   */
+  function calculateBracketTax(annualTaxable, rawBrackets) {
+    if (!rawBrackets || !rawBrackets.length || annualTaxable <= 0) return 0;
+
+    const brackets = rawBrackets.map(normaliseBracket);
+    let tax = 0;
+    let applied = false;
+
+    for (let i = 0; i < brackets.length; i++) {
+      const b = brackets[i];
+      const upper = (b.to === null || b.to === undefined) ? Infinity : Number(b.to);
+
+      if (annualTaxable > Number(b.excess) && annualTaxable <= upper) {
+        tax = Number(b.base) + (annualTaxable - Number(b.excess)) * Number(b.rate);
+        applied = true;
+        break;
+      }
+    }
+
+    // Income exceeds the highest defined bracket
+    if (!applied && brackets.length > 0) {
+      const top = brackets[brackets.length - 1];
+      tax = Number(top.base) + (annualTaxable - Number(top.excess)) * Number(top.rate);
+    }
+
+    return Math.max(0, tax);
+  }
+
+  /**
+   * Get a parameter value from the tax context.
+   * Checks both flat keys (from API) and nested parameters array.
+   */
+  function getTaxParam(taxContext, key, fallback) {
+    // Check flat keys first (e.g. context.primary_rebate)
+    if (taxContext[key] !== undefined && taxContext[key] !== null) {
+      return Number(taxContext[key]);
+    }
+
+    // Check nested parameters array
+    // (in case the API returns them grouped)
+    if (Array.isArray(taxContext.parameters)) {
+      const param = taxContext.parameters.find(
+        p => p.parameter_key === key
+      );
+      if (param && param.numeric_value !== null) {
+        return Number(param.numeric_value);
+      }
+    }
+
+    return fallback !== undefined ? Number(fallback) : null;
+  }
+
+  /**
+   * Calculate age from a date-of-birth string (yyyy-mm-dd).
+   */
+  function getAgeFromDate(dobStr) {
+    if (!dobStr) return 0;
+    try {
+      const dob = new Date(dobStr);
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const monthDiff = today.getMonth() - dob.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      return Math.max(0, age);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /**
+   * South Africa SARS PAYE — progressive brackets + age-based rebates
+   * + medical aid tax credits (section 6A).
+   *
+   * Taxable income = Gross pay
+   *   – employee pension/retirement fund contributions (section 11F)
+   *
+   * Medical credits are deducted from the TAX (not from income).
+   */
+  function calculateSARSPayE(monthlyTaxable, taxContext) {
+    const annualTaxable = monthlyTaxable * 12;
+
+    // 1. Brackets — prefer API, fall back to hardcoded
+    const apiBrackets = taxContext.brackets;
+    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
+      ? apiBrackets
+      : SARS_FALLBACK_BRACKETS;
+
+    // 2. Calculate gross annual tax
+    let annualTax = calculateBracketTax(annualTaxable, brackets);
+
+    // 3. Age-dependent rebates
+    const employee = payrollPreviewSelectedEmployee();
+    const taxProfile = (employee?.tax_profiles || [])[0] || {};
+    const dob = taxProfile.date_of_birth || "";
+    const residencyStatus = taxProfile.residency_status || "resident";
+
+    // Non-residents get NO rebates
+    const rebatesApply = residencyStatus !== "non_resident" &&
+      getTaxParam(taxContext, "rebate_applies_non_resident", 0) !== 1;
+
+    if (rebatesApply) {
+      const primaryRebate   = getTaxParam(taxContext, "primary_rebate", 17235);
+      const secondaryRebate = getTaxParam(taxContext, "secondary_rebate", 9150);
+      const tertiaryRebate  = getTaxParam(taxContext, "tertiary_rebate", 3047);
+
+      let totalRebate = primaryRebate;
+
+      if (dob) {
+        const age = getAgeFromDate(dob);
+        if (age >= 75) {
+          totalRebate += secondaryRebate + tertiaryRebate;
+        } else if (age >= 65) {
+          totalRebate += secondaryRebate;
+        }
+      }
+
+      annualTax -= totalRebate;
+      if (annualTax < 0) annualTax = 0;
+    }
+
+    // 4. Medical aid tax credit (section 6A) — deducted from tax, not income
+    const medicalMembers = Number(taxProfile.medical_scheme_members || 0);
+
+    if (medicalMembers > 0) {
+      const monthlyCredit = getTaxParam(
+        taxContext, "medical_credit_monthly", 364
+      );
+
+      const additionalCredit = getTaxParam(
+        taxContext, "medical_credit_additional_monthly", 246
+      );
+
+      const dependants = Math.max(0, medicalMembers - 1);
+      const annualMedicalCredit = (monthlyCredit + dependants * additionalCredit) * 12;
+
+      annualTax -= annualMedicalCredit;
+      if (annualTax < 0) annualTax = 0;
+    }
+
+    // 5. Monthly conversion
+    return Math.round((annualTax / 12) * 100) / 100;
+  }
+
+  /**
+   * Lesotho RSL PAYE — progressive brackets, no age rebates.
+   */
+  function calculateRSLPayE(monthlyTaxable, taxContext) {
+    const annualTaxable = monthlyTaxable * 12;
+
+    const apiBrackets = taxContext.brackets;
+    const brackets = (Array.isArray(apiBrackets) && apiBrackets.length > 0)
+      ? apiBrackets
+      : RSL_FALLBACK_BRACKETS;
+
+    let annualTax = calculateBracketTax(annualTaxable, brackets);
+
+    // Lesotho has no separate rebate system (the 0% first bracket
+    // acts as the tax-free threshold), but check for an annual_rebate
+    // parameter just in case.
+    const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
+    if (annualRebate > 0) {
+      annualTax -= annualRebate;
+      if (annualTax < 0) annualTax = 0;
+    }
+
+    return Math.round((annualTax / 12) * 100) / 100;
+  }
+
+  /**
+   * Generic PAYE calculator — for any authority that returns bracket data.
+   * Used for Botswana BURS and any future authorities.
+   */
+  function calculateGenericPayE(monthlyTaxable, taxContext) {
+    const apiBrackets = taxContext.brackets;
+    if (!Array.isArray(apiBrackets) || !apiBrackets.length) return 0;
+
+    const basis = String(taxContext.calculation_basis || "annualised").toLowerCase();
+    const isMonthly = basis.includes("monthly");
+
+    const effectiveIncome = isMonthly ? monthlyTaxable : monthlyTaxable * 12;
+    let tax = calculateBracketTax(effectiveIncome, apiBrackets);
+
+    // Apply rebate if any (only for annualised calculations)
+    if (!isMonthly) {
+      const annualRebate = getTaxParam(taxContext, "annual_rebate", 0);
+      if (annualRebate > 0) {
+        tax -= annualRebate;
+        if (tax < 0) tax = 0;
+      }
+      // Also check primary_rebate key (SA-style)
+      const primaryRebate = getTaxParam(taxContext, "primary_rebate", 0);
+      if (primaryRebate > 0) {
+        tax -= primaryRebate;
+        if (tax < 0) tax = 0;
+      }
+    }
+
+    if (isMonthly) {
+      return Math.round(tax * 100) / 100;
+    }
+
+    return Math.round((tax / 12) * 100) / 100;
+  }
+
+  /**
+   * MAIN ENTRY POINT — calculate PAYE for the payslip preview.
+   *
+   * Routes to the correct calculator based on country code,
+   * using API brackets if available, falling back to hardcoded tables.
+   *
+   * @param {number} monthlyTaxableIncome
+   * @returns {number} monthly PAYE
+   */
+  function calculatePreviewPaye(monthlyTaxableIncome) {
+    if (monthlyTaxableIncome <= 0) return 0;
+
+    const ctx = payrollState.taxContext;
+    if (!ctx) return 0;
+
+    const country = String(
+      ctx.country_code ||
+      window.CURRENT_COMPANY?.country ||
+      window.CURRENT_COMPANY_COUNTRY ||
+      ""
+    ).trim().toUpperCase();
+
+    // South Africa
+    if (["ZA", "RSA", "SOUTH AFRICA"].includes(country)) {
+      return calculateSARSPayE(monthlyTaxableIncome, ctx);
+    }
+
+    // Lesotho
+    if (["LS", "LES", "LESOTHO"].includes(country)) {
+      return calculateRSLPayE(monthlyTaxableIncome, ctx);
+    }
+
+    // Botswana or any other — try generic with API brackets,
+    // then try BURS fallback
+    if (Array.isArray(ctx.brackets) && ctx.brackets.length > 0) {
+      return calculateGenericPayE(monthlyTaxableIncome, ctx);
+    }
+
+    if (["BW", "BOT", "BOTSWANA"].includes(country)) {
+      // Use BURS fallback brackets
+      const ctxWithBrackets = { ...ctx, brackets: BURS_FALLBACK_BRACKETS };
+      return calculateGenericPayE(monthlyTaxableIncome, ctxWithBrackets);
+    }
+
+    // No matching authority
+    return 0;
+  }
+
   function renderPayrollPayslipPreview() {
     const employee = payrollPreviewSelectedEmployee();
 
@@ -51859,22 +52174,76 @@ function bindEventsOnce() {
         0
       ) + taxableBenefits;
 
-    let manualPaye = 0;
+    const payeTreatment =
+      $("payrollPayTaxTreatment")?.value || "standard";
 
-    if ($("payrollPayTaxTreatment")?.value === "manual") {
-      manualPaye = Number(
+    let calculatedPaye = 0;
+
+    if (payeTreatment === "manual") {
+      calculatedPaye = Number(
         $("payrollManualPayeAmount")?.value || 0
       );
+
+    } else if (payeTreatment === "exempt") {
+      calculatedPaye = 0;
+
+    } else {
+      // Standard PAYE — calculate from tax brackets
+
+      let taxableIncome = grossPay;
+
+      // Subtract pension/retirement employee deductions from taxable income
+      // (SA SARS section 11F — pension fund contributions are tax-deductible)
+      const pensionDeductions = deductions.filter(d =>
+        /PENSION|RETIREMENT|RA_/i.test(d.code || "")
+      );
+
+      const totalPensionDeduction = pensionDeductions.reduce(
+        (sum, d) => sum + Number(d.amount || 0), 0
+      );
+
+      taxableIncome -= totalPensionDeduction;
+      if (taxableIncome < 0) taxableIncome = 0;
+
+      calculatedPaye = calculatePreviewPaye(taxableIncome);
     }
 
-    const deductionLines = [...deductions];
+    // Build deduction lines:
+    // Include all deductions EXCEPT any user-added "PAYE" line
+    // (the calculated PAYE is added separately below)
+    const deductionLines = deductions.filter(d => d.code !== "PAYE");
 
-    if (manualPaye > 0) {
+    if (calculatedPaye > 0) {
       deductionLines.push({
         code: "PAYE",
         name: "PAYE",
-        amount: manualPaye,
+        amount: calculatedPaye,
       });
+    }
+
+    /* ── END PAYE replacement ── */
+
+
+    /* ── Optional: show which tax method was used in the preview ── */
+
+    const payeNoteEl = $("payrollPreviewPayeNote");
+    if (payeNoteEl) {
+      if (payeTreatment === "standard" && calculatedPaye > 0) {
+        const ctx = payrollState.taxContext;
+        const authorityName = ctx?.authority_code || "Tax Authority";
+        const yearLabel = ctx?.tax_year_label || "current year";
+        payeNoteEl.textContent =
+          "Bracket-based (" + authorityName + ", " + yearLabel + ")";
+        payeNoteEl.classList.remove("hidden");
+      } else if (payeTreatment === "exempt") {
+        payeNoteEl.textContent = "PAYE exempt";
+        payeNoteEl.classList.remove("hidden");
+      } else if (payeTreatment === "manual") {
+        payeNoteEl.textContent = "Manually entered";
+        payeNoteEl.classList.remove("hidden");
+      } else {
+        payeNoteEl.classList.add("hidden");
+      }
     }
 
     const totalDeductions = deductionLines.reduce(
@@ -52182,6 +52551,10 @@ function bindEventsOnce() {
     );
 
     const context = res?.data || {};
+
+    /* ── NEW: store the full tax context for PAYE calculation ── */
+    payrollState.taxContext = context;
+    /* ── END NEW ── */
 
     setTxt(
       "payrollTaxCountry",

@@ -1318,9 +1318,39 @@ def api_payroll_tax_context(company_id: int):
             payment_date,
         )
 
+        if not out:
+            return jsonify({
+                "ok": True,
+                "data": {
+                    "configured": False,
+                    "message": "No active tax year found.",
+                },
+            }), 200
+
+        tax_year_id = out.get("tax_year_id")
+
+        # ── Fetch brackets for the frontend preview calculator ──
+        if tax_year_id:
+            out["brackets"] = db_service.payroll_tax_brackets(
+                tax_year_id,
+                "resident",
+            )
+
+            params = db_service.payroll_tax_parameters(
+                tax_year_id
+            )
+
+            # Flatten parameters into the response
+            # so the frontend can read them as top-level keys
+            for key, value in (params or {}).items():
+                if key not in out:
+                    out[key] = value
+
+        out["configured"] = True
+
         return jsonify({
             "ok": True,
-            "data": out or {},
+            "data": out,
         }), 200
 
     except ValueError as error:
