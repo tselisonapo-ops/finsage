@@ -53225,6 +53225,8 @@ function bindEventsOnce() {
     const settlementMethod =
       $("adNewSettlementMethod")?.value || "";
 
+    const accountRouting = window._AD_ACCOUNT_ROUTING || {};
+
     const vendorSelect = $("adNewVendorId");
     const vendorOption = vendorSelect?.selectedOptions?.[0];
 
@@ -53248,13 +53250,25 @@ function bindEventsOnce() {
       frequency: $("adNewFrequency")?.value || "monthly",
 
       balance_account_role:
-        $("adNewBalanceAccountRole")?.value?.trim(),
+        $("adNewBalanceAccountRole")?.value?.trim() ||
+        $("adNewType")?.value ||
+        "",
+
+      balance_account:
+        String(accountRouting.balance_account || "").trim(),
+
+      balance_account_name:
+        String(accountRouting.balance_account_name || "").trim(),
 
       recognition_account_role:
-        $("adNewRecognitionRole")?.value?.trim(),
+        $("adNewRecognitionRole")?.value?.trim() || "",
 
-      recognition_account: ctx.account?.code || "",
+      recognition_account:
+        String(accountRouting.recognition_account || "").trim(),
 
+      recognition_account_name:
+        String(accountRouting.recognition_account_name || "").trim(),
+        
       settlement_method: settlementMethod,
 
       settlement_account:
@@ -53448,69 +53462,159 @@ function bindEventsOnce() {
   function applyAdTypeDefaults(ctx = {}) {
     const type = $("adNewType")?.value || "prepaid_expense";
 
-    const titleLabel = document.querySelector('[for="adNewTitleLabel"]');
-    const settlementLabel = document.querySelector('[for="adNewSettlementLabel"]');
-
-    const recognition = $("adNewRecognitionAccount");
-    const balance = $("adNewBalanceAccount");
+    const balanceRoleInput = $("adNewBalanceAccountRole");
     const balanceDisplay = $("adNewBalanceAccountDisplay");
-    const role = $("adNewRecognitionRole");
 
-    const fromRole = ctx.account?.role || "";
+    const recognitionRoleInput = $("adNewRecognitionRole");
+    const recognitionDisplay = $("adNewRecognitionAccount");
+
+    const redirectedAccount = ctx.account || {};
+
+    const redirectedCode = String(
+      redirectedAccount.code ||
+      ctx.account_code ||
+      ""
+    ).trim();
+
+    const redirectedName = String(
+      redirectedAccount.name ||
+      ctx.account_name ||
+      ""
+    ).trim();
+
+    const redirectedRole = String(
+      redirectedAccount.role ||
+      ctx.account_role ||
+      ""
+    ).trim().toLowerCase();
 
     const defaults = {
       prepaid_expense: {
         balanceRole: "prepaid_expense",
-        recognitionRole: fromRole || "insurance_expense",
-        recognitionText: ctx.account?.name
-          ? ctx.account.name
-          : "Expense account will be resolved from selected profile/account",
-        settlementText: "Paid from Bank / Cash",
+        recognitionRole: "insurance_expense",
+        recognitionText:
+          "Expense account will be resolved from the selected expense profile",
       },
+
       deferred_expense: {
         balanceRole: "deferred_expense",
-        recognitionRole: fromRole || "maintenance_expense",
-        recognitionText: ctx.account?.name
-          ? ctx.account.name
-          : "Expense account will be resolved from selected profile/account",
-        settlementText: "Paid from Bank / Cash",
+        recognitionRole: "maintenance_expense",
+        recognitionText:
+          "Expense account will be resolved from the selected expense profile",
       },
+
       deferred_income: {
         balanceRole: "deferred_income",
-        recognitionRole: fromRole || "rent_income",
-        recognitionText: ctx.account?.name
-          ? ctx.account.name
-          : "Income account will be resolved from selected profile/account",
-        settlementText: "Received into Bank / Cash",
+        recognitionRole: "rent_income",
+        recognitionText:
+          "Income account will be resolved from the selected income profile",
       },
+
       accrued_expense: {
         balanceRole: "accrued_expense",
-        recognitionRole: fromRole || "maintenance_expense",
-        recognitionText: ctx.account?.name
-          ? ctx.account.name
-          : "Expense account will be resolved from selected profile/account",
-        settlementText: "Accrual liability",
+        recognitionRole: "maintenance_expense",
+        recognitionText:
+          "Expense account will be resolved from the selected expense profile",
       },
+
       accrued_income: {
         balanceRole: "accrued_income",
-        recognitionRole: fromRole || "rent_income",
-        recognitionText: ctx.account?.name
-          ? ctx.account.name
-          : "Income account will be resolved from selected profile/account",
-        settlementText: "Accrued income asset",
+        recognitionRole: "rent_income",
+        recognitionText:
+          "Income account will be resolved from the selected income profile",
       },
     };
 
-    const d = defaults[type];
+    const d = defaults[type] || defaults.prepaid_expense;
 
-    if (balance) balance.value = d.balanceRole;
-    if (balanceDisplay) balanceDisplay.value = d.balanceRole;
-    if (role) role.value = d.recognitionRole;
-    if (recognition) recognition.value = d.recognitionText;
+    /*
+    * Determine whether the redirected journal account is the balance
+    * account or the recognition account.
+    */
+    const redirectedIsBalance =
+      redirectedRole === d.balanceRole ||
+      redirectedRole === type ||
+      (
+        type === "prepaid_expense" &&
+        redirectedRole.includes("prepaid")
+      ) ||
+      (
+        type === "deferred_income" &&
+        redirectedRole.includes("deferred_income")
+      ) ||
+      (
+        type === "accrued_expense" &&
+        redirectedRole.includes("accrued_expense")
+      ) ||
+      (
+        type === "accrued_income" &&
+        redirectedRole.includes("accrued_income")
+      );
 
-    if (settlementLabel) {
-      settlementLabel.textContent = d.settlementText;
+    const redirectedIsRecognition =
+      !!redirectedRole &&
+      !redirectedIsBalance &&
+      (
+        redirectedRole.includes("expense") ||
+        redirectedRole.includes("income") ||
+        redirectedRole.includes("revenue")
+      );
+
+    if (balanceRoleInput) {
+      balanceRoleInput.value = d.balanceRole;
     }
+
+    if (balanceDisplay) {
+      balanceDisplay.value = labelType(d.balanceRole);
+    }
+
+    if (recognitionRoleInput) {
+      recognitionRoleInput.value = redirectedIsRecognition
+        ? redirectedRole
+        : d.recognitionRole;
+    }
+
+    if (recognitionDisplay) {
+      recognitionDisplay.value = redirectedIsRecognition && redirectedName
+        ? redirectedName
+        : d.recognitionText;
+    }
+
+    /*
+    * Store account routing separately. Do not automatically treat every
+    * redirected account as the recognition account.
+    */
+    window._AD_ACCOUNT_ROUTING = {
+      balance_account:
+        redirectedIsBalance && redirectedCode
+          ? redirectedCode
+          : "",
+
+      balance_account_name:
+        redirectedIsBalance
+          ? redirectedName
+          : "",
+
+      recognition_account:
+        redirectedIsRecognition && redirectedCode
+          ? redirectedCode
+          : "",
+
+      recognition_account_name:
+        redirectedIsRecognition
+          ? redirectedName
+          : "",
+    };
+
+    console.log("[AD] account defaults applied", {
+      type,
+      redirectedCode,
+      redirectedName,
+      redirectedRole,
+      redirectedIsBalance,
+      redirectedIsRecognition,
+      routing: window._AD_ACCOUNT_ROUTING,
+    });
   }
 
   async function createAccrualDeferralItem(payload) {

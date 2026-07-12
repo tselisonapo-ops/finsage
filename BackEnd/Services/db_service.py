@@ -5924,15 +5924,6 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         );
 
-        ALTER TABLE {schema}.payroll_settings
-            ADD COLUMN IF NOT EXISTS period_start_day INT,
-            ADD COLUMN IF NOT EXISTS period_end_day INT,
-            ADD COLUMN IF NOT EXISTS period_end_month_offset INT NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS payment_day_rule TEXT,
-            ADD COLUMN IF NOT EXISTS payment_month_offset INT NOT NULL DEFAULT 0,
-            ADD COLUMN IF NOT EXISTS payment_adjustment TEXT NOT NULL DEFAULT 'none',
-            ADD COLUMN IF NOT EXISTS calendar_generation_months INT NOT NULL DEFAULT 12;
-
         CONSTRAINT {schema}_payroll_settings_company_fk
             FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -5945,6 +5936,15 @@ class DatabaseService:
         CONSTRAINT {schema}_payroll_settings_frequency_ck
             CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
     
+        ALTER TABLE {schema}.payroll_settings
+            ADD COLUMN IF NOT EXISTS period_start_day INT,
+            ADD COLUMN IF NOT EXISTS period_end_day INT,
+            ADD COLUMN IF NOT EXISTS period_end_month_offset INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payment_day_rule TEXT,
+            ADD COLUMN IF NOT EXISTS payment_month_offset INT NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payment_adjustment TEXT NOT NULL DEFAULT 'none',
+            ADD COLUMN IF NOT EXISTS calendar_generation_months INT NOT NULL DEFAULT 12;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -6159,9 +6159,6 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-            ALTER TABLE {schema}.payroll_deduction_types
-            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
-
             CONSTRAINT {schema}_payroll_ded_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6171,6 +6168,9 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_ded_uniq
                 UNIQUE (company_id, code)
         );
+
+        ALTER TABLE {schema}.payroll_deduction_types
+        ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_ded_company_idx
             ON {schema}.payroll_deduction_types(company_id);
@@ -6185,10 +6185,6 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-            ALTER TABLE {schema}.payroll_employer_contribution_types
-                ADD COLUMN IF NOT EXISTS expense_account_code TEXT,
-                ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
-
             CONSTRAINT {schema}_payroll_cont_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6201,6 +6197,11 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_cont_uniq
                 UNIQUE (company_id, code)
         );
+
+
+        ALTER TABLE {schema}.payroll_employer_contribution_types
+            ADD COLUMN IF NOT EXISTS expense_account_code TEXT,
+            ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_cont_company_idx
             ON {schema}.payroll_employer_contribution_types(company_id);
@@ -6299,53 +6300,6 @@ class DatabaseService:
             effective_to DATE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-            ALTER TABLE {schema}.payroll_employee_tax_profiles
-                ADD COLUMN IF NOT EXISTS residency_status TEXT
-                    NOT NULL DEFAULT 'resident',
-
-                ADD COLUMN IF NOT EXISTS date_of_birth DATE,
-
-                ADD COLUMN IF NOT EXISTS medical_scheme_members INT
-                    NOT NULL DEFAULT 0,
-
-                ADD COLUMN IF NOT EXISTS directive_number TEXT,
-
-                ADD COLUMN IF NOT EXISTS directive_rate NUMERIC(9,6),
-
-                ADD COLUMN IF NOT EXISTS additional_tax_amount NUMERIC(18,2)
-                    NOT NULL DEFAULT 0,
-
-                ADD COLUMN IF NOT EXISTS tax_calculation_method TEXT
-                    NOT NULL DEFAULT 'standard';
-
-            ALTER TABLE {schema}.payroll_employee_tax_profiles
-                DROP CONSTRAINT IF EXISTS
-                    chk_payroll_tax_residency;
-
-            ALTER TABLE {schema}.payroll_employee_tax_profiles
-                ADD CONSTRAINT chk_payroll_tax_residency
-                CHECK (
-                    residency_status IN (
-                        'resident',
-                        'non_resident'
-                    )
-                );
-
-            ALTER TABLE {schema}.payroll_employee_tax_profiles
-                DROP CONSTRAINT IF EXISTS
-                    chk_payroll_tax_calculation_method;
-
-            ALTER TABLE {schema}.payroll_employee_tax_profiles
-                ADD CONSTRAINT chk_payroll_tax_calculation_method
-                CHECK (
-                    tax_calculation_method IN (
-                        'standard',
-                        'directive',
-                        'manual',
-                        'exempt'
-                    )
-                );
-
             CONSTRAINT {schema}_payroll_tax_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6358,6 +6312,53 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_tax_dates_ck
                 CHECK (effective_to IS NULL OR effective_to >= effective_from)
         );
+
+        ALTER TABLE {schema}.payroll_employee_tax_profiles
+            ADD COLUMN IF NOT EXISTS residency_status TEXT
+                NOT NULL DEFAULT 'resident',
+
+            ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+
+            ADD COLUMN IF NOT EXISTS medical_scheme_members INT
+                NOT NULL DEFAULT 0,
+
+            ADD COLUMN IF NOT EXISTS directive_number TEXT,
+
+            ADD COLUMN IF NOT EXISTS directive_rate NUMERIC(9,6),
+
+            ADD COLUMN IF NOT EXISTS additional_tax_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            ADD COLUMN IF NOT EXISTS tax_calculation_method TEXT
+                NOT NULL DEFAULT 'standard';
+
+        ALTER TABLE {schema}.payroll_employee_tax_profiles
+            DROP CONSTRAINT IF EXISTS
+                chk_payroll_tax_residency;
+
+        ALTER TABLE {schema}.payroll_employee_tax_profiles
+            ADD CONSTRAINT chk_payroll_tax_residency
+            CHECK (
+                residency_status IN (
+                    'resident',
+                    'non_resident'
+                )
+            );
+
+        ALTER TABLE {schema}.payroll_employee_tax_profiles
+            DROP CONSTRAINT IF EXISTS
+                chk_payroll_tax_calculation_method;
+
+        ALTER TABLE {schema}.payroll_employee_tax_profiles
+            ADD CONSTRAINT chk_payroll_tax_calculation_method
+            CHECK (
+                tax_calculation_method IN (
+                    'standard',
+                    'directive',
+                    'manual',
+                    'exempt'
+                )
+            );
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_tax_emp_idx
             ON {schema}.payroll_employee_tax_profiles(company_id, employee_id);
@@ -6407,13 +6408,6 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-            ALTER TABLE {schema}.payroll_benefit_types
-                ADD COLUMN IF NOT EXISTS earning_type_id INT,
-                ADD COLUMN IF NOT EXISTS deduction_type_id INT,
-                ADD COLUMN IF NOT EXISTS contribution_type_id INT,
-                ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT TRUE;
-
-
             CONSTRAINT {schema}_payroll_benefit_company_fk
                 FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
 
@@ -6432,6 +6426,12 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_benefit_category_ck
                 CHECK (benefit_category IN ('allowance','deduction','employer_contribution','fringe_benefit','mixed'))
         );
+
+        ALTER TABLE {schema}.payroll_benefit_types
+            ADD COLUMN IF NOT EXISTS earning_type_id INT,
+            ADD COLUMN IF NOT EXISTS deduction_type_id INT,
+            ADD COLUMN IF NOT EXISTS contribution_type_id INT,
+            ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT TRUE;
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_benefit_company_idx
             ON {schema}.payroll_benefit_types(company_id);
@@ -6673,63 +6673,46 @@ class DatabaseService:
             net_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'draft',
 
-            ALTER TABLE {schema}.payroll_run_employees
-                ADD COLUMN IF NOT EXISTS pay_setup_id BIGINT,
-                ADD COLUMN IF NOT EXISTS taxable_income NUMERIC(18,2)
-                    NOT NULL DEFAULT 0,
-                ADD COLUMN IF NOT EXISTS paye NUMERIC(18,2)
-                    NOT NULL DEFAULT 0,
-                ADD COLUMN IF NOT EXISTS employer_cost NUMERIC(18,2)
-                    NOT NULL DEFAULT 0,
-                ADD COLUMN IF NOT EXISTS tax_authority_code TEXT,
-                ADD COLUMN IF NOT EXISTS tax_year_label TEXT,
-                ADD COLUMN IF NOT EXISTS calculation_status TEXT
-                    NOT NULL DEFAULT 'calculated',
-                ADD COLUMN IF NOT EXISTS calculation_message TEXT;
-
-            ALTER TABLE {schema}.payroll_run_lines
-                ADD COLUMN IF NOT EXISTS item_type TEXT,
-                ADD COLUMN IF NOT EXISTS item_id BIGINT,
-                ADD COLUMN IF NOT EXISTS code TEXT,
-                ADD COLUMN IF NOT EXISTS quantity NUMERIC(18,4),
-                ADD COLUMN IF NOT EXISTS rate NUMERIC(18,4),
-                ADD COLUMN IF NOT EXISTS percentage NUMERIC(18,4),
-                ADD COLUMN IF NOT EXISTS taxable BOOLEAN
-                    NOT NULL DEFAULT FALSE,
-                ADD COLUMN IF NOT EXISTS pensionable BOOLEAN
-                    NOT NULL DEFAULT FALSE,
-                ADD COLUMN IF NOT EXISTS source_type TEXT,
-                ADD COLUMN IF NOT EXISTS source_id BIGINT,
-                ADD COLUMN IF NOT EXISTS metadata JSONB
-                    NOT NULL DEFAULT '{{}}'::jsonb;
-
             CONSTRAINT {schema}_payroll_run_emp_company_fk
-                FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (company_id)
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE,
 
             CONSTRAINT {schema}_payroll_run_emp_run_fk
-                FOREIGN KEY (payroll_run_id) REFERENCES {schema}.payroll_runs(id) ON DELETE CASCADE,
+                FOREIGN KEY (payroll_run_id)
+                REFERENCES {schema}.payroll_runs(id)
+                ON DELETE CASCADE,
 
             CONSTRAINT {schema}_payroll_run_emp_employee_fk
-                FOREIGN KEY (employee_id) REFERENCES {schema}.payroll_employees(id),
+                FOREIGN KEY (employee_id)
+                REFERENCES {schema}.payroll_employees(id),
 
             CONSTRAINT {schema}_payroll_run_emp_contract_fk
-                FOREIGN KEY (contract_id) REFERENCES {schema}.payroll_employee_contracts(id) ON DELETE SET NULL,
+                FOREIGN KEY (contract_id)
+                REFERENCES {schema}.payroll_employee_contracts(id)
+                ON DELETE SET NULL,
 
             CONSTRAINT {schema}_payroll_run_emp_uniq
-                UNIQUE(company_id, payroll_run_id, employee_id)
-        
-            CREATE UNIQUE INDEX IF NOT EXISTS
-                uq_payroll_run_line_source
-            ON {schema}.payroll_run_lines (
-                company_id,
-                payroll_run_id,
-                run_employee_id,
-                line_type,
-                COALESCE(item_type, ''),
-                COALESCE(item_id, 0),
-                COALESCE(code, '')
-            );
+                UNIQUE (
+                    company_id,
+                    payroll_run_id,
+                    employee_id
+                )
         );
+
+        ALTER TABLE {schema}.payroll_run_employees
+            ADD COLUMN IF NOT EXISTS pay_setup_id BIGINT,
+            ADD COLUMN IF NOT EXISTS taxable_income NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS paye NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS employer_cost NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS tax_authority_code TEXT,
+            ADD COLUMN IF NOT EXISTS tax_year_label TEXT,
+            ADD COLUMN IF NOT EXISTS calculation_status TEXT
+                NOT NULL DEFAULT 'calculated',
+            ADD COLUMN IF NOT EXISTS calculation_message TEXT;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_run_lines (
             id SERIAL PRIMARY KEY,
@@ -6760,15 +6743,50 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_run_lines_coa_fk
                 FOREIGN KEY (gl_account_code) REFERENCES {schema}.coa(code),
 
-            CONSTRAINT {schema}_payroll_run_lines_type_ck
-                CHECK (line_type IN ('earning','deduction','employer_contribution','tax','net_pay'))
+           CONSTRAINT {schema}_payroll_run_lines_type_ck
+            CHECK (
+                line_type IN (
+                    'earning',
+                    'deduction',
+                    'employer_contribution',
+                    'tax',
+                    'net_pay',
+                    'benefit'
+                )
+            )
         );
+
+        ALTER TABLE {schema}.payroll_run_lines
+            ADD COLUMN IF NOT EXISTS item_type TEXT,
+            ADD COLUMN IF NOT EXISTS item_id BIGINT,
+            ADD COLUMN IF NOT EXISTS code TEXT,
+            ADD COLUMN IF NOT EXISTS quantity NUMERIC(18,4),
+            ADD COLUMN IF NOT EXISTS rate NUMERIC(18,4),
+            ADD COLUMN IF NOT EXISTS percentage NUMERIC(18,4),
+            ADD COLUMN IF NOT EXISTS taxable BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS pensionable BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS source_type TEXT,
+            ADD COLUMN IF NOT EXISTS source_id BIGINT,
+            ADD COLUMN IF NOT EXISTS metadata JSONB
+                NOT NULL DEFAULT '{{}}'::jsonb;
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_runs_status_idx
             ON {schema}.payroll_runs(company_id, status);
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_run_lines_run_idx
             ON {schema}.payroll_run_lines(company_id, payroll_run_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_payroll_run_line_source_uniq
+        ON {schema}.payroll_run_lines (
+            company_id,
+            payroll_run_id,
+            run_employee_id,
+            line_type,
+            COALESCE(item_type, ''),
+            COALESCE(item_id, 0),
+            COALESCE(code, '')
+        );
 
         CREATE TABLE IF NOT EXISTS
             {schema}.payroll_employee_pay_setups (
