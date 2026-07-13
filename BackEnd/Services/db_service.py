@@ -85211,23 +85211,23 @@ class DatabaseService:
 
         return int(row["id"]) if row else None
 
-def payroll_tax_authorities_list(self):
-    """Return all tax authorities for the frontend dropdown."""
-    return self.fetch_all("""
-        SELECT
-            ta.id,
-            ta.code,
-            ta.name,
-            r.country_code,
-            r.currency,
-            r.is_active
-        FROM public.tax_authorities ta
-        LEFT JOIN public.payroll_tax_regimes r
-            ON UPPER(r.authority_code) = UPPER(ta.code)
-        WHERE COALESCE(r.is_active, TRUE) = TRUE
-          AND UPPER(ta.code) IN ('SARS', 'RSL', 'BURS')
-        ORDER BY ta.name;
-    """)
+    def payroll_tax_authorities_list(self):
+        """Return all tax authorities for the frontend dropdown."""
+        return self.fetch_all("""
+            SELECT
+                ta.id,
+                ta.code,
+                ta.name,
+                r.country_code,
+                r.currency,
+                r.is_active
+            FROM public.tax_authorities ta
+            LEFT JOIN public.payroll_tax_regimes r
+                ON UPPER(r.authority_code) = UPPER(ta.code)
+            WHERE COALESCE(r.is_active, TRUE) = TRUE
+            AND UPPER(ta.code) IN ('SARS', 'RSL', 'BURS')
+            ORDER BY ta.name;
+        """)
 
     def payroll_settings_get(self, company_id: int):
         schema = self.company_schema(company_id)
