@@ -85587,6 +85587,7 @@ class DatabaseService:
         """, (int(company_id), int(employee_id)))
 
     def payroll_settings_upsert(self, company_id: int, data: dict):
+        self.ensure_company_payroll(company_id)     
         company_id = int(company_id)
         schema = self.company_schema(company_id)
 
