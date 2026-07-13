@@ -14577,6 +14577,51 @@ class DatabaseService:
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS component_percentage NUMERIC(5,2) NULL;
 
+        -- Migration: Add accounting_standard to assets
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS accounting_standard TEXT NOT NULL DEFAULT 'ias16';
+
+        -- Constraint: only allow known standards
+        ALTER TABLE {schema}.assets 
+        ADD CONSTRAINT chk_accounting_standard 
+        CHECK (accounting_standard IN ('ias16', 'ias40', 'ias38'));
+
+        -- Add index for filtering
+        CREATE INDEX IF NOT EXISTS idx_assets_accounting_standard 
+        ON {schema}.assets (company_id, accounting_standard);
+
+        -- IAS 38 specific: indefinite useful life flag
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS indefinite_useful_life BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- IAS 40 specific: fair value model flag
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS fair_value_model BOOLEAN NOT NULL DEFAULT FALSE;
+
+        -- IAS 38: development phase capitalisation tracking
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS is_intangible_dev_phase BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS dev_cap_start_date DATE NULL;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS dev_cap_end_date DATE NULL;
+
+        -- IAS 40: rental income tracking (link to rental income account)
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS rental_income_account_code TEXT NULL;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS fv_gain_loss_account_code TEXT NULL;  -- FV changes go to P&L under IAS 40
+
+        -- Reclassification tracking
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS reclassified_from_asset_id INT NULL;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS reclassified_from_standard TEXT NULL;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS reclassified_date DATE NULL;
+        ALTER TABLE {schema}.assets 
+        ADD COLUMN IF NOT EXISTS reclassified_notes TEXT NULL;
+
         -- optional safety: only allow the two modes
         -- ==================================================
         -- UOP usage mode rules (corrected)

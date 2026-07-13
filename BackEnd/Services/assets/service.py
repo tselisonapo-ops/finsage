@@ -410,7 +410,42 @@ def update_subsequent_measurement(cur, company_id: int, sm_id: int, patch: dict)
 
     return True
 
-def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50, offset=0, as_at=None):
+def reclassify_asset(cur, company_id, asset_id, new_standard, reclassification_date, notes=None):
+    """Reclassify an asset between IAS 16 ↔ IAS 40 (IAS 40.50)"""
+    schema = company_schema(company_id)
+
+    # Fetch current asset
+    cur.execute(_q(schema, """
+        SELECT * FROM {schema}.assets
+        WHERE company_id = %s AND id = %s
+    """), (company_id, asset_id))
+    asset = fetchone(cur)
+    if not asset:
+        raise Exception("Asset not found")
+
+    current_standard = (asset.get("accounting_standard") or "ias16").strip().lower()
+
+    if current_standard == new_standard:
+        raise Exception(f"Asset is already under {new_standard.upper()}")
+
+    valid_transitions = {("ias16", "ias40"), ("ias40", "ias16")}
+    if (current_standard, new_standard) not in valid_transitions:
+        raise Exception("Invalid reclassification path. Only IAS 16 ↔ IAS 40 allowed.")
+
+    # Update the asset record
+    cur.execute(_q(schema, """
+        UPDATE {schema}.assets SET
+            accounting_standard = %s,
+            reclassified_from_standard = %s,
+            reclassified_date = %s,
+            reclassified_notes = %s,
+            updated_at = NOW()
+        WHERE company_id = %s AND id = %s
+    """), (new_standard, current_standard, reclassification_date, notes, company_id, asset_id))
+
+    return asset
+
+def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50, offset=0, as_at=None, accounting_standard=None):
     schema = company_schema(company_id)
     as_at = as_at or date.today()
 
@@ -424,6 +459,10 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
     if asset_class:
         where.append("a.asset_class=%s")
         params.append(asset_class)
+
+    if accounting_standard:
+        where.append("a.accounting_standard=%s")
+        params.append(accounting_standard)
 
     if q:
         where.append("(a.asset_code ILIKE %s OR a.asset_name ILIKE %s)")
@@ -911,6 +950,17 @@ def normalize_asset_class_group(asset_class="", asset_name="", category=""):
         ("Furniture and fittings", ["furniture", "fittings", "desk", "chair", "boardroom"]),
         ("Tools and small equipment", ["tool", "tools", "small equipment"]),
         ("Leasehold improvements", ["leasehold", "improvement", "renovation"]),
+        ("Investment property - Land", ["investment property land", "investment land"]),
+        ("Investment property - Buildings", ["investment property building", "investment building", "investment property"]),
+        ("Goodwill", ["goodwill"]),
+        ("Patents", ["patent"]),
+        ("Copyrights", ["copyright"]),
+        ("Trademarks", ["trademark"]),
+        ("Software", ["software"]),
+        ("Licences", ["licence", "license"]),
+        ("Franchises", ["franchise"]),
+        ("Research and development", ["research and development", "r&d", "randd"]),
+        ("Other intangible assets", ["intangible"]),
     ]
 
     for group, keywords in rules:
@@ -1287,6 +1337,56 @@ def create_asset(cur, company_id, payload):
         )
 
     # ----------------------------
+    # Accounting standard (IAS 16 / IAS 40 / IAS 38)
+    # ----------------------------
+    accounting_standard = str(payload.get("accounting_standard") or "ias16").strip().lower()
+    if accounting_standard not in ("ias16", "ias40", "ias38"):
+        accounting_standard = "ias16"
+
+    # Auto-derive from class_group if not explicitly sent
+    if not payload.get("accounting_standard"):
+        _acg = asset_class_group.lower()
+        if "investment property" in _acg:
+            accounting_standard = "ias40"
+        elif any(k in _acg for k in (
+            "goodwill", "patent", "copyright", "trademark", "software",
+            "licence", "license", "franchise", "customer list",
+            "research and development", "intangible",
+        )):
+            accounting_standard = "ias38"
+        else:
+            accounting_standard = "ias16"
+
+    # IAS 38: residual value is ALWAYS zero
+    if accounting_standard == "ias38":
+        residual_value = Decimal("0")
+        if payload.get("residual_value") and Decimal(str(payload["residual_value"])) != 0:
+            current_app.logger.warning(
+                f"[IAS38] Residual value forced to 0 for intangible asset: {asset_name}"
+            )
+
+    # IAS 40 fair value model: no depreciation
+    fair_value_model = bool(payload.get("fair_value_model") or False)
+    if accounting_standard == "ias40" and fair_value_model:
+        m = "APP"
+        payload["depreciation_method"] = "APP"
+        payload["useful_life_months"] = 0
+        payload["rb_rate_percent"] = None
+        payload["uop_total_units"] = None
+        payload["uop_unit_name"] = None
+        residual_value = Decimal("0")
+
+    # IAS 38 indefinite useful life: no amortisation
+    indefinite_useful_life = bool(payload.get("indefinite_useful_life") or False)
+    if accounting_standard == "ias38" and indefinite_useful_life:
+        m = "APP"
+        payload["depreciation_method"] = "APP"
+        payload["useful_life_months"] = 0
+        payload["rb_rate_percent"] = None
+        payload["uop_total_units"] = None
+        payload["uop_unit_name"] = None
+        
+    # ----------------------------
     # INSERT
     # ----------------------------
     cur.execute(_q(schema, """
@@ -1320,7 +1420,17 @@ def create_asset(cur, company_id, payload):
         revaluation_surplus_to_pnl_account_code, revaluation_deficit_pnl_account_code,
         impairment_loss_account_code, impairment_reversal_account_code,
         held_for_sale_account_code,
-        is_qualifying_asset, ready_for_use_date
+        is_qualifying_asset, ready_for_use_date,
+
+        -- IAS 40 / IAS 38 fields
+        accounting_standard,
+        indefinite_useful_life,
+        is_intangible_dev_phase,
+        dev_cap_start_date,
+        dev_cap_end_date,
+        fair_value_model,
+        rental_income_account_code,
+        fv_gain_loss_account_code
         )
         VALUES (
             %s,
@@ -1343,7 +1453,17 @@ def create_asset(cur, company_id, payload):
             COALESCE(%s,'cost'), %s,
             %s,%s,
             %s,%s,%s,
-            %s,%s   
+            %s,%s,
+
+            -- IAS 40 / IAS 38 values
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s
         )
       RETURNING id
     """), 
@@ -1374,16 +1494,14 @@ def create_asset(cur, company_id, payload):
 
             opening_as_at, opening_cost, opening_accum_dep, opening_impairment,
 
-            payload.get("status", "active"),
-            payload.get("supplier_id"), payload.get("acquisition_ref"),
-            payload.get("asset_account_code"), payload.get("accum_dep_account_code"), payload.get("dep_expense_account_code"),
-            payload.get("disposal_gain_account_code"), payload.get("disposal_loss_account_code"),
-            measurement_basis, payload.get("revaluation_reserve_account_code"),
-            payload.get("revaluation_surplus_to_pnl_account_code"), payload.get("revaluation_deficit_pnl_account_code"),
-            payload.get("impairment_loss_account_code"), payload.get("impairment_reversal_account_code"),
-            payload.get("held_for_sale_account_code"),
-            bool(payload.get("is_qualifying_asset") or False),
-            payload.get("ready_for_use_date") or None,
+            accounting_standard,
+            indefinite_useful_life,
+            bool(payload.get("is_intangible_dev_phase") or False),
+            payload.get("dev_cap_start_date") or None,
+            payload.get("dev_cap_end_date") or None,
+            fair_value_model,
+            payload.get("rental_income_account_code") or None,
+            payload.get("fv_gain_loss_account_code") or None,
         ))
     asset_id = cur.fetchone()["id"]
 
@@ -1435,8 +1553,15 @@ _ASSET_UPDATE_ALLOWED = {
     "impairment_reversal_account_code",
     "held_for_sale_account_code",
     "is_qualifying_asset", "ready_for_use_date",
+    "accounting_standard",
+    "indefinite_useful_life",
+    "is_intangible_dev_phase",
+    "dev_cap_start_date",
+    "dev_cap_end_date",
+    "fair_value_model",
+    "rental_income_account_code",
+    "fv_gain_loss_account_code",
 }
-
 
 def update_asset(cur, company_id, asset_id, payload):
     schema = company_schema(company_id)

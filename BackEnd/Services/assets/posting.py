@@ -439,10 +439,11 @@ def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
     # standard (ias16 / ias40 / ias38)
     std = (asset_row.get("accounting_standard") or "").strip().lower()
 
-    # map common aliases -> canonical standards
-    # adjust aliases to match your DB values
-    if std in ("", None):
-        # infer from class/category if standard not stored
+    # Explicit column takes priority (only set for new/updated assets)
+    if std in ("ias16", "ias38", "ias40"):
+        pass  # use it as-is
+    else:
+        # Fall back to inference from class/category (legacy assets)
         cls = (asset_row.get("asset_class") or asset_row.get("class") or "").strip().lower()
         cat = (asset_row.get("category") or asset_row.get("category_name") or asset_row.get("type") or "").strip().lower()
         if cls in ("intangible", "intangibles", "goodwill") or "goodwill" in cat or "intangible" in cat:
@@ -452,6 +453,7 @@ def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
         else:
             std = "ias16"
 
+    # Normalise common aliases
     if std in ("intangible", "intangibles", "goodwill", "ias 38"):
         std = "ias38"
     if std in ("ias 16",):
@@ -473,6 +475,10 @@ def asset_standard_and_model(asset_row: dict, policy: dict) -> tuple[str, str]:
     allowed = [str(x).strip().lower() for x in (defaults.get("allowed") or [])]
     if allowed and model not in allowed:
         model = (defaults.get("default") or "cost").strip().lower()
+
+    # IAS 40 fair value model: override if flag is set
+    if std == "ias40" and bool(asset_row.get("fair_value_model")):
+        model = "fair_value"
 
     return std, model
 
@@ -1010,6 +1016,14 @@ def _preview_impairment(asset_row: dict, payload: dict, policy: dict, ca_before:
         lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(amt), "memo": "Reduce carrying amount"})
         ca_after_d = ca_before_d - amt
 
+    # IAS 36.122 / IAS 38.124: goodwill impairment NEVER reverses
+    std, _model = asset_standard_and_model(asset_row, policy or {})
+    if et == "impairment_reversal" and std == "ias38" and (
+        (asset_row.get("asset_class") or "").strip().lower() == "goodwill"
+        or "goodwill" in (asset_row.get("category") or "").strip().lower()
+    ):
+        raise ValueError("Impairment reversal is prohibited for goodwill (IAS 36.122 / IAS 38.124).")
+    
     elif et == "impairment_reversal":
         rev_acct = _pick_asset_code(asset_row, "impairment_reversal_account_code", policy, "impairment_reversal_income")
         lines.append({"account_code": asset_acct, "debit": money(amt), "credit": 0.0, "memo": "Increase carrying amount"})
@@ -1091,6 +1105,58 @@ def _preview_revaluation(asset_row: dict, payload: dict, policy: dict, ca_before
     company_id = int(asset_row.get("company_id") or 0)
     schema = company_schema(company_id)
     meta = payload.get("meta_json") or {}
+
+    # ---- IAS 40 Fair Value Model: route to P&L instead of OCI ----
+    std, model = asset_standard_and_model(asset_row, policy or {})
+    if std == "ias40" and model == "fair_value":
+        # IAS 40.35: FV gains/losses go to P&L (not OCI revaluation surplus)
+        gain_loss_account = (
+            asset_row.get("fv_gain_loss_account_code")
+            or ((policy.get("posting") or {}).get("fv_gain_loss_investment_property") or "").strip()
+            or None
+        )
+        if not gain_loss_account:
+            # fallback: look up by COA role
+            gain_loss_account = _account_by_role(
+                cur, schema, company_id,
+                "fv_gain_loss_investment_property", "investment_property_fv_gain_loss"
+            )
+        if not gain_loss_account:
+            raise ValueError(
+                "IAS 40 fair value model requires a FV gain/loss P&L account. "
+                "Set fv_gain_loss_account_code on the asset or configure the 'fv_gain_loss_investment_property' role in COA."
+            )
+
+        ca0 = D(ca_before)
+        delta = fair_value - ca0
+        journal_amount = abs(delta)
+        asset_acct = _pick_asset_code(asset_row, "asset_account_code", policy)
+
+        lines = []
+        warnings = []
+        if delta == 0:
+            warnings.append("Fair value equals current carrying amount; no journal impact.")
+        elif delta > 0:
+            # FV increase: DR asset, CR P&L gain
+            lines.append({"account_code": asset_acct, "debit": money(journal_amount), "credit": 0.0, "memo": "IAS 40 FV increase"})
+            lines.append({"account_code": gain_loss_account, "debit": 0.0, "credit": money(journal_amount), "memo": "FV gain (P&L)"})
+        else:
+            # FV decrease: DR P&L loss, CR asset
+            lines.append({"account_code": gain_loss_account, "debit": money(journal_amount), "credit": 0.0, "memo": "FV loss (P&L)"})
+            lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(journal_amount), "memo": "IAS 40 FV decrease"})
+
+        return {
+            "header": _preview_header(payload, memo="SM preview: IAS 40 fair_value_valuation"),
+            "lines": _attach_account_names(lines, schema, cur=cur) if cur and lines else lines,
+            "impact": {
+                "carrying_amount_before": money(ca0),
+                "carrying_amount_after": money(fair_value),
+                "delta": money(delta),
+                "journal_amount": money(journal_amount),
+            },
+            "warnings": warnings,
+        }
+    # ---- END IAS 40 FV routing ----
 
     fair_value = D(meta.get("fair_value") or meta.get("new_carrying_amount") or 0)
     if fair_value <= 0:
@@ -6354,6 +6420,47 @@ def generate_single_asset_depreciation(
     if existing:
         return None
 
+     # ---- IAS 40 / IAS 38 gates ----
+    policy = company_policy(company_id)
+    std, model = asset_standard_and_model(a, policy)
+
+    # IAS 40 fair value model: NO depreciation (IAS 40.33)
+    if std == "ias40" and model == "fair_value":
+        return {
+            "ok": True,
+            "skip": True,
+            "reason": "Fair value model — no depreciation under IAS 40.33",
+            "amount": 0,
+        }
+
+    # IAS 38 indefinite useful life: NO amortisation (IAS 38.88)
+    if std == "ias38" and bool(a.get("indefinite_useful_life")):
+        return {
+            "ok": True,
+            "skip": True,
+            "reason": "Indefinite useful life — no amortisation under IAS 38.88",
+            "amount": 0,
+        }
+
+    # IAS 38 development phase still in progress: NO amortisation
+    if std == "ias38" and bool(a.get("is_intangible_dev_phase")):
+        dev_end = a.get("dev_cap_end_date")
+        if dev_end and period_end <= dev_end:
+            return {
+                "ok": True,
+                "skip": True,
+                "reason": "Development phase still in progress — capitalising, not amortising",
+                "amount": 0,
+            }
+    # IAS 38: residual value must be 0 (enforce)
+    if std == "ias38":
+        a_residual_value = Decimal("0")
+
+    # IAS 38.100: residual value is always zero for intangible assets
+    std_for_residual, _ = asset_standard_and_model(a, policy)
+    if std_for_residual == "ias38":
+        residual = Decimal("0")
+        
     cost_basis = get_cost_total(cur, schema, company_id, asset_id, period_end)
     residual = Decimal(a.get("residual_value") or 0)
     life = int(a.get("useful_life_months") or 0)

@@ -1681,6 +1681,9 @@ const ENDPOINTS = {
     update: (companyId, assetId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/assets/${encodeURIComponent(assetId)}`,
 
+    reclassify: (companyId, assetId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/assets/${encodeURIComponent(assetId)}/reclassify`,
+
     // -------------------------
     // APPROVE + POST (review mode)
     // -------------------------
@@ -33531,6 +33534,13 @@ async function postLeaseJournal(lease) {
     };
   }
 
+  function standardBadge(std) {
+    const s = String(std || "ias16").trim().toLowerCase();
+    if (s === "ias40") return `<span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold border rounded bg-violet-50 text-violet-700 border-violet-200">IAS 40</span>`;
+    if (s === "ias38") return `<span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold border rounded bg-cyan-50 text-cyan-700 border-cyan-200">IAS 38</span>`;
+    return `<span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold border rounded bg-slate-50 text-slate-500 border-slate-200">IAS 16</span>`;
+  }
+
   function badge(text) {
     const t = String(text ?? "").toLowerCase();
     const cls =
@@ -33567,6 +33577,10 @@ async function postLeaseJournal(lease) {
     if (action === "revalue") return isActive;
     if (action === "dispose") return isActive;
     if (action === "impair") return isActive;
+    if (action === "reclassify") {
+      const std = String(assetRow?.accounting_standard || "ias16").trim().toLowerCase();
+      return isActive && (std === "ias16" || std === "ias40");
+    }
     return false;
   }
 
@@ -33625,6 +33639,8 @@ async function postLeaseJournal(lease) {
       ${actionItem("Revalue", "revalue", assetId, canAction("revalue", row))}
       ${actionItem("Dispose", "dispose", assetId, canAction("dispose", row))}
       ${actionItem("Impair", "impair", assetId, canAction("impair", row))}
+      <div class="border-t"></div>
+      ${actionItem("Reclassify (IAS 16 ↔ 40)", "reclassify", assetId, canAction("reclassify", row))}
     `;
 
     // toggle if clicking same asset again
@@ -34635,7 +34651,7 @@ async function postLeaseJournal(lease) {
     if (!rows.length) {
       tb.innerHTML = `
         <tr>
-          <td class="p-3 text-sm text-slate-500" colspan="8">
+          <td class="p-3 text-sm text-slate-500" colspan="9">
             No assets found.
           </td>
         </tr>`;
@@ -34657,6 +34673,7 @@ async function postLeaseJournal(lease) {
         <tr class="border-b hover:bg-slate-50">
           <td class="p-2 font-medium">${name}</td>
           <td class="p-2">${cls}</td>
+          <td class="p-2">${standardBadge(r.accounting_standard)}</td>
           <td class="p-2">${acquired}</td>
 
           <td class="p-2 text-right">${fmtMoney(n.cost)}</td>
@@ -35377,6 +35394,44 @@ async function postLeaseJournal(lease) {
     if (action === "transfer" || action === "revalue" || action === "dispose" || action === "impair") {
       bindOpsModalOnce();
       openOpsModal(action, assetId);
+      return;
+    }
+
+    if (action === "reclassify") {
+      const row = REGISTER_ROWS.find((r) => Number(r.id ?? r.asset_id) === Number(assetId));
+      if (!row) return;
+      const currentStd = String(row.accounting_standard || "ias16").trim().toLowerCase();
+      const newStd = currentStd === "ias16" ? "ias40" : "ias16";
+      const label = newStd === "ias40" ? "Investment Property (IAS 40)" : "PPE (IAS 16)";
+
+      if (!confirm(`Reclassify this asset from ${currentStd.toUpperCase()} to ${label}?\n\nIAS 40.50`)) return;
+
+      const dateStr = prompt("Reclassification date (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
+      if (!dateStr) return;
+
+      try {
+        const url = window.ENDPOINTS?.assets?.reclassify
+          ? window.ENDPOINTS.assets.reclassify(cid, assetId)
+          : `/api/companies/${cid}/assets/${assetId}/reclassify`;
+
+        const res = await apiFetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accounting_standard: newStd,
+            reclassification_date: dateStr,
+          }),
+        });
+
+        if (res?.ok) {
+          alert(`Asset reclassified to ${label}`);
+          await refreshFixedAssetsRegister();
+        } else {
+          alert(res?.message || res?.error || "Reclassification failed");
+        }
+      } catch (e) {
+        alert("Reclassification failed: " + (e?.message || e));
+      }
       return;
     }
   }
@@ -52551,7 +52606,9 @@ function bindEventsOnce() {
 
     if ($("payrollStartDate")) {
       $("payrollStartDate").value =
-        payrollToInputDate(settings.payroll_start_date);
+        payrollToInputDate(
+          settings.payroll_start_date
+        );
     }
 
     renderPayrollTaxAuthoritySelects();
@@ -52587,10 +52644,36 @@ function bindEventsOnce() {
         settings.payment_adjustment;
     }
 
-    if ($("payrollFirstPeriodMonth") && settings.payroll_start_date) {
-      const raw = String(settings.payroll_start_date).slice(0, 7);
-      $("payrollFirstPeriodMonth").value = raw;
+    // FIX 2 — Safe month formatting.
+    // The backend may return payroll_start_date as various formats:
+    //   "2025-07-01",  "2025-07-01T00:00:00",
+    //   a Python date object,  or even null.
+    // We need a reliable "yyyy-MM" for <input type="month">.
+    if ($("payrollFirstPeriodMonth")) {
+      const val = settings.payroll_start_date;
+      if (val) {
+        const s = String(val);
+        // Try ISO "2025-07-01" or "2025-07-01T..."
+        const isoMatch = s.match(/^(\d{4})-(\d{2})/);
+        if (isoMatch) {
+          $("payrollFirstPeriodMonth").value =
+            isoMatch[1] + "-" + isoMatch[2];
+        }
+        // If not ISO, try parsing as Date
+        else {
+          const d = new Date(s);
+          if (!isNaN(d.getTime())) {
+            const mm = String(d.getMonth() + 1).padStart(2, "0");
+            const yyyy = d.getFullYear();
+            $("payrollFirstPeriodMonth").value =
+              yyyy + "-" + mm;
+          }
+        }
+      }
+      // If no value at all, leave blank — don't set anything.
     }
+
+    renderPayrollSchedulePreview();
   }
 
   async function loadPayrollSettings() {
@@ -52702,50 +52785,113 @@ function bindEventsOnce() {
     }
   }
 
+  function formatPayrollDate(dateStr, withYear) {
+    if (!dateStr) return "";
+    const s = String(dateStr).slice(0, 10); // "2025-07-27"
+    const parts = s.split("-");
+    if (parts.length < 3) return s;
+
+    const year = parts[0];
+    const month = parts[1];
+    const day = parts[2];
+
+    const MONTHS = [
+      "Jan","Feb","Mar","Apr","May","Jun",
+      "Jul","Aug","Sep","Oct","Nov","Dec"
+    ];
+    const mi = parseInt(month, 10) - 1;
+    const label = MONTHS[mi] || month;
+    const dayNum = parseInt(day, 10);
+
+    let result = dayNum + " " + label;
+    if (withYear) {
+      result += " " + year;
+    }
+    return result;
+  }
+
+
+  /* ═══════════════════════════════════════════════════════════
+    CHANGE 4 — REPLACE renderPayrollCalendars()
+    ═══════════════════════════════════════════════════════════ */
+
   function renderPayrollCalendars() {
     const el = $("payrollCalendarsList");
     if (!el) return;
 
-    if (!payrollState.calendars.length) {
-      el.innerHTML = `<p class="muted">No payroll calendars yet.</p>`;
+    if (!payrollState.calendars || !payrollState.calendars.length) {
+      el.innerHTML =
+        '<p class="muted">No payroll calendars yet.</p>';
       return;
     }
 
-    // Parse Python date strings like "Thu, 27 May 2027 00:00:00 GMT"
-    // or ISO strings like "2027-05-27"
-    function fmtDate(val) {
-      if (!val) return "—";
-      const d = new Date(val);
-      if (isNaN(d.getTime())) return String(val).slice(0, 10);
-      return d.toLocaleDateString(undefined, {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-    }
+    // Determine year range to know when to show year
+    let minYear = null, maxYear = null;
+    payrollState.calendars.forEach(c => {
+      const y = String(c.period_start || "").slice(0, 4);
+      if (y.length === 4) {
+        const yn = parseInt(y, 10);
+        if (!minYear || yn < minYear) minYear = yn;
+        if (!maxYear || yn > maxYear) maxYear = yn;
+      }
+    });
+    const spansMultipleYears = minYear && maxYear && minYear !== maxYear;
 
-    // Build a period label like "Jul 2026" from period_start
-    function periodLabel(startStr) {
-      const d = new Date(startStr);
-      if (isNaN(d.getTime())) return "";
-      return d.toLocaleDateString(undefined, {
-        month: "short",
-        year: "numeric",
-      });
-    }
+    el.innerHTML = payrollState.calendars.map((c, i) => {
+      const startStr = formatPayrollDate(
+        c.period_start,
+        spansMultipleYears
+      );
+      const endStr = formatPayrollDate(
+        c.period_end,
+        spansMultipleYears
+      );
+      const payStr = formatPayrollDate(
+        c.payment_date,
+        true
+      );
 
-    el.innerHTML = payrollState.calendars.map(c => `
-      <div class="list-row">
-        <div>
-          <strong>${esc(periodLabel(c.period_start) || c.frequency || "")}</strong>
-          <div class="muted">${fmtDate(c.period_start)} → ${fmtDate(c.period_end)}</div>
-        </div>
-        <div>
-          <span class="pill">${esc(c.status || "open")}</span>
-          <div class="muted">Pay: ${fmtDate(c.payment_date)}</div>
-        </div>
-      </div>
-    `).join("");
+      // Check if payment falls on a weekend
+      let payDayInfo = "";
+      if (c.payment_date) {
+        const pd = new Date(
+          String(c.payment_date).slice(0, 10) + "T00:00:00"
+        );
+        if (!isNaN(pd.getTime())) {
+          const dow = pd.getDay(); // 0=Sun, 6=Sat
+          if (dow === 0 || dow === 6) {
+            payDayInfo =
+              ' <span style="color:#e74c3c;font-size:0.75em;">' +
+              "(weekend)" +
+              "</span>";
+          }
+        }
+      }
+
+      const statusClass =
+        (c.status === "closed") ? "pill-closed" : "pill-open";
+      const statusLabel =
+        (c.status === "closed") ? "Closed" : "Open";
+
+      return '<div class="list-row">' +
+        '<div>' +
+          '<strong>' + esc(c.frequency || "Monthly") + '</strong>' +
+          '<div class="muted" style="margin-top:2px;">' +
+            esc(startStr) +
+            ' <span style="color:var(--text-muted);">&ndash;</span> ' +
+            esc(endStr) +
+          '</div>' +
+        '</div>' +
+        '<div style="text-align:right;">' +
+          '<span class="pill ' + statusClass + '">' +
+            esc(statusLabel) +
+          '</span>' +
+          '<div class="muted" style="margin-top:2px;">' +
+            'Pay: ' + esc(payStr) + payDayInfo +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join("");
   }
 
   async function loadPayrollEmployeePaySetup(employeeId) {
@@ -53267,6 +53413,26 @@ function bindEventsOnce() {
       throw new Error("No active company selected.");
     }
 
+    const startDay =
+      Number($("payrollPeriodStartDay")?.value || 1);
+    const endDay =
+      Number($("payrollPeriodEndDay")?.value || 31);
+    let endOffset =
+      Number($("payrollPeriodEndOffset")?.value || 0);
+
+    // FIX 1 — Auto-correct End Month offset.
+    // If the period end day is LESS than the start day AND
+    // the offset is 0 (same month), the period is impossible.
+    // Example: start=27, end=26, offset=0 → 27th to 26th
+    //   of the same month makes no sense.
+    // Auto-bump offset to 1 (following month).
+    if (endDay < startDay && endOffset === 0) {
+      endOffset = 1;
+      if ($("payrollPeriodEndOffset")) {
+        $("payrollPeriodEndOffset").value = "1";
+      }
+    }
+
     const firstPeriodMonth =
       $("payrollFirstPeriodMonth")?.value || "";
 
@@ -53274,14 +53440,9 @@ function bindEventsOnce() {
       default_frequency:
         $("payrollScheduleFrequency")?.value || "monthly",
 
-      period_start_day:
-        Number($("payrollPeriodStartDay")?.value || 1),
-
-      period_end_day:
-        Number($("payrollPeriodEndDay")?.value || 31),
-
-      period_end_month_offset:
-        Number($("payrollPeriodEndOffset")?.value || 0),
+      period_start_day: startDay,
+      period_end_day: endDay,
+      period_end_month_offset: endOffset,
 
       payment_day_rule:
         $("payrollPaymentDayRule")?.value || "last_day",
@@ -53345,14 +53506,16 @@ function bindEventsOnce() {
     renderPayrollSettings();
     renderPayrollSchedulePreview();
 
-    // Auto-generate calendar periods from the saved schedule
-    generatePayrollPeriods();
-
     showPayrollStatus(
       "Pay schedule saved.",
       "success"
     );
+
+    // Now generate calendar periods using the
+    // just-saved settings.
+    await generatePayrollPeriods();
   }
+
 
   async function savePayrollEmployee() {
     const companyId = cid();

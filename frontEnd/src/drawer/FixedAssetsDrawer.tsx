@@ -128,6 +128,9 @@ type CoaRow = {
 
 type DepreciationMethod = "" | "SL" | "RB" | "UOP" | "APP";
 
+export type AccountingStandard = "ias16" | "ias40" | "ias38";
+export type AssetNature = "tangible" | "intangible";
+
 type AssetComponentDraft = {
   component_type: "land" | "building" | string;
   asset_name: string;
@@ -150,7 +153,11 @@ type VatRecoveryReason =
   | "taxi_transport"
   | "not_registered_or_exempt";
 
+// Add to the type constants
+
+// Expand ASSET_CLASS_GROUPS to include IAS 40 and IAS 38 groups
 const ASSET_CLASS_GROUPS = [
+  // --- IAS 16 (existing) ---
   "Land",
   "Buildings",
   "Land and buildings",
@@ -170,6 +177,21 @@ const ASSET_CLASS_GROUPS = [
   "Leasehold improvements",
   "Assets under construction",
   "Other PPE",
+  // --- IAS 40 (Investment Property) ---
+  "Investment property - Land",
+  "Investment property - Buildings",
+  "Investment property - Under construction",
+  // --- IAS 38 (Intangible Assets) ---
+  "Goodwill",
+  "Patents",
+  "Copyrights",
+  "Trademarks",
+  "Software",
+  "Licences",
+  "Franchises",
+  "Customer lists",
+  "Research and development",
+  "Other intangible assets",
 ] as const;
 
 type AssetClassGroup = typeof ASSET_CLASS_GROUPS[number];
@@ -228,7 +250,18 @@ type CreateAssetPayload = {
   vendor_invoice_no?: string | null;
   grn_no?: string | null;
   other_credit_account_code?: string | null;
+
+  // NEW: IAS standard & nature
+  accounting_standard?: AccountingStandard | null;
+  indefinite_useful_life?: boolean;    // IAS 38
+  is_intangible_dev_phase?: boolean;   // IAS 38
+  dev_cap_start_date?: string | null;  // IAS 38
+  dev_cap_end_date?: string | null;    // IAS 38
+  fair_value_model?: boolean;          // IAS 40
+  rental_income_account_code?: string | null;  // IAS 40
+  fv_gain_loss_account_code?: string | null;    // IAS 40
 };
+
 
 /** -----------------------------
  *  URL builders (pure)
@@ -357,6 +390,17 @@ function pickContraForAsset(assetAcctCode: string, allAccounts: CoaRow[]): strin
   if (assetName.includes("vehicle") || assetName.includes("motor")) return findBy("vehicle") || findBy("equipment") || "";
 
   return findBy("equipment") || "";
+}
+
+function deriveAccountingStandard(classGroup: string): AccountingStandard {
+  const g = classGroup.toLowerCase();
+  if (g.includes("investment property")) return "ias40";
+  if ([
+    "goodwill", "patents", "copyrights", "trademarks", "software",
+    "licences", "franchises", "customer lists", "research and development",
+    "other intangible",
+  ].some(k => g.includes(k.toLowerCase()))) return "ias38";
+  return "ias16";
 }
 
 /** For safe parsing of API shapes (no any) */
@@ -497,6 +541,13 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
     selectedClassLabel.includes("intangible") ||
     String(form.asset_account_code || "").toLowerCase().includes("intangible");
 
+  const isIAS40 =
+    selectedClassGroup.includes("investment property") ||
+    selectedClassLabel.includes("investment property");
+
+  const isIAS38 =
+    isIntangibleAsset;
+    
   const supportsRevaluationModel = isLandOrBuilding || isIntangibleAsset;
 
   /** -----------------------------
@@ -536,6 +587,11 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
             : 0,
       vat_input_claimable: !!form.vat_input_claimable,
       vat_recovery_reason: form.vat_recovery_reason?.trim() || null,
+
+      accounting_standard: accountingStandard,
+      indefinite_useful_life: isIAS38 ? !!form.indefinite_useful_life : false,
+      is_intangible_dev_phase: isIAS38 ? !!form.is_intangible_dev_phase : false,
+      fair_value_model: isIAS40 ? !!form.fair_value_model : false,
     };
 
     if (funding === "bank_cash") {
@@ -649,6 +705,42 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
       }));
     }
   }, [isLandOnly, form.depreciation_method]);
+
+  // Derive standard from selected class group
+  const accountingStandard = useMemo(
+    () => deriveAccountingStandard(form.asset_class_group || ""),
+    [form.asset_class_group]
+  );
+
+  // Auto-adjust form when standard changes
+  useEffect(() => {
+    if (isIAS38) {
+      setForm((p) => ({
+        ...p,
+        accounting_standard: "ias38",
+        residual_value: 0,        // IAS 38: residual value is ALWAYS zero
+        depreciation_method: p.indefinite_useful_life ? "" : (p.depreciation_method || "SL"),
+        // Don't allow revaluation model for most intangibles (requires active market)
+        measurement_model: "cost",
+      }));
+    } else if (isIAS40) {
+      setForm((p) => ({
+        ...p,
+        accounting_standard: "ias40",
+        // IAS 40 allows both cost and fair value model
+        // Don't override measurement_model - let user choose
+      }));
+    } else {
+      setForm((p) => ({
+        ...p,
+        accounting_standard: "ias16",
+        // Reset IAS 40/38 specific fields
+        indefinite_useful_life: false,
+        is_intangible_dev_phase: false,
+        fair_value_model: false,
+      }));
+    }
+  }, [isIAS38, isIAS40]);
 
   useEffect(() => {
     if (!open || !args) return;
@@ -830,6 +922,25 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
 
     if (!isCompoundLandBuilding && !String(form.asset_class || "").trim()) {
       return setErr("Asset class is required.");
+    }
+
+    // IAS 38 validations
+    if (isIAS38) {
+      if (Number(form.residual_value || 0) !== 0) {
+        return setErr("Residual value must be zero for intangible assets (IAS 38.100).");
+      }
+      if (!form.indefinite_useful_life && form.depreciation_method === "SL" && Number(form.useful_life_months || 0) <= 0) {
+        return setErr("Useful life is required for finite-lived intangible assets.");
+      }
+    }
+
+    // IAS 40 validations
+    if (isIAS40 && form.fair_value_model) {
+      // FV model: no depreciation fields needed
+      // but FV gain/loss account is required
+      if (!form.fv_gain_loss_account_code) {
+        return setErr("FV gain/loss account is required for fair value model (IAS 40.35).");
+      }
     }
 
     if (isCompoundLandBuilding) {
@@ -1483,6 +1594,123 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
               </span>
             </div>
           ) : null}
+
+          {/* IAS 40: Fair Value Model toggle */}
+          {isIAS40 && (
+            <div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!form.fair_value_model}
+                  onChange={(e) => {
+                    const fv = e.target.checked;
+                    setForm((p) => ({
+                      ...p,
+                      fair_value_model: fv,
+                      // If FV model: no depreciation, no residual value
+                      ...(fv ? {
+                        depreciation_method: "APP",
+                        useful_life_months: 0,
+                        residual_value: 0,
+                        measurement_model: "cost", // FV is separate from revaluation
+                      } : {}),
+                    }));
+                  }}
+                />
+                Fair Value Model (IAS 40.33)
+              </label>
+              {form.fair_value_model && (
+                <p className="text-xs text-amber-600">
+                  No depreciation under fair value model. FV changes recognized in P&L.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* IAS 40: Rental income account */}
+          {isIAS40 && (
+            <div>
+              <label>Rental Income Account</label>
+              <select value={form.rental_income_account_code || ""}>
+                <option value="">-- Select --</option>
+                {coaAll
+                  .filter((a) => a.cf_bucket === "other_income" || a.cf_bucket === "rental_income")
+                  .map((a) => (
+                    <option key={a.code} value={a.code}>
+                      {a.code} - {a.name || a.account_name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {/* IAS 38: Indefinite useful life */}
+          {isIAS38 && (
+            <div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!form.indefinite_useful_life}
+                  onChange={(e) => {
+                    setForm((p) => ({
+                      ...p,
+                      indefinite_useful_life: e.target.checked,
+                      // Indefinite life = no amortisation
+                      ...(e.target.checked
+                        ? { depreciation_method: "APP", useful_life_months: 0 }
+                        : { depreciation_method: "SL" }),
+                    }));
+                  }}
+                />
+                Indefinite Useful Life (IAS 38.88)
+              </label>
+              {form.indefinite_useful_life && (
+                <p className="text-xs text-amber-600">
+                  No amortisation. Annual impairment testing required (IAS 36).
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* IAS 38: Development phase capitalisation */}
+          {isIAS38 && (
+            <div>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!form.is_intangible_dev_phase}
+                  onChange={(e) => setForm((p) => ({ ...p, is_intangible_dev_phase: e.target.checked }))}
+                />
+                Development Phase (IAS 38.57)
+              </label>
+              {form.is_intangible_dev_phase && (
+                <>
+                  <label>Dev capitalisation start date</label>
+                  <input
+                    type="date"
+                    value={form.dev_cap_start_date || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, dev_cap_start_date: e.target.value }))}
+                  />
+                  <label>Dev capitalisation end date</label>
+                  <input
+                    type="date"
+                    value={form.dev_cap_end_date || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, dev_cap_end_date: e.target.value }))}
+                  />
+                  <p className="text-xs text-amber-600">
+                    Must meet all 6 criteria in IAS 38.57. Research costs are expensed.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* IAS 38: Lock residual value to 0 */}
+          {isIAS38 && (
+            <div className="text-xs text-gray-500">
+              Residual value is always zero for intangible assets (IAS 38.100).
+            </div>
+          )}
 
           {/* VIN / Location */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

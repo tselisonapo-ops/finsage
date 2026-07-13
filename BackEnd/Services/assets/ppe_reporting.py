@@ -434,6 +434,39 @@ def acquisition_journal_preview(company_id, acq_id):
         current_app.logger.exception("journal preview failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route(
+    "/api/companies/<int:company_id>/assets/<int:asset_id>/reclassify",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def reclassify_asset(company_id, asset_id):
+    """Reclassify an asset between IAS 16 ↔ IAS 40 (IAS 40.50)"""
+    if request.method == "OPTIONS":
+        return _opt()
+
+    body = request.get_json(force=True) or {}
+    new_standard = (body.get("accounting_standard") or "").strip().lower()
+
+    try:
+        reclassification_date = _parse_optional_date(body, "reclassification_date")
+        if not reclassification_date:
+            raise ValueError("reclassification_date is required")
+    except Exception as e:
+        return _json_error(str(e), 400)
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                before = service.reclassify_asset(
+                    cur, company_id, asset_id, new_standard,
+                    reclassification_date,
+                    notes=body.get("notes"),
+                )
+                conn.commit()
+                return jsonify({"ok": True, "accounting_standard": new_standard})
+    except Exception as e:
+        current_app.logger.exception("reclassify_asset failed")
+        return _json_error(str(e), 400)
 # -------------------------
 # ASSETS
 # ------------------------
@@ -460,6 +493,7 @@ def assets_list_or_create(company_id: int):
     if request.method == "GET":
         status = (request.args.get("status") or "").strip() or None
         asset_class = (request.args.get("class") or "").strip() or None
+        accounting_standard = (request.args.get("accounting_standard") or "").strip() or None
         q = (request.args.get("q") or "").strip() or None
 
         limit = _int_arg("limit", 50)
@@ -477,6 +511,7 @@ def assets_list_or_create(company_id: int):
                     company_id,
                     status=status,
                     asset_class=asset_class,
+                    accounting_standard=accounting_standard,
                     q=q,
                     limit=limit,
                     offset=offset,
