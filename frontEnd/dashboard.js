@@ -49298,21 +49298,22 @@ function bindEventsOnce() {
   }
 
   function renderPayrollRunCalendarSelect() {
-    const el = $("payrollRunCalendarId");
+    var el = $("payrollRunCalendarId");
     if (!el) return;
 
-    el.innerHTML =
-      '<option value="">Select calendar\u2026</option>' +
-      (payrollState.calendars || []).map(c => {
-        const ps = formatPayrollDate(c.period_start);
-        const pe = formatPayrollDate(c.period_end);
-        const pd = formatPayrollDate(c.payment_date);
-        return '<option value="' + esc(c.id) + '">' +
-          esc(c.frequency) + ' | ' +
-          esc(ps) + ' \u2192 ' + esc(pe) +
-          ' | Pay ' + esc(pd) +
+    var html = '<option value="">Select calendar\u2026</option>';
+    var cals = payrollState.calendars || [];
+    for (var i = 0; i < cals.length; i++) {
+      var c = cals[i];
+      html +=
+        '<option value="' + esc(c.id) + '">' +
+        esc(c.frequency || "Monthly") + " | " +
+        formatPayrollDate(c.period_start) + " \u2192 " +
+        formatPayrollDate(c.period_end) +
+        " | Pay " + formatPayrollDate(c.payment_date, true) +
         '</option>';
-      }).join("");
+    }
+    el.innerHTML = html;
   }
 
   function payrollPaymentRuleLabel(rule) {
@@ -49432,68 +49433,98 @@ function bindEventsOnce() {
   }
 
   function renderPayrollRuns() {
-    const el = $("payrollRunsList");
+    var el = $("payrollRunsList");
     if (!el) return;
 
-    const runs = payrollState.runs || [];
-    if (!runs.length) {
-      el.innerHTML =
-        '<p class="muted">No payroll runs yet.</p>';
+    var statusFilter = String(
+      $("payrollRunStatusFilter")?.value || ""
+    ).toLowerCase().trim();
+
+    var items = (payrollState.runs || []).slice();
+
+    if (statusFilter) {
+      items = items.filter(function(run) {
+        return String(run.status || "")
+          .toLowerCase() === statusFilter;
+      });
+    }
+
+    if (!items.length) {
+      var hasRuns = (payrollState.runs || []).length > 0;
+
+      el.innerHTML = hasRuns
+        ? '<div class="payroll-empty-state">' +
+          '<strong>No runs match this filter</strong>' +
+          '<p>Change the status filter to All statuses.</p>' +
+          '<button type="button" ' +
+          'id="payrollClearRunFilterBtn" ' +
+          'class="payroll-secondary">' +
+          'Clear filter</button></div>'
+        : '<div class="payroll-empty-state">' +
+          '<strong>No payroll runs yet</strong>' +
+          '<p>Select a pay calendar and create your ' +
+          'first payroll run.</p></div>';
+
+      $("payrollClearRunFilterBtn")?.addEventListener(
+        "click", function() {
+          $("payrollRunStatusFilter").value = "";
+          renderPayrollRuns();
+        }
+      );
       return;
     }
 
-    el.innerHTML = runs.map(run => {
-      const ps = formatPayrollDate(run.period_start);
-      const pe = formatPayrollDate(run.period_end);
-      const pd = formatPayrollDate(run.payment_date);
-      const freq = esc(run.frequency || "Monthly");
-      const st = (run.status || "draft").toUpperCase();
+    var html = "";
+    for (var i = 0; i < items.length; i++) {
+      var run = items[i];
+      var ps = formatPayrollDate(run.period_start);
+      var pe = formatPayrollDate(run.period_end);
+      var pd = formatPayrollDate(run.payment_date, true);
 
-      return '<div class="list-row" data-payroll-run-id="' +
-        esc(run.id) + '">' +
-        '<div>' +
-          '<span class="pill" style="margin-right:6px;">PR</span> ' +
-          '<strong>' + esc(run.run_no || "") + '</strong>' +
-          '<div class="muted" style="margin-top:2px;">' +
-            ps + ' \u2014 ' + pe +
+      html +=
+        '<button type="button" ' +
+        'class="payroll-run-row" ' +
+        'data-payroll-run-id="' + esc(run.id) + '">' +
+          '<div class="payroll-run-main">' +
+            '<div class="payroll-run-icon">PR</div>' +
+            '<div>' +
+              '<strong>' +
+                esc(run.run_no || "Payroll Run " + run.id) +
+              '</strong>' +
+              '<div class="payroll-muted">' +
+                ps + ' \u2192 ' + pe +
+              '</div>' +
+            '</div>' +
           '</div>' +
-        '</div>' +
-        '<div style="text-align:right;">' +
-          '<span class="pill">' + esc(st) + '</span>' +
-          '<div class="muted" style="margin-top:2px;">' +
-            'Pay ' + pd +
+          '<div>' +
+            '<span class="payroll-run-label">' +
+              'Payment date</span>' +
+            '<strong>' + esc(pd) + '</strong>' +
           '</div>' +
-        '</div>' +
-      '</div>';
-    }).join("");
+          '<div>' +
+            '<span class="payroll-run-label">Frequency</span>' +
+            '<strong>' + esc(cap(run.frequency || "\u2014")) +
+            '</strong>' +
+          '</div>' +
+          '<span class="payroll-pill payroll-status-' +
+            esc(String(run.status || "draft").toLowerCase()) +
+            '">' + esc(cap(run.status || "draft")) +
+          '</span>' +
+          '<span class="payroll-arrow">\u203A</span>' +
+        '</button>';
+    }
 
-    // Re-bind click handlers
+    el.innerHTML = html;
+
     el.querySelectorAll("[data-payroll-run-id]").forEach(
-      row => {
-        row.addEventListener("click", () => {
+      function(row) {
+        row.addEventListener("click", function() {
           openPayrollRun(
             Number(row.dataset.payrollRunId)
           );
         });
       }
     );
-  }
-
-  function formatPayrollDate(value) {
-    if (!value) return "—";
-
-    const raw = String(value).slice(0, 10);
-    const date = new Date(`${raw}T00:00:00`);
-
-    if (Number.isNaN(date.getTime())) {
-      return raw;
-    }
-
-    return date.toLocaleDateString(undefined, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
   }
 
   async function createPayrollRun() {
@@ -52816,25 +52847,25 @@ function bindEventsOnce() {
     }
   }
 
-  function formatPayrollDate(dateStr, withYear) {
-    if (!dateStr) return "";
-    const s = String(dateStr).slice(0, 10); // "2025-07-27"
-    const parts = s.split("-");
+  function formatPayrollDate(value, withYear) {
+    if (!value) return "\u2014";   // em dash for null
+
+    var s = String(value).slice(0, 10);   // "2026-05-23"
+    var parts = s.split("-");
     if (parts.length < 3) return s;
 
-    const year = parts[0];
-    const month = parts[1];
-    const day = parts[2];
+    var year  = parts[0];
+    var month = parts[1];
+    var day   = parts[2];
 
-    const MONTHS = [
+    var MONTHS = [
       "Jan","Feb","Mar","Apr","May","Jun",
       "Jul","Aug","Sep","Oct","Nov","Dec"
     ];
-    const mi = parseInt(month, 10) - 1;
-    const label = MONTHS[mi] || month;
-    const dayNum = parseInt(day, 10);
+    var label = MONTHS[parseInt(month, 10) - 1] || month;
+    var dayNum = parseInt(day, 10);
 
-    let result = dayNum + " " + label;
+    var result = dayNum + " " + label;
     if (withYear) {
       result += " " + year;
     }

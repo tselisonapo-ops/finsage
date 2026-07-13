@@ -719,7 +719,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         ...p,
         accounting_standard: "ias38",
         residual_value: 0,        // IAS 38: residual value is ALWAYS zero
-        depreciation_method: p.indefinite_useful_life ? "" : (p.depreciation_method || "SL"),
+        depreciation_method: p.indefinite_useful_life ? "APP" : "SL",
         // Don't allow revaluation model for most intangibles (requires active market)
         measurement_model: "cost",
       }));
