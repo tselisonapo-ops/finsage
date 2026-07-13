@@ -84988,6 +84988,36 @@ class DatabaseService:
     # =========================
     # DB METHODS - PAYROLL
     # =========================
+    def _ensure_columns(self, schema: str, table: str, columns: dict):
+        """Compare expected columns against actual table and ADD any missing."""
+        if not columns:
+            return
+        existing = self.fetch_all("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+        """, (schema, table))
+        existing_names = {r["column_name"] for r in existing}
+        for col_name, col_def in columns.items():
+            if col_name not in existing_names:
+                self.execute_sql(
+                    f"ALTER TABLE {schema}.{table} "
+                    f"ADD COLUMN IF NOT EXISTS {col_name} {col_def};"
+                )
+
+    def _sync_payroll_settings(self, company_id: int):
+        """Ensure payroll_settings has every column the code expects."""
+        schema = self.company_schema(company_id)
+        self._ensure_columns(schema, "payroll_settings", {
+            "period_start_day":           "INT",
+            "period_end_day":             "INT",
+            "period_end_month_offset":    "INT NOT NULL DEFAULT 0",
+            "payment_day_rule":           "TEXT",
+            "payment_month_offset":       "INT NOT NULL DEFAULT 0",
+            "payment_adjustment":         "TEXT NOT NULL DEFAULT 'none'",
+            "calendar_generation_months": "INT NOT NULL DEFAULT 12",
+        })
+
     def payroll_seed_defaults(self, company_id: int) -> dict:
         company_id = int(company_id)
         schema = self.company_schema(company_id)
@@ -85587,8 +85617,8 @@ class DatabaseService:
         """, (int(company_id), int(employee_id)))
 
     def payroll_settings_upsert(self, company_id: int, data: dict):
-        self.ensure_company_payroll(company_id)     
         company_id = int(company_id)
+        self._sync_payroll_settings(company_id)       # <-- one line
         schema = self.company_schema(company_id)
 
         period_start_day = data.get("period_start_day")
