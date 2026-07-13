@@ -52536,6 +52536,7 @@ function bindEventsOnce() {
   function renderPayrollSettings() {
     const settings = payrollState.settings || {};
 
+    // ── General tab fields ──
     if ($("payrollDefaultFrequency")) {
       $("payrollDefaultFrequency").value =
         settings.default_frequency || "monthly";
@@ -52550,12 +52551,46 @@ function bindEventsOnce() {
 
     if ($("payrollStartDate")) {
       $("payrollStartDate").value =
-        payrollToInputDate(
-          settings.payroll_start_date
-        );
+        payrollToInputDate(settings.payroll_start_date);
     }
 
     renderPayrollTaxAuthoritySelects();
+
+    // ── Pay Schedule tab fields ──
+    if ($("payrollPeriodStartDay") && settings.period_start_day) {
+      $("payrollPeriodStartDay").value =
+        String(settings.period_start_day);
+    }
+
+    if ($("payrollPeriodEndDay") && settings.period_end_day) {
+      $("payrollPeriodEndDay").value =
+        String(settings.period_end_day);
+    }
+
+    if ($("payrollPeriodEndOffset") && settings.period_end_month_offset != null) {
+      $("payrollPeriodEndOffset").value =
+        String(settings.period_end_month_offset);
+    }
+
+    if ($("payrollPaymentDayRule") && settings.payment_day_rule) {
+      $("payrollPaymentDayRule").value =
+        settings.payment_day_rule;
+    }
+
+    if ($("payrollPaymentMonthOffset") && settings.payment_month_offset != null) {
+      $("payrollPaymentMonthOffset").value =
+        String(settings.payment_month_offset);
+    }
+
+    if ($("payrollPaymentAdjustment") && settings.payment_adjustment) {
+      $("payrollPaymentAdjustment").value =
+        settings.payment_adjustment;
+    }
+
+    if ($("payrollFirstPeriodMonth") && settings.payroll_start_date) {
+      const raw = String(settings.payroll_start_date).slice(0, 7);
+      $("payrollFirstPeriodMonth").value = raw;
+    }
   }
 
   async function loadPayrollSettings() {
@@ -53992,7 +54027,7 @@ function bindEventsOnce() {
     $("payrollCalendarsGenerateBtn")?.addEventListener(
       "click", () => runPayrollAction(generatePayrollPeriods)
     );
-    
+
     $("payrollAddDepartmentBtn")?.addEventListener(
       "click",
       runPayrollAction(createPayrollDepartment)
