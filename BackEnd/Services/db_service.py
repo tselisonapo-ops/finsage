@@ -85116,7 +85116,7 @@ class DatabaseService:
             "settings": self.payroll_settings_get(company_id) or {},
             "calendars": self.payroll_calendars_list(company_id),
             "employees": self.payroll_employees_list(company_id),
-            "tax_authorities": self.payroll_tax_authorities_list(company_id),
+            "tax_authorities": self.payroll_tax_authorities_list,
             "setup": self.payroll_setup_master(company_id),
         }
 
@@ -85211,22 +85211,23 @@ class DatabaseService:
 
         return int(row["id"]) if row else None
 
-
-    def payroll_tax_authorities_list(self, company_id: int) -> list:
-        """Return all tax authorities for the frontend dropdown."""
-        return self.fetch_all("""
-            SELECT
-                ta.id,
-                ta.code,
-                ta.name,
-                ta.description,
-                ptr.id AS regime_id
-            FROM public.tax_authorities ta
-            LEFT JOIN public.payroll_tax_regimes ptr
-                ON ptr.authority_code = ta.code
-                AND ptr.is_active = TRUE
-            ORDER BY ta.code;
-        """)
+def payroll_tax_authorities_list(self):
+    """Return all tax authorities for the frontend dropdown."""
+    return self.fetch_all("""
+        SELECT
+            ta.id,
+            ta.code,
+            ta.name,
+            r.country_code,
+            r.currency,
+            r.is_active
+        FROM public.tax_authorities ta
+        LEFT JOIN public.payroll_tax_regimes r
+            ON UPPER(r.authority_code) = UPPER(ta.code)
+        WHERE COALESCE(r.is_active, TRUE) = TRUE
+          AND UPPER(ta.code) IN ('SARS', 'RSL', 'BURS')
+        ORDER BY ta.name;
+    """)
 
     def payroll_settings_get(self, company_id: int):
         schema = self.company_schema(company_id)

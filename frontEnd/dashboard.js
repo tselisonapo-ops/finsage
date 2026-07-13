@@ -52133,16 +52133,47 @@ function bindEventsOnce() {
 
     const companyLogo = $("payrollPreviewCompanyLogo");
     const logoFallback = $("payrollPreviewLogoFallback");
+    const companyName = company.name || "Company";
+
+    // Build initials from company name (e.g. "FinSage Inc" → "FSI")
+    const initials = companyName
+      .replace(/[^A-Za-z\s]/g, "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(w => w[0].toUpperCase())
+      .slice(0, 3)
+      .join("");
 
     if (companyLogo && company.logo_url) {
+      // Logo URL is available — show it
       companyLogo.src = company.logo_url;
       companyLogo.classList.remove("hidden");
       logoFallback?.classList.add("hidden");
     } else {
+      // No logo URL — show dynamic initials as fallback
       companyLogo?.classList.add("hidden");
-      logoFallback?.classList.remove("hidden");
-    }
+      if (logoFallback) {
+        logoFallback.textContent = initials || "F";
+        logoFallback.classList.remove("hidden");
+      }
 
+      // Try to fetch the company record to get the logo
+      if (!company.logo_url && cid()) {
+        apiFetch(`/api/companies/${cid()}`)
+          .then(c => {
+            if (c && c.logo_url) {
+              companyLogo.src = c.logo_url;
+              companyLogo.classList.remove("hidden");
+              logoFallback?.classList.add("hidden");
+              // Cache it so we don't fetch again
+              if (window.CURRENT_COMPANY) {
+                window.CURRENT_COMPANY.logo_url = c.logo_url;
+              }
+            }
+          })
+          .catch(() => {});
+      }
+    }
     const earnings = collectPayrollPreviewLines("earning")
       .filter(line => line.code !== "BASIC");
 
