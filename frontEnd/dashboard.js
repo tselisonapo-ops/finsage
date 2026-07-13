@@ -53322,6 +53322,9 @@ function bindEventsOnce() {
     renderPayrollSettings();
     renderPayrollSchedulePreview();
 
+    // Auto-generate calendar periods from the saved schedule
+    generatePayrollPeriods();
+
     showPayrollStatus(
       "Pay schedule saved.",
       "success"
