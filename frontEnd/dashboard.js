@@ -49308,7 +49308,7 @@ function bindEventsOnce() {
       html +=
         '<option value="' + esc(c.id) + '">' +
         esc(c.frequency || "Monthly") + " | " +
-        formatPayrollDate(c.period_start) + " \u2192 " +
+        formatPayrollDate(c.period_start, true) + " \u2192 " +
         formatPayrollDate(c.period_end) +
         " | Pay " + formatPayrollDate(c.payment_date, true) +
         '</option>';
@@ -49477,8 +49477,8 @@ function bindEventsOnce() {
     var html = "";
     for (var i = 0; i < items.length; i++) {
       var run = items[i];
-      var ps = formatPayrollDate(run.period_start);
-      var pe = formatPayrollDate(run.period_end);
+      var ps = formatPayrollDate(run.period_start, true);
+      var pe = formatPayrollDate(run.period_end, true);
       var pd = formatPayrollDate(run.payment_date, true);
 
       html +=
@@ -52848,24 +52848,36 @@ function bindEventsOnce() {
   }
 
   function formatPayrollDate(value, withYear) {
-    if (!value) return "\u2014";   // em dash for null
+    if (!value) return "\u2014";
 
-    var s = String(value).slice(0, 10);   // "2026-05-23"
-    var parts = s.split("-");
-    if (parts.length < 3) return s;
+    var s = String(value).trim();
+    var day, month, year;
 
-    var year  = parts[0];
-    var month = parts[1];
-    var day   = parts[2];
+    // Try ISO format first: "2026-03-23" or "2026-03-23T..."
+    var isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      year  = isoMatch[1];
+      month = parseInt(isoMatch[2], 10) - 1;   // 0-based
+      day   = parseInt(isoMatch[3], 10);
+    } else {
+      // Fallback: let the browser parse any format
+      // e.g. "Sun, 23 March 2026 00:00:00 GMT"
+      var d = new Date(s);
+      if (isNaN(d.getTime())) {
+        return s.length > 25 ? s.slice(0, 25) + "\u2026" : s;
+      }
+      year  = d.getFullYear();
+      month = d.getMonth();      // already 0-based
+      day   = d.getDate();
+    }
 
     var MONTHS = [
       "Jan","Feb","Mar","Apr","May","Jun",
       "Jul","Aug","Sep","Oct","Nov","Dec"
     ];
-    var label = MONTHS[parseInt(month, 10) - 1] || month;
-    var dayNum = parseInt(day, 10);
+    var label = MONTHS[month] || String(month + 1);
 
-    var result = dayNum + " " + label;
+    var result = day + " " + label;
     if (withYear) {
       result += " " + year;
     }
@@ -52900,14 +52912,10 @@ function bindEventsOnce() {
     const spansMultipleYears = minYear && maxYear && minYear !== maxYear;
 
     el.innerHTML = payrollState.calendars.map((c, i) => {
-      const startStr = formatPayrollDate(
-        c.period_start,
-        spansMultipleYears
-      );
-      const endStr = formatPayrollDate(
-        c.period_end,
-        spansMultipleYears
-      );
+      
+      const startStr = formatPayrollDate(c.period_start, true);
+      const endStr = formatPayrollDate(c.period_end, true);
+      
       const payStr = formatPayrollDate(
         c.payment_date,
         true
