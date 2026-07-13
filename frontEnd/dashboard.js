@@ -49301,11 +49301,18 @@ function bindEventsOnce() {
     const el = $("payrollRunCalendarId");
     if (!el) return;
 
-    el.innerHTML = `<option value="">Select calendar…</option>` + (payrollState.calendars || []).map(c => `
-      <option value="${esc(c.id)}">
-        ${esc(c.frequency)} | ${esc(c.period_start)} → ${esc(c.period_end)} | Pay ${esc(c.payment_date)}
-      </option>
-    `).join("");
+    el.innerHTML =
+      '<option value="">Select calendar\u2026</option>' +
+      (payrollState.calendars || []).map(c => {
+        const ps = formatPayrollDate(c.period_start);
+        const pe = formatPayrollDate(c.period_end);
+        const pd = formatPayrollDate(c.payment_date);
+        return '<option value="' + esc(c.id) + '">' +
+          esc(c.frequency) + ' | ' +
+          esc(ps) + ' \u2192 ' + esc(pe) +
+          ' | Pay ' + esc(pd) +
+        '</option>';
+      }).join("");
   }
 
   function payrollPaymentRuleLabel(rule) {
@@ -49428,102 +49435,48 @@ function bindEventsOnce() {
     const el = $("payrollRunsList");
     if (!el) return;
 
-    const statusFilter = String(
-      $("payrollRunStatusFilter")?.value || ""
-    ).toLowerCase().trim();
-
-    let items = [...(payrollState.runs || [])];
-
-    if (statusFilter) {
-      items = items.filter(
-        run =>
-          String(run.status || "").toLowerCase() === statusFilter
-      );
-    }
-
-    if (!items.length) {
-      const hasRuns = (payrollState.runs || []).length > 0;
-
-      el.innerHTML = hasRuns
-        ? `
-          <div class="payroll-empty-state">
-            <strong>No runs match this filter</strong>
-            <p>Change the status filter to All statuses.</p>
-            <button
-              type="button"
-              id="payrollClearRunFilterBtn"
-              class="payroll-secondary"
-            >
-              Clear filter
-            </button>
-          </div>
-        `
-        : `
-          <div class="payroll-empty-state">
-            <strong>No payroll runs yet</strong>
-            <p>Select a pay calendar and create your first payroll run.</p>
-          </div>
-        `;
-
-      $("payrollClearRunFilterBtn")?.addEventListener("click", () => {
-        $("payrollRunStatusFilter").value = "";
-        renderPayrollRuns();
-      });
-
+    const runs = payrollState.runs || [];
+    if (!runs.length) {
+      el.innerHTML =
+        '<p class="muted">No payroll runs yet.</p>';
       return;
     }
 
-    el.innerHTML = items.map(run => `
-      <button
-        type="button"
-        class="payroll-run-row"
-        data-payroll-run-id="${esc(run.id)}"
-      >
-        <div class="payroll-run-main">
-          <div class="payroll-run-icon">PR</div>
+    el.innerHTML = runs.map(run => {
+      const ps = formatPayrollDate(run.period_start);
+      const pe = formatPayrollDate(run.period_end);
+      const pd = formatPayrollDate(run.payment_date);
+      const freq = esc(run.frequency || "Monthly");
+      const st = (run.status || "draft").toUpperCase();
 
-          <div>
-            <strong>${esc(run.run_no || `Payroll Run ${run.id}`)}</strong>
+      return '<div class="list-row" data-payroll-run-id="' +
+        esc(run.id) + '">' +
+        '<div>' +
+          '<span class="pill" style="margin-right:6px;">PR</span> ' +
+          '<strong>' + esc(run.run_no || "") + '</strong>' +
+          '<div class="muted" style="margin-top:2px;">' +
+            ps + ' \u2014 ' + pe +
+          '</div>' +
+        '</div>' +
+        '<div style="text-align:right;">' +
+          '<span class="pill">' + esc(st) + '</span>' +
+          '<div class="muted" style="margin-top:2px;">' +
+            'Pay ' + pd +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join("");
 
-            <div class="payroll-muted">
-              ${formatPayrollDate(run.period_start)}
-              →
-              ${formatPayrollDate(run.period_end)}
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <span class="payroll-run-label">Payment date</span>
-          <strong>${formatPayrollDate(run.payment_date)}</strong>
-        </div>
-
-        <div>
-          <span class="payroll-run-label">Frequency</span>
-          <strong>${esc(cap(run.frequency || "—"))}</strong>
-        </div>
-
-        <span class="payroll-pill payroll-status-${esc(
-          String(run.status || "draft").toLowerCase()
-        )}">
-          ${esc(cap(run.status || "draft"))}
-        </span>
-
-        <span class="payroll-arrow">›</span>
-      </button>
-    `).join("");
-
-    el.querySelectorAll("[data-payroll-run-id]").forEach(row => {
-      row.addEventListener("click", async () => {
-        try {
-          await openPayrollRun(
+    // Re-bind click handlers
+    el.querySelectorAll("[data-payroll-run-id]").forEach(
+      row => {
+        row.addEventListener("click", () => {
+          openPayrollRun(
             Number(row.dataset.payrollRunId)
           );
-        } catch (error) {
-          showPayrollStatus(error.message, "error");
-        }
-      });
-    });
+        });
+      }
+    );
   }
 
   function formatPayrollDate(value) {
@@ -49625,11 +49578,17 @@ function bindEventsOnce() {
           showPayrollStatus(msg, "success");
           return;
         } catch (calcErr) {
-          // Calculation failed — still show the
-          // draft run, but report the error.
+          // Show the error to the user!
+          const errMsg =
+            calcErr?.message
+            || calcErr?.error
+            || String(calcErr);
           console.error(
-            "Auto-calculate failed:",
-            calcErr
+            "Auto-calculate failed:", calcErr
+          );
+          showPayrollStatus(
+            "Calculation failed: " + errMsg,
+            "error"
           );
         }
       }
