@@ -85106,19 +85106,18 @@ class DatabaseService:
 
         return {"ok": True}
 
-        
     def payroll_bootstrap(self, company_id: int) -> dict:
-        company_id = int(company_id)
+            company_id = int(company_id)
 
-        self.payroll_ensure_ready(company_id)
+            self.payroll_ensure_ready(company_id)
 
-        return {
-            "settings": self.payroll_settings_get(company_id) or {},
-            "calendars": self.payroll_calendars_list(company_id),
-            "employees": self.payroll_employees_list(company_id),
-            "tax_authorities": self.payroll_tax_authorities_list,
-            "setup": self.payroll_setup_master(company_id),
-        }
+            return {
+                "settings": self.payroll_settings_get(company_id) or {},
+                "calendars": self.payroll_calendars_list(company_id),
+                "employees": self.payroll_employees_list(company_id),
+                "tax_authorities": self.payroll_tax_authorities_list(),
+                "setup": self.payroll_setup_master(company_id),
+            }
 
     def payroll_ensure_ready(self, company_id: int) -> dict:
         company_id = int(company_id)
