@@ -52649,6 +52649,24 @@ function bindEventsOnce() {
     }
   }
 
+  async function loadPayrollCalendars() {
+    const companyId = cid();
+    if (!companyId) return;
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.payroll.calendars(companyId)
+      );
+      payrollState.calendars =
+        Array.isArray(res?.data) ? res.data
+        : Array.isArray(res?.items) ? res.items
+        : Array.isArray(res) ? res
+        : payrollState.calendars;
+      renderPayrollCalendars();
+    } catch (e) {
+      console.warn("Failed to load payroll calendars:", e);
+    }
+  }
+
   function renderPayrollCalendars() {
     const el = $("payrollCalendarsList");
     if (!el) return;
@@ -52947,6 +52965,14 @@ function bindEventsOnce() {
         "payroll-workspace-open",
         !isDashboard
       );
+
+    if (tab === "employees") {
+      renderPayrollEmployees();
+    } else if (tab === "calendars") {
+      loadPayrollCalendars();
+    } else if (tab === "runs") {
+      loadPayrollRuns();
+    }
 
     if (scroll) {
       const target =
