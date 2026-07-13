@@ -52711,15 +52711,38 @@ function bindEventsOnce() {
       return;
     }
 
+    // Parse Python date strings like "Thu, 27 May 2027 00:00:00 GMT"
+    // or ISO strings like "2027-05-27"
+    function fmtDate(val) {
+      if (!val) return "—";
+      const d = new Date(val);
+      if (isNaN(d.getTime())) return String(val).slice(0, 10);
+      return d.toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    }
+
+    // Build a period label like "Jul 2026" from period_start
+    function periodLabel(startStr) {
+      const d = new Date(startStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      });
+    }
+
     el.innerHTML = payrollState.calendars.map(c => `
       <div class="list-row">
         <div>
-          <strong>${esc(c.frequency || "")}</strong>
-          <div class="muted">${esc(c.period_start || "")} → ${esc(c.period_end || "")}</div>
+          <strong>${esc(periodLabel(c.period_start) || c.frequency || "")}</strong>
+          <div class="muted">${fmtDate(c.period_start)} → ${fmtDate(c.period_end)}</div>
         </div>
         <div>
           <span class="pill">${esc(c.status || "open")}</span>
-          <div class="muted">Pay date: ${esc(c.payment_date || "")}</div>
+          <div class="muted">Pay: ${fmtDate(c.payment_date)}</div>
         </div>
       </div>
     `).join("");

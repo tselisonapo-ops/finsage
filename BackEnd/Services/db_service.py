@@ -85445,6 +85445,14 @@ class DatabaseService:
                 int(end_day),
             )
 
+            # Adjust period start/end if they fall on weekends
+            period_start = self._payroll_adjust_working_day(
+                period_start, adjustment,
+            )
+            period_end = self._payroll_adjust_working_day(
+                period_end, adjustment,
+            )
+            
             if period_end < period_start:
                 raise ValueError(
                     "Generated period end cannot be before "
