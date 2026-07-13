@@ -85106,21 +85106,6 @@ class DatabaseService:
 
         return {"ok": True}
 
-
-    def payroll_tax_authorities_list(self, company_id: int) -> list:
-        return self.fetch_all("""
-            SELECT
-                ta.id,
-                ta.code,
-                ta.name,
-                ta.description,
-                ptr.id AS regime_id
-            FROM public.tax_authorities ta
-            LEFT JOIN public.payroll_tax_regimes ptr
-                ON ptr.authority_code = ta.code
-                AND ptr.is_active = TRUE
-            ORDER BY ta.code;
-        """)
         
     def payroll_bootstrap(self, company_id: int) -> dict:
         company_id = int(company_id)
@@ -85252,22 +85237,7 @@ class DatabaseService:
             LIMIT 1;
         """, (int(company_id),))
 
-    def payroll_tax_authorities_list(self):
-        return self.fetch_all("""
-            SELECT
-                ta.id,
-                ta.code,
-                ta.name,
-                r.country_code,
-                r.currency,
-                r.is_active
-            FROM public.tax_authorities ta
-            LEFT JOIN public.payroll_tax_regimes r
-            ON UPPER(r.authority_code) = UPPER(ta.code)
-            WHERE COALESCE(r.is_active, TRUE) = TRUE
-            AND UPPER(ta.code) IN ('SARS', 'RSL', 'BURS')
-            ORDER BY ta.name;
-        """)
+
 
     def payroll_setup_master(self, company_id: int) -> dict:
         company_id = int(company_id)
