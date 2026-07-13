@@ -53989,6 +53989,10 @@ function bindEventsOnce() {
       runPayrollAction(generatePayrollPeriods)
     );
 
+    $("payrollCalendarsGenerateBtn")?.addEventListener(
+      "click", () => runPayrollAction(generatePayrollPeriods)
+    );
+    
     $("payrollAddDepartmentBtn")?.addEventListener(
       "click",
       runPayrollAction(createPayrollDepartment)

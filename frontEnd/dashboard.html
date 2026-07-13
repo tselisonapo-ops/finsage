@@ -12750,13 +12750,22 @@ html, body {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  class="payroll-secondary dark"
-                  data-payroll-goto="settings"
-                >
-                  Manage Pay Schedule
-                </button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button
+                    id="payrollCalendarsGenerateBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    Generate Periods
+                  </button>
+                  <button
+                    type="button"
+                    class="payroll-secondary dark"
+                    data-payroll-goto="settings"
+                  >
+                    Manage Pay Schedule
+                  </button>
+                </div>
               </div>
 
               <div id="payrollCalendarsList"></div>
