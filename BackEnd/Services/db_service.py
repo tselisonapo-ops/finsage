@@ -84992,8 +84992,20 @@ class DatabaseService:
         company_id = int(company_id)
         schema = self.company_schema(company_id)
 
+        # ── Determine country ──
+        company = self.fetch_one("""
+            SELECT country
+            FROM public.companies
+            WHERE id = %s
+            LIMIT 1;
+        """, (company_id,)) or {}
+
+        country = str(company.get("country") or "").strip().lower()
+        is_sa = country in ("south africa", "rsa", "za")
+
         self.ensure_company_payroll(company_id)
 
+        # ── Earnings (same for all countries) ──
         earnings = [
             ("BASIC", "Basic Salary", True, True),
             ("OVERTIME", "Overtime", True, True),
@@ -85004,6 +85016,7 @@ class DatabaseService:
             ("ALLOW_CELLPHONE", "Cellphone Allowance", True, False),
         ]
 
+        # ── Deductions (common to all countries) ──
         deductions = [
             ("PAYE", "PAYE", True),
             ("PENSION_EMP", "Pension Employee Deduction", False),
@@ -85013,13 +85026,26 @@ class DatabaseService:
             ("UNION", "Union Fee", False),
         ]
 
+        # ── South Africa ONLY deductions ──
+        if is_sa:
+            deductions.append(
+                ("UIF_EMP", "UIF Employee Deduction", True)
+            )
+
+        # ── Employer contributions (common to all) ──
         contributions = [
             ("PENSION_ER", "Employer Pension Contribution"),
             ("MEDICAL_ER", "Employer Medical Aid Contribution"),
-            ("UIF_ER", "Employer UIF Contribution"),
-            ("SKILLS_LEVY", "Skills Levy"),
         ]
 
+        # ── South Africa ONLY contributions ──
+        if is_sa:
+            contributions.extend([
+                ("UIF_ER", "Employer UIF Contribution"),
+                ("SKILLS_LEVY", "Skills Levy"),
+            ])
+
+        # ── Benefits (same for all countries) ──
         benefits = [
             ("MEDICAL", "Medical Aid", "mixed"),
             ("PENSION", "Pension Fund", "mixed"),
@@ -85080,6 +85106,7 @@ class DatabaseService:
 
         return {"ok": True}
 
+
     def payroll_tax_authorities_list(self, company_id: int) -> list:
         return self.fetch_all("""
             SELECT
@@ -85106,7 +85133,7 @@ class DatabaseService:
             "employees": self.payroll_employees_list(company_id),
             "tax_authorities": self.payroll_tax_authorities_list(company_id),
             "setup": self.payroll_setup_master(company_id),
-}
+        }
 
     def payroll_ensure_ready(self, company_id: int) -> dict:
         company_id = int(company_id)
@@ -85117,17 +85144,22 @@ class DatabaseService:
         settings = self.payroll_settings_get(company_id)
         if not settings:
             company = self.fetch_one("""
-                SELECT currency
+                SELECT currency, country
                 FROM public.companies
                 WHERE id=%s
                 LIMIT 1;
             """, (company_id,)) or {}
 
+            # ── Auto-resolve tax authority from country ──
+            tax_authority_id = self._resolve_tax_authority(
+                company.get("country")
+            )
+
             settings = self.payroll_settings_upsert(company_id, {
                 "default_frequency": "monthly",
                 "default_currency": company.get("currency") or "USD",
                 "payroll_start_date": None,
-                "tax_authority_id": None,
+                "tax_authority_id": tax_authority_id,
 
                 "period_start_day": 21,
                 "period_end_day": 20,
@@ -85140,8 +85172,76 @@ class DatabaseService:
                 "calendar_generation_months": 12,
                 "is_active": True,
             })
+        else:
+            # ── Existing company: set authority if still NULL ──
+            if not settings.get("tax_authority_id"):
+                company = self.fetch_one("""
+                    SELECT country
+                    FROM public.companies
+                    WHERE id=%s
+                    LIMIT 1;
+                """, (company_id,)) or {}
+
+                tax_authority_id = self._resolve_tax_authority(
+                    company.get("country")
+                )
+
+                if tax_authority_id:
+                    schema = self.company_schema(company_id)
+                    self.execute_sql(f"""
+                        UPDATE {schema}.payroll_settings
+                        SET tax_authority_id = %s
+                        WHERE company_id = %s
+                        AND tax_authority_id IS NULL;
+                    """, (tax_authority_id, company_id))
+
+                    settings["tax_authority_id"] = tax_authority_id
 
         return {"ok": True, "settings": settings}
+
+    def _resolve_tax_authority(self, country: str) -> int | None:
+        """Return the tax_authorities.id for the given country."""
+        country = str(country or "").strip().lower()
+
+        country_map = {
+            "south africa": "SARS",
+            "rsa": "SARS",
+            "za": "SARS",
+            "lesotho": "RSL",
+            "ls": "RSL",
+            "botswana": "BURS",
+            "bw": "BURS",
+        }
+
+        code = country_map.get(country)
+        if not code:
+            return None
+
+        row = self.fetch_one("""
+            SELECT id
+            FROM public.tax_authorities
+            WHERE UPPER(code) = UPPER(%s)
+            LIMIT 1;
+        """, (code,))
+
+        return int(row["id"]) if row else None
+
+
+    def payroll_tax_authorities_list(self, company_id: int) -> list:
+        """Return all tax authorities for the frontend dropdown."""
+        return self.fetch_all("""
+            SELECT
+                ta.id,
+                ta.code,
+                ta.name,
+                ta.description,
+                ptr.id AS regime_id
+            FROM public.tax_authorities ta
+            LEFT JOIN public.payroll_tax_regimes ptr
+                ON ptr.authority_code = ta.code
+                AND ptr.is_active = TRUE
+            ORDER BY ta.code;
+        """)
 
     def payroll_settings_get(self, company_id: int):
         schema = self.company_schema(company_id)
