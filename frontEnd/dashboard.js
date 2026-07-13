@@ -49545,28 +49545,98 @@ function bindEventsOnce() {
 
   async function createPayrollRun() {
     const companyId = cid();
-    const calendarId = Number($("payrollRunCalendarId")?.value || 0);
+    const calendarId = Number(
+      $("payrollRunCalendarId")?.value || 0
+    );
 
     if (!calendarId) {
       throw new Error("Select a payroll calendar first.");
     }
 
-    const res = await apiFetch(ENDPOINTS.payroll.runs(companyId), {
-      method: "POST",
-      body: JSON.stringify({
-        pay_calendar_id: calendarId,
-      }),
-    });
+    // Step 1: Create the run (draft shell).
+    const res = await apiFetch(
+      ENDPOINTS.payroll.runs(companyId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          pay_calendar_id: calendarId,
+        }),
+      }
+    );
 
     const createdRun = res?.data;
 
-    // Do not hide a newly-created draft run behind a status filter.
+    // Do not hide a newly-created draft run behind
+    // a status filter.
     if ($("payrollRunStatusFilter")) {
       $("payrollRunStatusFilter").value = "";
     }
 
-    await loadPayrollRuns();
+    // Step 2: Auto-calculate immediately so the run
+    // opens with real employee data and amounts.
+    if (createdRun?.id) {
+      // Skip calculation if the run already existed
+      // and is past draft (already calculated/posted).
+      const alreadyDone =
+        createdRun.already_existed &&
+        createdRun.status &&
+        createdRun.status !== "draft";
 
+      if (!alreadyDone) {
+        try {
+          showPayrollStatus(
+            "Calculating payroll…",
+            "info"
+          );
+
+          const calcRes = await apiFetch(
+            ENDPOINTS.payroll.calculateRun(
+              companyId,
+              createdRun.id
+            ),
+            {
+              method: "POST",
+              body: JSON.stringify({}),
+            }
+          );
+
+          payrollState.selectedRun = calcRes?.data;
+          const count =
+            calcRes?.data
+              ?.calculated_employee_count || 0;
+          const skipped =
+            calcRes?.data?.skipped_employees || [];
+
+          await loadPayrollRuns();
+          await openPayrollRun(createdRun.id);
+
+          let msg =
+            "Payroll run created and calculated.";
+          if (count > 0) {
+            msg +=
+              " " + count + " employee" +
+              (count !== 1 ? "s" : "") + " processed.";
+          }
+          if (skipped.length > 0) {
+            msg +=
+              " " + skipped.length +
+              " skipped (no pay setup).";
+          }
+          showPayrollStatus(msg, "success");
+          return;
+        } catch (calcErr) {
+          // Calculation failed — still show the
+          // draft run, but report the error.
+          console.error(
+            "Auto-calculate failed:",
+            calcErr
+          );
+        }
+      }
+    }
+
+    // Fallback: show the draft run as-is.
+    await loadPayrollRuns();
     if (createdRun?.id) {
       await openPayrollRun(Number(createdRun.id));
     }
@@ -49919,7 +49989,9 @@ function bindEventsOnce() {
     const checks = [
       { label: "Employees included",   ok: (run.employees || []).length > 0 },
       { label: "Gross pay calculated",  ok: Number(run.gross_pay || 0) > 0 },
-      { label: "Net pay calculated",    ok: Number(run.net_pay || 0) >= 0 },
+      { label: "Net pay calculated",
+        ok: (run.employees || []).length > 0 &&
+              Number(run.net_pay || 0) > 0 },
       { label: "Journal posted",        ok: !!run.posted_journal_id },
     ];
 

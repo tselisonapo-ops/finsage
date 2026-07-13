@@ -85394,166 +85394,6 @@ class DatabaseService:
             """, (company_id,)),
         }
 
-    def payroll_calendars_generate(
-        self,
-        company_id: int,
-        periods: int = None,
-        from_month=None,
-    ):
-        company_id = int(company_id)
-        schema = self.company_schema(company_id)
-
-        settings = self.payroll_settings_get(company_id) or {}
-
-        frequency = (
-            settings.get("default_frequency") or "monthly"
-        )
-
-        if frequency != "monthly":
-            raise ValueError(
-                "Automatic calendar generation currently supports "
-                "monthly payroll only"
-            )
-
-        start_day = settings.get("period_start_day")
-        end_day = settings.get("period_end_day")
-        end_offset = int(
-            settings.get("period_end_month_offset") or 0
-        )
-
-        payment_rule = settings.get("payment_day_rule")
-        payment_offset = int(
-            settings.get("payment_month_offset") or 0
-        )
-
-        adjustment = (
-            settings.get("payment_adjustment") or "none"
-        )
-
-        if not start_day or not end_day or not payment_rule:
-            raise ValueError(
-                "Complete the payroll schedule in Settings first"
-            )
-
-        periods = int(
-            periods
-            or settings.get("calendar_generation_months")
-            or 12
-        )
-
-        if periods < 1 or periods > 60:
-            raise ValueError(
-                "periods must be between 1 and 60"
-            )
-
-        if from_month:
-            if isinstance(from_month, str):
-                raw = from_month[:10]
-                anchor = date.fromisoformat(raw)
-            else:
-                anchor = from_month
-        elif settings.get("payroll_start_date"):
-            value = settings["payroll_start_date"]
-
-            if isinstance(value, str):
-                anchor = date.fromisoformat(value[:10])
-            else:
-                anchor = value
-        else:
-            today = date.today()
-            anchor = date(today.year, today.month, 1)
-
-        anchor = date(anchor.year, anchor.month, 1)
-
-        generated = []
-
-        for index in range(periods):
-            start_month = self._payroll_add_months(
-                anchor,
-                index,
-            )
-
-            period_start = self._payroll_safe_month_day(
-                start_month.year,
-                start_month.month,
-                int(start_day),
-            )
-
-            end_month = self._payroll_add_months(
-                start_month,
-                end_offset,
-            )
-
-            period_end = self._payroll_safe_month_day(
-                end_month.year,
-                end_month.month,
-                int(end_day),
-            )
-
-            # Adjust period start/end if they fall on weekends
-            period_start = self._payroll_adjust_working_day(
-                period_start, adjustment,
-            )
-            period_end = self._payroll_adjust_working_day(
-                period_end, adjustment,
-            )
-            
-            if period_end < period_start:
-                raise ValueError(
-                    "Generated period end cannot be before "
-                    "period start"
-                )
-
-            payment_month = self._payroll_add_months(
-                date(
-                    period_end.year,
-                    period_end.month,
-                    1,
-                ),
-                payment_offset,
-            )
-
-            payment_date = self._payroll_payment_date(
-                payment_month,
-                payment_rule,
-            )
-
-            payment_date = self._payroll_adjust_working_day(
-                payment_date,
-                adjustment,
-            )
-
-            row = self.fetch_one(f"""
-                INSERT INTO {schema}.payroll_pay_calendars (
-                    company_id,
-                    frequency,
-                    period_start,
-                    period_end,
-                    payment_date,
-                    status
-                )
-                VALUES (%s,%s,%s,%s,%s,'open')
-                ON CONFLICT (
-                    company_id,
-                    period_start,
-                    period_end
-                )
-                DO UPDATE SET
-                    frequency = EXCLUDED.frequency,
-                    payment_date = EXCLUDED.payment_date
-                RETURNING *;
-            """, (
-                company_id,
-                frequency,
-                period_start,
-                period_end,
-                payment_date,
-            ))
-
-            generated.append(row)
-
-        return generated
-
 
     def payroll_employee_benefit_create(self, company_id: int, employee_id: int, data: dict):
         schema = self.company_schema(company_id)
@@ -88837,6 +88677,295 @@ class DatabaseService:
             f"Unsupported calculation method: {method}"
         ) 
 
+    def _payroll_adjust_to_workday(
+        self,
+        d,
+        direction="forward",
+    ):
+        """
+        If *d* falls on a Saturday or Sunday, return the
+        nearest weekday.  direction controls which way:
+          "forward"  → next Monday   (default)
+          "backward" → previous Friday
+          "nearest"  → closest weekday
+        Does NOT check holidays (use _payroll_next_workday
+        for that).
+        """
+        if d.weekday() < 5:          # Mon-Fri
+            return d
+
+        if direction == "backward":
+            # Sat → Fri, Sun → Fri
+            return d - timedelta(days=(d.weekday() - 4))
+
+        if direction == "nearest":
+            # Sat → Fri (1 day back), Sun → Mon (1 day fwd)
+            if d.weekday() == 5:     # Saturday
+                return d - timedelta(days=1)
+            return d + timedelta(days=1)   # Sunday
+
+        # "forward" (default)
+        return d + timedelta(days=(7 - d.weekday()))
+
+
+    # ─── HELPER 2: Adjust for holidays too ───
+    # Add this inside your PayrollMethods class.
+
+    def _payroll_next_workday(
+        self,
+        d,
+        schema,
+        company_id,
+        direction="forward",
+    ):
+        """
+        Like _payroll_adjust_to_workday but also skips
+        dates in the company_holidays table.
+        """
+        candidate = self._payroll_adjust_to_workday(d, direction)
+        max_loops = 15  # safety limit
+        for _ in range(max_loops):
+            if candidate.weekday() >= 5:
+                candidate = self._payroll_adjust_to_workday(
+                    candidate, direction
+                )
+                continue
+            row = self.fetch_one(f"""
+                SELECT 1 FROM {schema}.company_holidays
+                WHERE company_id = %s
+                  AND holiday_date = %s
+                LIMIT 1;
+            """, (int(company_id), candidate))
+            if not row:
+                return candidate
+            # It's a holiday — move to next/prev day
+            if direction == "backward":
+                candidate -= timedelta(days=1)
+            else:
+                candidate += timedelta(days=1)
+        return candidate
+
+
+    # ─── MAIN FIX: Replace payroll_calendars_generate() ───
+    # REPLACE the existing method entirely.
+
+    def payroll_calendars_generate(
+        self,
+        company_id: int,
+        periods: int = None,
+        from_month=None,
+    ):
+        import calendar as cal_mod
+        from datetime import date, timedelta
+
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        settings = self.payroll_settings_get(company_id) or {}
+
+        frequency = (
+            settings.get("default_frequency") or "monthly"
+        )
+
+        if frequency != "monthly":
+            raise ValueError(
+                "Automatic calendar generation currently "
+                "supports monthly payroll only"
+            )
+
+        start_day = settings.get("period_start_day")
+        end_day = settings.get("period_end_day")
+        end_offset = int(
+            settings.get("period_end_month_offset") or 0
+        )
+
+        payment_rule = settings.get("payment_day_rule")
+        payment_offset = int(
+            settings.get("payment_month_offset") or 0
+        )
+
+        adjustment = (
+            settings.get("payment_adjustment") or "none"
+        )
+
+        if not start_day or not end_day or not payment_rule:
+            raise ValueError(
+                "Complete the payroll schedule in Settings "
+                "first"
+            )
+
+        # ── FIX 1: Auto-correct impossible offset ──
+        if int(end_day) < int(start_day) and end_offset == 0:
+            end_offset = 1
+
+        periods = int(
+            periods
+            or settings.get("calendar_generation_months")
+            or 12
+        )
+
+        if periods < 1 or periods > 60:
+            raise ValueError(
+                "periods must be between 1 and 60"
+            )
+
+        # Determine the anchor month
+        if from_month:
+            if isinstance(from_month, str):
+                raw = from_month[:10]
+                anchor = date.fromisoformat(raw)
+            else:
+                anchor = from_month
+        elif settings.get("payroll_start_date"):
+            value = settings["payroll_start_date"]
+            if isinstance(value, str):
+                anchor = date.fromisoformat(value[:10])
+            else:
+                anchor = value
+        else:
+            today = date.today()
+            anchor = date(today.year, today.month, 1)
+
+        anchor = date(anchor.year, anchor.month, 1)
+
+        # Check if holiday-aware adjustment is requested
+        holiday_aware = (
+            adjustment == "next_workday"
+            or adjustment == "previous_workday"
+            or adjustment == "nearest_workday"
+        )
+
+        # Determine adjustment direction for holidays
+        h_direction = "forward"
+        if adjustment == "previous_workday":
+            h_direction = "backward"
+        elif adjustment == "nearest_workday":
+            h_direction = "nearest"
+
+        generated = []
+
+        for index in range(periods):
+            start_month = self._payroll_add_months(
+                anchor, index,
+            )
+
+            raw_start = self._payroll_safe_month_day(
+                start_month.year,
+                start_month.month,
+                int(start_day),
+            )
+
+            end_month = self._payroll_add_months(
+                start_month, end_offset,
+            )
+
+            raw_end = self._payroll_safe_month_day(
+                end_month.year,
+                end_month.month,
+                int(end_day),
+            )
+
+            if raw_end < raw_start:
+                raise ValueError(
+                    "Generated period end cannot be before "
+                    "period start"
+                )
+
+            # ── FIX 2 & 3: Weekend + holiday adjustment ──
+            # Adjust period start
+            if holiday_aware:
+                period_start = self._payroll_next_workday(
+                    raw_start, schema, company_id, h_direction
+                )
+            else:
+                period_start = raw_start
+
+            # Adjust period end
+            if holiday_aware:
+                period_end = self._payroll_next_workday(
+                    raw_end, schema, company_id, "backward"
+                )
+            else:
+                period_end = raw_end
+
+            # Payment date
+            payment_month = self._payroll_add_months(
+                date(period_end.year, period_end.month, 1),
+                payment_offset,
+            )
+
+            payment_date = self._payroll_payment_date(
+                payment_month, payment_rule,
+            )
+
+            # Adjust payment date for weekends
+            if adjustment in (
+                "next_workday", "nearest_workday"
+            ) or adjustment == "none":
+                # Default: move weekend pay dates forward
+                # to Monday
+                if payment_date.weekday() >= 5:
+                    payment_date = (
+                        self._payroll_adjust_to_workday(
+                            payment_date, "forward"
+                        )
+                    )
+
+            if holiday_aware:
+                payment_date = self._payroll_next_workday(
+                    payment_date, schema, company_id,
+                    h_direction
+                )
+
+            # Build adjustment notes for the frontend
+            notes = []
+            if period_start != raw_start:
+                notes.append(
+                    f"start adjusted from "
+                    f"{raw_start.strftime('%d %b')} to "
+                    f"{period_start.strftime('%d %b')}"
+                )
+            if period_end != raw_end:
+                notes.append(
+                    f"end adjusted from "
+                    f"{raw_end.strftime('%d %b')} to "
+                    f"{period_end.strftime('%d %b')}"
+                )
+
+            row = self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_pay_calendars (
+                    company_id,
+                    frequency,
+                    period_start,
+                    period_end,
+                    payment_date,
+                    status
+                )
+                VALUES (%s,%s,%s,%s,%s,'open')
+                ON CONFLICT (
+                    company_id,
+                    period_start,
+                    period_end
+                )
+                DO UPDATE SET
+                    frequency = EXCLUDED.frequency,
+                    payment_date = EXCLUDED.payment_date
+                RETURNING *;
+            """, (
+                company_id,
+                frequency,
+                period_start,
+                period_end,
+                payment_date,
+            ))
+
+            if row and notes:
+                row = dict(row)
+                row["_adjustment_notes"] = "; ".join(notes)
+
+            generated.append(row)
+
+        return generated
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
