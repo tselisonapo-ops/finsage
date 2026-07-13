@@ -52871,7 +52871,7 @@ function bindEventsOnce() {
     }
     return result;
   }
-
+  window.formatPayrollDate = formatPayrollDate;
 
   /* ═══════════════════════════════════════════════════════════
     CHANGE 4 — REPLACE renderPayrollCalendars()
