@@ -53039,6 +53039,885 @@ var TAX_ADMIN_HTML = `
   }
   window.formatPayrollDate = formatPayrollDate;
 
+  var taxAdminState = {
+    regimes: [],
+    selectedRegimeId: null,
+    years: [],
+    selectedYearId: null,
+    brackets: [],
+    params: [],
+  };
+
+  // ─── HELPERS ─────────────────────────────────────────────
+
+  function taxAdminShowStatus(msg, type) {
+    var el = $("taxAdminStatus");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = type === "error" ? "#e74c3c"
+      : type === "success" ? "#16a34a" : "";
+  }
+
+  // ─── INIT (called when Tax Tables tab opens) ─────────────
+
+  async function taxAdminInit() {
+    var panel = $("payrollTabTaxAdmin");
+    if (!panel) return;
+
+    // Only inject HTML and bind events once
+    if (!panel.dataset.initialized) {
+      panel.innerHTML = TAX_ADMIN_HTML;
+      panel.dataset.initialized = "1";
+
+      $("taxAdminRegime").addEventListener("change", function () {
+        taxAdminState.selectedRegimeId = Number(this.value) || null;
+        taxAdminState.selectedYearId = null;
+        taxAdminState.brackets = [];
+        taxAdminState.params = [];
+        var content = $("taxAdminYearContent");
+        if (content) content.classList.add("hidden");
+        taxAdminLoadYears();
+      });
+
+      $("taxAdminNewYearBtn").addEventListener("click", function () {
+        taxAdminShowYearForm();
+      });
+
+      $("taxAdminCancelYearBtn").addEventListener("click", function () {
+        taxAdminHideYearForm();
+      });
+
+      $("taxAdminSaveYearBtn").addEventListener("click", function () {
+        taxAdminSaveYear();
+      });
+
+      $("taxAdminAddBracketBtn").addEventListener("click", function () {
+        taxAdminAddBracketRow();
+      });
+
+      $("taxAdminSaveBracketsBtn").addEventListener("click", function () {
+        taxAdminSaveBrackets();
+      });
+
+      $("taxAdminAddParamBtn").addEventListener("click", function () {
+        taxAdminAddParamRow();
+      });
+
+      $("taxAdminSaveParamsBtn").addEventListener("click", function () {
+        taxAdminSaveParams();
+      });
+    }
+
+    taxAdminShowStatus("Loading regimes...");
+    await taxAdminLoadRegimes();
+    taxAdminShowStatus("");
+  }
+
+  // ─── LOAD REGIMES ────────────────────────────────────────
+
+  async function taxAdminLoadRegimes() {
+    try {
+      var companyId = cid();
+      var res = await apiFetch(
+        ENDPOINTS.payroll.taxTables.regimes(companyId)
+      );
+      taxAdminState.regimes = (res && res.items) || [];
+
+      var sel = $("taxAdminRegime");
+      sel.innerHTML =
+        '<option value="">Select regime...</option>';
+      for (var i = 0; i < taxAdminState.regimes.length; i++) {
+        var r = taxAdminState.regimes[i];
+        sel.innerHTML +=
+          '<option value="' + esc(r.id) + '">' +
+          esc(r.name) + " (" + esc(r.authority_code) +
+          " / " + esc(r.country_code) + ")" +
+          "</option>";
+      }
+
+      // Restore selection if regime still valid
+      if (taxAdminState.selectedRegimeId) {
+        sel.value = String(taxAdminState.selectedRegimeId);
+      }
+    } catch (e) {
+      console.error("Failed to load regimes:", e);
+      taxAdminShowStatus("Failed to load regimes", "error");
+    }
+  }
+
+  // ─── LOAD / RENDER TAX YEARS ────────────────────────────
+
+  async function taxAdminLoadYears() {
+    var el = $("taxAdminYearList");
+    if (!el) return;
+
+    if (!taxAdminState.selectedRegimeId) {
+      el.innerHTML =
+        '<p class="payroll-muted">Select a regime above.</p>';
+      taxAdminState.years = [];
+      return;
+    }
+
+    taxAdminShowStatus("Loading tax years...");
+    try {
+      var companyId = cid();
+      var res = await apiFetch(
+        ENDPOINTS.payroll.taxTables.years(companyId, {
+          regimeId: taxAdminState.selectedRegimeId,
+        })
+      );
+      taxAdminState.years = (res && res.items) || [];
+
+      if (!taxAdminState.years.length) {
+        el.innerHTML =
+          '<p class="payroll-muted">' +
+          "No tax years for this regime.</p>";
+        taxAdminShowStatus("");
+        return;
+      }
+
+      var html = "";
+      for (var i = 0; i < taxAdminState.years.length; i++) {
+        var y = taxAdminState.years[i];
+        var isActive = y.is_active;
+        var selected = taxAdminState.selectedYearId === y.id;
+        var borderStyle = selected
+          ? "border-color:var(--primary,#2563eb);"
+          : "";
+        var bgStyle = selected
+          ? "background:var(--primary-bg,#eff6ff);"
+          : "";
+
+        html +=
+          '<div class="list-row" style="cursor:pointer;' +
+          borderStyle +
+          bgStyle +
+          'margin-bottom:4px;border-radius:6px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;" ' +
+          'data-tax-year-id="' + y.id + '" ' +
+          'onclick="taxAdminSelectYear(' + y.id + ')">' +
+          "<div>" +
+          "<strong>" + esc(y.tax_year_label) + "</strong>" +
+          '<div class="payroll-muted" style="margin-top:2px;">' +
+          esc(y.calculation_basis || "annualised") +
+          " | " + esc(y.effective_from) +
+          " to " + esc(y.effective_to) +
+          "</div>" +
+          "</div>" +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span class="pill ' +
+          (isActive ? "pill-open" : "pill-closed") +
+          '">' +
+          (isActive ? "Active" : "Inactive") +
+          "</span>" +
+          '<button type="button" class="payroll-secondary" ' +
+          'style="font-size:0.8em;padding:2px 8px;" ' +
+          'onclick="event.stopPropagation();taxAdminEditYear(' +
+          y.id +
+          ')" title="Edit">Edit</button>' +
+          '<button type="button" class="payroll-secondary" ' +
+          'style="font-size:0.8em;padding:2px 8px;" ' +
+          'onclick="event.stopPropagation();taxAdminCloneYear(' +
+          y.id +
+          ')" title="Clone">Clone</button>' +
+          (isActive
+            ? '<button type="button" class="payroll-secondary" ' +
+              'style="font-size:0.8em;padding:2px 8px;color:#e74c3c;" ' +
+              'onclick="event.stopPropagation();taxAdminToggleYear(' +
+              y.id +
+              ',false)" title="Deactivate">Deactivate</button>'
+            : '<button type="button" class="payroll-secondary" ' +
+              'style="font-size:0.8em;padding:2px 8px;" ' +
+              'onclick="event.stopPropagation();taxAdminToggleYear(' +
+              y.id +
+              ',true)" title="Activate">Activate</button>') +
+          "</div>" +
+          "</div>";
+      }
+      el.innerHTML = html;
+      taxAdminShowStatus("");
+    } catch (e) {
+      el.innerHTML =
+        '<p style="color:#e74c3c;">Failed to load tax years.</p>';
+      taxAdminShowStatus("Failed to load years", "error");
+      console.error(e);
+    }
+  }
+
+  // ─── SELECT A YEAR (load brackets + params) ─────────────
+
+  async function taxAdminSelectYear(yearId) {
+    taxAdminState.selectedYearId = yearId;
+
+    // Re-render year list to show selection highlight
+    taxAdminLoadYears();
+
+    // Show content area
+    var content = $("taxAdminYearContent");
+    if (content) content.classList.remove("hidden");
+
+    taxAdminShowStatus("Loading brackets & parameters...");
+    await Promise.all([
+      taxAdminLoadBrackets(yearId),
+      taxAdminLoadParams(yearId),
+    ]);
+    taxAdminShowStatus("");
+  }
+
+  // ─── BRACKETS ───────────────────────────────────────────
+
+  async function taxAdminLoadBrackets(yearId) {
+    var body = $("taxAdminBracketsBody");
+    var countEl = $("taxAdminBracketCount");
+    if (!body) return;
+
+    try {
+      var companyId = cid();
+      var res = await apiFetch(
+        ENDPOINTS.payroll.taxTables.brackets(companyId, yearId)
+      );
+      taxAdminState.brackets = (res && res.items) || [];
+
+      if (countEl) {
+        countEl.textContent =
+          "(" + taxAdminState.brackets.length + ")";
+      }
+
+      taxAdminRenderBrackets();
+    } catch (e) {
+      console.error("Failed to load brackets:", e);
+    }
+  }
+
+  function taxAdminRenderBrackets() {
+    var body = $("taxAdminBracketsBody");
+    if (!body) return;
+
+    if (!taxAdminState.brackets.length) {
+      body.innerHTML =
+        '<tr><td colspan="8" class="payroll-muted" style="padding:12px;">' +
+        "No brackets. Click \"+ Add Bracket\" to create one.</td></tr>";
+      return;
+    }
+
+    var html = "";
+    for (var i = 0; i < taxAdminState.brackets.length; i++) {
+      var b = taxAdminState.brackets[i];
+      var ratePct = (Number(b.marginal_rate || 0) * 100).toFixed(
+        2
+      );
+      var upperDisplay =
+        b.upper_bound != null
+          ? Number(b.upper_bound).toLocaleString()
+          : "No limit";
+      var isNew = !b.id;
+
+      html +=
+        '<tr style="border-bottom:1px solid var(--border,#eee);" ' +
+        'data-bracket-id="' + (b.id || "new") + '">' +
+        "<td style='padding:6px 8px;'>" +
+        (isNew
+          ? ""
+          : '<input type="hidden" class="ta-b-id" value="' +
+            b.id +
+            '">') +
+        i +
+        1 +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="number" class="ta-b-lower" value="' +
+        (b.lower_bound || 0) +
+        '" step="0.01" style="width:120px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="number" class="ta-b-upper" value="' +
+        (b.upper_bound != null ? b.upper_bound : "") +
+        '" step="0.01" placeholder="None" style="width:120px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="number" class="ta-b-base" value="' +
+        (b.base_tax || 0) +
+        '" step="0.01" style="width:120px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="number" class="ta-b-rate" value="' +
+        ratePct +
+        '" step="0.01" style="width:80px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="number" class="ta-b-excess" value="' +
+        (b.excess_over || 0) +
+        '" step="0.01" style="width:120px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<select class="ta-b-residency" style="width:100px;">' +
+        '<option value="resident"' +
+        (b.residency_status === "resident" ? " selected" : "") +
+        ">Resident</option>" +
+        '<option value="non_resident"' +
+        (b.residency_status === "non_resident"
+          ? " selected"
+          : "") +
+        ">Non-resident</option>" +
+        "</select>" +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        (isNew
+          ? '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
+            'onclick="taxAdminRemoveNewBracket(' +
+            i +
+            ')" title="Remove">&times;</button>'
+          : '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
+            'onclick="taxAdminDeleteBracket(' +
+            b.id +
+            ')" title="Delete">&times;</button>') +
+        "</td>" +
+        "</tr>";
+    }
+    body.innerHTML = html;
+  }
+
+  function taxAdminAddBracketRow() {
+    if (!taxAdminState.selectedYearId) {
+      showPayrollStatus("Select a tax year first.", "error");
+      return;
+    }
+    taxAdminState.brackets.push({
+      id: null,
+      tax_year_id: taxAdminState.selectedYearId,
+      residency_status: "resident",
+      lower_bound: 0,
+      upper_bound: null,
+      base_tax: 0,
+      marginal_rate: 0,
+      excess_over: 0,
+      sort_order: taxAdminState.brackets.length + 1,
+    });
+    taxAdminRenderBrackets();
+  }
+
+  function taxAdminRemoveNewBracket(index) {
+    taxAdminState.brackets.splice(index, 1);
+    taxAdminRenderBrackets();
+  }
+
+  async function taxAdminDeleteBracket(bracketId) {
+    if (!confirm("Delete this bracket?")) return;
+    try {
+      var companyId = cid();
+      await apiFetch(
+        ENDPOINTS.payroll.taxTables.bracket(companyId, bracketId),
+        { method: "DELETE" }
+      );
+      await taxAdminLoadBrackets(taxAdminState.selectedYearId);
+      showPayrollStatus("Bracket deleted.", "success");
+    } catch (e) {
+      showPayrollStatus(
+        "Failed to delete: " + (e.message || e),
+        "error"
+      );
+    }
+  }
+
+  async function taxAdminSaveBrackets() {
+    if (!taxAdminState.selectedYearId) return;
+
+    var companyId = cid();
+    var rows = $("taxAdminBracketsBody").querySelectorAll(
+      "tr[data-bracket-id]"
+    );
+    var saved = 0;
+    var errors = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var bracketId = row.querySelector(".ta-b-id");
+      var id = bracketId ? bracketId.value : null;
+      var isNew = row.dataset.bracketId === "new";
+
+      var lower = Number(row.querySelector(".ta-b-lower").value);
+      var upperVal = row.querySelector(".ta-b-upper").value;
+      var upper =
+        upperVal !== "" ? Number(upperVal) : null;
+      var base = Number(row.querySelector(".ta-b-base").value);
+      var rate =
+        Number(row.querySelector(".ta-b-rate").value) / 100;
+      var excess = Number(
+        row.querySelector(".ta-b-excess").value
+      );
+      var residency = row.querySelector(".ta-b-residency")
+        .value;
+      var sort = i + 1;
+
+      if (isNaN(rate) || rate < 0 || rate > 1) {
+        errors.push(
+          "Row " + (i + 1) + ": invalid rate"
+        );
+        continue;
+      }
+
+      var payload = {
+        residency_status: residency,
+        lower_bound: lower,
+        upper_bound: upper,
+        base_tax: base,
+        marginal_rate: rate,
+        excess_over: excess,
+        sort_order: sort,
+      };
+
+      try {
+        if (!isNew && id) {
+          await apiFetch(
+            ENDPOINTS.payroll.taxTables.bracket(
+              companyId,
+              id
+            ),
+            {
+              method: "PATCH",
+              body: JSON.stringify(payload),
+            }
+          );
+        } else {
+          await apiFetch(
+            ENDPOINTS.payroll.taxTables.brackets(
+              companyId,
+              taxAdminState.selectedYearId
+            ),
+            {
+              method: "POST",
+              body: JSON.stringify(payload),
+            }
+          );
+        }
+        saved++;
+      } catch (e) {
+        errors.push(
+          "Row " +
+            (i + 1) +
+            ": " +
+            (e.error || e.message || e)
+        );
+      }
+    }
+
+    if (errors.length) {
+      showPayrollStatus(
+        "Saved " +
+          saved +
+          " bracket(s) with errors:\n" +
+          errors.join("; "),
+        "error"
+      );
+    } else {
+      showPayrollStatus(
+        saved + " bracket(s) saved.",
+        "success"
+      );
+    }
+
+    await taxAdminLoadBrackets(taxAdminState.selectedYearId);
+  }
+
+  // ─── PARAMETERS ─────────────────────────────────────────
+
+  async function taxAdminLoadParams(yearId) {
+    var body = $("taxAdminParamsBody");
+    if (!body) return;
+
+    try {
+      var companyId = cid();
+      var res = await apiFetch(
+        ENDPOINTS.payroll.taxTables.parameters(
+          companyId,
+          yearId
+        )
+      );
+      taxAdminState.params = (res && res.items) || [];
+      taxAdminRenderParams();
+    } catch (e) {
+      console.error("Failed to load parameters:", e);
+    }
+  }
+
+  function taxAdminRenderParams() {
+    var body = $("taxAdminParamsBody");
+    if (!body) return;
+
+    if (!taxAdminState.params.length) {
+      body.innerHTML =
+        '<tr><td colspan="3" class="payroll-muted" style="padding:12px;">' +
+        "No parameters. Click \"+ Add Parameter\" to create one.</td></tr>";
+      return;
+    }
+
+    var html = "";
+    for (var i = 0; i < taxAdminState.params.length; i++) {
+      var p = taxAdminState.params[i];
+      var val =
+        p.numeric_value != null
+          ? p.numeric_value
+          : p.text_value || "";
+      var displayVal =
+        typeof val === "number"
+          ? Number(val).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 6,
+            })
+          : esc(String(val));
+
+      html +=
+        '<tr style="border-bottom:1px solid var(--border,#eee);" ' +
+        'data-param-id="' + p.id + '">' +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="hidden" class="ta-p-id" value="' +
+        p.id +
+        '">' +
+        '<span style="font-family:monospace;font-size:0.9em;">' +
+        esc(p.parameter_key) +
+        "</span>" +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<input type="text" class="ta-p-val" value="' +
+        displayVal +
+        '" style="width:200px;">' +
+        "</td>" +
+        "<td style='padding:6px 8px;'>" +
+        '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
+        'onclick="taxAdminDeleteParam(' +
+        p.id +
+        ')" title="Delete">&times;</button>' +
+        "</td>" +
+        "</tr>";
+    }
+    body.innerHTML = html;
+  }
+
+  function taxAdminAddParamRow() {
+    if (!taxAdminState.selectedYearId) {
+      showPayrollStatus("Select a tax year first.", "error");
+      return;
+    }
+
+    var key = prompt("Parameter key (e.g. primary_rebate):");
+    if (!key || !key.trim()) return;
+    key = key.trim().replace(/\s+/g, "_").toLowerCase();
+
+    // Check if already exists in current list
+    for (var i = 0; i < taxAdminState.params.length; i++) {
+      if (taxAdminState.params[i].parameter_key === key) {
+        alert("Parameter '" + key + "' already exists.");
+        return;
+      }
+    }
+
+    var val = prompt("Numeric value for " + key + ":");
+    if (val === null) return;
+    var numVal = Number(val);
+    if (isNaN(numVal)) {
+      alert("Please enter a valid number.");
+      return;
+    }
+
+    // Immediately save to backend via upsert
+    (async function () {
+      try {
+        var companyId = cid();
+        await apiFetch(
+          ENDPOINTS.payroll.taxTables.parameters(
+            companyId,
+            taxAdminState.selectedYearId
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify({
+              parameter_key: key,
+              numeric_value: numVal,
+            }),
+          }
+        );
+        await taxAdminLoadParams(taxAdminState.selectedYearId);
+        showPayrollStatus("Parameter added.", "success");
+      } catch (e) {
+        showPayrollStatus(
+          "Failed to add parameter: " +
+            (e.error || e.message || e),
+          "error"
+        );
+      }
+    })();
+  }
+
+  async function taxAdminDeleteParam(paramId) {
+    if (!confirm("Delete this parameter?")) return;
+    try {
+      var companyId = cid();
+      await apiFetch(
+        ENDPOINTS.payroll.taxTables.parameter(
+          companyId,
+          paramId
+        ),
+        { method: "DELETE" }
+      );
+      await taxAdminLoadParams(taxAdminState.selectedYearId);
+      showPayrollStatus("Parameter deleted.", "success");
+    } catch (e) {
+      showPayrollStatus(
+        "Failed to delete: " + (e.message || e),
+        "error"
+      );
+    }
+  }
+
+  async function taxAdminSaveParams() {
+    if (!taxAdminState.selectedYearId) return;
+
+    var companyId = cid();
+    var rows = $("taxAdminParamsBody").querySelectorAll(
+      "tr[data-param-id]"
+    );
+    var saved = 0;
+    var errors = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var paramId = row.querySelector(".ta-p-id").value;
+      var valStr = row.querySelector(".ta-p-val").value;
+      var numVal = Number(valStr.replace(/,/g, ""));
+
+      var payload = {
+        numeric_value: isNaN(numVal) ? null : numVal,
+        text_value: isNaN(numVal) ? valStr : null,
+      };
+
+      try {
+        await apiFetch(
+          ENDPOINTS.payroll.taxTables.parameter(
+            companyId,
+            paramId
+          ),
+          {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          }
+        );
+        saved++;
+      } catch (e) {
+        errors.push(
+          (e.error || e.message || String(e))
+        );
+      }
+    }
+
+    if (errors.length) {
+      showPayrollStatus(
+        "Saved " +
+          saved +
+          " with errors: " +
+          errors.join("; "),
+        "error"
+      );
+    } else {
+      showPayrollStatus(
+        saved + " parameter(s) saved.",
+        "success"
+      );
+    }
+
+    await taxAdminLoadParams(taxAdminState.selectedYearId);
+  }
+
+  // ─── YEAR FORM (New / Edit / Toggle / Clone) ────────────
+
+  function taxAdminShowYearForm(prefill) {
+    var form = $("taxAdminYearForm");
+    if (!form) return;
+    form.classList.remove("hidden");
+
+    if (prefill) {
+      $("taxAdminYearFormTitle").textContent = "Edit Tax Year";
+      $("taxAdminYearEditId").value = prefill.id || "";
+      $("taxAdminYearLabel").value =
+        prefill.tax_year_label || "";
+      $("taxAdminYearBasis").value =
+        prefill.calculation_basis || "annualised";
+      $("taxAdminYearFrom").value =
+        prefill.effective_from || "";
+      $("taxAdminYearTo").value = prefill.effective_to || "";
+    } else {
+      $("taxAdminYearFormTitle").textContent = "New Tax Year";
+      $("taxAdminYearEditId").value = "";
+      $("taxAdminYearLabel").value = "";
+      $("taxAdminYearBasis").value = "annualised";
+      $("taxAdminYearFrom").value = "";
+      $("taxAdminYearTo").value = "";
+    }
+  }
+
+  function taxAdminHideYearForm() {
+    var form = $("taxAdminYearForm");
+    if (form) form.classList.add("hidden");
+  }
+
+  function taxAdminEditYear(yearId) {
+    var year = null;
+    for (var i = 0; i < taxAdminState.years.length; i++) {
+      if (taxAdminState.years[i].id === yearId) {
+        year = taxAdminState.years[i];
+        break;
+      }
+    }
+    if (year) taxAdminShowYearForm(year);
+  }
+
+  async function taxAdminSaveYear() {
+    var editId = $("taxAdminYearEditId").value;
+    var label = $("taxAdminYearLabel").value.trim();
+    var basis = $("taxAdminYearBasis").value;
+    var from = $("taxAdminYearFrom").value;
+    var to = $("taxAdminYearTo").value;
+
+    if (!label || !from || !to) {
+      showPayrollStatus(
+        "Label, effective from, and effective to are required.",
+        "error"
+      );
+      return;
+    }
+
+    var companyId = cid();
+    var payload = {
+      tax_year_label: label,
+      calculation_basis: basis,
+      effective_from: from,
+      effective_to: to,
+    };
+
+    try {
+      if (editId) {
+        await apiFetch(
+          ENDPOINTS.payroll.taxTables.year(companyId, editId),
+          {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+          }
+        );
+      } else {
+        payload.regime_id = taxAdminState.selectedRegimeId;
+        await apiFetch(
+          ENDPOINTS.payroll.taxTables.years(companyId),
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+      }
+      taxAdminHideYearForm();
+      await taxAdminLoadYears();
+      showPayrollStatus("Tax year saved.", "success");
+    } catch (e) {
+      showPayrollStatus(
+        "Failed to save: " + (e.error || e.message || e),
+        "error"
+      );
+    }
+  }
+
+  async function taxAdminToggleYear(yearId, active) {
+    try {
+      var companyId = cid();
+      await apiFetch(
+        ENDPOINTS.payroll.taxTables.year(companyId, yearId),
+        {
+          method: "PATCH",
+          body: JSON.stringify({ is_active: active }),
+        }
+      );
+      await taxAdminLoadYears();
+      showPayrollStatus(
+        "Tax year " + (active ? "activated" : "deactivated") +
+          ".",
+        "success"
+      );
+    } catch (e) {
+      showPayrollStatus(
+        "Failed: " + (e.error || e.message || e),
+        "error"
+      );
+    }
+  }
+
+  async function taxAdminCloneYear(yearId) {
+    var year = null;
+    for (var i = 0; i < taxAdminState.years.length; i++) {
+      if (taxAdminState.years[i].id === yearId) {
+        year = taxAdminState.years[i];
+        break;
+      }
+    }
+    if (!year) return;
+
+    // Calculate suggested next year label
+    var parts = year.tax_year_label.split("/");
+    var y1 = parseInt(parts[0]) || 0;
+    var y2 = parseInt(parts[1]) || 0;
+    var newLabel = y1 + 1 + "/" + (y2 + 1);
+
+    // Calculate suggested next year dates
+    var fromDate = year.effective_from || "";
+    var toDate = year.effective_to || "";
+    if (fromDate.length >= 4) {
+      var fy = parseInt(fromDate.slice(0, 4));
+      fromDate = fy + 1 + fromDate.slice(4);
+    }
+    if (toDate.length >= 4) {
+      var ty = parseInt(toDate.slice(0, 4));
+      toDate = ty + 1 + toDate.slice(4);
+    }
+
+    newLabel = prompt("New tax year label:", newLabel);
+    if (!newLabel) return;
+
+    var newFrom = prompt(
+      "Effective from date (YYYY-MM-DD):",
+      fromDate
+    );
+    if (!newFrom) return;
+
+    var newTo = prompt(
+      "Effective to date (YYYY-MM-DD):",
+      toDate
+    );
+    if (!newTo) return;
+
+    try {
+      var companyId = cid();
+      await apiFetch(
+        ENDPOINTS.payroll.taxTables.cloneYear(
+          companyId,
+          yearId
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            tax_year_label: newLabel,
+            effective_from: newFrom,
+            effective_to: newTo,
+          }),
+        }
+      );
+      showPayrollStatus(
+        "Tax year cloned! Select it and adjust rates.",
+        "success"
+      );
+      await taxAdminLoadYears();
+    } catch (e) {
+      showPayrollStatus(
+        "Failed to clone: " + (e.error || e.message || e),
+        "error"
+      );
+    }
+  }
+  
   /* ═══════════════════════════════════════════════════════════
     CHANGE 4 — REPLACE renderPayrollCalendars()
     ═══════════════════════════════════════════════════════════ */
@@ -75066,885 +75945,6 @@ async function renderARStatements() {
     selected: null,
     bound: false,
   };
-
-  var taxAdminState = {
-    regimes: [],
-    selectedRegimeId: null,
-    years: [],
-    selectedYearId: null,
-    brackets: [],
-    params: [],
-  };
-
-  // ─── HELPERS ─────────────────────────────────────────────
-
-  function taxAdminShowStatus(msg, type) {
-    var el = $("taxAdminStatus");
-    if (!el) return;
-    el.textContent = msg || "";
-    el.style.color = type === "error" ? "#e74c3c"
-      : type === "success" ? "#16a34a" : "";
-  }
-
-  // ─── INIT (called when Tax Tables tab opens) ─────────────
-
-  async function taxAdminInit() {
-    var panel = $("payrollTabTaxAdmin");
-    if (!panel) return;
-
-    // Only inject HTML and bind events once
-    if (!panel.dataset.initialized) {
-      panel.innerHTML = TAX_ADMIN_HTML;
-      panel.dataset.initialized = "1";
-
-      $("taxAdminRegime").addEventListener("change", function () {
-        taxAdminState.selectedRegimeId = Number(this.value) || null;
-        taxAdminState.selectedYearId = null;
-        taxAdminState.brackets = [];
-        taxAdminState.params = [];
-        var content = $("taxAdminYearContent");
-        if (content) content.classList.add("hidden");
-        taxAdminLoadYears();
-      });
-
-      $("taxAdminNewYearBtn").addEventListener("click", function () {
-        taxAdminShowYearForm();
-      });
-
-      $("taxAdminCancelYearBtn").addEventListener("click", function () {
-        taxAdminHideYearForm();
-      });
-
-      $("taxAdminSaveYearBtn").addEventListener("click", function () {
-        taxAdminSaveYear();
-      });
-
-      $("taxAdminAddBracketBtn").addEventListener("click", function () {
-        taxAdminAddBracketRow();
-      });
-
-      $("taxAdminSaveBracketsBtn").addEventListener("click", function () {
-        taxAdminSaveBrackets();
-      });
-
-      $("taxAdminAddParamBtn").addEventListener("click", function () {
-        taxAdminAddParamRow();
-      });
-
-      $("taxAdminSaveParamsBtn").addEventListener("click", function () {
-        taxAdminSaveParams();
-      });
-    }
-
-    taxAdminShowStatus("Loading regimes...");
-    await taxAdminLoadRegimes();
-    taxAdminShowStatus("");
-  }
-
-  // ─── LOAD REGIMES ────────────────────────────────────────
-
-  async function taxAdminLoadRegimes() {
-    try {
-      var companyId = cid();
-      var res = await apiFetch(
-        ENDPOINTS.payroll.taxTables.regimes(companyId)
-      );
-      taxAdminState.regimes = (res && res.items) || [];
-
-      var sel = $("taxAdminRegime");
-      sel.innerHTML =
-        '<option value="">Select regime...</option>';
-      for (var i = 0; i < taxAdminState.regimes.length; i++) {
-        var r = taxAdminState.regimes[i];
-        sel.innerHTML +=
-          '<option value="' + esc(r.id) + '">' +
-          esc(r.name) + " (" + esc(r.authority_code) +
-          " / " + esc(r.country_code) + ")" +
-          "</option>";
-      }
-
-      // Restore selection if regime still valid
-      if (taxAdminState.selectedRegimeId) {
-        sel.value = String(taxAdminState.selectedRegimeId);
-      }
-    } catch (e) {
-      console.error("Failed to load regimes:", e);
-      taxAdminShowStatus("Failed to load regimes", "error");
-    }
-  }
-
-  // ─── LOAD / RENDER TAX YEARS ────────────────────────────
-
-  async function taxAdminLoadYears() {
-    var el = $("taxAdminYearList");
-    if (!el) return;
-
-    if (!taxAdminState.selectedRegimeId) {
-      el.innerHTML =
-        '<p class="payroll-muted">Select a regime above.</p>';
-      taxAdminState.years = [];
-      return;
-    }
-
-    taxAdminShowStatus("Loading tax years...");
-    try {
-      var companyId = cid();
-      var res = await apiFetch(
-        ENDPOINTS.payroll.taxTables.years(companyId, {
-          regimeId: taxAdminState.selectedRegimeId,
-        })
-      );
-      taxAdminState.years = (res && res.items) || [];
-
-      if (!taxAdminState.years.length) {
-        el.innerHTML =
-          '<p class="payroll-muted">' +
-          "No tax years for this regime.</p>";
-        taxAdminShowStatus("");
-        return;
-      }
-
-      var html = "";
-      for (var i = 0; i < taxAdminState.years.length; i++) {
-        var y = taxAdminState.years[i];
-        var isActive = y.is_active;
-        var selected = taxAdminState.selectedYearId === y.id;
-        var borderStyle = selected
-          ? "border-color:var(--primary,#2563eb);"
-          : "";
-        var bgStyle = selected
-          ? "background:var(--primary-bg,#eff6ff);"
-          : "";
-
-        html +=
-          '<div class="list-row" style="cursor:pointer;' +
-          borderStyle +
-          bgStyle +
-          'margin-bottom:4px;border-radius:6px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;" ' +
-          'data-tax-year-id="' + y.id + '" ' +
-          'onclick="taxAdminSelectYear(' + y.id + ')">' +
-          "<div>" +
-          "<strong>" + esc(y.tax_year_label) + "</strong>" +
-          '<div class="payroll-muted" style="margin-top:2px;">' +
-          esc(y.calculation_basis || "annualised") +
-          " | " + esc(y.effective_from) +
-          " to " + esc(y.effective_to) +
-          "</div>" +
-          "</div>" +
-          '<div style="display:flex;align-items:center;gap:8px;">' +
-          '<span class="pill ' +
-          (isActive ? "pill-open" : "pill-closed") +
-          '">' +
-          (isActive ? "Active" : "Inactive") +
-          "</span>" +
-          '<button type="button" class="payroll-secondary" ' +
-          'style="font-size:0.8em;padding:2px 8px;" ' +
-          'onclick="event.stopPropagation();taxAdminEditYear(' +
-          y.id +
-          ')" title="Edit">Edit</button>' +
-          '<button type="button" class="payroll-secondary" ' +
-          'style="font-size:0.8em;padding:2px 8px;" ' +
-          'onclick="event.stopPropagation();taxAdminCloneYear(' +
-          y.id +
-          ')" title="Clone">Clone</button>' +
-          (isActive
-            ? '<button type="button" class="payroll-secondary" ' +
-              'style="font-size:0.8em;padding:2px 8px;color:#e74c3c;" ' +
-              'onclick="event.stopPropagation();taxAdminToggleYear(' +
-              y.id +
-              ',false)" title="Deactivate">Deactivate</button>'
-            : '<button type="button" class="payroll-secondary" ' +
-              'style="font-size:0.8em;padding:2px 8px;" ' +
-              'onclick="event.stopPropagation();taxAdminToggleYear(' +
-              y.id +
-              ',true)" title="Activate">Activate</button>') +
-          "</div>" +
-          "</div>";
-      }
-      el.innerHTML = html;
-      taxAdminShowStatus("");
-    } catch (e) {
-      el.innerHTML =
-        '<p style="color:#e74c3c;">Failed to load tax years.</p>';
-      taxAdminShowStatus("Failed to load years", "error");
-      console.error(e);
-    }
-  }
-
-  // ─── SELECT A YEAR (load brackets + params) ─────────────
-
-  async function taxAdminSelectYear(yearId) {
-    taxAdminState.selectedYearId = yearId;
-
-    // Re-render year list to show selection highlight
-    taxAdminLoadYears();
-
-    // Show content area
-    var content = $("taxAdminYearContent");
-    if (content) content.classList.remove("hidden");
-
-    taxAdminShowStatus("Loading brackets & parameters...");
-    await Promise.all([
-      taxAdminLoadBrackets(yearId),
-      taxAdminLoadParams(yearId),
-    ]);
-    taxAdminShowStatus("");
-  }
-
-  // ─── BRACKETS ───────────────────────────────────────────
-
-  async function taxAdminLoadBrackets(yearId) {
-    var body = $("taxAdminBracketsBody");
-    var countEl = $("taxAdminBracketCount");
-    if (!body) return;
-
-    try {
-      var companyId = cid();
-      var res = await apiFetch(
-        ENDPOINTS.payroll.taxTables.brackets(companyId, yearId)
-      );
-      taxAdminState.brackets = (res && res.items) || [];
-
-      if (countEl) {
-        countEl.textContent =
-          "(" + taxAdminState.brackets.length + ")";
-      }
-
-      taxAdminRenderBrackets();
-    } catch (e) {
-      console.error("Failed to load brackets:", e);
-    }
-  }
-
-  function taxAdminRenderBrackets() {
-    var body = $("taxAdminBracketsBody");
-    if (!body) return;
-
-    if (!taxAdminState.brackets.length) {
-      body.innerHTML =
-        '<tr><td colspan="8" class="payroll-muted" style="padding:12px;">' +
-        "No brackets. Click \"+ Add Bracket\" to create one.</td></tr>";
-      return;
-    }
-
-    var html = "";
-    for (var i = 0; i < taxAdminState.brackets.length; i++) {
-      var b = taxAdminState.brackets[i];
-      var ratePct = (Number(b.marginal_rate || 0) * 100).toFixed(
-        2
-      );
-      var upperDisplay =
-        b.upper_bound != null
-          ? Number(b.upper_bound).toLocaleString()
-          : "No limit";
-      var isNew = !b.id;
-
-      html +=
-        '<tr style="border-bottom:1px solid var(--border,#eee);" ' +
-        'data-bracket-id="' + (b.id || "new") + '">' +
-        "<td style='padding:6px 8px;'>" +
-        (isNew
-          ? ""
-          : '<input type="hidden" class="ta-b-id" value="' +
-            b.id +
-            '">') +
-        i +
-        1 +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="number" class="ta-b-lower" value="' +
-        (b.lower_bound || 0) +
-        '" step="0.01" style="width:120px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="number" class="ta-b-upper" value="' +
-        (b.upper_bound != null ? b.upper_bound : "") +
-        '" step="0.01" placeholder="None" style="width:120px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="number" class="ta-b-base" value="' +
-        (b.base_tax || 0) +
-        '" step="0.01" style="width:120px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="number" class="ta-b-rate" value="' +
-        ratePct +
-        '" step="0.01" style="width:80px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="number" class="ta-b-excess" value="' +
-        (b.excess_over || 0) +
-        '" step="0.01" style="width:120px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<select class="ta-b-residency" style="width:100px;">' +
-        '<option value="resident"' +
-        (b.residency_status === "resident" ? " selected" : "") +
-        ">Resident</option>" +
-        '<option value="non_resident"' +
-        (b.residency_status === "non_resident"
-          ? " selected"
-          : "") +
-        ">Non-resident</option>" +
-        "</select>" +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        (isNew
-          ? '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
-            'onclick="taxAdminRemoveNewBracket(' +
-            i +
-            ')" title="Remove">&times;</button>'
-          : '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
-            'onclick="taxAdminDeleteBracket(' +
-            b.id +
-            ')" title="Delete">&times;</button>') +
-        "</td>" +
-        "</tr>";
-    }
-    body.innerHTML = html;
-  }
-
-  function taxAdminAddBracketRow() {
-    if (!taxAdminState.selectedYearId) {
-      showPayrollStatus("Select a tax year first.", "error");
-      return;
-    }
-    taxAdminState.brackets.push({
-      id: null,
-      tax_year_id: taxAdminState.selectedYearId,
-      residency_status: "resident",
-      lower_bound: 0,
-      upper_bound: null,
-      base_tax: 0,
-      marginal_rate: 0,
-      excess_over: 0,
-      sort_order: taxAdminState.brackets.length + 1,
-    });
-    taxAdminRenderBrackets();
-  }
-
-  function taxAdminRemoveNewBracket(index) {
-    taxAdminState.brackets.splice(index, 1);
-    taxAdminRenderBrackets();
-  }
-
-  async function taxAdminDeleteBracket(bracketId) {
-    if (!confirm("Delete this bracket?")) return;
-    try {
-      var companyId = cid();
-      await apiFetch(
-        ENDPOINTS.payroll.taxTables.bracket(companyId, bracketId),
-        { method: "DELETE" }
-      );
-      await taxAdminLoadBrackets(taxAdminState.selectedYearId);
-      showPayrollStatus("Bracket deleted.", "success");
-    } catch (e) {
-      showPayrollStatus(
-        "Failed to delete: " + (e.message || e),
-        "error"
-      );
-    }
-  }
-
-  async function taxAdminSaveBrackets() {
-    if (!taxAdminState.selectedYearId) return;
-
-    var companyId = cid();
-    var rows = $("taxAdminBracketsBody").querySelectorAll(
-      "tr[data-bracket-id]"
-    );
-    var saved = 0;
-    var errors = [];
-
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      var bracketId = row.querySelector(".ta-b-id");
-      var id = bracketId ? bracketId.value : null;
-      var isNew = row.dataset.bracketId === "new";
-
-      var lower = Number(row.querySelector(".ta-b-lower").value);
-      var upperVal = row.querySelector(".ta-b-upper").value;
-      var upper =
-        upperVal !== "" ? Number(upperVal) : null;
-      var base = Number(row.querySelector(".ta-b-base").value);
-      var rate =
-        Number(row.querySelector(".ta-b-rate").value) / 100;
-      var excess = Number(
-        row.querySelector(".ta-b-excess").value
-      );
-      var residency = row.querySelector(".ta-b-residency")
-        .value;
-      var sort = i + 1;
-
-      if (isNaN(rate) || rate < 0 || rate > 1) {
-        errors.push(
-          "Row " + (i + 1) + ": invalid rate"
-        );
-        continue;
-      }
-
-      var payload = {
-        residency_status: residency,
-        lower_bound: lower,
-        upper_bound: upper,
-        base_tax: base,
-        marginal_rate: rate,
-        excess_over: excess,
-        sort_order: sort,
-      };
-
-      try {
-        if (!isNew && id) {
-          await apiFetch(
-            ENDPOINTS.payroll.taxTables.bracket(
-              companyId,
-              id
-            ),
-            {
-              method: "PATCH",
-              body: JSON.stringify(payload),
-            }
-          );
-        } else {
-          await apiFetch(
-            ENDPOINTS.payroll.taxTables.brackets(
-              companyId,
-              taxAdminState.selectedYearId
-            ),
-            {
-              method: "POST",
-              body: JSON.stringify(payload),
-            }
-          );
-        }
-        saved++;
-      } catch (e) {
-        errors.push(
-          "Row " +
-            (i + 1) +
-            ": " +
-            (e.error || e.message || e)
-        );
-      }
-    }
-
-    if (errors.length) {
-      showPayrollStatus(
-        "Saved " +
-          saved +
-          " bracket(s) with errors:\n" +
-          errors.join("; "),
-        "error"
-      );
-    } else {
-      showPayrollStatus(
-        saved + " bracket(s) saved.",
-        "success"
-      );
-    }
-
-    await taxAdminLoadBrackets(taxAdminState.selectedYearId);
-  }
-
-  // ─── PARAMETERS ─────────────────────────────────────────
-
-  async function taxAdminLoadParams(yearId) {
-    var body = $("taxAdminParamsBody");
-    if (!body) return;
-
-    try {
-      var companyId = cid();
-      var res = await apiFetch(
-        ENDPOINTS.payroll.taxTables.parameters(
-          companyId,
-          yearId
-        )
-      );
-      taxAdminState.params = (res && res.items) || [];
-      taxAdminRenderParams();
-    } catch (e) {
-      console.error("Failed to load parameters:", e);
-    }
-  }
-
-  function taxAdminRenderParams() {
-    var body = $("taxAdminParamsBody");
-    if (!body) return;
-
-    if (!taxAdminState.params.length) {
-      body.innerHTML =
-        '<tr><td colspan="3" class="payroll-muted" style="padding:12px;">' +
-        "No parameters. Click \"+ Add Parameter\" to create one.</td></tr>";
-      return;
-    }
-
-    var html = "";
-    for (var i = 0; i < taxAdminState.params.length; i++) {
-      var p = taxAdminState.params[i];
-      var val =
-        p.numeric_value != null
-          ? p.numeric_value
-          : p.text_value || "";
-      var displayVal =
-        typeof val === "number"
-          ? Number(val).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 6,
-            })
-          : esc(String(val));
-
-      html +=
-        '<tr style="border-bottom:1px solid var(--border,#eee);" ' +
-        'data-param-id="' + p.id + '">' +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="hidden" class="ta-p-id" value="' +
-        p.id +
-        '">' +
-        '<span style="font-family:monospace;font-size:0.9em;">' +
-        esc(p.parameter_key) +
-        "</span>" +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<input type="text" class="ta-p-val" value="' +
-        displayVal +
-        '" style="width:200px;">' +
-        "</td>" +
-        "<td style='padding:6px 8px;'>" +
-        '<button type="button" style="color:#e74c3c;border:none;background:none;cursor:pointer;font-size:1.2em;" ' +
-        'onclick="taxAdminDeleteParam(' +
-        p.id +
-        ')" title="Delete">&times;</button>' +
-        "</td>" +
-        "</tr>";
-    }
-    body.innerHTML = html;
-  }
-
-  function taxAdminAddParamRow() {
-    if (!taxAdminState.selectedYearId) {
-      showPayrollStatus("Select a tax year first.", "error");
-      return;
-    }
-
-    var key = prompt("Parameter key (e.g. primary_rebate):");
-    if (!key || !key.trim()) return;
-    key = key.trim().replace(/\s+/g, "_").toLowerCase();
-
-    // Check if already exists in current list
-    for (var i = 0; i < taxAdminState.params.length; i++) {
-      if (taxAdminState.params[i].parameter_key === key) {
-        alert("Parameter '" + key + "' already exists.");
-        return;
-      }
-    }
-
-    var val = prompt("Numeric value for " + key + ":");
-    if (val === null) return;
-    var numVal = Number(val);
-    if (isNaN(numVal)) {
-      alert("Please enter a valid number.");
-      return;
-    }
-
-    // Immediately save to backend via upsert
-    (async function () {
-      try {
-        var companyId = cid();
-        await apiFetch(
-          ENDPOINTS.payroll.taxTables.parameters(
-            companyId,
-            taxAdminState.selectedYearId
-          ),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              parameter_key: key,
-              numeric_value: numVal,
-            }),
-          }
-        );
-        await taxAdminLoadParams(taxAdminState.selectedYearId);
-        showPayrollStatus("Parameter added.", "success");
-      } catch (e) {
-        showPayrollStatus(
-          "Failed to add parameter: " +
-            (e.error || e.message || e),
-          "error"
-        );
-      }
-    })();
-  }
-
-  async function taxAdminDeleteParam(paramId) {
-    if (!confirm("Delete this parameter?")) return;
-    try {
-      var companyId = cid();
-      await apiFetch(
-        ENDPOINTS.payroll.taxTables.parameter(
-          companyId,
-          paramId
-        ),
-        { method: "DELETE" }
-      );
-      await taxAdminLoadParams(taxAdminState.selectedYearId);
-      showPayrollStatus("Parameter deleted.", "success");
-    } catch (e) {
-      showPayrollStatus(
-        "Failed to delete: " + (e.message || e),
-        "error"
-      );
-    }
-  }
-
-  async function taxAdminSaveParams() {
-    if (!taxAdminState.selectedYearId) return;
-
-    var companyId = cid();
-    var rows = $("taxAdminParamsBody").querySelectorAll(
-      "tr[data-param-id]"
-    );
-    var saved = 0;
-    var errors = [];
-
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      var paramId = row.querySelector(".ta-p-id").value;
-      var valStr = row.querySelector(".ta-p-val").value;
-      var numVal = Number(valStr.replace(/,/g, ""));
-
-      var payload = {
-        numeric_value: isNaN(numVal) ? null : numVal,
-        text_value: isNaN(numVal) ? valStr : null,
-      };
-
-      try {
-        await apiFetch(
-          ENDPOINTS.payroll.taxTables.parameter(
-            companyId,
-            paramId
-          ),
-          {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          }
-        );
-        saved++;
-      } catch (e) {
-        errors.push(
-          (e.error || e.message || String(e))
-        );
-      }
-    }
-
-    if (errors.length) {
-      showPayrollStatus(
-        "Saved " +
-          saved +
-          " with errors: " +
-          errors.join("; "),
-        "error"
-      );
-    } else {
-      showPayrollStatus(
-        saved + " parameter(s) saved.",
-        "success"
-      );
-    }
-
-    await taxAdminLoadParams(taxAdminState.selectedYearId);
-  }
-
-  // ─── YEAR FORM (New / Edit / Toggle / Clone) ────────────
-
-  function taxAdminShowYearForm(prefill) {
-    var form = $("taxAdminYearForm");
-    if (!form) return;
-    form.classList.remove("hidden");
-
-    if (prefill) {
-      $("taxAdminYearFormTitle").textContent = "Edit Tax Year";
-      $("taxAdminYearEditId").value = prefill.id || "";
-      $("taxAdminYearLabel").value =
-        prefill.tax_year_label || "";
-      $("taxAdminYearBasis").value =
-        prefill.calculation_basis || "annualised";
-      $("taxAdminYearFrom").value =
-        prefill.effective_from || "";
-      $("taxAdminYearTo").value = prefill.effective_to || "";
-    } else {
-      $("taxAdminYearFormTitle").textContent = "New Tax Year";
-      $("taxAdminYearEditId").value = "";
-      $("taxAdminYearLabel").value = "";
-      $("taxAdminYearBasis").value = "annualised";
-      $("taxAdminYearFrom").value = "";
-      $("taxAdminYearTo").value = "";
-    }
-  }
-
-  function taxAdminHideYearForm() {
-    var form = $("taxAdminYearForm");
-    if (form) form.classList.add("hidden");
-  }
-
-  function taxAdminEditYear(yearId) {
-    var year = null;
-    for (var i = 0; i < taxAdminState.years.length; i++) {
-      if (taxAdminState.years[i].id === yearId) {
-        year = taxAdminState.years[i];
-        break;
-      }
-    }
-    if (year) taxAdminShowYearForm(year);
-  }
-
-  async function taxAdminSaveYear() {
-    var editId = $("taxAdminYearEditId").value;
-    var label = $("taxAdminYearLabel").value.trim();
-    var basis = $("taxAdminYearBasis").value;
-    var from = $("taxAdminYearFrom").value;
-    var to = $("taxAdminYearTo").value;
-
-    if (!label || !from || !to) {
-      showPayrollStatus(
-        "Label, effective from, and effective to are required.",
-        "error"
-      );
-      return;
-    }
-
-    var companyId = cid();
-    var payload = {
-      tax_year_label: label,
-      calculation_basis: basis,
-      effective_from: from,
-      effective_to: to,
-    };
-
-    try {
-      if (editId) {
-        await apiFetch(
-          ENDPOINTS.payroll.taxTables.year(companyId, editId),
-          {
-            method: "PATCH",
-            body: JSON.stringify(payload),
-          }
-        );
-      } else {
-        payload.regime_id = taxAdminState.selectedRegimeId;
-        await apiFetch(
-          ENDPOINTS.payroll.taxTables.years(companyId),
-          {
-            method: "POST",
-            body: JSON.stringify(payload),
-          }
-        );
-      }
-      taxAdminHideYearForm();
-      await taxAdminLoadYears();
-      showPayrollStatus("Tax year saved.", "success");
-    } catch (e) {
-      showPayrollStatus(
-        "Failed to save: " + (e.error || e.message || e),
-        "error"
-      );
-    }
-  }
-
-  async function taxAdminToggleYear(yearId, active) {
-    try {
-      var companyId = cid();
-      await apiFetch(
-        ENDPOINTS.payroll.taxTables.year(companyId, yearId),
-        {
-          method: "PATCH",
-          body: JSON.stringify({ is_active: active }),
-        }
-      );
-      await taxAdminLoadYears();
-      showPayrollStatus(
-        "Tax year " + (active ? "activated" : "deactivated") +
-          ".",
-        "success"
-      );
-    } catch (e) {
-      showPayrollStatus(
-        "Failed: " + (e.error || e.message || e),
-        "error"
-      );
-    }
-  }
-
-  async function taxAdminCloneYear(yearId) {
-    var year = null;
-    for (var i = 0; i < taxAdminState.years.length; i++) {
-      if (taxAdminState.years[i].id === yearId) {
-        year = taxAdminState.years[i];
-        break;
-      }
-    }
-    if (!year) return;
-
-    // Calculate suggested next year label
-    var parts = year.tax_year_label.split("/");
-    var y1 = parseInt(parts[0]) || 0;
-    var y2 = parseInt(parts[1]) || 0;
-    var newLabel = y1 + 1 + "/" + (y2 + 1);
-
-    // Calculate suggested next year dates
-    var fromDate = year.effective_from || "";
-    var toDate = year.effective_to || "";
-    if (fromDate.length >= 4) {
-      var fy = parseInt(fromDate.slice(0, 4));
-      fromDate = fy + 1 + fromDate.slice(4);
-    }
-    if (toDate.length >= 4) {
-      var ty = parseInt(toDate.slice(0, 4));
-      toDate = ty + 1 + toDate.slice(4);
-    }
-
-    newLabel = prompt("New tax year label:", newLabel);
-    if (!newLabel) return;
-
-    var newFrom = prompt(
-      "Effective from date (YYYY-MM-DD):",
-      fromDate
-    );
-    if (!newFrom) return;
-
-    var newTo = prompt(
-      "Effective to date (YYYY-MM-DD):",
-      toDate
-    );
-    if (!newTo) return;
-
-    try {
-      var companyId = cid();
-      await apiFetch(
-        ENDPOINTS.payroll.taxTables.cloneYear(
-          companyId,
-          yearId
-        ),
-        {
-          method: "POST",
-          body: JSON.stringify({
-            tax_year_label: newLabel,
-            effective_from: newFrom,
-            effective_to: newTo,
-          }),
-        }
-      );
-      showPayrollStatus(
-        "Tax year cloned! Select it and adjust rates.",
-        "success"
-      );
-      await taxAdminLoadYears();
-    } catch (e) {
-      showPayrollStatus(
-        "Failed to clone: " + (e.error || e.message || e),
-        "error"
-      );
-    }
-  }
 
   function cid() {
     return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
