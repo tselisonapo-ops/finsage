@@ -1376,3 +1376,523 @@ def api_payroll_tax_context(company_id: int):
             "ok": False,
             "error": str(error),
         }), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/regimes",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_regimes(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        items = db_service.payroll_tax_regimes_list()
+        return jsonify({"ok": True, "items": items}), 200
+    except Exception as e:
+        current_app.logger.exception("api_payroll_tax_regimes failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: List tax years (optionally filtered by regime)
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/years",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_years(company_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            regime_id = request.args.get("regime_id")
+            items = db_service.payroll_tax_years_list(
+                regime_id=int(regime_id) if regime_id else None
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception(
+                "api_payroll_tax_years GET failed"
+            )
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    # POST — create tax year
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        body = _payroll_body()
+
+        required = [
+            "regime_id", "tax_year_label",
+            "effective_from", "effective_to",
+        ]
+        missing = [k for k in required if not body.get(k)]
+        if missing:
+            return jsonify({
+                "ok": False,
+                "error": f"Missing required fields: {', '.join(missing)}",
+            }), 400
+
+        out = db_service.payroll_tax_year_create(body, user_id=user_id)
+
+        try:
+            db_service.audit_log(
+                int(company_id),
+                actor_user_id=user_id,
+                module="payroll",
+                action="create_tax_year",
+                severity="info",
+                entity_type="payroll_tax_year",
+                entity_id=str(out.get("id")),
+                entity_ref=body.get("tax_year_label"),
+                before_json={},
+                after_json=out,
+                message=f"Created tax year {body.get('tax_year_label')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed in api_payroll_tax_years"
+            )
+
+        return jsonify({"ok": True, "data": out}), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_years POST failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Update a tax year
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/years/<int:year_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_year_update(company_id: int, year_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        before = db_service.payroll_tax_year_get(int(year_id))
+        if not before:
+            return jsonify({
+                "ok": False,
+                "error": "Tax year not found",
+            }), 404
+
+        out = db_service.payroll_tax_year_update(
+            int(year_id), _payroll_body(), user_id=user_id
+        )
+
+        try:
+            db_service.audit_log(
+                int(company_id),
+                actor_user_id=user_id,
+                module="payroll",
+                action="update_tax_year",
+                severity="info",
+                entity_type="payroll_tax_year",
+                entity_id=str(year_id),
+                entity_ref=before.get("tax_year_label"),
+                before_json=before,
+                after_json=out,
+                message=f"Updated tax year {before.get('tax_year_label')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed in api_payroll_tax_year_update"
+            )
+
+        return jsonify({
+            "ok": True,
+            "data": out,
+            "before": before,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_year_update failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: List brackets for a tax year
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/years/<int:year_id>/brackets",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_brackets(company_id: int, year_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            items = db_service.payroll_tax_brackets_admin_list(
+                int(year_id)
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception(
+                "api_payroll_tax_brackets GET failed"
+            )
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    # POST — create bracket
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        body = _payroll_body()
+
+        if body.get("marginal_rate") is None:
+            return jsonify({
+                "ok": False,
+                "error": "marginal_rate is required",
+            }), 400
+
+        out = db_service.payroll_tax_bracket_create(
+            int(year_id), body, user_id=user_id
+        )
+
+        return jsonify({"ok": True, "data": out}), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_brackets POST failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Update a bracket
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/brackets/<int:bracket_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_bracket_update(
+    company_id: int, bracket_id: int
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        out = db_service.payroll_tax_bracket_update(
+            int(bracket_id), _payroll_body(), user_id=user_id
+        )
+
+        if not out:
+            return jsonify({
+                "ok": False,
+                "error": "Bracket not found",
+            }), 404
+
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_bracket_update failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Delete a bracket
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/brackets/<int:bracket_id>",
+    methods=["DELETE", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_bracket_delete(
+    company_id: int, bracket_id: int
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        db_service.payroll_tax_bracket_delete(
+            int(bracket_id), user_id=user_id
+        )
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_bracket_delete failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: List parameters for a tax year
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/years/<int:year_id>/parameters",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_parameters(company_id: int, year_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        try:
+            items = db_service.payroll_tax_parameters_admin_list(
+                int(year_id)
+            )
+            return jsonify({"ok": True, "items": items}), 200
+        except Exception as e:
+            current_app.logger.exception(
+                "api_payroll_tax_parameters GET failed"
+            )
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+    # POST — create or update parameter (upsert by key)
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        body = _payroll_body()
+
+        if not body.get("parameter_key"):
+            return jsonify({
+                "ok": False,
+                "error": "parameter_key is required",
+            }), 400
+
+        out = db_service.payroll_tax_parameter_upsert(
+            int(year_id), body, user_id=user_id
+        )
+
+        return jsonify({"ok": True, "data": out}), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_parameters POST failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Update a parameter
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/parameters/<int:param_id>",
+    methods=["PATCH", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_parameter_update(
+    company_id: int, param_id: int
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        out = db_service.payroll_tax_parameter_update(
+            int(param_id), _payroll_body(), user_id=user_id
+        )
+
+        if not out:
+            return jsonify({
+                "ok": False,
+                "error": "Parameter not found",
+            }), 404
+
+        return jsonify({"ok": True, "data": out}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_parameter_update failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Delete a parameter
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/parameters/<int:param_id>",
+    methods=["DELETE", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_parameter_delete(
+    company_id: int, param_id: int
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        db_service.payroll_tax_parameter_delete(
+            int(param_id), user_id=user_id
+        )
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_parameter_delete failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════
+#  ROUTE: Clone a tax year (brackets + parameters)
+# ═══════════════════════════════════════════════════════════════
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/tax-tables/years/<int:year_id>/clone",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_payroll_tax_year_clone(company_id: int, year_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    deny = _payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id = _jwt_user_id()
+    if not user_id:
+        return jsonify({
+            "ok": False,
+            "error": "AUTH|missing_user_id",
+        }), 401
+
+    try:
+        body = _payroll_body()
+
+        required = [
+            "tax_year_label", "effective_from", "effective_to",
+        ]
+        missing = [k for k in required if not body.get(k)]
+        if missing:
+            return jsonify({
+                "ok": False,
+                "error": f"Missing required fields: {', '.join(missing)}",
+            }), 400
+
+        out = db_service.payroll_tax_year_clone(
+            int(year_id), body, user_id=user_id
+        )
+
+        try:
+            db_service.audit_log(
+                int(company_id),
+                actor_user_id=user_id,
+                module="payroll",
+                action="clone_tax_year",
+                severity="info",
+                entity_type="payroll_tax_year",
+                entity_id=str(out.get("id")),
+                entity_ref=body.get("tax_year_label"),
+                before_json={},
+                after_json=out,
+                message=f"Cloned tax year to {body.get('tax_year_label')}",
+                source="api",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "audit_log failed in api_payroll_tax_year_clone"
+            )
+
+        return jsonify({"ok": True, "data": out}), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_payroll_tax_year_clone failed"
+        )
+        return jsonify({"ok": False, "error": str(e)}), 400
+

@@ -85033,6 +85033,334 @@ class DatabaseService:
     # =========================
     # DB METHODS - PAYROLL
     # =========================
+    def payroll_tax_regimes_list(self):
+        """Return all tax regimes (public schema, not company-scoped)."""
+        return self._payroll_query("""
+            SELECT  id,
+                    authority_code,
+                    country_code,
+                    name,
+                    currency,
+                    is_active
+            FROM    public.payroll_tax_regimes
+            WHERE   is_active = TRUE
+            ORDER BY country_code, authority_code
+        """)
+
+
+    def payroll_tax_years_list(self, regime_id=None):
+        """Return tax years, optionally filtered by regime."""
+        if regime_id:
+            return self._payroll_query("""
+                SELECT  y.*,
+                        r.authority_code,
+                        r.country_code,
+                        r.name  AS regime_name,
+                        r.currency
+                FROM    public.payroll_tax_years y
+                JOIN    public.payroll_tax_regimes r
+                        ON r.id = y.regime_id
+                WHERE   y.regime_id = %s
+                ORDER   BY y.effective_from DESC
+            """, (regime_id,))
+        else:
+            return self._payroll_query("""
+                SELECT  y.*,
+                        r.authority_code,
+                        r.country_code,
+                        r.name  AS regime_name,
+                        r.currency
+                FROM    public.payroll_tax_years y
+                JOIN    public.payroll_tax_regimes r
+                        ON r.id = y.regime_id
+                ORDER   BY r.country_code, y.effective_from DESC
+            """)
+
+
+    def payroll_tax_year_get(self, year_id):
+        """Get a single tax year by ID."""
+        rows = self._payroll_query("""
+            SELECT  y.*,
+                    r.authority_code,
+                    r.country_code,
+                    r.name  AS regime_name,
+                    r.currency
+            FROM    public.payroll_tax_years y
+            JOIN    public.payroll_tax_regimes r
+                    ON r.id = y.regime_id
+            WHERE   y.id = %s
+        """, (year_id,))
+        return rows[0] if rows else None
+
+
+    def payroll_tax_year_create(self, body, user_id=None):
+        """Create a new tax year."""
+        return self._payroll_query("""
+            INSERT INTO public.payroll_tax_years
+                (regime_id, tax_year_label, effective_from,
+                effective_to, calculation_basis, is_active)
+            VALUES (%s, %s, %s, %s, %s, TRUE)
+            RETURNING *
+        """, (
+            int(body["regime_id"]),
+            body["tax_year_label"],
+            body["effective_from"],
+            body["effective_to"],
+            body.get("calculation_basis", "annualised"),
+        ))[0]
+
+
+    def payroll_tax_year_update(self, year_id, body, user_id=None):
+        """Update a tax year. Returns updated row or None."""
+        sets = []
+        params = []
+
+        for field in (
+            "tax_year_label", "effective_from",
+            "effective_to", "calculation_basis",
+        ):
+            if field in body and body[field] is not None:
+                sets.append(f"{field} = %s")
+                params.append(body[field])
+
+        if "is_active" in body:
+            sets.append("is_active = %s")
+            params.append(bool(body["is_active"]))
+
+        if not sets:
+            return self.payroll_tax_year_get(year_id)
+
+        params.append(int(year_id))
+
+        rows = self._payroll_query(f"""
+            UPDATE  public.payroll_tax_years
+            SET     {', '.join(sets)}
+            WHERE   id = %s
+            RETURNING *
+        """, params)
+
+        return rows[0] if rows else None
+
+
+    def payroll_tax_brackets_admin_list(self, year_id):
+        """Return all brackets for a tax year (flat list)."""
+        return self._payroll_query("""
+            SELECT  *
+            FROM    public.payroll_tax_brackets
+            WHERE   tax_year_id = %s
+            ORDER   BY residency_status, sort_order
+        """, (year_id,))
+
+
+    def payroll_tax_bracket_create(self, year_id, body, user_id=None):
+        """Create a bracket for a tax year."""
+        rows = self._payroll_query("""
+            INSERT INTO public.payroll_tax_brackets
+                (tax_year_id, residency_status,
+                lower_bound, upper_bound,
+                base_tax, marginal_rate, excess_over,
+                sort_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+        """, (
+            int(year_id),
+            body.get("residency_status", "resident"),
+            body.get("lower_bound", 0),
+            body.get("upper_bound"),
+            body.get("base_tax", 0),
+            body.get("marginal_rate", 0),
+            body.get("excess_over", 0),
+            body.get("sort_order", 1),
+        ))
+        return rows[0] if rows else None
+
+
+    def payroll_tax_bracket_update(self, bracket_id, body, user_id=None):
+        """Update a single bracket. Returns updated row or None."""
+        sets = []
+        params = []
+
+        for field in (
+            "residency_status", "lower_bound", "upper_bound",
+            "base_tax", "marginal_rate", "excess_over", "sort_order",
+        ):
+            if field in body and body[field] is not None:
+                sets.append(f"{field} = %s")
+                params.append(body[field])
+
+        if not sets:
+            rows = self._payroll_query("""
+                SELECT * FROM public.payroll_tax_brackets
+                WHERE id = %s
+            """, (int(bracket_id),))
+            return rows[0] if rows else None
+
+        params.append(int(bracket_id))
+
+        rows = self._payroll_query(f"""
+            UPDATE  public.payroll_tax_brackets
+            SET     {', '.join(sets)}
+            WHERE   id = %s
+            RETURNING *
+        """, params)
+
+        return rows[0] if rows else None
+
+
+    def payroll_tax_bracket_delete(self, bracket_id, user_id=None):
+        """Delete a bracket."""
+        self._payroll_execute("""
+            DELETE FROM public.payroll_tax_brackets
+            WHERE id = %s
+        """, (int(bracket_id),))
+
+
+    def payroll_tax_parameters_admin_list(self, year_id):
+        """Return all parameters for a tax year (flat list)."""
+        return self._payroll_query("""
+            SELECT  *
+            FROM    public.payroll_tax_parameters
+            WHERE   tax_year_id = %s
+            ORDER   BY parameter_key
+        """, (year_id,))
+
+
+    def payroll_tax_parameter_upsert(self, year_id, body, user_id=None):
+        """
+        Create or update a parameter (upsert by tax_year_id + parameter_key).
+        """
+        rows = self._payroll_query("""
+            INSERT INTO public.payroll_tax_parameters
+                (tax_year_id, parameter_key,
+                numeric_value, text_value)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (tax_year_id, parameter_key)
+                DO UPDATE SET
+                    numeric_value = EXCLUDED.numeric_value,
+                    text_value   = EXCLUDED.text_value
+            RETURNING *
+        """, (
+            int(year_id),
+            body["parameter_key"],
+            body.get("numeric_value"),
+            body.get("text_value"),
+        ))
+        return rows[0] if rows else None
+
+
+    def payroll_tax_parameter_update(self, param_id, body, user_id=None):
+        """Update a parameter by ID. Returns updated row or None."""
+        sets = []
+        params = []
+
+        if "parameter_key" in body:
+            sets.append("parameter_key = %s")
+            params.append(body["parameter_key"])
+        if "numeric_value" in body:
+            sets.append("numeric_value = %s")
+            params.append(body["numeric_value"])
+        if "text_value" in body:
+            sets.append("text_value = %s")
+            params.append(body["text_value"])
+
+        if not sets:
+            rows = self._payroll_query("""
+                SELECT * FROM public.payroll_tax_parameters
+                WHERE id = %s
+            """, (int(param_id),))
+            return rows[0] if rows else None
+
+        params.append(int(param_id))
+
+        rows = self._payroll_query(f"""
+            UPDATE  public.payroll_tax_parameters
+            SET     {', '.join(sets)}
+            WHERE   id = %s
+            RETURNING *
+        """, params)
+
+        return rows[0] if rows else None
+
+
+    def payroll_tax_parameter_delete(self, param_id, user_id=None):
+        """Delete a parameter."""
+        self._payroll_execute("""
+            DELETE FROM public.payroll_tax_parameters
+            WHERE id = %s
+        """, (int(param_id),))
+
+
+    def payroll_tax_year_clone(self, source_year_id, body, user_id=None):
+        """Clone a tax year (brackets + parameters) into a new year."""
+        # Get source year
+        source = self.payroll_tax_year_get(int(source_year_id))
+        if not source:
+            raise ValueError("Source tax year not found")
+
+        # Create new year
+        new_year = self.payroll_tax_year_create({
+            "regime_id": source["regime_id"],
+            "tax_year_label": body["tax_year_label"],
+            "effective_from": body["effective_from"],
+            "effective_to": body["effective_to"],
+            "calculation_basis": source.get(
+                "calculation_basis", "annualised"
+            ),
+        })
+
+        new_id = new_year["id"]
+
+        # Clone brackets
+        self._payroll_execute("""
+            INSERT INTO public.payroll_tax_brackets
+                (tax_year_id, residency_status,
+                lower_bound, upper_bound,
+                base_tax, marginal_rate, excess_over,
+                sort_order)
+            SELECT  %s,
+                    residency_status,
+                    lower_bound, upper_bound,
+                    base_tax, marginal_rate, excess_over,
+                    sort_order
+            FROM    public.payroll_tax_brackets
+            WHERE   tax_year_id = %s
+        """, (new_id, int(source_year_id)))
+
+        # Clone parameters
+        self._payroll_execute("""
+            INSERT INTO public.payroll_tax_parameters
+                (tax_year_id, parameter_key,
+                numeric_value, text_value)
+            SELECT  %s,
+                    parameter_key,
+                    numeric_value, text_value
+            FROM    public.payroll_tax_parameters
+            WHERE   tax_year_id = %s
+        """, (new_id, int(source_year_id)))
+
+        return new_year
+
+    def _payroll_query(self, sql, params=None):
+        """Run SELECT and return list of dicts."""
+        conn = self.get_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            cur.execute(sql, params or ())
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+        finally:
+            cur.close()
+
+    def _payroll_execute(self, sql, params=None):
+        """Run INSERT/UPDATE/DELETE, commit, return None."""
+        conn = self.get_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(sql, params or ())
+            conn.commit()
+        finally:
+            cur.close()
+
     def _ensure_columns(self, schema: str, table: str, columns: dict):
         """Compare expected columns against actual table and ADD any missing."""
         if not columns:

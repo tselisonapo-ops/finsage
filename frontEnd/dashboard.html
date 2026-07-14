@@ -12610,6 +12610,11 @@ html, body {
             <button data-payroll-tab="runs">Runs</button>
             <button data-payroll-tab="reports">Reports</button>
             <button data-payroll-tab="settings">Settings</button>
+            <button type="button" class="payroll-tab-btn"
+              data-payroll-tab="tax-admin"
+              onclick="switchPayrollTab('tax-admin')">
+              Tax Tables
+            </button>
           </div>
 
           <div id="payrollTabOverview" class="payroll-panel">
@@ -12685,6 +12690,8 @@ html, body {
             </div>
           </div>
 
+          <div id="payrollTabTaxAdmin" class="payroll-tab-panel hidden"></div>
+          
           <div id="payrollTabEmployees" class="payroll-panel hidden">
             <div class="payroll-section-navigation">
               <button
