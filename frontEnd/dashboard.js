@@ -53370,8 +53370,8 @@ var TAX_ADMIN_HTML = `
         calendars: "payrollTabCalendars",
         runs: "payrollTabRuns",
         reports: "payrollTabReports",
+        "tax-admin": "payrollTabTaxAdmin",   // ← add this
         settings: "payrollTabSettings",
-        "tax-admin": "payrollTabTaxAdmin",
       };
 
     Object.entries(panelMap).forEach(
