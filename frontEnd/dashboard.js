@@ -53363,14 +53363,15 @@ var TAX_ADMIN_HTML = `
         );
       });
 
-    const panelMap = {
-      overview: "payrollTabOverview",
-      employees: "payrollTabEmployees",
-      calendars: "payrollTabCalendars",
-      runs: "payrollTabRuns",
-      reports: "payrollTabReports",
-      settings: "payrollTabSettings",
-    };
+      const panelMap = {
+        overview: "payrollTabOverview",
+        employees: "payrollTabEmployees",
+        calendars: "payrollTabCalendars",
+        runs: "payrollTabRuns",
+        reports: "payrollTabReports",
+        settings: "payrollTabSettings",
+        "tax-admin": "payrollTabTaxAdmin",
+      };
 
     Object.entries(panelMap).forEach(
       ([name, panelId]) => {
