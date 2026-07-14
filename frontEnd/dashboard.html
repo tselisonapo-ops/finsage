@@ -14541,7 +14541,7 @@ html, body {
       <div id="faSettingsModal" class="fixed inset-0 z-50 hidden">
         <div id="faSettingsBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-       <div class="absolute left-[calc(50%+90px)] top-2 w-[calc(96vw-120px)] h-[96vh] lg:top-6 lg:w-[min(1700px,88vw)] lg:h-[92vh] -translate-x-1/2">
+       <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-6 lg:w-[min(1700px,88vw)] lg:h-[92vh] lg:-translate-x-1/2 lg:left-[calc(50%+90px)]">
           <div class="border rounded-xl bg-white shadow-xl overflow-hidden h-full flex flex-col">
             <!-- Header -->
             <div class="p-3 border-b flex items-center justify-between">
@@ -14558,7 +14558,7 @@ html, body {
             </div>
 
             <!-- Body -->
-            <div class="p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-[48%_52%] gap-3 lg:gap-4 flex-1 overflow-auto lg:overflow-hidden min-h-0">
+                        <div class="p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-[48%_52%] gap-3 lg:gap-4 flex-1 overflow-auto min-h-0">
               <!-- LEFT: Asset Rules (saved to /assets/policies) -->
               <div class="border rounded p-3 overflow-auto h-full min-h-0 flex flex-col">
                 <div class="flex items-center justify-between">
@@ -14650,7 +14650,7 @@ html, body {
       <div id="smModal" class="fixed inset-0 z-50 hidden">
         <div id="smBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-        <div class="absolute left-[calc(50%+90px)] top-2 w-[calc(96vw-120px)] h-[96vh] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] -translate-x-1/2">
+                <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] lg:-translate-x-1/2">
           <div class="border rounded-xl bg-white shadow-xl overflow-hidden bg-white h-full flex flex-col">
             <div class="p-3 border-b flex items-center justify-between">
               <div>
@@ -14688,9 +14688,9 @@ html, body {
               </div>
 
               <!-- MAIN CONTENT -->
-              <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-3 lg:gap-4 text-sm flex-1 min-h-0 overflow-hidden">
+              <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-3 lg:gap-4 text-sm flex-1 min-h-0 overflow-auto lg:overflow-hidden">
                 <!-- LEFT -->
-                <div class="border rounded-lg flex flex-col h-full min-h-0">
+                <div class="border rounded-lg flex flex-col h-full min-h-0 max-h-[35vh] lg:max-h-none">
                   <div class="p-3 border-b bg-slate-50">
                     <div class="text-xs text-slate-500 mb-1">Asset</div>
 
