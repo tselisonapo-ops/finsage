@@ -53305,6 +53305,7 @@ var TAX_ADMIN_HTML = `
       "calendars",
       "runs",
       "reports",
+      "tax-admin",
       "settings",
     ]);
 
