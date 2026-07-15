@@ -2166,6 +2166,12 @@ const ENDPOINTS = {
       backfillEventSplits: (companyId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/backfill-event-splits`,
     },
+
+   ipNotePayload: (companyId, params = {}) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ip-note-payload?${new URLSearchParams(params).toString()}`,
+
+    iaNotePayload: (companyId, params = {}) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
   },
 
   // -------------------------
@@ -2267,12 +2273,6 @@ const ENDPOINTS = {
       const qs = params.toString();
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-reports/disposals${qs ? `?${qs}` : ""}`;
     },
-
-    ipNotePayload: (companyId, params = {}) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ip-note-payload?${new URLSearchParams(params).toString()}`,
-
-    iaNotePayload: (companyId, params = {}) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
   },
 
   valuation: {
