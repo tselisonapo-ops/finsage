@@ -1810,6 +1810,13 @@ const ENDPOINTS = {
     postRevaluation: (companyId, revalId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revaluations/${encodeURIComponent(revalId)}/post`,
 
+    // Add these INSIDE the same object that has the existing notePayload:
+    ipNotePayload: (cid, params = {}) =>
+      `/api/companies/${cid}/ppe/ip-note-payload?${new URLSearchParams(params)}`,
+
+    iaNotePayload: (cid, params = {}) =>
+      `/api/companies/${cid}/ppe/ia-note-payload?${new URLSearchParams(params)}`,
+
     // -------------------------
     // VALUATION FLOW
     // -------------------------
@@ -26907,6 +26914,212 @@ function renderRevenueDisclosureHTML(payload) {
   `;
 }
 
+function renderIPNoteHTML(payload) {
+  const sections = payload?.sections?.sections || [];
+  const columns = (payload?.sections?.columns || []).filter(c => c !== "Total");
+  const period = payload?.sections?.period || {};
+  const summary = payload?.summary || {};
+
+  const sectionHtml = sections
+    .filter(sec => sec?.section_key !== "carrying_amount")
+    .map(sec => {
+      const rows = Array.isArray(sec?.rows) ? sec.rows : [];
+      if (!rows.length) return "";
+      return `
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">${escHtml(sec.title || "")}</div>
+          <div class="overflow-auto">
+            <table class="w-full text-xs border">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="p-2 border text-left">Movement</th>
+                  ${columns.map(c => `<th class="p-2 border text-right">${escHtml(c)}</th>`).join("")}
+                  <th class="p-2 border text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr ${String(r.row_key || "").includes("closing") ? `class="font-semibold"` : ""}>
+                    <td class="p-2 border">${escHtml(r.label || "")}</td>
+                    ${columns.map(c => {
+                      const v = r?.values?.[c];
+                      return `<td class="p-2 border text-right">${v == null ? "" : fmtMoney(v)}</td>`;
+                    }).join("")}
+                    <td class="p-2 border text-right font-semibold">${fmtMoney(r?.values?.Total || 0)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join("");
+
+  const carryingSection = sections.find(s => s?.section_key === "carrying_amount");
+  const carryingRows = Array.isArray(carryingSection?.rows) ? carryingSection.rows : [];
+  const carryingHtml = carryingRows.length ? `
+    <div class="border rounded-lg p-3 border-blue-200 bg-blue-50/30">
+      <div class="font-semibold mb-2">Carrying amount (Net book value)</div>
+      <div class="overflow-auto">
+        <table class="w-full text-xs border">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="p-2 border text-left">Movement</th>
+              ${columns.map(c => `<th class="p-2 border text-right">${escHtml(c)}</th>`).join("")}
+              <th class="p-2 border text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${carryingRows.map(r => `
+              <tr ${String(r.row_key || "").includes("closing") ? `class="font-semibold bg-blue-50"` : ""}>
+                <td class="p-2 border">${escHtml(r.label || "")}</td>
+                ${columns.map(c => {
+                  const v = r?.values?.[c];
+                  return `<td class="p-2 border text-right">${v == null ? "" : fmtMoney(v)}</td>`;
+                }).join("")}
+                <td class="p-2 border text-right font-semibold">${fmtMoney(r?.values?.Total || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>` : "";
+
+  return `
+    <div class="text-sm space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="font-semibold text-slate-800">IAS 40 Investment Property disclosures</div>
+          <div class="text-slate-500 text-xs mt-0.5">
+            Period: ${escHtml(period?.start_date || "")} &rarr; ${escHtml(period?.end_date || "")}
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing cost</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_cost || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing accum. depreciation</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_accum_dep || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing impairment</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_impairment || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing carrying amount</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_carrying || 0)}</div>
+        </div>
+      </div>
+    ${sectionHtml}
+    ${carryingHtml}
+    </div>`;
+}
+
+function renderIANoteHTML(payload) {
+  const sections = payload?.sections?.sections || [];
+  const columns = (payload?.sections?.columns || []).filter(c => c !== "Total");
+  const period = payload?.sections?.period || {};
+  const summary = payload?.summary || {};
+
+  const sectionHtml = sections
+    .filter(sec => sec?.section_key !== "carrying_amount")
+    .map(sec => {
+      const rows = Array.isArray(sec?.rows) ? sec.rows : [];
+      if (!rows.length) return "";
+      return `
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">${escHtml(sec.title || "")}</div>
+          <div class="overflow-auto">
+            <table class="w-full text-xs border">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="p-2 border text-left">Movement</th>
+                  ${columns.map(c => `<th class="p-2 border text-right">${escHtml(c)}</th>`).join("")}
+                  <th class="p-2 border text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr ${String(r.row_key || "").includes("closing") ? `class="font-semibold"` : ""}>
+                    <td class="p-2 border">${escHtml(r.label || "")}</td>
+                    ${columns.map(c => {
+                      const v = r?.values?.[c];
+                      return `<td class="p-2 border text-right">${v == null ? "" : fmtMoney(v)}</td>`;
+                    }).join("")}
+                    <td class="p-2 border text-right font-semibold">${fmtMoney(r?.values?.Total || 0)}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join("");
+
+  const carryingSection = sections.find(s => s?.section_key === "carrying_amount");
+  const carryingRows = Array.isArray(carryingSection?.rows) ? carryingSection.rows : [];
+  const carryingHtml = carryingRows.length ? `
+    <div class="border rounded-lg p-3 border-emerald-200 bg-emerald-50/30">
+      <div class="font-semibold mb-2">Carrying amount (Net book value)</div>
+      <div class="overflow-auto">
+        <table class="w-full text-xs border">
+          <thead>
+            <tr class="bg-slate-50">
+              <th class="p-2 border text-left">Movement</th>
+              ${columns.map(c => `<th class="p-2 border text-right">${escHtml(c)}</th>`).join("")}
+              <th class="p-2 border text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${carryingRows.map(r => `
+              <tr ${String(r.row_key || "").includes("closing") ? `class="font-semibold bg-emerald-50"` : ""}>
+                <td class="p-2 border">${escHtml(r.label || "")}</td>
+                ${columns.map(c => {
+                  const v = r?.values?.[c];
+                  return `<td class="p-2 border text-right">${v == null ? "" : fmtMoney(v)}</td>`;
+                }).join("")}
+                <td class="p-2 border text-right font-semibold">${fmtMoney(r?.values?.Total || 0)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>` : "";
+
+  return `
+    <div class="text-sm space-y-4">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="font-semibold text-slate-800">IAS 38 Intangible Assets disclosures</div>
+          <div class="text-slate-500 text-xs mt-0.5">
+            Period: ${escHtml(period?.start_date || "")} &rarr; ${escHtml(period?.end_date || "")}
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing cost</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_cost || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing accum. amortisation</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_accum_dep || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing impairment</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_impairment || 0)}</div>
+        </div>
+        <div class="border rounded-lg p-3">
+          <div class="text-xs text-slate-500">Closing carrying amount</div>
+          <div class="font-semibold mt-1">${fmtMoney(summary?.closing_carrying || 0)}</div>
+        </div>
+      </div>
+    ${sectionHtml}
+    ${carryingHtml}
+    </div>`;
+}
+
 const NOTES_REGISTRY = {
   ifrs16: {
     label: "IFRS 16 Lease disclosures",
@@ -26934,38 +27147,38 @@ const NOTES_REGISTRY = {
     }
   },
 
-ifrs15_revenue: {
-  label: "IFRS 15 Revenue disclosures",
-  fetch: async (cid, period) => {
-    const q = {};
+  ifrs15_revenue: {
+    label: "IFRS 15 Revenue disclosures",
+    fetch: async (cid, period) => {
+      const q = {};
 
-    const p = period?.params || period || {};
+      const p = period?.params || period || {};
 
-    if (p.from && p.to) {
-      q.date_from = p.from;
-      q.date_to = p.to;
-    } else {
-      q.preset =
-        p.preset ||
-        period?.preset ||
-        document.getElementById("stmtPreset")?.value ||
-        "this_year";
+      if (p.from && p.to) {
+        q.date_from = p.from;
+        q.date_to = p.to;
+      } else {
+        q.preset =
+          p.preset ||
+          period?.preset ||
+          document.getElementById("stmtPreset")?.value ||
+          "this_year";
+      }
+
+      console.log("IFRS15 period received:", period);
+      console.log("IFRS15 FINAL PARAMS:", q);
+
+      const url = ENDPOINTS.revenue.disclosure(cid, q);
+      const resp = await window.apiFetch(url, { method: "GET" });
+      const payload = resp?.data || resp;
+
+      return {
+        data: payload,
+        html: renderRevenueDisclosureHTML(payload),
+        meta: { q, period },
+      };
     }
-
-    console.log("IFRS15 period received:", period);
-    console.log("IFRS15 FINAL PARAMS:", q);
-
-    const url = ENDPOINTS.revenue.disclosure(cid, q);
-    const resp = await window.apiFetch(url, { method: "GET" });
-    const payload = resp?.data || resp;
-
-    return {
-      data: payload,
-      html: renderRevenueDisclosureHTML(payload),
-      meta: { q, period },
-    };
-  }
-},
+  },
 
   ias16_ppe: {
     label: "IAS 16 PPE disclosures",
@@ -27005,7 +27218,77 @@ ifrs15_revenue: {
         },
       };
     }
-  }
+  },
+
+  ias40_ip: {
+    label: "IAS 40 Investment Property disclosures",
+    fetch: async (cid, period) => {
+      const q = {};
+
+      if (period?.from && period?.to) {
+        q.start_date = period.from;
+        q.end_date = period.to;
+      } else if (period?.preset) {         // ← add this branch
+        q.preset = period.preset;
+      } else {
+        q.preset = document.getElementById("stmtPreset")?.value || "this_year";
+      }
+
+      const notePayloadFn =
+        ENDPOINTS?.assets?.reporting?.ipNotePayload ||
+        ENDPOINTS?.reporting?.ipNotePayload;
+
+      if (typeof notePayloadFn !== "function") {
+        console.error("ENDPOINTS debug:", ENDPOINTS);
+        throw new Error("IP notePayload endpoint is missing from ENDPOINTS.");
+      }
+
+      const url = notePayloadFn(cid, q);
+      const resp = await window.apiFetch(url, { method: "GET" });
+      const payload = resp?.data || resp;
+
+      return {
+        data: payload,
+        html: renderIPNoteHTML(payload),
+        meta: { q, period_meta: payload?.period_meta || null },
+      };
+    }
+  },
+
+  ias38_ia: {
+    label: "IAS 38 Intangible Assets disclosures",
+    fetch: async (cid, period) => {
+      const q = {};
+
+      if (period?.from && period?.to) {
+        q.start_date = period.from;
+        q.end_date = period.to;
+      } else if (period?.preset) {         // ← add this branch
+        q.preset = period.preset;
+      } else {
+        q.preset = document.getElementById("stmtPreset")?.value || "this_year";
+      }
+
+      const notePayloadFn =
+        ENDPOINTS?.assets?.reporting?.iaNotePayload ||
+        ENDPOINTS?.reporting?.iaNotePayload;
+
+      if (typeof notePayloadFn !== "function") {
+        console.error("ENDPOINTS debug:", ENDPOINTS);
+        throw new Error("IA notePayload endpoint is missing from ENDPOINTS.");
+      }
+
+      const url = notePayloadFn(cid, q);
+      const resp = await window.apiFetch(url, { method: "GET" });
+      const payload = resp?.data || resp;
+
+      return {
+        data: payload,
+        html: renderIANoteHTML(payload),
+        meta: { q, period_meta: payload?.period_meta || null },
+      };
+    }
+  },
 };
 
 window.FS_NOTES_STATE = {
@@ -27141,13 +27424,13 @@ async function resetFinancialStatementNote() {
 
 function getEditorNoteKeyFromNotesPack() {
   const pack = document.getElementById("notesPack")?.value;
-
   const map = {
     ifrs16: "ifrs16_lease_policy",
     ias16_ppe: "ias16_ppe_policy",
     ifrs15_revenue: "ifrs15_revenue_policy",
+    ias40_ip: "ias40_ip_policy",
+    ias38_ia: "ias38_ia_policy",
   };
-
   return map[pack] || "ifrs15_revenue_policy";
 }
 
@@ -53917,7 +54200,7 @@ var TAX_ADMIN_HTML = `
       );
     }
   }
-  
+
   /* ═══════════════════════════════════════════════════════════
     CHANGE 4 — REPLACE renderPayrollCalendars()
     ═══════════════════════════════════════════════════════════ */

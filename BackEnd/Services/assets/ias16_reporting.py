@@ -455,3 +455,88 @@ def backfill_event_splits(company_id: int):
     finally:
         if conn:
             conn.close()
+
+@ppe_reporting_bp.get("/ip-note-payload")
+@require_auth
+def get_ip_note_payload_route(company_id: int):
+    db_service, get_db_connection, _ = _get_services()
+    conn = None
+    try:
+        start_raw = request.args.get("start_date") or request.args.get("from")
+        end_raw = request.args.get("end_date") or request.args.get("to")
+        preset = request.args.get("preset")
+
+        if start_raw and end_raw:
+            start_date = _parse_date(start_raw, "start_date")
+            end_date = _parse_date(end_raw, "end_date")
+        elif preset:
+            from BackEnd.Services.period_core import resolve_company_period
+            start_date, end_date, _ = resolve_company_period(
+                db_service, company_id, request, mode="range"
+            )
+        else:
+            raise ValueError("Provide start_date/end_date or preset")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        data = db_service.get_ip_note_payload(cur, company_id, start_date, end_date)
+
+        if isinstance(data, dict):
+            data["period_meta"] = {
+                "preset": preset or None,
+                "label": f"{start_date.isoformat()} → {end_date.isoformat()}",
+                "period": {"from": start_date.isoformat(), "to": end_date.isoformat()},
+            }
+
+        return _ok(data)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        current_app.logger.exception("Failed to load IP note payload")
+        return _err("Failed to load IP note payload", 500, error=str(exc))
+    finally:
+        if conn:
+            conn.close()
+
+
+@ppe_reporting_bp.get("/ia-note-payload")
+@require_auth
+def get_ia_note_payload_route(company_id: int):
+    db_service, get_db_connection, _ = _get_services()
+    conn = None
+    try:
+        start_raw = request.args.get("start_date") or request.args.get("from")
+        end_raw = request.args.get("end_date") or request.args.get("to")
+        preset = request.args.get("preset")
+
+        if start_raw and end_raw:
+            start_date = _parse_date(start_raw, "start_date")
+            end_date = _parse_date(end_raw, "end_date")
+        elif preset:
+            from BackEnd.Services.period_core import resolve_company_period
+            start_date, end_date, _ = resolve_company_period(
+                db_service, company_id, request, mode="range"
+            )
+        else:
+            raise ValueError("Provide start_date/end_date or preset")
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        data = db_service.get_ia_note_payload(cur, company_id, start_date, end_date)
+
+        if isinstance(data, dict):
+            data["period_meta"] = {
+                "preset": preset or None,
+                "label": f"{start_date.isoformat()} → {end_date.isoformat()}",
+                "period": {"from": start_date.isoformat(), "to": end_date.isoformat()},
+            }
+
+        return _ok(data)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        current_app.logger.exception("Failed to load IA note payload")
+        return _err("Failed to load IA note payload", 500, error=str(exc))
+    finally:
+        if conn:
+            conn.close()

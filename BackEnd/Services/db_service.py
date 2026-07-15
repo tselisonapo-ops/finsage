@@ -57368,6 +57368,542 @@ class DatabaseService:
 
         return out
 
+    # ─── IAS 40 Investment Property ────────────────────────────────
+
+    def get_ip_disclosure_by_class(
+        self, cur, company_id: int, start_date, end_date, *, asset_classes: list[str] | None = None,
+    ):
+        schema = self.company_schema(company_id)
+        self.ensure_ppe_reporting_views(cur, company_id)
+
+        params = [start_date, end_date, company_id]
+        class_filter_sql = ""
+        if asset_classes:
+            class_filter_sql = "WHERE c.asset_class = ANY(%s)"
+            params.append(asset_classes)
+
+        sql = f"""
+        WITH p AS (SELECT %s::date AS start_date, %s::date AS end_date),
+        ip_assets AS (
+            SELECT id, asset_class, category
+            FROM {schema}.assets
+            WHERE company_id = %s AND UPPER(COALESCE(accounting_standard, '')) = 'IAS40'
+        ),
+        opening AS (
+            SELECT a.asset_class,
+                SUM(m.cost_delta)::numeric(18,2) AS opening_cost,
+                SUM(m.accum_dep_delta)::numeric(18,2) AS opening_accum_dep,
+                SUM(m.impairment_delta)::numeric(18,2) AS opening_impairment,
+                SUM(m.revaluation_reserve_delta)::numeric(18,2) AS opening_reserve,
+                SUM(m.carrying_delta)::numeric(18,2) AS opening_carrying
+            FROM {schema}.vw_ppe_movements m
+            JOIN ip_assets a ON a.id = m.asset_id CROSS JOIN p
+            WHERE m.event_date < p.start_date
+            GROUP BY a.asset_class
+        ),
+        period_mov AS (
+            SELECT a.asset_class,
+                SUM(CASE WHEN m.movement_type = 'addition' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS additions_cost,
+                SUM(CASE WHEN m.movement_type = 'subsequent_addition' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS subsequent_additions_cost,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS transfers_in_cost,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS transfers_out_cost,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS disposals_cost,
+                SUM(CASE WHEN m.movement_type IN ('revaluation_up','revaluation_down') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS revaluation_cost_delta,
+                SUM(CASE WHEN m.movement_type = 'depreciation' THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS depreciation_charge,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS transfers_in_accum_dep,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS transfers_out_accum_dep,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS disposals_accum_dep,
+                SUM(CASE WHEN m.movement_type IN ('revaluation_up','revaluation_down') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS revaluation_accum_dep_delta,
+                SUM(CASE WHEN m.movement_type = 'impairment_loss' THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS impairment_losses,
+                SUM(CASE WHEN m.movement_type = 'impairment_reversal' THEN -m.impairment_delta ELSE 0 END)::numeric(18,2) AS impairment_reversals,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS transfers_in_impairment,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS transfers_out_impairment,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS disposals_impairment,
+                SUM(CASE WHEN m.movement_type = 'revaluation_up' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS revaluation_upward,
+                SUM(CASE WHEN m.movement_type = 'revaluation_down' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS revaluation_downward,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS transfers_in_carrying,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS transfers_out_carrying,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS disposals_carrying,
+                SUM(m.cost_delta)::numeric(18,2) AS period_cost_delta,
+                SUM(m.accum_dep_delta)::numeric(18,2) AS period_accum_dep_delta,
+                SUM(m.impairment_delta)::numeric(18,2) AS period_impairment_delta,
+                SUM(m.revaluation_reserve_delta)::numeric(18,2) AS period_reserve_delta,
+                SUM(m.carrying_delta)::numeric(18,2) AS period_carrying_delta
+            FROM {schema}.vw_ppe_movements m
+            JOIN ip_assets a ON a.id = m.asset_id CROSS JOIN p
+            WHERE (m.movement_type <> 'depreciation' AND m.event_date BETWEEN p.start_date AND p.end_date)
+               OR (m.movement_type = 'depreciation' AND m.period_end >= p.start_date AND m.period_start <= p.end_date)
+            GROUP BY a.asset_class
+        ),
+        classes AS (
+            SELECT asset_class FROM opening UNION
+            SELECT asset_class FROM period_mov UNION
+            SELECT DISTINCT asset_class FROM ip_assets
+        )
+        SELECT c.asset_class,
+            COALESCE(o.opening_cost,0)::numeric(18,2) AS opening_cost,
+            COALESCE(o.opening_accum_dep,0)::numeric(18,2) AS opening_accum_dep,
+            COALESCE(o.opening_impairment,0)::numeric(18,2) AS opening_impairment,
+            COALESCE(o.opening_reserve,0)::numeric(18,2) AS opening_reserve,
+            COALESCE(o.opening_carrying,0)::numeric(18,2) AS opening_carrying,
+            COALESCE(pm.additions_cost,0)::numeric(18,2) AS additions_cost,
+            COALESCE(pm.subsequent_additions_cost,0)::numeric(18,2) AS subsequent_additions_cost,
+            COALESCE(pm.revaluation_cost_delta,0)::numeric(18,2) AS revaluation_cost_delta,
+            COALESCE(pm.transfers_in_cost,0)::numeric(18,2) AS transfers_in_cost,
+            COALESCE(pm.transfers_out_cost,0)::numeric(18,2) AS transfers_out_cost,
+            COALESCE(pm.disposals_cost,0)::numeric(18,2) AS disposals_cost,
+            COALESCE(pm.depreciation_charge,0)::numeric(18,2) AS depreciation_charge,
+            COALESCE(pm.revaluation_accum_dep_delta,0)::numeric(18,2) AS revaluation_accum_dep_delta,
+            COALESCE(pm.transfers_in_accum_dep,0)::numeric(18,2) AS transfers_in_accum_dep,
+            COALESCE(pm.transfers_out_accum_dep,0)::numeric(18,2) AS transfers_out_accum_dep,
+            COALESCE(pm.disposals_accum_dep,0)::numeric(18,2) AS disposals_accum_dep,
+            COALESCE(pm.impairment_losses,0)::numeric(18,2) AS impairment_losses,
+            COALESCE(pm.impairment_reversals,0)::numeric(18,2) AS impairment_reversals,
+            COALESCE(pm.transfers_in_impairment,0)::numeric(18,2) AS transfers_in_impairment,
+            COALESCE(pm.transfers_out_impairment,0)::numeric(18,2) AS transfers_out_impairment,
+            COALESCE(pm.disposals_impairment,0)::numeric(18,2) AS disposals_impairment,
+            COALESCE(pm.revaluation_upward,0)::numeric(18,2) AS revaluation_upward,
+            COALESCE(pm.revaluation_downward,0)::numeric(18,2) AS revaluation_downward,
+            COALESCE(pm.transfers_in_carrying,0)::numeric(18,2) AS transfers_in_carrying,
+            COALESCE(pm.transfers_out_carrying,0)::numeric(18,2) AS transfers_out_carrying,
+            COALESCE(pm.disposals_carrying,0)::numeric(18,2) AS disposals_carrying,
+            (COALESCE(o.opening_cost,0)+COALESCE(pm.period_cost_delta,0))::numeric(18,2) AS closing_cost,
+            (COALESCE(o.opening_accum_dep,0)+COALESCE(pm.period_accum_dep_delta,0))::numeric(18,2) AS closing_accum_dep,
+            (COALESCE(o.opening_impairment,0)+COALESCE(pm.period_impairment_delta,0))::numeric(18,2) AS closing_impairment,
+            (COALESCE(o.opening_reserve,0)+COALESCE(pm.period_reserve_delta,0))::numeric(18,2) AS closing_reserve,
+            (COALESCE(o.opening_carrying,0)+COALESCE(pm.period_carrying_delta,0))::numeric(18,2) AS closing_carrying
+        FROM classes c
+        LEFT JOIN opening o ON o.asset_class = c.asset_class
+        LEFT JOIN period_mov pm ON pm.asset_class = c.asset_class
+        {class_filter_sql}
+        ORDER BY c.asset_class"""
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        out = []
+        for row in rows:
+            if isinstance(row, dict):
+                out.append(dict(row))
+            else:
+                cols = [d[0] for d in cur.description]
+                out.append(dict(zip(cols, row)))
+        return out
+    
+    # ─── IAS 38 Intangible Assets ──────────────────────────────────
+
+    def get_ia_disclosure_by_class(
+        self, cur, company_id: int, start_date, end_date, *, asset_classes: list[str] | None = None,
+    ):
+        schema = self.company_schema(company_id)
+        self.ensure_ppe_reporting_views(cur, company_id)
+
+        params = [start_date, end_date, company_id]
+        class_filter_sql = ""
+        if asset_classes:
+            class_filter_sql = "WHERE c.asset_class = ANY(%s)"
+            params.append(asset_classes)
+
+        sql = f"""
+        WITH p AS (SELECT %s::date AS start_date, %s::date AS end_date),
+        ia_assets AS (
+            SELECT id, asset_class, category
+            FROM {schema}.assets
+            WHERE company_id = %s AND UPPER(COALESCE(accounting_standard, '')) = 'IAS38'
+        ),
+        opening AS (
+            SELECT a.asset_class,
+                SUM(m.cost_delta)::numeric(18,2) AS opening_cost,
+                SUM(m.accum_dep_delta)::numeric(18,2) AS opening_accum_dep,
+                SUM(m.impairment_delta)::numeric(18,2) AS opening_impairment,
+                SUM(m.revaluation_reserve_delta)::numeric(18,2) AS opening_reserve,
+                SUM(m.carrying_delta)::numeric(18,2) AS opening_carrying
+            FROM {schema}.vw_ppe_movements m
+            JOIN ia_assets a ON a.id = m.asset_id CROSS JOIN p
+            WHERE m.event_date < p.start_date
+            GROUP BY a.asset_class
+        ),
+        period_mov AS (
+            SELECT a.asset_class,
+                SUM(CASE WHEN m.movement_type = 'addition' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS additions_cost,
+                SUM(CASE WHEN m.movement_type = 'subsequent_addition' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS subsequent_additions_cost,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS transfers_in_cost,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS transfers_out_cost,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS disposals_cost,
+                SUM(CASE WHEN m.movement_type IN ('revaluation_up','revaluation_down') THEN m.cost_delta ELSE 0 END)::numeric(18,2) AS revaluation_cost_delta,
+                SUM(CASE WHEN m.movement_type = 'depreciation' THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS depreciation_charge,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS transfers_in_accum_dep,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS transfers_out_accum_dep,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS disposals_accum_dep,
+                SUM(CASE WHEN m.movement_type IN ('revaluation_up','revaluation_down') THEN m.accum_dep_delta ELSE 0 END)::numeric(18,2) AS revaluation_accum_dep_delta,
+                SUM(CASE WHEN m.movement_type = 'impairment_loss' THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS impairment_losses,
+                SUM(CASE WHEN m.movement_type = 'impairment_reversal' THEN -m.impairment_delta ELSE 0 END)::numeric(18,2) AS impairment_reversals,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS transfers_in_impairment,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS transfers_out_impairment,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.impairment_delta ELSE 0 END)::numeric(18,2) AS disposals_impairment,
+                SUM(CASE WHEN m.movement_type = 'revaluation_up' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS revaluation_upward,
+                SUM(CASE WHEN m.movement_type = 'revaluation_down' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS revaluation_downward,
+                SUM(CASE WHEN m.movement_type IN ('transfer_in','held_for_sale_transfer_in') THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS transfers_in_carrying,
+                SUM(CASE WHEN m.movement_type IN ('transfer_out','held_for_sale_transfer_out') THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS transfers_out_carrying,
+                SUM(CASE WHEN m.movement_type = 'disposal' THEN m.carrying_delta ELSE 0 END)::numeric(18,2) AS disposals_carrying,
+                SUM(m.cost_delta)::numeric(18,2) AS period_cost_delta,
+                SUM(m.accum_dep_delta)::numeric(18,2) AS period_accum_dep_delta,
+                SUM(m.impairment_delta)::numeric(18,2) AS period_impairment_delta,
+                SUM(m.revaluation_reserve_delta)::numeric(18,2) AS period_reserve_delta,
+                SUM(m.carrying_delta)::numeric(18,2) AS period_carrying_delta
+            FROM {schema}.vw_ppe_movements m
+            JOIN ia_assets a ON a.id = m.asset_id CROSS JOIN p
+            WHERE (m.movement_type <> 'depreciation' AND m.event_date BETWEEN p.start_date AND p.end_date)
+               OR (m.movement_type = 'depreciation' AND m.period_end >= p.start_date AND m.period_start <= p.end_date)
+            GROUP BY a.asset_class
+        ),
+        classes AS (
+            SELECT asset_class FROM opening UNION
+            SELECT asset_class FROM period_mov UNION
+            SELECT DISTINCT asset_class FROM ia_assets
+        )
+        SELECT c.asset_class,
+            COALESCE(o.opening_cost,0)::numeric(18,2) AS opening_cost,
+            COALESCE(o.opening_accum_dep,0)::numeric(18,2) AS opening_accum_dep,
+            COALESCE(o.opening_impairment,0)::numeric(18,2) AS opening_impairment,
+            COALESCE(o.opening_reserve,0)::numeric(18,2) AS opening_reserve,
+            COALESCE(o.opening_carrying,0)::numeric(18,2) AS opening_carrying,
+            COALESCE(pm.additions_cost,0)::numeric(18,2) AS additions_cost,
+            COALESCE(pm.subsequent_additions_cost,0)::numeric(18,2) AS subsequent_additions_cost,
+            COALESCE(pm.revaluation_cost_delta,0)::numeric(18,2) AS revaluation_cost_delta,
+            COALESCE(pm.transfers_in_cost,0)::numeric(18,2) AS transfers_in_cost,
+            COALESCE(pm.transfers_out_cost,0)::numeric(18,2) AS transfers_out_cost,
+            COALESCE(pm.disposals_cost,0)::numeric(18,2) AS disposals_cost,
+            COALESCE(pm.depreciation_charge,0)::numeric(18,2) AS depreciation_charge,
+            COALESCE(pm.revaluation_accum_dep_delta,0)::numeric(18,2) AS revaluation_accum_dep_delta,
+            COALESCE(pm.transfers_in_accum_dep,0)::numeric(18,2) AS transfers_in_accum_dep,
+            COALESCE(pm.transfers_out_accum_dep,0)::numeric(18,2) AS transfers_out_accum_dep,
+            COALESCE(pm.disposals_accum_dep,0)::numeric(18,2) AS disposals_accum_dep,
+            COALESCE(pm.impairment_losses,0)::numeric(18,2) AS impairment_losses,
+            COALESCE(pm.impairment_reversals,0)::numeric(18,2) AS impairment_reversals,
+            COALESCE(pm.transfers_in_impairment,0)::numeric(18,2) AS transfers_in_impairment,
+            COALESCE(pm.transfers_out_impairment,0)::numeric(18,2) AS transfers_out_impairment,
+            COALESCE(pm.disposals_impairment,0)::numeric(18,2) AS disposals_impairment,
+            COALESCE(pm.revaluation_upward,0)::numeric(18,2) AS revaluation_upward,
+            COALESCE(pm.revaluation_downward,0)::numeric(18,2) AS revaluation_downward,
+            COALESCE(pm.transfers_in_carrying,0)::numeric(18,2) AS transfers_in_carrying,
+            COALESCE(pm.transfers_out_carrying,0)::numeric(18,2) AS transfers_out_carrying,
+            COALESCE(pm.disposals_carrying,0)::numeric(18,2) AS disposals_carrying,
+            (COALESCE(o.opening_cost,0)+COALESCE(pm.period_cost_delta,0))::numeric(18,2) AS closing_cost,
+            (COALESCE(o.opening_accum_dep,0)+COALESCE(pm.period_accum_dep_delta,0))::numeric(18,2) AS closing_accum_dep,
+            (COALESCE(o.opening_impairment,0)+COALESCE(pm.period_impairment_delta,0))::numeric(18,2) AS closing_impairment,
+            (COALESCE(o.opening_reserve,0)+COALESCE(pm.period_reserve_delta,0))::numeric(18,2) AS closing_reserve,
+            (COALESCE(o.opening_carrying,0)+COALESCE(pm.period_carrying_delta,0))::numeric(18,2) AS closing_carrying
+        FROM classes c
+        LEFT JOIN opening o ON o.asset_class = c.asset_class
+        LEFT JOIN period_mov pm ON pm.asset_class = c.asset_class
+        {class_filter_sql}
+        ORDER BY c.asset_class"""
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        out = []
+        for row in rows:
+            if isinstance(row, dict):
+                out.append(dict(row))
+            else:
+                cols = [d[0] for d in cur.description]
+                out.append(dict(zip(cols, row)))
+        return out
+
+    # ─── Shared section builder helper ────────────────────────────
+
+    def _build_standard_note_sections(self, disclosure, columns, prefix):
+        """Generic section builder used by both IP and IA note payloads."""
+        def total(key):
+            return round(sum(float(r.get(key) or 0) for r in disclosure), 2)
+
+        rows = {}
+
+        def add(row_key, label, value_fn):
+            vals = {}
+            for r in disclosure:
+                cls = r.get("asset_class", "")
+                vals[cls] = round(value_fn(r), 2)
+            vals["Total"] = round(sum(vals.values()), 2)
+            rows[row_key] = {"row_key": row_key, "label": label, "values": vals}
+
+        p = prefix
+        add(f"{p}_cost_opening", "Cost at beginning of year", lambda r: float(r.get("opening_cost", 0)))
+        add(f"{p}_cost_additions", "Additions", lambda r: float(r.get("additions_cost", 0)) + float(r.get("subsequent_additions_cost", 0)))
+        add(f"{p}_cost_revaluation", "Revaluation", lambda r: float(r.get("revaluation_cost_delta", 0)))
+        add(f"{p}_cost_transfers_in", "Transfers in", lambda r: float(r.get("transfers_in_cost", 0)))
+        add(f"{p}_cost_transfers_out", "Transfers out", lambda r: float(r.get("transfers_out_cost", 0)))
+        add(f"{p}_cost_disposals", "Disposals", lambda r: float(r.get("disposals_cost", 0)))
+        add(f"{p}_cost_closing", "Cost at end of year", lambda r: float(r.get("closing_cost", 0)))
+
+        dep_label_opening = "Accumulated amortisation at beginning of year" if prefix == "ia" else "Accumulated depreciation at beginning of year"
+        dep_label_charge = "Amortisation charge for the year" if prefix == "ia" else "Depreciation charge for the year"
+        dep_label_closing = "Accumulated amortisation at end of year" if prefix == "ia" else "Accumulated depreciation at end of year"
+        dep_section_title = "Accumulated amortisation" if prefix == "ia" else "Accumulated depreciation"
+        dep_carrying_label = "Amortisation" if prefix == "ia" else "Depreciation"
+
+        add(f"{p}_accdep_opening", dep_label_opening, lambda r: float(r.get("opening_accum_dep", 0)))
+        add(f"{p}_accdep_charge", dep_label_charge, lambda r: float(r.get("depreciation_charge", 0)))
+        add(f"{p}_accdep_revaluation", "Revaluation", lambda r: float(r.get("revaluation_accum_dep_delta", 0)))
+        add(f"{p}_accdep_transfers_in", "Transfers in", lambda r: float(r.get("transfers_in_accum_dep", 0)))
+        add(f"{p}_accdep_transfers_out", "Transfers out", lambda r: float(r.get("transfers_out_accum_dep", 0)))
+        add(f"{p}_accdep_disposals", "Disposals", lambda r: float(r.get("disposals_accum_dep", 0)))
+        add(f"{p}_accdep_closing", dep_label_closing, lambda r: float(r.get("closing_accum_dep", 0)))
+
+        add(f"{p}_imp_opening", "Accumulated impairment at beginning of year", lambda r: float(r.get("opening_impairment", 0)))
+        add(f"{p}_imp_losses", "Impairment losses recognised", lambda r: float(r.get("impairment_losses", 0)))
+        add(f"{p}_imp_reversals", "Impairment reversals recognised", lambda r: float(r.get("impairment_reversals", 0)))
+        add(f"{p}_imp_transfers_in", "Transfers in", lambda r: float(r.get("transfers_in_impairment", 0)))
+        add(f"{p}_imp_transfers_out", "Transfers out", lambda r: float(r.get("transfers_out_impairment", 0)))
+        add(f"{p}_imp_disposals", "Disposals", lambda r: float(r.get("disposals_impairment", 0)))
+        add(f"{p}_imp_closing", "Accumulated impairment at end of year", lambda r: float(r.get("closing_impairment", 0)))
+
+        add(f"{p}_carrying_opening", "Carrying amount at beginning of year", lambda r: float(r.get("opening_carrying", 0)))
+        add(f"{p}_carrying_additions", "Additions", lambda r: float(r.get("additions_cost", 0)) + float(r.get("subsequent_additions_cost", 0)))
+        add(f"{p}_carrying_dep", dep_carrying_label, lambda r: -abs(float(r.get("depreciation_charge", 0))))
+        add(f"{p}_carrying_imp_losses", "Impairment losses", lambda r: -abs(float(r.get("impairment_losses", 0))))
+        add(f"{p}_carrying_imp_reversals", "Impairment reversals", lambda r: abs(float(r.get("impairment_reversals", 0))))
+        add(f"{p}_carrying_rev_up", "Revaluation surplus", lambda r: float(r.get("revaluation_upward", 0)))
+        add(f"{p}_carrying_rev_down", "Revaluation deficit", lambda r: float(r.get("revaluation_downward", 0)))
+        add(f"{p}_carrying_transfers_in", "Transfers in", lambda r: float(r.get("transfers_in_carrying", 0)))
+        add(f"{p}_carrying_transfers_out", "Transfers out", lambda r: float(r.get("transfers_out_carrying", 0)))
+        add(f"{p}_carrying_disposals", "Disposals", lambda r: float(r.get("disposals_carrying", 0)))
+        add(f"{p}_carrying_closing", "Carrying amount at end of year", lambda r: float(r.get("closing_carrying", 0)))
+
+        add(f"{p}_reserve_opening", "Revaluation reserve at beginning of year", lambda r: float(r.get("opening_reserve", 0)))
+        add(f"{p}_reserve_closing", "Revaluation reserve at end of year", lambda r: float(r.get("closing_reserve", 0)))
+
+        def pick(keys):
+            return [rows[k] for k in keys if k in rows]
+
+        return [
+            {"section_key": "cost", "title": "Cost", "rows": pick([
+                f"{p}_cost_opening", f"{p}_cost_additions", f"{p}_cost_revaluation",
+                f"{p}_cost_transfers_in", f"{p}_cost_transfers_out", f"{p}_cost_disposals", f"{p}_cost_closing",
+            ])},
+            {"section_key": "accumulated_depreciation", "title": dep_section_title, "rows": pick([
+                f"{p}_accdep_opening", f"{p}_accdep_charge", f"{p}_accdep_revaluation",
+                f"{p}_accdep_transfers_in", f"{p}_accdep_transfers_out", f"{p}_accdep_disposals", f"{p}_accdep_closing",
+            ])},
+            {"section_key": "impairment", "title": "Accumulated impairment", "rows": pick([
+                f"{p}_imp_opening", f"{p}_imp_losses", f"{p}_imp_reversals",
+                f"{p}_imp_transfers_in", f"{p}_imp_transfers_out", f"{p}_imp_disposals", f"{p}_imp_closing",
+            ])},
+            {"section_key": "carrying_amount", "title": "Carrying amount", "rows": pick([
+                f"{p}_carrying_opening", f"{p}_carrying_additions", f"{p}_carrying_dep",
+                f"{p}_carrying_imp_losses", f"{p}_carrying_imp_reversals",
+                f"{p}_carrying_rev_up", f"{p}_carrying_rev_down",
+                f"{p}_carrying_transfers_in", f"{p}_carrying_transfers_out", f"{p}_carrying_disposals", f"{p}_carrying_closing",
+            ])},
+            {"section_key": "revaluation_reserve", "title": "Revaluation reserve", "rows": pick([
+                f"{p}_reserve_opening", f"{p}_reserve_closing",
+            ])},
+        ]
+
+    def _build_note_payload(self, cur, company_id, start_date, end_date, get_disclosure_fn, prefix, asset_classes=None):
+        """Generic note payload builder used by both IP and IA."""
+        disclosure = get_disclosure_fn(cur, company_id, start_date, end_date, asset_classes=asset_classes)
+        class_names = [r["asset_class"] for r in disclosure]
+        columns = class_names[:] + (["Total"] if "Total" not in class_names else [])
+
+        def s(key):
+            return round(sum(float(r.get(key) or 0) for r in disclosure), 2)
+
+        summary = {
+            "opening_cost": s("opening_cost"), "opening_accum_dep": s("opening_accum_dep"),
+            "opening_impairment": s("opening_impairment"), "opening_carrying": s("opening_carrying"),
+            "additions_cost": s("additions_cost"), "subsequent_additions_cost": s("subsequent_additions_cost"),
+            "depreciation_charge": s("depreciation_charge"), "impairment_losses": s("impairment_losses"),
+            "impairment_reversals": s("impairment_reversals"), "revaluation_upward": s("revaluation_upward"),
+            "revaluation_downward": s("revaluation_downward"), "transfers_in_carrying": s("transfers_in_carrying"),
+            "transfers_out_carrying": s("transfers_out_carrying"), "disposals_carrying": s("disposals_carrying"),
+            "closing_cost": s("closing_cost"), "closing_accum_dep": s("closing_accum_dep"),
+            "closing_impairment": s("closing_impairment"), "closing_reserve": s("closing_reserve"),
+            "closing_carrying": s("closing_carrying"),
+        }
+
+        return {
+            "summary": summary,
+            "table": [],
+            "sections": {
+                "columns": columns,
+                "period": {"start_date": str(start_date), "end_date": str(end_date)},
+                "sections": self._build_standard_note_sections(disclosure, columns, prefix),
+                "raw": disclosure,
+            },
+            "revaluation_note": [],
+        }
+
+    def get_ip_note_payload(self, cur, company_id, start_date, end_date, *, asset_classes=None):
+        return self._build_note_payload(cur, company_id, start_date, end_date, self.get_ip_disclosure_by_class, "ip", asset_classes)
+
+    def get_ia_note_payload(self, cur, company_id, start_date, end_date, *, asset_classes=None):
+        return self._build_note_payload(cur, company_id, start_date, end_date, self.get_ia_disclosure_by_class, "ia", asset_classes)
+    
+    # ─── IAS 40 Policy Note ────────────────────────────────────────
+
+    def build_investment_property_policy_note_text(self, company_id, period_from, period_to, *, cur=None):
+        ctx = self.get_company_context(company_id) if hasattr(self, "get_company_context") else {}
+        ctx = ctx or {}
+        company_name = ctx.get("company_name") or ctx.get("name") or "the Company"
+
+        has_cost_model = False
+        has_fv_model = False
+        asset_classes = []
+
+        if cur:
+            schema = self.company_schema(company_id)
+            cur.execute(f"""
+                SELECT DISTINCT a.asset_class, a.measurement_basis
+                FROM {schema}.assets a
+                WHERE a.company_id = %s AND UPPER(COALESCE(a.accounting_standard, '')) = 'IAS40'
+            """, [company_id])
+            rows = cur.fetchall()
+            if rows and isinstance(rows[0], dict):
+                for r in rows:
+                    asset_classes.append(r.get("asset_class", ""))
+                    mb = str(r.get("measurement_basis") or "").lower()
+                    if "fair_value" in mb or "fv" in mb:
+                        has_fv_model = True
+                    else:
+                        has_cost_model = True
+            elif rows:
+                cols = [d[0] for d in cur.description]
+                for raw in rows:
+                    r = dict(zip(cols, raw))
+                    asset_classes.append(r.get("asset_class", ""))
+                    mb = str(r.get("measurement_basis") or "").lower()
+                    if "fair_value" in mb or "fv" in mb:
+                        has_fv_model = True
+                    else:
+                        has_cost_model = True
+
+        classes_text = ", ".join(sorted(set(asset_classes))) if asset_classes else "not yet specified"
+
+        text = f"""Investment property
+
+Investment property is property (land, a building, part of a building, or both) held to earn rentals or for capital appreciation or both, rather than for use in the production or supply of goods or services or for administrative purposes, or for sale in the ordinary course of business.
+
+{company_name} classifies investment property by asset class as follows: {classes_text}.
+
+Initial recognition and measurement
+
+Investment property is initially recognised at cost, which comprises its purchase price and any directly attributable expenditure. Cost also includes the initial estimate of dismantling and removing the item and restoring the site on which it is located.
+"""
+        if has_cost_model:
+            text += """Cost model
+
+Investment property held under the cost model is measured at cost less accumulated depreciation and accumulated impairment losses. Depreciation is charged on a straight-line basis over the estimated useful lives of the assets. The estimated useful lives and residual values are reviewed at each reporting date and adjusted prospectively if appropriate.
+"""
+        if has_fv_model:
+            text += """Fair value model
+
+Investment property held under the fair value model is measured at fair value at each reporting date. Gains or losses arising from changes in fair value are recognised in profit or loss in the period in which they arise. Fair value is determined based on current market prices for similar properties in the same location and condition.
+"""
+        if not has_cost_model and not has_fv_model:
+            text += f"""Measurement policy
+
+{company_name} has not yet specified the measurement model (cost or fair value) for its investment property classes.
+"""
+        text += """Transfers
+
+Investment property is reclassified as property, plant and equipment when it ceases to meet the definition of investment property. Conversely, owner-occupied property is reclassified as investment property when it commences being held to earn rentals or for capital appreciation. Transfers are made at carrying amount.
+
+Disposal
+
+Investment property is derecognised on disposal or when it is permanently withdrawn from use and no future economic benefits are expected from its disposal. Gains or losses on disposal are recognised in profit or loss."""
+        return text
+
+    # ─── IAS 38 Policy Note ────────────────────────────────────────
+
+    def build_intangible_assets_policy_note_text(self, company_id, period_from, period_to, *, cur=None):
+        ctx = self.get_company_context(company_id) if hasattr(self, "get_company_context") else {}
+        ctx = ctx or {}
+        company_name = ctx.get("company_name") or ctx.get("name") or "the Company"
+
+        has_goodwill = False
+        has_indefinite_life = False
+        has_finite_life = False
+        has_dev_phase = False
+        asset_classes = []
+
+        if cur:
+            schema = self.company_schema(company_id)
+            cur.execute(f"""
+                SELECT DISTINCT a.asset_class, a.category, a.useful_life, a.is_development_phase
+                FROM {schema}.assets a
+                WHERE a.company_id = %s AND UPPER(COALESCE(a.accounting_standard, '')) = 'IAS38'
+            """, [company_id])
+            rows = cur.fetchall()
+            if rows and isinstance(rows[0], dict):
+                for r in rows:
+                    cls = r.get("asset_class", "")
+                    asset_classes.append(cls)
+                    cat = str(r.get("category") or "").lower()
+                    ul = str(r.get("useful_life") or "").lower()
+                    if "goodwill" in cat or "goodwill" in cls.lower():
+                        has_goodwill = True
+                    if ul in ("indefinite", "indefinite life", "indefinite_life", "0", "none"):
+                        has_indefinite_life = True
+                    else:
+                        has_finite_life = True
+                    if r.get("is_development_phase"):
+                        has_dev_phase = True
+            elif rows:
+                cols = [d[0] for d in cur.description]
+                for raw in rows:
+                    r = dict(zip(cols, raw))
+                    cls = r.get("asset_class", "")
+                    asset_classes.append(cls)
+                    cat = str(r.get("category") or "").lower()
+                    ul = str(r.get("useful_life") or "").lower()
+                    if "goodwill" in cat or "goodwill" in cls.lower():
+                        has_goodwill = True
+                    if ul in ("indefinite", "indefinite life", "indefinite_life", "0", "none"):
+                        has_indefinite_life = True
+                    else:
+                        has_finite_life = True
+                    if r.get("is_development_phase"):
+                        has_dev_phase = True
+
+        classes_text = ", ".join(sorted(set(asset_classes))) if asset_classes else "not yet specified"
+
+        text = f"""Intangible assets
+
+Intangible assets are non-monetary assets without physical substance that are identifiable, controlled by the entity as a result of past events, and from which future economic benefits are expected to flow. {company_name} recognises intangible assets in the following classes: {classes_text}.
+
+Initial recognition and measurement
+
+Intangible assets are initially recognised at cost. For separately acquired intangible assets, cost comprises the purchase price (including import duties and non-refundable purchase taxes after deducting trade discounts and rebates) and any directly attributable expenditure. Internally generated goodwill is not recognised as an asset.
+"""
+        if has_finite_life:
+            text += """Amortisation
+
+Intangible assets with finite useful lives are amortised on a straight-line basis over their estimated useful lives. The amortisation period and the amortisation method are reviewed at each reporting date. Residual values are assumed to be zero.
+"""
+        if has_indefinite_life:
+            text += """Intangible assets with indefinite useful lives
+
+Intangible assets with indefinite useful lives are not amortised. These assets are tested for impairment annually and whenever there is an indication that the asset may be impaired.
+"""
+        if has_goodwill:
+            text += """Goodwill
+
+Goodwill is recognised as an asset when the consideration transferred in a business combination exceeds the net of the acquisition-date fair values of the identifiable assets acquired and liabilities assumed. Goodwill is not amortised but is tested for impairment annually. Impairment losses recognised for goodwill are never reversed in accordance with IAS 36.
+"""
+        if has_dev_phase:
+            text += """Development costs
+
+Development costs are capitalised only when all of the following criteria are demonstrated: the technical feasibility of completing the intangible asset, the intention to complete and use or sell the asset, the ability to use or sell the asset, the probable future economic benefits from the asset, the availability of adequate resources to complete the development, and the ability to reliably measure the expenditure attributable to the intangible asset during its development. Research expenditure is recognised as an expense when incurred.
+"""
+        text += """Impairment
+
+Intangible assets are assessed for impairment at each reporting date. If the carrying amount of an asset exceeds its recoverable amount, an impairment loss is recognised in profit or loss. For intangible assets other than goodwill, impairment losses recognised in prior periods are assessed for reversal at each reporting date. Goodwill impairment losses are not reversed.
+
+Disposal
+
+Intangible assets are derecognised on disposal or when no future economic benefits are expected from use or disposal. Gains or losses on derecognition are recognised in profit or loss."""
+        return text
+
+
     def get_ppe_asset_rollforward(
         self,
         cur,
@@ -78596,6 +79132,11 @@ class DatabaseService:
                 "Revenue from contracts with customers",
                 lambda: self.build_revenue_disclosure_note_text(company_id, period_from, period_to, cur=cur),
             ),
+
+            "ias40_ip_policy": ("Investment property", lambda: self.build_investment_property_policy_note_text(company_id, period_from, period_to, cur=cur)),
+            "ias40_ip_disclosure": ("Investment property disclosures", lambda: self.build_investment_property_policy_note_text(company_id, period_from, period_to, cur=cur)),
+            "ias38_ia_policy": ("Intangible assets", lambda: self.build_intangible_assets_policy_note_text(company_id, period_from, period_to, cur=cur)),
+            "ias38_ia_disclosure": ("Intangible assets disclosures", lambda: self.build_intangible_assets_policy_note_text(company_id, period_from, period_to, cur=cur)),
         }
 
         if note_key not in builders:
@@ -85341,25 +85882,15 @@ class DatabaseService:
         return new_year
 
     def _payroll_query(self, sql, params=None):
-        """Run SELECT and return list of dicts."""
-        conn = self.get_connection()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        try:
+        """Run SELECT on public schema and return list of dicts."""
+        with self._conn_cursor() as (conn, cur):
             cur.execute(sql, params or ())
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
-        finally:
-            cur.close()
+            return cur.fetchall()
 
     def _payroll_execute(self, sql, params=None):
         """Run INSERT/UPDATE/DELETE, commit, return None."""
-        conn = self.get_connection()
-        cur = conn.cursor()
-        try:
+        with self._conn_cursor() as (conn, cur):
             cur.execute(sql, params or ())
-            conn.commit()
-        finally:
-            cur.close()
 
     def _ensure_columns(self, schema: str, table: str, columns: dict):
         """Compare expected columns against actual table and ADD any missing."""

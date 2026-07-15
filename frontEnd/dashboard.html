@@ -4660,6 +4660,325 @@ html, body {
     font-size: 12px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   TAX ADMIN — Tax Tables Management
+   Paste into your payroll stylesheet
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── BASE CLASSES (if not already defined) ─────────────── */
+
+.payroll-section {
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.payroll-primary,
+.payroll-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  white-space: nowrap;
+}
+
+.payroll-primary {
+  background: #2563eb;
+  color: #fff;
+}
+.payroll-primary:hover {
+  background: #1d4ed8;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+.payroll-primary:active {
+  transform: scale(0.97);
+}
+
+.payroll-secondary {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid var(--border, #e2e8f0);
+}
+.payroll-secondary:hover {
+  background: #e2e8f0;
+}
+.payroll-secondary:active {
+  transform: scale(0.97);
+}
+
+.payroll-muted {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ─── TAX ADMIN CONTAINER ───────────────────────────────── */
+
+#taxAdminContainer h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+#taxAdminContainer h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+#taxAdminContainer h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+#taxAdminStatus {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* ─── REGIME SELECTOR ───────────────────────────────────── */
+
+#taxAdminContainer label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+#taxAdminRegime,
+#taxAdminYearLabel,
+#taxAdminYearBasis,
+#taxAdminYearFrom,
+#taxAdminYearTo {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 0.875rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+#taxAdminRegime:focus,
+#taxAdminYearLabel:focus,
+#taxAdminYearBasis:focus,
+#taxAdminYearFrom:focus,
+#taxAdminYearTo:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* ─── YEAR LIST (clickable cards) ───────────────────────── */
+
+#taxAdminYearList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tax-admin-year-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 240px;
+}
+
+.tax-admin-year-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+}
+
+.tax-admin-year-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.tax-admin-year-card .year-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.tax-admin-year-card .year-basis {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tax-admin-year-card .year-dates {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+/* ─── YEAR FORM ─────────────────────────────────────────── */
+
+#taxAdminYearForm {
+  background: #f8fafc;
+}
+
+#taxAdminYearForm label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ─── BRACKETS TABLE ────────────────────────────────────── */
+
+#taxAdminBracketsTable {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#taxAdminBracketsTable thead {
+  background: #f1f5f9;
+}
+
+#taxAdminBracketsTable thead th {
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  border-bottom: 2px solid var(--border, #e2e8f0);
+}
+
+#taxAdminBracketsTable tbody td {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+#taxAdminBracketsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+#taxAdminBracketsTable tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* Inline inputs inside tables */
+
+#taxAdminBracketsTable input,
+#taxAdminParamsTable input,
+#taxAdminParamsTable select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  color: #1e293b;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#taxAdminBracketsTable input:focus,
+#taxAdminParamsTable input:focus,
+#taxAdminParamsTable select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* ─── PARAMETERS TABLE ──────────────────────────────────── */
+
+#taxAdminParamsTable {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#taxAdminParamsTable thead {
+  background: #f1f5f9;
+}
+
+#taxAdminParamsTable thead th {
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  border-bottom: 2px solid var(--border, #e2e8f0);
+}
+
+#taxAdminParamsTable tbody td {
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+#taxAdminParamsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+#taxAdminParamsTable tbody tr:hover {
+  background: #f8fafc;
+}
+
+/* ─── DELETE BUTTON (inside tables) ─────────────────────── */
+
+.tax-admin-del-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.tax-admin-del-btn:hover {
+  background: #fef2f2;
+}
+
+/* ─── SAVE BAR ──────────────────────────────────────────── */
+
+#taxAdminYearContent > .payroll-section > div:last-child {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
   </style>
 
 </head>
