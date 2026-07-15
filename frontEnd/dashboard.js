@@ -1810,13 +1810,6 @@ const ENDPOINTS = {
     postRevaluation: (companyId, revalId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/revaluations/${encodeURIComponent(revalId)}/post`,
 
-    // Add these INSIDE the same object that has the existing notePayload:
-    ipNotePayload: (cid, params = {}) =>
-      `/api/companies/${cid}/ppe/ip-note-payload?${new URLSearchParams(params)}`,
-
-    iaNotePayload: (cid, params = {}) =>
-      `/api/companies/${cid}/ppe/ia-note-payload?${new URLSearchParams(params)}`,
-
     // -------------------------
     // VALUATION FLOW
     // -------------------------
@@ -2274,6 +2267,12 @@ const ENDPOINTS = {
       const qs = params.toString();
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/asset-reports/disposals${qs ? `?${qs}` : ""}`;
     },
+
+    ipNotePayload: (companyId, params = {}) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ip-note-payload?${new URLSearchParams(params).toString()}`,
+
+    iaNotePayload: (companyId, params = {}) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
   },
 
   valuation: {
