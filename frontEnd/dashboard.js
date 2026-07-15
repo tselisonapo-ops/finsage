@@ -2165,15 +2165,15 @@ const ENDPOINTS = {
 
       backfillEventSplits: (companyId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/backfill-event-splits`,
-    },
 
-   ipNotePayload: (companyId, params = {}) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ip-note-payload?${new URLSearchParams(params).toString()}`,
+      ipNotePayload: (companyId, params = {}) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ip-note-payload?${new URLSearchParams(params).toString()}`,
 
-    iaNotePayload: (companyId, params = {}) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
+      iaNotePayload: (companyId, params = {}) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
+    },  
   },
-
+  
   // -------------------------
   // ASSET REPORTS
   // -------------------------
