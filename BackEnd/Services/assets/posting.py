@@ -1122,26 +1122,32 @@ def _preview_header(payload: dict, memo: str):
         "currency": payload.get("currency") or None,
     }
 
-def _preview_impairment(asset_row: dict, payload: dict, policy: dict, ca_before: float, cur=None) -> dict:
+def _preview_impairment(
+    asset_row: dict,
+    payload: dict,
+    policy: dict,
+    ca_before: float,
+    cur=None,
+) -> dict:
     et = (payload.get("event_type") or "").strip().lower()
     amt = D(payload.get("amount") or 0)
+    company_id = int(asset_row.get("company_id") or 0)
+    schema = company_schema(company_id)
 
     if amt <= 0:
-        raise ValueError("Impairment amount must be > 0")
+        raise ValueError("Impairment amount must be greater than zero.")
 
-    company_id = int(asset_row.get("company_id") or 0)
-
-    asset_acct = _pick_asset_code(asset_row, "asset_account_code", policy)
+    if et not in ("impairment_loss", "impairment_reversal"):
+        raise ValueError(f"Unsupported impairment event_type '{et}'")
 
     lines = []
     ca_before_d = D(ca_before)
-    ca_after_d = ca_before_d
 
     if et == "impairment_loss":
         loss_acct, accum_acct = resolve_impairment_accounts(
             cur,
-            company_schema(int(asset_row["company_id"])),
-            int(asset_row["company_id"]),
+            schema,
+            company_id,
             asset_row,
         )
 
@@ -1150,38 +1156,82 @@ def _preview_impairment(asset_row: dict, payload: dict, policy: dict, ca_before:
 
         if not accum_acct:
             raise ValueError("Accumulated impairment account is not configured.")
-        lines.append({"account_code": loss_acct, "debit": money(amt), "credit": 0.0, "memo": "Impairment loss"})
-        lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(amt), "memo": "Reduce carrying amount"})
+
+        lines.extend([
+            {
+                "account_code": loss_acct,
+                "debit": money(amt),
+                "credit": 0.0,
+                "memo": "Impairment loss",
+            },
+            {
+                "account_code": accum_acct,
+                "debit": 0.0,
+                "credit": money(amt),
+                "memo": "Accumulated impairment",
+            },
+        ])
+
         ca_after_d = ca_before_d - amt
 
-    # IAS 36.122 / IAS 38.124: goodwill impairment NEVER reverses
-    std, _model = asset_standard_and_model(asset_row, policy or {})
-    if et == "impairment_reversal" and std == "ias38" and (
-        (asset_row.get("asset_class") or "").strip().lower() == "goodwill"
-        or "goodwill" in (asset_row.get("category") or "").strip().lower()
-    ):
-        raise ValueError("Impairment reversal is prohibited for goodwill (IAS 36.122 / IAS 38.124).")
-    
-    elif et == "impairment_reversal":
-        rev_acct = _pick_asset_code(asset_row, "impairment_reversal_account_code", policy, "impairment_reversal_income")
-        lines.append({"account_code": asset_acct, "debit": money(amt), "credit": 0.0, "memo": "Increase carrying amount"})
-        lines.append({"account_code": rev_acct, "debit": 0.0, "credit": money(amt), "memo": "Impairment reversal"})
-        ca_after_d = ca_before_d + amt
-
     else:
-        raise ValueError(f"Unsupported impairment event_type '{et}'")
+        standard, _model = asset_standard_and_model(asset_row, policy or {})
+        asset_class = (asset_row.get("asset_class") or "").strip().lower()
+        category = (asset_row.get("category") or "").strip().lower()
 
-    ca_after = money(ca_after_d)
-    impact = {
-        "carrying_amount_before": money(ca_before_d),
-        "carrying_amount_after": ca_after,
-        "delta": money(ca_after_d - ca_before_d),
-    }
+        if standard == "ias38" and (
+            asset_class == "goodwill"
+            or "goodwill" in category
+        ):
+            raise ValueError(
+                "Impairment reversal is prohibited for goodwill."
+            )
+
+        _, accum_acct = resolve_impairment_accounts(
+            cur,
+            schema,
+            company_id,
+            asset_row,
+        )
+
+        reversal_acct = resolve_impairment_reversal_account(
+            cur,
+            schema,
+            company_id,
+            asset_row,
+        )
+
+        if not accum_acct:
+            raise ValueError("Accumulated impairment account is not configured.")
+
+        if not reversal_acct:
+            raise ValueError("Impairment reversal income account is not configured.")
+
+        lines.extend([
+            {
+                "account_code": accum_acct,
+                "debit": money(amt),
+                "credit": 0.0,
+                "memo": "Reverse accumulated impairment",
+            },
+            {
+                "account_code": reversal_acct,
+                "debit": 0.0,
+                "credit": money(amt),
+                "memo": "Impairment reversal",
+            },
+        ])
+
+        ca_after_d = ca_before_d + amt
 
     return {
         "header": _preview_header(payload, memo=f"SM preview: {et}"),
-        "lines": _attach_account_names(lines, company_schema(company_id), cur=cur),
-        "impact": impact,
+        "lines": _attach_account_names(lines, schema, cur=cur),
+        "impact": {
+            "carrying_amount_before": money(ca_before_d),
+            "carrying_amount_after": money(ca_after_d),
+            "delta": money(ca_after_d - ca_before_d),
+        },
         "warnings": [],
     }
 
