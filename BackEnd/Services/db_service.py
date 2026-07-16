@@ -124,6 +124,9 @@ def _pct(v) -> Decimal:
 def _json_dumps(obj) -> str:
     return json.dumps(obj or {}, default=str)
 
+def json_dumps(obj) -> str:
+    return json.dumps(obj or {}, default=str)
+
 def _revenue_contract_ref(self, row: dict) -> str:
     return (row.get("contract_number") or f"REV-CON-{row.get('id')}").strip()
 
@@ -90521,7 +90524,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             int(tax_authority_id),
             tax_rate,
             int(user_id) if user_id else None,
-            self.json_dumps(_json_dict(payload.get("calculation_json"))),
+            json_dumps(_json_dict(payload.get("calculation_json"))),
         ))
 
         return run
@@ -90664,7 +90667,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload.get("reversal_pattern"),
             payload.get("expected_reversal_date"),
             bool(payload.get("is_manual", True)),
-            self.json_dumps(
+            json_dumps(
                 _json_dict(payload.get("calculation_json"))
             ),
         ))
@@ -91234,7 +91237,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             recognized,
             unrecognized,
             payload.get("conclusion"),
-            self.json_dumps(
+            json_dumps(
                 _json_dict(payload.get("evidence_json"))
             ),
             int(user_id) if user_id else None,
@@ -91289,7 +91292,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             recognized,
             unrecognized,
             payload.get("conclusion"),
-            self.json_dumps(
+            json_dumps(
                 _json_dict(payload.get("evidence_json"))
             ),
             int(user_id) if user_id else None,
