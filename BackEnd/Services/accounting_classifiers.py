@@ -1328,6 +1328,38 @@ def _coa_role_from_text(
         return "contract_revenue"
 
     # ----------------------------
+    # IAS 36 impairment roles
+    # ----------------------------
+
+    if is_expense and has_any(
+        "impairment loss - ppe",
+        "ppe impairment loss",
+        "asset impairment loss",
+        "impairment loss on assets",
+        "impairment expense",
+        "loss on impairment",
+    ):
+        return "impairment_loss_ppe"
+
+    if is_asset and has_any(
+        "accumulated impairment - ppe",
+        "accumulated impairment ppe",
+        "accumulated impairment on assets",
+        "asset impairment allowance",
+    ):
+        return "accumulated_impairment_ppe"
+
+    if (
+        "income" in sec
+        or "revenue" in sec
+        or "other income" in sec
+    ) and has_any(
+        "impairment reversal",
+        "reversal of impairment",
+        "impairment reversal income",
+    ):
+        return "impairment_reversal_income"
+    # ----------------------------
     # IFRS 9 / Financial Instruments
     # ----------------------------
 
@@ -1339,7 +1371,6 @@ def _coa_role_from_text(
             "credit loss",
             "impairment - client receivables",
             "impairment - trade receivables",
-            "impairment loss",
             "bad debts & impairment",
             "bad debt expense",
             "doubtful debts expense",

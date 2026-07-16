@@ -1138,7 +1138,18 @@ def _preview_impairment(asset_row: dict, payload: dict, policy: dict, ca_before:
     ca_after_d = ca_before_d
 
     if et == "impairment_loss":
-        loss_acct = _pick_asset_code(asset_row, "impairment_loss_account_code", policy, "impairment_loss_expense")
+        loss_acct, accum_acct = resolve_impairment_accounts(
+            cur,
+            company_schema(int(asset_row["company_id"])),
+            int(asset_row["company_id"]),
+            asset_row,
+        )
+
+        if not loss_acct:
+            raise ValueError("Impairment loss account is not configured.")
+
+        if not accum_acct:
+            raise ValueError("Accumulated impairment account is not configured.")
         lines.append({"account_code": loss_acct, "debit": money(amt), "credit": 0.0, "memo": "Impairment loss"})
         lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(amt), "memo": "Reduce carrying amount"})
         ca_after_d = ca_before_d - amt
@@ -1179,7 +1190,12 @@ def _preview_hfs(asset_row: dict, payload: dict, policy: dict, ca_before: float,
     company_id = int(asset_row.get("company_id") or 0)
 
     asset_acct = _pick_asset_code(asset_row, "asset_account_code", policy)
-    hfs_acct = _pick_asset_code(asset_row, "held_for_sale_account_code", policy, "held_for_sale_asset")
+    hfs_acct = _pick_asset_code(
+        asset_row,
+        "held_for_sale_account_code",
+        policy,
+        "held_for_sale_asset",
+    )
 
     ca = D(ca_before)
     lines = []
@@ -1189,15 +1205,49 @@ def _preview_hfs(asset_row: dict, payload: dict, policy: dict, ca_before: float,
     imp_on_class = D(meta.get("impairment_on_classification") or 0)
 
     if et == "held_for_sale_classify":
-        lines.append({"account_code": hfs_acct, "debit": money(ca), "credit": 0.0, "memo": "Move to held-for-sale"})
-        lines.append({"account_code": asset_acct, "debit": 0.0, "credit": money(ca), "memo": "Remove from PPE"})
+        lines.append({
+            "account_code": hfs_acct,
+            "debit": money(ca),
+            "credit": 0.0,
+            "memo": "Move to held-for-sale",
+        })
+
+        lines.append({
+            "account_code": asset_acct,
+            "debit": 0.0,
+            "credit": money(ca),
+            "memo": "Remove from PPE",
+        })
 
         ca_after = ca
-        # optional impairment on classification reduces CA (IFRS 5)
+
         if imp_on_class > 0:
-            loss_acct = _pick_asset_code(asset_row, "impairment_loss_account_code", policy, "impairment_loss_expense")
-            lines.append({"account_code": loss_acct, "debit": money(imp_on_class), "credit": 0.0, "memo": "HFS impairment"})
-            lines.append({"account_code": hfs_acct, "debit": 0.0, "credit": money(imp_on_class), "memo": "Reduce HFS carrying amount"})
+            loss_acct, _ = resolve_impairment_accounts(
+                cur,
+                company_schema(company_id),
+                company_id,
+                asset_row,
+            )
+
+            if not loss_acct:
+                raise ValueError(
+                    "Impairment loss account is not configured."
+                )
+
+            lines.append({
+                "account_code": loss_acct,
+                "debit": money(imp_on_class),
+                "credit": 0.0,
+                "memo": "HFS impairment",
+            })
+
+            lines.append({
+                "account_code": hfs_acct,
+                "debit": 0.0,
+                "credit": money(imp_on_class),
+                "memo": "Reduce HFS carrying amount",
+            })
+
             ca_after = ca - imp_on_class
 
         impact = {
@@ -1207,23 +1257,46 @@ def _preview_hfs(asset_row: dict, payload: dict, policy: dict, ca_before: float,
         }
 
     elif et == "held_for_sale_unclassify":
-        # reverse the reclass back to PPE
-        lines.append({"account_code": asset_acct, "debit": money(ca), "credit": 0.0, "memo": "Move back to PPE"})
-        lines.append({"account_code": hfs_acct, "debit": 0.0, "credit": money(ca), "memo": "Remove from held-for-sale"})
+        lines.append({
+            "account_code": asset_acct,
+            "debit": money(ca),
+            "credit": 0.0,
+            "memo": "Move back to PPE",
+        })
+
+        lines.append({
+            "account_code": hfs_acct,
+            "debit": 0.0,
+            "credit": money(ca),
+            "memo": "Remove from held-for-sale",
+        })
 
         impact = {
             "carrying_amount_before": money(ca),
             "carrying_amount_after": money(ca),
             "delta": 0.0,
         }
-        warnings.append("Unclassify preview assumes carrying amount equals current CA. If you track HFS CA separately, use meta_json to supply it.")
+
+        warnings.append(
+            "Unclassify preview assumes carrying amount equals current CA. "
+            "If you track HFS CA separately, use meta_json to supply it."
+        )
 
     else:
-        raise ValueError(f"Unsupported HFS event_type '{et}'")
+        raise ValueError(
+            f"Unsupported HFS event_type '{et}'"
+        )
 
     return {
-        "header": _preview_header(payload, memo=f"SM preview: {et}"),
-        "lines": _attach_account_names(lines, company_schema(company_id), cur=cur),
+        "header": _preview_header(
+            payload,
+            memo=f"SM preview: {et}",
+        ),
+        "lines": _attach_account_names(
+            lines,
+            company_schema(company_id),
+            cur=cur,
+        ),
         "impact": impact,
         "warnings": warnings,
     }

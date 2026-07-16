@@ -3623,6 +3623,231 @@ html, body {
 }
 
 /* =========================================================
+   FIXED ASSET MODALS — MOBILE LANDSCAPE
+   ========================================================= */
+
+@media screen and (orientation: landscape) and (max-height: 650px) {
+  #faSettingsModal,
+  #smModal {
+    padding: 6px;
+  }
+
+  .fa-settings-shell,
+  .sm-modal-shell {
+    position: absolute;
+    inset: 6px;
+    width: auto;
+    height: auto;
+    transform: none;
+  }
+
+  #faSettingsModal .rounded-xl,
+  #smModal .rounded-xl {
+    border-radius: 10px;
+  }
+
+  #faSettingsModal .border-b,
+  #smModal .border-b {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  #faSettingsModal .btn,
+  #smModal .btn {
+    min-height: 34px;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  /* -----------------------------------------
+     Rules and Subsequent Measurements modal
+     ----------------------------------------- */
+
+  .fa-settings-body {
+    grid-template-columns: minmax(300px, 44%) minmax(390px, 56%);
+    gap: 10px;
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .fa-settings-body > div {
+    min-width: 0;
+    overflow: auto;
+  }
+
+  #faSettingsModal .mt-3 {
+    margin-top: 8px;
+  }
+
+  #faSettingsModal .gap-3 {
+    gap: 8px;
+  }
+
+  #faSettingsModal .p-3 {
+    padding: 10px;
+  }
+
+  #faSettingsModal table {
+    min-width: 620px;
+  }
+
+  #faSettingsModal th,
+  #faSettingsModal td {
+    padding: 6px;
+  }
+
+  #faSettingsModal [style*="max-height: 55vh"] {
+    max-height: none !important;
+    height: calc(100dvh - 190px);
+  }
+
+  /* -----------------------------------------
+     New subsequent measurement modal
+     ----------------------------------------- */
+
+  .sm-modal-body {
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .sm-modal-top {
+    grid-template-columns: minmax(180px, 32%) minmax(300px, 68%);
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .sm-main-grid {
+    display: grid;
+    grid-template-columns: minmax(230px, 30%) minmax(420px, 70%);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .sm-asset-panel {
+    grid-column: 1;
+    grid-row: 1;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sm-fields-panel {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .sm-journal-panel {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 150px;
+    max-height: 27dvh;
+    padding: 10px;
+    overflow: auto;
+  }
+
+  #smModal .mt-3 {
+    margin-top: 8px;
+  }
+
+  #smModal .mb-3,
+  #smModal .mb-4 {
+    margin-bottom: 8px;
+  }
+
+  #smModal .gap-3,
+  #smModal .gap-4 {
+    gap: 8px;
+  }
+
+  #smModal .p-3 {
+    padding: 10px;
+  }
+
+  #smModal input,
+  #smModal select,
+  #smModal textarea {
+    font-size: 13px;
+  }
+
+  #smModal input,
+  #smModal select {
+    min-height: 34px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  #smModal textarea {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  #smModal #smAssetList {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  #smModal #smAddCostImpact {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  #smModal #smPreviewLines {
+    min-width: 580px;
+  }
+
+  #smModal .sm-journal-panel > div:first-child {
+    flex-wrap: wrap;
+  }
+
+  #smModal .sm-journal-panel > div:first-child .ml-auto {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+/* Smaller landscape phones */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  .fa-settings-body {
+    grid-template-columns: minmax(270px, 42%) minmax(360px, 58%);
+  }
+
+  .sm-main-grid {
+    grid-template-columns: minmax(210px, 29%) minmax(390px, 71%);
+  }
+
+  .sm-journal-panel {
+    min-height: 125px;
+    max-height: 25dvh;
+  }
+
+  #smModal .text-xs {
+    line-height: 1.15;
+  }
+
+  #smModal #smAddCostImpact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Prevent modal content from forcing the viewport wider */
+#faSettingsModal *,
+#smModal * {
+  box-sizing: border-box;
+}
+
+.fa-settings-body,
+.sm-main-grid,
+.sm-fields-panel,
+.sm-journal-panel {
+  min-width: 0;
+}
+/* =========================================================
    DRILL-DOWN SECTION NAVIGATION
    ========================================================= */
 
@@ -5245,6 +5470,123 @@ html, body {
 
   .dt-summary-grid,
   .dt-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dt-workflow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.dt-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dfe7ef;
+  border-radius: 12px;
+  background: #fff;
+  opacity: 0.65;
+}
+
+.dt-step > span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #edf2f7;
+  color: #526579;
+  font-weight: 700;
+}
+
+.dt-step strong,
+.dt-step small {
+  display: block;
+}
+
+.dt-step small {
+  margin-top: 3px;
+  color: #718096;
+}
+
+.dt-step.active {
+  opacity: 1;
+  border-color: #16a6b6;
+  background: #f0fbfc;
+}
+
+.dt-step.active > span {
+  background: #16a6b6;
+  color: #fff;
+}
+
+.dt-step.done {
+  opacity: 1;
+  border-color: #b7e4c7;
+  background: #f0fff4;
+}
+
+.dt-step.done > span {
+  background: #16834b;
+  color: #fff;
+}
+
+.dt-run-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  padding: 15px 18px;
+  margin-bottom: 16px;
+  border: 1px solid #dfe7ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.dt-run-info span,
+.dt-run-info strong {
+  display: block;
+}
+
+.dt-run-info span {
+  margin-bottom: 4px;
+  color: #718096;
+  font-size: 12px;
+}
+
+.dt-lock-notice,
+.dt-help-card {
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border-radius: 10px;
+}
+
+.dt-lock-notice {
+  color: #8a6116;
+  background: #fff8e6;
+  border: 1px solid #f6d88f;
+}
+
+.dt-help-card {
+  color: #24576b;
+  background: #edfafd;
+  border: 1px solid #bee8ef;
+}
+
+.dt-help-card p {
+  margin: 6px 0 0;
+}
+
+.dt-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 800px) {
+  .dt-workflow {
     grid-template-columns: 1fr;
   }
 }
@@ -15184,7 +15526,7 @@ html, body {
       <div id="faSettingsModal" class="fixed inset-0 z-50 hidden">
         <div id="faSettingsBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-       <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-6 lg:w-[min(1700px,88vw)] lg:h-[92vh] lg:-translate-x-1/2 lg:left-[calc(50%+90px)]">
+       <div class="fa-settings-shell absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-6 lg:w-[min(1700px,88vw)] lg:h-[92vh] lg:-translate-x-1/2">
           <div class="border rounded-xl bg-white shadow-xl overflow-hidden h-full flex flex-col">
             <!-- Header -->
             <div class="p-3 border-b flex items-center justify-between">
@@ -15201,7 +15543,7 @@ html, body {
             </div>
 
             <!-- Body -->
-                        <div class="p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-[48%_52%] gap-3 lg:gap-4 flex-1 overflow-auto min-h-0">
+            <div class="fa-settings-body p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-[48%_52%] gap-3 lg:gap-4 flex-1 overflow-auto min-h-0">
               <!-- LEFT: Asset Rules (saved to /assets/policies) -->
               <div class="border rounded p-3 overflow-auto h-full min-h-0 flex flex-col">
                 <div class="flex items-center justify-between">
@@ -15293,7 +15635,7 @@ html, body {
       <div id="smModal" class="fixed inset-0 z-50 hidden">
         <div id="smBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-        <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] lg:-translate-x-1/2">
+        <div class="sm-modal-shell absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] lg:-translate-x-1/2">
           <div class="border rounded-xl bg-white shadow-xl overflow-hidden bg-white h-full flex flex-col">
             <div class="p-3 border-b flex items-center justify-between">
               <div>
@@ -15303,11 +15645,11 @@ html, body {
               <button id="smClose" class="btn">Close</button>
             </div>
 
-            <div class="p-3 lg:p-4 flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div class="sm-modal-body p-3 lg:p-4 flex-1 min-h-0 overflow-hidden flex flex-col">
               <input id="smId" type="hidden" />
 
               <!-- TOP ROW -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 shrink-0">
+              <div class="sm-modal-top grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 shrink-0">
                 <div>
                   <label class="block text-xs text-slate-500 mb-1">Date</label>
                   <input id="smEventDate" class="w-full border rounded px-3 py-2" type="date" />
@@ -15331,9 +15673,10 @@ html, body {
               </div>
 
               <!-- MAIN CONTENT -->
-              <div class="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-3 lg:gap-4 text-sm flex-1 min-h-0 overflow-auto lg:overflow-hidden">
+              <div class="sm-main-grid grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-3 lg:gap-4 text-sm flex-1 min-h-0 overflow-auto lg:overflow-hidden">
                 <!-- LEFT -->
-                <div class="border rounded-lg flex flex-col h-full min-h-0 max-h-[35vh] lg:max-h-none">
+                <!-- LEFT -->
+<div class="sm-asset-panel border rounded-lg flex flex-col h-full min-h-0 max-h-[35vh] lg:max-h-none">
                   <div class="p-3 border-b bg-slate-50">
                     <div class="text-xs text-slate-500 mb-1">Asset</div>
 
@@ -15356,7 +15699,7 @@ html, body {
                 </div>
 
                 <!-- RIGHT -->
-                <div class="min-h-0 overflow-auto pr-1">
+                <div class="sm-fields-panel min-h-0 overflow-auto pr-1">
                   <div class="border rounded-lg p-3 mb-3">
                     <div class="flex items-center justify-between">
                       <div class="font-medium">Asset details</div>
@@ -15882,7 +16225,7 @@ html, body {
                   <div id="smFormMsg" class="text-sm text-slate-500 mt-3"></div>
                 </div>
 
-                <div class="lg:col-span-2 border rounded-lg p-3 min-h-[220px] max-h-[32vh] overflow-auto">
+                <div class="sm-journal-panel lg:col-span-2 border rounded-lg p-3 min-h-[220px] max-h-[32vh] overflow-auto">
                   <div class="flex items-center justify-between gap-3">
                     <div class="font-medium shrink-0">Journal preview</div>
 

@@ -8080,8 +8080,10 @@ class DatabaseService:
                         ''ifrs9_writeoff_reversal'',
                         ''accrual_deferral_initial'',
                         ''accrual_deferral_run'',
-                        ''accrual_deferral_initial_reversal',
+                        ''accrual_deferral_initial_reversal'',
                         ''accrual_deferral_run_reversal'',
+                        ''deferred_tax'',
+                        ''deferred_tax_reversal''
                     ]::text[])
                 )',
                 '{schema}',
@@ -91296,6 +91298,162 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 _json_dict(payload.get("evidence_json"))
             ),
             int(user_id) if user_id else None,
+        ))
+
+    def deferred_tax_return_to_draft(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET
+                status = 'draft',
+                reviewed_by_user_id = NULL,
+                reviewed_at = NULL
+            WHERE company_id = %s
+            AND id = %s
+            AND status = 'reviewed'
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not row:
+            raise ValueError(
+                "Only a reviewed run can be returned to draft."
+            )
+
+        return row
+
+    def deferred_tax_post_run(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: int = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (company_id, run_id))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "approved":
+            raise ValueError("Only an approved run can be posted.")
+
+        if run.get("journal_id"):
+            raise ValueError("Deferred-tax run is already posted.")
+
+        net = Decimal(str(run.get("net_deferred_tax") or 0))
+
+        if net == 0:
+            return self.fetch_one(f"""
+                UPDATE {schema}.deferred_tax_runs
+                SET status='posted',
+                    posted_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """, (company_id, run_id))
+
+        roles = {
+            row["role"]: row["code"]
+            for row in self.fetch_all(f"""
+                SELECT role, code
+                FROM {schema}.coa
+                WHERE role IN (
+                    'deferred_tax_asset',
+                    'deferred_tax_liability',
+                    'deferred_tax_expense',
+                    'deferred_tax_income'
+                );
+            """)
+        }
+
+        required = {
+            "deferred_tax_asset",
+            "deferred_tax_liability",
+            "deferred_tax_expense",
+            "deferred_tax_income",
+        }
+
+        missing = required - roles.keys()
+        if missing:
+            raise ValueError(
+                "Missing deferred-tax COA roles: "
+                + ", ".join(sorted(missing))
+            )
+
+        amount = abs(net)
+
+        if net > 0:
+            lines = [
+                {
+                    "account_code": roles["deferred_tax_expense"],
+                    "debit": float(amount),
+                    "credit": 0.0,
+                    "memo": "Deferred tax expense",
+                },
+                {
+                    "account_code": roles["deferred_tax_liability"],
+                    "debit": 0.0,
+                    "credit": float(amount),
+                    "memo": "Deferred tax liability",
+                },
+            ]
+        else:
+            lines = [
+                {
+                    "account_code": roles["deferred_tax_asset"],
+                    "debit": float(amount),
+                    "credit": 0.0,
+                    "memo": "Deferred tax asset",
+                },
+                {
+                    "account_code": roles["deferred_tax_income"],
+                    "debit": 0.0,
+                    "credit": float(amount),
+                    "memo": "Deferred tax income",
+                },
+            ]
+
+        journal_id = self.post_journal(
+            company_id,
+            {
+                "date": str(run["reporting_date"])[:10],
+                "ref": f"DT-{run_id}",
+                "description": (
+                    f"Deferred tax adjustment at "
+                    f"{str(run['reporting_date'])[:10]}"
+                ),
+                "source": "deferred_tax",
+                "source_id": run_id,
+                "prepared_by_user_id": user_id,
+                "created_by_user_id": user_id,
+                "module_name": "deferred_tax",
+                "lines": lines,
+            },
+        )
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET status='posted',
+                journal_id=%s,
+                posted_at=NOW()
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """, (
+            journal_id,
+            company_id,
+            run_id,
         ))
 
 

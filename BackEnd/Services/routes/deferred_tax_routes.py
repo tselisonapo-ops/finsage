@@ -447,3 +447,69 @@ def deferred_tax_recognition_assessment(cid: int, run_id: int):
             "deferred_tax_recognition_assessment failed"
         )
         return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/runs/"
+    "<int:run_id>/return-to-draft",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_return_to_draft(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.deferred_tax_return_to_draft(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_return_to_draft failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/runs/<int:run_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_post(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.deferred_tax_post_run(
+            company_id,
+            run_id,
+            user_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("deferred_tax_post failed")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
