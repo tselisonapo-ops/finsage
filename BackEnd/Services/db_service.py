@@ -2558,6 +2558,362 @@ class DatabaseService:
                     effective_from
                 )
         );
+
+        -- ============================================================
+        -- GLOBAL REVENUE TAX TREATMENT RULES
+        -- Master defaults for SARS, RSL and BURS
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS public.revenue_tax_treatment_rules (
+            id BIGSERIAL PRIMARY KEY,
+
+            tax_authority_id INT NOT NULL
+                REFERENCES public.tax_authorities(id)
+                ON DELETE CASCADE,
+
+            rule_code TEXT NOT NULL,
+            rule_name TEXT NOT NULL,
+
+            revenue_item_type TEXT NOT NULL
+                DEFAULT 'contract_liability',
+
+            tax_trigger_method TEXT NOT NULL
+                DEFAULT 'requires_review',
+
+            tax_base_method TEXT NOT NULL
+                DEFAULT 'manual_review',
+
+            effective_from DATE NOT NULL
+                DEFAULT DATE '1900-01-01',
+
+            effective_to DATE NULL,
+
+            configuration JSONB NOT NULL
+                DEFAULT '{}'::jsonb,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            requires_review BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            source_reference TEXT NULL,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_revenue_tax_rule_item_type
+            CHECK (
+                revenue_item_type IN (
+                    'contract_asset',
+                    'contract_liability',
+                    'trade_receivable',
+                    'customer_advance',
+                    'refundable_deposit',
+                    'general_revenue'
+                )
+            ),
+
+            CONSTRAINT ck_revenue_tax_trigger_method
+            CHECK (
+                tax_trigger_method IN (
+                    'accounting_recognition',
+                    'billing',
+                    'cash_received',
+                    'receipt_or_accrual',
+                    'upfront_taxation',
+                    'completion',
+                    'manual',
+                    'requires_review'
+                )
+            ),
+
+            CONSTRAINT ck_revenue_tax_base_method
+            CHECK (
+                tax_base_method IN (
+                    'equals_carrying_amount',
+                    'zero_if_already_taxed',
+                    'future_taxable_amount',
+                    'proportion_not_yet_taxed',
+                    'manual_override',
+                    'manual_review'
+                )
+            ),
+
+            CONSTRAINT ck_revenue_tax_rule_dates
+            CHECK (
+                effective_to IS NULL
+                OR effective_to >= effective_from
+            ),
+
+            CONSTRAINT uq_revenue_tax_treatment_rule
+            UNIQUE (
+                tax_authority_id,
+                rule_code,
+                effective_from
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS revenue_tax_rules_authority_idx
+        ON public.revenue_tax_treatment_rules (
+            tax_authority_id,
+            is_active,
+            effective_from,
+            effective_to
+        );
+
+        CREATE INDEX IF NOT EXISTS revenue_tax_rules_lookup_idx
+        ON public.revenue_tax_treatment_rules (
+            tax_authority_id,
+            revenue_item_type,
+            is_default,
+            is_active
+        );
+
+        -- ============================================================
+        -- PRE-SEED REVENUE TAX RULES
+        --
+        -- These are cautious system defaults.
+        -- They require review because the tax result may depend on:
+        -- contract terms, receipt, accrual, billing, refundability,
+        -- transaction type and applicable tax provisions.
+        -- ============================================================
+
+        INSERT INTO public.revenue_tax_treatment_rules (
+            tax_authority_id,
+            rule_code,
+            rule_name,
+            revenue_item_type,
+            tax_trigger_method,
+            tax_base_method,
+            effective_from,
+            configuration,
+            is_default,
+            requires_review,
+            source_reference,
+            notes
+        )
+        SELECT
+            ta.id,
+            seed.rule_code,
+            seed.rule_name,
+            seed.revenue_item_type,
+            seed.tax_trigger_method,
+            seed.tax_base_method,
+            seed.effective_from,
+            seed.configuration,
+            seed.is_default,
+            seed.requires_review,
+            seed.source_reference,
+            seed.notes
+        FROM public.tax_authorities ta
+        JOIN (
+            VALUES
+            (
+                'SARS',
+                'SARS_CONTRACT_LIABILITY_REVIEW',
+                'SARS contract liability – determine receipt or accrual',
+                'contract_liability',
+                'receipt_or_accrual',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'already_taxed_tax_base', 0,
+                    'not_yet_taxed_tax_base', 'carrying_amount',
+                    'supported_evidence', jsonb_build_array(
+                        'tax_computation',
+                        'invoice',
+                        'payment_record',
+                        'contract_terms'
+                    )
+                ),
+                TRUE,
+                TRUE,
+                'SARS Income Tax Act and applicable interpretation guidance',
+                'Review whether the amount was received or accrued for income-tax purposes. Do not assume every IFRS 15 contract liability has a zero tax base.'
+            ),
+            (
+                'SARS',
+                'SARS_CUSTOMER_ADVANCE_REVIEW',
+                'SARS customer advance or advance income',
+                'customer_advance',
+                'receipt_or_accrual',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'possible_future_expenditure_allowance', TRUE,
+                    'allowance_requires_separate_assessment', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'SARS guidance concerning advance income and contractual future expenditure',
+                'Advance receipts may be taxable before IFRS 15 revenue recognition. Any allowance for future expenditure must be assessed separately.'
+            ),
+            (
+                'SARS',
+                'SARS_REFUNDABLE_DEPOSIT_REVIEW',
+                'SARS refundable customer deposit',
+                'refundable_deposit',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'consider_refundability', TRUE,
+                    'consider_unconditional_entitlement', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'SARS guidance on receipts of deposits',
+                'Determine whether the taxpayer has an unconditional entitlement to the deposit. A genuinely refundable deposit may differ from advance income.'
+            ),
+
+            (
+                'RSL',
+                'RSL_CONTRACT_LIABILITY_REVIEW',
+                'RSL contract liability – determine taxable timing',
+                'contract_liability',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'already_taxed_tax_base', 0,
+                    'not_yet_taxed_tax_base', 'carrying_amount',
+                    'supported_evidence', jsonb_build_array(
+                        'tax_computation',
+                        'invoice',
+                        'payment_record',
+                        'contract_terms'
+                    )
+                ),
+                TRUE,
+                TRUE,
+                'Lesotho Income Tax Act 1993, as amended',
+                'Confirm the applicable income-recognition timing under Lesotho tax law before determining the contract liability tax base.'
+            ),
+            (
+                'RSL',
+                'RSL_CUSTOMER_ADVANCE_REVIEW',
+                'RSL customer advance',
+                'customer_advance',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'consider_receipt_date', TRUE,
+                    'consider_accrual_date', TRUE,
+                    'consider_refundability', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'Lesotho Income Tax Act 1993, as amended',
+                'Review the contract and tax computation. The accounting deferral alone does not establish the tax base.'
+            ),
+            (
+                'RSL',
+                'RSL_REFUNDABLE_DEPOSIT_REVIEW',
+                'RSL refundable customer deposit',
+                'refundable_deposit',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'consider_refundability', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'Lesotho Income Tax Act 1993, as amended',
+                'Determine whether the receipt is income or a refundable amount held for the customer.'
+            ),
+
+            (
+                'BURS',
+                'BURS_CONTRACT_LIABILITY_REVIEW',
+                'BURS contract liability – determine taxable timing',
+                'contract_liability',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'already_taxed_tax_base', 0,
+                    'not_yet_taxed_tax_base', 'carrying_amount',
+                    'supported_evidence', jsonb_build_array(
+                        'tax_computation',
+                        'invoice',
+                        'payment_record',
+                        'contract_terms'
+                    )
+                ),
+                TRUE,
+                TRUE,
+                'Botswana Income Tax Act, Cap 52:01, as amended',
+                'Confirm whether the amount forms part of Botswana-source taxable business income for the relevant tax year.'
+            ),
+            (
+                'BURS',
+                'BURS_CUSTOMER_ADVANCE_REVIEW',
+                'BURS customer advance',
+                'customer_advance',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'consider_receipt_date', TRUE,
+                    'consider_accrual_date', TRUE,
+                    'consider_refundability', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'Botswana Income Tax Act, Cap 52:01, as amended',
+                'Review the underlying agreement and tax treatment. Do not infer tax timing solely from IFRS 15 recognition.'
+            ),
+            (
+                'BURS',
+                'BURS_REFUNDABLE_DEPOSIT_REVIEW',
+                'BURS refundable customer deposit',
+                'refundable_deposit',
+                'requires_review',
+                'manual_review',
+                DATE '1900-01-01',
+                jsonb_build_object(
+                    'consider_refundability', TRUE
+                ),
+                FALSE,
+                TRUE,
+                'Botswana Income Tax Act, Cap 52:01, as amended',
+                'Determine whether the receipt is earned income or remains refundable to the customer.'
+            )
+        ) AS seed (
+            authority_code,
+            rule_code,
+            rule_name,
+            revenue_item_type,
+            tax_trigger_method,
+            tax_base_method,
+            effective_from,
+            configuration,
+            is_default,
+            requires_review,
+            source_reference,
+            notes
+        )
+        ON ta.code = seed.authority_code
+
+        ON CONFLICT (
+            tax_authority_id,
+            rule_code,
+            effective_from
+        )
+        DO UPDATE SET
+            rule_name = EXCLUDED.rule_name,
+            revenue_item_type = EXCLUDED.revenue_item_type,
+            tax_trigger_method = EXCLUDED.tax_trigger_method,
+            tax_base_method = EXCLUDED.tax_base_method,
+            configuration = EXCLUDED.configuration,
+            is_default = EXCLUDED.is_default,
+            requires_review = EXCLUDED.requires_review,
+            source_reference = EXCLUDED.source_reference,
+            notes = EXCLUDED.notes,
+            is_active = TRUE,
+            updated_at = NOW();
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
 
@@ -23972,6 +24328,196 @@ class DatabaseService:
             '{schema}','{schema}_revenue_recognition_entries_run_fk','{schema}');
         END IF;
         END $$;
+
+        -- ============================================================
+        -- IFRS 15 / IAS 12: REVENUE CONTRACT TAX PROFILES
+        -- One profile per contract and tax authority
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.revenue_contract_tax_profiles (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            contract_id BIGINT NOT NULL,
+
+            tax_authority_id INT NOT NULL,
+            treatment_rule_id BIGINT NULL,
+
+            tax_treatment_method TEXT NOT NULL
+                DEFAULT 'requires_review',
+
+            taxable_revenue_to_date NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            tax_base_override NUMERIC(18,2) NULL,
+            override_reason TEXT NULL,
+
+            review_status TEXT NOT NULL
+                DEFAULT 'requires_review',
+
+            effective_from DATE NOT NULL
+                DEFAULT DATE '1900-01-01',
+
+            effective_to DATE NULL,
+
+            notes TEXT NULL,
+
+            payload_json JSONB NOT NULL
+                DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_method_ck
+            CHECK (
+                tax_treatment_method IN (
+                    'accounting_recognition',
+                    'billing',
+                    'cash_received',
+                    'receipt_or_accrual',
+                    'upfront_taxation',
+                    'completion',
+                    'manual',
+                    'requires_review'
+                )
+            ),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_status_ck
+            CHECK (
+                review_status IN (
+                    'requires_review',
+                    'configured',
+                    'approved',
+                    'inactive'
+                )
+            ),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_dates_ck
+            CHECK (
+                effective_to IS NULL
+                OR effective_to >= effective_from
+            ),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_taxable_ck
+            CHECK (
+                taxable_revenue_to_date >= 0
+            ),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_override_ck
+            CHECK (
+                tax_base_override IS NULL
+                OR tax_base_override >= 0
+            ),
+
+            CONSTRAINT {schema}_revenue_contract_tax_profiles_uq
+            UNIQUE (
+                company_id,
+                contract_id,
+                tax_authority_id,
+                effective_from
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_tax_profiles_contract_idx
+        ON {schema}.revenue_contract_tax_profiles (
+            company_id,
+            contract_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_tax_profiles_authority_idx
+        ON {schema}.revenue_contract_tax_profiles (
+            company_id,
+            tax_authority_id,
+            review_status
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_tax_profiles_rule_idx
+        ON {schema}.revenue_contract_tax_profiles (
+            treatment_rule_id
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_revenue_tax_profiles_effective_idx
+        ON {schema}.revenue_contract_tax_profiles (
+            company_id,
+            effective_from,
+            effective_to
+        );
+
+        DO $revenue_contract_tax_profiles_contract_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname =
+                    '{schema}_revenue_contract_tax_profiles_contract_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.revenue_contract_tax_profiles
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (contract_id)
+                    REFERENCES %I.revenue_contracts(id)
+                    ON DELETE CASCADE',
+                    '{schema}',
+                    '{schema}_revenue_contract_tax_profiles_contract_fk',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $revenue_contract_tax_profiles_contract_fk$;
+
+        DO $revenue_contract_tax_profiles_authority_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname =
+                    '{schema}_revenue_contract_tax_profiles_authority_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.revenue_contract_tax_profiles
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (tax_authority_id)
+                    REFERENCES public.tax_authorities(id)
+                    ON DELETE RESTRICT',
+                    '{schema}',
+                    '{schema}_revenue_contract_tax_profiles_authority_fk'
+                );
+            END IF;
+        END
+        $revenue_contract_tax_profiles_authority_fk$;
+
+        DO $revenue_contract_tax_profiles_rule_fk$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname =
+                    '{schema}_revenue_contract_tax_profiles_rule_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.revenue_contract_tax_profiles
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (treatment_rule_id)
+                    REFERENCES public.revenue_tax_treatment_rules(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_revenue_contract_tax_profiles_rule_fk'
+                );
+            END IF;
+        END
+        $revenue_contract_tax_profiles_rule_fk$;
 
         -- ==================================================
         -- ACCRUALS & DEFERRALS: MASTER ITEMS
@@ -73775,6 +74321,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 except Exception:
                     pass
 
+            try:
+                tax_profile = (
+                    self.revenue_contract_tax_profile_ensure(
+                        company_id=int(company_id),
+                        contract_id=int(row["id"]),
+                        user_id=(
+                            int(user_id)
+                            if user_id
+                            else None
+                        ),
+                        cur=cur,
+                    )
+                )
+
+                row["revenue_tax_profile"] = tax_profile
+
+            except ValueError as exc:
+                row["revenue_tax_profile"] = None
+                row["revenue_tax_profile_warning"] = str(exc)
             conn.commit()
 
         return row
@@ -73941,6 +74506,26 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
                 after["project_code"] = (project or {}).get("project_code")
                 after["project_name"] = (project or {}).get("project_name")
+
+            try:
+                tax_profile = (
+                    self.revenue_contract_tax_profile_ensure(
+                        company_id=int(company_id),
+                        contract_id=int(contract_id),
+                        user_id=(
+                            int(user_id)
+                            if user_id
+                            else None
+                        ),
+                        cur=cur,
+                    )
+                )
+
+                after["revenue_tax_profile"] = tax_profile
+
+            except ValueError as exc:
+                after["revenue_tax_profile"] = None
+                after["revenue_tax_profile_warning"] = str(exc)
 
             conn.commit()
 
@@ -91822,29 +92407,54 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         run: Dict[str, Any],
         candidate: Dict[str, Any],
     ):
+        """
+        Scans IAS 16 PPE, IAS 38 intangible assets and IAS 40 investment
+        property for temporary differences.
+
+        ROU assets are intentionally excluded because they must be scanned
+        together with the related lease liability in a separate lease scanner.
+        """
         self.ensure_ppe_reporting_views(cur, company_id)
+
         as_at = run["reporting_date"]
         authority_id = run["tax_authority_id"]
-        face_amount = Decimal(str(candidate.get("carrying_amount") or 0))
+        face_amount = Decimal(
+            str(candidate.get("carrying_amount") or 0)
+        ).quantize(Decimal("0.01"))
 
         company_settings = self.deferred_tax_get_settings(company_id)
-        dt_settings = company_settings.get("deferred_tax_settings") or {}
+        dt_settings = (
+            company_settings.get("deferred_tax_settings") or {}
+        )
 
         tolerance = Decimal(str(
             dt_settings.get("reconciliation_tolerance", 0.05)
         ))
+
         standard_map = {
             "ppe": "ias16",
             "intangible_asset": "ias38",
             "investment_property": "ias40",
         }
 
-        accounting_standard = standard_map.get(
-            candidate.get("source_type")
-        )
+        source_type = str(
+            candidate.get("source_type") or ""
+        ).strip().lower()
+
+        accounting_standard = standard_map.get(source_type)
 
         if not accounting_standard:
             return
+
+        # Only use the candidate account as a filter when it is a real
+        # balance-sheet account code. Generic labels such as "PPE" must not
+        # be compared with assets.asset_account_code.
+        candidate_account_code = str(
+            candidate.get("account_code") or ""
+        ).strip()
+
+        if not candidate_account_code.startswith("BS_"):
+            candidate_account_code = ""
 
         tax_run = self.fetch_one(f"""
             SELECT
@@ -91872,8 +92482,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 id DESC
             LIMIT 1;
         """, (
-            company_id,
-            authority_id,
+            int(company_id),
+            int(authority_id),
             as_at,
         ), cur=cur)
 
@@ -91920,10 +92530,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         CASE
                             WHEN m.event_date <= %s
                             AND m.source_table = 'asset_revaluation_reserve'
-                            THEN COALESCE(m.revaluation_reserve_delta, 0)
+                            THEN COALESCE(
+                                m.revaluation_reserve_delta,
+                                0
+                            )
                             ELSE 0
                         END
-                    )::numeric(18,2) AS closing_revaluation_reserve,
+                    )::numeric(18,2)
+                        AS closing_revaluation_reserve,
 
                     SUM(
                         CASE
@@ -91936,7 +92550,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             THEN COALESCE(m.carrying_delta, 0)
                             ELSE 0
                         END
-                    )::numeric(18,2) AS total_revaluation_movement,
+                    )::numeric(18,2)
+                        AS total_revaluation_movement,
 
                     SUM(
                         CASE
@@ -91953,7 +92568,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             WHEN m.event_date <= %s
                             AND m.source_table = 'asset_impairments'
                             AND m.movement_type = 'impairment_reversal'
-                            THEN ABS(COALESCE(m.impairment_delta, 0))
+                            THEN ABS(
+                                COALESCE(m.impairment_delta, 0)
+                            )
                             ELSE 0
                         END
                     )::numeric(18,2) AS impairment_reversals,
@@ -91976,8 +92593,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 a.asset_name,
                 a.asset_class,
                 a.category,
+                a.asset_account_code,
                 a.accounting_standard,
                 a.measurement_basis,
+                COALESCE(a.fair_value_model, FALSE)
+                    AS fair_value_model,
                 a.depreciation_method,
                 a.useful_life_months,
                 a.residual_value,
@@ -91997,17 +92617,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 COALESCE(mt.closing_carrying, 0)::numeric(18,2)
                     AS accounting_carrying_amount,
 
-                COALESCE(mt.closing_revaluation_reserve, 0)::numeric(18,2)
-                    AS revaluation_reserve,
+                COALESCE(
+                    mt.closing_revaluation_reserve,
+                    0
+                )::numeric(18,2) AS revaluation_reserve,
 
-                COALESCE(mt.total_revaluation_movement, 0)::numeric(18,2)
-                    AS revaluation_movement,
+                COALESCE(
+                    mt.total_revaluation_movement,
+                    0
+                )::numeric(18,2) AS revaluation_movement,
 
-                COALESCE(mt.impairment_losses, 0)::numeric(18,2)
-                    AS impairment_losses,
+                COALESCE(
+                    mt.impairment_losses,
+                    0
+                )::numeric(18,2) AS impairment_losses,
 
-                COALESCE(mt.impairment_reversals, 0)::numeric(18,2)
-                    AS impairment_reversals,
+                COALESCE(
+                    mt.impairment_reversals,
+                    0
+                )::numeric(18,2) AS impairment_reversals,
 
                 mt.latest_movement_date,
 
@@ -92026,9 +92654,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 trl.total_capital_allowance,
                 trl.closing_tax_wdv,
                 trl.book_depreciation,
-                trl.accounting_carrying_amount AS tax_run_accounting_carrying_amount,
+                trl.accounting_carrying_amount
+                    AS tax_run_accounting_carrying_amount,
                 trl.tax_adjustment,
-                trl.temporary_difference AS tax_run_temporary_difference,
+                trl.temporary_difference
+                    AS tax_run_temporary_difference,
                 trl.calculation_method,
                 trl.rate_percent,
                 trl.override_reason,
@@ -92037,26 +92667,33 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             FROM {schema}.assets a
 
             LEFT JOIN movement_totals mt
-            ON mt.asset_id = a.id
+                ON mt.asset_id = a.id
 
             LEFT JOIN {schema}.asset_tax_profiles p
-            ON p.company_id = a.company_id
-            AND p.asset_id = a.id
-            AND p.tax_authority_id = %s
+                ON p.company_id = a.company_id
+                AND p.asset_id = a.id
+                AND p.tax_authority_id = %s
 
             LEFT JOIN {schema}.asset_tax_run_lines trl
-            ON trl.company_id = a.company_id
-            AND trl.asset_id = a.id
-            AND trl.run_id = %s
+                ON trl.company_id = a.company_id
+                AND trl.asset_id = a.id
+                AND trl.run_id = %s
 
             WHERE a.company_id = %s
+
             AND LOWER(
-                    REPLACE(
-                        COALESCE(a.accounting_standard, ''),
-                        ' ',
-                        ''
-                    )
-                ) = %s
+                REPLACE(
+                    COALESCE(a.accounting_standard, ''),
+                    ' ',
+                    ''
+                )
+            ) = %s
+
+            AND (
+                NULLIF(%s, '') IS NULL
+                OR a.asset_account_code = %s
+            )
+
             AND COALESCE(a.status, 'active') NOT IN (
                 'disposed',
                 'void',
@@ -92077,34 +92714,47 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             as_at,
             as_at,
             as_at,
-            company_id,
-            authority_id,
+            int(company_id),
+            int(authority_id),
             tax_run_id,
-            company_id,
+            int(company_id),
             accounting_standard,
+            candidate_account_code,
+            candidate_account_code,
         ), cur=cur) or []
 
         assets = [
-            row for row in assets
+            row
+            for row in assets
             if (
-                abs(Decimal(str(row.get("closing_cost") or 0))) > Decimal("0.005")
-                or abs(Decimal(str(row.get("closing_accum_dep") or 0))) > Decimal("0.005")
-                or abs(Decimal(str(row.get("closing_impairment") or 0))) > Decimal("0.005")
-                or abs(Decimal(str(row.get("accounting_carrying_amount") or 0))) > Decimal("0.005")
+                abs(Decimal(str(
+                    row.get("closing_cost") or 0
+                ))) > Decimal("0.005")
+                or abs(Decimal(str(
+                    row.get("closing_accum_dep") or 0
+                ))) > Decimal("0.005")
+                or abs(Decimal(str(
+                    row.get("closing_impairment") or 0
+                ))) > Decimal("0.005")
+                or abs(Decimal(str(
+                    row.get("accounting_carrying_amount") or 0
+                ))) > Decimal("0.005")
             )
         ]
 
         detail_total = sum(
-            Decimal(str(row.get("accounting_carrying_amount") or 0))
-            for row in assets
+            (
+                Decimal(str(
+                    row.get("accounting_carrying_amount") or 0
+                ))
+                for row in assets
+            ),
+            Decimal("0"),
         ).quantize(Decimal("0.01"))
-
-        face_amount = face_amount.quantize(Decimal("0.01"))
 
         reconciliation_difference = (
             detail_total - face_amount
         ).quantize(Decimal("0.01"))
-
 
         if not assets:
             self._dt_insert_scanned_line(
@@ -92114,29 +92764,42 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 run=run,
                 source_module="assets",
                 source_table="assets",
-                source_type=candidate["source_type"],
+                source_type=source_type,
                 source_id=None,
                 source_line_id=None,
-                description=candidate["description"],
+                description=(
+                    candidate.get("description")
+                    or source_type.replace("_", " ").title()
+                ),
                 balance_type="asset",
                 carrying_amount=face_amount,
                 tax_base=face_amount,
-                bs_account_code=candidate["account_code"],
+                bs_account_code=candidate.get("account_code"),
                 bs_carrying_amount=face_amount,
                 scan_status="requires_review",
                 resolution_message=(
-                    "No matching assets were found in the asset register."
+                    "No matching assets were found in the asset "
+                    "register for this balance-sheet item."
                 ),
+                tax_treatment_code="asset_register_missing",
                 calculation_json={
                     "accounting_standard": accounting_standard,
-                    "balance_sheet_face_amount": str(face_amount),
+                    "candidate_account_code":
+                        candidate_account_code,
+                    "balance_sheet_face_amount":
+                        str(face_amount),
                     "asset_register_total": "0.00",
-                    "reconciliation_difference": str(-face_amount),
+                    "reconciliation_difference":
+                        str(-face_amount),
                 },
             )
             return
 
-        if abs(reconciliation_difference) > tolerance:
+        category_reconciled = (
+            abs(reconciliation_difference) <= tolerance
+        )
+
+        if not category_reconciled:
             self._dt_insert_scanned_line(
                 cur,
                 schema=schema,
@@ -92144,33 +92807,41 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 run=run,
                 source_module="assets",
                 source_table="assets",
-                source_type=candidate["source_type"],
+                source_type=source_type,
                 source_id=None,
                 source_line_id=None,
-                description=f"{candidate['description']} reconciliation",
+                description=(
+                    f"{candidate.get('description') or source_type} "
+                    "reconciliation"
+                ),
                 balance_type="asset",
 
-                # Keep CA and tax base equal so the unresolved reconciliation
-                # does not create a false temporary difference or DTL.
+                # An unresolved reconciliation must not create a false
+                # temporary difference.
                 carrying_amount=face_amount,
                 tax_base=face_amount,
 
-                bs_account_code=candidate["account_code"],
+                bs_account_code=candidate.get("account_code"),
                 bs_carrying_amount=face_amount,
                 scan_status="reconciliation_error",
                 resolution_message=(
-                    f"Asset-register total {detail_total} does not reconcile "
-                    f"to balance-sheet amount {face_amount}. "
+                    f"Asset-register total {detail_total} does not "
+                    f"reconcile to balance-sheet amount {face_amount}. "
                     f"Difference: {reconciliation_difference}."
                 ),
-                tax_treatment_code="asset_register_reconciliation",
+                tax_treatment_code=(
+                    "asset_register_reconciliation"
+                ),
                 calculation_json={
                     "accounting_standard": accounting_standard,
-                    "balance_sheet_face_amount": str(face_amount),
-                    "asset_register_total": str(detail_total),
-                    "reconciliation_difference": str(
-                        reconciliation_difference
-                    ),
+                    "candidate_account_code":
+                        candidate_account_code,
+                    "balance_sheet_face_amount":
+                        str(face_amount),
+                    "asset_register_total":
+                        str(detail_total),
+                    "reconciliation_difference":
+                        str(reconciliation_difference),
                     "asset_count": len(assets),
                     "asset_ids": [
                         row.get("asset_id")
@@ -92178,12 +92849,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     ],
                 },
             )
-            return
 
         for asset in assets:
             carrying_amount = Decimal(str(
                 asset.get("accounting_carrying_amount") or 0
-            ))
+            )).quantize(Decimal("0.01"))
 
             tax_profile_id = asset.get("tax_profile_id")
             tax_run_line_id = asset.get("tax_run_line_id")
@@ -92201,70 +92871,147 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 asset.get("impairment_losses") or 0
             ))
 
-            if not tax_profile_id:
-                scan_status = "requires_review"
-                resolution_message = "No tax profile is assigned to this asset."
-                tax_base = Decimal("0")
-
-            elif not tax_run:
-                scan_status = "requires_review"
-                resolution_message = (
-                    "No asset-tax calculation exists on or before the reporting date."
-                )
-                tax_base = Decimal("0")
-
-            elif not tax_run_line_id or closing_tax_wdv is None:
-                scan_status = "requires_review"
-                resolution_message = (
-                    "The latest asset-tax run does not contain "
-                    "a tax WDV for this asset."
-                )
-                tax_base = Decimal("0")
-
-            else:
-                scan_status = "resolved"
-                resolution_message = None
-                tax_base = Decimal(str(closing_tax_wdv))
+            impairment_reversals = Decimal(str(
+                asset.get("impairment_reversals") or 0
+            ))
 
             measurement_basis = str(
                 asset.get("measurement_basis") or ""
             ).strip().lower()
 
+            fair_value_model = bool(
+                asset.get("fair_value_model")
+            )
+
+            tax_base_is_known = False
+
+            if not tax_profile_id:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "No tax profile is assigned to this asset. "
+                    "The tax base has not been determined."
+                )
+
+                # Unknown tax base: keep CA and tax base equal so no
+                # unsupported deferred-tax amount is produced.
+                tax_base = carrying_amount
+
+            elif not tax_run:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "No approved, locked or posted asset-tax "
+                    "calculation exists on or before the reporting "
+                    "date. The tax base has not been determined."
+                )
+                tax_base = carrying_amount
+
+            elif not tax_run_line_id or closing_tax_wdv is None:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "The latest asset-tax calculation does not "
+                    "contain a closing tax WDV for this asset."
+                )
+                tax_base = carrying_amount
+
+            else:
+                scan_status = "resolved"
+                resolution_message = None
+                tax_base = Decimal(
+                    str(closing_tax_wdv)
+                ).quantize(Decimal("0.01"))
+                tax_base_is_known = True
+
+            if not category_reconciled:
+                if scan_status == "resolved":
+                    scan_status = "requires_review"
+
+                reconciliation_note = (
+                    "The asset was calculated individually, but "
+                    "its asset-register category does not reconcile "
+                    "to the balance-sheet amount."
+                )
+
+                resolution_message = (
+                    f"{resolution_message} {reconciliation_note}"
+                    if resolution_message
+                    else reconciliation_note
+                )
+
+            # IAS 40 fair-value movements are recognised in profit or
+            # loss. IAS 16/IAS 38 revaluation differences may be OCI.
             recognition_destination = "profit_or_loss"
+
+            if accounting_standard != "ias40":
+                total_difference = abs(
+                    carrying_amount - tax_base
+                )
+
+                revaluation_related_difference = Decimal("0")
+
+                if (
+                    tax_base_is_known
+                    and revaluation_reserve != 0
+                ):
+                    revaluation_related_difference = min(
+                        total_difference,
+                        abs(revaluation_reserve),
+                    )
+
+                if (
+                    total_difference > 0
+                    and revaluation_related_difference
+                    == total_difference
+                ):
+                    recognition_destination = "oci"
+
+            treatment_parts = []
 
             if (
                 revaluation_movement != 0
                 or revaluation_reserve != 0
-                or measurement_basis == "revaluation"
+                or (
+                    accounting_standard != "ias40"
+                    and measurement_basis == "revaluation"
+                )
             ):
-                recognition_destination = "oci"
-
-            treatment_parts = []
-
-            if revaluation_movement != 0 or revaluation_reserve != 0:
                 treatment_parts.append("revaluation")
 
             if impairment_losses != 0:
                 treatment_parts.append("impairment_loss")
 
-            if Decimal(str(asset.get("impairment_reversals") or 0)) != 0:
+            if impairment_reversals != 0:
                 treatment_parts.append("impairment_reversal")
 
             if accounting_standard == "ias40":
                 treatment_parts.append("investment_property")
 
-            if measurement_basis == "fair_value":
-                treatment_parts.append("fair_value")
+                if fair_value_model:
+                    treatment_parts.append(
+                        "investment_property_fair_value"
+                    )
+                else:
+                    treatment_parts.append(
+                        "investment_property_cost_model"
+                    )
 
             if (
-                closing_tax_wdv is not None
-                and carrying_amount != Decimal(str(closing_tax_wdv))
+                tax_base_is_known
+                and carrying_amount != tax_base
             ):
-                treatment_parts.append("depreciation_vs_tax_allowance")
+                treatment_parts.append(
+                    "accounting_carrying_amount_vs_tax_wdv"
+                )
+
+            if not tax_base_is_known:
+                treatment_parts.append(
+                    "tax_base_undetermined"
+                )
 
             if not treatment_parts:
-                treatment_parts.append("no_identified_tax_difference")
-                
+                treatment_parts.append(
+                    "no_identified_tax_difference"
+                )
+
             self._dt_insert_scanned_line(
                 cur,
                 schema=schema,
@@ -92272,80 +93019,190 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 run=run,
                 source_module="assets",
                 source_table="assets",
-                source_type=candidate["source_type"],
+                source_type=source_type,
                 source_id=asset["asset_id"],
                 source_line_id=tax_run_line_id,
                 description=(
                     asset.get("asset_name")
                     or asset.get("asset_code")
-                    or candidate["description"]
+                    or candidate.get("description")
+                    or source_type.replace("_", " ").title()
                 ),
                 balance_type="asset",
                 carrying_amount=carrying_amount,
                 tax_base=tax_base,
-                bs_account_code=candidate["account_code"],
+                bs_account_code=candidate.get("account_code"),
                 bs_carrying_amount=face_amount,
                 scan_status=scan_status,
                 resolution_message=resolution_message,
-                tax_treatment_code="|".join(treatment_parts),
+                tax_treatment_code="|".join(
+                    treatment_parts
+                ),
                 destination=recognition_destination,
                 calculation_json={
-                    "asset_code": asset.get("asset_code"),
-                    "asset_class": asset.get("asset_class"),
-                    "accounting_standard": asset.get("accounting_standard"),
-                    "measurement_basis": asset.get("measurement_basis"),
-                    "depreciation_method": asset.get("depreciation_method"),
-                    "accounting_useful_life_months": asset.get("useful_life_months"),
-                    "residual_value": str(asset.get("residual_value") or 0),
-                    "acquisition_date": str(asset.get("acquisition_date") or ""),
-                    "available_for_use_date": str(asset.get("available_for_use_date") or ""),
+                    "asset_code":
+                        asset.get("asset_code"),
+                    "asset_class":
+                        asset.get("asset_class"),
+                    "asset_account_code":
+                        asset.get("asset_account_code"),
+                    "accounting_standard":
+                        asset.get("accounting_standard"),
+                    "measurement_basis":
+                        asset.get("measurement_basis"),
+                    "fair_value_model":
+                        fair_value_model,
+                    "depreciation_method":
+                        asset.get("depreciation_method"),
+                    "accounting_useful_life_months":
+                        asset.get("useful_life_months"),
+                    "residual_value":
+                        str(asset.get("residual_value") or 0),
+                    "acquisition_date":
+                        str(asset.get("acquisition_date") or ""),
+                    "available_for_use_date":
+                        str(
+                            asset.get(
+                                "available_for_use_date"
+                            ) or ""
+                        ),
 
-                    "closing_cost": str(asset.get("closing_cost") or 0),
-                    "closing_accum_dep": str(asset.get("closing_accum_dep") or 0),
-                    "closing_impairment": str(asset.get("closing_impairment") or 0),
-                    "accounting_carrying_amount": str(carrying_amount),
+                    "closing_cost":
+                        str(asset.get("closing_cost") or 0),
+                    "closing_accum_dep":
+                        str(
+                            asset.get(
+                                "closing_accum_dep"
+                            ) or 0
+                        ),
+                    "closing_impairment":
+                        str(
+                            asset.get(
+                                "closing_impairment"
+                            ) or 0
+                        ),
+                    "accounting_carrying_amount":
+                        str(carrying_amount),
 
-                    "revaluation_movement": str(revaluation_movement),
-                    "revaluation_reserve": str(revaluation_reserve),
-                    "impairment_losses": str(impairment_losses),
-                    "impairment_reversals": str(asset.get("impairment_reversals") or 0),
-                    "latest_movement_date": str(asset.get("latest_movement_date") or ""),
+                    "revaluation_movement":
+                        str(revaluation_movement),
+                    "revaluation_reserve":
+                        str(revaluation_reserve),
+                    "impairment_losses":
+                        str(impairment_losses),
+                    "impairment_reversals":
+                        str(impairment_reversals),
+                    "latest_movement_date":
+                        str(
+                            asset.get(
+                                "latest_movement_date"
+                            ) or ""
+                        ),
 
-                    "tax_profile_id": tax_profile_id,
-                    "asset_tax_run_id": tax_run_id,
-                    "asset_tax_run_line_id": tax_run_line_id,
-                    "allowance_rule_id": asset.get("allowance_rule_id"),
+                    "tax_base_is_known":
+                        tax_base_is_known,
+                    "tax_profile_id":
+                        tax_profile_id,
+                    "asset_tax_run_id":
+                        tax_run_id,
+                    "asset_tax_run_line_id":
+                        tax_run_line_id,
+                    "allowance_rule_id":
+                        asset.get("allowance_rule_id"),
 
-                    "opening_tax_wdv": str(asset.get("opening_tax_wdv") or 0),
-                    "additions": str(asset.get("additions") or 0),
-                    "disposal_proceeds": str(asset.get("disposal_proceeds") or 0),
-                    "disposal_tax_value": str(asset.get("disposal_tax_value") or 0),
-                    "allowance_base": str(asset.get("allowance_base") or 0),
-                    "initial_allowance": str(asset.get("initial_allowance") or 0),
-                    "annual_allowance": str(asset.get("annual_allowance") or 0),
-                    "total_capital_allowance": str(
-                        asset.get("total_capital_allowance") or 0
+                    "opening_tax_wdv":
+                        str(
+                            asset.get(
+                                "opening_tax_wdv"
+                            ) or 0
+                        ),
+                    "additions":
+                        str(asset.get("additions") or 0),
+                    "disposal_proceeds":
+                        str(
+                            asset.get(
+                                "disposal_proceeds"
+                            ) or 0
+                        ),
+                    "disposal_tax_value":
+                        str(
+                            asset.get(
+                                "disposal_tax_value"
+                            ) or 0
+                        ),
+                    "allowance_base":
+                        str(
+                            asset.get(
+                                "allowance_base"
+                            ) or 0
+                        ),
+                    "initial_allowance":
+                        str(
+                            asset.get(
+                                "initial_allowance"
+                            ) or 0
+                        ),
+                    "annual_allowance":
+                        str(
+                            asset.get(
+                                "annual_allowance"
+                            ) or 0
+                        ),
+                    "total_capital_allowance":
+                        str(
+                            asset.get(
+                                "total_capital_allowance"
+                            ) or 0
+                        ),
+                    "closing_tax_wdv": (
+                        str(closing_tax_wdv)
+                        if closing_tax_wdv is not None
+                        else ""
                     ),
-                    "closing_tax_wdv": str(
-                        closing_tax_wdv if closing_tax_wdv is not None else ""
-                    ),
 
-                    "book_depreciation": str(asset.get("book_depreciation") or 0),
-                    "tax_adjustment": str(asset.get("tax_adjustment") or 0),
-                    "tax_run_temporary_difference": str(
-                        asset.get("tax_run_temporary_difference") or 0
-                    ),
-                    "tax_run_accounting_carrying_amount": str(
-                        asset.get("tax_run_accounting_carrying_amount") or 0
-                    ),
-                    "tax_calculation_method": asset.get("calculation_method"),
-                    "tax_rate_percent": str(asset.get("rate_percent") or 0),
-                    "tax_override_reason": asset.get("override_reason"),
-                    "tax_notes": asset.get("notes"),
+                    "book_depreciation":
+                        str(
+                            asset.get(
+                                "book_depreciation"
+                            ) or 0
+                        ),
+                    "tax_adjustment":
+                        str(
+                            asset.get(
+                                "tax_adjustment"
+                            ) or 0
+                        ),
+                    "tax_run_temporary_difference":
+                        str(
+                            asset.get(
+                                "tax_run_temporary_difference"
+                            ) or 0
+                        ),
+                    "tax_run_accounting_carrying_amount":
+                        str(
+                            asset.get(
+                                "tax_run_accounting_carrying_amount"
+                            ) or 0
+                        ),
+                    "tax_calculation_method":
+                        asset.get("calculation_method"),
+                    "tax_rate_percent":
+                        str(asset.get("rate_percent") or 0),
+                    "tax_override_reason":
+                        asset.get("override_reason"),
+                    "tax_notes":
+                        asset.get("notes"),
 
-                    "balance_sheet_face_amount": str(face_amount),
-                    "asset_register_total": str(detail_total),
-                    "reconciliation_difference": str(reconciliation_difference),
+                    "category_reconciled":
+                        category_reconciled,
+                    "candidate_account_code":
+                        candidate_account_code,
+                    "balance_sheet_face_amount":
+                        str(face_amount),
+                    "asset_register_total":
+                        str(detail_total),
+                    "reconciliation_difference":
+                        str(reconciliation_difference),
                 },
             )
 
@@ -92647,6 +93504,887 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "processed_candidate_count": scanned,
         }
         return result
+
+    def revenue_tax_rules_list(
+        self,
+        tax_authority_id: int = None,
+        authority_code: str = None,
+        revenue_item_type: str = None,
+        active_only: bool = True,
+        as_at=None,
+    ):
+        conditions = []
+        params = []
+
+        if tax_authority_id is not None:
+            conditions.append("r.tax_authority_id = %s")
+            params.append(int(tax_authority_id))
+
+        if authority_code:
+            conditions.append("UPPER(ta.code) = UPPER(%s)")
+            params.append(str(authority_code).strip())
+
+        if revenue_item_type:
+            conditions.append("r.revenue_item_type = %s")
+            params.append(str(revenue_item_type).strip())
+
+        if active_only:
+            conditions.append("r.is_active = TRUE")
+
+        if as_at:
+            conditions.append("r.effective_from <= %s")
+            params.append(as_at)
+
+            conditions.append(
+                "(r.effective_to IS NULL OR r.effective_to >= %s)"
+            )
+            params.append(as_at)
+
+        where_sql = ""
+
+        if conditions:
+            where_sql = "WHERE " + " AND ".join(conditions)
+
+        return self.fetch_all(f"""
+            SELECT
+                r.id,
+                r.tax_authority_id,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                r.rule_code,
+                r.rule_name,
+                r.revenue_item_type,
+                r.tax_trigger_method,
+                r.tax_base_method,
+
+                r.effective_from,
+                r.effective_to,
+
+                r.configuration,
+                r.is_default,
+                r.requires_review,
+                r.is_active,
+
+                r.source_reference,
+                r.notes,
+                r.created_at,
+                r.updated_at
+
+            FROM public.revenue_tax_treatment_rules r
+
+            JOIN public.tax_authorities ta
+                ON ta.id = r.tax_authority_id
+
+            {where_sql}
+
+            ORDER BY
+                ta.code,
+                r.revenue_item_type,
+                r.is_default DESC,
+                r.effective_from DESC,
+                r.id DESC;
+        """, tuple(params)) or []
+
+    def revenue_tax_rule_default(
+        self,
+        *,
+        tax_authority_id: int,
+        revenue_item_type: str = "contract_liability",
+        as_at=None,
+    ):
+        as_at = as_at or date.today()
+
+        return self.fetch_one("""
+            SELECT
+                r.id,
+                r.tax_authority_id,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                r.rule_code,
+                r.rule_name,
+                r.revenue_item_type,
+                r.tax_trigger_method,
+                r.tax_base_method,
+
+                r.effective_from,
+                r.effective_to,
+
+                r.configuration,
+                r.is_default,
+                r.requires_review,
+                r.is_active,
+
+                r.source_reference,
+                r.notes
+
+            FROM public.revenue_tax_treatment_rules r
+
+            JOIN public.tax_authorities ta
+                ON ta.id = r.tax_authority_id
+
+            WHERE r.tax_authority_id = %s
+            AND r.revenue_item_type = %s
+            AND r.is_default = TRUE
+            AND r.is_active = TRUE
+            AND r.effective_from <= %s
+            AND (
+                r.effective_to IS NULL
+                OR r.effective_to >= %s
+            )
+
+            ORDER BY
+                r.effective_from DESC,
+                r.id DESC
+
+            LIMIT 1;
+        """, (
+            int(tax_authority_id),
+            str(revenue_item_type),
+            as_at,
+            as_at,
+        ))
+
+    def revenue_contract_tax_profiles_list(
+        self,
+        company_id: int,
+        *,
+        contract_id: int = None,
+        tax_authority_id: int = None,
+        review_status: str = None,
+        as_at=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        conditions = [
+            "p.company_id = %s",
+        ]
+
+        params = [
+            int(company_id),
+        ]
+
+        if contract_id is not None:
+            conditions.append("p.contract_id = %s")
+            params.append(int(contract_id))
+
+        if tax_authority_id is not None:
+            conditions.append("p.tax_authority_id = %s")
+            params.append(int(tax_authority_id))
+
+        if review_status:
+            conditions.append("p.review_status = %s")
+            params.append(str(review_status).strip())
+
+        if as_at:
+            conditions.append("p.effective_from <= %s")
+            params.append(as_at)
+
+            conditions.append(
+                "(p.effective_to IS NULL OR p.effective_to >= %s)"
+            )
+            params.append(as_at)
+
+        where_sql = " AND ".join(conditions)
+
+        return self.fetch_all(f"""
+            SELECT
+                p.id,
+                p.company_id,
+                p.contract_id,
+
+                rc.contract_number,
+                rc.contract_title,
+                rc.contract_date,
+                rc.start_date,
+                rc.end_date,
+                rc.status AS contract_status,
+
+                rc.recognized_revenue_to_date,
+                rc.billed_to_date,
+                rc.cash_received_to_date,
+
+                GREATEST(
+                    COALESCE(rc.billed_to_date, 0)
+                    - COALESCE(rc.recognized_revenue_to_date, 0),
+                    0
+                )::numeric(18,2) AS contract_liability,
+
+                GREATEST(
+                    COALESCE(rc.recognized_revenue_to_date, 0)
+                    - COALESCE(rc.billed_to_date, 0),
+                    0
+                )::numeric(18,2) AS contract_asset,
+
+                p.tax_authority_id,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                p.treatment_rule_id,
+                r.rule_code,
+                r.rule_name,
+                r.revenue_item_type,
+                r.tax_base_method,
+                r.requires_review AS rule_requires_review,
+
+                p.tax_treatment_method,
+                p.taxable_revenue_to_date,
+                p.tax_base_override,
+                p.override_reason,
+                p.review_status,
+
+                p.effective_from,
+                p.effective_to,
+
+                p.notes,
+                p.payload_json,
+
+                p.created_by_user_id,
+                p.updated_by_user_id,
+                p.created_at,
+                p.updated_at
+
+            FROM {schema}.revenue_contract_tax_profiles p
+
+            JOIN {schema}.revenue_contracts rc
+                ON rc.id = p.contract_id
+                AND rc.company_id = p.company_id
+
+            JOIN public.tax_authorities ta
+                ON ta.id = p.tax_authority_id
+
+            LEFT JOIN public.revenue_tax_treatment_rules r
+                ON r.id = p.treatment_rule_id
+
+            WHERE {where_sql}
+
+            ORDER BY
+                rc.contract_number,
+                p.effective_from DESC,
+                p.id DESC;
+        """, tuple(params)) or []
+
+    def revenue_contract_tax_profile_get(
+        self,
+        company_id: int,
+        profile_id: int,
+    ):
+        rows = self.revenue_contract_tax_profiles_list(
+            company_id,
+        )
+
+        for row in rows:
+            if int(row.get("id") or 0) == int(profile_id):
+                return row
+
+        return None
+
+    def revenue_contract_tax_profile_get(
+        self,
+        company_id: int,
+        profile_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                p.*,
+
+                rc.contract_number,
+                rc.contract_title,
+                rc.contract_date,
+                rc.start_date,
+                rc.end_date,
+
+                rc.recognized_revenue_to_date,
+                rc.billed_to_date,
+                rc.cash_received_to_date,
+
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+
+                r.rule_code,
+                r.rule_name,
+                r.revenue_item_type,
+                r.tax_base_method,
+                r.requires_review AS rule_requires_review
+
+            FROM {schema}.revenue_contract_tax_profiles p
+
+            JOIN {schema}.revenue_contracts rc
+                ON rc.id = p.contract_id
+                AND rc.company_id = p.company_id
+
+            JOIN public.tax_authorities ta
+                ON ta.id = p.tax_authority_id
+
+            LEFT JOIN public.revenue_tax_treatment_rules r
+                ON r.id = p.treatment_rule_id
+
+            WHERE p.company_id = %s
+            AND p.id = %s
+
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(profile_id),
+        ))
+
+    def revenue_contract_tax_profile_ensure(
+        self,
+        company_id: int,
+        contract_id: int,
+        *,
+        tax_authority_id: int = None,
+        user_id: int = None,
+        cur=None,
+    ):
+        import json
+        from datetime import date
+
+        schema = self.company_schema(company_id)
+
+        def execute_with_cursor(active_cur):
+            contract = self.fetch_one(f"""
+                SELECT
+                    id,
+                    company_id,
+                    contract_number,
+                    contract_title,
+                    contract_date,
+                    status
+                FROM {schema}.revenue_contracts
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1;
+            """, (
+                int(company_id),
+                int(contract_id),
+            ), cur=active_cur)
+
+            if not contract:
+                raise ValueError(
+                    "Revenue contract not found."
+                )
+
+            company = self.fetch_one("""
+                SELECT
+                    id,
+                    tax_authority_id
+                FROM public.companies
+                WHERE id = %s
+                LIMIT 1;
+            """, (
+                int(company_id),
+            ), cur=active_cur)
+
+            if not company:
+                raise ValueError("Company not found.")
+
+            authority_id = (
+                int(tax_authority_id)
+                if tax_authority_id is not None
+                else company.get("tax_authority_id")
+            )
+
+            if not authority_id:
+                raise ValueError(
+                    "The company has no tax authority assigned."
+                )
+
+            effective_from = (
+                contract.get("contract_date")
+                or date.today()
+            )
+
+            existing = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.revenue_contract_tax_profiles
+                WHERE company_id = %s
+                AND contract_id = %s
+                AND tax_authority_id = %s
+                AND review_status <> 'inactive'
+                ORDER BY
+                    effective_from DESC,
+                    id DESC
+                LIMIT 1;
+            """, (
+                int(company_id),
+                int(contract_id),
+                int(authority_id),
+            ), cur=active_cur)
+
+            if existing:
+                return existing
+
+            rule = self.fetch_one("""
+                SELECT
+                    r.id,
+                    r.tax_authority_id,
+                    r.rule_code,
+                    r.rule_name,
+                    r.revenue_item_type,
+                    r.tax_trigger_method,
+                    r.tax_base_method,
+                    r.requires_review,
+                    ta.code AS tax_authority_code
+                FROM public.revenue_tax_treatment_rules r
+                JOIN public.tax_authorities ta
+                    ON ta.id = r.tax_authority_id
+                WHERE r.tax_authority_id = %s
+                AND r.revenue_item_type = 'contract_liability'
+                AND r.is_default = TRUE
+                AND r.is_active = TRUE
+                AND r.effective_from <= %s
+                AND (
+                    r.effective_to IS NULL
+                    OR r.effective_to >= %s
+                )
+                ORDER BY
+                    r.effective_from DESC,
+                    r.id DESC
+                LIMIT 1;
+            """, (
+                int(authority_id),
+                effective_from,
+                effective_from,
+            ), cur=active_cur)
+
+            if not rule:
+                raise ValueError(
+                    "No default revenue tax rule exists for "
+                    "the selected tax authority."
+                )
+
+            tax_method = (
+                rule.get("tax_trigger_method")
+                or "requires_review"
+            )
+
+            profile_payload = {
+                "auto_seeded": True,
+                "rule_code": rule.get("rule_code"),
+                "authority_code": rule.get(
+                    "tax_authority_code"
+                ),
+                "source": "revenue_contract",
+            }
+
+            active_cur.execute(f"""
+                INSERT INTO {schema}.revenue_contract_tax_profiles (
+                    company_id,
+                    contract_id,
+                    tax_authority_id,
+                    treatment_rule_id,
+                    tax_treatment_method,
+                    taxable_revenue_to_date,
+                    review_status,
+                    effective_from,
+                    notes,
+                    payload_json,
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    0,
+                    'requires_review',
+                    %s,
+                    %s,
+                    %s::jsonb,
+                    %s,
+                    %s
+                )
+                RETURNING *;
+            """, (
+                int(company_id),
+                int(contract_id),
+                int(authority_id),
+                int(rule["id"]),
+                str(tax_method),
+                effective_from,
+                (
+                    "Automatically created from the default "
+                    "public revenue tax rule."
+                ),
+                json.dumps(
+                    profile_payload,
+                    default=str,
+                ),
+                int(user_id) if user_id else None,
+                int(user_id) if user_id else None,
+            ))
+
+            return dict(active_cur.fetchone())
+
+        if cur is not None:
+            return execute_with_cursor(cur)
+
+        with self._conn_cursor() as (conn, local_cur):
+            result = execute_with_cursor(local_cur)
+            conn.commit()
+            return result
+        
+    def revenue_contract_tax_profile_update(
+        self,
+        company_id: int,
+        profile_id: int,
+        payload: dict,
+        *,
+        user_id: int = None,
+    ):
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.revenue_contract_tax_profiles
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(profile_id),
+        ))
+
+        if not current:
+            raise ValueError(
+                "Revenue contract tax profile not found."
+            )
+
+        allowed_methods = {
+            "accounting_recognition",
+            "billing",
+            "cash_received",
+            "receipt_or_accrual",
+            "upfront_taxation",
+            "completion",
+            "manual",
+            "requires_review",
+        }
+
+        allowed_statuses = {
+            "requires_review",
+            "configured",
+            "approved",
+            "inactive",
+        }
+
+        treatment_rule_id = payload.get(
+            "treatment_rule_id",
+            current.get("treatment_rule_id"),
+        )
+
+        tax_treatment_method = str(
+            payload.get(
+                "tax_treatment_method",
+                current.get("tax_treatment_method")
+                or "requires_review",
+            )
+        ).strip()
+
+        if tax_treatment_method not in allowed_methods:
+            raise ValueError(
+                "Invalid revenue tax treatment method."
+            )
+
+        review_status = str(
+            payload.get(
+                "review_status",
+                current.get("review_status")
+                or "requires_review",
+            )
+        ).strip()
+
+        if review_status not in allowed_statuses:
+            raise ValueError(
+                "Invalid revenue tax profile status."
+            )
+
+        taxable_revenue_to_date = Decimal(str(
+            payload.get(
+                "taxable_revenue_to_date",
+                current.get("taxable_revenue_to_date")
+                or 0,
+            )
+        ))
+
+        if taxable_revenue_to_date < 0:
+            raise ValueError(
+                "Taxable revenue to date cannot be negative."
+            )
+
+        override_value = payload.get(
+            "tax_base_override",
+            current.get("tax_base_override"),
+        )
+
+        if override_value in ("", None):
+            tax_base_override = None
+        else:
+            tax_base_override = Decimal(
+                str(override_value)
+            )
+
+            if tax_base_override < 0:
+                raise ValueError(
+                    "Tax-base override cannot be negative."
+                )
+
+        override_reason = payload.get(
+            "override_reason",
+            current.get("override_reason"),
+        )
+
+        if (
+            tax_base_override is not None
+            and not str(override_reason or "").strip()
+        ):
+            raise ValueError(
+                "An override reason is required when "
+                "a tax-base override is entered."
+            )
+
+        effective_from = payload.get(
+            "effective_from",
+            current.get("effective_from"),
+        )
+
+        effective_to = payload.get(
+            "effective_to",
+            current.get("effective_to"),
+        )
+
+        notes = payload.get(
+            "notes",
+            current.get("notes"),
+        )
+
+        payload_json = payload.get(
+            "payload_json",
+            current.get("payload_json") or {},
+        )
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.revenue_contract_tax_profiles
+            SET
+                treatment_rule_id = %s,
+                tax_treatment_method = %s,
+                taxable_revenue_to_date = %s,
+                tax_base_override = %s,
+                override_reason = %s,
+                review_status = %s,
+                effective_from = %s,
+                effective_to = %s,
+                notes = %s,
+                payload_json = %s::jsonb,
+                updated_by_user_id = %s,
+                updated_at = NOW()
+
+            WHERE company_id = %s
+            AND id = %s
+
+            RETURNING *;
+        """, (
+            treatment_rule_id,
+            tax_treatment_method,
+            taxable_revenue_to_date,
+            tax_base_override,
+            override_reason,
+            review_status,
+            effective_from,
+            effective_to,
+            notes,
+            json.dumps(
+                payload_json,
+                default=str,
+            ),
+            user_id,
+            int(company_id),
+            int(profile_id),
+        ))
+
+    def revenue_contract_tax_base_calculate(
+        self,
+        *,
+        contract: dict,
+        profile: dict,
+    ):
+        recognized = Decimal(str(
+            contract.get(
+                "recognized_revenue_to_date"
+            ) or 0
+        ))
+
+        billed = Decimal(str(
+            contract.get("billed_to_date") or 0
+        ))
+
+        cash_received = Decimal(str(
+            contract.get(
+                "cash_received_to_date"
+            ) or 0
+        ))
+
+        taxable_to_date = Decimal(str(
+            profile.get(
+                "taxable_revenue_to_date"
+            ) or 0
+        ))
+
+        contract_liability = max(
+            billed - recognized,
+            Decimal("0"),
+        )
+
+        method = str(
+            profile.get(
+                "tax_treatment_method"
+            )
+            or "requires_review"
+        ).strip().lower()
+
+        override_value = profile.get(
+            "tax_base_override"
+        )
+
+        if override_value is not None:
+            tax_base = Decimal(str(override_value))
+
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": tax_base,
+                "method": "manual_override",
+                "scan_status": "resolved",
+                "message": (
+                    "Tax base was manually overridden."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        if method == "accounting_recognition":
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": contract_liability,
+                "method": method,
+                "scan_status": "resolved",
+                "message": (
+                    "Tax follows accounting revenue recognition."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        if method in {
+            "billing",
+            "upfront_taxation",
+        }:
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": Decimal("0"),
+                "method": method,
+                "scan_status": "resolved",
+                "message": (
+                    "The contract liability has already "
+                    "been included in taxable revenue."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        if method == "cash_received":
+            taxed_before_accounting = max(
+                cash_received - recognized,
+                Decimal("0"),
+            )
+
+            tax_base = max(
+                contract_liability
+                - taxed_before_accounting,
+                Decimal("0"),
+            )
+
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": tax_base,
+                "method": method,
+                "scan_status": "resolved",
+                "message": (
+                    "Tax base calculated using cash "
+                    "received before accounting recognition."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        if method == "completion":
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": contract_liability,
+                "method": method,
+                "scan_status": "resolved",
+                "message": (
+                    "Tax is deferred until contract completion."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        if method == "manual":
+            future_taxable_amount = max(
+                billed - taxable_to_date,
+                Decimal("0"),
+            )
+
+            tax_base = min(
+                contract_liability,
+                future_taxable_amount,
+            )
+
+            return {
+                "carrying_amount": contract_liability,
+                "tax_base": tax_base,
+                "method": method,
+                "scan_status": "resolved",
+                "message": (
+                    "Tax base calculated from manually "
+                    "maintained taxable revenue to date."
+                ),
+                "recognized_revenue_to_date": recognized,
+                "billed_to_date": billed,
+                "cash_received_to_date": cash_received,
+                "taxable_revenue_to_date": taxable_to_date,
+            }
+
+        return {
+            "carrying_amount": contract_liability,
+            "tax_base": contract_liability,
+            "method": method,
+            "scan_status": "requires_review",
+            "message": (
+                "The revenue tax treatment must be reviewed "
+                "before deferred tax can be recognized."
+            ),
+            "recognized_revenue_to_date": recognized,
+            "billed_to_date": billed,
+            "cash_received_to_date": cash_received,
+            "taxable_revenue_to_date": taxable_to_date,
+        }
 
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:

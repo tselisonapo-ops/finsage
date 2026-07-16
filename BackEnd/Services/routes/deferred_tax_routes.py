@@ -645,3 +645,444 @@ def deferred_tax_allowance_rules(cid: int):
         "data": rows,
     }), 200
 
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-tax-rules",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_tax_rules(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        authority_id = request.args.get(
+            "tax_authority_id",
+            type=int,
+        )
+
+        if not authority_id:
+            settings = (
+                db_service.deferred_tax_get_settings(
+                    company_id
+                )
+            )
+
+            authority_id = settings.get(
+                "tax_authority_id"
+            )
+
+        item_type = (
+            request.args.get(
+                "revenue_item_type"
+            )
+            or ""
+        ).strip() or None
+
+        as_at = (
+            request.args.get("as_at")
+            or ""
+        ).strip() or None
+
+        rows = db_service.revenue_tax_rules_list(
+            tax_authority_id=authority_id,
+            revenue_item_type=item_type,
+            active_only=True,
+            as_at=as_at,
+        ) or []
+
+        return jsonify({
+            "ok": True,
+            "data": rows,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_tax_rules failed"
+        )
+
+        return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-contract-tax-profiles",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_profiles(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(
+            company_id
+        )
+
+        contract_id = request.args.get(
+            "contract_id",
+            type=int,
+        )
+
+        authority_id = request.args.get(
+            "tax_authority_id",
+            type=int,
+        )
+
+        review_status = (
+            request.args.get("review_status")
+            or ""
+        ).strip() or None
+
+        as_at = (
+            request.args.get("as_at")
+            or ""
+        ).strip() or None
+
+        rows = (
+            db_service
+            .revenue_contract_tax_profiles_list(
+                company_id=company_id,
+                contract_id=contract_id,
+                tax_authority_id=authority_id,
+                review_status=review_status,
+                as_at=as_at,
+            )
+        ) or []
+
+        return jsonify({
+            "ok": True,
+            "data": rows,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_profiles failed"
+        )
+
+        return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-contract-tax-profiles/<int:profile_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_profile_get(
+    cid: int,
+    profile_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = (
+            db_service
+            .revenue_contract_tax_profile_get(
+                company_id=company_id,
+                profile_id=profile_id,
+            )
+        )
+
+        if not row:
+            return _error_response(
+                "Revenue contract tax profile "
+                "not found.",
+                404,
+            )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_profile_get "
+            "failed"
+        )
+
+        return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-contracts/<int:contract_id>/"
+    "tax-profile",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_profile_ensure(
+    cid: int,
+    contract_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = (
+            _auth_context(cid)
+        )
+
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(
+            company_id
+        )
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        authority_id = body.get(
+            "tax_authority_id"
+        )
+
+        if authority_id not in (
+            None,
+            "",
+            0,
+            "0",
+        ):
+            authority_id = int(authority_id)
+        else:
+            authority_id = None
+
+        row = (
+            db_service
+            .revenue_contract_tax_profile_ensure(
+                company_id=company_id,
+                contract_id=contract_id,
+                tax_authority_id=authority_id,
+                user_id=user_id,
+            )
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action=(
+                "ensure_revenue_contract_"
+                "tax_profile"
+            ),
+            entity_type=(
+                "revenue_contract_tax_profile"
+            ),
+            entity_id=row.get("id"),
+            entity_ref=(
+                f"contract:{contract_id}"
+            ),
+            after_json={
+                "profile": row,
+            },
+            message=(
+                "Created or confirmed revenue "
+                f"tax profile for contract "
+                f"{contract_id}"
+            ),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_profile_ensure "
+            "failed"
+        )
+
+        return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-contract-tax-profiles/<int:profile_id>",
+    methods=["PUT", "PATCH", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_profile_update(
+    cid: int,
+    profile_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = (
+            _auth_context(cid)
+        )
+
+        if deny:
+            return deny
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        before = (
+            db_service
+            .revenue_contract_tax_profile_get(
+                company_id=company_id,
+                profile_id=profile_id,
+            )
+        )
+
+        if not before:
+            return _error_response(
+                "Revenue contract tax profile "
+                "not found.",
+                404,
+            )
+
+        row = (
+            db_service
+            .revenue_contract_tax_profile_update(
+                company_id=company_id,
+                profile_id=profile_id,
+                payload=body,
+                user_id=user_id,
+            )
+        )
+
+        after = (
+            db_service
+            .revenue_contract_tax_profile_get(
+                company_id=company_id,
+                profile_id=profile_id,
+            )
+        ) or row
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action=(
+                "update_revenue_contract_"
+                "tax_profile"
+            ),
+            entity_type=(
+                "revenue_contract_tax_profile"
+            ),
+            entity_id=profile_id,
+            entity_ref=(
+                before.get("contract_number")
+                or str(
+                    before.get("contract_id")
+                    or ""
+                )
+            ),
+            before_json={
+                "profile": before,
+            },
+            after_json={
+                "profile": after,
+            },
+            message=(
+                "Updated revenue contract tax "
+                f"profile {profile_id}"
+            ),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": after,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_profile_update "
+            "failed"
+        )
+
+        return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "revenue-contract-tax-profiles/"
+    "<int:profile_id>/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_revenue_profile_calculate(
+    cid: int,
+    profile_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = (
+            _auth_context(cid)
+        )
+
+        if deny:
+            return deny
+
+        profile = (
+            db_service
+            .revenue_contract_tax_profile_get(
+                company_id=company_id,
+                profile_id=profile_id,
+            )
+        )
+
+        if not profile:
+            return _error_response(
+                "Revenue contract tax profile "
+                "not found.",
+                404,
+            )
+
+        contract = {
+            "recognized_revenue_to_date":
+                profile.get(
+                    "recognized_revenue_to_date"
+                ),
+            "billed_to_date":
+                profile.get("billed_to_date"),
+            "cash_received_to_date":
+                profile.get(
+                    "cash_received_to_date"
+                ),
+        }
+
+        result = (
+            db_service
+            .revenue_contract_tax_base_calculate(
+                contract=contract,
+                profile=profile,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": result,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_revenue_profile_"
+            "calculate failed"
+        )
+
+        return _error_response(str(e))
