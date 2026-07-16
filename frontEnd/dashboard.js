@@ -38774,6 +38774,68 @@ async function saveEditModal() {
     });
   }
 
+  function bindImpairmentCguControls() {
+    document
+      .querySelectorAll('input[name="smImpairmentTargetType"]')
+      .forEach((el) => {
+        el.addEventListener("change", applyImpairmentTargetUI);
+      });
+
+    const invalidate = () => {
+      impairmentPreviewCache = null;
+      invalidateSmPreview();
+    };
+
+    [
+      "smImpairmentCguId",
+      "smImpairmentAllocationBasis",
+      "smRecoverableAmount",
+      "smDirectImpairmentAmount",
+      "smImpairmentReversalAmount",
+      "smImpairmentFairValue",
+      "smCostsOfDisposal",
+      "smValueInUse",
+    ].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+
+      el.addEventListener("input", invalidate);
+      el.addEventListener("change", invalidate);
+    });
+
+    $("smImpairmentAllocationPreviewBtn")?.addEventListener(
+      "click",
+      async () => {
+        try {
+          setMsg(
+            $("smFormMsg"),
+            "Calculating CGU allocation…"
+          );
+
+          await previewImpairmentAllocation();
+
+          setMsg(
+            $("smFormMsg"),
+            "Allocation preview loaded.",
+            "ok"
+          );
+        } catch (error) {
+          setMsg(
+            $("smFormMsg"),
+            error?.message || "Allocation preview failed.",
+            "error"
+          );
+        }
+      }
+    );
+
+    loadImpairmentCgus().catch((error) => {
+      console.error("Failed to load impairment CGUs", error);
+    });
+
+    applyImpairmentTargetUI();
+  }
+
   async function openSmModal(row = null) {
     $("smModal")?.classList.remove("hidden");
     const isEdit = !!row?.id;
