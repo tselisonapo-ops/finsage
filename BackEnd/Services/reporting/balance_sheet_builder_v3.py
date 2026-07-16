@@ -408,6 +408,113 @@ def _make_header(title: str) -> Dict[str, Any]:
         "meta": {"row_type": "header", "bold": True},
     }
 
+def _standard_code(row: Dict[str, Any]) -> str:
+    standard = str(
+        row.get("standard")
+        or row.get("ifrs_tag")
+        or row.get("std_tag")
+        or ""
+    ).strip().upper()
+
+    return standard.replace(" ", "")
+
+
+def _deferred_tax_source_module(row: Dict[str, Any]) -> str:
+    standard = _standard_code(row)
+    role = str(row.get("role") or "").strip().lower()
+    text = _norm(
+        row.get("section"),
+        row.get("category"),
+        row.get("subcategory"),
+        role,
+        _tb_name(row),
+    )
+
+    if standard in ("IAS16", "IAS38", "IAS40"):
+        return "assets"
+
+    if standard == "IFRS16":
+        return "leases"
+
+    if standard == "IFRS9":
+        return "ifrs9"
+
+    if standard == "IFRS15":
+        if any(x in text for x in (
+            "deferred income",
+            "contract liability",
+            "contract asset",
+            "unbilled revenue",
+        )):
+            return "accrual_deferral"
+        return "revenue"
+
+    if role in (
+        "prepaid_expense",
+        "deferred_income",
+        "accrued_expense",
+        "accrued_income",
+    ):
+        return "accrual_deferral"
+
+    if "inventory" in text or standard == "IAS2":
+        return "inventory"
+
+    return "general_ledger"
+
+
+def _deferred_tax_source_type(row: Dict[str, Any]) -> str:
+    standard = _standard_code(row)
+    role = str(row.get("role") or "").strip().lower()
+    text = _norm(
+        row.get("section"),
+        row.get("category"),
+        row.get("subcategory"),
+        role,
+        _tb_name(row),
+    )
+
+    if standard == "IAS16":
+        return "ppe"
+
+    if standard == "IAS38":
+        return "intangible_asset"
+
+    if standard == "IAS40":
+        return "investment_property"
+
+    if standard == "IFRS16":
+        if "liability" in text:
+            return "lease_liability"
+        return "right_of_use_asset"
+
+    if role in (
+        "prepaid_expense",
+        "deferred_income",
+        "accrued_expense",
+        "accrued_income",
+    ):
+        return role
+
+    if "deferred income" in text or "contract liability" in text:
+        return "deferred_income"
+
+    if "contract asset" in text or "unbilled revenue" in text:
+        return "contract_asset"
+
+    if "receivable" in text:
+        return "receivable"
+
+    if "payable" in text:
+        return "payable"
+
+    if "inventory" in text:
+        return "inventory"
+
+    if "provision" in text:
+        return "provision"
+
+    return "balance_sheet_account"
 # ============================================================
 # Builder v3: exact layout
 # ============================================================
@@ -631,7 +738,14 @@ def build_balance_sheet_v3(
         # fallback: retained earnings has movement and PL still has P&L result
         return False
 
-    def _make_line(code: str, name: str, values: Dict[str, float], row_any: Dict[str, Any], *, is_contra: bool) -> Dict[str, Any]:
+    def _make_line(
+        code: str,
+        name: str,
+        values: Dict[str, float],
+        row_any: Dict[str, Any],
+        *,
+        is_contra: bool,
+    ) -> Dict[str, Any]:
         return {
             "code": code,
             "name": name,
@@ -640,8 +754,17 @@ def build_balance_sheet_v3(
             "meta": {
                 "section": row_any.get("section"),
                 "category": row_any.get("category"),
-                "standard": row_any.get("standard") or row_any.get("ifrs_tag") or row_any.get("std_tag") or None,
-            }
+                "subcategory": row_any.get("subcategory"),
+                "standard": (
+                    row_any.get("standard")
+                    or row_any.get("ifrs_tag")
+                    or row_any.get("std_tag")
+                    or None
+                ),
+                "role": row_any.get("role"),
+                "source_module": _deferred_tax_source_module(row_any),
+                "source_type": _deferred_tax_source_type(row_any),
+            },
         }
 
     # -------------------------
@@ -837,7 +960,14 @@ def build_balance_sheet_v3(
             "name": "Property, plant and equipment",
             "values": ppe_values,
             "is_contra": False,
-            "meta": {"standard": "IAS 16", "section": "Property, Plant & Equipment"},
+            "meta": {
+                "standard": "IAS 16",
+                "section": "Property, Plant & Equipment",
+                "category": "Non-current assets",
+                "role": "ppe",
+                "source_module": "assets",
+                "source_type": "ppe",
+            },
             "ppe_table": ppe_table,
         }
 
@@ -867,7 +997,14 @@ def build_balance_sheet_v3(
                 "name": "Right-of-use assets",
                 "values": rou_values,
                 "is_contra": False,
-                "meta": {"standard": "IFRS 16", "section": "Right-of-use assets"},
+                "meta": {
+                    "standard": "IFRS 16",
+                    "section": "Right-of-use assets",
+                    "category": "Non-current assets",
+                    "role": "right_of_use_asset",
+                    "source_module": "leases",
+                    "source_type": "right_of_use_asset",
+                },
                 "rou_table": rou_table,
             }
 
@@ -1109,3 +1246,110 @@ def build_balance_sheet_v3(
             "values": diff,
         },
     }
+
+def _candidate_carrying_amount(
+    line: Dict[str, Any],
+) -> float:
+    ppe_current = (
+        line.get("ppe_table", {})
+        .get("values", {})
+        .get("cur")
+    )
+
+    if ppe_current:
+        return float(ppe_current.get("carrying") or 0)
+
+    rou_current = (
+        line.get("rou_table", {})
+        .get("values", {})
+        .get("cur")
+    )
+
+    if rou_current:
+        return float(rou_current.get("carrying") or 0)
+
+    values = line.get("values") or {}
+
+    if values.get("cur") is not None:
+        return float(values.get("cur") or 0)
+
+    if values.get("total") is not None:
+        return float(values.get("total") or 0)
+
+    return 0.0
+
+def extract_deferred_tax_candidates(
+    balance_sheet: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    candidates: List[Dict[str, Any]] = []
+
+    sections = (
+        (
+            "current_assets",
+            "asset",
+            balance_sheet.get("assets", {}).get(
+                "current_assets",
+                {},
+            ),
+        ),
+        (
+            "non_current_assets",
+            "asset",
+            balance_sheet.get("assets", {}).get(
+                "non_current_assets",
+                {},
+            ),
+        ),
+        (
+            "current_liabilities",
+            "liability",
+            balance_sheet.get(
+                "equity_and_liabilities",
+                {},
+            ).get("current_liabilities", {}),
+        ),
+        (
+            "non_current_liabilities",
+            "liability",
+            balance_sheet.get(
+                "equity_and_liabilities",
+                {},
+            ).get("non_current_liabilities", {}),
+        ),
+    )
+
+    for section_name, balance_type, section in sections:
+        for line in section.get("lines", []) or []:
+            meta = line.get("meta") or {}
+
+            if meta.get("row_type") == "header":
+                continue
+
+            carrying_amount = _candidate_carrying_amount(line)
+
+            if abs(carrying_amount) < 0.005:
+                continue
+
+            candidates.append({
+                "account_code": line.get("code"),
+                "description": line.get("name"),
+                "balance_type": balance_type,
+                "carrying_amount": carrying_amount,
+                "standard": meta.get("standard"),
+                "role": meta.get("role"),
+                "source_module": (
+                    meta.get("source_module")
+                    or "general_ledger"
+                ),
+                "source_type": (
+                    meta.get("source_type")
+                    or "balance_sheet_account"
+                ),
+                "section": section_name,
+                "category": meta.get("category"),
+                "subcategory": meta.get("subcategory"),
+                "is_contra": bool(line.get("is_contra")),
+                "source_json": line,
+            })
+
+    return candidates

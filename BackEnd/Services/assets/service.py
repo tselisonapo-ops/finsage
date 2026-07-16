@@ -5,7 +5,7 @@ from decimal import Decimal
 from datetime import date
 from BackEnd.Services.assets.posting import generate_single_asset_depreciation
 from flask import current_app
-
+import json
 from decimal import Decimal, ROUND_HALF_UP
 
 IMPAIRMENT_EVENTS = {"impairment_loss", "impairment_reversal"}
@@ -292,74 +292,45 @@ def get_asset(cur, company_id, asset_id):
 
     return None
 
-def create_subsequent_measurement(
-    cur,
-    company_id: int,
-    asset_id: int,
-    *,
-    event_date,
-    event_type: str,
-    amount=None,
-    debit_account_code=None,
-    credit_account_code=None,
-    useful_life_months=None,
-    residual_value=None,
-    depreciation_method=None,
-    notes=None,
-    created_by=None,
-):
+def create_subsequent_measurement(cur, company_id, payload):
     schema = company_schema(company_id)
 
     cur.execute(_q(schema, """
         INSERT INTO {schema}.asset_subsequent_measurements(
-            company_id,
-            asset_id,
-            event_date,
-            event_type,
-
-            amount,
-            debit_account_code,
-            credit_account_code,
-
-            useful_life_months,
-            residual_value,
-            depreciation_method,
-
-            notes,
-            status,
-            created_by,
-            created_at
+            company_id, asset_id, event_date, event_type, amount,
+            debit_account_code, credit_account_code,
+            useful_life_months, residual_value, depreciation_method,
+            notes, status, meta_json,
+            source_company_id, engagement_company_id, engagement_id,
+            created_by_user_id, updated_by_user_id
         )
         VALUES (
-            %s,%s,%s,%s,
-            %s,%s,%s,
-            %s,%s,%s,
-            %s,
-            'draft',
-            %s,
-            NOW()
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            COALESCE(%s,'draft'),%s::jsonb,%s,%s,%s,%s,%s
         )
         RETURNING id
     """), (
         company_id,
-        asset_id,
-        event_date,
-        event_type,
-
-        amount,
-        debit_account_code,
-        credit_account_code,
-
-        useful_life_months,
-        residual_value,
-        depreciation_method,
-
-        notes,
-        created_by
+        payload["asset_id"],
+        payload["event_date"],
+        payload["event_type"],
+        payload.get("amount", 0),
+        payload.get("debit_account_code"),
+        payload.get("credit_account_code"),
+        payload.get("useful_life_months"),
+        payload.get("residual_value"),
+        payload.get("depreciation_method"),
+        payload.get("notes"),
+        payload.get("status"),
+        json.dumps(payload.get("meta_json") or {}),
+        payload.get("source_company_id"),
+        payload.get("engagement_company_id"),
+        payload.get("engagement_id"),
+        payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
     ))
 
-    row = cur.fetchone()
-    return row["id"]
+    return int(cur.fetchone()["id"])
 
 def fetch_asset_row(cur, company_id: int, asset_id: int) -> dict:
     schema = company_schema(company_id)

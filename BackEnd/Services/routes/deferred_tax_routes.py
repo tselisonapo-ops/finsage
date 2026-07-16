@@ -513,3 +513,45 @@ def deferred_tax_post(cid: int, run_id: int):
             "ok": False,
             "error": str(e),
         }), 400
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/runs/<int:run_id>/scan",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_scan(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.deferred_tax_scan_run(
+            company_id,
+            run_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="scan_deferred_tax_run",
+            entity_type="deferred_tax_run",
+            entity_id=run_id,
+            after_json={"scan_summary": row.get("scan_summary")},
+            message=f"Scanned balance sheet for deferred tax run {run_id}",
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("deferred_tax_scan failed")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+    

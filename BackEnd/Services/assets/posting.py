@@ -1645,75 +1645,122 @@ def create_revaluation_from_sm(cur, company_id: int, sm: dict, asset: dict) -> i
     ))
     return int(cur.fetchone()["id"])
 
-def create_impairment_from_sm(cur, company_id: int, sm: dict, asset: dict) -> int:
+def create_impairment_from_sm(
+    cur,
+    company_id: int,
+    sm: dict,
+    asset: dict,
+) -> int:
     schema = company_schema(company_id)
+
     meta = sm.get("meta_json") or {}
-
-    ca_before = Decimal(str(meta.get("carrying_amount_before") or asset.get("carrying_amount") or asset.get("nbv") or 0))
-
     et = (sm.get("event_type") or "").strip().lower()
+
+    ca_before = D(
+        meta.get("carrying_amount_before")
+        or meta.get("carrying_amount")
+        or _asset_carrying_amount(asset)
+    )
+
+    if ca_before <= 0:
+        raise ValueError(
+            "Unable to determine the asset carrying amount."
+        )
+
+    recoverable = D(
+        meta.get("recoverable_amount")
+        or 0
+    )
+
     if et == "impairment_loss":
-        direct_amount = Decimal(str(
+
+        impairment = D(
             sm.get("amount")
             or meta.get("impairment_amount")
             or meta.get("amount")
             or 0
-        ))
+        )
 
-        rec = Decimal(str(
-            meta.get("recoverable_amount") or 0
-        ))
-
-        if direct_amount > 0:
-            imp_amt = direct_amount
-            rec = max(Decimal("0"), ca_before - imp_amt)
-
-        elif rec > 0:
-            imp_amt = max(Decimal("0"), ca_before - rec)
-
-        else:
-            raise ValueError(
-                "impairment_loss requires impairment amount "
-                "or recoverable amount"
+        if impairment <= 0 and recoverable > 0:
+            impairment = max(
+                D("0"),
+                ca_before - recoverable
             )
 
-        if imp_amt > ca_before:
+        if impairment <= 0:
             raise ValueError(
-                "Impairment loss cannot exceed carrying amount"
+                "Impairment amount must be greater than zero."
             )
 
-        rev_amt = Decimal("0")
+        if impairment > ca_before:
+            raise ValueError(
+                f"Impairment loss ({money(impairment)}) "
+                f"cannot exceed carrying amount ({money(ca_before)})."
+            )
+
+        if recoverable <= 0:
+            recoverable = max(
+                D("0"),
+                ca_before - impairment
+            )
+
+        reversal = D("0")
 
     elif et == "impairment_reversal":
-        # reversal needs explicit amount OR recoverable amount
-        rev_amt = Decimal(str(meta.get("reversal_amount") or meta.get("amount") or 0))
-        if rev_amt <= 0:
-            raise ValueError("impairment_reversal requires meta_json.reversal_amount (or meta_json.amount) > 0")
-        rec = Decimal(str(meta.get("recoverable_amount") or 0))  # optional
-        imp_amt = Decimal("0")
+
+        reversal = D(
+            sm.get("amount")
+            or meta.get("reversal_amount")
+            or meta.get("amount")
+            or 0
+        )
+
+        if reversal <= 0:
+            raise ValueError(
+                "Impairment reversal amount must be greater than zero."
+            )
+
+        impairment = D("0")
 
     else:
-        raise ValueError(f"Unsupported impairment event_type '{et}'")
+        raise ValueError(
+            f"Unsupported impairment event_type '{et}'"
+        )
 
     cur.execute(_q(schema, """
-      INSERT INTO {schema}.asset_impairments(
-        company_id, asset_id, impairment_date,
-        carrying_amount_before, recoverable_amount,
-        impairment_amount, reversal_amount,
-        reason, notes, status, created_at
-      ) VALUES (
-        %s,%s,%s,
-        %s,%s,
-        %s,%s,
-        %s,%s,'draft',NOW()
-      )
-      RETURNING id
+        INSERT INTO {schema}.asset_impairments(
+            company_id,
+            asset_id,
+            impairment_date,
+            carrying_amount_before,
+            recoverable_amount,
+            impairment_amount,
+            reversal_amount,
+            reason,
+            notes,
+            status,
+            created_at
+        )
+        VALUES (
+            %s,%s,%s,
+            %s,%s,%s,%s,
+            %s,%s,
+            'draft',
+            NOW()
+        )
+        RETURNING id
     """), (
-      company_id, int(sm["asset_id"]), sm["event_date"],
-      ca_before, (rec if 'rec' in locals() else Decimal("0")),
-      imp_amt, rev_amt,
-      meta.get("reason"), sm.get("notes")
+        company_id,
+        int(sm["asset_id"]),
+        sm["event_date"],
+        ca_before,
+        recoverable,
+        impairment,
+        reversal,
+        meta.get("reason"),
+        sm.get("notes"),
     ))
+
     return int(cur.fetchone()["id"])
 
 def create_hfs_from_sm(cur, company_id: int, sm: dict, asset: dict) -> int:

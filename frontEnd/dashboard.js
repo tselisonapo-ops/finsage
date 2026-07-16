@@ -1693,6 +1693,9 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${cid}/deferred-tax/runs${qs ? `?${qs}` : ""}`;
     },
 
+    scan: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/scan`,
+
     run: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}`,
 
@@ -39174,80 +39177,27 @@ async function saveEditModal() {
       $("smEventType")?.value || "add_cost"
     ).trim().toLowerCase();
 
-    const meta_json = {};
-
+    const asset = selectedSmAsset();
     const components = collectGroupComponentPayload(t);
+    const meta_json = {};
 
     if (Object.keys(components).length) {
       meta_json.components = components;
     }
 
     if ($("smFairValue")?.value) {
-      meta_json.fair_value =
-        Number($("smFairValue").value);
+      meta_json.fair_value = Number(
+        $("smFairValue").value
+      );
     }
 
     if ($("smFairValueReason")?.value) {
-      meta_json.reason =
-        $("smFairValueReason").value;
+      meta_json.reason = $("smFairValueReason").value;
     }
 
     if (t === "change_estimate") {
       meta_json.reason =
         $("smEstimateReason")?.value || null;
-    }
-
-    if (t === "impairment_loss") {
-      meta_json.recoverable_amount =
-        $("smRecoverableAmount")?.value
-          ? Number($("smRecoverableAmount").value)
-          : null;
-
-      meta_json.recoverable_amount_basis =
-        $("smRecoverableBasis")?.value || null;
-
-      meta_json.discount_rate_percent =
-        $("smDiscountRate")?.value
-          ? Number($("smDiscountRate").value)
-          : null;
-
-      meta_json.growth_rate_percent =
-        $("smGrowthRate")?.value
-          ? Number($("smGrowthRate").value)
-          : null;
-
-      meta_json.cash_flow_period_years =
-        $("smCashFlowPeriod")?.value
-          ? Number($("smCashFlowPeriod").value)
-          : null;
-
-      meta_json.fair_value =
-        $("smImpairmentFairValue")?.value
-          ? Number($("smImpairmentFairValue").value)
-          : null;
-
-      meta_json.costs_of_disposal =
-        $("smCostsOfDisposal")?.value
-          ? Number($("smCostsOfDisposal").value)
-          : null;
-
-      meta_json.reason =
-        $("smImpairmentReason")?.value || null;
-    }
-
-    if (t === "impairment_reversal") {
-      meta_json.reversal_amount =
-        $("smImpairmentReversalAmount")?.value
-          ? Number($("smImpairmentReversalAmount").value)
-          : null;
-
-      meta_json.recoverable_amount =
-        $("smReversalRecoverableAmount")?.value
-          ? Number($("smReversalRecoverableAmount").value)
-          : null;
-
-      meta_json.reason =
-        $("smImpairmentReason")?.value || null;
     }
 
     if (t === "held_for_sale_classify") {
@@ -39282,65 +39232,42 @@ async function saveEditModal() {
     }
 
     const base = {
-      event_date:
-        $("smEventDate")?.value || null,
-
+      event_date: $("smEventDate")?.value || null,
       event_type: t,
-
-      asset_id:
-        Number($("smAssetId")?.value || 0) || null,
-
-      notes:
-        $("smNotes")?.value || null,
-
-      meta_json:
-        Object.keys(meta_json).length
-          ? meta_json
-          : null,
-
-      components:
-        Object.keys(components).length
-          ? components
-          : null,
+      asset_id: Number($("smAssetId")?.value || 0) || null,
+      notes: $("smNotes")?.value || null,
+      components: Object.keys(components).length
+        ? components
+        : null,
     };
 
     if (t === "add_cost") {
-      const asset = selectedSmAsset();
-
       const vatTreatment = String(
-        $("smAddCostVatTreatment")?.value ||
-        "inclusive"
+        $("smAddCostVatTreatment")?.value || "inclusive"
       ).trim().toLowerCase();
 
       const vatInputClaimable =
         String(
-          $("smAddCostVatClaimable")?.value ||
-          "true"
+          $("smAddCostVatClaimable")?.value || "true"
         ) === "true";
 
       const vatRatePercent =
         vatTreatment === "no_vat"
           ? 0
-          : Number(
-              $("smAddCostVatRate")?.value || 0
-            );
+          : Number($("smAddCostVatRate")?.value || 0);
 
       const vatRecoveryPercent =
-        vatTreatment !== "no_vat" &&
-        vatInputClaimable
+        vatTreatment !== "no_vat" && vatInputClaimable
           ? Number(
-              $("smAddCostVatRecoveryPercent")?.value ||
-              100
+              $("smAddCostVatRecoveryPercent")?.value || 100
             )
           : 0;
 
       return {
         ...base,
-
-        amount:
-          $("smAmount")?.value
-            ? Number($("smAmount").value)
-            : null,
+        amount: $("smAmount")?.value
+          ? Number($("smAmount").value)
+          : null,
 
         debit_account_code:
           asset?.asset_account_code ||
@@ -39358,48 +39285,114 @@ async function saveEditModal() {
         vat_recovery_percent: vatRecoveryPercent,
 
         meta_json: {
-          ...(base.meta_json || {}),
-
+          ...meta_json,
           vat_treatment: vatTreatment,
           vat_rate_percent: vatRatePercent,
           vat_input_claimable: vatInputClaimable,
           vat_recovery_percent: vatRecoveryPercent,
-
           supplier_name:
             $("smAddCostSupplier")?.value || null,
-
           vendor_invoice_no:
             $("smAddCostInvoiceNo")?.value || null,
         },
       };
     }
 
-    if (t === "impairment_loss") {
-      const carrying = Number(
-        selectedSmAsset()?.carrying_amount ??
-        selectedSmAsset()?.nbv ??
+    if (
+      t === "impairment_loss" ||
+      t === "impairment_reversal"
+    ) {
+      const carryingAmount = Number(
+        asset?.carrying_amount ??
+        asset?.carrying_value ??
+        asset?.nbv ??
         0
       );
 
-      const recoverableAmount =
-        Number(
-          meta_json.recoverable_amount || 0
-        );
+      const recoverableAmount = Number(
+        $("smRecoverableAmount")?.value || 0
+      );
+
+      const recoverableBasis =
+        $("smRecoverableBasis")?.value || null;
+
+      const fairValue = Number(
+        $("smImpairmentFairValue")?.value || 0
+      );
+
+      const disposalCosts = Number(
+        $("smCostsOfDisposal")?.value || 0
+      );
+
+      const cashFlowYears = Number(
+        $("smCashFlowPeriod")?.value || 0
+      );
+
+      const amount =
+        t === "impairment_loss"
+          ? Math.max(
+              0,
+              carryingAmount - recoverableAmount
+            )
+          : Number(
+              $("smImpairmentReversalAmount")?.value || 0
+            );
 
       return {
         ...base,
-        amount:
-          carrying > recoverableAmount
-            ? carrying - recoverableAmount
-            : 0,
-      };
-    }
+        amount: Number(amount.toFixed(2)),
 
-    if (t === "impairment_reversal") {
-      return {
-        ...base,
-        amount:
-          Number(meta_json.reversal_amount || 0),
+        meta_json: {
+          ...meta_json,
+          carrying_amount_before:
+            Number(carryingAmount.toFixed(2)),
+
+          recoverable_amount:
+            Number(recoverableAmount.toFixed(2)),
+
+          recoverable_basis:
+            recoverableBasis,
+
+          value_in_use:
+            recoverableBasis === "value_in_use"
+              ? Number(recoverableAmount.toFixed(2))
+              : null,
+
+          fair_value_less_costs:
+            recoverableBasis === "fair_value_less_costs"
+              ? Number(
+                  Math.max(
+                    0,
+                    fairValue - disposalCosts
+                  ).toFixed(2)
+                )
+              : null,
+
+          fair_value:
+            fairValue || null,
+
+          costs_of_disposal:
+            disposalCosts || null,
+
+          discount_rate:
+            Number($("smDiscountRate")?.value || 0) || null,
+
+          growth_rate:
+            Number($("smGrowthRate")?.value || 0) || null,
+
+          cash_flow_period_months:
+            cashFlowYears > 0
+              ? cashFlowYears * 12
+              : null,
+
+          reversal_amount:
+            t === "impairment_reversal"
+              ? Number(amount.toFixed(2))
+              : 0,
+
+          reason:
+            $("smImpairmentReason")?.value || null,
+        },
       };
     }
 
@@ -39418,6 +39411,11 @@ async function saveEditModal() {
 
       depreciation_method:
         $("smMethod")?.value || null,
+
+      meta_json:
+        Object.keys(meta_json).length
+          ? meta_json
+          : null,
     };
   }
 
@@ -41102,42 +41100,30 @@ async function saveEditModal() {
         ← Back to Runs
       </button>
 
-      ${isDraft ? `
-        <button class="btn btn-primary" id="dtAddLineBtn">
-          + Add Temporary Difference
-        </button>
+      actionButtons
 
-        <button class="btn btn-secondary" id="dtRecalculateBtn">
-          Recalculate
-        </button>
+            ${isReviewed ? `
+              <button class="btn btn-secondary" id="dtReturnDraftBtn">
+                ← Return to Draft
+              </button>
 
-        <button class="btn btn-primary" id="dtReviewBtn">
-          Submit for Review
-        </button>
-      ` : ""}
+              <button class="btn btn-primary" id="dtApproveBtn">
+                Approve Run
+              </button>
+            ` : ""}
 
-      ${isReviewed ? `
-        <button class="btn btn-secondary" id="dtReturnDraftBtn">
-          ← Return to Draft
-        </button>
+            ${isApproved ? `
+              <button class="btn btn-primary" id="dtPostBtn">
+                Post to General Ledger
+              </button>
+            ` : ""}
 
-        <button class="btn btn-primary" id="dtApproveBtn">
-          Approve Run
-        </button>
-      ` : ""}
-
-      ${isApproved ? `
-        <button class="btn btn-primary" id="dtPostBtn">
-          Post to General Ledger
-        </button>
-      ` : ""}
-
-      ${canVoid ? `
-        <button class="btn btn-danger" id="dtVoidBtn">
-          Void Run
-        </button>
-      ` : ""}
-    `;
+            ${canVoid ? `
+              <button class="btn btn-danger" id="dtVoidBtn">
+                Void Run
+              </button>
+            ` : ""}
+          `;
 
     const workflowMessage =
       isDraft
@@ -41207,8 +41193,19 @@ async function saveEditModal() {
               ${line.difference_type}
             </span>
           </td>
-          <td>${money(line.recognized_amount)}</td>
-          ${deleteButton}
+            <td>${money(line.recognized_amount)}</td>
+
+            <td>
+              <span class="dt-status ${line.scan_status || "resolved"}">
+                ${line.scan_status || "resolved"}
+              </span>
+            </td>
+
+            <td>
+              ${line.resolution_message || "-"}
+            </td>
+
+            ${deleteButton}
         </tr>
       `;
     }).join("");
@@ -41227,6 +41224,8 @@ async function saveEditModal() {
                 <th>Difference</th>
                 <th>Type</th>
                 <th>Deferred Tax</th>
+                <th>Scan Status</th>
+                <th>Message</th>
                 ${tableHeaderAction}
               </tr>
             </thead>
@@ -41633,6 +41632,14 @@ async function saveEditModal() {
 
     if (e.target.id === "dtRefreshBtn") {
       await loadRuns();
+    }
+
+    if (e.target.id === "dtScanBtn") {
+      if (!confirm(
+        "Scan the balance sheet and replace previously generated lines?"
+      )) return;
+
+      await runAction("scan");
     }
 
     if (e.target.id === "dtBackBtn") {

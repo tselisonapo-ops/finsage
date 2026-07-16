@@ -67,6 +67,11 @@ from BackEnd.Services.reporting.revenue_disclosure_builder import build_revenue_
 if TYPE_CHECKING:
     from BackEnd.Services.lease_engine import LeaseScheduleResult
 
+
+from BackEnd.Services.reporting.balance_sheet_builder_v3 import (
+    build_balance_sheet_v3,
+    extract_deferred_tax_candidates,
+)
 # ────────────────────────────────────────────────────────────────
 # ENV-DEPENDENT CONFIG (NOW SAFE)
 # ────────────────────────────────────────────────────────────────
@@ -24094,6 +24099,7 @@ class DatabaseService:
         ALTER TABLE {schema}.accrual_deferral_items
         ADD COLUMN IF NOT EXISTS tax_treatment_code TEXT NULL,
         ADD COLUMN IF NOT EXISTS tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS manual_tax_base NUMERIC(18,2) NULL,
         ADD COLUMN IF NOT EXISTS tax_treatment_notes TEXT NULL;
 
         DO $$
@@ -25450,6 +25456,50 @@ class DatabaseService:
                     recognition_percent BETWEEN 0 AND 100
                 )
         );
+
+        ALTER TABLE {schema}.deferred_tax_run_lines
+        ADD COLUMN IF NOT EXISTS scan_status TEXT
+            NOT NULL DEFAULT 'resolved',
+        ADD COLUMN IF NOT EXISTS resolution_message TEXT NULL,
+        ADD COLUMN IF NOT EXISTS bs_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS bs_carrying_amount NUMERIC(18,2) NULL;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname = 'ck_deferred_tax_scan_status'
+            ) THEN
+                ALTER TABLE {schema}.deferred_tax_run_lines
+                ADD CONSTRAINT ck_deferred_tax_scan_status
+                CHECK (
+                    scan_status IN (
+                        'resolved',
+                        'requires_review',
+                        'excluded',
+                        'reconciliation_error'
+                    )
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_deferred_tax_scan_status_idx
+        ON {schema}.deferred_tax_run_lines (
+            company_id,
+            run_id,
+            scan_status
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_deferred_tax_bs_account_idx
+        ON {schema}.deferred_tax_run_lines (
+            company_id,
+            bs_account_code
+        )
+        WHERE bs_account_code IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_tax_base_overrides (
             id BIGSERIAL PRIMARY KEY,
@@ -91455,6 +91505,582 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id,
             run_id,
         ))
+
+    def deferred_tax_build_balance_sheet(
+        self,
+        company_id: int,
+        as_at: date,
+    ) -> Dict[str, Any]:
+        return build_balance_sheet_v3(
+            company_id=int(company_id),
+            as_of=as_at,
+            get_company_context_fn=self.get_company_context,
+            get_trial_balance_fn=self.get_trial_balance,
+            get_pnl_full_fn=self.get_pnl_full,
+            include_net_profit_line=False,
+            view="external",
+            basis="external",
+        )
+
+    def _dt_classify(
+        self,
+        balance_type: str,
+        carrying_amount: Decimal,
+        tax_base: Decimal,
+    ):
+        difference = carrying_amount - tax_base
+
+        if difference == 0:
+            return difference, "none"
+
+        if balance_type == "asset":
+            return difference, "taxable" if difference > 0 else "deductible"
+
+        if balance_type == "liability":
+            return difference, "deductible" if difference > 0 else "taxable"
+
+        raise ValueError(f"Unsupported balance type: {balance_type}")
+
+    def _dt_insert_scanned_line(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        run: Dict[str, Any],
+        source_module: str,
+        source_table: str,
+        source_type: str,
+        source_id,
+        source_line_id,
+        description: str,
+        balance_type: str,
+        carrying_amount,
+        tax_base,
+        bs_account_code: str,
+        bs_carrying_amount,
+        scan_status: str = "resolved",
+        resolution_message: str = None,
+        tax_treatment_code: str = None,
+        destination: str = "profit_or_loss",
+        calculation_json: Dict[str, Any] = None,
+    ):
+        carrying = Decimal(str(carrying_amount or 0))
+        tax_base = Decimal(str(tax_base or 0))
+        difference, difference_type = self._dt_classify(
+            balance_type,
+            carrying,
+            tax_base,
+        )
+
+        rate = Decimal(str(run["tax_rate"] or 0))
+        gross_tax = (
+            abs(difference) * rate / Decimal("100")
+        ).quantize(Decimal("0.01"))
+
+        cur.execute(f"""
+            INSERT INTO {schema}.deferred_tax_run_lines (
+                company_id,
+                run_id,
+                source_module,
+                source_table,
+                source_type,
+                source_id,
+                source_line_id,
+                description,
+                balance_type,
+                carrying_amount,
+                tax_base,
+                temporary_difference,
+                difference_type,
+                tax_rate,
+                gross_deferred_tax,
+                recognition_percent,
+                recognized_amount,
+                unrecognized_amount,
+                recognition_destination,
+                tax_treatment_code,
+                is_manual,
+                scan_status,
+                resolution_message,
+                bs_account_code,
+                bs_carrying_amount,
+                calculation_json
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                100,%s,0,%s,%s,FALSE,
+                %s,%s,%s,%s,%s::jsonb
+            );
+        """, (
+            company_id,
+            run["id"],
+            source_module,
+            source_table,
+            source_type,
+            source_id,
+            source_line_id,
+            description,
+            balance_type,
+            carrying,
+            tax_base,
+            difference,
+            difference_type,
+            rate,
+            gross_tax,
+            gross_tax if scan_status == "resolved" else Decimal("0"),
+            destination,
+            tax_treatment_code,
+            scan_status,
+            resolution_message,
+            bs_account_code,
+            Decimal(str(bs_carrying_amount or 0)),
+            json_dumps(calculation_json or {}),
+        ))
+
+    def _dt_scan_assets(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        run: Dict[str, Any],
+        candidate: Dict[str, Any],
+    ):
+        tax_run = self.fetch_one(f"""
+            SELECT id, status, tax_year_end
+            FROM {schema}.asset_tax_runs
+            WHERE company_id = %s
+            AND tax_authority_id = %s
+            AND tax_year_end = %s
+            AND status IN ('calculated','approved','locked')
+            ORDER BY
+                CASE status
+                    WHEN 'locked' THEN 1
+                    WHEN 'approved' THEN 2
+                    ELSE 3
+                END,
+                id DESC
+            LIMIT 1;
+        """, (
+            company_id,
+            run["tax_authority_id"],
+            run["reporting_date"],
+        ), cur=cur)
+
+        if not tax_run:
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="assets",
+                source_table="asset_tax_runs",
+                source_type=candidate["source_type"],
+                source_id=None,
+                source_line_id=None,
+                description=candidate["description"],
+                balance_type="asset",
+                carrying_amount=candidate["carrying_amount"],
+                tax_base=candidate["carrying_amount"],
+                bs_account_code=candidate["account_code"],
+                bs_carrying_amount=candidate["carrying_amount"],
+                scan_status="requires_review",
+                resolution_message=(
+                    "No calculated, approved or locked asset-tax run "
+                    "exists for this reporting date."
+                ),
+                calculation_json={"candidate": candidate},
+            )
+            return
+
+        rows = self.fetch_all(f"""
+            SELECT
+                l.id,
+                l.asset_id,
+                l.accounting_carrying_amount,
+                l.closing_tax_wdv,
+                a.name AS asset_name,
+                a.accounting_standard,
+                a.measurement_model
+            FROM {schema}.asset_tax_run_lines l
+            JOIN {schema}.assets a
+            ON a.id = l.asset_id
+            WHERE l.company_id = %s
+            AND l.run_id = %s
+            ORDER BY l.asset_id;
+        """, (
+            company_id,
+            tax_run["id"],
+        ), cur=cur) or []
+
+        expected_standard = {
+            "ppe": "ias16",
+            "intangible_asset": "ias38",
+            "investment_property": "ias40",
+        }.get(candidate["source_type"])
+
+        if expected_standard:
+            rows = [
+                row for row in rows
+                if str(row.get("accounting_standard") or "").lower()
+                == expected_standard
+            ]
+
+        resolved_total = sum(
+            Decimal(str(row.get("accounting_carrying_amount") or 0))
+            for row in rows
+        )
+
+        face_amount = Decimal(str(candidate["carrying_amount"] or 0))
+        reconciles = abs(resolved_total - face_amount) <= Decimal("0.05")
+
+        for row in rows:
+            destination = (
+                "oci"
+                if str(row.get("measurement_model") or "").lower()
+                in ("revaluation", "fair_value")
+                else "profit_or_loss"
+            )
+
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="assets",
+                source_table="asset_tax_run_lines",
+                source_type=candidate["source_type"],
+                source_id=row["asset_id"],
+                source_line_id=row["id"],
+                description=row.get("asset_name") or candidate["description"],
+                balance_type="asset",
+                carrying_amount=row["accounting_carrying_amount"],
+                tax_base=row["closing_tax_wdv"],
+                bs_account_code=candidate["account_code"],
+                bs_carrying_amount=face_amount,
+                scan_status=(
+                    "resolved"
+                    if reconciles
+                    else "reconciliation_error"
+                ),
+                resolution_message=(
+                    None
+                    if reconciles
+                    else (
+                        f"Asset detail carrying amount {resolved_total} "
+                        f"does not reconcile to balance-sheet value "
+                        f"{face_amount}."
+                    )
+                ),
+                destination=destination,
+                calculation_json={
+                    "asset_tax_run_id": tax_run["id"],
+                    "asset_tax_run_line_id": row["id"],
+                    "balance_sheet_face_amount": str(face_amount),
+                    "resolved_asset_total": str(resolved_total),
+                },
+            )
+
+    def _dt_accrual_tax_base(
+        self,
+        item_type: str,
+        treatment: str,
+        carrying_amount: Decimal,
+        manual_tax_base,
+    ):
+        if treatment == "manual":
+            if manual_tax_base is None:
+                return None
+            return Decimal(str(manual_tax_base))
+
+        if item_type in ("prepaid_expense", "deferred_expense"):
+            if treatment == "already_deducted":
+                return Decimal("0")
+            if treatment == "deductible_as_recognized":
+                return carrying_amount
+
+        if item_type == "accrued_expense":
+            if treatment == "deductible_on_payment":
+                return Decimal("0")
+            if treatment == "deductible_when_incurred":
+                return carrying_amount
+
+        if item_type == "deferred_income":
+            if treatment == "taxed_on_receipt":
+                return Decimal("0")
+            if treatment == "taxed_when_earned":
+                return carrying_amount
+
+        if item_type == "accrued_income":
+            if treatment == "taxed_on_receipt":
+                return Decimal("0")
+            if treatment == "taxed_when_earned":
+                return carrying_amount
+
+        if treatment == "non_deductible":
+            return carrying_amount
+
+        return None
+
+    def _dt_scan_accrual_deferrals(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        run: Dict[str, Any],
+        candidate: Dict[str, Any],
+    ):
+        items = self.fetch_all(f"""
+            SELECT
+                i.id,
+                i.item_number,
+                i.item_title,
+                i.item_type,
+                i.balance_account,
+                i.tax_treatment_code,
+                i.manual_tax_base,
+                i.tax_treatment_notes,
+                s.id AS schedule_line_id,
+                s.closing_balance
+            FROM {schema}.accrual_deferral_items i
+            JOIN LATERAL (
+                SELECT
+                    sl.id,
+                    sl.closing_balance
+                FROM {schema}.accrual_deferral_schedule_lines sl
+                WHERE sl.company_id = i.company_id
+                AND sl.item_id = i.id
+                AND sl.period_end <= %s
+                AND sl.status NOT IN ('reversed','void')
+                ORDER BY sl.period_end DESC, sl.id DESC
+                LIMIT 1
+            ) s ON TRUE
+            WHERE i.company_id = %s
+            AND i.status IN ('active','completed')
+            AND i.item_type = %s
+            AND i.balance_account = %s
+            AND ABS(s.closing_balance) > 0.005
+            ORDER BY i.id;
+        """, (
+            run["reporting_date"],
+            company_id,
+            candidate["source_type"],
+            candidate["account_code"],
+        ), cur=cur) or []
+
+        detail_total = sum(
+            Decimal(str(row.get("closing_balance") or 0))
+            for row in items
+        )
+
+        face_amount = Decimal(str(candidate["carrying_amount"] or 0))
+        reconciles = abs(detail_total - face_amount) <= Decimal("0.05")
+
+        if not items:
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="accrual_deferral",
+                source_table="accrual_deferral_items",
+                source_type=candidate["source_type"],
+                source_id=None,
+                source_line_id=None,
+                description=candidate["description"],
+                balance_type=candidate["balance_type"],
+                carrying_amount=face_amount,
+                tax_base=face_amount,
+                bs_account_code=candidate["account_code"],
+                bs_carrying_amount=face_amount,
+                scan_status="requires_review",
+                resolution_message=(
+                    "No accrual/deferral schedule detail was found "
+                    "for this balance-sheet account."
+                ),
+                calculation_json={"candidate": candidate},
+            )
+            return
+
+        for row in items:
+            carrying = Decimal(str(row["closing_balance"] or 0))
+            treatment = row.get("tax_treatment_code")
+
+            tax_base = self._dt_accrual_tax_base(
+                row["item_type"],
+                treatment,
+                carrying,
+                row.get("manual_tax_base"),
+            )
+
+            if not reconciles:
+                scan_status = "reconciliation_error"
+                message = (
+                    f"Schedule total {detail_total} does not reconcile "
+                    f"to balance-sheet value {face_amount}."
+                )
+            elif tax_base is None:
+                scan_status = "requires_review"
+                message = "Select the tax treatment for this item."
+                tax_base = carrying
+            else:
+                scan_status = "resolved"
+                message = None
+
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="accrual_deferral",
+                source_table="accrual_deferral_items",
+                source_type=row["item_type"],
+                source_id=row["id"],
+                source_line_id=row["schedule_line_id"],
+                description=(
+                    row.get("item_title")
+                    or row.get("item_number")
+                    or candidate["description"]
+                ),
+                balance_type=candidate["balance_type"],
+                carrying_amount=carrying,
+                tax_base=tax_base,
+                bs_account_code=candidate["account_code"],
+                bs_carrying_amount=face_amount,
+                scan_status=scan_status,
+                resolution_message=message,
+                tax_treatment_code=treatment,
+                calculation_json={
+                    "item_number": row.get("item_number"),
+                    "schedule_total": str(detail_total),
+                    "balance_sheet_face_amount": str(face_amount),
+                    "tax_treatment_notes": row.get(
+                        "tax_treatment_notes"
+                    ),
+                },
+            )
+
+    def deferred_tax_scan_run(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                run = self.fetch_one(f"""
+                    SELECT *
+                    FROM {schema}.deferred_tax_runs
+                    WHERE company_id = %s
+                    AND id = %s
+                    LIMIT 1;
+                """, (
+                    company_id,
+                    run_id,
+                ), cur=cur)
+
+                if not run:
+                    raise ValueError("Deferred-tax run not found.")
+
+                if run["status"] != "draft":
+                    raise ValueError(
+                        "Only a draft deferred-tax run can be scanned."
+                    )
+
+                as_at = run["reporting_date"]
+                balance_sheet = self.deferred_tax_build_balance_sheet(
+                    company_id,
+                    as_at,
+                )
+
+                balance_difference = Decimal(str(
+                    balance_sheet
+                    .get("balance_check", {})
+                    .get("values", {})
+                    .get("cur", 0)
+                ))
+
+                if abs(balance_difference) > Decimal("0.05"):
+                    raise ValueError(
+                        "Balance sheet is not balanced at the reporting date."
+                    )
+
+                candidates = extract_deferred_tax_candidates(
+                    balance_sheet
+                )
+
+                cur.execute(f"""
+                    DELETE FROM {schema}.deferred_tax_run_lines
+                    WHERE company_id = %s
+                    AND run_id = %s
+                    AND is_manual = FALSE;
+                """, (
+                    company_id,
+                    run_id,
+                ))
+
+                scanned = 0
+
+                for candidate in candidates:
+                    module = candidate.get("source_module")
+                    source_type = candidate.get("source_type")
+
+                    if (
+                        module == "assets"
+                        and source_type in (
+                            "ppe",
+                            "intangible_asset",
+                            "investment_property",
+                        )
+                    ):
+                        self._dt_scan_assets(
+                            cur,
+                            schema=schema,
+                            company_id=company_id,
+                            run=run,
+                            candidate=candidate,
+                        )
+                        scanned += 1
+                        continue
+
+                    if (
+                        module == "accrual_deferral"
+                        and source_type in (
+                            "prepaid_expense",
+                            "deferred_expense",
+                            "deferred_income",
+                            "accrued_income",
+                            "accrued_expense",
+                        )
+                    ):
+                        self._dt_scan_accrual_deferrals(
+                            cur,
+                            schema=schema,
+                            company_id=company_id,
+                            run=run,
+                            candidate=candidate,
+                        )
+                        scanned += 1
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        self.deferred_tax_refresh_totals(company_id, run_id)
+
+        result = self.deferred_tax_get_run(company_id, run_id)
+        result["scan_summary"] = {
+            "balance_sheet_as_at": str(as_at),
+            "candidate_count": len(candidates),
+            "processed_candidate_count": scanned,
+        }
+        return result
 
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
