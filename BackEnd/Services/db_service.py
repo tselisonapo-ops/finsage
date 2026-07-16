@@ -90968,7 +90968,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ).quantize(Decimal("0.01"))
 
         # PLACE THE UPDATE HERE
-        self.execute(f"""
+        self.execute_sql(f"""
             UPDATE {schema}.deferred_tax_runs
             SET
                 gross_dta = %s,
