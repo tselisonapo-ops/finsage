@@ -40955,9 +40955,23 @@ async function saveEditModal() {
       maximumFractionDigits: 2
     });
 
+  const modal = () =>
+    document.getElementById("dtModal");
+
+  function openModal(title, html) {
+    document.getElementById("dtModalTitle").textContent = title;
+    document.getElementById("dtModalBody").innerHTML = html;
+    modal().classList.remove("hidden");
+  }
+
+  function closeModal() {
+    modal().classList.add("hidden");
+    document.getElementById("dtModalBody").innerHTML = "";
+  }
+
   async function loadRuns() {
     const mount = document.getElementById("dtRunList");
-    mount.innerHTML = "Loading...";
+    mount.innerHTML = `<div class="dt-loading">Loading deferred tax runs...</div>`;
 
     try {
       const res = await apiFetch(
@@ -40968,45 +40982,66 @@ async function saveEditModal() {
 
       mount.innerHTML = rows.length
         ? `
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Authority</th>
-                <th>Rate</th>
-                <th>Status</th>
-                <th>DTA</th>
-                <th>DTL</th>
-                <th>Net</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map(row => `
+          <div class="dt-table-wrap">
+            <table class="dt-table">
+              <thead>
                 <tr>
-                  <td>${String(row.reporting_date).slice(0, 10)}</td>
-                  <td>${row.tax_authority_code || row.tax_authority_name || "-"}</td>
-                  <td>${Number(row.tax_rate || 0).toFixed(2)}%</td>
-                  <td>${row.status}</td>
-                  <td>${money(row.gross_dta)}</td>
-                  <td>${money(row.gross_dtl)}</td>
-                  <td>${money(row.net_deferred_tax)}</td>
-                  <td>
-                    <button
-                      class="btn btn-sm btn-secondary"
-                      data-dt-run="${row.id}"
-                    >
-                      Open
-                    </button>
-                  </td>
+                  <th>Date</th>
+                  <th>Authority</th>
+                  <th>Rate</th>
+                  <th>Status</th>
+                  <th>DTA</th>
+                  <th>DTL</th>
+                  <th>Net</th>
+                  <th></th>
                 </tr>
-              `).join("")}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                ${rows.map(row => `
+                  <tr>
+                    <td>${String(row.reporting_date).slice(0, 10)}</td>
+                    <td>
+                      ${row.tax_authority_code ||
+                        row.tax_authority_name ||
+                        "-"}
+                    </td>
+                    <td>
+                      ${Number(row.tax_rate || 0).toFixed(2)}%
+                    </td>
+                    <td>
+                      <span class="dt-status ${row.status}">
+                        ${row.status}
+                      </span>
+                    </td>
+                    <td>${money(row.gross_dta)}</td>
+                    <td>${money(row.gross_dtl)}</td>
+                    <td>${money(row.net_deferred_tax)}</td>
+                    <td>
+                      <button
+                        class="btn btn-sm btn-secondary"
+                        data-dt-run="${row.id}"
+                      >
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
         `
-        : `<div class="empty-state">No deferred tax runs.</div>`;
+        : `
+          <div class="dt-empty">
+            No deferred tax runs have been created.
+          </div>
+        `;
     } catch (e) {
-      mount.innerHTML = `<div class="error">${e.message}</div>`;
+      mount.innerHTML = `
+        <div class="dt-error">
+          ${e.message}
+        </div>
+      `;
     }
   }
 
@@ -41021,8 +41056,9 @@ async function saveEditModal() {
       .getElementById("dtRunList")
       .classList.add("hidden");
 
-    const mount = document.getElementById("dtRunDetail");
-    mount.classList.remove("hidden");
+    document
+      .getElementById("dtRunDetail")
+      .classList.remove("hidden");
 
     renderRun();
   }
@@ -41032,14 +41068,20 @@ async function saveEditModal() {
     const lines = run?.lines || [];
 
     document.getElementById("dtRunDetail").innerHTML = `
-      <div class="toolbar">
+      <div class="dt-toolbar">
         <button class="btn btn-secondary" id="dtBackBtn">
           Back
         </button>
 
-        <button class="btn btn-primary" id="dtAddLineBtn">
-          Add Line
-        </button>
+        ${
+          run.status === "draft"
+            ? `
+              <button class="btn btn-primary" id="dtAddLineBtn">
+                Add Line
+              </button>
+            `
+            : ""
+        }
 
         <button class="btn btn-secondary" id="dtRecalculateBtn">
           Recalculate
@@ -41047,129 +41089,294 @@ async function saveEditModal() {
 
         ${
           run.status === "draft"
-            ? `<button class="btn btn-primary" id="dtReviewBtn">Review</button>`
+            ? `
+              <button class="btn btn-primary" id="dtReviewBtn">
+                Review
+              </button>
+            `
             : ""
         }
 
         ${
           run.status === "reviewed"
-            ? `<button class="btn btn-primary" id="dtApproveBtn">Approve</button>`
+            ? `
+              <button class="btn btn-primary" id="dtApproveBtn">
+                Approve
+              </button>
+            `
             : ""
         }
 
         ${
           ["draft", "reviewed", "approved"].includes(run.status)
-            ? `<button class="btn btn-danger" id="dtVoidBtn">Void</button>`
+            ? `
+              <button class="btn btn-danger" id="dtVoidBtn">
+                Void
+              </button>
+            `
             : ""
         }
       </div>
 
-      <div class="summary-grid">
-        <div class="summary-card">
+      <div class="dt-summary-grid">
+        <div class="dt-summary-card">
           <span>Gross DTA</span>
           <strong>${money(run.gross_dta)}</strong>
         </div>
 
-        <div class="summary-card">
+        <div class="dt-summary-card">
           <span>Gross DTL</span>
           <strong>${money(run.gross_dtl)}</strong>
         </div>
 
-        <div class="summary-card">
+        <div class="dt-summary-card">
           <span>Recognized DTA</span>
           <strong>${money(run.recognized_dta)}</strong>
         </div>
 
-        <div class="summary-card">
+        <div class="dt-summary-card">
           <span>Net Deferred Tax</span>
           <strong>${money(run.net_deferred_tax)}</strong>
         </div>
       </div>
 
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th>Balance Type</th>
-            <th>Carrying Amount</th>
-            <th>Tax Base</th>
-            <th>Difference</th>
-            <th>Type</th>
-            <th>Deferred Tax</th>
-            <th></th>
-          </tr>
-        </thead>
+      ${
+        lines.length
+          ? `
+            <div class="dt-table-wrap">
+              <table class="dt-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th>Balance Type</th>
+                    <th>Carrying Amount</th>
+                    <th>Tax Base</th>
+                    <th>Difference</th>
+                    <th>Type</th>
+                    <th>Deferred Tax</th>
+                    <th></th>
+                  </tr>
+                </thead>
 
-        <tbody>
-          ${lines.map(line => `
-            <tr>
-              <td>${line.description}</td>
-              <td>${line.balance_type}</td>
-              <td>${money(line.carrying_amount)}</td>
-              <td>${money(line.tax_base)}</td>
-              <td>${money(line.temporary_difference)}</td>
-              <td>${line.difference_type}</td>
-              <td>${money(line.recognized_amount)}</td>
-              <td>
-                ${
-                  run.status === "draft"
-                    ? `
-                      <button
-                        class="btn btn-sm btn-danger"
-                        data-dt-delete="${line.id}"
-                      >
-                        Delete
-                      </button>
-                    `
-                    : ""
-                }
-              </td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
+                <tbody>
+                  ${lines.map(line => `
+                    <tr>
+                      <td>${line.description}</td>
+                      <td>${line.balance_type}</td>
+                      <td>${money(line.carrying_amount)}</td>
+                      <td>${money(line.tax_base)}</td>
+                      <td>${money(line.temporary_difference)}</td>
+                      <td>${line.difference_type}</td>
+                      <td>${money(line.recognized_amount)}</td>
+                      <td>
+                        ${
+                          run.status === "draft"
+                            ? `
+                              <button
+                                class="btn btn-sm btn-danger"
+                                data-dt-delete="${line.id}"
+                              >
+                                Delete
+                              </button>
+                            `
+                            : ""
+                        }
+                      </td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="dt-empty">
+              No temporary differences have been added.
+            </div>
+          `
+      }
     `;
   }
 
-  async function createRun() {
-    const reportingDate = prompt("Reporting date: YYYY-MM-DD");
-    if (!reportingDate) return;
+  function showCreateRunModal() {
+    openModal("Create Deferred Tax Run", `
+      <form id="dtCreateRunForm">
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Reporting date</label>
+            <input
+              type="date"
+              name="reporting_date"
+              required
+            >
+          </div>
 
-    const authorityId = prompt("Tax authority ID");
-    if (!authorityId) return;
+          <div class="dt-field">
+            <label>Tax authority</label>
+            <select name="tax_authority_id" required>
+              <option value="">Select authority</option>
+              <option value="1">RSL</option>
+              <option value="2">SARS</option>
+              <option value="3">BURS</option>
+            </select>
+          </div>
 
-    const taxRate = prompt("Tax rate percentage");
-    if (taxRate === null) return;
+          <div class="dt-field">
+            <label>Tax rate (%)</label>
+            <input
+              type="number"
+              name="tax_rate"
+              min="0"
+              max="100"
+              step="0.0001"
+              required
+            >
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-dt-close
+          >
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Create Run
+          </button>
+        </div>
+      </form>
+    `);
+  }
+
+  function showAddLineModal() {
+    openModal("Add Temporary Difference", `
+      <form id="dtAddLineForm">
+        <div class="dt-form-grid">
+          <div class="dt-field full">
+            <label>Description</label>
+            <input
+              type="text"
+              name="description"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Balance type</label>
+            <select name="balance_type" required>
+              <option value="asset">Asset</option>
+              <option value="liability">Liability</option>
+              <option value="tax_loss">Tax loss</option>
+              <option value="tax_credit">Tax credit</option>
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Source module</label>
+            <select name="source_module">
+              <option value="manual">Manual</option>
+              <option value="assets">Assets</option>
+              <option value="accrual_deferral">
+                Accruals & Deferrals
+              </option>
+              <option value="ifrs9">IFRS 9</option>
+              <option value="ifrs16">IFRS 16</option>
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Carrying amount</label>
+            <input
+              type="number"
+              name="carrying_amount"
+              step="0.01"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Tax base</label>
+            <input
+              type="number"
+              name="tax_base"
+              step="0.01"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Recognition percent</label>
+            <input
+              type="number"
+              name="recognition_percent"
+              min="0"
+              max="100"
+              step="0.01"
+              value="100"
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Recognition destination</label>
+            <select name="recognition_destination">
+              <option value="profit_or_loss">
+                Profit or loss
+              </option>
+              <option value="oci">OCI</option>
+              <option value="equity">Equity</option>
+              <option value="business_combination">
+                Business combination
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-dt-close
+          >
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Add Line
+          </button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function createRun(form) {
+    const data = Object.fromEntries(
+      new FormData(form).entries()
+    );
 
     const res = await apiFetch(
       ENDPOINTS.deferredTax.runs(cid()),
       {
         method: "POST",
         body: JSON.stringify({
-          reporting_date: reportingDate,
-          tax_authority_id: Number(authorityId),
-          tax_rate: Number(taxRate)
+          reporting_date: data.reporting_date,
+          tax_authority_id:
+            Number(data.tax_authority_id),
+          tax_rate: Number(data.tax_rate)
         })
       }
     );
 
+    closeModal();
     await loadRuns();
     await openRun(res.data.id);
   }
 
-  async function addLine() {
-    const description = prompt("Description");
-    if (!description) return;
-
-    const balanceType =
-      prompt("Balance type: asset or liability", "asset") ||
-      "asset";
-
-    const carryingAmount = prompt("Carrying amount");
-    if (carryingAmount === null) return;
-
-    const taxBase = prompt("Tax base");
-    if (taxBase === null) return;
+  async function addLine(form) {
+    const data = Object.fromEntries(
+      new FormData(form).entries()
+    );
 
     await apiFetch(
       ENDPOINTS.deferredTax.lines(
@@ -41179,20 +41386,26 @@ async function saveEditModal() {
       {
         method: "POST",
         body: JSON.stringify({
-          description,
-          source_module: "manual",
+          description: data.description,
+          source_module: data.source_module,
           source_type: "manual",
-          balance_type: balanceType,
-          carrying_amount: Number(carryingAmount),
-          tax_base: Number(taxBase),
-          tax_rate: Number(selectedRun.tax_rate),
-          recognition_percent: 100,
-          recognition_destination: "profit_or_loss",
+          balance_type: data.balance_type,
+          carrying_amount:
+            Number(data.carrying_amount),
+          tax_base:
+            Number(data.tax_base),
+          tax_rate:
+            Number(selectedRun.tax_rate),
+          recognition_percent:
+            Number(data.recognition_percent || 100),
+          recognition_destination:
+            data.recognition_destination,
           is_manual: true
         })
       }
     );
 
+    closeModal();
     await openRun(selectedRun.id);
   }
 
@@ -41206,10 +41419,26 @@ async function saveEditModal() {
     );
 
     await openRun(selectedRun.id);
-    await loadRuns();
   }
 
+  document.addEventListener("submit", async e => {
+    if (e.target.id === "dtCreateRunForm") {
+      e.preventDefault();
+      await createRun(e.target);
+    }
+
+    if (e.target.id === "dtAddLineForm") {
+      e.preventDefault();
+      await addLine(e.target);
+    }
+  });
+
   document.addEventListener("click", async e => {
+    if (e.target.closest("[data-dt-close]")) {
+      closeModal();
+      return;
+    }
+
     const runBtn = e.target.closest("[data-dt-run]");
     if (runBtn) {
       await openRun(Number(runBtn.dataset.dtRun));
@@ -41232,7 +41461,7 @@ async function saveEditModal() {
     }
 
     if (e.target.id === "dtNewRunBtn") {
-      await createRun();
+      showCreateRunModal();
     }
 
     if (e.target.id === "dtRefreshBtn") {
@@ -41247,10 +41476,12 @@ async function saveEditModal() {
       document
         .getElementById("dtRunList")
         .classList.remove("hidden");
+
+      await loadRuns();
     }
 
     if (e.target.id === "dtAddLineBtn") {
-      await addLine();
+      showAddLineModal();
     }
 
     if (e.target.id === "dtRecalculateBtn") {
@@ -41270,9 +41501,7 @@ async function saveEditModal() {
     }
   });
 
-  window.bindDeferredTaxScreen = async function () {
-    await loadRuns();
-  };
+  window.bindDeferredTaxScreen = loadRuns;
 })();
 
 (function () {

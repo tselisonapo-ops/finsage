@@ -4979,6 +4979,275 @@ html, body {
   justify-content: flex-end;
   padding-top: 12px;
 }
+
+.dt-page {
+  max-width: 1450px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.dt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.dt-header h2 {
+  margin: 4px 0 6px;
+  font-size: 28px;
+  color: #102a43;
+}
+
+.dt-header p {
+  margin: 0;
+  color: #66788a;
+}
+
+.dt-tag {
+  display: inline-flex;
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: #e8f5f7;
+  color: #087f8c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dt-actions,
+.dt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dt-toolbar {
+  margin-bottom: 18px;
+}
+
+.dt-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.dt-summary-card {
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #dfe7ef;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(16, 42, 67, 0.05);
+}
+
+.dt-summary-card span {
+  display: block;
+  margin-bottom: 7px;
+  color: #6b7c8f;
+  font-size: 13px;
+}
+
+.dt-summary-card strong {
+  color: #102a43;
+  font-size: 23px;
+}
+
+.dt-table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #dfe7ef;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(16, 42, 67, 0.04);
+}
+
+.dt-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dt-table th,
+.dt-table td {
+  padding: 13px 15px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+}
+
+.dt-table th {
+  background: #f7fafc;
+  color: #526579;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.dt-table tbody tr:hover {
+  background: #f8fbfc;
+}
+
+.dt-status {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 20px;
+  background: #eef2f6;
+  color: #46596d;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.dt-status.draft {
+  background: #fff7df;
+  color: #946200;
+}
+
+.dt-status.reviewed {
+  background: #e8f2ff;
+  color: #175cd3;
+}
+
+.dt-status.approved,
+.dt-status.posted {
+  background: #e8f8ee;
+  color: #067647;
+}
+
+.dt-status.void,
+.dt-status.reversed {
+  background: #fdecec;
+  color: #b42318;
+}
+
+.dt-empty,
+.dt-loading,
+.dt-error {
+  padding: 45px 20px;
+  background: #fff;
+  border: 1px dashed #ccd7e2;
+  border-radius: 12px;
+  text-align: center;
+  color: #6b7c8f;
+}
+
+.dt-error {
+  color: #b42318;
+}
+
+.dt-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+}
+
+.dt-modal.hidden {
+  display: none;
+}
+
+.dt-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 29, 46, 0.55);
+}
+
+.dt-modal-card {
+  position: relative;
+  width: min(700px, calc(100vw - 32px));
+  max-height: calc(100vh - 50px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.25);
+}
+
+.dt-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e5eaf0;
+}
+
+.dt-modal-header h3 {
+  margin: 0;
+  color: #102a43;
+}
+
+.dt-modal-close {
+  border: 0;
+  background: transparent;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+#dtModalBody {
+  padding: 20px;
+}
+
+.dt-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+}
+
+.dt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dt-field.full {
+  grid-column: 1 / -1;
+}
+
+.dt-field label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #34495e;
+}
+
+.dt-field input,
+.dt-field select,
+.dt-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ccd7e2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.dt-field textarea {
+  min-height: 85px;
+  resize: vertical;
+}
+
+.dt-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .dt-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .dt-page {
+    padding: 16px;
+  }
+
+  .dt-header {
+    flex-direction: column;
+  }
+
+  .dt-summary-grid,
+  .dt-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
   </style>
 
 </head>
@@ -14570,26 +14839,49 @@ html, body {
       </div>
 
       <section id="screen-deferred-tax" class="screen hidden">
-        <div class="page-header">
-          <div>
-            <h2>IAS 12 Deferred Tax</h2>
-            <p>Temporary differences, tax bases and recognition assessments.</p>
+        <div class="dt-page">
+          <div class="dt-header">
+            <div>
+              <span class="dt-tag">IAS 12</span>
+              <h2>Deferred Tax</h2>
+              <p>Temporary differences, tax bases and recognition assessments.</p>
+            </div>
+
+            <div class="dt-actions">
+              <button id="dtRefreshBtn" class="btn btn-secondary">
+                Refresh
+              </button>
+
+              <button id="dtNewRunBtn" class="btn btn-primary">
+                New Run
+              </button>
+            </div>
           </div>
 
-          <button id="dtNewRunBtn" class="btn btn-primary">
-            New Run
-          </button>
+          <div id="dtRunList"></div>
+          <div id="dtRunDetail" class="hidden"></div>
         </div>
-
-        <div class="toolbar">
-          <button id="dtRefreshBtn" class="btn btn-secondary">
-            Refresh
-          </button>
-        </div>
-
-        <div id="dtRunList"></div>
-        <div id="dtRunDetail" class="hidden"></div>
       </section>
+
+      <div id="dtModal" class="dt-modal hidden">
+        <div class="dt-modal-backdrop" data-dt-close></div>
+
+        <div class="dt-modal-card">
+          <div class="dt-modal-header">
+            <h3 id="dtModalTitle"></h3>
+
+            <button
+              type="button"
+              class="dt-modal-close"
+              data-dt-close
+            >
+              ×
+            </button>
+          </div>
+
+          <div id="dtModalBody"></div>
+        </div>
+      </div>
 
       <section id="screen-fixedassets" class="screen">
         <div class="card p-4">
