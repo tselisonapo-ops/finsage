@@ -2030,7 +2030,7 @@ def impairments_void(company_id, imp_id):
     except Exception as e:
         current_app.logger.exception("void_impairment failed")
         return _json_error(str(e), 400)
-
+ 
 @ppe_bp.route("/api/companies/<int:company_id>/asset-cgus", methods=["GET", "POST", "OPTIONS"])
 @require_auth
 def asset_cgus_list_or_create(company_id):
@@ -2062,81 +2062,6 @@ def asset_cgus_list_or_create(company_id):
 
     except Exception as e:
         current_app.logger.exception("asset CGU request failed")
-        return _json_error(str(e), 400)
-    
-@ppe_bp.route("/api/companies/<int:company_id>/asset-cgus", methods=["GET", "POST", "OPTIONS"])
-@require_auth
-def asset_cgus_list_or_create(company_id):
-    if request.method == "OPTIONS":
-        return _opt()
-
-    payload, actor_id, deny = _ppe_request_context(company_id)
-    if deny:
-        return deny
-
-    try:
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                if request.method == "GET":
-                    status = (request.args.get("status") or "active").strip() or None
-                    return jsonify({
-                        "ok": True,
-                        "data": service.list_cgus(cur, company_id, status),
-                    })
-
-                body = _apply_engagement_bridge(
-                    request.get_json(force=True) or {},
-                    user_id=actor_id,
-                )
-
-                cgu_id = service.create_cgu(cur, company_id, body)
-                conn.commit()
-                return jsonify({"ok": True, "id": cgu_id}), 201
-
-    except Exception as e:
-        current_app.logger.exception("asset CGU request failed")
-        return _json_error(str(e), 400)
-
-@ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])
-@require_auth
-def impairment_get_update_or_void(company_id, imp_id):
-    if request.method == "OPTIONS":
-        return _opt()
-
-    payload, actor_id, deny = _ppe_request_context(company_id)
-    if deny:
-        return deny
-
-    try:
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                if request.method == "GET":
-                    row = service.get_impairment(cur, company_id, imp_id)
-                    if not row:
-                        return _json_error("Impairment not found", 404)
-                    return jsonify({"ok": True, "data": row})
-
-                if request.method == "DELETE":
-                    service.void_impairment(cur, company_id, imp_id)
-                    conn.commit()
-                    return jsonify({"ok": True})
-
-                body = request.get_json(force=True) or {}
-
-                if "impairment_date" in body:
-                    body["impairment_date"] = _parse_date(
-                        body.get("impairment_date"),
-                        "impairment_date",
-                    )
-
-                body["updated_by_user_id"] = actor_id
-                service.update_impairment(cur, company_id, imp_id, body)
-
-                conn.commit()
-                return jsonify({"ok": True})
-
-    except Exception as e:
-        current_app.logger.exception("impairment update failed")
         return _json_error(str(e), 400)
 
 @ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])
