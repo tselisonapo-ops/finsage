@@ -41072,9 +41072,187 @@ async function saveEditModal() {
   function renderRun() {
     const run = selectedRun;
     const lines = run?.lines || [];
+
     const isDraft = run.status === "draft";
     const isReviewed = run.status === "reviewed";
+    const isApproved = run.status === "approved";
+    const isPosted = run.status === "posted";
+
     const canVoid = ["draft", "reviewed", "approved"].includes(run.status);
+
+    const reviewStepClass =
+      isReviewed
+        ? "active"
+        : isApproved || isPosted
+          ? "done"
+          : "";
+
+    const approvalStepClass =
+      isApproved
+        ? "active"
+        : isPosted
+          ? "done"
+          : "";
+
+    const postingStepClass =
+      isPosted ? "done" : "";
+
+    const actionButtons = `
+      <button class="btn btn-secondary" id="dtBackBtn">
+        ← Back to Runs
+      </button>
+
+      ${isDraft ? `
+        <button class="btn btn-primary" id="dtAddLineBtn">
+          + Add Temporary Difference
+        </button>
+
+        <button class="btn btn-secondary" id="dtRecalculateBtn">
+          Recalculate
+        </button>
+
+        <button class="btn btn-primary" id="dtReviewBtn">
+          Submit for Review
+        </button>
+      ` : ""}
+
+      ${isReviewed ? `
+        <button class="btn btn-secondary" id="dtReturnDraftBtn">
+          ← Return to Draft
+        </button>
+
+        <button class="btn btn-primary" id="dtApproveBtn">
+          Approve Run
+        </button>
+      ` : ""}
+
+      ${isApproved ? `
+        <button class="btn btn-primary" id="dtPostBtn">
+          Post to General Ledger
+        </button>
+      ` : ""}
+
+      ${canVoid ? `
+        <button class="btn btn-danger" id="dtVoidBtn">
+          Void Run
+        </button>
+      ` : ""}
+    `;
+
+    const workflowMessage =
+      isDraft
+        ? `
+          <div class="dt-help-card">
+            <strong>Prepare the deferred-tax calculation</strong>
+            <p>
+              Add balances where the accounting carrying amount differs
+              from the tax base, then submit the run for review.
+            </p>
+          </div>
+        `
+        : isReviewed
+          ? `
+            <div class="dt-lock-notice">
+              This run is under review. Return it to draft when corrections
+              or additional temporary differences are required.
+            </div>
+          `
+          : isApproved
+            ? `
+              <div class="dt-help-card">
+                <strong>The run is approved</strong>
+                <p>
+                  Review the final totals, then post the deferred-tax
+                  adjustment to the general ledger.
+                </p>
+              </div>
+            `
+            : isPosted
+              ? `
+                <div class="dt-help-card">
+                  <strong>Posted to the general ledger</strong>
+                  <p>
+                    Journal ID: ${run.journal_id || "-"}
+                  </p>
+                </div>
+              `
+              : "";
+
+    const tableHeaderAction = isDraft ? "<th></th>" : "";
+
+    const tableRows = lines.map(line => {
+      const deleteButton = isDraft
+        ? `
+          <td>
+            <button
+              class="btn btn-sm btn-danger"
+              data-dt-delete="${line.id}"
+            >
+              Delete
+            </button>
+          </td>
+        `
+        : "";
+
+      return `
+        <tr>
+          <td><strong>${line.description}</strong></td>
+          <td>${line.source_module || "manual"}</td>
+          <td>${line.balance_type}</td>
+          <td>${money(line.carrying_amount)}</td>
+          <td>${money(line.tax_base)}</td>
+          <td>${money(line.temporary_difference)}</td>
+          <td>
+            <span class="dt-status ${line.difference_type}">
+              ${line.difference_type}
+            </span>
+          </td>
+          <td>${money(line.recognized_amount)}</td>
+          ${deleteButton}
+        </tr>
+      `;
+    }).join("");
+
+    const differencesSection = lines.length
+      ? `
+        <div class="dt-table-wrap">
+          <table class="dt-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Source</th>
+                <th>Balance Type</th>
+                <th>Carrying Amount</th>
+                <th>Tax Base</th>
+                <th>Difference</th>
+                <th>Type</th>
+                <th>Deferred Tax</th>
+                ${tableHeaderAction}
+              </tr>
+            </thead>
+
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </div>
+      `
+      : `
+        <div class="dt-empty">
+          <strong>No temporary differences yet</strong>
+
+          <p>
+            Add PPE, revaluations, impairments, prepayments,
+            accruals or deferred-income balances.
+          </p>
+
+          ${isDraft ? `
+            <button class="btn btn-primary" id="dtEmptyAddLineBtn">
+              + Add First Temporary Difference
+            </button>
+          ` : ""}
+        </div>
+      `;
 
     document.getElementById("dtRunDetail").innerHTML = `
       <div class="dt-workflow">
@@ -41086,13 +41264,7 @@ async function saveEditModal() {
           </div>
         </div>
 
-        <div class="dt-step ${
-          isReviewed
-            ? "active"
-            : ["approved", "posted"].includes(run.status)
-              ? "done"
-              : ""
-        }">
+        <div class="dt-step ${reviewStepClass}">
           <span>2</span>
           <div>
             <strong>Review</strong>
@@ -41100,17 +41272,19 @@ async function saveEditModal() {
           </div>
         </div>
 
-        <div class="dt-step ${
-          run.status === "approved"
-            ? "active"
-            : run.status === "posted"
-              ? "done"
-              : ""
-        }">
+        <div class="dt-step ${approvalStepClass}">
           <span>3</span>
           <div>
             <strong>Approve</strong>
             <small>Confirm the IAS 12 calculation</small>
+          </div>
+        </div>
+
+        <div class="dt-step ${postingStepClass}">
+          <span>4</span>
+          <div>
+            <strong>Post</strong>
+            <small>Create the general-ledger journal</small>
           </div>
         </div>
       </div>
@@ -41118,7 +41292,9 @@ async function saveEditModal() {
       <div class="dt-run-info">
         <div>
           <span>Reporting date</span>
-          <strong>${String(run.reporting_date || "").slice(0, 10)}</strong>
+          <strong>
+            ${String(run.reporting_date || "").slice(0, 10)}
+          </strong>
         </div>
 
         <div>
@@ -41130,7 +41306,9 @@ async function saveEditModal() {
 
         <div>
           <span>Tax rate</span>
-          <strong>${Number(run.tax_rate || 0).toFixed(2)}%</strong>
+          <strong>
+            ${Number(run.tax_rate || 0).toFixed(2)}%
+          </strong>
         </div>
 
         <div>
@@ -41142,81 +41320,10 @@ async function saveEditModal() {
       </div>
 
       <div class="dt-toolbar">
-        <button class="btn btn-secondary" id="dtBackBtn">
-          ← Back to Runs
-        </button>
-
-        <button
-          class="btn btn-primary"
-          id="dtAddLineBtn"
-          ${isDraft ? "" : "disabled"}
-          title="${
-            isDraft
-              ? "Add a temporary difference"
-              : "Return the run to draft before adding lines"
-          }"
-        >
-          + Add Temporary Difference
-        </button>
-
-        ${
-          isDraft
-            ? `
-              <button class="btn btn-secondary" id="dtRecalculateBtn">
-                Recalculate
-              </button>
-
-              <button class="btn btn-primary" id="dtReviewBtn">
-                Submit for Review →
-              </button>
-            `
-            : ""
-        }
-
-        ${
-          isReviewed
-            ? `
-              <button class="btn btn-secondary" id="dtReturnDraftBtn">
-                ← Return to Draft
-              </button>
-
-              <button class="btn btn-primary" id="dtApproveBtn">
-                Approve Run
-              </button>
-            `
-            : ""
-        }
-
-        ${
-          canVoid
-            ? `
-              <button class="btn btn-danger" id="dtVoidBtn">
-                Void Run
-              </button>
-            `
-            : ""
-        }
+        ${actionButtons}
       </div>
 
-      ${
-        isDraft
-          ? `
-            <div class="dt-help-card">
-              <strong>How to use this run</strong>
-              <p>
-                Add every balance where the carrying amount differs from
-                its tax base. FinSage will classify the difference as
-                taxable or deductible and calculate the deferred tax.
-              </p>
-            </div>
-          `
-          : `
-            <div class="dt-lock-notice">
-              This run is currently <strong>${run.status}</strong>.
-              Lines can only be added or deleted while the run is in draft.
-            </div>
-          `
-      }
+      ${workflowMessage}
 
       <div class="dt-summary-grid">
         <div class="dt-summary-card">
@@ -41248,105 +41355,12 @@ async function saveEditModal() {
           </p>
         </div>
 
-        <span>${lines.length} line${lines.length === 1 ? "" : "s"}</span>
+        <span>
+          ${lines.length} line${lines.length === 1 ? "" : "s"}
+        </span>
       </div>
 
-      ${
-        lines.length
-          ? `
-            <div class="dt-table-wrap">
-              <table class="dt-table">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th>Source</th>
-                    <th>Balance Type</th>
-                    <th>Carrying Amount</th>
-                    <th>Tax Base</th>
-                    <th>Difference</th>
-                    <th>Type</th>
-                    <th>Deferred Tax</th>
-                    ${isDraft ? "<th></th>" : ""}
-                  </tr>
-                </thead>
-
-                <tbody>
-                  ${lines.map(line => `
-                    <tr>
-                      <td>
-                        <strong>${line.description}</strong>
-                      </td>
-
-                      <td>
-                        ${line.source_module || "manual"}
-                      </td>
-
-                      <td>
-                        ${line.balance_type}
-                      </td>
-
-                      <td>
-                        ${money(line.carrying_amount)}
-                      </td>
-
-                      <td>
-                        ${money(line.tax_base)}
-                      </td>
-
-                      <td>
-                        ${money(line.temporary_difference)}
-                      </td>
-
-                      <td>
-                        <span class="dt-status ${line.difference_type}">
-                          ${line.difference_type}
-                        </span>
-                      </td>
-
-                      <td>
-                        ${money(line.recognized_amount)}
-                      </td>
-
-                      ${
-                        isDraft
-                          ? `
-                            <td>
-                              <button
-                                class="btn btn-sm btn-danger"
-                                data-dt-delete="${line.id}"
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          `
-                          : ""
-                      }
-                    </tr>
-                  `).join("")}
-                </tbody>
-              </table>
-            </div>
-          `
-          : `
-            <div class="dt-empty">
-              <strong>No temporary differences yet</strong>
-              <p>
-                Start by adding PPE, revaluations, impairments,
-                prepayments, accruals or deferred income balances.
-              </p>
-
-              ${
-                isDraft
-                  ? `
-                    <button class="btn btn-primary" id="dtEmptyAddLineBtn">
-                      + Add First Temporary Difference
-                    </button>
-                  `
-                  : ""
-              }
-            </div>
-          `
-      }
+      ${differencesSection}
     `;
   }
 
@@ -41638,6 +41652,10 @@ async function saveEditModal() {
       e.target.id === "dtEmptyAddLineBtn"
     ) {
       showAddLineModal();
+    }
+
+    if (e.target.id === "dtPostBtn") {
+      await runAction("post");
     }
 
     if (e.target.id === "dtRecalculateBtn") {
