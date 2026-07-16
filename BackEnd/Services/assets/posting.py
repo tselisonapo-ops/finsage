@@ -1904,8 +1904,11 @@ def post_subsequent_measurement(
             imp_id,
             user=user,
             approved_via=approved_via,
-            engagement_company_id=engagement_company_id,
-            engagement_id=engagement_id,
+            engagement_company_id=(
+                sm.get("engagement_company_id")
+                or sm.get("source_company_id")
+            ),
+            engagement_id=sm.get("engagement_id"),
         )
 
     elif et == "revaluation":
@@ -5441,38 +5444,95 @@ def post_revaluation(
 # ----------------------------
 # Posting: Impairment
 # ----------------------------
-def post_impairment(cur, company_id, imp_id, *, user=None, approved_via=None):
+def post_impairment(
+    cur,
+    company_id: int,
+    imp_id: int,
+    *,
+    user: dict | None = None,
+    approved_via: str | None = None,
+    engagement_company_id: int | None = None,
+    engagement_id: int | None = None,
+) -> int:
+    enforce_ppe_post_policy(
+        company_id=company_id,
+        user=user,
+        action="post_impairment",
+        approved_via=approved_via,
+    )
+
     schema = company_schema(company_id)
-    impairment = service.get_impairment(cur, company_id, imp_id, for_update=True)
+    impairment = service.get_impairment(
+        cur,
+        company_id,
+        imp_id,
+        for_update=True,
+    )
 
     if not impairment:
         raise ValueError("Impairment not found")
 
-    status = str(impairment.get("status") or "").strip().lower()
+    status = str(
+        impairment.get("status") or ""
+    ).strip().lower()
 
     if status == "posted" and impairment.get("posted_journal_id"):
         return int(impairment["posted_journal_id"])
 
     if status in {"void", "reversed"}:
-        raise ValueError(f"Cannot post impairment in status '{status}'")
+        raise ValueError(
+            f"Cannot post impairment in status '{status}'"
+        )
 
-    preview = build_impairment_journal_preview(cur, company_id, imp_id)
+    preview = build_impairment_journal_preview(
+        cur,
+        company_id,
+        imp_id,
+    )
+
     lines = preview.get("lines") or []
 
     if not lines:
-        raise ValueError("Impairment journal has no lines")
+        raise ValueError(
+            "Impairment journal has no lines"
+        )
 
-    debit = _q2(sum((_D(x["debit"]) for x in lines), Decimal("0")))
-    credit = _q2(sum((_D(x["credit"]) for x in lines), Decimal("0")))
+    debit = _q2(sum(
+        (_D(line.get("debit")) for line in lines),
+        Decimal("0"),
+    ))
+
+    credit = _q2(sum(
+        (_D(line.get("credit")) for line in lines),
+        Decimal("0"),
+    ))
 
     if debit != credit:
-        raise ValueError(f"Impairment journal is not balanced: debit={debit}, credit={credit}")
+        raise ValueError(
+            f"Impairment journal is not balanced: "
+            f"debit={debit}, credit={credit}"
+        )
 
-    currency = get_company_currency(cur, company_id)
-    target = impairment.get("cgu_code") or impairment.get("asset_code") or imp_id
+    currency = get_company_currency(
+        cur,
+        company_id,
+    )
+
+    target = (
+        impairment.get("cgu_code")
+        or impairment.get("asset_code")
+        or imp_id
+    )
+
+    event_type = str(
+        impairment.get("event_type")
+        or "impairment_loss"
+    ).strip().lower()
 
     journal_id = create_journal(
-        cur, schema, company_id,
+        cur,
+        schema,
+        company_id,
         impairment["impairment_date"],
         f"IMP-{imp_id}",
         f"IAS 36 impairment: {target}",
@@ -5483,31 +5543,56 @@ def post_impairment(cur, company_id, imp_id, *, user=None, approved_via=None):
 
     for line in lines:
         add_line(
-            cur, schema, company_id, journal_id,
-            line["account_code"], line["memo"],
-            _D(line["debit"]), _D(line["credit"]),
-            "asset_impairment", imp_id,
+            cur,
+            schema,
+            company_id,
+            journal_id,
+            line["account_code"],
+            line["memo"],
+            _D(line.get("debit")),
+            _D(line.get("credit")),
+            "asset_impairment",
+            imp_id,
         )
 
-    finalize_journal(cur, schema, company_id, journal_id)
+    finalize_journal(
+        cur,
+        schema,
+        company_id,
+        journal_id,
+    )
 
     _post_journal_to_ledger_and_tb(
-        cur, schema, company_id, journal_id,
-        impairment["impairment_date"],
+        cur,
+        schema,
+        company_id,
+        journal_id,
+        je_date=impairment["impairment_date"],
         ref=f"IMP-{imp_id}",
     )
 
+    allocations = impairment.get("allocations") or []
+
     _save_impairment_allocation_accounts(
-        cur, schema, company_id, imp_id,
-        impairment.get("allocations") or [],
+        cur,
+        schema,
+        company_id,
+        imp_id,
+        allocations,
     )
 
     actor_id = None
+
     if isinstance(user, dict):
         try:
-            actor_id = int(user.get("user_id") or user.get("id") or user.get("sub") or 0) or None
+            actor_id = int(
+                user.get("user_id")
+                or user.get("id")
+                or user.get("sub")
+                or 0
+            ) or None
         except Exception:
-            pass
+            actor_id = None
 
     cur.execute(_q(schema, """
         UPDATE {schema}.asset_impairments
@@ -5517,7 +5602,89 @@ def post_impairment(cur, company_id, imp_id, *, user=None, approved_via=None):
             updated_by_user_id=COALESCE(%s,updated_by_user_id),
             updated_at=NOW()
         WHERE company_id=%s AND id=%s
-    """), (journal_id, actor_id, company_id, imp_id))
+    """), (
+        journal_id,
+        actor_id,
+        company_id,
+        imp_id,
+    ))
+
+    # Update carrying snapshots for all affected assets.
+    affected_asset_ids = {
+        int(row["asset_id"])
+        for row in allocations
+        if row.get("asset_id")
+    }
+
+    if impairment.get("asset_id"):
+        affected_asset_ids.add(
+            int(impairment["asset_id"])
+        )
+
+    for asset_id in affected_asset_ids:
+        upsert_carrying_snapshot(
+            cur,
+            company_id,
+            asset_id,
+            as_at=impairment["impairment_date"],
+            source_event=event_type,
+            created_by=actor_id,
+        )
+
+    # Use engagement values passed by the caller, otherwise
+    # use values stored on the impairment record.
+    engagement_company_id = (
+        engagement_company_id
+        or impairment.get("engagement_company_id")
+        or impairment.get("source_company_id")
+    )
+
+    engagement_id = (
+        engagement_id
+        or impairment.get("engagement_id")
+    )
+
+    if engagement_company_id and engagement_id:
+        if event_type == "impairment_reversal":
+            amount_val = float(
+                impairment.get("reversal_amount")
+                or 0
+            )
+            description = (
+                f"Impairment reversal posted for {target}"
+            )
+        else:
+            amount_val = float(
+                impairment.get("impairment_amount")
+                or 0
+            )
+            description = (
+                f"Impairment loss posted for {target}"
+            )
+
+        db_service.upsert_engagement_posting_activity(
+            cur,
+            company_id=int(engagement_company_id),
+            engagement_id=int(engagement_id),
+            posting_date=impairment["impairment_date"],
+            module_name="ppe",
+            event_type=event_type,
+            reference_no=f"IMP-{imp_id}",
+            description=description,
+            prepared_by_user_id=actor_id,
+            reviewer_user_id=None,
+            status="posted",
+            amount=abs(amount_val),
+            currency_code=currency,
+            source_table="asset_impairments",
+            source_id=int(imp_id),
+            notes=(
+                f"IAS 36 {event_type.replace('_', ' ')} "
+                f"posted to journal {journal_id}"
+            ),
+            created_by_user_id=actor_id,
+            updated_by_user_id=actor_id,
+        )
 
     return int(journal_id)
 # ----------------------------

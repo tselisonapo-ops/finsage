@@ -1728,6 +1728,15 @@ const ENDPOINTS = {
   
     post: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/post`,
+  
+    settings: cid =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/settings`,
+
+    authorities: cid =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/authorities`,
+
+    allowanceRules: (cid, authorityId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules?tax_authority_id=${authorityId}`,
   },
 
   assets: {
@@ -41280,12 +41289,36 @@ async function saveEditModal() {
     `;
   }
 
-  function showCreateRunModal() {
+  async function showCreateRunModal() {
     const reportingDate =
       window.FS_REPORT_STATE?.dateTo ||
       document.getElementById("reportDateTo")?.value ||
       document.getElementById("reportsDateTo")?.value ||
       "";
+
+    const settingsRes = await apiFetch(
+      ENDPOINTS.deferredTax.settings(cid())
+    );
+
+    const settings = settingsRes?.data || {};
+
+    if (!settings.deferred_tax_enabled) {
+      throw new Error(
+        "Deferred tax is not enabled. Open Tax Rules & Settings first."
+      );
+    }
+
+    if (!settings.tax_authority_id) {
+      throw new Error(
+        "No tax authority is configured for this company."
+      );
+    }
+
+    if (settings.income_tax_rate == null) {
+      throw new Error(
+        "No corporate income tax rate is configured."
+      );
+    }
 
     openModal("Create Deferred Tax Run", `
       <form id="dtCreateRunForm">
@@ -41299,31 +41332,38 @@ async function saveEditModal() {
               required
             >
             <small>
-              Defaults to the current Balance Sheet reporting date.
+              Defaults to the current financial-statement reporting date.
             </small>
           </div>
 
-          <div class="dt-field">
-            <label>Tax authority</label>
-            <select name="tax_authority_id" id="dtTaxAuthority" required>
-              <option value="">Select authority</option>
-              <option value="1" data-rate="25">RSL</option>
-              <option value="2" data-rate="27">SARS</option>
-              <option value="3" data-rate="22">BURS</option>
-            </select>
-          </div>
+          <input
+            type="hidden"
+            name="tax_authority_id"
+            value="${settings.tax_authority_id}"
+          >
 
-          <div class="dt-field">
-            <label>Tax rate (%)</label>
-            <input
-              type="number"
-              name="tax_rate"
-              id="dtTaxRate"
-              min="0"
-              max="100"
-              step="0.0001"
-              required
-            >
+          <input
+            type="hidden"
+            name="tax_rate"
+            value="${settings.income_tax_rate}"
+          >
+
+          <div class="dt-field full">
+            <div class="dt-setting-preview">
+              <div>
+                <span>Tax authority</span>
+                <strong>
+                  ${settings.tax_authority_code || settings.tax_authority_name || "-"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Corporate tax rate</span>
+                <strong>
+                  ${Number(settings.income_tax_rate || 0).toFixed(2)}%
+                </strong>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -41342,19 +41382,6 @@ async function saveEditModal() {
         </div>
       </form>
     `);
-
-    const authoritySelect =
-      document.getElementById("dtTaxAuthority");
-
-    const rateInput =
-      document.getElementById("dtTaxRate");
-
-    authoritySelect?.addEventListener("change", () => {
-      const option =
-        authoritySelect.options[authoritySelect.selectedIndex];
-
-      rateInput.value = option?.dataset?.rate || "";
-    });
   }
 
   function showAddLineModal() {
@@ -41567,8 +41594,51 @@ async function saveEditModal() {
       return;
     }
 
+    if (e.target.id === "dtSettingsForm") {
+      e.preventDefault();
+
+      const form = e.target;
+      const data = new FormData(form);
+
+      await apiFetch(
+        ENDPOINTS.deferredTax.settings(cid()),
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            tax_authority_id: Number(
+              data.get("tax_authority_id")
+            ),
+            income_tax_rate: Number(
+              data.get("income_tax_rate")
+            ),
+            deferred_tax_enabled:
+              data.get("deferred_tax_enabled") === "on",
+            deferred_tax_settings: {
+              default_recovery_method:
+                data.get("default_recovery_method"),
+              reconciliation_tolerance: Number(
+                data.get("reconciliation_tolerance") || 0.05
+              ),
+              auto_scan_assets:
+                data.get("auto_scan_assets") === "on",
+              auto_scan_accrual_deferrals:
+                data.get("auto_scan_accrual_deferrals") === "on",
+              require_dta_recoverability_review:
+                data.get("require_dta_recoverability_review") === "on"
+            }
+          })
+        }
+      );
+
+      closeModal();
+    }
+
+    if (e.target.id === "dtSettingsBtn") {
+      await showDeferredTaxSettings();
+    }
+
     if (e.target.id === "dtNewRunBtn") {
-      showCreateRunModal();
+      await showCreateRunModal();
     }
 
     if (e.target.id === "dtRefreshBtn") {
@@ -77541,6 +77611,123 @@ async function renderARStatements() {
       if (status && p.config_status !== status) return false;
       return true;
     });
+  }
+
+  async function showDeferredTaxSettings() {
+    const companyId = cid();
+
+    const [settingsRes, authoritiesRes] = await Promise.all([
+      apiFetch(ENDPOINTS.deferredTax.settings(companyId)),
+      apiFetch(ENDPOINTS.deferredTax.authorities(companyId))
+    ]);
+
+    const settings = settingsRes.data || {};
+    const config = settings.deferred_tax_settings || {};
+    const authorities = authoritiesRes.data || [];
+
+    openModal("Deferred Tax Settings", `
+      <form id="dtSettingsForm">
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Tax authority</label>
+            <select name="tax_authority_id" required>
+              <option value="">Select authority</option>
+              ${authorities.map(row => `
+                <option
+                  value="${row.id}"
+                  ${Number(settings.tax_authority_id) === Number(row.id) ? "selected" : ""}
+                >
+                  ${row.code} — ${row.name}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Corporate income tax rate (%)</label>
+            <input
+              type="number"
+              name="income_tax_rate"
+              min="0"
+              max="100"
+              step="0.0001"
+              value="${settings.income_tax_rate || 0}"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Default recovery method</label>
+            <select name="default_recovery_method">
+              <option value="use"
+                ${config.default_recovery_method === "use" ? "selected" : ""}>
+                Through use
+              </option>
+              <option value="sale"
+                ${config.default_recovery_method === "sale" ? "selected" : ""}>
+                Through sale
+              </option>
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Reconciliation tolerance</label>
+            <input
+              type="number"
+              name="reconciliation_tolerance"
+              step="0.01"
+              value="${config.reconciliation_tolerance ?? 0.05}"
+            >
+          </div>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="deferred_tax_enabled"
+              ${settings.deferred_tax_enabled ? "checked" : ""}
+            >
+            Enable deferred tax
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_assets"
+              ${config.auto_scan_assets !== false ? "checked" : ""}
+            >
+            Automatically scan assets
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="auto_scan_accrual_deferrals"
+              ${config.auto_scan_accrual_deferrals !== false ? "checked" : ""}
+            >
+            Automatically scan accruals and deferrals
+          </label>
+
+          <label class="dt-check">
+            <input
+              type="checkbox"
+              name="require_dta_recoverability_review"
+              ${config.require_dta_recoverability_review !== false ? "checked" : ""}
+            >
+            Require DTA recoverability assessment
+          </label>
+        </div>
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>
+            Cancel
+          </button>
+
+          <button type="submit" class="btn btn-primary">
+            Save Settings
+          </button>
+        </div>
+      </form>
+    `);
   }
 
   function renderProfiles() {

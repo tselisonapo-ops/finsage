@@ -90414,6 +90414,107 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return generated
 
+    def deferred_tax_get_settings(self, company_id: int) -> Dict[str, Any]:
+        row = self.fetch_one("""
+            SELECT
+                c.id AS company_id,
+                c.country,
+                c.tax_authority_id,
+                c.income_tax_rate,
+                c.deferred_tax_enabled,
+                c.deferred_tax_settings,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name
+            FROM public.companies c
+            LEFT JOIN public.tax_authorities ta
+            ON ta.id = c.tax_authority_id
+            WHERE c.id = %s
+            LIMIT 1;
+        """, (company_id,))
+
+        if not row:
+            raise ValueError("Company not found.")
+
+        return row
+
+    def deferred_tax_update_settings(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        authority_id = payload.get("tax_authority_id")
+        tax_rate = Decimal(str(payload.get("income_tax_rate") or 0))
+        enabled = bool(payload.get("deferred_tax_enabled", True))
+        settings = payload.get("deferred_tax_settings") or {}
+
+        if tax_rate < 0 or tax_rate > 100:
+            raise ValueError("Income tax rate must be between 0 and 100.")
+
+        if authority_id:
+            authority = self.fetch_one("""
+                SELECT id
+                FROM public.tax_authorities
+                WHERE id = %s
+                AND is_active = TRUE
+                LIMIT 1;
+            """, (authority_id,))
+
+            if not authority:
+                raise ValueError("Invalid tax authority.")
+
+        return self.fetch_one("""
+            UPDATE public.companies
+            SET
+                tax_authority_id = %s,
+                income_tax_rate = %s,
+                deferred_tax_enabled = %s,
+                deferred_tax_settings = %s::jsonb
+            WHERE id = %s
+            RETURNING
+                id AS company_id,
+                tax_authority_id,
+                income_tax_rate,
+                deferred_tax_enabled,
+                deferred_tax_settings;
+        """, (
+            authority_id,
+            tax_rate,
+            enabled,
+            json.dumps(settings),
+            company_id,
+        ))
+
+    def deferred_tax_list_authorities(self):
+        return self.fetch_all("""
+            SELECT id, code, name, country_code
+            FROM public.tax_authorities
+            WHERE is_active = TRUE
+            ORDER BY name;
+        """)
+
+    def deferred_tax_list_allowance_rules(
+        self,
+        tax_authority_id: int,
+    ):
+        return self.fetch_all("""
+            SELECT
+                id,
+                tax_authority_id,
+                asset_category,
+                method,
+                rate_percent,
+                useful_life_years,
+                initial_allowance_percent,
+                effective_from,
+                effective_to,
+                notes
+            FROM public.tax_allowance_rules
+            WHERE tax_authority_id = %s
+            AND is_active = TRUE
+            ORDER BY asset_category, effective_from DESC;
+        """, (tax_authority_id,))
+
+
     def deferred_tax_list_runs(
         self,
         company_id: int,
@@ -91886,8 +91987,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 trl.id AS tax_run_line_id,
                 trl.opening_tax_wdv,
-                trl.qualifying_cost,
-                trl.tax_allowance,
+                trl.allowance_base,
+                trl.initial_allowance,
+                trl.annual_allowance,
+                trl.total_capital_allowance
                 trl.closing_tax_wdv
 
             FROM {schema}.assets a
@@ -92093,76 +92196,57 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 calculation_json={
                     "asset_code": asset.get("asset_code"),
                     "asset_class": asset.get("asset_class"),
-                    "accounting_standard": asset.get(
-                        "accounting_standard"
-                    ),
-                    "measurement_basis": asset.get(
-                        "measurement_basis"
-                    ),
-                    "depreciation_method": asset.get(
-                        "depreciation_method"
-                    ),
-                    "accounting_useful_life_months": asset.get(
-                        "useful_life_months"
-                    ),
-                    "residual_value": str(
-                        asset.get("residual_value") or 0
-                    ),
-                    "acquisition_date": str(
-                        asset.get("acquisition_date") or ""
-                    ),
-                    "available_for_use_date": str(
-                        asset.get("available_for_use_date") or ""
-                    ),
-                    "closing_cost": str(
-                        asset.get("closing_cost") or 0
-                    ),
-                    "closing_accum_dep": str(
-                        asset.get("closing_accum_dep") or 0
-                    ),
-                    "closing_impairment": str(
-                        asset.get("closing_impairment") or 0
-                    ),
-                    "accounting_carrying_amount": str(
-                        carrying_amount
-                    ),
-                    "revaluation_movement": str(
-                        revaluation_movement
-                    ),
-                    "revaluation_reserve": str(
-                        revaluation_reserve
-                    ),
-                    "impairment_losses": str(
-                        impairment_losses
-                    ),
-                    "impairment_reversals": str(
-                        asset.get("impairment_reversals") or 0
-                    ),
-                    "latest_movement_date": str(
-                        asset.get("latest_movement_date") or ""
-                    ),
+                    "accounting_standard": asset.get("accounting_standard"),
+                    "measurement_basis": asset.get("measurement_basis"),
+                    "depreciation_method": asset.get("depreciation_method"),
+                    "accounting_useful_life_months": asset.get("useful_life_months"),
+                    "residual_value": str(asset.get("residual_value") or 0),
+                    "acquisition_date": str(asset.get("acquisition_date") or ""),
+                    "available_for_use_date": str(asset.get("available_for_use_date") or ""),
+
+                    "closing_cost": str(asset.get("closing_cost") or 0),
+                    "closing_accum_dep": str(asset.get("closing_accum_dep") or 0),
+                    "closing_impairment": str(asset.get("closing_impairment") or 0),
+                    "accounting_carrying_amount": str(carrying_amount),
+
+                    "revaluation_movement": str(revaluation_movement),
+                    "revaluation_reserve": str(revaluation_reserve),
+                    "impairment_losses": str(impairment_losses),
+                    "impairment_reversals": str(asset.get("impairment_reversals") or 0),
+                    "latest_movement_date": str(asset.get("latest_movement_date") or ""),
+
                     "tax_profile_id": tax_profile_id,
                     "asset_tax_run_id": tax_run_id,
                     "asset_tax_run_line_id": tax_run_line_id,
-                    "opening_tax_wdv": str(
-                        asset.get("opening_tax_wdv") or 0
-                    ),
-                    "qualifying_cost": str(
-                        asset.get("qualifying_cost") or 0
-                    ),
-                    "tax_allowance": str(
-                        asset.get("tax_allowance") or 0
+                    "allowance_rule_id": asset.get("allowance_rule_id"),
+
+                    "opening_tax_wdv": str(asset.get("opening_tax_wdv") or 0),
+                    "additions": str(asset.get("additions") or 0),
+                    "disposal_proceeds": str(asset.get("disposal_proceeds") or 0),
+                    "disposal_tax_value": str(asset.get("disposal_tax_value") or 0),
+                    "allowance_base": str(asset.get("allowance_base") or 0),
+                    "initial_allowance": str(asset.get("initial_allowance") or 0),
+                    "annual_allowance": str(asset.get("annual_allowance") or 0),
+                    "total_capital_allowance": str(
+                        asset.get("total_capital_allowance") or 0
                     ),
                     "closing_tax_wdv": str(
-                        closing_tax_wdv
-                        if closing_tax_wdv is not None
-                        else ""
+                        closing_tax_wdv if closing_tax_wdv is not None else ""
                     ),
+
+                    "book_depreciation": str(asset.get("book_depreciation") or 0),
+                    "tax_adjustment": str(asset.get("tax_adjustment") or 0),
+                    "tax_temporary_difference": str(
+                        asset.get("temporary_difference") or 0
+                    ),
+                    "tax_calculation_method": asset.get("calculation_method"),
+                    "tax_rate_percent": str(asset.get("rate_percent") or 0),
+                    "tax_override_reason": asset.get("override_reason"),
+                    "tax_notes": asset.get("notes"),
+
                     "balance_sheet_face_amount": str(face_amount),
                     "asset_register_total": str(detail_total),
-                    "reconciliation_difference": str(
-                        reconciliation_difference
-                    ),
+                    "reconciliation_difference": str(reconciliation_difference),
                 },
             )
 

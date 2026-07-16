@@ -554,4 +554,94 @@ def deferred_tax_scan(cid: int, run_id: int):
             "ok": False,
             "error": str(e),
         }), 400
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/settings",
+    methods=["GET", "PUT", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_settings(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        if request.method == "GET":
+            row = db_service.deferred_tax_get_settings(company_id)
+            return jsonify({"ok": True, "data": row}), 200
+
+        body = request.get_json(silent=True) or {}
+
+        row = db_service.deferred_tax_update_settings(
+            company_id,
+            body,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="update_deferred_tax_settings",
+            entity_type="company",
+            entity_id=company_id,
+            after_json={"settings": row},
+        )
+
+        return jsonify({"ok": True, "data": row}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_settings failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
     
+@deferred_tax_bp.get(
+    "/api/companies/<int:cid>/deferred-tax/authorities"
+)
+@require_auth
+def deferred_tax_authorities(cid: int):
+    company_id, _, deny = _auth_context(cid)
+    if deny:
+        return deny
+
+    rows = db_service.deferred_tax_list_authorities()
+
+    return jsonify({
+        "ok": True,
+        "data": rows,
+    }), 200
+
+@deferred_tax_bp.get(
+    "/api/companies/<int:cid>/deferred-tax/allowance-rules"
+)
+@require_auth
+def deferred_tax_allowance_rules(cid: int):
+    company_id, _, deny = _auth_context(cid)
+    if deny:
+        return deny
+
+    authority_id = request.args.get(
+        "tax_authority_id",
+        type=int,
+    )
+
+    if not authority_id:
+        settings = db_service.deferred_tax_get_settings(
+            company_id
+        )
+        authority_id = settings.get("tax_authority_id")
+
+    rows = db_service.deferred_tax_list_allowance_rules(
+        authority_id
+    ) if authority_id else []
+
+    return jsonify({
+        "ok": True,
+        "data": rows,
+    }), 200
+
