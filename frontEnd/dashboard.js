@@ -41281,6 +41281,12 @@ async function saveEditModal() {
   }
 
   function showCreateRunModal() {
+    const reportingDate =
+      window.FS_REPORT_STATE?.dateTo ||
+      document.getElementById("reportDateTo")?.value ||
+      document.getElementById("reportsDateTo")?.value ||
+      "";
+
     openModal("Create Deferred Tax Run", `
       <form id="dtCreateRunForm">
         <div class="dt-form-grid">
@@ -41289,17 +41295,21 @@ async function saveEditModal() {
             <input
               type="date"
               name="reporting_date"
+              value="${reportingDate}"
               required
             >
+            <small>
+              Defaults to the current Balance Sheet reporting date.
+            </small>
           </div>
 
           <div class="dt-field">
             <label>Tax authority</label>
-            <select name="tax_authority_id" required>
+            <select name="tax_authority_id" id="dtTaxAuthority" required>
               <option value="">Select authority</option>
-              <option value="1">RSL</option>
-              <option value="2">SARS</option>
-              <option value="3">BURS</option>
+              <option value="1" data-rate="25">RSL</option>
+              <option value="2" data-rate="27">SARS</option>
+              <option value="3" data-rate="22">BURS</option>
             </select>
           </div>
 
@@ -41308,6 +41318,7 @@ async function saveEditModal() {
             <input
               type="number"
               name="tax_rate"
+              id="dtTaxRate"
               min="0"
               max="100"
               step="0.0001"
@@ -41331,6 +41342,19 @@ async function saveEditModal() {
         </div>
       </form>
     `);
+
+    const authoritySelect =
+      document.getElementById("dtTaxAuthority");
+
+    const rateInput =
+      document.getElementById("dtTaxRate");
+
+    authoritySelect?.addEventListener("change", () => {
+      const option =
+        authoritySelect.options[authoritySelect.selectedIndex];
+
+      rateInput.value = option?.dataset?.rate || "";
+    });
   }
 
   function showAddLineModal() {

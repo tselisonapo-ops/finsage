@@ -91547,41 +91547,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 result.append({
                     **row,
                     "code": code,
-                    "name": (
-                        row.get("name")
-                        or coa.get("name")
-                        or code
-                    ),
-                    "section": (
-                        row.get("section")
-                        or coa.get("section")
-                        or ""
-                    ),
-                    "category": (
-                        row.get("category")
-                        or coa.get("category")
-                        or ""
-                    ),
-                    "subcategory": (
-                        row.get("subcategory")
-                        or coa.get("subcategory")
-                        or ""
-                    ),
-                    "standard": (
-                        row.get("standard")
-                        or coa.get("standard")
-                        or ""
-                    ),
-                    "role": (
-                        row.get("role")
-                        or coa.get("role")
-                        or ""
-                    ),
-                    "code_family": (
-                        row.get("code_family")
-                        or coa.get("code_family")
-                        or ""
-                    ),
+                    "name": row.get("name") or coa.get("name") or code,
+                    "section": row.get("section") or coa.get("section") or "",
+                    "category": row.get("category") or coa.get("category") or "",
+                    "subcategory": row.get("subcategory") or coa.get("subcategory") or "",
+                    "standard": row.get("standard") or coa.get("standard") or "",
+                    "role": row.get("role") or coa.get("role") or "",
+                    "code_family": row.get("code_family") or coa.get("code_family") or "",
                     "is_contra": bool(
                         row.get("is_contra")
                         or coa.get("is_contra")
@@ -91606,7 +91578,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             as_of=as_at,
             get_company_context_fn=_get_company_context,
             get_trial_balance_fn=_get_trial_balance,
-            include_net_profit_line=False,
+            get_pnl_full_fn=self.get_pnl_full,
+            include_net_profit_line=True,
             view="external",
             basis="external",
         )
