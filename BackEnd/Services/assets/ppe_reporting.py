@@ -1989,65 +1989,6 @@ def impairments_list_or_create(company_id):
     except Exception as e:
         current_app.logger.exception("impairment request failed")
         return _json_error(str(e), 400)
-    
-@ppe_bp.route("/api/companies/<int:company_id>/impairments", methods=["GET", "POST", "OPTIONS"])
-@require_auth
-def impairments_list_or_create(company_id):
-    if request.method == "OPTIONS":
-        return _opt()
-
-    payload, actor_id, deny = _ppe_request_context(company_id)
-    if deny:
-        return deny
-
-    try:
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                if request.method == "GET":
-                    rows = service.list_impairments(
-                        cur,
-                        company_id,
-                        asset_id=_int_arg("asset_id", 0) or None,
-                        cgu_id=_int_arg("cgu_id", 0) or None,
-                        target_type=(request.args.get("target_type") or "").strip() or None,
-                        status=(request.args.get("status") or "").strip() or None,
-                        limit=min(max(_int_arg("limit", 100), 1), 500),
-                        offset=max(_int_arg("offset", 0), 0),
-                    )
-                    return jsonify({"ok": True, "data": rows})
-
-                body = _apply_engagement_bridge(
-                    request.get_json(force=True) or {},
-                    user_id=actor_id,
-                )
-                body["impairment_date"] = _parse_date(
-                    body.get("impairment_date"),
-                    "impairment_date",
-                )
-
-                impairment_id = service.create_impairment(cur, company_id, body)
-
-                _audit_safe(
-                    company_id=company_id,
-                    payload=payload,
-                    module="ppe",
-                    action="create_impairment",
-                    entity_type="impairment",
-                    entity_id=str(impairment_id),
-                    entity_ref=f"IMP-{impairment_id}",
-                    amount=float(body.get("impairment_amount") or body.get("reversal_amount") or 0),
-                    before_json={"request": body},
-                    after_json={"impairment_id": impairment_id},
-                    message=f"Created impairment {impairment_id}",
-                    cur=cur,
-                )
-
-                conn.commit()
-                return jsonify({"ok": True, "id": impairment_id}), 201
-
-    except Exception as e:
-        current_app.logger.exception("impairment request failed")
-        return _json_error(str(e), 400)
 
 @ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>/void", methods=["POST", "OPTIONS"])
 @require_auth
