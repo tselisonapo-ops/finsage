@@ -1687,6 +1687,40 @@ const ENDPOINTS = {
     },
   },
 
+  deferredTax: {
+    runs: (cid, q = {}) => {
+      const qs = new URLSearchParams(q).toString();
+      return `${API_BASE}/api/companies/${cid}/deferred-tax/runs${qs ? `?${qs}` : ""}`;
+    },
+
+    run: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}`,
+
+    lines: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/lines`,
+
+    line: (cid, runId, lineId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/lines/${lineId}`,
+
+    recalculate: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/recalculate`,
+
+    review: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/review`,
+
+    approve: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/approve`,
+
+    void: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/void`,
+
+    overrides: (cid) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/tax-base-overrides`,
+
+    assessment: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/recognition-assessment`
+  },
+
   assets: {
     // -------------------------
     // ASSETS
@@ -6021,8 +6055,9 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Chart of Accounts", screen: "coa", icon: "📗", minRole: "assistant", permission: "can_view_reports" },
         { name: "IFRS 16 Lease Wizard", icon: "📄", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏗️", minRole: "assistant", permission: "can_manage_fixed_assets" },
-        {name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials"},
+        { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials"},
         { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "📘", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"],},
+        { name: "IAS 12 Deferred Tax", screen: "deferred-tax", icon: "⚖️", minRole: "assistant", permissionAny: [ "can_prepare_financials", "can_view_reports", "can_edit_tax_settings" ]},
       ],
     },
 
@@ -7797,6 +7832,16 @@ const SCREEN_POLICY = {
       "can_view_control_room"
     ],
   },
+
+  "deferred-tax": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_prepare_financials",
+      "can_view_reports",
+      "can_edit_tax_settings"
+    ]
+  },
 };
 
 
@@ -9186,6 +9231,8 @@ async function switchScreen(name) {
   const isBudgetingWorkflow = 
     name === "budgeting";
 
+  const isDeferredTaxWorkflow = 
+    name === "deferred-tax";
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -9241,6 +9288,7 @@ async function switchScreen(name) {
   // ✅ ADD THIS (so it doesn't become "fixed")
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
+  else if (isDeferredTaxWorkflow) base = "deferred-tax";
   else base = name.split("-")[0];
 
   // Remember current screen
@@ -9381,6 +9429,17 @@ async function switchScreen(name) {
 
     await window.bindBudgetingScreen?.();
     console.log("[switchScreen] early return at:", name, "base:", base);
+    return;
+  }
+
+  if (base === "deferred-tax") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[DeferredTax] company load failed:", e);
+    }
+
+    await window.bindDeferredTaxScreen?.();
     return;
   }
 
@@ -9744,6 +9803,7 @@ async function switchScreen(name) {
     ifrs9: "IFRS 9 Financial Instruments",
     payroll: "Payroll",
     budgeting: "Planning & Performance",
+    "deferred-tax": "IAS 12 Deferred Tax",
     inventory: "Inventory & Services",
     customers: "Customers",
     vendors: "Vendors",
@@ -37744,6 +37804,263 @@ async function saveEditModal() {
     }
   }
 
+  let impairmentCgusCache = [];
+  let impairmentPreviewCache = null;
+
+  function impairmentEndpoints() {
+    const cid = getCid();
+
+    return {
+      listCgus: `/api/companies/${cid}/asset-cgus`,
+      preview: `/api/companies/${cid}/impairments/preview`,
+      create: `/api/companies/${cid}/impairments`,
+      update: (id) => `/api/companies/${cid}/impairments/${id}`,
+      post: (id) => `/api/companies/${cid}/impairments/${id}/post`,
+      journalPreview: (id) => `/api/companies/${cid}/impairments/${id}/journal-preview`,
+    };
+  }
+
+  async function loadImpairmentCgus() {
+    const out = await api(impairmentEndpoints().listCgus);
+    impairmentCgusCache = out?.data || out?.items || [];
+    renderImpairmentCguOptions();
+  }
+
+  function renderImpairmentCguOptions() {
+    const el = $("smImpairmentCguId");
+    if (!el) return;
+
+    el.innerHTML = [
+      `<option value="">Select CGU…</option>`,
+      ...impairmentCgusCache.map((cgu) => `
+        <option value="${Number(cgu.id)}">
+          ${esc(cgu.cgu_code)} — ${esc(cgu.cgu_name)}
+          (${Number(cgu.member_count || 0)} assets)
+        </option>
+      `),
+    ].join("");
+  }
+
+  function impairmentTargetType() {
+    return String(
+      document.querySelector('input[name="smImpairmentTargetType"]:checked')?.value || "asset"
+    ).trim().toLowerCase();
+  }
+
+  function applyImpairmentTargetUI() {
+    const isCgu = impairmentTargetType() === "cgu";
+
+    $("smImpairmentAssetTargetWrap")?.classList.toggle("hidden", isCgu);
+    $("smImpairmentCguTargetWrap")?.classList.toggle("hidden", !isCgu);
+    $("smImpairmentAllocationWrap")?.classList.toggle("hidden", !isCgu);
+
+    impairmentPreviewCache = null;
+    invalidateSmPreview();
+  }
+
+  function impairmentPayloadFromUI() {
+    const targetType = impairmentTargetType();
+    const eventType = String($("smEventType")?.value || "").trim().toLowerCase();
+    const fairValue = Number($("smImpairmentFairValue")?.value || 0);
+    const disposalCosts = Number($("smCostsOfDisposal")?.value || 0);
+
+    return {
+      target_type: targetType,
+      asset_id: targetType === "asset" ? Number($("smAssetId")?.value || 0) || null : null,
+      cgu_id: targetType === "cgu" ? Number($("smImpairmentCguId")?.value || 0) || null : null,
+      impairment_date: $("smEventDate")?.value || null,
+      event_type: eventType,
+      recoverable_amount: Number($("smRecoverableAmount")?.value || 0),
+      impairment_amount:
+        eventType === "impairment_loss"
+          ? Number($("smDirectImpairmentAmount")?.value || 0)
+          : 0,
+      reversal_amount:
+        eventType === "impairment_reversal"
+          ? Number($("smImpairmentReversalAmount")?.value || 0)
+          : 0,
+      maximum_reversal_amount: Number($("smMaximumReversalAmount")?.value || 0),
+      recoverable_basis: $("smRecoverableBasis")?.value || null,
+      fair_value_less_costs: Math.max(0, fairValue - disposalCosts),
+      value_in_use: Number($("smValueInUse")?.value || 0),
+      discount_rate: $("smDiscountRate")?.value === "" ? null : Number($("smDiscountRate").value),
+      growth_rate: $("smGrowthRate")?.value === "" ? null : Number($("smGrowthRate").value),
+      cash_flow_period_months: Number($("smCashFlowPeriod")?.value || 0) || null,
+      allocation_basis: $("smImpairmentAllocationBasis")?.value || "carrying_amount",
+      reason: $("smImpairmentReason")?.value || null,
+      notes: $("smNotes")?.value || null,
+    };
+  }
+
+  function validateImpairmentPayload(payload) {
+    if (!payload.impairment_date) throw new Error("Impairment date is required.");
+    if (payload.target_type === "asset" && !payload.asset_id) throw new Error("Select an asset.");
+    if (payload.target_type === "cgu" && !payload.cgu_id) throw new Error("Select a cash-generating unit.");
+  }
+
+  async function previewImpairmentAllocation() {
+    const payload = impairmentPayloadFromUI();
+    validateImpairmentPayload(payload);
+
+    const out = await api(impairmentEndpoints().preview, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    impairmentPreviewCache = out;
+    renderImpairmentAllocationPreview(out);
+    return out;
+  }
+
+  function renderImpairmentAllocationPreview(out) {
+    const host = $("smImpairmentAllocationPreview");
+    if (!host) return;
+
+    const rows = out?.allocations || [];
+    if (!rows.length) {
+      host.innerHTML = `<div class="text-xs text-slate-500">No allocation preview available.</div>`;
+      return;
+    }
+
+    const isReversal = out.event_type === "impairment_reversal";
+    const amountKey = isReversal
+      ? "allocated_reversal_amount"
+      : "allocated_impairment_amount";
+
+    const afterTotal =
+      Number(out.carrying_amount_before || 0)
+      + (isReversal
+        ? Number(out.reversal_amount || 0)
+        : -Number(out.impairment_amount || 0));
+
+    host.innerHTML = `
+      <div class="overflow-auto border rounded-lg">
+        <table class="min-w-full text-xs">
+          <thead class="bg-slate-50">
+            <tr>
+              <th class="text-left p-2">Asset</th>
+              <th class="text-right p-2">Carrying before</th>
+              <th class="text-right p-2">Weight</th>
+              <th class="text-right p-2">${isReversal ? "Reversal" : "Impairment"}</th>
+              <th class="text-right p-2">Carrying after</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map((row) => `
+              <tr class="border-t">
+                <td class="p-2">
+                  <div class="font-medium">${esc(row.asset_name || `Asset ${row.asset_id}`)}</div>
+                  <div class="text-slate-400">${esc(row.asset_code || "")}</div>
+                </td>
+                <td class="p-2 text-right">${fmtMoney2(row.carrying_amount_before)}</td>
+                <td class="p-2 text-right">${Number(row.allocation_weight || 0).toFixed(4)}</td>
+                <td class="p-2 text-right font-medium">${fmtMoney2(row[amountKey])}</td>
+                <td class="p-2 text-right">${fmtMoney2(row.carrying_amount_after)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot class="bg-slate-50 border-t">
+            <tr>
+              <td class="p-2 font-medium">Total</td>
+              <td class="p-2 text-right font-medium">${fmtMoney2(out.carrying_amount_before)}</td>
+              <td></td>
+              <td class="p-2 text-right font-medium">
+                ${fmtMoney2(isReversal ? out.reversal_amount : out.impairment_amount)}
+              </td>
+              <td class="p-2 text-right font-medium">${fmtMoney2(afterTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  }
+
+  function impairmentAllocationsFromPreview() {
+    return Object.fromEntries(
+      (impairmentPreviewCache?.allocations || []).map((row) => [
+        String(row.asset_id),
+        {
+          asset_id: row.asset_id,
+          allocation_weight: row.allocation_weight,
+          allocated_impairment_amount: row.allocated_impairment_amount,
+          allocated_reversal_amount: row.allocated_reversal_amount,
+        },
+      ])
+    );
+  }
+
+  async function saveDirectImpairment() {
+    const payload = impairmentPayloadFromUI();
+    validateImpairmentPayload(payload);
+
+    if (payload.target_type === "cgu" && !impairmentPreviewCache) {
+      await previewImpairmentAllocation();
+    }
+
+    payload.allocations = impairmentAllocationsFromPreview();
+
+    const impairmentId = Number($("smId")?.dataset?.impairmentId || 0);
+    const url = impairmentId
+      ? impairmentEndpoints().update(impairmentId)
+      : impairmentEndpoints().create;
+
+    const out = await api(url, {
+      method: impairmentId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const savedId = Number(out?.id || impairmentId || 0);
+    if (savedId && $("smId")) {
+      $("smId").dataset.impairmentId = String(savedId);
+    }
+
+    return out;
+  }
+
+  function impairmentAllocationsFromPreview() {
+    return Object.fromEntries(
+      (impairmentPreviewCache?.allocations || []).map((row) => [
+        String(row.asset_id),
+        {
+          asset_id: row.asset_id,
+          allocation_weight: row.allocation_weight,
+          allocated_impairment_amount: row.allocated_impairment_amount,
+          allocated_reversal_amount: row.allocated_reversal_amount,
+        },
+      ])
+    );
+  }
+
+  async function saveDirectImpairment() {
+    const payload = impairmentPayloadFromUI();
+    validateImpairmentPayload(payload);
+
+    if (payload.target_type === "cgu" && !impairmentPreviewCache) {
+      await previewImpairmentAllocation();
+    }
+
+    payload.allocations = impairmentAllocationsFromPreview();
+
+    const impairmentId = Number($("smId")?.dataset?.impairmentId || 0);
+    const url = impairmentId
+      ? impairmentEndpoints().update(impairmentId)
+      : impairmentEndpoints().create;
+
+    const out = await api(url, {
+      method: impairmentId ? "PUT" : "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const savedId = Number(out?.id || impairmentId || 0);
+    if (savedId && $("smId")) {
+      $("smId").dataset.impairmentId = String(savedId);
+    }
+
+    return out;
+  }
+
   function applyImpairmentUI() {
     const t = String(
       $("smEventType")?.value || ""
@@ -39056,6 +39373,14 @@ async function saveEditModal() {
       if (fv <= 0) throw new Error("Fair value must be > 0");
     }
 
+    const eventType = String($("smEventType")?.value || "").trim().toLowerCase();
+
+    if (["impairment_loss", "impairment_reversal"].includes(eventType)) {
+      const result = await saveDirectImpairment();
+      setMsg($("smFormMsg"), "Impairment draft saved.", "ok");
+      return result;
+    }
+
     const { createSM, updateSM } = EP();
     setMsg($("smFormMsg"), "Saving…", "info");
 
@@ -39296,6 +39621,7 @@ async function saveEditModal() {
     $("smBackdrop")?.addEventListener("click", closeSmModal);
 
     bindAssetPickerOnce(); // ✅ add this
+    bindImpairmentCguControls();
 
     $("smEventType")?.addEventListener("change", () => {
       invalidateSmPreview();
@@ -40553,6 +40879,339 @@ async function saveEditModal() {
     close: hide,
   };
 };
+
+(() => {
+  let selectedRun = null;
+
+  const cid = () =>
+    getActiveCompanyId?.() ||
+    CURRENT_COMPANY_ID;
+
+  const money = value =>
+    Number(value || 0).toLocaleString("en-ZA", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+
+  async function loadRuns() {
+    const mount = document.getElementById("dtRunList");
+    mount.innerHTML = "Loading...";
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.deferredTax.runs(cid())
+      );
+
+      const rows = res?.data || [];
+
+      mount.innerHTML = rows.length
+        ? `
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Authority</th>
+                <th>Rate</th>
+                <th>Status</th>
+                <th>DTA</th>
+                <th>DTL</th>
+                <th>Net</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td>${String(row.reporting_date).slice(0, 10)}</td>
+                  <td>${row.tax_authority_code || row.tax_authority_name || "-"}</td>
+                  <td>${Number(row.tax_rate || 0).toFixed(2)}%</td>
+                  <td>${row.status}</td>
+                  <td>${money(row.gross_dta)}</td>
+                  <td>${money(row.gross_dtl)}</td>
+                  <td>${money(row.net_deferred_tax)}</td>
+                  <td>
+                    <button
+                      class="btn btn-sm btn-secondary"
+                      data-dt-run="${row.id}"
+                    >
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `
+        : `<div class="empty-state">No deferred tax runs.</div>`;
+    } catch (e) {
+      mount.innerHTML = `<div class="error">${e.message}</div>`;
+    }
+  }
+
+  async function openRun(runId) {
+    const res = await apiFetch(
+      ENDPOINTS.deferredTax.run(cid(), runId)
+    );
+
+    selectedRun = res.data;
+
+    document
+      .getElementById("dtRunList")
+      .classList.add("hidden");
+
+    const mount = document.getElementById("dtRunDetail");
+    mount.classList.remove("hidden");
+
+    renderRun();
+  }
+
+  function renderRun() {
+    const run = selectedRun;
+    const lines = run?.lines || [];
+
+    document.getElementById("dtRunDetail").innerHTML = `
+      <div class="toolbar">
+        <button class="btn btn-secondary" id="dtBackBtn">
+          Back
+        </button>
+
+        <button class="btn btn-primary" id="dtAddLineBtn">
+          Add Line
+        </button>
+
+        <button class="btn btn-secondary" id="dtRecalculateBtn">
+          Recalculate
+        </button>
+
+        ${
+          run.status === "draft"
+            ? `<button class="btn btn-primary" id="dtReviewBtn">Review</button>`
+            : ""
+        }
+
+        ${
+          run.status === "reviewed"
+            ? `<button class="btn btn-primary" id="dtApproveBtn">Approve</button>`
+            : ""
+        }
+
+        ${
+          ["draft", "reviewed", "approved"].includes(run.status)
+            ? `<button class="btn btn-danger" id="dtVoidBtn">Void</button>`
+            : ""
+        }
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>Gross DTA</span>
+          <strong>${money(run.gross_dta)}</strong>
+        </div>
+
+        <div class="summary-card">
+          <span>Gross DTL</span>
+          <strong>${money(run.gross_dtl)}</strong>
+        </div>
+
+        <div class="summary-card">
+          <span>Recognized DTA</span>
+          <strong>${money(run.recognized_dta)}</strong>
+        </div>
+
+        <div class="summary-card">
+          <span>Net Deferred Tax</span>
+          <strong>${money(run.net_deferred_tax)}</strong>
+        </div>
+      </div>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Balance Type</th>
+            <th>Carrying Amount</th>
+            <th>Tax Base</th>
+            <th>Difference</th>
+            <th>Type</th>
+            <th>Deferred Tax</th>
+            <th></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${lines.map(line => `
+            <tr>
+              <td>${line.description}</td>
+              <td>${line.balance_type}</td>
+              <td>${money(line.carrying_amount)}</td>
+              <td>${money(line.tax_base)}</td>
+              <td>${money(line.temporary_difference)}</td>
+              <td>${line.difference_type}</td>
+              <td>${money(line.recognized_amount)}</td>
+              <td>
+                ${
+                  run.status === "draft"
+                    ? `
+                      <button
+                        class="btn btn-sm btn-danger"
+                        data-dt-delete="${line.id}"
+                      >
+                        Delete
+                      </button>
+                    `
+                    : ""
+                }
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  async function createRun() {
+    const reportingDate = prompt("Reporting date: YYYY-MM-DD");
+    if (!reportingDate) return;
+
+    const authorityId = prompt("Tax authority ID");
+    if (!authorityId) return;
+
+    const taxRate = prompt("Tax rate percentage");
+    if (taxRate === null) return;
+
+    const res = await apiFetch(
+      ENDPOINTS.deferredTax.runs(cid()),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reporting_date: reportingDate,
+          tax_authority_id: Number(authorityId),
+          tax_rate: Number(taxRate)
+        })
+      }
+    );
+
+    await loadRuns();
+    await openRun(res.data.id);
+  }
+
+  async function addLine() {
+    const description = prompt("Description");
+    if (!description) return;
+
+    const balanceType =
+      prompt("Balance type: asset or liability", "asset") ||
+      "asset";
+
+    const carryingAmount = prompt("Carrying amount");
+    if (carryingAmount === null) return;
+
+    const taxBase = prompt("Tax base");
+    if (taxBase === null) return;
+
+    await apiFetch(
+      ENDPOINTS.deferredTax.lines(
+        cid(),
+        selectedRun.id
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          description,
+          source_module: "manual",
+          source_type: "manual",
+          balance_type: balanceType,
+          carrying_amount: Number(carryingAmount),
+          tax_base: Number(taxBase),
+          tax_rate: Number(selectedRun.tax_rate),
+          recognition_percent: 100,
+          recognition_destination: "profit_or_loss",
+          is_manual: true
+        })
+      }
+    );
+
+    await openRun(selectedRun.id);
+  }
+
+  async function runAction(action) {
+    await apiFetch(
+      ENDPOINTS.deferredTax[action](
+        cid(),
+        selectedRun.id
+      ),
+      { method: "POST" }
+    );
+
+    await openRun(selectedRun.id);
+    await loadRuns();
+  }
+
+  document.addEventListener("click", async e => {
+    const runBtn = e.target.closest("[data-dt-run]");
+    if (runBtn) {
+      await openRun(Number(runBtn.dataset.dtRun));
+      return;
+    }
+
+    const deleteBtn = e.target.closest("[data-dt-delete]");
+    if (deleteBtn) {
+      await apiFetch(
+        ENDPOINTS.deferredTax.line(
+          cid(),
+          selectedRun.id,
+          deleteBtn.dataset.dtDelete
+        ),
+        { method: "DELETE" }
+      );
+
+      await openRun(selectedRun.id);
+      return;
+    }
+
+    if (e.target.id === "dtNewRunBtn") {
+      await createRun();
+    }
+
+    if (e.target.id === "dtRefreshBtn") {
+      await loadRuns();
+    }
+
+    if (e.target.id === "dtBackBtn") {
+      document
+        .getElementById("dtRunDetail")
+        .classList.add("hidden");
+
+      document
+        .getElementById("dtRunList")
+        .classList.remove("hidden");
+    }
+
+    if (e.target.id === "dtAddLineBtn") {
+      await addLine();
+    }
+
+    if (e.target.id === "dtRecalculateBtn") {
+      await runAction("recalculate");
+    }
+
+    if (e.target.id === "dtReviewBtn") {
+      await runAction("review");
+    }
+
+    if (e.target.id === "dtApproveBtn") {
+      await runAction("approve");
+    }
+
+    if (e.target.id === "dtVoidBtn") {
+      await runAction("void");
+    }
+  });
+
+  window.bindDeferredTaxScreen = async function () {
+    await loadRuns();
+  };
+})();
 
 (function () {
   const $ = (sel, root = document) => root.querySelector(sel);

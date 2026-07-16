@@ -14569,6 +14569,28 @@ html, body {
         </div>
       </div>
 
+      <section id="screen-deferred-tax" class="screen hidden">
+        <div class="page-header">
+          <div>
+            <h2>IAS 12 Deferred Tax</h2>
+            <p>Temporary differences, tax bases and recognition assessments.</p>
+          </div>
+
+          <button id="dtNewRunBtn" class="btn btn-primary">
+            New Run
+          </button>
+        </div>
+
+        <div class="toolbar">
+          <button id="dtRefreshBtn" class="btn btn-secondary">
+            Refresh
+          </button>
+        </div>
+
+        <div id="dtRunList"></div>
+        <div id="dtRunDetail" class="hidden"></div>
+      </section>
+
       <section id="screen-fixedassets" class="screen">
         <div class="card p-4">
           <div class="flex items-center justify-between">
@@ -14979,7 +15001,7 @@ html, body {
       <div id="smModal" class="fixed inset-0 z-50 hidden">
         <div id="smBackdrop" class="absolute inset-0 bg-black/40"></div>
 
-                <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] lg:-translate-x-1/2">
+        <div class="absolute left-0 top-0 w-full h-full lg:left-[calc(50%+90px)] lg:top-4 lg:w-[min(1750px,88vw)] lg:h-[94vh] lg:-translate-x-1/2">
           <div class="border rounded-xl bg-white shadow-xl overflow-hidden bg-white h-full flex flex-col">
             <div class="p-3 border-b flex items-center justify-between">
               <div>

@@ -1,6 +1,7 @@
 # app/ppe/posting.py
 from BackEnd.Services.assets.ppe_db import fetchone
 from BackEnd.Services.assets.tenants import company_schema
+from BackEnd.Services.assets import service
 from datetime import date, timedelta, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from BackEnd.Services.db_service import db_service
@@ -85,6 +86,132 @@ def coa_by_role(cur, schema: str, role: str) -> str | None:
     """), (role,))
     row = fetchone(cur)
     return row["code"] if row else None
+
+def resolve_impairment_reversal_account(cur, schema, company_id, asset):
+    code = (
+        asset.get("impairment_reversal_account_code")
+        or coa_first_by_role(cur, schema, company_id, "impairment_reversal_income")
+        or coa_first_by_name_ilike(
+            cur, schema, company_id,
+            ["%impairment reversal%", "%reversal of impairment%"],
+            exclude_patterns=["%accumulated%", "%allowance%"],
+        )
+    )
+    return str(code).strip() if code else None
+
+def _impairment_asset_lines(cur, schema, company_id, allocation, event_type):
+    asset_id = int(allocation["asset_id"])
+    asset = service.get_asset(cur, company_id, asset_id)
+
+    if not asset:
+        raise ValueError(f"Asset {asset_id} not found")
+
+    name = asset.get("asset_name") or asset.get("asset_code") or f"Asset {asset_id}"
+    loss_code, accum_code = resolve_impairment_accounts(cur, schema, company_id, asset)
+
+    if not accum_code:
+        raise ValueError(f"Accumulated impairment account is missing for {name}")
+
+    if event_type == "impairment_loss":
+        amount = _q2(_D(allocation.get("allocated_impairment_amount")))
+        if amount <= 0:
+            return []
+
+        if not loss_code:
+            raise ValueError(f"Impairment loss account is missing for {name}")
+
+        return [
+            {
+                "account_code": loss_code,
+                "debit": _money(amount),
+                "credit": 0,
+                "memo": f"Impairment loss – {name}",
+                "asset_id": asset_id,
+            },
+            {
+                "account_code": accum_code,
+                "debit": 0,
+                "credit": _money(amount),
+                "memo": f"Accumulated impairment – {name}",
+                "asset_id": asset_id,
+            },
+        ]
+
+    amount = _q2(_D(allocation.get("allocated_reversal_amount")))
+    if amount <= 0:
+        return []
+
+    reversal_code = resolve_impairment_reversal_account(cur, schema, company_id, asset)
+    if not reversal_code:
+        raise ValueError(f"Impairment reversal account is missing for {name}")
+
+    return [
+        {
+            "account_code": accum_code,
+            "debit": _money(amount),
+            "credit": 0,
+            "memo": f"Reverse accumulated impairment – {name}",
+            "asset_id": asset_id,
+        },
+        {
+            "account_code": reversal_code,
+            "debit": 0,
+            "credit": _money(amount),
+            "memo": f"Impairment reversal income – {name}",
+            "asset_id": asset_id,
+        },
+    ]
+
+def build_impairment_journal_preview(cur, company_id, imp_id):
+    schema = company_schema(company_id)
+    impairment = service.get_impairment(cur, company_id, imp_id)
+
+    if not impairment:
+        raise ValueError("Impairment not found")
+
+    event_type = str(impairment.get("event_type") or "impairment_loss").strip().lower()
+    allocations = impairment.get("allocations") or []
+
+    if not allocations:
+        raise ValueError("Impairment has no allocation lines")
+
+    lines = []
+    for allocation in allocations:
+        lines.extend(_impairment_asset_lines(
+            cur, schema, company_id, allocation, event_type
+        ))
+
+    return {
+        "ok": True,
+        "impairment_id": int(imp_id),
+        "target_type": impairment.get("target_type"),
+        "asset_id": impairment.get("asset_id"),
+        "cgu_id": impairment.get("cgu_id"),
+        "event_type": event_type,
+        "date": str(impairment.get("impairment_date")),
+        "description": f"IAS 36 impairment – {impairment.get('cgu_name') or impairment.get('asset_name') or imp_id}",
+        "lines": lines,
+        "total_debit": _money(sum((_D(x["debit"]) for x in lines), Decimal("0"))),
+        "total_credit": _money(sum((_D(x["credit"]) for x in lines), Decimal("0"))),
+    }
+
+def _save_impairment_allocation_accounts(cur, schema, company_id, imp_id, allocations):
+    for allocation in allocations:
+        asset_id = int(allocation["asset_id"])
+        asset = service.get_asset(cur, company_id, asset_id)
+        loss_code, accum_code = resolve_impairment_accounts(cur, schema, company_id, asset)
+        reversal_code = resolve_impairment_reversal_account(cur, schema, company_id, asset)
+
+        cur.execute(_q(schema, """
+            UPDATE {schema}.asset_impairment_allocations
+            SET loss_account_code=%s,
+                contra_asset_account_code=%s,
+                reversal_account_code=%s
+            WHERE company_id=%s AND impairment_id=%s AND asset_id=%s
+        """), (
+            loss_code, accum_code, reversal_code,
+            company_id, imp_id, asset_id,
+        ))
 
 def resolve_impairment_accounts(
     cur,
@@ -5144,106 +5271,85 @@ def post_revaluation(
 # ----------------------------
 # Posting: Impairment
 # ----------------------------
-def post_impairment(
-    cur,
-    company_id: int,
-    imp_id: int,
-    *,
-    user: dict | None = None,
-    approved_via: str | None = None,
-    engagement_company_id: int | None = None,
-    engagement_id: int | None = None,
-) -> int:
-    enforce_ppe_post_policy(company_id=company_id, user=user, action="post_impairment", approved_via=approved_via)
-
+def post_impairment(cur, company_id, imp_id, *, user=None, approved_via=None):
     schema = company_schema(company_id)
+    impairment = service.get_impairment(cur, company_id, imp_id, for_update=True)
 
-    cur.execute(_q(schema, """
-        SELECT * FROM {schema}.asset_impairments
-        WHERE company_id=%s AND id=%s
-        FOR UPDATE
-    """), (company_id, imp_id))
-    r = fetchone(cur)
-    if not r:
-        raise Exception("impairment not found")
-    if r["status"] == "posted" and r["posted_journal_id"]:
-        return r["posted_journal_id"]
+    if not impairment:
+        raise ValueError("Impairment not found")
 
-    asset = get_asset(cur, schema, company_id, r["asset_id"])
-    if not asset or not asset.get("asset_account_code"):
-        raise Exception("asset missing asset_account_code")
+    status = str(impairment.get("status") or "").strip().lower()
 
-    imp = Decimal(r["impairment_amount"] or 0)
-    rev = Decimal(r["reversal_amount"] or 0)
-    if imp <= 0 and rev <= 0:
-        raise Exception("nothing to post")
+    if status == "posted" and impairment.get("posted_journal_id"):
+        return int(impairment["posted_journal_id"])
 
-    if imp > 0 and not asset.get("impairment_loss_account_code"):
-        raise Exception("missing impairment_loss_account_code")
-    if rev > 0 and not asset.get("impairment_reversal_account_code"):
-        raise Exception("missing impairment_reversal_account_code")
+    if status in {"void", "reversed"}:
+        raise ValueError(f"Cannot post impairment in status '{status}'")
 
-    ccy = get_company_currency(cur, company_id)
-    jid = create_journal(
+    preview = build_impairment_journal_preview(cur, company_id, imp_id)
+    lines = preview.get("lines") or []
+
+    if not lines:
+        raise ValueError("Impairment journal has no lines")
+
+    debit = _q2(sum((_D(x["debit"]) for x in lines), Decimal("0")))
+    credit = _q2(sum((_D(x["credit"]) for x in lines), Decimal("0")))
+
+    if debit != credit:
+        raise ValueError(f"Impairment journal is not balanced: debit={debit}, credit={credit}")
+
+    currency = get_company_currency(cur, company_id)
+    target = impairment.get("cgu_code") or impairment.get("asset_code") or imp_id
+
+    journal_id = create_journal(
         cur, schema, company_id,
-        r["impairment_date"], None,
-        f"Impairment: {asset['asset_code']} - {asset['asset_name']}",
-        ccy, "asset_impairment", r["id"]
+        impairment["impairment_date"],
+        f"IMP-{imp_id}",
+        f"IAS 36 impairment: {target}",
+        currency,
+        "asset_impairment",
+        imp_id,
     )
 
-    if imp > 0:
-        add_line(cur, schema, company_id, jid, asset["impairment_loss_account_code"], "Impairment loss", imp, 0, "asset_impairment", r["id"])
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Reduce PPE carrying amount", 0, imp, "asset_impairment", r["id"])
+    for line in lines:
+        add_line(
+            cur, schema, company_id, journal_id,
+            line["account_code"], line["memo"],
+            _D(line["debit"]), _D(line["credit"]),
+            "asset_impairment", imp_id,
+        )
 
-    if rev > 0:
-        add_line(cur, schema, company_id, jid, asset["asset_account_code"], "Increase PPE carrying amount", rev, 0, "asset_impairment", r["id"])
-        add_line(cur, schema, company_id, jid, asset["impairment_reversal_account_code"], "Impairment reversal", 0, rev, "asset_impairment", r["id"])
+    finalize_journal(cur, schema, company_id, journal_id)
 
-    finalize_journal(cur, schema, company_id, jid)
+    _post_journal_to_ledger_and_tb(
+        cur, schema, company_id, journal_id,
+        impairment["impairment_date"],
+        ref=f"IMP-{imp_id}",
+    )
 
-    _post_journal_to_ledger_and_tb(cur, schema, company_id, jid, je_date=r["impairment_date"], ref=f"IMP-{r['id']}")
+    _save_impairment_allocation_accounts(
+        cur, schema, company_id, imp_id,
+        impairment.get("allocations") or [],
+    )
+
+    actor_id = None
+    if isinstance(user, dict):
+        try:
+            actor_id = int(user.get("user_id") or user.get("id") or user.get("sub") or 0) or None
+        except Exception:
+            pass
 
     cur.execute(_q(schema, """
-      UPDATE {schema}.asset_impairments
-      SET status='posted', posted_journal_id=%s, posted_at=NOW()
-      WHERE company_id=%s AND id=%s
-    """), (jid, company_id, imp_id))
+        UPDATE {schema}.asset_impairments
+        SET status='posted',
+            posted_journal_id=%s,
+            posted_at=NOW(),
+            updated_by_user_id=COALESCE(%s,updated_by_user_id),
+            updated_at=NOW()
+        WHERE company_id=%s AND id=%s
+    """), (journal_id, actor_id, company_id, imp_id))
 
-    upsert_carrying_snapshot(
-        cur,
-        company_id,
-        r["asset_id"],
-        as_at=r["impairment_date"],
-        source_event="impairment",
-        created_by=None
-    )
-
-    if engagement_company_id and engagement_id:
-        amount_val = float(imp if imp > 0 else rev)
-        event_type_norm = "impairment_loss" if imp > 0 else "impairment_reversal"
-
-        db_service.upsert_engagement_posting_activity(
-            cur,
-            company_id=int(engagement_company_id),
-            engagement_id=int(engagement_id),
-            posting_date=r["impairment_date"],
-            module_name="ppe",
-            event_type=event_type_norm,
-            reference_no=f"IMP-{r['id']}",
-            description=f"PPE impairment posted ({event_type_norm})",
-            prepared_by_user_id=(user or {}).get("id") if user else None,
-            reviewer_user_id=None,
-            status="posted",
-            amount=amount_val,
-            currency_code=ccy,
-            source_table="asset_impairments",
-            source_id=int(imp_id),
-            notes=f"PPE impairment posted to journal {jid}",
-            created_by_user_id=(user or {}).get("id") if user else None,
-            updated_by_user_id=(user or {}).get("id") if user else None,
-        )
-    return jid
-
+    return int(journal_id)
 # ----------------------------
 # Posting: Held-for-sale
 # ----------------------------

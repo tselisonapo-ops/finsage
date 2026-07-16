@@ -189,6 +189,8 @@ from BackEnd.Services.routes.accrual_deferral_routes import bp_accrual_deferral
 from BackEnd.Services.routes.ifrs9_routes import bp_ifrs9
 from BackEnd.Services.routes.payroll_routes import payroll_bp
 from BackEnd.Services.routes.forecast_routes import forecast_bp
+from BackEnd.Services.routes.deferred_tax_routes import deferred_tax_bp
+
 
 
 
@@ -333,6 +335,7 @@ app.register_blueprint(bp_accrual_deferral)
 app.register_blueprint(bp_ifrs9)
 app.register_blueprint(payroll_bp)
 app.register_blueprint(forecast_bp)
+app.register_blueprint(deferred_tax_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

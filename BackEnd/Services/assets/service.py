@@ -5,7 +5,14 @@ from decimal import Decimal
 from datetime import date
 from BackEnd.Services.assets.posting import generate_single_asset_depreciation
 from flask import current_app
-from BackEnd.Services.db_service import db_service
+
+from decimal import Decimal, ROUND_HALF_UP
+
+IMPAIRMENT_EVENTS = {"impairment_loss", "impairment_reversal"}
+IMPAIRMENT_TARGETS = {"asset", "cgu"}
+ALLOCATION_BASES = {"carrying_amount", "equal", "manual_weight"}
+
+
 def _q(schema: str, sql: str) -> str:
     return sql.replace("{schema}", schema)
 
@@ -2582,64 +2589,637 @@ def create_group_revaluation_drafts(cur, company_id, payload, *, user=None):
 # -------------------------
 # IMPAIRMENTS (CRUD)
 # -------------------------
-def list_impairments(cur, company_id, asset_id=None, status=None, limit=100, offset=0):
+
+def _imp_D(value):
+    try:
+        return Decimal(str(value or 0))
+    except Exception:
+        return Decimal("0")
+
+
+def _imp_q2(value):
+    return _imp_D(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _asset_carrying_amount_for_impairment(asset):
+    for key in ("carrying_amount", "carrying_value", "nbv", "net_book_value"):
+        value = asset.get(key)
+        if value not in (None, ""):
+            return _imp_q2(value)
+
+    cost = _imp_D(asset.get("cost") or asset.get("opening_cost") or asset.get("gross_carrying_amount"))
+    dep = _imp_D(asset.get("accumulated_depreciation") or asset.get("acc_dep") or asset.get("opening_accum_dep"))
+    impairment = _imp_D(asset.get("accumulated_impairment") or asset.get("opening_impairment"))
+    return _imp_q2(cost - dep - impairment)
+
+
+# ============================================================
+# CGU CRUD
+# ============================================================
+
+def list_cgus(cur, company_id, status="active"):
     schema = company_schema(company_id)
-    where = ["company_id=%s"]
+    where = ["c.company_id=%s"]
     params = [company_id]
-    if asset_id:
-        where.append("asset_id=%s")
-        params.append(asset_id)
+
     if status:
-        where.append("status=%s")
+        where.append("c.status=%s")
         params.append(status)
 
     cur.execute(_q(schema, f"""
-      SELECT * FROM {{schema}}.asset_impairments
-      WHERE {" AND ".join(where)}
-      ORDER BY impairment_date DESC, id DESC
-      LIMIT %s OFFSET %s
-    """), (*params, limit, offset))
+        SELECT c.*, COUNT(m.id) FILTER (WHERE m.included_to IS NULL) AS member_count
+        FROM {{schema}}.asset_cgus c
+        LEFT JOIN {{schema}}.asset_cgu_members m
+          ON m.company_id=c.company_id AND m.cgu_id=c.id
+        WHERE {" AND ".join(where)}
+        GROUP BY c.id
+        ORDER BY c.cgu_name, c.id
+    """), tuple(params))
+
     return fetchall(cur)
 
-def get_impairment(cur, company_id, imp_id):
+
+def get_cgu(cur, company_id, cgu_id, as_at=None, for_update=False):
     schema = company_schema(company_id)
-    cur.execute(_q(schema, "SELECT * FROM {schema}.asset_impairments WHERE company_id=%s AND id=%s"),
-                (company_id, imp_id))
-    return fetchone(cur)
+    lock = "FOR UPDATE" if for_update else ""
+
+    cur.execute(_q(schema, f"""
+        SELECT *
+        FROM {{schema}}.asset_cgus
+        WHERE company_id=%s AND id=%s
+        {lock}
+    """), (company_id, cgu_id))
+
+    cgu = fetchone(cur)
+    if not cgu:
+        return None
+
+    params = [company_id, cgu_id]
+
+    if as_at:
+        date_filter = """
+            AND (m.included_from IS NULL OR m.included_from <= %s)
+            AND (m.included_to IS NULL OR m.included_to >= %s)
+        """
+        params.extend([as_at, as_at])
+    else:
+        date_filter = "AND m.included_to IS NULL"
+
+    cur.execute(_q(schema, f"""
+        SELECT
+            m.id AS membership_id,
+            m.cgu_id,
+            m.asset_id,
+            m.allocation_basis,
+            m.allocation_weight,
+            m.included_from,
+            m.included_to,
+            m.notes AS membership_notes,
+            a.*
+        FROM {{schema}}.asset_cgu_members m
+        JOIN {{schema}}.assets a
+          ON a.company_id=m.company_id AND a.id=m.asset_id
+        WHERE m.company_id=%s AND m.cgu_id=%s
+        {date_filter}
+        ORDER BY a.asset_name, a.id
+    """), tuple(params))
+
+    cgu["members"] = fetchall(cur)
+    return cgu
+
+
+def create_cgu(cur, company_id, payload):
+    schema = company_schema(company_id)
+    code = str(payload.get("cgu_code") or "").strip()
+    name = str(payload.get("cgu_name") or "").strip()
+
+    if not code:
+        raise ValueError("cgu_code is required")
+    if not name:
+        raise ValueError("cgu_name is required")
+
+    cur.execute(_q(schema, """
+        INSERT INTO {schema}.asset_cgus(
+            company_id, cgu_code, cgu_name, description, status,
+            source_company_id, engagement_company_id, engagement_id,
+            created_by_user_id, updated_by_user_id
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
+    """), (
+        company_id, code, name, payload.get("description"), payload.get("status") or "active",
+        payload.get("source_company_id"), payload.get("engagement_company_id"),
+        payload.get("engagement_id"), payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
+    ))
+
+    cgu_id = int(cur.fetchone()["id"])
+    replace_cgu_members(cur, company_id, cgu_id, payload.get("members") or [])
+    return cgu_id
+
+
+def update_cgu(cur, company_id, cgu_id, payload):
+    schema = company_schema(company_id)
+
+    if not get_cgu(cur, company_id, cgu_id, for_update=True):
+        raise ValueError("CGU not found")
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.asset_cgus
+        SET cgu_code=COALESCE(%s,cgu_code),
+            cgu_name=COALESCE(%s,cgu_name),
+            description=COALESCE(%s,description),
+            status=COALESCE(%s,status),
+            updated_by_user_id=COALESCE(%s,updated_by_user_id),
+            updated_at=NOW()
+        WHERE company_id=%s AND id=%s
+    """), (
+        payload.get("cgu_code"), payload.get("cgu_name"), payload.get("description"),
+        payload.get("status"), payload.get("updated_by_user_id"), company_id, cgu_id,
+    ))
+
+    if "members" in payload:
+        replace_cgu_members(cur, company_id, cgu_id, payload.get("members") or [])
+
+
+def _clean_cgu_members(members):
+    if not isinstance(members, list):
+        raise ValueError("members must be an array")
+
+    cleaned = {}
+    for item in members:
+        item = item or {}
+        asset_id = int(item.get("asset_id") or 0)
+        if asset_id <= 0:
+            continue
+
+        basis = str(item.get("allocation_basis") or "carrying_amount").strip().lower()
+        weight = item.get("allocation_weight")
+
+        if basis not in ALLOCATION_BASES:
+            raise ValueError(f"Invalid allocation basis for asset {asset_id}")
+        if basis == "manual_weight" and _imp_D(weight) <= 0:
+            raise ValueError(f"Allocation weight must be greater than zero for asset {asset_id}")
+
+        cleaned[asset_id] = {
+            "asset_id": asset_id,
+            "allocation_basis": basis,
+            "allocation_weight": weight,
+            "included_from": item.get("included_from"),
+            "notes": item.get("notes"),
+        }
+
+    if not cleaned:
+        raise ValueError("A CGU must have at least one asset")
+
+    return list(cleaned.values())
+
+
+def replace_cgu_members(cur, company_id, cgu_id, members):
+    schema = company_schema(company_id)
+    members = _clean_cgu_members(members)
+    asset_ids = [row["asset_id"] for row in members]
+
+    cur.execute(_q(schema, """
+        SELECT id FROM {schema}.assets
+        WHERE company_id=%s AND id=ANY(%s)
+    """), (company_id, asset_ids))
+
+    found = {int(row["id"]) for row in fetchall(cur)}
+    missing = sorted(set(asset_ids) - found)
+
+    if missing:
+        raise ValueError(f"Invalid asset ids: {missing}")
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.asset_cgu_members
+        SET included_to=CURRENT_DATE
+        WHERE company_id=%s AND cgu_id=%s AND included_to IS NULL
+    """), (company_id, cgu_id))
+
+    for row in members:
+        cur.execute(_q(schema, """
+            INSERT INTO {schema}.asset_cgu_members(
+                company_id, cgu_id, asset_id, allocation_basis,
+                allocation_weight, included_from, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,COALESCE(%s,CURRENT_DATE),%s)
+        """), (
+            company_id, cgu_id, row["asset_id"], row["allocation_basis"],
+            row["allocation_weight"], row["included_from"], row["notes"],
+        ))
+
+
+# ============================================================
+# IMPAIRMENT TARGETS AND ALLOCATION
+# ============================================================
+
+def _get_impairment_target_rows(cur, company_id, payload):
+    schema = company_schema(company_id)
+    target_type = str(payload.get("target_type") or "asset").strip().lower()
+    impairment_date = payload.get("impairment_date")
+    basis = str(payload.get("allocation_basis") or "carrying_amount").strip().lower()
+
+    if target_type not in IMPAIRMENT_TARGETS:
+        raise ValueError("target_type must be asset or cgu")
+    if basis not in ALLOCATION_BASES:
+        raise ValueError("Invalid allocation_basis")
+
+    if target_type == "asset":
+        asset_id = int(payload.get("asset_id") or 0)
+        if not asset_id:
+            raise ValueError("asset_id is required")
+
+        cur.execute(_q(schema, """
+            SELECT * FROM {schema}.assets
+            WHERE company_id=%s AND id=%s
+        """), (company_id, asset_id))
+
+        asset = fetchone(cur)
+        if not asset:
+            raise ValueError("Asset not found")
+
+        carrying = _asset_carrying_amount_for_impairment(asset)
+        return [{
+            "asset_id": asset_id,
+            "asset": asset,
+            "carrying_amount_before": carrying,
+            "allocation_weight": Decimal("1"),
+        }]
+
+    cgu_id = int(payload.get("cgu_id") or 0)
+    if not cgu_id:
+        raise ValueError("cgu_id is required")
+
+    cgu = get_cgu(cur, company_id, cgu_id, as_at=impairment_date)
+    if not cgu:
+        raise ValueError("CGU not found")
+    if cgu.get("status") != "active":
+        raise ValueError("CGU is not active")
+
+    manual = payload.get("allocations") or {}
+    rows = []
+
+    for asset in cgu.get("members") or []:
+        carrying = _asset_carrying_amount_for_impairment(asset)
+        if carrying <= 0:
+            continue
+
+        asset_id = int(asset["asset_id"])
+        supplied = manual.get(str(asset_id)) or manual.get(asset_id) or {}
+
+        if basis == "equal":
+            weight = Decimal("1")
+        elif basis == "manual_weight":
+            weight = _imp_D(supplied.get("allocation_weight") or asset.get("allocation_weight"))
+            if weight <= 0:
+                raise ValueError(f"Manual weight is required for {asset.get('asset_name') or asset_id}")
+        else:
+            weight = carrying
+
+        rows.append({
+            "asset_id": asset_id,
+            "asset": asset,
+            "carrying_amount_before": carrying,
+            "allocation_weight": weight,
+        })
+
+    if not rows:
+        raise ValueError("CGU has no assets with a positive carrying amount")
+
+    return rows
+
+
+def _allocate_amount_by_weight(total, rows):
+    total = _imp_q2(total)
+    total_weight = sum((_imp_D(row["allocation_weight"]) for row in rows), Decimal("0"))
+
+    if total_weight <= 0:
+        raise ValueError("Allocation weights must total more than zero")
+
+    allocated = {}
+    running_total = Decimal("0")
+
+    for row in rows:
+        asset_id = int(row["asset_id"])
+        amount = _imp_q2(total * _imp_D(row["allocation_weight"]) / total_weight)
+        allocated[asset_id] = amount
+        running_total += amount
+
+    difference = total - running_total
+    if difference:
+        first_asset_id = int(rows[0]["asset_id"])
+        allocated[first_asset_id] += difference
+
+    return allocated
+
+
+def _event_total(payload, event_type, carrying_total):
+    if event_type == "impairment_loss":
+        entered = _imp_q2(payload.get("impairment_amount"))
+        recoverable = _imp_q2(payload.get("recoverable_amount"))
+        total = entered if entered > 0 else max(Decimal("0"), carrying_total - recoverable)
+
+        if total <= 0:
+            raise ValueError("Recoverable amount is not below carrying amount")
+        if total > carrying_total:
+            raise ValueError("Impairment cannot exceed carrying amount")
+
+        return total
+
+    total = _imp_q2(payload.get("reversal_amount"))
+    maximum = _imp_q2(payload.get("maximum_reversal_amount"))
+
+    if total <= 0:
+        raise ValueError("reversal_amount must be greater than zero")
+    if maximum > 0 and total > maximum:
+        raise ValueError(f"Reversal exceeds the permitted maximum of {maximum}")
+
+    return total
+
+
+def _manual_or_weighted_allocations(payload, rows, event_type, total):
+    supplied = payload.get("allocations") or {}
+    key = "allocated_impairment_amount" if event_type == "impairment_loss" else "allocated_reversal_amount"
+
+    has_manual = any(
+        _imp_D((supplied.get(str(row["asset_id"])) or {}).get(key)) > 0
+        for row in rows
+    )
+
+    if not has_manual:
+        return _allocate_amount_by_weight(total, rows)
+
+    amounts = {
+        int(row["asset_id"]): _imp_q2((supplied.get(str(row["asset_id"])) or {}).get(key))
+        for row in rows
+    }
+
+    entered_total = _imp_q2(sum(amounts.values(), Decimal("0")))
+    if entered_total != _imp_q2(total):
+        raise ValueError(f"Manual allocations must total {_imp_q2(total)}; current total is {entered_total}")
+
+    return amounts
+
+
+def build_impairment_allocations(cur, company_id, payload):
+    event_type = str(payload.get("event_type") or "impairment_loss").strip().lower()
+
+    if event_type not in IMPAIRMENT_EVENTS:
+        raise ValueError("Invalid impairment event type")
+    if not payload.get("impairment_date"):
+        raise ValueError("impairment_date is required")
+
+    rows = _get_impairment_target_rows(cur, company_id, payload)
+    carrying_total = _imp_q2(sum((row["carrying_amount_before"] for row in rows), Decimal("0")))
+    total = _event_total(payload, event_type, carrying_total)
+    amounts = _manual_or_weighted_allocations(payload, rows, event_type, total)
+
+    allocations = []
+    for row in rows:
+        amount = _imp_q2(amounts[int(row["asset_id"])])
+        carrying = _imp_q2(row["carrying_amount_before"])
+
+        if event_type == "impairment_loss" and amount > carrying:
+            name = row["asset"].get("asset_name") or row["asset_id"]
+            raise ValueError(f"Allocated impairment exceeds carrying amount for {name}")
+
+        loss = amount if event_type == "impairment_loss" else Decimal("0")
+        reversal = amount if event_type == "impairment_reversal" else Decimal("0")
+
+        allocations.append({
+            **row,
+            "allocated_impairment_amount": loss,
+            "allocated_reversal_amount": reversal,
+            "carrying_amount_after": _imp_q2(carrying - loss + reversal),
+        })
+
+    return {
+        "target_type": str(payload.get("target_type") or "asset").strip().lower(),
+        "event_type": event_type,
+        "carrying_amount_before": carrying_total,
+        "recoverable_amount": _imp_q2(payload.get("recoverable_amount")),
+        "impairment_amount": total if event_type == "impairment_loss" else Decimal("0"),
+        "reversal_amount": total if event_type == "impairment_reversal" else Decimal("0"),
+        "allocations": allocations,
+    }
+
+
+# ============================================================
+# IMPAIRMENT CRUD
+# ============================================================
+
+def list_impairments(
+    cur, company_id, asset_id=None, cgu_id=None,
+    target_type=None, status=None, limit=100, offset=0
+):
+    schema = company_schema(company_id)
+    where = ["i.company_id=%s"]
+    params = [company_id]
+
+    if asset_id:
+        where.append("""
+            (
+                i.asset_id=%s OR EXISTS (
+                    SELECT 1
+                    FROM {schema}.asset_impairment_allocations x
+                    WHERE x.company_id=i.company_id
+                      AND x.impairment_id=i.id
+                      AND x.asset_id=%s
+                )
+            )
+        """)
+        params.extend([asset_id, asset_id])
+
+    if cgu_id:
+        where.append("i.cgu_id=%s")
+        params.append(cgu_id)
+    if target_type:
+        where.append("i.target_type=%s")
+        params.append(target_type)
+    if status:
+        where.append("i.status=%s")
+        params.append(status)
+
+    cur.execute(_q(schema, f"""
+        SELECT i.*, a.asset_code, a.asset_name, c.cgu_code, c.cgu_name
+        FROM {{schema}}.asset_impairments i
+        LEFT JOIN {{schema}}.assets a
+          ON a.company_id=i.company_id AND a.id=i.asset_id
+        LEFT JOIN {{schema}}.asset_cgus c
+          ON c.company_id=i.company_id AND c.id=i.cgu_id
+        WHERE {" AND ".join(where)}
+        ORDER BY i.impairment_date DESC, i.id DESC
+        LIMIT %s OFFSET %s
+    """), (*params, limit, offset))
+
+    return fetchall(cur)
+
+
+def get_impairment(cur, company_id, imp_id, for_update=False):
+    schema = company_schema(company_id)
+    lock = "FOR UPDATE" if for_update else ""
+
+    cur.execute(_q(schema, f"""
+        SELECT i.*, a.asset_code, a.asset_name, c.cgu_code, c.cgu_name
+        FROM {{schema}}.asset_impairments i
+        LEFT JOIN {{schema}}.assets a
+          ON a.company_id=i.company_id AND a.id=i.asset_id
+        LEFT JOIN {{schema}}.asset_cgus c
+          ON c.company_id=i.company_id AND c.id=i.cgu_id
+        WHERE i.company_id=%s AND i.id=%s
+        {lock}
+    """), (company_id, imp_id))
+
+    impairment = fetchone(cur)
+    if not impairment:
+        return None
+
+    cur.execute(_q(schema, """
+        SELECT x.*, a.asset_code, a.asset_name
+        FROM {schema}.asset_impairment_allocations x
+        JOIN {schema}.assets a
+          ON a.company_id=x.company_id AND a.id=x.asset_id
+        WHERE x.company_id=%s AND x.impairment_id=%s
+        ORDER BY a.asset_name, a.id
+    """), (company_id, imp_id))
+
+    impairment["allocations"] = fetchall(cur)
+    return impairment
+
+
+def _insert_impairment_allocations(cur, company_id, impairment_id, cgu_id, rows, notes=None):
+    schema = company_schema(company_id)
+
+    for row in rows:
+        cur.execute(_q(schema, """
+            INSERT INTO {schema}.asset_impairment_allocations(
+                company_id, impairment_id, cgu_id, asset_id,
+                carrying_amount_before, allocation_weight,
+                allocated_impairment_amount, allocated_reversal_amount,
+                carrying_amount_after, notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """), (
+            company_id, impairment_id, cgu_id, row["asset_id"],
+            row["carrying_amount_before"], row["allocation_weight"],
+            row["allocated_impairment_amount"], row["allocated_reversal_amount"],
+            row["carrying_amount_after"], notes,
+        ))
+
 
 def create_impairment(cur, company_id, payload):
     schema = company_schema(company_id)
+    calc = build_impairment_allocations(cur, company_id, payload)
+    is_cgu = calc["target_type"] == "cgu"
+    asset_id = int(payload.get("asset_id") or 0) or None
+    cgu_id = int(payload.get("cgu_id") or 0) or None
+
     cur.execute(_q(schema, """
-      INSERT INTO {schema}.asset_impairments(
-        company_id, asset_id,
-        impairment_date,
-        carrying_amount_before, recoverable_amount,
-        impairment_amount, reversal_amount,
-        reason, notes, status
-      )
-      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'draft'))
-      RETURNING id
+        INSERT INTO {schema}.asset_impairments(
+            company_id, target_type, asset_id, cgu_id,
+            impairment_date, event_type,
+            carrying_amount_before, recoverable_amount,
+            impairment_amount, reversal_amount,
+            recoverable_basis, fair_value_less_costs, value_in_use,
+            discount_rate, growth_rate, cash_flow_period_months,
+            allocation_basis, reason, notes, status,
+            source_company_id, engagement_company_id, engagement_id,
+            created_by_user_id, updated_by_user_id
+        )
+        VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,'draft'),
+            %s,%s,%s,%s,%s
+        )
+        RETURNING id
     """), (
-      company_id, payload["asset_id"],
-      payload["impairment_date"],
-      payload["carrying_amount_before"],
-      payload["recoverable_amount"],
-      payload["impairment_amount"],
-      payload.get("reversal_amount", 0),
-      payload.get("reason"),
-      payload.get("notes"),
-      payload.get("status","draft"),
+        company_id, calc["target_type"], None if is_cgu else asset_id, cgu_id if is_cgu else None,
+        payload["impairment_date"], calc["event_type"],
+        calc["carrying_amount_before"], calc["recoverable_amount"],
+        calc["impairment_amount"], calc["reversal_amount"],
+        payload.get("recoverable_basis"), payload.get("fair_value_less_costs"),
+        payload.get("value_in_use"), payload.get("discount_rate"),
+        payload.get("growth_rate"), payload.get("cash_flow_period_months"),
+        payload.get("allocation_basis") or "carrying_amount",
+        payload.get("reason"), payload.get("notes"), payload.get("status"),
+        payload.get("source_company_id"), payload.get("engagement_company_id"),
+        payload.get("engagement_id"), payload.get("created_by_user_id"),
+        payload.get("updated_by_user_id"),
     ))
-    return cur.fetchone()["id"]
+
+    impairment_id = int(cur.fetchone()["id"])
+    _insert_impairment_allocations(
+        cur, company_id, impairment_id,
+        cgu_id if is_cgu else None,
+        calc["allocations"], payload.get("notes")
+    )
+    return impairment_id
+
+
+def update_impairment(cur, company_id, imp_id, payload):
+    schema = company_schema(company_id)
+    current = get_impairment(cur, company_id, imp_id, for_update=True)
+
+    if not current:
+        raise ValueError("Impairment not found")
+    if current.get("status") not in {"draft", "pending_review"}:
+        raise ValueError("Only draft or pending-review impairments can be edited")
+
+    merged = {**current, **(payload or {})}
+    calc = build_impairment_allocations(cur, company_id, merged)
+    is_cgu = calc["target_type"] == "cgu"
+    asset_id = int(merged.get("asset_id") or 0) or None
+    cgu_id = int(merged.get("cgu_id") or 0) or None
+
+    cur.execute(_q(schema, """
+        UPDATE {schema}.asset_impairments
+        SET target_type=%s, asset_id=%s, cgu_id=%s,
+            impairment_date=%s, event_type=%s,
+            carrying_amount_before=%s, recoverable_amount=%s,
+            impairment_amount=%s, reversal_amount=%s,
+            recoverable_basis=%s, fair_value_less_costs=%s, value_in_use=%s,
+            discount_rate=%s, growth_rate=%s, cash_flow_period_months=%s,
+            allocation_basis=%s, reason=%s, notes=%s,
+            updated_by_user_id=%s, updated_at=NOW()
+        WHERE company_id=%s AND id=%s
+    """), (
+        calc["target_type"], None if is_cgu else asset_id, cgu_id if is_cgu else None,
+        merged["impairment_date"], calc["event_type"],
+        calc["carrying_amount_before"], calc["recoverable_amount"],
+        calc["impairment_amount"], calc["reversal_amount"],
+        merged.get("recoverable_basis"), merged.get("fair_value_less_costs"),
+        merged.get("value_in_use"), merged.get("discount_rate"),
+        merged.get("growth_rate"), merged.get("cash_flow_period_months"),
+        merged.get("allocation_basis") or "carrying_amount",
+        merged.get("reason"), merged.get("notes"), merged.get("updated_by_user_id"),
+        company_id, imp_id,
+    ))
+
+    cur.execute(_q(schema, """
+        DELETE FROM {schema}.asset_impairment_allocations
+        WHERE company_id=%s AND impairment_id=%s
+    """), (company_id, imp_id))
+
+    _insert_impairment_allocations(
+        cur, company_id, imp_id,
+        cgu_id if is_cgu else None,
+        calc["allocations"], merged.get("notes")
+    )
+
 
 def void_impairment(cur, company_id, imp_id):
     schema = company_schema(company_id)
+
     cur.execute(_q(schema, """
-      UPDATE {schema}.asset_impairments
-      SET status='void'
-      WHERE company_id=%s AND id=%s AND status <> 'posted'
+        UPDATE {schema}.asset_impairments
+        SET status='void', updated_at=NOW()
+        WHERE company_id=%s AND id=%s
+          AND status IN ('draft','pending_review')
     """), (company_id, imp_id))
 
+    if cur.rowcount != 1:
+        raise ValueError("Only draft or pending-review impairments can be voided")
 # -------------------------
 # DISPOSALS (CRUD)
 # -------------------------

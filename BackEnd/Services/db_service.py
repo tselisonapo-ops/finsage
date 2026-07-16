@@ -24,7 +24,7 @@ import secrets
 import string
 import sqlparse
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, InvalidOperation
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
@@ -38,6 +38,7 @@ import psycopg2
 import psycopg2.extras
 from psycopg2.extras import Json, execute_values
 from psycopg2.pool import SimpleConnectionPool
+
 
 from BackEnd.Services import accounting_classifiers as ac
 from BackEnd.Services.company_context import get_company_context, normalize_role
@@ -1117,6 +1118,15 @@ def _payroll_money(value) -> Decimal:
         rounding=ROUND_HALF_UP,
     )
 
+def _decimal(value: Any, default: str = "0") -> Decimal:
+    try:
+        return Decimal(str(value if value is not None else default))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal(default)
+
+
+def _json_dict(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 class DatabaseService:
     """
     Thin Postgres helper focused on users, companies, per-company COA/ledger,
@@ -2326,6 +2336,26 @@ class DatabaseService:
             country_code = EXCLUDED.country_code,
             currency_code = EXCLUDED.currency_code;
 
+        ALTER TABLE public.companies
+        ADD COLUMN IF NOT EXISTS tax_authority_id INT NULL,
+        ADD COLUMN IF NOT EXISTS income_tax_rate NUMERIC(8,4) NULL,
+        ADD COLUMN IF NOT EXISTS deferred_tax_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS deferred_tax_settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'companies_tax_authority_fk'
+                ) THEN
+                    ALTER TABLE public.companies
+                    ADD CONSTRAINT companies_tax_authority_fk
+                    FOREIGN KEY (tax_authority_id)
+                    REFERENCES public.tax_authorities(id)
+                    ON DELETE SET NULL;
+                END IF;
+            END $$;
 
         CREATE TABLE IF NOT EXISTS public.tax_allowance_rules (
             id SERIAL PRIMARY KEY,
@@ -2449,6 +2479,75 @@ class DatabaseService:
 
             CONSTRAINT uq_payroll_tax_parameter
                 UNIQUE (tax_year_id, parameter_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS public.corporate_tax_rates (
+            id SERIAL PRIMARY KEY,
+
+            tax_authority_id INT NOT NULL
+                REFERENCES public.tax_authorities(id),
+
+            taxpayer_type TEXT NOT NULL DEFAULT 'standard_company',
+
+            rate_percent NUMERIC(8,4) NOT NULL,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            is_substantively_enacted BOOLEAN NOT NULL DEFAULT TRUE,
+            source_reference TEXT NULL,
+            notes TEXT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_corporate_tax_rate
+                UNIQUE (
+                    tax_authority_id,
+                    taxpayer_type,
+                    effective_from
+                ),
+
+            CONSTRAINT ck_corporate_tax_rate
+                CHECK (
+                    rate_percent BETWEEN 0 AND 100
+                    AND (
+                        effective_to IS NULL
+                        OR effective_to >= effective_from
+                    )
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS public.deferred_tax_treatment_rules (
+            id SERIAL PRIMARY KEY,
+
+            tax_authority_id INT NOT NULL
+                REFERENCES public.tax_authorities(id),
+
+            source_module TEXT NOT NULL,
+            item_type TEXT NOT NULL,
+
+            treatment_code TEXT NOT NULL,
+            tax_base_method TEXT NOT NULL,
+
+            effective_from DATE NOT NULL DEFAULT DATE '1900-01-01',
+            effective_to DATE NULL,
+
+            configuration JSONB NOT NULL DEFAULT '{}'::jsonb,
+            is_default BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_deferred_tax_treatment_rule
+                UNIQUE (
+                    tax_authority_id,
+                    source_module,
+                    item_type,
+                    treatment_code,
+                    effective_from
+                )
         );
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
@@ -15832,144 +15931,400 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_asset_disp_status_idx
         ON {schema}.asset_disposals(status);
 
-        -- ==================================================
-        -- ASSET IMPAIRMENTS (IAS 36)
-        -- ==================================================
+        -- ============================================================
+        -- IAS 36 CASH-GENERATING UNITS
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_cgus (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            cgu_code TEXT NOT NULL,
+            cgu_name TEXT NOT NULL,
+            description TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            source_company_id INT NULL,
+            engagement_company_id INT NULL,
+            engagement_id INT NULL,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_asset_cgus_code_uq
+        ON {schema}.asset_cgus(company_id, LOWER(cgu_code))
+        WHERE status <> 'inactive';
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_cgus_company_idx
+        ON {schema}.asset_cgus(company_id, status);
+
+        DO $ck_asset_cgus_status$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_cgus_status' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_cgus
+                    ADD CONSTRAINT ck_asset_cgus_status
+                    CHECK (status IN (''active'',''inactive''))',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_asset_cgus_status$;
+
+
+        -- ============================================================
+        -- CGU MEMBERS
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_cgu_members (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            cgu_id INT NOT NULL,
+            asset_id INT NOT NULL,
+            allocation_basis TEXT NOT NULL DEFAULT 'carrying_amount',
+            allocation_weight NUMERIC(18,6) NULL,
+            included_from DATE NULL,
+            included_to DATE NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_asset_cgu_members_active_uq
+        ON {schema}.asset_cgu_members(company_id, cgu_id, asset_id)
+        WHERE included_to IS NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_cgu_members_cgu_idx
+        ON {schema}.asset_cgu_members(company_id, cgu_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_cgu_members_asset_idx
+        ON {schema}.asset_cgu_members(company_id, asset_id);
+
+        DO $ck_asset_cgu_members_basis$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_cgu_members_basis' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_cgu_members
+                    ADD CONSTRAINT ck_asset_cgu_members_basis
+                    CHECK (
+                        allocation_basis IN (''carrying_amount'',''equal'',''manual_weight'')
+                        AND (allocation_basis <> ''manual_weight'' OR allocation_weight > 0)
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_asset_cgu_members_basis$;
+
+        DO $fk_asset_cgu_members_cgu$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_cgu_members_cgu' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_cgu_members
+                    ADD CONSTRAINT fk_asset_cgu_members_cgu
+                    FOREIGN KEY (cgu_id) REFERENCES %I.asset_cgus(id) ON DELETE CASCADE',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_asset_cgu_members_cgu$;
+
+        DO $fk_asset_cgu_members_asset$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_cgu_members_asset' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_cgu_members
+                    ADD CONSTRAINT fk_asset_cgu_members_asset
+                    FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_asset_cgu_members_asset$;
+
+
+        -- ============================================================
+        -- IMPAIRMENTS
+        -- ============================================================
+
         CREATE TABLE IF NOT EXISTS {schema}.asset_impairments (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
-            asset_id INT NOT NULL,
-
+            target_type TEXT NOT NULL DEFAULT 'asset',
+            asset_id INT NULL,
+            cgu_id INT NULL,
             impairment_date DATE NOT NULL,
-
+            event_type TEXT NOT NULL DEFAULT 'impairment_loss',
             carrying_amount_before NUMERIC(18,2) NOT NULL,
             recoverable_amount NUMERIC(18,2) NOT NULL,
-            impairment_amount NUMERIC(18,2) NOT NULL,
-
+            impairment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
             reversal_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
+            recoverable_basis TEXT NULL,
+            fair_value_less_costs NUMERIC(18,2) NULL,
+            value_in_use NUMERIC(18,2) NULL,
+            discount_rate NUMERIC(9,6) NULL,
+            growth_rate NUMERIC(9,6) NULL,
+            cash_flow_period_months INT NULL,
+            allocation_basis TEXT NOT NULL DEFAULT 'carrying_amount',
             reason TEXT NULL,
             notes TEXT NULL,
-
-            status TEXT NOT NULL DEFAULT 'draft',  -- draft|posted|reversed|void
+            status TEXT NOT NULL DEFAULT 'draft',
             posted_journal_id INT NULL,
             posted_at TIMESTAMPTZ NULL,
-
-            created_at TIMESTAMPTZ DEFAULT NOW()
+            source_company_id INT NULL,
+            engagement_company_id INT NULL,
+            engagement_id INT NULL,
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
         ALTER TABLE {schema}.asset_impairments
-        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
-        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
-        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+        ALTER COLUMN asset_id DROP NOT NULL;
 
-        -- ==================================================
-        -- IAS 36: Constraints / Indexes / FK
-        -- ==================================================
+        ALTER TABLE {schema}.asset_impairments
+        ADD COLUMN IF NOT EXISTS target_type TEXT NOT NULL DEFAULT 'asset',
+        ADD COLUMN IF NOT EXISTS cgu_id INT NULL,
+        ADD COLUMN IF NOT EXISTS event_type TEXT NOT NULL DEFAULT 'impairment_loss',
+        ADD COLUMN IF NOT EXISTS recoverable_basis TEXT NULL,
+        ADD COLUMN IF NOT EXISTS fair_value_less_costs NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS value_in_use NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(9,6) NULL,
+        ADD COLUMN IF NOT EXISTS growth_rate NUMERIC(9,6) NULL,
+        ADD COLUMN IF NOT EXISTS cash_flow_period_months INT NULL,
+        ADD COLUMN IF NOT EXISTS allocation_basis TEXT NOT NULL DEFAULT 'carrying_amount',
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-        -- Checks
-        DO $ck_asset_impairments_valid$
+        DO $drop_old_impairment_checks$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_asset_impairments_valid'
-            AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_impairments
-            ADD CONSTRAINT ck_asset_impairments_valid
-            CHECK (
-                impairment_date IS NOT NULL
-                AND carrying_amount_before >= 0
-                AND recoverable_amount >= 0
-                AND impairment_amount >= 0
-                AND reversal_amount >= 0
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END
-        $ck_asset_impairments_valid$;
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_impairments_valid' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments DROP CONSTRAINT ck_asset_impairments_valid',
+                    '{schema}'
+                );
+            END IF;
 
-        -- Optional sanity: impairment_amount should roughly equal max(0, carrying_before - recoverable)
-        -- (allow tolerance because users may round or allocate across CGUs)
-        DO $ck_asset_impairments_math$
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_impairments_math' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments DROP CONSTRAINT ck_asset_impairments_math',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $drop_old_impairment_checks$;
+
+        DO $ck_asset_impairments_valid_v2$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_asset_impairments_math'
-            AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_impairments
-            ADD CONSTRAINT ck_asset_impairments_math
-            CHECK (
-                impairment_amount <= (carrying_amount_before + 0.02)
-                AND (carrying_amount_before - recoverable_amount) <= (impairment_amount + 0.05)
-            )',
-            '{schema}'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_impairments_valid_v2' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments
+                    ADD CONSTRAINT ck_asset_impairments_valid_v2
+                    CHECK (
+                        target_type IN (''asset'',''cgu'')
+                        AND event_type IN (''impairment_loss'',''impairment_reversal'')
+                        AND (
+                            (target_type=''asset'' AND asset_id IS NOT NULL AND cgu_id IS NULL)
+                            OR
+                            (target_type=''cgu'' AND cgu_id IS NOT NULL AND asset_id IS NULL)
+                        )
+                        AND carrying_amount_before >= 0
+                        AND recoverable_amount >= 0
+                        AND impairment_amount >= 0
+                        AND reversal_amount >= 0
+                        AND NOT (impairment_amount > 0 AND reversal_amount > 0)
+                        AND allocation_basis IN (''carrying_amount'',''equal'',''manual_weight'')
+                        AND status IN (''draft'',''pending_review'',''posted'',''reversed'',''void'')
+                    )',
+                    '{schema}'
+                );
+            END IF;
         END
-        $ck_asset_impairments_math$;
+        $ck_asset_impairments_valid_v2$;
 
-        -- Anti-duplicate: one non-void impairment entry per asset per impairment_date
-        DO $uq_asset_impairments_asset_date$
+        DO $ck_asset_impairments_math_v2$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_asset_impairments_asset_date'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_asset_impairments_asset_date
-            ON %I.asset_impairments(asset_id, impairment_date)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='ck_asset_impairments_math_v2' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments
+                    ADD CONSTRAINT ck_asset_impairments_math_v2
+                    CHECK (
+                        impairment_amount <= carrying_amount_before + 0.02
+                        AND (
+                            event_type=''impairment_reversal''
+                            OR impairment_amount <= GREATEST(carrying_amount_before-recoverable_amount,0)+0.05
+                        )
+                    )',
+                    '{schema}'
+                );
+            END IF;
         END
-        $uq_asset_impairments_asset_date$;
+        $ck_asset_impairments_math_v2$;
 
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_company_idx
-        ON {schema}.asset_impairments(company_id);
+        DROP INDEX IF EXISTS {schema}.uq_asset_impairments_asset_date;
 
-        CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_asset_date_idx
-        ON {schema}.asset_impairments(asset_id, impairment_date);
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_asset_impairments_asset_date_uq
+        ON {schema}.asset_impairments(company_id, asset_id, impairment_date, event_type)
+        WHERE target_type='asset' AND status <> 'void';
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_asset_impairments_cgu_date_uq
+        ON {schema}.asset_impairments(company_id, cgu_id, impairment_date, event_type)
+        WHERE target_type='cgu' AND status <> 'void';
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_target_idx
+        ON {schema}.asset_impairments(company_id, target_type, asset_id, cgu_id);
 
         CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_status_idx
-        ON {schema}.asset_impairments(status);
+        ON {schema}.asset_impairments(company_id, status);
 
-        CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_posted_journal_id_idx
+        CREATE INDEX IF NOT EXISTS {schema}_asset_impairments_journal_idx
         ON {schema}.asset_impairments(posted_journal_id);
 
-        -- FK -> assets (safe add)
-        DO $fk_asset_impairments_asset$
+        DO $fk_asset_impairments_asset_v2$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_asset_impairments_asset'
-            AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_impairments
-            ADD CONSTRAINT fk_asset_impairments_asset
-            FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_impairments_asset_v2' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments
+                    ADD CONSTRAINT fk_asset_impairments_asset_v2
+                    FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
+                    '{schema}', '{schema}'
+                );
+            END IF;
         END
-        $fk_asset_impairments_asset$;
-                
+        $fk_asset_impairments_asset_v2$;
+
+        DO $fk_asset_impairments_cgu$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_impairments_cgu' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairments
+                    ADD CONSTRAINT fk_asset_impairments_cgu
+                    FOREIGN KEY (cgu_id) REFERENCES %I.asset_cgus(id)',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_asset_impairments_cgu$;
+
+
+        -- ============================================================
+        -- IMPAIRMENT ALLOCATIONS
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_impairment_allocations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            impairment_id INT NOT NULL,
+            cgu_id INT NULL,
+            asset_id INT NOT NULL,
+            carrying_amount_before NUMERIC(18,2) NOT NULL,
+            allocation_weight NUMERIC(18,8) NOT NULL DEFAULT 0,
+            allocated_impairment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocated_reversal_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            carrying_amount_after NUMERIC(18,2) NOT NULL,
+            loss_account_code TEXT NULL,
+            contra_asset_account_code TEXT NULL,
+            reversal_account_code TEXT NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_asset_impairment_allocations_uq
+        ON {schema}.asset_impairment_allocations(impairment_id, asset_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_impairment_allocations_impairment_idx
+        ON {schema}.asset_impairment_allocations(company_id, impairment_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_asset_impairment_allocations_asset_idx
+        ON {schema}.asset_impairment_allocations(company_id, asset_id);
+
+        DO $fk_asset_impairment_allocations_impairment$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_impairment_allocations_impairment'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairment_allocations
+                    ADD CONSTRAINT fk_asset_impairment_allocations_impairment
+                    FOREIGN KEY (impairment_id)
+                    REFERENCES %I.asset_impairments(id)
+                    ON DELETE CASCADE',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_asset_impairment_allocations_impairment$;
+
+        DO $fk_asset_impairment_allocations_asset$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_asset_impairment_allocations_asset'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.asset_impairment_allocations
+                    ADD CONSTRAINT fk_asset_impairment_allocations_asset
+                    FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_asset_impairment_allocations_asset$;
+
         -- ==================================================
         -- ASSETS HELD FOR SALE (IFRS 5)
         -- ==================================================
@@ -23729,6 +24084,12 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+        ALTER TABLE {schema}.accrual_deferral_items
+        ADD COLUMN IF NOT EXISTS tax_treatment_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS tax_treatment_notes TEXT NULL;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -24958,6 +25319,177 @@ class DatabaseService:
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_disclosure_year_uq
         ON {schema}.ifrs9_disclosure_snapshots(company_id, financial_year, reporting_date);
 
+        CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_runs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            reporting_date DATE NOT NULL,
+            tax_authority_id INT NULL,
+            tax_rate NUMERIC(8,4) NOT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            total_taxable_difference NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_deductible_difference NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            gross_dta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gross_dtl NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            recognized_dta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            unrecognized_dta NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            net_deferred_tax NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            journal_id INT NULL,
+            reversed_by_journal_id INT NULL,
+
+            created_by_user_id INT NULL,
+            reviewed_by_user_id INT NULL,
+            approved_by_user_id INT NULL,
+
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            calculation_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_deferred_tax_runs_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'reviewed',
+                        'approved',
+                        'posted',
+                        'reversed',
+                        'void'
+                    )
+                ),
+
+            CONSTRAINT uq_deferred_tax_run
+                UNIQUE (company_id, reporting_date)
+        );    
+
+        CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_run_lines (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            run_id BIGINT NOT NULL,
+
+            source_module TEXT NOT NULL,
+            source_table TEXT NULL,
+            source_type TEXT NOT NULL,
+            source_id BIGINT NULL,
+            source_line_id BIGINT NULL,
+
+            description TEXT NOT NULL,
+            balance_type TEXT NOT NULL,
+
+            carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            tax_base NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            temporary_difference NUMERIC(18,2) NOT NULL DEFAULT 0,
+            difference_type TEXT NOT NULL,
+
+            tax_rate NUMERIC(8,4) NOT NULL,
+            gross_deferred_tax NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            recognition_percent NUMERIC(8,4) NOT NULL DEFAULT 100,
+            recognized_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            unrecognized_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            recognition_destination TEXT NOT NULL DEFAULT 'profit_or_loss',
+
+            tax_treatment_code TEXT NULL,
+            reversal_pattern TEXT NULL,
+            expected_reversal_date DATE NULL,
+
+            is_manual BOOLEAN NOT NULL DEFAULT FALSE,
+            calculation_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_deferred_tax_line_balance_type
+                CHECK (
+                    balance_type IN (
+                        'asset',
+                        'liability',
+                        'tax_loss',
+                        'tax_credit'
+                    )
+                ),
+
+            CONSTRAINT ck_deferred_tax_line_difference_type
+                CHECK (
+                    difference_type IN (
+                        'taxable',
+                        'deductible',
+                        'tax_loss',
+                        'tax_credit',
+                        'none'
+                    )
+                ),
+
+            CONSTRAINT ck_deferred_tax_line_destination
+                CHECK (
+                    recognition_destination IN (
+                        'profit_or_loss',
+                        'oci',
+                        'equity',
+                        'business_combination'
+                    )
+                ),
+
+            CONSTRAINT ck_deferred_tax_recognition_percent
+                CHECK (
+                    recognition_percent BETWEEN 0 AND 100
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_tax_base_overrides (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            source_module TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id BIGINT NULL,
+
+            effective_date DATE NOT NULL,
+
+            tax_base NUMERIC(18,2) NOT NULL,
+            reason TEXT NOT NULL,
+            supporting_reference TEXT NULL,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_recognition_assessments (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            run_id BIGINT NOT NULL,
+
+            assessment_type TEXT NOT NULL,
+            available_deductible_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            forecast_taxable_profit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognized_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            unrecognized_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            conclusion TEXT NULL,
+            evidence_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            assessed_by_user_id INT NULL,
+            assessed_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT ck_deferred_tax_assessment_type
+                CHECK (
+                    assessment_type IN (
+                        'deductible_temporary_differences',
+                        'tax_losses',
+                        'tax_credits',
+                        'investment_exemption'
+                    )
+                )
+        );
         """
         ddl_ap = """
         -- ==================================================
@@ -89825,6 +90357,943 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             generated.append(row)
 
         return generated
+
+    def deferred_tax_list_runs(
+        self,
+        company_id: int,
+        status: Optional[str] = None,
+        reporting_date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        schema = self.company_schema(company_id)
+
+        where = ["r.company_id = %s"]
+        params: List[Any] = [int(company_id)]
+
+        if status:
+            where.append("r.status = %s")
+            params.append(status)
+
+        if reporting_date:
+            where.append("r.reporting_date = %s")
+            params.append(reporting_date)
+
+        return self.fetch_all(f"""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+                COUNT(l.id)::int AS line_count
+            FROM {schema}.deferred_tax_runs r
+            LEFT JOIN public.tax_authorities ta
+                ON ta.id = r.tax_authority_id
+            LEFT JOIN {schema}.deferred_tax_run_lines l
+                ON l.run_id = r.id
+            WHERE {' AND '.join(where)}
+            GROUP BY
+                r.id,
+                ta.code,
+                ta.name
+            ORDER BY
+                r.reporting_date DESC,
+                r.id DESC;
+        """, tuple(params))
+
+    def deferred_tax_get_run(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name
+            FROM {schema}.deferred_tax_runs r
+            LEFT JOIN public.tax_authorities ta
+                ON ta.id = r.tax_authority_id
+            WHERE r.company_id = %s
+            AND r.id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        run["lines"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_run_lines
+            WHERE company_id = %s
+            AND run_id = %s
+            ORDER BY
+                source_module,
+                source_type,
+                id;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        run["recognition_assessments"] = self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_recognition_assessments
+            WHERE company_id = %s
+            AND run_id = %s
+            ORDER BY assessment_type, id;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        return run
+
+    def deferred_tax_create_run(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        reporting_date = payload.get("reporting_date")
+        tax_authority_id = payload.get("tax_authority_id")
+        tax_rate = _decimal(payload.get("tax_rate"))
+
+        if not reporting_date:
+            raise ValueError("reporting_date is required.")
+
+        if tax_authority_id is None:
+            raise ValueError("tax_authority_id is required.")
+
+        if tax_rate < 0 or tax_rate > 100:
+            raise ValueError("tax_rate must be between 0 and 100.")
+
+        authority = self.fetch_one("""
+            SELECT id
+            FROM public.tax_authorities
+            WHERE id = %s
+            AND is_active = TRUE
+            LIMIT 1;
+        """, (int(tax_authority_id),))
+
+        if not authority:
+            raise ValueError("Invalid tax authority.")
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND reporting_date = %s
+            AND tax_authority_id = %s
+            AND status <> 'void'
+            LIMIT 1;
+        """, (
+            int(company_id),
+            reporting_date,
+            int(tax_authority_id),
+        ))
+
+        if existing:
+            raise ValueError(
+                "An active deferred-tax run already exists "
+                "for this reporting date and tax authority."
+            )
+
+        run = self.fetch_one(f"""
+            INSERT INTO {schema}.deferred_tax_runs (
+                company_id,
+                reporting_date,
+                tax_authority_id,
+                tax_rate,
+                created_by_user_id,
+                calculation_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            RETURNING *;
+        """, (
+            int(company_id),
+            reporting_date,
+            int(tax_authority_id),
+            tax_rate,
+            int(user_id) if user_id else None,
+            self.json_dumps(_json_dict(payload.get("calculation_json"))),
+        ))
+
+        return run
+
+    def deferred_tax_add_line(
+        self,
+        company_id: int,
+        run_id: int,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT id, status, tax_rate
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "draft":
+            raise ValueError("Only draft runs can be edited.")
+
+        carrying_amount = _decimal(payload.get("carrying_amount"))
+        tax_base = _decimal(payload.get("tax_base"))
+
+        balance_type = payload.get("balance_type")
+        if balance_type not in {
+            "asset",
+            "liability",
+            "tax_loss",
+            "tax_credit",
+        }:
+            raise ValueError("Invalid balance_type.")
+
+        temporary_difference, difference_type = (
+            self.deferred_tax_classify_difference(
+                balance_type=balance_type,
+                carrying_amount=carrying_amount,
+                tax_base=tax_base,
+            )
+        )
+
+        tax_rate = _decimal(
+            payload.get("tax_rate"),
+            str(run["tax_rate"]),
+        )
+
+        recognition_percent = _decimal(
+            payload.get("recognition_percent"),
+            "100",
+        )
+
+        if recognition_percent < 0 or recognition_percent > 100:
+            raise ValueError(
+                "recognition_percent must be between 0 and 100."
+            )
+
+        gross_deferred_tax = (
+            abs(temporary_difference)
+            * tax_rate
+            / Decimal("100")
+        ).quantize(Decimal("0.01"))
+
+        recognized_amount = (
+            gross_deferred_tax
+            * recognition_percent
+            / Decimal("100")
+        ).quantize(Decimal("0.01"))
+
+        unrecognized_amount = (
+            gross_deferred_tax - recognized_amount
+        ).quantize(Decimal("0.01"))
+
+        line = self.fetch_one(f"""
+            INSERT INTO {schema}.deferred_tax_run_lines (
+                company_id,
+                run_id,
+                source_module,
+                source_table,
+                source_type,
+                source_id,
+                source_line_id,
+                description,
+                balance_type,
+                carrying_amount,
+                tax_base,
+                temporary_difference,
+                difference_type,
+                tax_rate,
+                gross_deferred_tax,
+                recognition_percent,
+                recognized_amount,
+                unrecognized_amount,
+                recognition_destination,
+                tax_treatment_code,
+                reversal_pattern,
+                expected_reversal_date,
+                is_manual,
+                calculation_json
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s::jsonb
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(run_id),
+            payload.get("source_module", "manual"),
+            payload.get("source_table"),
+            payload.get("source_type", "manual"),
+            payload.get("source_id"),
+            payload.get("source_line_id"),
+            payload.get("description") or "Manual temporary difference",
+            balance_type,
+            carrying_amount,
+            tax_base,
+            temporary_difference,
+            difference_type,
+            tax_rate,
+            gross_deferred_tax,
+            recognition_percent,
+            recognized_amount,
+            unrecognized_amount,
+            payload.get(
+                "recognition_destination",
+                "profit_or_loss",
+            ),
+            payload.get("tax_treatment_code"),
+            payload.get("reversal_pattern"),
+            payload.get("expected_reversal_date"),
+            bool(payload.get("is_manual", True)),
+            self.json_dumps(
+                _json_dict(payload.get("calculation_json"))
+            ),
+        ))
+
+        self.deferred_tax_refresh_totals(
+            company_id,
+            run_id,
+        )
+
+        return line
+
+    def deferred_tax_classify_difference(
+        self,
+        balance_type: str,
+        carrying_amount: Decimal,
+        tax_base: Decimal,
+    ) -> tuple[Decimal, str]:
+        difference = carrying_amount - tax_base
+
+        if difference == 0:
+            return Decimal("0"), "none"
+
+        if balance_type == "asset":
+            difference_type = (
+                "taxable"
+                if difference > 0
+                else "deductible"
+            )
+
+        elif balance_type == "liability":
+            difference_type = (
+                "deductible"
+                if difference > 0
+                else "taxable"
+            )
+
+        elif balance_type == "tax_loss":
+            return abs(difference), "tax_loss"
+
+        elif balance_type == "tax_credit":
+            return abs(difference), "tax_credit"
+
+        else:
+            raise ValueError("Invalid balance type.")
+
+        return difference, difference_type
+
+    def deferred_tax_refresh_totals(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        totals = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type = 'taxable'
+                        THEN ABS(temporary_difference)
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS total_taxable_difference,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type IN (
+                            'deductible',
+                            'tax_loss',
+                            'tax_credit'
+                        )
+                        THEN ABS(temporary_difference)
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS total_deductible_difference,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type IN (
+                            'deductible',
+                            'tax_loss',
+                            'tax_credit'
+                        )
+                        THEN gross_deferred_tax
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS gross_dta,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type = 'taxable'
+                        THEN gross_deferred_tax
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS gross_dtl,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type IN (
+                            'deductible',
+                            'tax_loss',
+                            'tax_credit'
+                        )
+                        THEN recognized_amount
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS recognized_dta,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN difference_type IN (
+                            'deductible',
+                            'tax_loss',
+                            'tax_credit'
+                        )
+                        THEN unrecognized_amount
+                        ELSE 0
+                    END
+                ), 0)::numeric(18,2)
+                    AS unrecognized_dta
+            FROM {schema}.deferred_tax_run_lines
+            WHERE company_id = %s
+            AND run_id = %s;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        recognized_dta = _decimal(totals["recognized_dta"])
+        gross_dtl = _decimal(totals["gross_dtl"])
+
+        # Positive = net liability.
+        # Negative = net asset.
+        net_deferred_tax = gross_dtl - recognized_dta
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET
+                total_taxable_difference = %s,
+                total_deductible_difference = %s,
+                gross_dta = %s,
+                gross_dtl = %s,
+                recognized_dta = %s,
+                unrecognized_dta = %s,
+                net_deferred_tax = %s
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *;
+        """, (
+            totals["total_taxable_difference"],
+            totals["total_deductible_difference"],
+            totals["gross_dta"],
+            totals["gross_dtl"],
+            totals["recognized_dta"],
+            totals["unrecognized_dta"],
+            net_deferred_tax,
+            int(company_id),
+            int(run_id),
+        ))
+
+    def deferred_tax_delete_line(
+        self,
+        company_id: int,
+        run_id: int,
+        line_id: int,
+    ) -> None:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            SELECT status
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "draft":
+            raise ValueError("Only draft runs can be edited.")
+
+        deleted = self.fetch_one(f"""
+            DELETE FROM {schema}.deferred_tax_run_lines
+            WHERE company_id = %s
+            AND run_id = %s
+            AND id = %s
+            RETURNING id;
+        """, (
+            int(company_id),
+            int(run_id),
+            int(line_id),
+        ))
+
+        if not deleted:
+            raise ValueError("Deferred-tax line not found.")
+
+        self.deferred_tax_refresh_totals(
+            company_id,
+            run_id,
+        )
+
+    def deferred_tax_review_run(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        self.deferred_tax_refresh_totals(
+            company_id,
+            run_id,
+        )
+
+        run = self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET
+                status = 'reviewed',
+                reviewed_by_user_id = %s,
+                reviewed_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND status = 'draft'
+            RETURNING *;
+        """, (
+            int(user_id),
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError(
+                "Only a draft deferred-tax run can be reviewed."
+            )
+
+        return run
+
+    def deferred_tax_approve_run(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET
+                status = 'approved',
+                approved_by_user_id = %s,
+                approved_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            AND status = 'reviewed'
+            RETURNING *;
+        """, (
+            int(user_id),
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError(
+                "Only a reviewed deferred-tax run can be approved."
+            )
+
+        return run
+
+    def deferred_tax_void_run(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        run = self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET status = 'void'
+            WHERE company_id = %s
+            AND id = %s
+            AND status IN (
+                'draft',
+                'reviewed',
+                'approved'
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError(
+                "Posted or reversed runs cannot be voided."
+            )
+
+        return run
+
+    def deferred_tax_list_overrides(
+        self,
+        company_id: int,
+        source_module: Optional[str] = None,
+        source_type: Optional[str] = None,
+        source_id: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        schema = self.company_schema(company_id)
+
+        where = ["company_id = %s"]
+        params: List[Any] = [int(company_id)]
+
+        if source_module:
+            where.append("source_module = %s")
+            params.append(source_module)
+
+        if source_type:
+            where.append("source_type = %s")
+            params.append(source_type)
+
+        if source_id is not None:
+            where.append("source_id = %s")
+            params.append(int(source_id))
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_tax_base_overrides
+            WHERE {' AND '.join(where)}
+            ORDER BY effective_date DESC, id DESC;
+        """, tuple(params))
+
+    def deferred_tax_save_override(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        required = (
+            "source_module",
+            "source_type",
+            "effective_date",
+            "tax_base",
+            "reason",
+        )
+
+        missing = [
+            field
+            for field in required
+            if payload.get(field) in (None, "")
+        ]
+
+        if missing:
+            raise ValueError(
+                f"Missing required fields: {', '.join(missing)}."
+            )
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.deferred_tax_tax_base_overrides (
+                company_id,
+                source_module,
+                source_type,
+                source_id,
+                effective_date,
+                tax_base,
+                reason,
+                supporting_reference,
+                created_by_user_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (
+                company_id,
+                source_module,
+                source_type,
+                (COALESCE(source_id, 0)),
+                effective_date
+            )
+            DO UPDATE SET
+                tax_base = EXCLUDED.tax_base,
+                reason = EXCLUDED.reason,
+                supporting_reference =
+                    EXCLUDED.supporting_reference,
+                created_by_user_id =
+                    EXCLUDED.created_by_user_id
+            RETURNING *;
+        """, (
+            int(company_id),
+            payload["source_module"],
+            payload["source_type"],
+            payload.get("source_id"),
+            payload["effective_date"],
+            _decimal(payload["tax_base"]),
+            payload["reason"],
+            payload.get("supporting_reference"),
+            int(user_id) if user_id else None,
+        ))
+
+    def deferred_tax_save_override(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.deferred_tax_tax_base_overrides
+            WHERE company_id = %s
+            AND source_module = %s
+            AND source_type = %s
+            AND source_id IS NOT DISTINCT FROM %s
+            AND effective_date = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            payload["source_module"],
+            payload["source_type"],
+            payload.get("source_id"),
+            payload["effective_date"],
+        ))
+
+        values = (
+            _decimal(payload["tax_base"]),
+            payload["reason"],
+            payload.get("supporting_reference"),
+            int(user_id) if user_id else None,
+        )
+
+        if existing:
+            return self.fetch_one(f"""
+                UPDATE {schema}.deferred_tax_tax_base_overrides
+                SET
+                    tax_base = %s,
+                    reason = %s,
+                    supporting_reference = %s,
+                    created_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *;
+            """, values + (
+                int(company_id),
+                int(existing["id"]),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.deferred_tax_tax_base_overrides (
+                company_id,
+                source_module,
+                source_type,
+                source_id,
+                effective_date,
+                tax_base,
+                reason,
+                supporting_reference,
+                created_by_user_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *;
+        """, (
+            int(company_id),
+            payload["source_module"],
+            payload["source_type"],
+            payload.get("source_id"),
+            payload["effective_date"],
+            *values,
+        ))
+
+    def deferred_tax_save_recognition_assessment(
+        self,
+        company_id: int,
+        run_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        assessment_type = payload.get("assessment_type")
+
+        valid_types = {
+            "deductible_temporary_differences",
+            "tax_losses",
+            "tax_credits",
+            "investment_exemption",
+        }
+
+        if assessment_type not in valid_types:
+            raise ValueError("Invalid assessment_type.")
+
+        run = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] not in {"draft", "reviewed"}:
+            raise ValueError(
+                "Recognition assessments cannot be changed "
+                "after approval."
+            )
+
+        available = _decimal(
+            payload.get("available_deductible_amount")
+        )
+
+        forecast_profit = _decimal(
+            payload.get("forecast_taxable_profit")
+        )
+
+        recognized = _decimal(
+            payload.get("recognized_amount")
+        )
+
+        unrecognized = _decimal(
+            payload.get(
+                "unrecognized_amount",
+                available - recognized,
+            )
+        )
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.deferred_tax_recognition_assessments
+            WHERE company_id = %s
+            AND run_id = %s
+            AND assessment_type = %s
+            LIMIT 1;
+        """, (
+            int(company_id),
+            int(run_id),
+            assessment_type,
+        ))
+
+        values = (
+            available,
+            forecast_profit,
+            recognized,
+            unrecognized,
+            payload.get("conclusion"),
+            self.json_dumps(
+                _json_dict(payload.get("evidence_json"))
+            ),
+            int(user_id) if user_id else None,
+        )
+
+        if existing:
+            return self.fetch_one(f"""
+                UPDATE {schema}.deferred_tax_recognition_assessments
+                SET
+                    available_deductible_amount = %s,
+                    forecast_taxable_profit = %s,
+                    recognized_amount = %s,
+                    unrecognized_amount = %s,
+                    conclusion = %s,
+                    evidence_json = %s::jsonb,
+                    assessed_by_user_id = %s,
+                    assessed_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *;
+            """, values + (
+                int(company_id),
+                int(existing["id"]),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.deferred_tax_recognition_assessments (
+                company_id,
+                run_id,
+                assessment_type,
+                available_deductible_amount,
+                forecast_taxable_profit,
+                recognized_amount,
+                unrecognized_amount,
+                conclusion,
+                evidence_json,
+                assessed_by_user_id,
+                assessed_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s::jsonb, %s,
+                NOW()
+            )
+            RETURNING *;
+        """, (
+            int(company_id),
+            int(run_id),
+            assessment_type,
+            available,
+            forecast_profit,
+            recognized,
+            unrecognized,
+            payload.get("conclusion"),
+            self.json_dumps(
+                _json_dict(payload.get("evidence_json"))
+            ),
+            int(user_id) if user_id else None,
+        ))
+
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

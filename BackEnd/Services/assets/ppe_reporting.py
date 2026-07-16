@@ -27,6 +27,10 @@ ppe_bp = Blueprint("ppe", __name__)
 # -------------------------
 from datetime import date, datetime
 
+def _ppe_request_context(company_id):
+    payload = request.jwt_payload or {}
+    deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
+    return payload, _actor_user_id(payload), deny
 
 def _parse_date(value, field_name: str = "date", required: bool = True) -> date | None:
     """
@@ -82,6 +86,19 @@ def _parse_date(value, field_name: str = "date", required: bool = True) -> date 
             raise ValueError(f"Invalid {field_name}: '{value}'")
 
     raise ValueError(f"Unsupported {field_name} value type: {type(value).__name__}")
+
+def _allocation_json(row):
+    asset = row["asset"]
+    return {
+        "asset_id": int(row["asset_id"]),
+        "asset_code": asset.get("asset_code"),
+        "asset_name": asset.get("asset_name"),
+        "carrying_amount_before": float(row["carrying_amount_before"]),
+        "allocation_weight": float(row["allocation_weight"]),
+        "allocated_impairment_amount": float(row["allocated_impairment_amount"]),
+        "allocated_reversal_amount": float(row["allocated_reversal_amount"]),
+        "carrying_amount_after": float(row["carrying_amount_after"]),
+    }
 
 def _apply_engagement_bridge(body: dict, *, user_id=None) -> dict:
     body = dict(body or {})
@@ -1920,56 +1937,117 @@ def impairments_list_or_create(company_id):
     if request.method == "OPTIONS":
         return _opt()
 
-    payload = request.jwt_payload or {}
-    deny = _deny_if_wrong_company(
-        payload,
-        int(company_id),
-        db_service=db_service,
-    )
+    payload, actor_id, deny = _ppe_request_context(company_id)
     if deny:
         return deny
 
-    if request.method == "GET":
-        asset_id = request.args.get("asset_id", type=int)
-        status = request.args.get("status")
-        limit = _int_arg("limit", 100)
-        offset = _int_arg("offset", 0)
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                rows = service.list_impairments(cur, company_id, asset_id=asset_id, status=status, limit=limit, offset=offset)
-                return jsonify({"ok": True, "data": rows})
-
-    # POST (create)
-    payload_in = request.get_json(force=True) or {}
     try:
-        if isinstance(payload_in.get("impairment_date"), str):
-            payload_in["impairment_date"] = _iso_date(payload_in["impairment_date"])
-
         with get_conn(company_id) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                new_id = service.create_impairment(cur, company_id, payload_in)
+                if request.method == "GET":
+                    rows = service.list_impairments(
+                        cur,
+                        company_id,
+                        asset_id=_int_arg("asset_id", 0) or None,
+                        cgu_id=_int_arg("cgu_id", 0) or None,
+                        target_type=(request.args.get("target_type") or "").strip() or None,
+                        status=(request.args.get("status") or "").strip() or None,
+                        limit=min(max(_int_arg("limit", 100), 1), 500),
+                        offset=max(_int_arg("offset", 0), 0),
+                    )
+                    return jsonify({"ok": True, "data": rows})
 
-                # ✅ AUDIT
+                body = _apply_engagement_bridge(
+                    request.get_json(force=True) or {},
+                    user_id=actor_id,
+                )
+                body["impairment_date"] = _parse_date(
+                    body.get("impairment_date"),
+                    "impairment_date",
+                )
+
+                impairment_id = service.create_impairment(cur, company_id, body)
+
                 _audit_safe(
                     company_id=company_id,
                     payload=payload,
                     module="ppe",
                     action="create_impairment",
                     entity_type="impairment",
-                    entity_id=str(new_id),
-                    entity_ref=f"IMP-{new_id}",
-                    before_json={"request": payload_in},
-                    after_json={"impairment_id": int(new_id)},
-                    message=f"Created impairment {new_id}",
+                    entity_id=str(impairment_id),
+                    entity_ref=f"IMP-{impairment_id}",
+                    amount=float(body.get("impairment_amount") or body.get("reversal_amount") or 0),
+                    before_json={"request": body},
+                    after_json={"impairment_id": impairment_id},
+                    message=f"Created impairment {impairment_id}",
                     cur=cur,
                 )
 
                 conn.commit()
-                return jsonify({"ok": True, "id": new_id}), 201
-    except Exception as e:
-        current_app.logger.exception("create_impairment failed")
-        return _json_error(str(e), 400)
+                return jsonify({"ok": True, "id": impairment_id}), 201
 
+    except Exception as e:
+        current_app.logger.exception("impairment request failed")
+        return _json_error(str(e), 400)
+    
+@ppe_bp.route("/api/companies/<int:company_id>/impairments", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def impairments_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload, actor_id, deny = _ppe_request_context(company_id)
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if request.method == "GET":
+                    rows = service.list_impairments(
+                        cur,
+                        company_id,
+                        asset_id=_int_arg("asset_id", 0) or None,
+                        cgu_id=_int_arg("cgu_id", 0) or None,
+                        target_type=(request.args.get("target_type") or "").strip() or None,
+                        status=(request.args.get("status") or "").strip() or None,
+                        limit=min(max(_int_arg("limit", 100), 1), 500),
+                        offset=max(_int_arg("offset", 0), 0),
+                    )
+                    return jsonify({"ok": True, "data": rows})
+
+                body = _apply_engagement_bridge(
+                    request.get_json(force=True) or {},
+                    user_id=actor_id,
+                )
+                body["impairment_date"] = _parse_date(
+                    body.get("impairment_date"),
+                    "impairment_date",
+                )
+
+                impairment_id = service.create_impairment(cur, company_id, body)
+
+                _audit_safe(
+                    company_id=company_id,
+                    payload=payload,
+                    module="ppe",
+                    action="create_impairment",
+                    entity_type="impairment",
+                    entity_id=str(impairment_id),
+                    entity_ref=f"IMP-{impairment_id}",
+                    amount=float(body.get("impairment_amount") or body.get("reversal_amount") or 0),
+                    before_json={"request": body},
+                    after_json={"impairment_id": impairment_id},
+                    message=f"Created impairment {impairment_id}",
+                    cur=cur,
+                )
+
+                conn.commit()
+                return jsonify({"ok": True, "id": impairment_id}), 201
+
+    except Exception as e:
+        current_app.logger.exception("impairment request failed")
+        return _json_error(str(e), 400)
 
 @ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>/void", methods=["POST", "OPTIONS"])
 @require_auth
@@ -2012,6 +2090,155 @@ def impairments_void(company_id, imp_id):
         current_app.logger.exception("void_impairment failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route("/api/companies/<int:company_id>/asset-cgus", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def asset_cgus_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload, actor_id, deny = _ppe_request_context(company_id)
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if request.method == "GET":
+                    status = (request.args.get("status") or "active").strip() or None
+                    return jsonify({
+                        "ok": True,
+                        "data": service.list_cgus(cur, company_id, status),
+                    })
+
+                body = _apply_engagement_bridge(
+                    request.get_json(force=True) or {},
+                    user_id=actor_id,
+                )
+
+                cgu_id = service.create_cgu(cur, company_id, body)
+                conn.commit()
+                return jsonify({"ok": True, "id": cgu_id}), 201
+
+    except Exception as e:
+        current_app.logger.exception("asset CGU request failed")
+        return _json_error(str(e), 400)
+    
+@ppe_bp.route("/api/companies/<int:company_id>/asset-cgus", methods=["GET", "POST", "OPTIONS"])
+@require_auth
+def asset_cgus_list_or_create(company_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload, actor_id, deny = _ppe_request_context(company_id)
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if request.method == "GET":
+                    status = (request.args.get("status") or "active").strip() or None
+                    return jsonify({
+                        "ok": True,
+                        "data": service.list_cgus(cur, company_id, status),
+                    })
+
+                body = _apply_engagement_bridge(
+                    request.get_json(force=True) or {},
+                    user_id=actor_id,
+                )
+
+                cgu_id = service.create_cgu(cur, company_id, body)
+                conn.commit()
+                return jsonify({"ok": True, "id": cgu_id}), 201
+
+    except Exception as e:
+        current_app.logger.exception("asset CGU request failed")
+        return _json_error(str(e), 400)
+
+@ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])
+@require_auth
+def impairment_get_update_or_void(company_id, imp_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload, actor_id, deny = _ppe_request_context(company_id)
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if request.method == "GET":
+                    row = service.get_impairment(cur, company_id, imp_id)
+                    if not row:
+                        return _json_error("Impairment not found", 404)
+                    return jsonify({"ok": True, "data": row})
+
+                if request.method == "DELETE":
+                    service.void_impairment(cur, company_id, imp_id)
+                    conn.commit()
+                    return jsonify({"ok": True})
+
+                body = request.get_json(force=True) or {}
+
+                if "impairment_date" in body:
+                    body["impairment_date"] = _parse_date(
+                        body.get("impairment_date"),
+                        "impairment_date",
+                    )
+
+                body["updated_by_user_id"] = actor_id
+                service.update_impairment(cur, company_id, imp_id, body)
+
+                conn.commit()
+                return jsonify({"ok": True})
+
+    except Exception as e:
+        current_app.logger.exception("impairment update failed")
+        return _json_error(str(e), 400)
+
+@ppe_bp.route("/api/companies/<int:company_id>/impairments/<int:imp_id>", methods=["GET", "PUT", "DELETE", "OPTIONS"])
+@require_auth
+def impairment_get_update_or_void(company_id, imp_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload, actor_id, deny = _ppe_request_context(company_id)
+    if deny:
+        return deny
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                if request.method == "GET":
+                    row = service.get_impairment(cur, company_id, imp_id)
+                    if not row:
+                        return _json_error("Impairment not found", 404)
+                    return jsonify({"ok": True, "data": row})
+
+                if request.method == "DELETE":
+                    service.void_impairment(cur, company_id, imp_id)
+                    conn.commit()
+                    return jsonify({"ok": True})
+
+                body = request.get_json(force=True) or {}
+
+                if "impairment_date" in body:
+                    body["impairment_date"] = _parse_date(
+                        body.get("impairment_date"),
+                        "impairment_date",
+                    )
+
+                body["updated_by_user_id"] = actor_id
+                service.update_impairment(cur, company_id, imp_id, body)
+
+                conn.commit()
+                return jsonify({"ok": True})
+
+    except Exception as e:
+        current_app.logger.exception("impairment update failed")
+        return _json_error(str(e), 400)
 
 # -------------------------------------------------------------------
 # Impairment /post (RESTORE AUDIT)
@@ -2024,81 +2251,38 @@ def impairment_post(company_id, imp_id):
 
     payload = request.jwt_payload or {}
     user = getattr(g, "current_user", None) or {}
-    deny = _deny_if_wrong_company(
-        payload,
-        int(company_id),
-        db_service=db_service,
-    )
+
+    deny = _deny_if_wrong_company(payload, company_id, db_service=db_service)
     if deny:
         return deny
 
     pol = company_policy(company_id)
-    mode = pol["mode"]
-    company_profile = pol["company"]
-    policy = pol["policy"]
+    must, response, *_ = _require_approve_post_if_review(
+        mode=pol["mode"],
+        policy=pol["policy"],
+        action="post_impairment",
+    )
 
-    must, resp, *_ = _require_approve_post_if_review(mode=mode, policy=policy, action="post_impairment")
     if must:
-        return resp
+        return response
 
-    if not can_post_ppe(user, company_profile, mode):
+    if not can_post_ppe(user, pol["company"], pol["mode"]):
         return _json_error("Not allowed to post impairments.", 403)
-
-    schema = company_schema(company_id)
 
     try:
         with get_conn(company_id) as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-
-                # Lock impairment row
-                cur.execute(_q(schema, """
-                    SELECT id, company_id, asset_id, impairment_date, status, posted_journal_id,
-                           impairment_amount, reversal_amount
-                    FROM {schema}.asset_impairments
-                    WHERE company_id=%s AND id=%s
-                    FOR UPDATE
-                """), (company_id, imp_id))
-                before = cur.fetchone()
+                before = service.get_impairment(cur, company_id, imp_id, for_update=True)
                 if not before:
                     return _json_error("Impairment not found", 404)
 
-                st = (before.get("status") or "").strip().lower()
-
-                if st == "posted" and before.get("posted_journal_id"):
-                    conn.commit()
-                    return jsonify({
-                        "ok": True,
-                        "status": "posted",
-                        "posted_journal_id": int(before["posted_journal_id"]),
-                        "idempotent": True,
-                    }), 200
-
-                if st in {"void", "reversed"}:
-                    return _json_error(f"Cannot post in status '{st}'", 400)
-
-                # Optional: lock asset
-                asset_id = int(before.get("asset_id") or 0)
-                if asset_id > 0:
-                    cur.execute(_q(schema, """
-                        SELECT id
-                        FROM {schema}.assets
-                        WHERE company_id=%s AND id=%s
-                        FOR UPDATE
-                    """), (company_id, asset_id))
-
-                jid = posting.post_impairment(cur, company_id, imp_id, user=user)
-
-                cur.execute(_q(schema, """
-                    SELECT id, company_id, asset_id, impairment_date, status, posted_journal_id,
-                           impairment_amount, reversal_amount
-                    FROM {schema}.asset_impairments
-                    WHERE company_id=%s AND id=%s
-                """), (company_id, imp_id))
-                after = cur.fetchone() or {}
-
-                amt = after.get("impairment_amount")
-                if amt in (None, "", 0) and after.get("reversal_amount"):
-                    amt = after.get("reversal_amount")
+                journal_id = posting.post_impairment(
+                    cur,
+                    company_id,
+                    imp_id,
+                    user=user,
+                    approved_via="impairment_post",
+                )
 
                 _audit_safe(
                     company_id=company_id,
@@ -2108,20 +2292,19 @@ def impairment_post(company_id, imp_id):
                     entity_type="impairment",
                     entity_id=str(imp_id),
                     entity_ref=f"IMP-{imp_id}",
-                    journal_id=int(jid) if jid else None,
-                    amount=float(amt or 0.0),
-                    currency=(pol.get("company") or {}).get("currency"),
-                    before_json={"row": before},
-                    after_json={"row": after},
-                    message=f"Posted impairment {imp_id} to journal {jid}",
+                    journal_id=journal_id,
+                    amount=float(before.get("impairment_amount") or before.get("reversal_amount") or 0),
+                    before_json=before,
+                    after_json={"status": "posted", "journal_id": journal_id},
+                    message=f"Posted impairment {imp_id}",
                     cur=cur,
                 )
 
                 conn.commit()
-                return jsonify({"ok": True, "status": "posted", "posted_journal_id": int(jid) if jid else None}), 200
+                return jsonify({"ok": True, "journal_id": journal_id})
 
     except Exception as e:
-        current_app.logger.exception("post_impairment failed")
+        current_app.logger.exception("impairment posting failed")
         return _json_error(str(e), 400)
 
 # -------------------------
