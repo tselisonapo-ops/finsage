@@ -91710,101 +91710,361 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         run: Dict[str, Any],
         candidate: Dict[str, Any],
     ):
+        as_at = run["reporting_date"]
+        authority_id = run["tax_authority_id"]
+        face_amount = Decimal(str(candidate.get("carrying_amount") or 0))
+
+        standard_map = {
+            "ppe": "ias16",
+            "intangible_asset": "ias38",
+            "investment_property": "ias40",
+        }
+
+        accounting_standard = standard_map.get(
+            candidate.get("source_type")
+        )
+
+        if not accounting_standard:
+            return
+
         tax_run = self.fetch_one(f"""
-            SELECT id, status, tax_year_end
+            SELECT id, tax_year_start, tax_year_end, status
             FROM {schema}.asset_tax_runs
             WHERE company_id = %s
             AND tax_authority_id = %s
-            AND tax_year_end = %s
-            AND status IN ('calculated','approved','locked')
+            AND tax_year_end <= %s
+            AND status IN ('calculated', 'approved', 'locked', 'posted')
             ORDER BY
+                tax_year_end DESC,
                 CASE status
                     WHEN 'locked' THEN 1
-                    WHEN 'approved' THEN 2
-                    ELSE 3
+                    WHEN 'posted' THEN 2
+                    WHEN 'approved' THEN 3
+                    ELSE 4
                 END,
                 id DESC
             LIMIT 1;
         """, (
             company_id,
-            run["tax_authority_id"],
-            run["reporting_date"],
+            authority_id,
+            as_at,
         ), cur=cur)
 
-        if not tax_run:
+        tax_run_id = tax_run["id"] if tax_run else None
+
+        assets = self.fetch_all(f"""
+            WITH movement_totals AS (
+                SELECT
+                    m.asset_id,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN COALESCE(m.cost_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS closing_cost,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN COALESCE(m.accum_dep_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS closing_accum_dep,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN COALESCE(m.impairment_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS closing_impairment,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN COALESCE(m.carrying_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS closing_carrying,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN COALESCE(m.revaluation_reserve_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS closing_revaluation_reserve,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            AND m.movement_type IN (
+                                'revaluation',
+                                'revaluation_up',
+                                'revaluation_down'
+                            )
+                            THEN COALESCE(m.carrying_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS total_revaluation_movement,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            AND m.movement_type = 'impairment_loss'
+                            THEN COALESCE(m.impairment_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS impairment_losses,
+
+                    SUM(
+                        CASE
+                            WHEN m.event_date <= %s
+                            AND m.movement_type = 'impairment_reversal'
+                            THEN COALESCE(m.impairment_delta, 0)
+                            ELSE 0
+                        END
+                    )::numeric(18,2) AS impairment_reversals,
+
+                    MAX(
+                        CASE
+                            WHEN m.event_date <= %s
+                            THEN m.event_date
+                        END
+                    ) AS latest_movement_date
+
+                FROM {schema}.vw_ppe_movements m
+                WHERE m.company_id = %s
+                GROUP BY m.asset_id
+            )
+
+            SELECT
+                a.id AS asset_id,
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.category,
+                a.accounting_standard,
+                a.measurement_basis,
+                a.depreciation_method,
+                a.useful_life_months,
+                a.residual_value,
+                a.acquisition_date,
+                a.available_for_use_date,
+                a.status AS asset_status,
+
+                COALESCE(mt.closing_cost, 0)::numeric(18,2)
+                    AS closing_cost,
+
+                COALESCE(mt.closing_accum_dep, 0)::numeric(18,2)
+                    AS closing_accum_dep,
+
+                COALESCE(mt.closing_impairment, 0)::numeric(18,2)
+                    AS closing_impairment,
+
+                COALESCE(mt.closing_carrying, 0)::numeric(18,2)
+                    AS accounting_carrying_amount,
+
+                COALESCE(mt.closing_revaluation_reserve, 0)::numeric(18,2)
+                    AS revaluation_reserve,
+
+                COALESCE(mt.total_revaluation_movement, 0)::numeric(18,2)
+                    AS revaluation_movement,
+
+                COALESCE(mt.impairment_losses, 0)::numeric(18,2)
+                    AS impairment_losses,
+
+                COALESCE(mt.impairment_reversals, 0)::numeric(18,2)
+                    AS impairment_reversals,
+
+                mt.latest_movement_date,
+
+                p.id AS tax_profile_id,
+                p.tax_authority_id,
+
+                trl.id AS tax_run_line_id,
+                trl.opening_tax_wdv,
+                trl.qualifying_cost,
+                trl.tax_allowance,
+                trl.closing_tax_wdv
+
+            FROM {schema}.assets a
+
+            LEFT JOIN movement_totals mt
+            ON mt.asset_id = a.id
+
+            LEFT JOIN {schema}.asset_tax_profiles p
+            ON p.company_id = a.company_id
+            AND p.asset_id = a.id
+            AND p.tax_authority_id = %s
+
+            LEFT JOIN {schema}.asset_tax_run_lines trl
+            ON trl.company_id = a.company_id
+            AND trl.asset_id = a.id
+            AND trl.run_id = %s
+
+            WHERE a.company_id = %s
+            AND LOWER(
+                    REPLACE(
+                        COALESCE(a.accounting_standard, ''),
+                        ' ',
+                        ''
+                    )
+                ) = %s
+            AND COALESCE(a.status, 'active') NOT IN (
+                'disposed',
+                'void',
+                'cancelled'
+            )
+
+            ORDER BY
+                a.asset_class,
+                a.asset_code,
+                a.id;
+        """, (
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            as_at,
+            company_id,
+            authority_id,
+            tax_run_id,
+            company_id,
+            accounting_standard,
+        ), cur=cur) or []
+
+        detail_total = sum(
+            Decimal(str(
+                row.get("accounting_carrying_amount") or 0
+            ))
+            for row in assets
+        )
+
+        reconciliation_difference = (
+            detail_total - face_amount
+        ).quantize(Decimal("0.01"))
+
+        reconciles = (
+            abs(reconciliation_difference)
+            <= Decimal("0.05")
+        )
+
+        if not assets:
             self._dt_insert_scanned_line(
                 cur,
                 schema=schema,
                 company_id=company_id,
                 run=run,
                 source_module="assets",
-                source_table="asset_tax_runs",
+                source_table="assets",
                 source_type=candidate["source_type"],
                 source_id=None,
                 source_line_id=None,
                 description=candidate["description"],
                 balance_type="asset",
-                carrying_amount=candidate["carrying_amount"],
-                tax_base=candidate["carrying_amount"],
+                carrying_amount=face_amount,
+                tax_base=face_amount,
                 bs_account_code=candidate["account_code"],
-                bs_carrying_amount=candidate["carrying_amount"],
+                bs_carrying_amount=face_amount,
                 scan_status="requires_review",
                 resolution_message=(
-                    "No calculated, approved or locked asset-tax run "
-                    "exists for this reporting date."
+                    "No matching assets were found in the asset register."
                 ),
-                calculation_json={"candidate": candidate},
+                calculation_json={
+                    "accounting_standard": accounting_standard,
+                    "balance_sheet_face_amount": str(face_amount),
+                },
             )
             return
 
-        rows = self.fetch_all(f"""
-            SELECT
-                l.id,
-                l.asset_id,
-                l.accounting_carrying_amount,
-                l.closing_tax_wdv,
-                a.name AS asset_name,
-                a.accounting_standard,
-                a.measurement_model
-            FROM {schema}.asset_tax_run_lines l
-            JOIN {schema}.assets a
-            ON a.id = l.asset_id
-            WHERE l.company_id = %s
-            AND l.run_id = %s
-            ORDER BY l.asset_id;
-        """, (
-            company_id,
-            tax_run["id"],
-        ), cur=cur) or []
+        for asset in assets:
+            carrying_amount = Decimal(str(
+                asset.get("accounting_carrying_amount") or 0
+            ))
 
-        expected_standard = {
-            "ppe": "ias16",
-            "intangible_asset": "ias38",
-            "investment_property": "ias40",
-        }.get(candidate["source_type"])
+            tax_profile_id = asset.get("tax_profile_id")
+            tax_run_line_id = asset.get("tax_run_line_id")
+            closing_tax_wdv = asset.get("closing_tax_wdv")
 
-        if expected_standard:
-            rows = [
-                row for row in rows
-                if str(row.get("accounting_standard") or "").lower()
-                == expected_standard
-            ]
+            revaluation_movement = Decimal(str(
+                asset.get("revaluation_movement") or 0
+            ))
 
-        resolved_total = sum(
-            Decimal(str(row.get("accounting_carrying_amount") or 0))
-            for row in rows
-        )
+            revaluation_reserve = Decimal(str(
+                asset.get("revaluation_reserve") or 0
+            ))
 
-        face_amount = Decimal(str(candidate["carrying_amount"] or 0))
-        reconciles = abs(resolved_total - face_amount) <= Decimal("0.05")
+            impairment_losses = Decimal(str(
+                asset.get("impairment_losses") or 0
+            ))
 
-        for row in rows:
-            destination = (
+            if not reconciles:
+                scan_status = "reconciliation_error"
+                resolution_message = (
+                    f"Asset-register total {detail_total} does not "
+                    f"reconcile to balance-sheet amount {face_amount}. "
+                    f"Difference: {reconciliation_difference}."
+                )
+                tax_base = (
+                    Decimal(str(closing_tax_wdv))
+                    if closing_tax_wdv is not None
+                    else carrying_amount
+                )
+
+            elif not tax_profile_id:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "No tax profile is assigned to this asset."
+                )
+                tax_base = carrying_amount
+
+            elif not tax_run:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "No asset-tax run exists on or before the "
+                    "deferred-tax reporting date."
+                )
+                tax_base = carrying_amount
+
+            elif not tax_run_line_id or closing_tax_wdv is None:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "The latest asset-tax run does not contain "
+                    "a tax WDV for this asset."
+                )
+                tax_base = carrying_amount
+
+            else:
+                scan_status = "resolved"
+                resolution_message = None
+                tax_base = Decimal(str(closing_tax_wdv))
+
+            recognition_destination = (
                 "oci"
-                if str(row.get("measurement_model") or "").lower()
-                in ("revaluation", "fair_value")
+                if (
+                    revaluation_movement != 0
+                    or revaluation_reserve != 0
+                )
                 else "profit_or_loss"
             )
+
+            treatment_parts = []
+
+            if revaluation_movement != 0:
+                treatment_parts.append("revaluation")
+
+            if impairment_losses != 0:
+                treatment_parts.append("impairment")
+
+            if not treatment_parts:
+                treatment_parts.append("depreciation_vs_tax_allowance")
 
             self._dt_insert_scanned_line(
                 cur,
@@ -91812,36 +92072,97 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 company_id=company_id,
                 run=run,
                 source_module="assets",
-                source_table="asset_tax_run_lines",
+                source_table="assets",
                 source_type=candidate["source_type"],
-                source_id=row["asset_id"],
-                source_line_id=row["id"],
-                description=row.get("asset_name") or candidate["description"],
+                source_id=asset["asset_id"],
+                source_line_id=tax_run_line_id,
+                description=(
+                    asset.get("asset_name")
+                    or asset.get("asset_code")
+                    or candidate["description"]
+                ),
                 balance_type="asset",
-                carrying_amount=row["accounting_carrying_amount"],
-                tax_base=row["closing_tax_wdv"],
+                carrying_amount=carrying_amount,
+                tax_base=tax_base,
                 bs_account_code=candidate["account_code"],
                 bs_carrying_amount=face_amount,
-                scan_status=(
-                    "resolved"
-                    if reconciles
-                    else "reconciliation_error"
-                ),
-                resolution_message=(
-                    None
-                    if reconciles
-                    else (
-                        f"Asset detail carrying amount {resolved_total} "
-                        f"does not reconcile to balance-sheet value "
-                        f"{face_amount}."
-                    )
-                ),
-                destination=destination,
+                scan_status=scan_status,
+                resolution_message=resolution_message,
+                tax_treatment_code="|".join(treatment_parts),
+                destination=recognition_destination,
                 calculation_json={
-                    "asset_tax_run_id": tax_run["id"],
-                    "asset_tax_run_line_id": row["id"],
+                    "asset_code": asset.get("asset_code"),
+                    "asset_class": asset.get("asset_class"),
+                    "accounting_standard": asset.get(
+                        "accounting_standard"
+                    ),
+                    "measurement_basis": asset.get(
+                        "measurement_basis"
+                    ),
+                    "depreciation_method": asset.get(
+                        "depreciation_method"
+                    ),
+                    "accounting_useful_life_months": asset.get(
+                        "useful_life_months"
+                    ),
+                    "residual_value": str(
+                        asset.get("residual_value") or 0
+                    ),
+                    "acquisition_date": str(
+                        asset.get("acquisition_date") or ""
+                    ),
+                    "available_for_use_date": str(
+                        asset.get("available_for_use_date") or ""
+                    ),
+                    "closing_cost": str(
+                        asset.get("closing_cost") or 0
+                    ),
+                    "closing_accum_dep": str(
+                        asset.get("closing_accum_dep") or 0
+                    ),
+                    "closing_impairment": str(
+                        asset.get("closing_impairment") or 0
+                    ),
+                    "accounting_carrying_amount": str(
+                        carrying_amount
+                    ),
+                    "revaluation_movement": str(
+                        revaluation_movement
+                    ),
+                    "revaluation_reserve": str(
+                        revaluation_reserve
+                    ),
+                    "impairment_losses": str(
+                        impairment_losses
+                    ),
+                    "impairment_reversals": str(
+                        asset.get("impairment_reversals") or 0
+                    ),
+                    "latest_movement_date": str(
+                        asset.get("latest_movement_date") or ""
+                    ),
+                    "tax_profile_id": tax_profile_id,
+                    "asset_tax_run_id": tax_run_id,
+                    "asset_tax_run_line_id": tax_run_line_id,
+                    "opening_tax_wdv": str(
+                        asset.get("opening_tax_wdv") or 0
+                    ),
+                    "qualifying_cost": str(
+                        asset.get("qualifying_cost") or 0
+                    ),
+                    "tax_allowance": str(
+                        asset.get("tax_allowance") or 0
+                    ),
+                    "closing_tax_wdv": str(
+                        closing_tax_wdv
+                        if closing_tax_wdv is not None
+                        else ""
+                    ),
                     "balance_sheet_face_amount": str(face_amount),
-                    "resolved_asset_total": str(resolved_total),
+                    "asset_register_total": str(detail_total),
+                    "reconciliation_difference": str(
+                        reconciliation_difference
+                    ),
                 },
             )
 
