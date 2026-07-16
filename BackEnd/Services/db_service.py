@@ -91511,12 +91511,101 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         company_id: int,
         as_at: date,
     ) -> Dict[str, Any]:
+
+        def _get_company_context(cid: int) -> Dict[str, Any]:
+            return get_company_context(self, cid) or {}
+
+        def _get_trial_balance(
+            cid: int,
+            _date_from: Optional[date],
+            date_to: date,
+        ) -> List[Dict[str, Any]]:
+            rows = self.get_trial_balance_as_of(cid, date_to) or []
+            coa_rows = self.get_company_coa(cid) or []
+
+            coa_map = {
+                str(row.get("code") or "").strip(): row
+                for row in coa_rows
+                if row.get("code")
+            }
+
+            result = []
+
+            for row in rows:
+                code = str(
+                    row.get("code")
+                    or row.get("account")
+                    or row.get("account_code")
+                    or ""
+                ).strip()
+
+                if not code:
+                    continue
+
+                coa = coa_map.get(code, {})
+
+                result.append({
+                    **row,
+                    "code": code,
+                    "name": (
+                        row.get("name")
+                        or coa.get("name")
+                        or code
+                    ),
+                    "section": (
+                        row.get("section")
+                        or coa.get("section")
+                        or ""
+                    ),
+                    "category": (
+                        row.get("category")
+                        or coa.get("category")
+                        or ""
+                    ),
+                    "subcategory": (
+                        row.get("subcategory")
+                        or coa.get("subcategory")
+                        or ""
+                    ),
+                    "standard": (
+                        row.get("standard")
+                        or coa.get("standard")
+                        or ""
+                    ),
+                    "role": (
+                        row.get("role")
+                        or coa.get("role")
+                        or ""
+                    ),
+                    "code_family": (
+                        row.get("code_family")
+                        or coa.get("code_family")
+                        or ""
+                    ),
+                    "is_contra": bool(
+                        row.get("is_contra")
+                        or coa.get("is_contra")
+                        or False
+                    ),
+                    "debit_total": float(
+                        row.get("debit_total")
+                        or row.get("debit")
+                        or 0
+                    ),
+                    "credit_total": float(
+                        row.get("credit_total")
+                        or row.get("credit")
+                        or 0
+                    ),
+                })
+
+            return result
+
         return build_balance_sheet_v3(
             company_id=int(company_id),
             as_of=as_at,
-            get_company_context_fn=self.get_company_context,
-            get_trial_balance_fn=self.get_trial_balance,
-            get_pnl_full_fn=self.get_pnl_full,
+            get_company_context_fn=_get_company_context,
+            get_trial_balance_fn=_get_trial_balance,
             include_net_profit_line=False,
             view="external",
             basis="external",
