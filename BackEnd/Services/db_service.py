@@ -91847,12 +91847,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             return
 
         tax_run = self.fetch_one(f"""
-            SELECT id, tax_year_start, tax_year_end, status
+            SELECT
+                id,
+                tax_year_start,
+                tax_year_end,
+                status
             FROM {schema}.asset_tax_runs
             WHERE company_id = %s
             AND tax_authority_id = %s
             AND tax_year_end <= %s
-            AND status IN ('approved', 'locked', 'posted')
+            AND status IN (
+                'approved',
+                'locked',
+                'posted'
+            )
             ORDER BY
                 tax_year_end DESC,
                 CASE status
@@ -91860,7 +91868,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     WHEN 'locked' THEN 2
                     WHEN 'approved' THEN 3
                     ELSE 4
-                END
+                END,
                 id DESC
             LIMIT 1;
         """, (
