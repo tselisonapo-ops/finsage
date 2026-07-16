@@ -41075,140 +41075,94 @@ async function saveEditModal() {
     const isReviewed = run.status === "reviewed";
     const isApproved = run.status === "approved";
     const isPosted = run.status === "posted";
-
     const canVoid = ["draft", "reviewed", "approved"].includes(run.status);
 
-    const reviewStepClass =
-      isReviewed
-        ? "active"
-        : isApproved || isPosted
-          ? "done"
-          : "";
-
-    const approvalStepClass =
-      isApproved
-        ? "active"
-        : isPosted
-          ? "done"
-          : "";
-
-    const postingStepClass =
-      isPosted ? "done" : "";
+    const reviewStepClass = isReviewed ? "active" : (isApproved || isPosted ? "done" : "");
+    const approvalStepClass = isApproved ? "active" : (isPosted ? "done" : "");
+    const postingStepClass = isPosted ? "done" : "";
 
     const actionButtons = `
-      <button class="btn btn-secondary" id="dtBackBtn">
-        ← Back to Runs
-      </button>
+      <button class="btn btn-secondary" id="dtBackBtn">← Back to Runs</button>
 
-      actionButtons
+      ${isDraft ? `
+        <button class="btn btn-secondary" id="dtScanBtn">Scan Balance Sheet</button>
+        <button class="btn btn-primary" id="dtAddLineBtn">+ Add Manual Difference</button>
+        <button class="btn btn-secondary" id="dtRecalculateBtn">Recalculate</button>
+        <button class="btn btn-primary" id="dtReviewBtn">Submit for Review</button>
+      ` : ""}
 
-            ${isReviewed ? `
-              <button class="btn btn-secondary" id="dtReturnDraftBtn">
-                ← Return to Draft
-              </button>
+      ${isReviewed ? `
+        <button class="btn btn-secondary" id="dtReturnDraftBtn">← Return to Draft</button>
+        <button class="btn btn-primary" id="dtApproveBtn">Approve Run</button>
+      ` : ""}
 
-              <button class="btn btn-primary" id="dtApproveBtn">
-                Approve Run
-              </button>
-            ` : ""}
+      ${isApproved ? `
+        <button class="btn btn-primary" id="dtPostBtn">Post to General Ledger</button>
+      ` : ""}
 
-            ${isApproved ? `
-              <button class="btn btn-primary" id="dtPostBtn">
-                Post to General Ledger
-              </button>
-            ` : ""}
+      ${canVoid ? `
+        <button class="btn btn-danger" id="dtVoidBtn">Void Run</button>
+      ` : ""}
+    `;
 
-            ${canVoid ? `
-              <button class="btn btn-danger" id="dtVoidBtn">
-                Void Run
-              </button>
-            ` : ""}
-          `;
-
-    const workflowMessage =
-      isDraft
+    const workflowMessage = isDraft
+      ? `
+        <div class="dt-help-card">
+          <strong>Prepare the deferred-tax calculation</strong>
+          <p>Scan the balance sheet to detect temporary differences automatically. Add manual differences only where FinSage cannot resolve the balance.</p>
+        </div>
+      `
+      : isReviewed
         ? `
-          <div class="dt-help-card">
-            <strong>Prepare the deferred-tax calculation</strong>
-            <p>
-              Add balances where the accounting carrying amount differs
-              from the tax base, then submit the run for review.
-            </p>
+          <div class="dt-lock-notice">
+            This run is under review. Return it to draft if corrections are required.
           </div>
         `
-        : isReviewed
+        : isApproved
           ? `
-            <div class="dt-lock-notice">
-              This run is under review. Return it to draft when corrections
-              or additional temporary differences are required.
+            <div class="dt-help-card">
+              <strong>The run is approved</strong>
+              <p>Review the totals, then post the deferred-tax adjustment to the general ledger.</p>
             </div>
           `
-          : isApproved
+          : isPosted
             ? `
               <div class="dt-help-card">
-                <strong>The run is approved</strong>
-                <p>
-                  Review the final totals, then post the deferred-tax
-                  adjustment to the general ledger.
-                </p>
+                <strong>Posted to the general ledger</strong>
+                <p>Journal ID: ${run.journal_id || "-"}</p>
               </div>
             `
-            : isPosted
-              ? `
-                <div class="dt-help-card">
-                  <strong>Posted to the general ledger</strong>
-                  <p>
-                    Journal ID: ${run.journal_id || "-"}
-                  </p>
-                </div>
-              `
-              : "";
+            : "";
 
-    const tableHeaderAction = isDraft ? "<th></th>" : "";
-
-    const tableRows = lines.map(line => {
-      const deleteButton = isDraft
-        ? `
+    const tableRows = lines.map(line => `
+      <tr>
+        <td><strong>${line.description}</strong></td>
+        <td>${line.source_module || "manual"}</td>
+        <td>${line.balance_type}</td>
+        <td>${money(line.carrying_amount)}</td>
+        <td>${money(line.tax_base)}</td>
+        <td>${money(line.temporary_difference)}</td>
+        <td>
+          <span class="dt-status ${line.difference_type}">
+            ${line.difference_type}
+          </span>
+        </td>
+        <td>${money(line.recognized_amount)}</td>
+        <td>
+          <span class="dt-status ${line.scan_status || "resolved"}">
+            ${line.scan_status || "resolved"}
+          </span>
+        </td>
+        <td>${line.resolution_message || "-"}</td>
+        ${isDraft ? `
           <td>
-            <button
-              class="btn btn-sm btn-danger"
-              data-dt-delete="${line.id}"
-            >
+            <button class="btn btn-sm btn-danger" data-dt-delete="${line.id}">
               Delete
             </button>
           </td>
-        `
-        : "";
-
-      return `
-        <tr>
-          <td><strong>${line.description}</strong></td>
-          <td>${line.source_module || "manual"}</td>
-          <td>${line.balance_type}</td>
-          <td>${money(line.carrying_amount)}</td>
-          <td>${money(line.tax_base)}</td>
-          <td>${money(line.temporary_difference)}</td>
-          <td>
-            <span class="dt-status ${line.difference_type}">
-              ${line.difference_type}
-            </span>
-          </td>
-            <td>${money(line.recognized_amount)}</td>
-
-            <td>
-              <span class="dt-status ${line.scan_status || "resolved"}">
-                ${line.scan_status || "resolved"}
-              </span>
-            </td>
-
-            <td>
-              ${line.resolution_message || "-"}
-            </td>
-
-            ${deleteButton}
-        </tr>
-      `;
-    }).join("");
+        ` : ""}
+      </tr>
+    `).join("");
 
     const differencesSection = lines.length
       ? `
@@ -41226,28 +41180,24 @@ async function saveEditModal() {
                 <th>Deferred Tax</th>
                 <th>Scan Status</th>
                 <th>Message</th>
-                ${tableHeaderAction}
+                ${isDraft ? "<th></th>" : ""}
               </tr>
             </thead>
-
-            <tbody>
-              ${tableRows}
-            </tbody>
+            <tbody>${tableRows}</tbody>
           </table>
         </div>
       `
       : `
         <div class="dt-empty">
           <strong>No temporary differences yet</strong>
-
-          <p>
-            Add PPE, revaluations, impairments, prepayments,
-            accruals or deferred-income balances.
-          </p>
+          <p>Scan the balance sheet to detect temporary differences automatically.</p>
 
           ${isDraft ? `
+            <button class="btn btn-secondary" id="dtEmptyScanBtn">
+              Scan Balance Sheet
+            </button>
             <button class="btn btn-primary" id="dtEmptyAddLineBtn">
-              + Add First Temporary Difference
+              + Add Manual Difference
             </button>
           ` : ""}
         </div>
@@ -41257,70 +41207,45 @@ async function saveEditModal() {
       <div class="dt-workflow">
         <div class="dt-step ${isDraft ? "active" : "done"}">
           <span>1</span>
-          <div>
-            <strong>Prepare</strong>
-            <small>Add temporary differences</small>
-          </div>
+          <div><strong>Prepare</strong><small>Scan and resolve temporary differences</small></div>
         </div>
 
         <div class="dt-step ${reviewStepClass}">
           <span>2</span>
-          <div>
-            <strong>Review</strong>
-            <small>Check carrying amounts and tax bases</small>
-          </div>
+          <div><strong>Review</strong><small>Check carrying amounts and tax bases</small></div>
         </div>
 
         <div class="dt-step ${approvalStepClass}">
           <span>3</span>
-          <div>
-            <strong>Approve</strong>
-            <small>Confirm the IAS 12 calculation</small>
-          </div>
+          <div><strong>Approve</strong><small>Confirm the IAS 12 calculation</small></div>
         </div>
 
         <div class="dt-step ${postingStepClass}">
           <span>4</span>
-          <div>
-            <strong>Post</strong>
-            <small>Create the general-ledger journal</small>
-          </div>
+          <div><strong>Post</strong><small>Create the general-ledger journal</small></div>
         </div>
       </div>
 
       <div class="dt-run-info">
         <div>
           <span>Reporting date</span>
-          <strong>
-            ${String(run.reporting_date || "").slice(0, 10)}
-          </strong>
+          <strong>${String(run.reporting_date || "").slice(0, 10)}</strong>
         </div>
-
         <div>
           <span>Tax authority</span>
-          <strong>
-            ${run.tax_authority_code || run.tax_authority_name || "-"}
-          </strong>
+          <strong>${run.tax_authority_code || run.tax_authority_name || "-"}</strong>
         </div>
-
         <div>
           <span>Tax rate</span>
-          <strong>
-            ${Number(run.tax_rate || 0).toFixed(2)}%
-          </strong>
+          <strong>${Number(run.tax_rate || 0).toFixed(2)}%</strong>
         </div>
-
         <div>
           <span>Status</span>
-          <strong class="dt-status ${run.status}">
-            ${run.status}
-          </strong>
+          <strong class="dt-status ${run.status}">${run.status}</strong>
         </div>
       </div>
 
-      <div class="dt-toolbar">
-        ${actionButtons}
-      </div>
+      <div class="dt-toolbar">${actionButtons}</div>
 
       ${workflowMessage}
 
@@ -41329,17 +41254,14 @@ async function saveEditModal() {
           <span>Gross DTA</span>
           <strong>${money(run.gross_dta)}</strong>
         </div>
-
         <div class="dt-summary-card">
           <span>Gross DTL</span>
           <strong>${money(run.gross_dtl)}</strong>
         </div>
-
         <div class="dt-summary-card">
           <span>Recognized DTA</span>
           <strong>${money(run.recognized_dta)}</strong>
         </div>
-
         <div class="dt-summary-card">
           <span>Net Deferred Tax</span>
           <strong>${money(run.net_deferred_tax)}</strong>
@@ -41349,14 +41271,9 @@ async function saveEditModal() {
       <div class="dt-section-heading">
         <div>
           <h3>Temporary Differences</h3>
-          <p>
-            Compare accounting carrying amounts with their tax bases.
-          </p>
+          <p>Compare accounting carrying amounts with their tax bases.</p>
         </div>
-
-        <span>
-          ${lines.length} line${lines.length === 1 ? "" : "s"}
-        </span>
+        <span>${lines.length} line${lines.length === 1 ? "" : "s"}</span>
       </div>
 
       ${differencesSection}
