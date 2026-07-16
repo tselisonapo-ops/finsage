@@ -1,5 +1,5 @@
 # app/ppe/posting.py
-from BackEnd.Services.assets.ppe_db import fetchone
+from BackEnd.Services.assets.ppe_db import fetchone, fetchall
 from BackEnd.Services.assets.tenants import company_schema
 from BackEnd.Services.assets import service
 from datetime import date, timedelta, datetime
@@ -1652,116 +1652,198 @@ def create_impairment_from_sm(
     asset: dict,
 ) -> int:
     schema = company_schema(company_id)
-
     meta = sm.get("meta_json") or {}
-    et = (sm.get("event_type") or "").strip().lower()
+    event_type = (sm.get("event_type") or "").strip().lower()
 
-    ca_before = D(
+    carrying_before = D(
         meta.get("carrying_amount_before")
         or meta.get("carrying_amount")
         or _asset_carrying_amount(asset)
     )
 
-    if ca_before <= 0:
-        raise ValueError(
-            "Unable to determine the asset carrying amount."
-        )
+    if carrying_before <= 0:
+        raise ValueError("Unable to determine the asset carrying amount")
 
-    recoverable = D(
-        meta.get("recoverable_amount")
-        or 0
-    )
+    recoverable = D(meta.get("recoverable_amount") or 0)
+    impairment_amount = D("0")
+    reversal_amount = D("0")
 
-    if et == "impairment_loss":
-
-        impairment = D(
+    if event_type == "impairment_loss":
+        impairment_amount = D(
             sm.get("amount")
             or meta.get("impairment_amount")
             or meta.get("amount")
             or 0
         )
 
-        if impairment <= 0 and recoverable > 0:
-            impairment = max(
+        if impairment_amount <= 0 and recoverable > 0:
+            impairment_amount = max(
                 D("0"),
-                ca_before - recoverable
+                carrying_before - recoverable,
             )
 
-        if impairment <= 0:
-            raise ValueError(
-                "Impairment amount must be greater than zero."
-            )
+        if impairment_amount <= 0:
+            raise ValueError("Impairment amount must be greater than zero")
 
-        if impairment > ca_before:
+        if impairment_amount > carrying_before:
             raise ValueError(
-                f"Impairment loss ({money(impairment)}) "
-                f"cannot exceed carrying amount ({money(ca_before)})."
+                f"Impairment loss {money(impairment_amount)} cannot exceed "
+                f"carrying amount {money(carrying_before)}"
             )
 
         if recoverable <= 0:
-            recoverable = max(
-                D("0"),
-                ca_before - impairment
-            )
+            recoverable = carrying_before - impairment_amount
 
-        reversal = D("0")
-
-    elif et == "impairment_reversal":
-
-        reversal = D(
+    elif event_type == "impairment_reversal":
+        reversal_amount = D(
             sm.get("amount")
             or meta.get("reversal_amount")
             or meta.get("amount")
             or 0
         )
 
-        if reversal <= 0:
-            raise ValueError(
-                "Impairment reversal amount must be greater than zero."
-            )
-
-        impairment = D("0")
+        if reversal_amount <= 0:
+            raise ValueError("Impairment reversal amount must be greater than zero")
 
     else:
-        raise ValueError(
-            f"Unsupported impairment event_type '{et}'"
-        )
+        raise ValueError(f"Unsupported impairment event_type '{event_type}'")
+
+    carrying_after = (
+        carrying_before
+        - impairment_amount
+        + reversal_amount
+    )
+
+    recoverable_basis = (
+        meta.get("recoverable_basis")
+        or meta.get("recoverable_amount_basis")
+    )
+
+    discount_rate = (
+        meta.get("discount_rate")
+        or meta.get("discount_rate_percent")
+    )
+
+    growth_rate = (
+        meta.get("growth_rate")
+        or meta.get("growth_rate_percent")
+    )
+
+    cash_flow_months = meta.get("cash_flow_period_months")
+
+    if not cash_flow_months:
+        years = D(meta.get("cash_flow_period_years") or 0)
+        cash_flow_months = int(years * 12) if years > 0 else None
 
     cur.execute(_q(schema, """
         INSERT INTO {schema}.asset_impairments(
             company_id,
+            target_type,
             asset_id,
+            cgu_id,
             impairment_date,
+            event_type,
             carrying_amount_before,
             recoverable_amount,
             impairment_amount,
             reversal_amount,
+            recoverable_basis,
+            fair_value_less_costs,
+            value_in_use,
+            discount_rate,
+            growth_rate,
+            cash_flow_period_months,
+            allocation_basis,
             reason,
             notes,
             status,
-            created_at
+            source_company_id,
+            engagement_company_id,
+            engagement_id,
+            created_by_user_id,
+            updated_by_user_id
         )
         VALUES (
-            %s,%s,%s,
+            %s,'asset',%s,NULL,%s,%s,
             %s,%s,%s,%s,
-            %s,%s,
-            'draft',
-            NOW()
+            %s,%s,%s,%s,%s,%s,
+            'carrying_amount',
+            %s,%s,'draft',
+            %s,%s,%s,%s,%s
         )
         RETURNING id
     """), (
         company_id,
         int(sm["asset_id"]),
         sm["event_date"],
-        ca_before,
+        event_type,
+        carrying_before,
         recoverable,
-        impairment,
-        reversal,
+        impairment_amount,
+        reversal_amount,
+        recoverable_basis,
+        meta.get("fair_value_less_costs"),
+        meta.get("value_in_use"),
+        discount_rate,
+        growth_rate,
+        cash_flow_months,
         meta.get("reason"),
+        sm.get("notes"),
+        sm.get("source_company_id"),
+        sm.get("engagement_company_id"),
+        sm.get("engagement_id"),
+        sm.get("created_by_user_id") or sm.get("created_by"),
+        sm.get("updated_by_user_id"),
+    ))
+
+    impairment_id = int(cur.fetchone()["id"])
+
+    cur.execute(_q(schema, """
+        INSERT INTO {schema}.asset_impairment_allocations(
+            company_id,
+            impairment_id,
+            cgu_id,
+            asset_id,
+            carrying_amount_before,
+            allocation_weight,
+            allocated_impairment_amount,
+            allocated_reversal_amount,
+            carrying_amount_after,
+            notes
+        )
+        VALUES (%s,%s,NULL,%s,%s,1,%s,%s,%s,%s)
+    """), (
+        company_id,
+        impairment_id,
+        int(sm["asset_id"]),
+        carrying_before,
+        impairment_amount,
+        reversal_amount,
+        carrying_after,
         sm.get("notes"),
     ))
 
-    return int(cur.fetchone()["id"])
+    cur.execute(_q(schema, """
+        SELECT
+            id,
+            impairment_id,
+            asset_id,
+            allocated_impairment_amount,
+            allocated_reversal_amount
+        FROM {schema}.asset_impairment_allocations
+        WHERE company_id=%s
+        AND impairment_id=%s
+    """), (
+        company_id,
+        impairment_id,
+    ))
+
+    print("[IMPAIRMENT ALLOCATION DEBUG]", {
+        "impairment_id": impairment_id,
+        "allocations": fetchall(cur),
+    })
+
+    return impairment_id
 
 def create_hfs_from_sm(cur, company_id: int, sm: dict, asset: dict) -> int:
     schema = company_schema(company_id)

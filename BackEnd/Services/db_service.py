@@ -57318,6 +57318,44 @@ class DatabaseService:
             WHERE COALESCE(ac.status,'draft') = 'posted'
         ),
 
+        fallback_acquisition_rows AS (
+            SELECT
+                a.company_id,
+                a.id AS asset_id,
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
+                a.acquisition_date AS event_date,
+
+                'addition'::text AS movement_type,
+                'assets_fallback'::text AS source_table,
+                a.id::bigint AS source_id,
+
+                a.measurement_basis,
+                'Fallback asset-register acquisition'::text AS narrative,
+
+                COALESCE(a.cost, 0)::numeric(18,2) AS cost_delta,
+                0::numeric(18,2) AS accum_dep_delta,
+                0::numeric(18,2) AS impairment_delta,
+                0::numeric(18,2) AS revaluation_reserve_delta,
+                COALESCE(a.cost, 0)::numeric(18,2) AS carrying_delta
+
+            FROM {schema}.assets a
+            WHERE COALESCE(a.cost, 0) <> 0
+
+            AND COALESCE(a.opening_cost, 0) = 0
+
+            AND NOT EXISTS (
+                SELECT 1
+                FROM {schema}.asset_acquisitions ac
+                WHERE ac.asset_id = a.id
+                    AND COALESCE(ac.status, 'draft') = 'posted'
+            )
+        ),
+
         subseq_rows AS (
             SELECT
                 a.company_id,
@@ -57421,7 +57459,12 @@ class DatabaseService:
             FROM {schema}.asset_subsequent_measurements sm
             JOIN {schema}.assets a
             ON a.id = sm.asset_id
-            WHERE COALESCE(sm.status,'draft') = 'posted'
+            WHERE COALESCE(sm.status, 'draft') = 'posted'
+            AND sm.event_type NOT IN (
+                'revaluation',
+                'impairment_loss',
+                'impairment_reversal'
+            )
         ),
 
         depreciation_rows AS (
@@ -57705,6 +57748,8 @@ class DatabaseService:
         SELECT * FROM opening_rows
         UNION ALL
         SELECT * FROM acquisition_rows
+        UNION ALL
+        SELECT * FROM fallback_acquisition_rows
         UNION ALL
         SELECT * FROM subseq_rows
         UNION ALL
@@ -91729,17 +91774,26 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         calculation_json: Dict[str, Any] = None,
     ):
         carrying = Decimal(str(carrying_amount or 0))
-        tax_base = Decimal(str(tax_base or 0))
+        tax_base_value = Decimal(str(tax_base or 0))
+
         difference, difference_type = self._dt_classify(
             balance_type,
             carrying,
-            tax_base,
+            tax_base_value,
         )
 
-        rate = Decimal(str(run["tax_rate"] or 0))
+        rate = Decimal(str(run.get("tax_rate") or 0))
+
         gross_tax = (
             abs(difference) * rate / Decimal("100")
         ).quantize(Decimal("0.01"))
+
+        if scan_status == "resolved":
+            recognized_amount = gross_tax
+            unrecognized_amount = Decimal("0")
+        else:
+            recognized_amount = Decimal("0")
+            unrecognized_amount = gross_tax
 
         cur.execute(f"""
             INSERT INTO {schema}.deferred_tax_run_lines (
@@ -91773,7 +91827,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             VALUES (
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,%s,
-                100,%s,0,%s,%s,FALSE,
+                100,%s,%s,%s,%s,FALSE,
                 %s,%s,%s,%s,%s::jsonb
             );
         """, (
@@ -91787,19 +91841,20 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             description,
             balance_type,
             carrying,
-            tax_base,
+            tax_base_value,
             difference,
             difference_type,
             rate,
             gross_tax,
-            gross_tax if scan_status == "resolved" else Decimal("0"),
+            recognized_amount,
+            unrecognized_amount,
             destination,
             tax_treatment_code,
             scan_status,
             resolution_message,
             bs_account_code,
             Decimal(str(bs_carrying_amount or 0)),
-            json_dumps(calculation_json or {}),
+            json.dumps(calculation_json or {}, default=str),
         ))
 
     def _dt_scan_assets(
@@ -91811,6 +91866,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         run: Dict[str, Any],
         candidate: Dict[str, Any],
     ):
+        self.ensure_ppe_reporting_views(cur, company_id)
         as_at = run["reporting_date"]
         authority_id = run["tax_authority_id"]
         face_amount = Decimal(str(candidate.get("carrying_amount") or 0))
@@ -91893,6 +91949,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     SUM(
                         CASE
                             WHEN m.event_date <= %s
+                            AND m.source_table = 'asset_revaluation_reserve'
                             THEN COALESCE(m.revaluation_reserve_delta, 0)
                             ELSE 0
                         END
@@ -91901,8 +91958,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     SUM(
                         CASE
                             WHEN m.event_date <= %s
+                            AND m.source_table = 'asset_revaluations'
                             AND m.movement_type IN (
-                                'revaluation',
                                 'revaluation_up',
                                 'revaluation_down'
                             )
@@ -91914,6 +91971,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     SUM(
                         CASE
                             WHEN m.event_date <= %s
+                            AND m.source_table = 'asset_impairments'
                             AND m.movement_type = 'impairment_loss'
                             THEN COALESCE(m.impairment_delta, 0)
                             ELSE 0
@@ -91923,8 +91981,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     SUM(
                         CASE
                             WHEN m.event_date <= %s
+                            AND m.source_table = 'asset_impairments'
                             AND m.movement_type = 'impairment_reversal'
-                            THEN COALESCE(m.impairment_delta, 0)
+                            THEN ABS(COALESCE(m.impairment_delta, 0))
                             ELSE 0
                         END
                     )::numeric(18,2) AS impairment_reversals,
@@ -91986,12 +92045,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 p.tax_authority_id,
 
                 trl.id AS tax_run_line_id,
+                trl.allowance_rule_id,
                 trl.opening_tax_wdv,
+                trl.additions,
+                trl.disposal_proceeds,
+                trl.disposal_tax_value,
                 trl.allowance_base,
                 trl.initial_allowance,
                 trl.annual_allowance,
                 trl.total_capital_allowance,
-                trl.closing_tax_wdv
+                trl.closing_tax_wdv,
+                trl.book_depreciation,
+                trl.accounting_carrying_amount AS tax_run_accounting_carrying_amount,
+                trl.tax_adjustment,
+                trl.temporary_difference AS tax_run_temporary_difference,
+                trl.calculation_method,
+                trl.rate_percent,
+                trl.override_reason,
+                trl.notes
 
             FROM {schema}.assets a
 
@@ -92042,6 +92113,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id,
             accounting_standard,
         ), cur=cur) or []
+
+        assets = [
+            row for row in assets
+            if (
+                abs(Decimal(str(row.get("closing_cost") or 0))) > Decimal("0.005")
+                or abs(Decimal(str(row.get("closing_accum_dep") or 0))) > Decimal("0.005")
+                or abs(Decimal(str(row.get("closing_impairment") or 0))) > Decimal("0.005")
+                or abs(Decimal(str(row.get("accounting_carrying_amount") or 0))) > Decimal("0.005")
+            )
+        ]
 
         detail_total = sum(
             Decimal(str(
@@ -92111,30 +92192,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not reconciles:
                 scan_status = "reconciliation_error"
                 resolution_message = (
-                    f"Asset-register total {detail_total} does not "
-                    f"reconcile to balance-sheet amount {face_amount}. "
+                    f"Asset-register total {detail_total} does not reconcile "
+                    f"to balance-sheet amount {face_amount}. "
                     f"Difference: {reconciliation_difference}."
                 )
                 tax_base = (
                     Decimal(str(closing_tax_wdv))
                     if closing_tax_wdv is not None
-                    else carrying_amount
+                    else Decimal("0")
                 )
 
             elif not tax_profile_id:
                 scan_status = "requires_review"
-                resolution_message = (
-                    "No tax profile is assigned to this asset."
-                )
-                tax_base = carrying_amount
+                resolution_message = "No tax profile is assigned to this asset."
+                tax_base = Decimal("0")
 
             elif not tax_run:
                 scan_status = "requires_review"
                 resolution_message = (
-                    "No asset-tax run exists on or before the "
-                    "deferred-tax reporting date."
+                    "No asset-tax calculation exists on or before the reporting date."
                 )
-                tax_base = carrying_amount
+                tax_base = Decimal("0")
 
             elif not tax_run_line_id or closing_tax_wdv is None:
                 scan_status = "requires_review"
@@ -92142,7 +92220,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "The latest asset-tax run does not contain "
                     "a tax WDV for this asset."
                 )
-                tax_base = carrying_amount
+                tax_base = Decimal("0")
 
             else:
                 scan_status = "resolved"
@@ -92236,8 +92314,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                     "book_depreciation": str(asset.get("book_depreciation") or 0),
                     "tax_adjustment": str(asset.get("tax_adjustment") or 0),
-                    "tax_temporary_difference": str(
-                        asset.get("temporary_difference") or 0
+                    "tax_run_temporary_difference": str(
+                        asset.get("tax_run_temporary_difference") or 0
+                    ),
+                    "tax_run_accounting_carrying_amount": str(
+                        asset.get("tax_run_accounting_carrying_amount") or 0
                     ),
                     "tax_calculation_method": asset.get("calculation_method"),
                     "tax_rate_percent": str(asset.get("rate_percent") or 0),
