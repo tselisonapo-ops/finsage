@@ -57845,23 +57845,42 @@ class DatabaseService:
                 NULL::date AS period_start,
                 NULL::date AS period_end,
                 ac.acquisition_date AS event_date,
-
                 'addition'::text AS movement_type,
                 'asset_acquisitions'::text AS source_table,
                 ac.id::bigint AS source_id,
-
                 a.measurement_basis,
                 COALESCE(ac.reference, ac.notes)::text AS narrative,
-
-                COALESCE(ac.amount,0)::numeric(18,2) AS cost_delta,
+                amount.capitalised_cost AS cost_delta,
                 0::numeric(18,2) AS accum_dep_delta,
                 0::numeric(18,2) AS impairment_delta,
                 0::numeric(18,2) AS revaluation_reserve_delta,
-                COALESCE(ac.amount,0)::numeric(18,2) AS carrying_delta
+                amount.capitalised_cost AS carrying_delta
             FROM {schema}.asset_acquisitions ac
-            JOIN {schema}.assets a
-            ON a.id = ac.asset_id
-            WHERE COALESCE(ac.status,'draft') = 'posted'
+            JOIN {schema}.assets a ON a.id = ac.asset_id
+            CROSS JOIN LATERAL (
+                SELECT ROUND((
+                    COALESCE(
+                        ac.net_amount,
+                        CASE
+                            WHEN COALESCE(ac.vat_treatment, 'no_vat') = 'inclusive'
+                            AND COALESCE(ac.vat_amount, 0) <> 0
+                            THEN COALESCE(ac.gross_amount, ac.amount, 0)
+                                - COALESCE(ac.vat_amount, 0)
+                            WHEN COALESCE(ac.vat_treatment, 'no_vat') = 'exclusive'
+                            THEN COALESCE(ac.amount, ac.gross_amount, 0)
+                            ELSE COALESCE(ac.amount, ac.gross_amount, 0)
+                        END,
+                        0
+                    )
+                    + CASE
+                        WHEN COALESCE(ac.nonrecoverable_vat_capitalized, FALSE)
+                        THEN COALESCE(ac.non_recoverable_vat_amount, 0)
+                        ELSE 0
+                    END
+                )::numeric, 2)::numeric(18,2) AS capitalised_cost
+            ) amount
+            WHERE COALESCE(ac.status, 'draft') = 'posted'
+            AND COALESCE(a.is_component_group, FALSE) = FALSE
         ),
 
         fallback_acquisition_rows AS (
@@ -57891,8 +57910,8 @@ class DatabaseService:
 
             FROM {schema}.assets a
             WHERE COALESCE(a.cost, 0) <> 0
-
             AND COALESCE(a.opening_cost, 0) = 0
+            AND COALESCE(a.is_component_group, FALSE) = FALSE
 
             AND NOT EXISTS (
                 SELECT 1
@@ -61933,229 +61952,242 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
 
     def asset_tax_calculate_run(self, company_id: int, run_id: int) -> dict:
+        from decimal import Decimal, ROUND_HALF_UP
+
         schema = self.company_schema(company_id)
-
-        run = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.asset_tax_runs
-            WHERE company_id = %s
-            AND id = %s
-        """, (company_id, run_id))
-
-        if not run:
-            raise ValueError("Tax run not found")
-
-        if run["status"] == "locked":
-            raise ValueError("Cannot recalculate a locked tax run")
-
-        tax_year = int(run["tax_year"])
-        tax_authority_id = int(run["tax_authority_id"])
-        start_date = run["tax_year_start"]
-        end_date = run["tax_year_end"]
+        D = lambda value: Decimal(str(value or 0))
+        q2 = lambda value: D(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         with self._conn_cursor() as (conn, cur):
-            cur.execute(f"""
-                DELETE FROM {schema}.asset_tax_run_lines
-                WHERE run_id = %s
-            """, (run_id,))
+            run = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.asset_tax_runs
+                WHERE company_id = %s AND id = %s
+                LIMIT 1
+            """, (company_id, run_id), cur=cur)
 
-            cur.execute(f"""
-                INSERT INTO {schema}.asset_tax_run_lines (
-                    run_id,
-                    company_id,
-                    asset_tax_profile_id,
-                    asset_id,
-                    tax_authority_id,
-                    allowance_rule_id,
-                    tax_year,
+            if not run:
+                raise ValueError("Tax run not found.")
 
-                    opening_tax_wdv,
-                    additions,
-                    disposal_proceeds,
-                    disposal_tax_value,
-                    allowance_base,
-                    initial_allowance,
-                    annual_allowance,
-                    total_capital_allowance,
-                    closing_tax_wdv,
+            if run["status"] == "locked":
+                raise ValueError("Cannot recalculate a locked tax run.")
 
-                    book_depreciation,
-                    accounting_carrying_amount,
-                    tax_adjustment,
-                    temporary_difference,
+            start_date = run["tax_year_start"]
+            end_date = run["tax_year_end"]
+            authority_id = int(run["tax_authority_id"])
+            tax_year = int(run["tax_year"])
 
-                    calculation_method,
-                    rate_percent,
-                    notes
-                )
+            self.ensure_ppe_reporting_views(cur, company_id)
+
+            profiles = self.fetch_all(f"""
                 SELECT
-                    %s AS run_id,
-                    p.company_id,
-                    p.id AS asset_tax_profile_id,
-                    p.asset_id,
-                    p.tax_authority_id,
-                    p.allowance_rule_id,
-                    %s AS tax_year,
-
-                    0 AS opening_tax_wdv,
-
-                    CASE
-                        WHEN p.tax_start_date BETWEEN %s AND %s
-                        THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                        ELSE 0
-                    END AS additions,
-
-                    0 AS disposal_proceeds,
-                    0 AS disposal_tax_value,
-
-                    (
-                        COALESCE(
-                            NULLIF(0,0),
-                            CASE
-                                WHEN p.tax_start_date <= %s
-                                THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                                ELSE 0
-                            END
-                        )
-                        * (COALESCE(p.qualifying_percent,100) / 100.0)
-                        * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                    ) AS allowance_base,
-
-                    0 AS initial_allowance,
-
-                    ROUND((
-                        (
-                            COALESCE(
-                                CASE
-                                    WHEN p.tax_start_date <= %s
-                                    THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                                    ELSE 0
-                                END,
-                                0
-                            )
-                            * (COALESCE(p.qualifying_percent,100) / 100.0)
-                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                        )
-                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
-                    )::numeric, 2) AS annual_allowance,
-
-                    ROUND((
-                        (
-                            COALESCE(
-                                CASE
-                                    WHEN p.tax_start_date <= %s
-                                    THEN COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                                    ELSE 0
-                                END,
-                                0
-                            )
-                            * (COALESCE(p.qualifying_percent,100) / 100.0)
-                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                        )
-                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
-                    )::numeric, 2) AS total_capital_allowance,
-
-                    GREATEST(
-                        0,
-                        ROUND((
-                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                            -
-                            (
-                                (
-                                    COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                                    * (COALESCE(p.qualifying_percent,100) / 100.0)
-                                    * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                                )
-                                * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
-                            )
-                        )::numeric, 2)
-                    ) AS closing_tax_wdv,
-
-                    COALESCE(dep.book_depreciation, 0) AS book_depreciation,
-                    COALESCE(dep.carrying_amount, a.cost, a.opening_cost, 0) AS accounting_carrying_amount,
-
-                    COALESCE(dep.book_depreciation, 0)
-                    -
-                    ROUND((
-                        (
-                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                            * (COALESCE(p.qualifying_percent,100) / 100.0)
-                            * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                        )
-                        * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
-                    )::numeric, 2) AS tax_adjustment,
-
-                    COALESCE(dep.carrying_amount, a.cost, a.opening_cost, 0)
-                    -
-                    GREATEST(
-                        0,
-                        ROUND((
-                            COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                            -
-                            (
-                                (
-                                    COALESCE(p.tax_cost, a.cost, a.opening_cost, 0)
-                                    * (COALESCE(p.qualifying_percent,100) / 100.0)
-                                    * ((100.0 - COALESCE(p.private_use_percent,0)) / 100.0)
-                                )
-                                * (COALESCE(r.rate_percent, r.annual_allowance_percent, 0) / 100.0)
-                            )
-                        )::numeric, 2)
-                    ) AS temporary_difference,
-
-                    r.method AS calculation_method,
-                    COALESCE(r.rate_percent, r.annual_allowance_percent, 0) AS rate_percent,
-
-                    'Calculated from asset tax profile'
+                    p.*,
+                    a.asset_code,
+                    a.asset_name,
+                    a.asset_class,
+                    a.category,
+                    a.accounting_standard,
+                    a.measurement_basis,
+                    a.fair_value_model,
+                    a.acquisition_date,
+                    a.available_for_use_date,
+                    a.cost AS register_cost,
+                    a.opening_cost,
+                    a.status AS asset_status,
+                    r.method,
+                    r.rate_percent,
+                    r.initial_allowance_percent,
+                    r.annual_allowance_percent,
+                    r.rule_code,
+                    r.rule_name
                 FROM {schema}.asset_tax_profiles p
                 JOIN {schema}.assets a ON a.id = p.asset_id
                 LEFT JOIN public.tax_allowance_rules r ON r.id = p.allowance_rule_id
-                LEFT JOIN LATERAL (
-                    SELECT
-                        SUM(d.depreciation_amount) AS book_depreciation,
-                        MIN(d.carrying_amount) AS carrying_amount
-                    FROM {schema}.asset_depreciation d
-                    WHERE d.asset_id = p.asset_id
-                    AND d.period_start >= %s
-                    AND d.period_end <= %s
-                ) dep ON TRUE
                 WHERE p.company_id = %s
                 AND p.tax_authority_id = %s
                 AND p.is_active = TRUE
-                AND p.is_tax_depreciable = TRUE
-                AND p.allowance_rule_id IS NOT NULL
-            """, (
-                run_id,
-                tax_year,
-                start_date,
-                end_date,
-                end_date,
-                end_date,
-                end_date,
-                start_date,
-                end_date,
-                company_id,
-                tax_authority_id,
-            ))
+                AND COALESCE(a.status, 'active') NOT IN ('void', 'cancelled')
+                ORDER BY a.id
+            """, (company_id, authority_id), cur=cur) or []
 
-            line_count = cur.rowcount or 0
+            cur.execute(f"DELETE FROM {schema}.asset_tax_run_lines WHERE run_id = %s", (run_id,))
+
+            inserted = 0
+
+            for p in profiles:
+                asset_id = int(p["asset_id"])
+
+                movements = self.fetch_one(f"""
+                    SELECT
+                        COALESCE(SUM(CASE WHEN event_date <= %s THEN carrying_delta ELSE 0 END), 0) AS carrying_amount,
+                        COALESCE(SUM(CASE WHEN event_date BETWEEN %s AND %s AND movement_type = 'depreciation'
+                            THEN ABS(carrying_delta) ELSE 0 END), 0) AS book_depreciation,
+                        COALESCE(SUM(CASE WHEN event_date BETWEEN %s AND %s AND movement_type = 'subsequent_addition'
+                            THEN cost_delta ELSE 0 END), 0) AS subsequent_additions,
+                        COALESCE(SUM(CASE WHEN event_date <= %s AND movement_type IN ('revaluation_up','revaluation_down')
+                            THEN carrying_delta ELSE 0 END), 0) AS revaluation_movement,
+                        COALESCE(SUM(CASE WHEN event_date <= %s AND movement_type = 'impairment_loss'
+                            THEN impairment_delta ELSE 0 END), 0) AS impairment_losses,
+                        COALESCE(SUM(CASE WHEN event_date <= %s AND movement_type = 'impairment_reversal'
+                            THEN ABS(impairment_delta) ELSE 0 END), 0) AS impairment_reversals
+                    FROM {schema}.vw_ppe_movements
+                    WHERE company_id = %s AND asset_id = %s
+                """, (
+                    end_date,
+                    start_date, end_date,
+                    start_date, end_date,
+                    end_date, end_date, end_date,
+                    company_id, asset_id,
+                ), cur=cur) or {}
+
+                acquisition = self.fetch_one(f"""
+                    SELECT
+                        COALESCE(SUM(
+                            CASE
+                                WHEN net_amount IS NOT NULL THEN
+                                    net_amount
+                                    + CASE
+                                        WHEN COALESCE(nonrecoverable_vat_capitalized, FALSE)
+                                        THEN COALESCE(non_recoverable_vat_amount, 0)
+                                        ELSE 0
+                                    END
+                                ELSE COALESCE(amount, 0)
+                            END
+                        ), 0) AS accounting_cost
+                    FROM {schema}.asset_acquisitions
+                    WHERE company_id = %s
+                    AND asset_id = %s
+                    AND status = 'posted'
+                    AND acquisition_date <= %s
+                """, (company_id, asset_id, end_date), cur=cur) or {}
+
+                previous = self.fetch_one(f"""
+                    SELECT l.closing_tax_wdv
+                    FROM {schema}.asset_tax_run_lines l
+                    JOIN {schema}.asset_tax_runs r ON r.id = l.run_id
+                    WHERE l.company_id = %s
+                    AND l.asset_id = %s
+                    AND l.tax_authority_id = %s
+                    AND r.tax_year_end < %s
+                    AND r.status IN ('calculated','approved','locked','posted')
+                    ORDER BY r.tax_year_end DESC, r.id DESC
+                    LIMIT 1
+                """, (company_id, asset_id, authority_id, start_date), cur=cur)
+
+                disposed = self.fetch_one(f"""
+                    SELECT id
+                    FROM {schema}.asset_disposals
+                    WHERE company_id = %s
+                    AND asset_id = %s
+                    AND status = 'posted'
+                    AND disposal_date BETWEEN %s AND %s
+                    LIMIT 1
+                """, (company_id, asset_id, start_date, end_date), cur=cur)
+
+                accounting_cost = q2(
+                    acquisition.get("accounting_cost")
+                    or p.get("opening_cost")
+                    or p.get("register_cost")
+                )
+
+                profile_tax_cost = p.get("tax_cost")
+                tax_cost = q2(profile_tax_cost if profile_tax_cost is not None else accounting_cost)
+
+                qualifying_factor = D(p.get("qualifying_percent") or 100) / D(100)
+                business_factor = (D(100) - D(p.get("private_use_percent") or 0)) / D(100)
+                qualifying_cost = q2(tax_cost * qualifying_factor * business_factor)
+
+                previous_wdv = q2((previous or {}).get("closing_tax_wdv"))
+                first_tax_year = p.get("tax_start_date") and start_date <= p["tax_start_date"] <= end_date
+
+                opening_wdv = previous_wdv
+                additions = qualifying_cost if first_tax_year and previous_wdv == 0 else D(0)
+                additions += q2(D(movements.get("subsequent_additions")) * qualifying_factor * business_factor)
+
+                method = str(p.get("method") or "").upper()
+                annual_rate = D(p.get("annual_allowance_percent") or p.get("rate_percent"))
+                initial_rate = D(p.get("initial_allowance_percent"))
+                depreciable = bool(p.get("is_tax_depreciable")) and p.get("allowance_rule_id") is not None
+
+                allowance_base = q2(opening_wdv + additions)
+                initial_allowance = q2(additions * initial_rate / D(100)) if depreciable else D(0)
+
+                remaining_base = max(D(0), allowance_base - initial_allowance)
+
+                if not depreciable:
+                    annual_allowance = D(0)
+                elif method == "IMMEDIATE":
+                    annual_allowance = remaining_base
+                elif method == "WDV":
+                    annual_allowance = q2(remaining_base * annual_rate / D(100))
+                elif method == "SL":
+                    annual_allowance = q2(qualifying_cost * annual_rate / D(100))
+                    annual_allowance = min(annual_allowance, remaining_base)
+                else:
+                    annual_allowance = D(0)
+
+                total_allowance = q2(initial_allowance + annual_allowance)
+                disposal_tax_value = allowance_base if disposed else D(0)
+                closing_wdv = D(0) if disposed else q2(max(D(0), allowance_base - total_allowance))
+
+                carrying_amount = q2(movements.get("carrying_amount"))
+                book_depreciation = q2(movements.get("book_depreciation"))
+                temporary_difference = q2(carrying_amount - closing_wdv)
+                tax_adjustment = q2(book_depreciation - total_allowance)
+
+                notes = []
+                if not p.get("allowance_rule_id"):
+                    notes.append("No allowance rule assigned; tax WDV preserved without allowance.")
+                if not p.get("is_tax_depreciable"):
+                    notes.append("Asset marked as not tax depreciable.")
+                if D(movements.get("revaluation_movement")):
+                    notes.append("Accounting revaluation does not change tax WDV.")
+                if D(movements.get("impairment_losses")) or D(movements.get("impairment_reversals")):
+                    notes.append("Accounting impairment movement does not change tax WDV unless included in the tax rule.")
+                if profile_tax_cost is None:
+                    notes.append("Tax cost derived from VAT-adjusted accounting acquisition cost.")
+
+                cur.execute(f"""
+                    INSERT INTO {schema}.asset_tax_run_lines (
+                        run_id, company_id, asset_tax_profile_id, asset_id,
+                        tax_authority_id, allowance_rule_id, tax_year,
+                        opening_tax_wdv, additions, disposal_proceeds,
+                        disposal_tax_value, allowance_base, initial_allowance,
+                        annual_allowance, total_capital_allowance, closing_tax_wdv,
+                        book_depreciation, accounting_carrying_amount,
+                        tax_adjustment, temporary_difference,
+                        calculation_method, rate_percent, notes
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,0,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s
+                    )
+                """, (
+                    run_id, company_id, p["id"], asset_id,
+                    authority_id, p.get("allowance_rule_id"), tax_year,
+                    opening_wdv, additions, disposal_tax_value,
+                    allowance_base, initial_allowance, annual_allowance,
+                    total_allowance, closing_wdv,
+                    book_depreciation, carrying_amount,
+                    tax_adjustment, temporary_difference,
+                    method or "NONE", annual_rate,
+                    " ".join(notes) or "Calculated from asset tax profile and asset movements.",
+                ))
+
+                inserted += 1
 
             cur.execute(f"""
                 UPDATE {schema}.asset_tax_runs
-                SET status = 'calculated',
-                    calculated_at = NOW()
-                WHERE id = %s
-                AND company_id = %s
+                SET status = 'calculated', calculated_at = NOW()
+                WHERE company_id = %s AND id = %s
                 RETURNING *
-            """, (run_id, company_id))
+            """, (company_id, run_id))
 
-            updated_run = cur.fetchone()
+            updated_run = dict(cur.fetchone())
             conn.commit()
 
-        return {
-            "run": updated_run,
-            "line_count": line_count,
-        }
+        return {"run": updated_run, "line_count": inserted}
 
 
     def asset_tax_get_run(self, company_id: int, run_id: int) -> dict:
@@ -93040,169 +93072,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ),
                 destination=recognition_destination,
                 calculation_json={
-                    "asset_code":
-                        asset.get("asset_code"),
-                    "asset_class":
-                        asset.get("asset_class"),
-                    "asset_account_code":
-                        asset.get("asset_account_code"),
-                    "accounting_standard":
-                        asset.get("accounting_standard"),
-                    "measurement_basis":
-                        asset.get("measurement_basis"),
-                    "fair_value_model":
-                        fair_value_model,
-                    "depreciation_method":
-                        asset.get("depreciation_method"),
-                    "accounting_useful_life_months":
-                        asset.get("useful_life_months"),
-                    "residual_value":
-                        str(asset.get("residual_value") or 0),
-                    "acquisition_date":
-                        str(asset.get("acquisition_date") or ""),
-                    "available_for_use_date":
-                        str(
-                            asset.get(
-                                "available_for_use_date"
-                            ) or ""
-                        ),
-
-                    "closing_cost":
-                        str(asset.get("closing_cost") or 0),
-                    "closing_accum_dep":
-                        str(
-                            asset.get(
-                                "closing_accum_dep"
-                            ) or 0
-                        ),
-                    "closing_impairment":
-                        str(
-                            asset.get(
-                                "closing_impairment"
-                            ) or 0
-                        ),
-                    "accounting_carrying_amount":
-                        str(carrying_amount),
-
-                    "revaluation_movement":
-                        str(revaluation_movement),
-                    "revaluation_reserve":
-                        str(revaluation_reserve),
-                    "impairment_losses":
-                        str(impairment_losses),
-                    "impairment_reversals":
-                        str(impairment_reversals),
-                    "latest_movement_date":
-                        str(
-                            asset.get(
-                                "latest_movement_date"
-                            ) or ""
-                        ),
-
-                    "tax_base_is_known":
-                        tax_base_is_known,
-                    "tax_profile_id":
-                        tax_profile_id,
-                    "asset_tax_run_id":
-                        tax_run_id,
-                    "asset_tax_run_line_id":
-                        tax_run_line_id,
-                    "allowance_rule_id":
-                        asset.get("allowance_rule_id"),
-
-                    "opening_tax_wdv":
-                        str(
-                            asset.get(
-                                "opening_tax_wdv"
-                            ) or 0
-                        ),
-                    "additions":
-                        str(asset.get("additions") or 0),
-                    "disposal_proceeds":
-                        str(
-                            asset.get(
-                                "disposal_proceeds"
-                            ) or 0
-                        ),
-                    "disposal_tax_value":
-                        str(
-                            asset.get(
-                                "disposal_tax_value"
-                            ) or 0
-                        ),
-                    "allowance_base":
-                        str(
-                            asset.get(
-                                "allowance_base"
-                            ) or 0
-                        ),
-                    "initial_allowance":
-                        str(
-                            asset.get(
-                                "initial_allowance"
-                            ) or 0
-                        ),
-                    "annual_allowance":
-                        str(
-                            asset.get(
-                                "annual_allowance"
-                            ) or 0
-                        ),
-                    "total_capital_allowance":
-                        str(
-                            asset.get(
-                                "total_capital_allowance"
-                            ) or 0
-                        ),
-                    "closing_tax_wdv": (
-                        str(closing_tax_wdv)
-                        if closing_tax_wdv is not None
-                        else ""
-                    ),
-
-                    "book_depreciation":
-                        str(
-                            asset.get(
-                                "book_depreciation"
-                            ) or 0
-                        ),
-                    "tax_adjustment":
-                        str(
-                            asset.get(
-                                "tax_adjustment"
-                            ) or 0
-                        ),
-                    "tax_run_temporary_difference":
-                        str(
-                            asset.get(
-                                "tax_run_temporary_difference"
-                            ) or 0
-                        ),
-                    "tax_run_accounting_carrying_amount":
-                        str(
-                            asset.get(
-                                "tax_run_accounting_carrying_amount"
-                            ) or 0
-                        ),
-                    "tax_calculation_method":
-                        asset.get("calculation_method"),
-                    "tax_rate_percent":
-                        str(asset.get("rate_percent") or 0),
-                    "tax_override_reason":
-                        asset.get("override_reason"),
-                    "tax_notes":
-                        asset.get("notes"),
-
-                    "category_reconciled":
-                        category_reconciled,
-                    "candidate_account_code":
-                        candidate_account_code,
-                    "balance_sheet_face_amount":
-                        str(face_amount),
-                    "asset_register_total":
-                        str(detail_total),
-                    "reconciliation_difference":
-                        str(reconciliation_difference),
+                    "asset_code": asset.get("asset_code"),
+                    "asset_class": asset.get("asset_class"),
+                    "asset_account_code": asset.get("asset_account_code"),
+                    "accounting_standard": asset.get("accounting_standard"),
+                    "measurement_basis": asset.get("measurement_basis"),
+                    "fair_value_model": fair_value_model,
+                    "depreciation_method": asset.get("depreciation_method"),
+                    "accounting_useful_life_months": asset.get("useful_life_months"),
+                    "residual_value": str(asset.get("residual_value") or 0),
+                    "acquisition_date": str(asset.get("acquisition_date") or ""),
+                    "available_for_use_date": str(asset.get("available_for_use_date") or ""),
+                    "closing_cost": str(asset.get("closing_cost") or 0),
+                    "closing_accum_dep": str(asset.get("closing_accum_dep") or 0),
+                    "closing_impairment": str(asset.get("closing_impairment") or 0),
+                    "accounting_carrying_amount": str(carrying_amount),
+                    "revaluation_movement": str(revaluation_movement),
+                    "revaluation_reserve": str(revaluation_reserve),
+                    "impairment_losses": str(impairment_losses),
+                    "impairment_reversals": str(impairment_reversals),
+                    "latest_movement_date": str(asset.get("latest_movement_date") or ""),
+                    "tax_base_is_known": tax_base_is_known,
+                    "tax_profile_id": tax_profile_id,
+                    "asset_tax_run_id": tax_run_id,
+                    "asset_tax_run_line_id": tax_run_line_id,
+                    "allowance_rule_id": asset.get("allowance_rule_id"),
+                    "opening_tax_wdv": str(asset.get("opening_tax_wdv") or 0),
+                    "additions": str(asset.get("additions") or 0),
+                    "disposal_proceeds": str(asset.get("disposal_proceeds") or 0),
+                    "disposal_tax_value": str(asset.get("disposal_tax_value") or 0),
+                    "allowance_base": str(asset.get("allowance_base") or 0),
+                    "initial_allowance": str(asset.get("initial_allowance") or 0),
+                    "annual_allowance": str(asset.get("annual_allowance") or 0),
+                    "total_capital_allowance": str(asset.get("total_capital_allowance") or 0),
+                    "closing_tax_wdv": str(closing_tax_wdv) if closing_tax_wdv is not None else "",
+                    "book_depreciation": str(asset.get("book_depreciation") or 0),
+                    "tax_adjustment": str(asset.get("tax_adjustment") or 0),
+                    "tax_run_temporary_difference": str(asset.get("tax_run_temporary_difference") or 0),
+                    "tax_run_accounting_carrying_amount": str(asset.get("tax_run_accounting_carrying_amount") or 0),
+                    "tax_calculation_method": asset.get("calculation_method"),
+                    "tax_rate_percent": str(asset.get("rate_percent") or 0),
+                    "tax_override_reason": asset.get("override_reason"),
+                    "tax_notes": asset.get("notes"),
+                    "category_reconciled": category_reconciled,
+                    "candidate_account_code": candidate_account_code,
+                    "balance_sheet_face_amount": str(face_amount),
+                    "asset_register_total": str(detail_total),
+                    "reconciliation_difference": str(reconciliation_difference),
                 },
             )
 
