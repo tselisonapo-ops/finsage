@@ -3029,16 +3029,29 @@ def list_impairments(
 
 def get_impairment(cur, company_id, imp_id, for_update=False):
     schema = company_schema(company_id)
-    lock = "FOR UPDATE" if for_update else ""
+
+    lock = "FOR UPDATE OF i" if for_update else ""
 
     cur.execute(_q(schema, f"""
-        SELECT i.*, a.asset_code, a.asset_name, c.cgu_code, c.cgu_name
+        SELECT
+            i.*,
+            a.asset_code,
+            a.asset_name,
+            c.cgu_code,
+            c.cgu_name
         FROM {{schema}}.asset_impairments i
+
         LEFT JOIN {{schema}}.assets a
-          ON a.company_id=i.company_id AND a.id=i.asset_id
+          ON a.company_id=i.company_id
+         AND a.id=i.asset_id
+
         LEFT JOIN {{schema}}.asset_cgus c
-          ON c.company_id=i.company_id AND c.id=i.cgu_id
-        WHERE i.company_id=%s AND i.id=%s
+          ON c.company_id=i.company_id
+         AND c.id=i.cgu_id
+
+        WHERE i.company_id=%s
+          AND i.id=%s
+
         {lock}
     """), (company_id, imp_id))
 
@@ -3047,17 +3060,21 @@ def get_impairment(cur, company_id, imp_id, for_update=False):
         return None
 
     cur.execute(_q(schema, """
-        SELECT x.*, a.asset_code, a.asset_name
+        SELECT
+            x.*,
+            a.asset_code,
+            a.asset_name
         FROM {schema}.asset_impairment_allocations x
         JOIN {schema}.assets a
-          ON a.company_id=x.company_id AND a.id=x.asset_id
-        WHERE x.company_id=%s AND x.impairment_id=%s
+          ON a.company_id=x.company_id
+         AND a.id=x.asset_id
+        WHERE x.company_id=%s
+          AND x.impairment_id=%s
         ORDER BY a.asset_name, a.id
     """), (company_id, imp_id))
 
     impairment["allocations"] = fetchall(cur)
     return impairment
-
 
 def _insert_impairment_allocations(cur, company_id, impairment_id, cgu_id, rows, notes=None):
     schema = company_schema(company_id)

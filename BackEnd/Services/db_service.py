@@ -91990,7 +91990,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 trl.allowance_base,
                 trl.initial_allowance,
                 trl.annual_allowance,
-                trl.total_capital_allowance
+                trl.total_capital_allowance,
                 trl.closing_tax_wdv
 
             FROM {schema}.assets a
