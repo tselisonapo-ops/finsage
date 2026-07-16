@@ -275,22 +275,19 @@ def get_asset_with_balances(cur, company_id, asset_id, as_at=None):
     return fetchone(cur)
 
 def get_asset(cur, company_id, asset_id):
-    rows = list_assets(
-        cur,
+    schema = company_schema(company_id)
+
+    cur.execute(_q(schema, """
+        SELECT *
+        FROM {schema}.assets
+        WHERE company_id=%s AND id=%s
+        LIMIT 1
+    """), (
         company_id,
-        status=None,
-        asset_class=None,
-        q=None,
-        limit=1,
-        offset=0,
-        as_at=date.today()
-    )
+        asset_id,
+    ))
 
-    for r in rows:
-        if int(r.get("id")) == int(asset_id):
-            return r
-
-    return None
+    return fetchone(cur)
 
 def create_subsequent_measurement(cur, company_id, payload):
     schema = company_schema(company_id)

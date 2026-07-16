@@ -90920,47 +90920,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
-        run = self.fetch_one(f"""
-            SELECT id, status
-            FROM {schema}.deferred_tax_runs
-            WHERE company_id = %s
-            AND id = %s
-            LIMIT 1;
-        """, (
-            int(company_id),
-            int(run_id),
-        ))
-
-        if not run:
-            raise ValueError("Deferred-tax run not found.")
-
         totals = self.fetch_one(f"""
             SELECT
                 COALESCE(SUM(
                     CASE
-                        WHEN difference_type = 'taxable'
-                        THEN ABS(temporary_difference)
+                        WHEN scan_status = 'resolved'
+                        AND difference_type = 'taxable'
+                        THEN gross_deferred_tax
                         ELSE 0
                     END
-                ), 0)::numeric(18,2)
-                    AS total_taxable_difference,
+                ), 0)::numeric(18,2) AS gross_dtl,
 
                 COALESCE(SUM(
                     CASE
-                        WHEN difference_type IN (
-                            'deductible',
-                            'tax_loss',
-                            'tax_credit'
-                        )
-                        THEN ABS(temporary_difference)
-                        ELSE 0
-                    END
-                ), 0)::numeric(18,2)
-                    AS total_deductible_difference,
-
-                COALESCE(SUM(
-                    CASE
-                        WHEN difference_type IN (
+                        WHEN scan_status = 'resolved'
+                        AND difference_type IN (
                             'deductible',
                             'tax_loss',
                             'tax_credit'
@@ -90968,81 +90942,63 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         THEN gross_deferred_tax
                         ELSE 0
                     END
-                ), 0)::numeric(18,2)
-                    AS gross_dta,
+                ), 0)::numeric(18,2) AS gross_dta,
 
                 COALESCE(SUM(
                     CASE
-                        WHEN difference_type = 'taxable'
-                        THEN gross_deferred_tax
-                        ELSE 0
-                    END
-                ), 0)::numeric(18,2)
-                    AS gross_dtl,
-
-                COALESCE(SUM(
-                    CASE
-                        WHEN difference_type IN (
-                            'deductible',
-                            'tax_loss',
-                            'tax_credit'
-                        )
-                        THEN recognized_amount
-                        ELSE 0
-                    END
-                ), 0)::numeric(18,2)
-                    AS recognized_dta,
-
-                COALESCE(SUM(
-                    CASE
-                        WHEN difference_type IN (
-                            'deductible',
-                            'tax_loss',
-                            'tax_credit'
-                        )
+                        WHEN scan_status <> 'resolved'
                         THEN unrecognized_amount
                         ELSE 0
                     END
-                ), 0)::numeric(18,2)
-                    AS unrecognized_dta
+                ), 0)::numeric(18,2) AS unresolved_potential_tax
+
             FROM {schema}.deferred_tax_run_lines
             WHERE company_id = %s
             AND run_id = %s;
         """, (
-            int(company_id),
-            int(run_id),
-        ))
+            company_id,
+            run_id,
+        )) or {}
 
-        recognized_dta = _decimal(totals["recognized_dta"])
-        gross_dtl = _decimal(totals["gross_dtl"])
+        gross_dta = Decimal(str(totals.get("gross_dta") or 0))
+        gross_dtl = Decimal(str(totals.get("gross_dtl") or 0))
 
-        # Positive = net liability.
-        # Negative = net asset.
-        net_deferred_tax = gross_dtl - recognized_dta
+        net_deferred_tax = (
+            gross_dtl - gross_dta
+        ).quantize(Decimal("0.01"))
 
-        return self.fetch_one(f"""
+        # PLACE THE UPDATE HERE
+        self.execute(f"""
             UPDATE {schema}.deferred_tax_runs
             SET
-                total_taxable_difference = %s,
-                total_deductible_difference = %s,
                 gross_dta = %s,
                 gross_dtl = %s,
                 recognized_dta = %s,
                 unrecognized_dta = %s,
                 net_deferred_tax = %s
             WHERE company_id = %s
-            AND id = %s
-            RETURNING *;
+            AND id = %s;
         """, (
-            totals["total_taxable_difference"],
-            totals["total_deductible_difference"],
-            totals["gross_dta"],
-            totals["gross_dtl"],
-            totals["recognized_dta"],
-            totals["unrecognized_dta"],
+            gross_dta,
+            gross_dtl,
+            gross_dta,
+            Decimal(str(
+                totals.get("unresolved_potential_tax") or 0
+            )),
             net_deferred_tax,
-            int(company_id),
-            int(run_id),
+            company_id,
+            run_id,
+        ))
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            company_id,
+            run_id,
         ))
 
     def deferred_tax_delete_line(
@@ -91871,6 +91827,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         authority_id = run["tax_authority_id"]
         face_amount = Decimal(str(candidate.get("carrying_amount") or 0))
 
+        company_settings = self.deferred_tax_get_settings(company_id)
+        dt_settings = company_settings.get("deferred_tax_settings") or {}
+
+        tolerance = Decimal(str(
+            dt_settings.get("reconciliation_tolerance", 0.05)
+        ))
         standard_map = {
             "ppe": "ias16",
             "intangible_asset": "ias38",
@@ -91890,15 +91852,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE company_id = %s
             AND tax_authority_id = %s
             AND tax_year_end <= %s
-            AND status IN ('calculated', 'approved', 'locked', 'posted')
+            AND status IN ('approved', 'locked', 'posted')
             ORDER BY
                 tax_year_end DESC,
                 CASE status
-                    WHEN 'locked' THEN 1
-                    WHEN 'posted' THEN 2
+                    WHEN 'posted' THEN 1
+                    WHEN 'locked' THEN 2
                     WHEN 'approved' THEN 3
                     ELSE 4
-                END,
+                END
                 id DESC
             LIMIT 1;
         """, (
@@ -92125,20 +92087,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ]
 
         detail_total = sum(
-            Decimal(str(
-                row.get("accounting_carrying_amount") or 0
-            ))
+            Decimal(str(row.get("accounting_carrying_amount") or 0))
             for row in assets
-        )
+        ).quantize(Decimal("0.01"))
+
+        face_amount = face_amount.quantize(Decimal("0.01"))
 
         reconciliation_difference = (
             detail_total - face_amount
         ).quantize(Decimal("0.01"))
 
-        reconciles = (
-            abs(reconciliation_difference)
-            <= Decimal("0.05")
-        )
 
         if not assets:
             self._dt_insert_scanned_line(
@@ -92164,6 +92122,52 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 calculation_json={
                     "accounting_standard": accounting_standard,
                     "balance_sheet_face_amount": str(face_amount),
+                    "asset_register_total": "0.00",
+                    "reconciliation_difference": str(-face_amount),
+                },
+            )
+            return
+
+        if abs(reconciliation_difference) > tolerance:
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="assets",
+                source_table="assets",
+                source_type=candidate["source_type"],
+                source_id=None,
+                source_line_id=None,
+                description=f"{candidate['description']} reconciliation",
+                balance_type="asset",
+
+                # Keep CA and tax base equal so the unresolved reconciliation
+                # does not create a false temporary difference or DTL.
+                carrying_amount=face_amount,
+                tax_base=face_amount,
+
+                bs_account_code=candidate["account_code"],
+                bs_carrying_amount=face_amount,
+                scan_status="reconciliation_error",
+                resolution_message=(
+                    f"Asset-register total {detail_total} does not reconcile "
+                    f"to balance-sheet amount {face_amount}. "
+                    f"Difference: {reconciliation_difference}."
+                ),
+                tax_treatment_code="asset_register_reconciliation",
+                calculation_json={
+                    "accounting_standard": accounting_standard,
+                    "balance_sheet_face_amount": str(face_amount),
+                    "asset_register_total": str(detail_total),
+                    "reconciliation_difference": str(
+                        reconciliation_difference
+                    ),
+                    "asset_count": len(assets),
+                    "asset_ids": [
+                        row.get("asset_id")
+                        for row in assets
+                    ],
                 },
             )
             return
@@ -92189,20 +92193,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 asset.get("impairment_losses") or 0
             ))
 
-            if not reconciles:
-                scan_status = "reconciliation_error"
-                resolution_message = (
-                    f"Asset-register total {detail_total} does not reconcile "
-                    f"to balance-sheet amount {face_amount}. "
-                    f"Difference: {reconciliation_difference}."
-                )
-                tax_base = (
-                    Decimal(str(closing_tax_wdv))
-                    if closing_tax_wdv is not None
-                    else Decimal("0")
-                )
-
-            elif not tax_profile_id:
+            if not tax_profile_id:
                 scan_status = "requires_review"
                 resolution_message = "No tax profile is assigned to this asset."
                 tax_base = Decimal("0")
@@ -92227,26 +92218,45 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 resolution_message = None
                 tax_base = Decimal(str(closing_tax_wdv))
 
-            recognition_destination = (
-                "oci"
-                if (
-                    revaluation_movement != 0
-                    or revaluation_reserve != 0
-                )
-                else "profit_or_loss"
-            )
+            measurement_basis = str(
+                asset.get("measurement_basis") or ""
+            ).strip().lower()
+
+            recognition_destination = "profit_or_loss"
+
+            if (
+                revaluation_movement != 0
+                or revaluation_reserve != 0
+                or measurement_basis == "revaluation"
+            ):
+                recognition_destination = "oci"
 
             treatment_parts = []
 
-            if revaluation_movement != 0:
+            if revaluation_movement != 0 or revaluation_reserve != 0:
                 treatment_parts.append("revaluation")
 
             if impairment_losses != 0:
-                treatment_parts.append("impairment")
+                treatment_parts.append("impairment_loss")
 
-            if not treatment_parts:
+            if Decimal(str(asset.get("impairment_reversals") or 0)) != 0:
+                treatment_parts.append("impairment_reversal")
+
+            if accounting_standard == "ias40":
+                treatment_parts.append("investment_property")
+
+            if measurement_basis == "fair_value":
+                treatment_parts.append("fair_value")
+
+            if (
+                closing_tax_wdv is not None
+                and carrying_amount != Decimal(str(closing_tax_wdv))
+            ):
                 treatment_parts.append("depreciation_vs_tax_allowance")
 
+            if not treatment_parts:
+                treatment_parts.append("no_identified_tax_difference")
+                
             self._dt_insert_scanned_line(
                 cur,
                 schema=schema,
