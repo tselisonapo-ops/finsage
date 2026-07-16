@@ -24,8 +24,9 @@ import secrets
 import string
 import sqlparse
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone, InvalidOperation
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from decimal import InvalidOperation
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
 from flask import current_app, g, request
