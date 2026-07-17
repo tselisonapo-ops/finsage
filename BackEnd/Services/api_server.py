@@ -1732,175 +1732,236 @@ def api_auth_resend_confirm():
 
 @app.route("/api/auth/signin", methods=["POST", "OPTIONS"])
 @cross_origin(
-    origins=["http://127.0.0.1:5500", "http://localhost:5500"],
+    origins=[
+        "https://finspheresolutions.com",
+        "https://www.finspheresolutions.com",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
     allow_headers=["Content-Type", "Authorization"],
     methods=["POST", "OPTIONS"],
     supports_credentials=True,
 )
 def api_auth_signin():
     if request.method == "OPTIONS":
-        return ("", 204)
-
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-
-    if not email or not password:
-        return jsonify({"error": "email and password required"}), 400
+        return "", 204
 
     try:
+        data = request.get_json(silent=True) or {}
+
+        email = str(data.get("email") or "").strip().lower()
+        password = str(data.get("password") or "")
+
+        if not email or not password:
+            return jsonify({
+                "error": "Email and password are required."
+            }), 400
+
+        current_app.logger.info("[AUTH] Signin attempt for %s", email)
+
         user = db_service.get_user_by_email(email)
-    except Exception as e:
-        current_app.logger.exception("DB error in signin: %s", e)
-        return jsonify({"error": f"DB error: {type(e).__name__}: {str(e)}"}), 500
 
-    if not user:
-        return jsonify({"error": "Invalid credentials"}), 401
+        if not user:
+            return jsonify({
+                "error": "Invalid credentials"
+            }), 401
 
-    if not check_password_hash(user["password_hash"], password):
-        return jsonify({"error": "Invalid credentials"}), 401
+        password_hash = user.get("password_hash")
 
-    db_service.execute_sql(
-        """
-        UPDATE public.users
-        SET last_login_at = NOW(),
-            last_activity_at = NOW()
-        WHERE id = %s
-        """,
-        (int(user["id"]),),
-    )
+        if not password_hash:
+            current_app.logger.error(
+                "[AUTH] User %s has no password hash",
+                user.get("id"),
+            )
+            return jsonify({
+                "error": "Invalid credentials"
+            }), 401
 
-    if not user.get("is_confirmed"):
-        return jsonify({"error": "Please confirm your email before signing in."}), 403
+        if not check_password_hash(password_hash, password):
+            return jsonify({
+                "error": "Invalid credentials"
+            }), 401
 
-    base_role = (user.get("user_role") or "viewer").strip()
-    user_type = (user.get("user_type") or "Enterprise").strip()
+        if not user.get("is_confirmed"):
+            return jsonify({
+                "error": "Please confirm your email before signing in."
+            }), 403
 
-    primary_mem = db_service.fetch_one(
-        """
-        SELECT company_id, role, access_scope
-        FROM public.company_users
-        WHERE user_id=%s
-          AND is_active=TRUE
-          AND is_primary=TRUE
-        LIMIT 1;
-        """,
-        (int(user["id"]),)
-    )
+        user_id = int(user["id"])
 
-    if not primary_mem:
+        # Do not let activity tracking prevent signin.
+        try:
+            db_service.execute_sql(
+                """
+                UPDATE public.users
+                SET last_login_at = NOW(),
+                    last_activity_at = NOW()
+                WHERE id = %s;
+                """,
+                (user_id,),
+            )
+        except Exception:
+            current_app.logger.exception(
+                "[AUTH] Could not update login activity for user %s",
+                user_id,
+            )
+
+        base_role = str(
+            user.get("user_role") or "viewer"
+        ).strip()
+
+        user_type = str(
+            user.get("user_type") or "Enterprise"
+        ).strip()
+
         primary_mem = db_service.fetch_one(
             """
             SELECT company_id, role, access_scope
             FROM public.company_users
-            WHERE user_id=%s
-              AND is_active=TRUE
-            ORDER BY company_id
+            WHERE user_id = %s
+              AND is_active = TRUE
+              AND is_primary = TRUE
             LIMIT 1;
             """,
-            (int(user["id"]),)
+            (user_id,),
         )
 
-    # all active memberships
-    allowed_rows = db_service.fetch_all(
-        """
-        SELECT company_id
-        FROM public.company_users
-        WHERE user_id=%s
-          AND is_active=TRUE
-        ORDER BY company_id;
-        """,
-        (int(user["id"]),)
-    ) or []
-
-    allowed_company_ids = [
-        int(r["company_id"])
-        for r in allowed_rows
-        if r.get("company_id") is not None
-    ]
-
-    company_id = int(primary_mem["company_id"]) if primary_mem and primary_mem.get("company_id") else None
-
-    if primary_mem:
-        user_role = normalize_role(primary_mem.get("role") or base_role)
-        access_scope = (primary_mem.get("access_scope") or "core").strip().lower()
-    else:
-        user_role = normalize_role(base_role)
-        access_scope = "core"
-
-    dashboards = get_dashboard_access(user_role, access_scope)
-    default_dashboard = resolve_default_dashboard(
-        user_type=user_type,
-        role=user_role,
-        access_scope=access_scope,
-    )
-    # owner fallback: include owned companies too
-    owned_rows = db_service.fetch_all(
-        """
-        SELECT id AS company_id
-        FROM public.companies
-        WHERE owner_user_id=%s
-        ORDER BY id;
-        """,
-        (int(user["id"]),)
-    ) or []
-
-    for r in owned_rows:
-        cid = r.get("company_id")
-        if cid is not None:
-            allowed_company_ids.append(int(cid))
-
-    allowed_company_ids = sorted(set(allowed_company_ids))
-
-    # safe fallback: if selected company exists, keep it in allowed list
-    if company_id is not None and int(company_id) not in allowed_company_ids:
-        allowed_company_ids.append(int(company_id))
-        allowed_company_ids = sorted(set(allowed_company_ids))
-
-    token = make_jwt(
-        user_id=user["id"],
-        email=user["email"],
-        role=user_role,
-        user_type=user_type,
-        company_id=company_id,
-        access_scope=access_scope,
-        allowed_company_ids=allowed_company_ids,
-    )
-
-    company_name = None
-    industry = None
-    sub_industry = None
-
-    if company_id:
-        try:
-            company = db_service.fetch_one(
+        if not primary_mem:
+            primary_mem = db_service.fetch_one(
                 """
-                SELECT id, name, industry, sub_industry
-                FROM public.companies
-                WHERE id=%s
+                SELECT company_id, role, access_scope
+                FROM public.company_users
+                WHERE user_id = %s
+                  AND is_active = TRUE
+                ORDER BY company_id
                 LIMIT 1;
                 """,
-                (company_id,),
-            )
-            if company:
-                company_name = company.get("name")
-                industry = company.get("industry")
-                sub_industry = company.get("sub_industry")
-        except Exception as e:
-            current_app.logger.warning(
-                "Error loading company for user %s: %s", user["id"], e
+                (user_id,),
             )
 
+        allowed_rows = db_service.fetch_all(
+            """
+            SELECT company_id
+            FROM public.company_users
+            WHERE user_id = %s
+              AND is_active = TRUE
+            ORDER BY company_id;
+            """,
+            (user_id,),
+        ) or []
+
+        allowed_company_ids = []
+
+        for row in allowed_rows:
+            company_value = row.get("company_id")
+
+            if company_value is not None:
+                allowed_company_ids.append(int(company_value))
+
+        company_id = None
+
+        if primary_mem and primary_mem.get("company_id") is not None:
+            company_id = int(primary_mem["company_id"])
+
+        if primary_mem:
+            user_role = normalize_role(
+                primary_mem.get("role") or base_role
+            )
+
+            access_scope = str(
+                primary_mem.get("access_scope") or "core"
+            ).strip().lower()
+        else:
+            user_role = normalize_role(base_role)
+            access_scope = "core"
+
+        dashboards = get_dashboard_access(
+            user_role,
+            access_scope,
+        )
+
+        default_dashboard = resolve_default_dashboard(
+            user_type=user_type,
+            role=user_role,
+            access_scope=access_scope,
+        )
+
+        owned_rows = db_service.fetch_all(
+            """
+            SELECT id AS company_id
+            FROM public.companies
+            WHERE owner_user_id = %s
+            ORDER BY id;
+            """,
+            (user_id,),
+        ) or []
+
+        for row in owned_rows:
+            owned_company_id = row.get("company_id")
+
+            if owned_company_id is not None:
+                allowed_company_ids.append(
+                    int(owned_company_id)
+                )
+
+        if company_id is not None:
+            allowed_company_ids.append(company_id)
+
+        allowed_company_ids = sorted(
+            set(allowed_company_ids)
+        )
+
+        token = make_jwt(
+            user_id=user_id,
+            email=user["email"],
+            role=user_role,
+            user_type=user_type,
+            company_id=company_id,
+            access_scope=access_scope,
+            allowed_company_ids=allowed_company_ids,
+        )
+
+        company_name = None
+        industry = None
+        sub_industry = None
+
+        if company_id is not None:
+            try:
+                company = db_service.fetch_one(
+                    """
+                    SELECT id, name, industry, sub_industry
+                    FROM public.companies
+                    WHERE id = %s
+                    LIMIT 1;
+                    """,
+                    (company_id,),
+                )
+
+                if company:
+                    company_name = company.get("name")
+                    industry = company.get("industry")
+                    sub_industry = company.get("sub_industry")
+
+            except Exception:
+                current_app.logger.exception(
+                    "[AUTH] Could not load company %s for user %s",
+                    company_id,
+                    user_id,
+                )
+
+        # This return must be outside `if company_id`.
         return jsonify({
             "message": "signin OK",
             "token": token,
             "user": {
-                "id": user["id"],
+                "id": user_id,
                 "email": user["email"],
                 "role": user_role,
                 "user_type": user_type,
                 "access_scope": access_scope,
-                "is_confirmed": bool(user.get("is_confirmed")),
+                "is_confirmed": bool(
+                    user.get("is_confirmed")
+                ),
                 "company_id": company_id,
                 "company_name": company_name,
                 "industry": industry,
@@ -1911,6 +1972,17 @@ def api_auth_signin():
             },
         }), 200
 
+    except Exception as exc:
+        current_app.logger.exception(
+            "[AUTH] Unexpected signin failure: %s",
+            exc,
+        )
+
+        return jsonify({
+            "error": "Sign in failed due to a server error.",
+            "error_type": type(exc).__name__,
+        }), 500
+    
 @app.route("/api/auth/me", methods=["GET", "OPTIONS"])
 @require_auth
 def api_auth_me():
