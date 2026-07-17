@@ -93439,7 +93439,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             tax_year_start,
                             tax_year_end,
                             status,
-                            created_by
+                            created_by_user_id
                         )
                         VALUES (%s, %s, %s, %s, %s, 'draft', %s)
                         RETURNING *;
