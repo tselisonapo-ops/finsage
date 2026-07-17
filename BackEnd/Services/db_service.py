@@ -61950,13 +61950,87 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload.get("notes"),
         ))
 
+    def _asset_tax_classify_asset(self, asset: dict) -> str:
+        current = str(asset.get("tax_asset_class") or "").strip().lower()
+        if current:
+            return current
+
+        text = " ".join(str(asset.get(k) or "") for k in (
+            "asset_name", "asset_code", "asset_class",
+            "asset_class_group", "category", "accounting_standard"
+        )).lower()
+
+        checks = [
+            (("right of use", "rou asset", "rou"), "rou_asset"),
+            (("investment property",), "investment_property"),
+            (("land",), "land"),
+            (("building", "property"), "building"),
+            (("software", "application", "system"), "software"),
+            (("trademark",), "trademark"),
+            (("patent",), "patent"),
+            (("computer", "laptop", "desktop", "server", "tablet"), "computer"),
+            (("motorcycle", "scooter", "vehicle", "car", "bicycle"), "vehicle"),
+            (("manufacturing", "production line", "factory equipment"), "manufacturing_equipment"),
+            (("warehouse", "forklift", "racking", "shelving"), "warehouse"),
+            (("furniture", "fitting"), "furniture"),
+            (("office equipment", "photocopier", "printer"), "office_equipment"),
+            (("security", "alarm", "camera", "cctv"), "security"),
+            (("medical",), "medical_equipment"),
+            (("telecom", "telephone", "network"), "telecom_equipment"),
+            (("leasehold",), "leasehold_improvement"),
+            (("bearer plant",), "bearer_plant"),
+            (("biological",), "biological_asset"),
+            (("plant", "machinery", "generator", "compressor", "tool"), "plant"),
+        ]
+
+        for words, classification in checks:
+            if any(word in text for word in words):
+                return classification
+
+        return "other"
+
+    def _asset_tax_default_rule(self, cur, authority_id: int, asset: dict, as_at):
+        tax_class = self._asset_tax_classify_asset(asset)
+
+        rules = self.fetch_all("""
+            SELECT *
+            FROM public.tax_allowance_rules
+            WHERE tax_authority_id = %s
+            AND is_active = TRUE
+            AND effective_from <= %s
+            AND (effective_to IS NULL OR effective_to >= %s)
+            ORDER BY effective_from DESC, id
+        """, (authority_id, as_at, as_at), cur=cur) or []
+
+        exact = [r for r in rules if str(r.get("tax_asset_class") or "").lower() == tax_class]
+        if exact:
+            return exact[0]
+
+        code_map = {
+            "land": ("LAND_NON_DEPRECIABLE",),
+            "building": ("BUILDINGS_GENERAL_REVIEW", "COMMERCIAL_BUILDING_REVIEW"),
+            "computer": ("PERSONAL_COMPUTER", "SERVER", "TABLET"),
+            "vehicle": ("PASSENGER_CAR", "DELIVERY_VEHICLE", "MOTORCYCLE", "BICYCLE"),
+            "furniture": ("FURNITURE_FITTINGS",),
+            "office_equipment": ("OFFICE_EQUIPMENT_ELECTRONIC", "OFFICE_EQUIPMENT_MECHANICAL"),
+            "warehouse": ("WAREHOUSE_EQUIPMENT", "FORKLIFTS", "SHELVING_RACKING"),
+            "manufacturing_equipment": ("MANUFACTURING_MACHINERY", "FACTORY_EQUIPMENT"),
+            "plant": ("GENERATORS", "COMPRESSORS", "TOOLS_HEAVY"),
+        }
+
+        for token in code_map.get(tax_class, ()):
+            for rule in rules:
+                if token in str(rule.get("rule_code") or "").upper():
+                    return rule
+
+        return None
 
     def asset_tax_calculate_run(self, company_id: int, run_id: int) -> dict:
         from decimal import Decimal, ROUND_HALF_UP
 
         schema = self.company_schema(company_id)
-        D = lambda value: Decimal(str(value or 0))
-        q2 = lambda value: D(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        D = lambda v: Decimal(str(v or 0))
+        q2 = lambda v: D(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         with self._conn_cursor() as (conn, cur):
             run = self.fetch_one(f"""
@@ -61968,7 +62042,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             if not run:
                 raise ValueError("Tax run not found.")
-
             if run["status"] == "locked":
                 raise ValueError("Cannot recalculate a locked tax run.")
 
@@ -61978,28 +62051,36 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tax_year = int(run["tax_year"])
 
             self.ensure_ppe_reporting_views(cur, company_id)
+            self.asset_tax_create_missing_profiles(company_id, cur=cur)
 
             profiles = self.fetch_all(f"""
                 SELECT
                     p.*,
-                    a.asset_code,
-                    a.asset_name,
-                    a.asset_class,
-                    a.category,
-                    a.accounting_standard,
-                    a.measurement_basis,
-                    a.fair_value_model,
-                    a.acquisition_date,
-                    a.available_for_use_date,
-                    a.cost AS register_cost,
-                    a.opening_cost,
-                    a.status AS asset_status,
-                    r.method,
-                    r.rate_percent,
-                    r.initial_allowance_percent,
-                    r.annual_allowance_percent,
-                    r.rule_code,
-                    r.rule_name
+                    a.asset_code, a.asset_name, a.asset_class,
+                    a.asset_class_group, a.category, a.accounting_standard,
+                    a.tax_asset_class,
+                    a.measurement_basis, COALESCE(a.fair_value_model, FALSE) AS fair_value_model,
+                    a.acquisition_date, a.available_for_use_date,
+                    a.cost AS register_cost, a.opening_cost,
+                    COALESCE(a.is_component_group, FALSE) AS is_component_group,
+                    r.method, r.rate_percent, r.initial_allowance_percent,
+                    r.annual_allowance_percent,         
+                                      r.rule_code,
+                    r.rule_name,
+                    r.tax_cost_basis,
+                    r.allow_vat_capitalisation,
+                    r.allow_subsequent_expenditure,
+                    r.allow_revaluation,
+                    r.allow_impairment,
+                    r.allow_disposals,
+                    r.allow_balancing_allowance,
+                    r.allow_recoupment,
+                    r.allow_private_use,
+                    r.allow_components,
+                    r.allow_fair_value,
+                    r.impairment_method,
+                    r.revaluation_method,
+                    r.allowance_pattern
                 FROM {schema}.asset_tax_profiles p
                 JOIN {schema}.assets a ON a.id = p.asset_id
                 LEFT JOIN public.tax_allowance_rules r ON r.id = p.allowance_rule_id
@@ -62007,15 +62088,67 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 AND p.tax_authority_id = %s
                 AND p.is_active = TRUE
                 AND COALESCE(a.status, 'active') NOT IN ('void', 'cancelled')
+                AND COALESCE(a.is_component_group, FALSE) = FALSE
                 ORDER BY a.id
             """, (company_id, authority_id), cur=cur) or []
 
             cur.execute(f"DELETE FROM {schema}.asset_tax_run_lines WHERE run_id = %s", (run_id,))
-
             inserted = 0
+            review_count = 0
 
             for p in profiles:
                 asset_id = int(p["asset_id"])
+
+                tax_asset_class = self._asset_tax_classify_asset(p)
+
+                if not p.get("tax_asset_class"):
+                    cur.execute(f"""
+                        UPDATE {schema}.assets
+                        SET tax_asset_class = %s
+                        WHERE company_id = %s AND id = %s
+                    """, (tax_asset_class, company_id, asset_id))
+                    p["tax_asset_class"] = tax_asset_class
+
+                if not p.get("allowance_rule_id"):
+                    rule = self._asset_tax_default_rule(cur, authority_id, p, end_date)
+                    if rule:
+                        cur.execute(f"""
+                            UPDATE {schema}.asset_tax_profiles
+                            SET allowance_rule_id = %s,
+                                is_tax_depreciable = CASE
+                                    WHEN UPPER(%s) LIKE '%%LAND_NON_DEPRECIABLE%%' THEN FALSE
+                                    ELSE is_tax_depreciable
+                                END,
+                                updated_at = NOW()
+                            WHERE id = %s AND company_id = %s
+                        """, (rule["id"], rule.get("rule_code"), p["id"], company_id))
+                        p.update({
+                            "allowance_rule_id": rule["id"],
+                            "method": rule.get("method"),
+                            "rate_percent": rule.get("rate_percent"),
+                            "initial_allowance_percent": rule.get("initial_allowance_percent"),
+                            "annual_allowance_percent": rule.get("annual_allowance_percent"),
+                            "rule_code": rule.get("rule_code"),
+                            "rule_name": rule.get("rule_name"),
+                        })
+
+                        for key in (
+                            "tax_cost_basis",
+                            "allow_vat_capitalisation",
+                            "allow_subsequent_expenditure",
+                            "allow_revaluation",
+                            "allow_impairment",
+                            "allow_disposals",
+                            "allow_balancing_allowance",
+                            "allow_recoupment",
+                            "allow_private_use",
+                            "allow_components",
+                            "allow_fair_value",
+                            "impairment_method",
+                            "revaluation_method",
+                            "allowance_pattern",
+                        ):
+                            p[key] = rule.get(key)
 
                 movements = self.fetch_one(f"""
                     SELECT
@@ -62033,27 +62166,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     FROM {schema}.vw_ppe_movements
                     WHERE company_id = %s AND asset_id = %s
                 """, (
-                    end_date,
-                    start_date, end_date,
-                    start_date, end_date,
-                    end_date, end_date, end_date,
-                    company_id, asset_id,
+                    end_date, start_date, end_date, start_date, end_date,
+                    end_date, end_date, end_date, company_id, asset_id,
                 ), cur=cur) or {}
 
                 acquisition = self.fetch_one(f"""
-                    SELECT
-                        COALESCE(SUM(
-                            CASE
-                                WHEN net_amount IS NOT NULL THEN
-                                    net_amount
-                                    + CASE
-                                        WHEN COALESCE(nonrecoverable_vat_capitalized, FALSE)
-                                        THEN COALESCE(non_recoverable_vat_amount, 0)
-                                        ELSE 0
-                                    END
-                                ELSE COALESCE(amount, 0)
-                            END
-                        ), 0) AS accounting_cost
+                    SELECT COALESCE(SUM(
+                        COALESCE(
+                            net_amount + CASE
+                                WHEN COALESCE(nonrecoverable_vat_capitalized, FALSE)
+                                THEN COALESCE(non_recoverable_vat_amount, 0)
+                                ELSE 0
+                            END,
+                            amount, gross_amount, 0
+                        )
+                    ), 0) AS capitalised_cost
                     FROM {schema}.asset_acquisitions
                     WHERE company_id = %s
                     AND asset_id = %s
@@ -62074,78 +62201,91 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     LIMIT 1
                 """, (company_id, asset_id, authority_id, start_date), cur=cur)
 
-                disposed = self.fetch_one(f"""
-                    SELECT id
-                    FROM {schema}.asset_disposals
-                    WHERE company_id = %s
-                    AND asset_id = %s
-                    AND status = 'posted'
-                    AND disposal_date BETWEEN %s AND %s
-                    LIMIT 1
-                """, (company_id, asset_id, start_date, end_date), cur=cur)
-
                 accounting_cost = q2(
-                    acquisition.get("accounting_cost")
+                    acquisition.get("capitalised_cost")
                     or p.get("opening_cost")
                     or p.get("register_cost")
                 )
-
-                profile_tax_cost = p.get("tax_cost")
-                tax_cost = q2(profile_tax_cost if profile_tax_cost is not None else accounting_cost)
-
+                tax_cost = q2(p["tax_cost"] if p.get("tax_cost") is not None else accounting_cost)
                 qualifying_factor = D(p.get("qualifying_percent") or 100) / D(100)
                 business_factor = (D(100) - D(p.get("private_use_percent") or 0)) / D(100)
                 qualifying_cost = q2(tax_cost * qualifying_factor * business_factor)
 
-                previous_wdv = q2((previous or {}).get("closing_tax_wdv"))
-                first_tax_year = p.get("tax_start_date") and start_date <= p["tax_start_date"] <= end_date
-
-                opening_wdv = previous_wdv
-                additions = qualifying_cost if first_tax_year and previous_wdv == 0 else D(0)
+                opening_wdv = q2((previous or {}).get("closing_tax_wdv"))
+                first_year = bool(p.get("tax_start_date") and start_date <= p["tax_start_date"] <= end_date)
+                additions = qualifying_cost if first_year and opening_wdv == 0 else D(0)
                 additions += q2(D(movements.get("subsequent_additions")) * qualifying_factor * business_factor)
 
                 method = str(p.get("method") or "").upper()
                 annual_rate = D(p.get("annual_allowance_percent") or p.get("rate_percent"))
                 initial_rate = D(p.get("initial_allowance_percent"))
-                depreciable = bool(p.get("is_tax_depreciable")) and p.get("allowance_rule_id") is not None
-
+                configured = bool(p.get("allowance_rule_id"))
+                depreciable = bool(p.get("is_tax_depreciable")) and configured
                 allowance_base = q2(opening_wdv + additions)
                 initial_allowance = q2(additions * initial_rate / D(100)) if depreciable else D(0)
-
                 remaining_base = max(D(0), allowance_base - initial_allowance)
 
-                if not depreciable:
+                if not depreciable or method == "CUSTOM":
                     annual_allowance = D(0)
+
                 elif method == "IMMEDIATE":
                     annual_allowance = remaining_base
+
                 elif method == "WDV":
-                    annual_allowance = q2(remaining_base * annual_rate / D(100))
+                    annual_allowance = q2(
+                        remaining_base * annual_rate / D(100)
+                    )
+
                 elif method == "SL":
-                    annual_allowance = q2(qualifying_cost * annual_rate / D(100))
-                    annual_allowance = min(annual_allowance, remaining_base)
+                    annual_allowance = min(
+                        q2(qualifying_cost * annual_rate / D(100)),
+                        remaining_base,
+                    )
+
+                elif method == "MULTI_YEAR":
+                    pattern = p.get("allowance_pattern") or []
+
+                    if isinstance(pattern, str):
+                        pattern = json.loads(pattern or "[]")
+
+                    tax_start = p.get("tax_start_date")
+                    start_year = tax_start.year if tax_start else tax_year
+                    year_index = max(0, tax_year - start_year)
+
+                    rate = (
+                        D(pattern[year_index])
+                        if year_index < len(pattern)
+                        else D(0)
+                    )
+
+                    annual_allowance = min(
+                        q2(qualifying_cost * rate / D(100)),
+                        remaining_base,
+                    )
+
                 else:
                     annual_allowance = D(0)
 
                 total_allowance = q2(initial_allowance + annual_allowance)
-                disposal_tax_value = allowance_base if disposed else D(0)
-                closing_wdv = D(0) if disposed else q2(max(D(0), allowance_base - total_allowance))
-
+                closing_wdv = q2(max(D(0), allowance_base - total_allowance))
                 carrying_amount = q2(movements.get("carrying_amount"))
                 book_depreciation = q2(movements.get("book_depreciation"))
                 temporary_difference = q2(carrying_amount - closing_wdv)
                 tax_adjustment = q2(book_depreciation - total_allowance)
 
                 notes = []
-                if not p.get("allowance_rule_id"):
-                    notes.append("No allowance rule assigned; tax WDV preserved without allowance.")
-                if not p.get("is_tax_depreciable"):
-                    notes.append("Asset marked as not tax depreciable.")
+                if not configured:
+                    notes.append("No country default rule matched; review required.")
+                    review_count += 1
+                elif method == "CUSTOM":
+                    notes.append(f"{p.get('rule_name') or 'Custom rule'} requires review.")
+                    review_count += 1
                 if D(movements.get("revaluation_movement")):
-                    notes.append("Accounting revaluation does not change tax WDV.")
+                    notes.append("Accounting revaluation left tax WDV unchanged.")
                 if D(movements.get("impairment_losses")) or D(movements.get("impairment_reversals")):
-                    notes.append("Accounting impairment movement does not change tax WDV unless included in the tax rule.")
-                if profile_tax_cost is None:
-                    notes.append("Tax cost derived from VAT-adjusted accounting acquisition cost.")
+                    notes.append("Accounting impairment left tax WDV unchanged.")
+                if p.get("tax_cost") is None:
+                    notes.append("Tax cost derived from VAT-adjusted capitalised cost.")
 
                 cur.execute(f"""
                     INSERT INTO {schema}.asset_tax_run_lines (
@@ -62159,22 +62299,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         calculation_method, rate_percent, notes
                     )
                     VALUES (
-                        %s,%s,%s,%s,%s,%s,%s,
-                        %s,%s,0,%s,%s,%s,%s,%s,%s,
-                        %s,%s,%s,%s,%s,%s,%s
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,0,0,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
                     )
                 """, (
-                    run_id, company_id, p["id"], asset_id,
-                    authority_id, p.get("allowance_rule_id"), tax_year,
-                    opening_wdv, additions, disposal_tax_value,
+                    run_id, company_id, p["id"], asset_id, authority_id,
+                    p.get("allowance_rule_id"), tax_year, opening_wdv, additions,
                     allowance_base, initial_allowance, annual_allowance,
-                    total_allowance, closing_wdv,
-                    book_depreciation, carrying_amount,
-                    tax_adjustment, temporary_difference,
+                    total_allowance, closing_wdv, book_depreciation,
+                    carrying_amount, tax_adjustment, temporary_difference,
                     method or "NONE", annual_rate,
-                    " ".join(notes) or "Calculated from asset tax profile and asset movements.",
+                    " ".join(notes) or "Calculated from country tax rule.",
                 ))
-
                 inserted += 1
 
             cur.execute(f"""
@@ -62187,8 +62323,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             updated_run = dict(cur.fetchone())
             conn.commit()
 
-        return {"run": updated_run, "line_count": inserted}
-
+        return {"run": updated_run, "line_count": inserted, "review_count": review_count}
 
     def asset_tax_get_run(self, company_id: int, run_id: int) -> dict:
         schema = self.company_schema(company_id)
