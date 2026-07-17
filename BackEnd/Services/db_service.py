@@ -82271,7 +82271,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     opening,
                     recognition_amount,
                     closing,
-                    {},
+                    Json({}),
                 ))
 
                 opening = closing
