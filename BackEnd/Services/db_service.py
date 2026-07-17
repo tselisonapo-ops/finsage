@@ -92569,10 +92569,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         cur,
         *,
-        schema: str,
-        company_id: int,
-        run: Dict[str, Any],
-        candidate: Dict[str, Any],
+        schema,
+        company_id,
+        run,
+        candidate,
+        asset_tax_run_id,
     ):
         """
         Scans IAS 16 PPE, IAS 38 intangible assets and IAS 40 investment
@@ -92623,38 +92624,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if not candidate_account_code.startswith("BS_"):
             candidate_account_code = ""
 
-        tax_run = self.fetch_one(f"""
-            SELECT
-                id,
-                tax_year_start,
-                tax_year_end,
-                status
-            FROM {schema}.asset_tax_runs
-            WHERE company_id = %s
-            AND tax_authority_id = %s
-            AND tax_year_end <= %s
-            AND status IN (
-                'approved',
-                'locked',
-                'posted'
-            )
-            ORDER BY
-                tax_year_end DESC,
-                CASE status
-                    WHEN 'posted' THEN 1
-                    WHEN 'locked' THEN 2
-                    WHEN 'approved' THEN 3
-                    ELSE 4
-                END,
-                id DESC
-            LIMIT 1;
-        """, (
-            int(company_id),
-            int(authority_id),
-            as_at,
-        ), cur=cur)
-
-        tax_run_id = tax_run["id"] if tax_run else None
+        tax_run_id = int(asset_tax_run_id)
 
         assets = self.fetch_all(f"""
             WITH movement_totals AS (
@@ -93063,15 +93033,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 # unsupported deferred-tax amount is produced.
                 tax_base = carrying_amount
 
-            elif not tax_run:
-                scan_status = "requires_review"
-                resolution_message = (
-                    "No approved, locked or posted asset-tax "
-                    "calculation exists on or before the reporting "
-                    "date. The tax base has not been determined."
-                )
-                tax_base = carrying_amount
-
             elif not tax_run_line_id or closing_tax_wdv is None:
                 scan_status = "requires_review"
                 resolution_message = (
@@ -93437,35 +93398,132 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 },
             )
 
+    def deferred_tax_prepare_asset_tax_base(
+        self,
+        *,
+        company_id: int,
+        reporting_date,
+        tax_authority_id: int,
+        user_id: int | None = None,
+    ) -> dict:
+        from datetime import date, timedelta
+
+        if isinstance(reporting_date, str):
+            reporting_date = date.fromisoformat(
+                reporting_date[:10]
+            )
+
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            run = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.asset_tax_runs
+                WHERE company_id = %s
+                AND tax_authority_id = %s
+                AND tax_year_end = %s
+                AND status <> 'void'
+                ORDER BY id DESC
+                LIMIT 1
+            """, (
+                company_id,
+                tax_authority_id,
+                reporting_date,
+            ), cur=cur)
+
+            if not run:
+                start_date = reporting_date.replace(
+                    year=reporting_date.year - 1
+                ) + timedelta(days=1)
+
+                cur.execute(f"""
+                    INSERT INTO {schema}.asset_tax_runs (
+                        company_id,
+                        tax_authority_id,
+                        tax_year,
+                        tax_year_start,
+                        tax_year_end,
+                        status,
+                        created_by_user_id
+                    )
+                    VALUES (%s,%s,%s,%s,%s,'draft',%s)
+                    RETURNING *
+                """, (
+                    company_id,
+                    tax_authority_id,
+                    reporting_date.year,
+                    start_date,
+                    reporting_date,
+                    user_id,
+                ))
+
+                run = self._row_to_dict(
+                    cur,
+                    cur.fetchone()
+                )
+
+        if run["status"] not in (
+            "locked",
+            "posted",
+        ):
+            run = self.asset_tax_calculate_run(
+                company_id,
+                int(run["id"]),
+            )
+
+        return run
+
     def deferred_tax_scan_run(
         self,
         company_id: int,
         run_id: int,
+        user_id: int | None = None,
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id = %s
+            AND id = %s
+            LIMIT 1;
+        """, (
+            company_id,
+            run_id,
+        ))
+
+        if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "draft":
+            raise ValueError(
+                "Only a draft deferred-tax run can be scanned."
+            )
+
+        prepared = self.deferred_tax_prepare_asset_tax_base(
+            company_id=company_id,
+            reporting_date=run["reporting_date"],
+            tax_authority_id=int(run["tax_authority_id"]),
+            user_id=user_id,
+        )
+
+        asset_tax_run = (
+            prepared.get("run")
+            if isinstance(prepared, dict) and prepared.get("run")
+            else prepared
+        )
+
+        if not asset_tax_run or not asset_tax_run.get("id"):
+            raise ValueError(
+                "Asset-tax calculation could not be prepared."
+            )
+
+        asset_tax_run_id = int(asset_tax_run["id"])
+
         with self._conn_cursor() as (conn, cur):
             try:
-                run = self.fetch_one(f"""
-                    SELECT *
-                    FROM {schema}.deferred_tax_runs
-                    WHERE company_id = %s
-                    AND id = %s
-                    LIMIT 1;
-                """, (
-                    company_id,
-                    run_id,
-                ), cur=cur)
-
-                if not run:
-                    raise ValueError("Deferred-tax run not found.")
-
-                if run["status"] != "draft":
-                    raise ValueError(
-                        "Only a draft deferred-tax run can be scanned."
-                    )
-
                 as_at = run["reporting_date"]
+
                 balance_sheet = self.deferred_tax_build_balance_sheet(
                     company_id,
                     as_at,
@@ -93517,6 +93575,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             company_id=company_id,
                             run=run,
                             candidate=candidate,
+                            asset_tax_run_id=asset_tax_run_id,
                         )
                         scanned += 1
                         continue
@@ -93546,14 +93605,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 conn.rollback()
                 raise
 
-        self.deferred_tax_refresh_totals(company_id, run_id)
+        self.deferred_tax_refresh_totals(
+            company_id,
+            run_id,
+        )
 
-        result = self.deferred_tax_get_run(company_id, run_id)
+        result = self.deferred_tax_get_run(
+            company_id,
+            run_id,
+        )
+
         result["scan_summary"] = {
             "balance_sheet_as_at": str(as_at),
             "candidate_count": len(candidates),
             "processed_candidate_count": scanned,
+            "asset_tax_run_id": asset_tax_run_id,
         }
+
         return result
 
     def revenue_tax_rules_list(
@@ -94437,6 +94505,345 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "taxable_revenue_to_date": taxable_to_date,
         }
 
+    def get_deferred_tax_posting_accounts(
+        self,
+        company_id: int,
+    ) -> dict:
+        settings = self.get_company_account_settings(
+            company_id
+        ) or {}
+
+        return {
+            "deferred_tax_asset":
+                settings.get("deferred_tax_asset"),
+            "deferred_tax_liability":
+                settings.get("deferred_tax_liability"),
+            "deferred_tax_expense":
+                settings.get("deferred_tax_expense"),
+            "deferred_tax_income":
+                settings.get("deferred_tax_income"),
+            "deferred_tax_oci":
+                settings.get("deferred_tax_oci"),
+            "deferred_tax_equity":
+                settings.get("deferred_tax_equity"),
+        }
+
+    def preview_deferred_tax_posting(
+        self,
+        *,
+        company_id: int,
+        run_id: int,
+        posting_date=None,
+        reference: str | None = None,
+        description: str | None = None,
+        user_id: int | None = None,
+    ) -> dict:
+        from decimal import Decimal, ROUND_HALF_UP
+        from datetime import date
+
+        def money(value):
+            return Decimal(str(value or 0)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        def account_name(code):
+            row = self.get_account_row_for_posting(
+                company_id,
+                code,
+            )
+            return row[0] if row else code
+
+        run = self.deferred_tax_get_run(
+            company_id,
+            run_id,
+        )
+
+        if not run:
+            raise ValueError("Deferred tax run not found")
+
+        if run.get("status") not in (
+            "reviewed",
+            "approved",
+        ):
+            raise ValueError(
+                "Deferred tax run must be reviewed or approved before preview"
+            )
+
+        post_date = posting_date or run.get("reporting_date")
+
+        if isinstance(post_date, str):
+            post_date = date.fromisoformat(
+                post_date[:10]
+            )
+
+        accounts = self.get_deferred_tax_posting_accounts(
+            company_id
+        )
+
+        def resolve(value, label):
+            value = str(value or "").strip()
+
+            if not value:
+                raise ValueError(
+                    f"Missing {label} account in company settings"
+                )
+
+            row = self.get_account_row_for_posting(
+                company_id,
+                value,
+            )
+
+            if not row:
+                raise ValueError(
+                    f"{label} account '{value}' not found in COA"
+                )
+
+            return str(row[1] or value).strip()
+
+        dta_code = resolve(
+            accounts.get("deferred_tax_asset"),
+            "Deferred tax asset",
+        )
+
+        dtl_code = resolve(
+            accounts.get("deferred_tax_liability"),
+            "Deferred tax liability",
+        )
+
+        tax_expense_code = resolve(
+            accounts.get("deferred_tax_expense"),
+            "Deferred tax expense",
+        )
+
+        tax_income_code = resolve(
+            accounts.get("deferred_tax_income")
+            or accounts.get("deferred_tax_expense"),
+            "Deferred tax income",
+        )
+
+        oci_code = None
+
+        if accounts.get("deferred_tax_oci"):
+            oci_code = resolve(
+                accounts.get("deferred_tax_oci"),
+                "Deferred tax OCI",
+            )
+
+        equity_code = None
+
+        if accounts.get("deferred_tax_equity"):
+            equity_code = resolve(
+                accounts.get("deferred_tax_equity"),
+                "Deferred tax equity",
+            )
+
+        lines_data = (
+            run.get("lines")
+            or self.deferred_tax_list_lines(
+                company_id,
+                run_id,
+            )
+            or []
+        )
+
+        journal_lines = []
+        totals = {
+            "profit_or_loss": money(0),
+            "oci": money(0),
+            "equity": money(0),
+            "business_combination": money(0),
+        }
+
+        for line in lines_data:
+            amount = money(
+                line.get("recognized_amount")
+            )
+
+            if amount == 0:
+                continue
+
+            destination = (
+                line.get("recognition_destination")
+                or "profit_or_loss"
+            )
+
+            totals[destination] = money(
+                totals.get(destination, money(0))
+                + amount
+            )
+
+        recognized_dta = money(
+            run.get("recognized_dta")
+        )
+
+        recognized_dtl = money(
+            run.get("recognized_dtl")
+        )
+
+        if recognized_dta > 0:
+            journal_lines.append({
+                "account_code": dta_code,
+                "account_name": account_name(dta_code),
+                "debit": float(recognized_dta),
+                "credit": 0.0,
+                "memo": "Deferred tax asset recognized",
+            })
+
+        if recognized_dtl > 0:
+            journal_lines.append({
+                "account_code": dtl_code,
+                "account_name": account_name(dtl_code),
+                "debit": 0.0,
+                "credit": float(recognized_dtl),
+                "memo": "Deferred tax liability recognized",
+            })
+
+        net_movement = money(
+            recognized_dtl - recognized_dta
+        )
+
+        base_memo = (
+            str(description or "").strip()
+            or f"Deferred tax adjustment – Run {run_id}"
+        )
+
+        if totals["oci"] != 0:
+            if not oci_code:
+                raise ValueError(
+                    "Deferred tax OCI account is not configured"
+                )
+
+            amount = abs(totals["oci"])
+
+            journal_lines.append({
+                "account_code": oci_code,
+                "account_name": account_name(oci_code),
+                "debit": float(amount)
+                if totals["oci"] < 0 else 0.0,
+                "credit": float(amount)
+                if totals["oci"] > 0 else 0.0,
+                "memo": f"{base_memo} [OCI]",
+            })
+
+        if totals["equity"] != 0:
+            if not equity_code:
+                raise ValueError(
+                    "Deferred tax equity account is not configured"
+                )
+
+            amount = abs(totals["equity"])
+
+            journal_lines.append({
+                "account_code": equity_code,
+                "account_name": account_name(equity_code),
+                "debit": float(amount)
+                if totals["equity"] < 0 else 0.0,
+                "credit": float(amount)
+                if totals["equity"] > 0 else 0.0,
+                "memo": f"{base_memo} [equity]",
+            })
+
+        pnl_amount = money(
+            net_movement
+            - totals["oci"]
+            - totals["equity"]
+        )
+
+        if pnl_amount > 0:
+            journal_lines.append({
+                "account_code": tax_expense_code,
+                "account_name": account_name(
+                    tax_expense_code
+                ),
+                "debit": float(pnl_amount),
+                "credit": 0.0,
+                "memo": f"{base_memo} [tax expense]",
+            })
+
+        elif pnl_amount < 0:
+            amount = abs(pnl_amount)
+
+            journal_lines.append({
+                "account_code": tax_income_code,
+                "account_name": account_name(
+                    tax_income_code
+                ),
+                "debit": 0.0,
+                "credit": float(amount),
+                "memo": f"{base_memo} [tax income]",
+            })
+
+        debit_total = money(sum(
+            Decimal(str(line.get("debit") or 0))
+            for line in journal_lines
+        ))
+
+        credit_total = money(sum(
+            Decimal(str(line.get("credit") or 0))
+            for line in journal_lines
+        ))
+
+        if debit_total != credit_total:
+            raise ValueError(
+                f"Deferred tax journal does not balance: "
+                f"debits {debit_total}, credits {credit_total}"
+            )
+
+        ref = (
+            str(reference or "").strip()
+            or f"DT-PREVIEW-{run_id}"
+        )
+
+        return {
+            "company_id": int(company_id),
+            "run_id": int(run_id),
+            "reporting_date": str(
+                run.get("reporting_date")
+            )[:10],
+            "posting_date": post_date.isoformat(),
+            "status": run.get("status"),
+            "tax_rate": str(
+                run.get("tax_rate") or 0
+            ),
+            "requested_by_user_id": (
+                int(user_id)
+                if user_id is not None
+                else None
+            ),
+            "summary": {
+                "recognized_dta": str(
+                    recognized_dta
+                ),
+                "recognized_dtl": str(
+                    recognized_dtl
+                ),
+                "net_movement": str(
+                    net_movement
+                ),
+                "profit_or_loss": str(
+                    pnl_amount
+                ),
+                "oci": str(
+                    totals["oci"]
+                ),
+                "equity": str(
+                    totals["equity"]
+                ),
+            },
+            "preview_journal": {
+                "date": post_date.isoformat(),
+                "ref": ref,
+                "description": base_memo,
+                "source": "deferred_tax_preview",
+                "source_id": None,
+            },
+            "preview_journal_lines": journal_lines,
+            "totals": {
+                "debit": str(debit_total),
+                "credit": str(credit_total),
+            },
+        }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

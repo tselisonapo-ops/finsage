@@ -1708,6 +1708,9 @@ const ENDPOINTS = {
     line: (cid, runId, lineId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/lines/${lineId}`,
 
+    previewPost: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/preview-post`,
+
     recalculate: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/recalculate`,
 
@@ -41013,14 +41016,15 @@ async function saveEditModal() {
   const modal = () =>
     document.getElementById("dtModal");
 
-  function openModal(title, html) {
+  function openModal(title, body = "") {
     document.getElementById("dtModalTitle").textContent = title;
-    document.getElementById("dtModalBody").innerHTML = html;
-    modal().classList.remove("hidden");
+    document.getElementById("dtModalBody").innerHTML = body;
+    document.getElementById("dtModal").classList.remove("hidden");
   }
 
   function closeModal() {
-    modal().classList.add("hidden");
+    document.getElementById("dtModal").classList.add("hidden");
+    document.getElementById("dtModalTitle").textContent = "";
     document.getElementById("dtModalBody").innerHTML = "";
   }
 
@@ -41891,7 +41895,9 @@ async function saveEditModal() {
       ` : ""}
 
       ${isApproved ? `
-        <button class="btn btn-primary" id="dtPostBtn">Post to General Ledger</button>
+        <button class="btn btn-primary" id="dtPreviewPostBtn">
+          Preview Journal
+        </button>
       ` : ""}
 
       ${canVoid ? `
@@ -42328,6 +42334,128 @@ async function saveEditModal() {
     await openRun(selectedRun.id);
   }
 
+  async function showJournalPreview() {
+    if (!selectedRun?.id) throw new Error("No deferred-tax run is selected.");
+
+    openModal("Deferred Tax Journal Preview", `<div class="dt-loading">Preparing journal preview...</div>`);
+
+    try {
+      const runId = selectedRun.id;
+      const date = String(selectedRun.reporting_date || "").slice(0, 10);
+      const reference = `DT-${runId}`;
+      const description = `Deferred tax adjustment as at ${date}`;
+
+      const res = await apiFetch(
+        ENDPOINTS.deferredTax.previewPost(cid(), runId),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            posting_date: date,
+            reference,
+            description
+          })
+        }
+      );
+
+      const preview = res?.data || {};
+      const journal = preview.preview_journal || preview.journal || preview.header || {};
+      const lines = preview.preview_journal_lines || preview.journal_lines || preview.lines || [];
+      const totals = preview.totals || {};
+
+      const totalDebit = Number(
+        totals.total_debit ??
+        totals.debit ??
+        lines.reduce((sum, line) => sum + Number(line.debit || 0), 0)
+      );
+
+      const totalCredit = Number(
+        totals.total_credit ??
+        totals.credit ??
+        lines.reduce((sum, line) => sum + Number(line.credit || 0), 0)
+      );
+
+      const difference = totalDebit - totalCredit;
+      const balanced = Math.abs(difference) <= 0.01;
+      const postingDate = String(journal.posting_date || journal.date || date).slice(0, 10) || "-";
+      const journalReference = journal.reference || journal.ref || reference;
+      const journalDescription = journal.description || description;
+
+      const rows = lines.map((line, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td><strong>${line.account_code || line.account || "-"}</strong></td>
+          <td>${line.account_name || line.name || "-"}</td>
+          <td>${line.description || line.memo || "-"}</td>
+          <td class="dt-number">${money(line.debit)}</td>
+          <td class="dt-number">${money(line.credit)}</td>
+        </tr>
+      `).join("");
+
+      document.getElementById("dtModalBody").innerHTML = `
+        <div class="dt-journal-header">
+          <div><span>Posting Date</span><strong>${postingDate}</strong></div>
+          <div><span>Reference</span><strong>${journalReference}</strong></div>
+          <div class="full"><span>Description</span><strong>${journalDescription}</strong></div>
+          <div><span>Run ID</span><strong>${runId}</strong></div>
+          <div><span>Status</span><strong class="dt-status ${selectedRun.status}">${selectedRun.status}</strong></div>
+        </div>
+
+        <div class="dt-section-heading">
+          <div>
+            <h3>Journal Lines</h3>
+            <p>These entries will be posted to the general ledger.</p>
+          </div>
+          <span>${lines.length} line${lines.length === 1 ? "" : "s"}</span>
+        </div>
+
+        ${lines.length ? `
+          <div class="dt-table-wrap">
+            <table class="dt-table dt-journal-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Account Code</th>
+                  <th>Account</th>
+                  <th>Description</th>
+                  <th class="dt-number">Debit</th>
+                  <th class="dt-number">Credit</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="4">Journal Totals</th>
+                  <th class="dt-number">${money(totalDebit)}</th>
+                  <th class="dt-number">${money(totalCredit)}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="dt-journal-balance ${balanced ? "balanced" : "unbalanced"}">
+            <span>Journal Balance</span>
+            <strong>${balanced ? "Balanced" : `Out of balance by ${money(Math.abs(difference))}`}</strong>
+          </div>
+        ` : `
+          <div class="dt-empty">
+            <strong>No journal lines were generated</strong>
+            <p>Check the recognized deferred-tax amounts and configured posting accounts.</p>
+          </div>
+        `}
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>Close</button>
+          ${lines.length && balanced
+            ? `<button type="button" class="btn btn-primary" id="dtConfirmPostBtn">Post Journal</button>`
+            : ""}
+        </div>
+      `;
+    } catch (error) {
+      closeModal();
+      throw error;
+    }
+  }
+
   async function runAction(action) {
     await apiFetch(
       ENDPOINTS.deferredTax[action](
@@ -42499,8 +42627,40 @@ async function saveEditModal() {
       showAddLineModal();
     }
 
-    if (e.target.id === "dtPostBtn") {
-      await runAction("post");
+    if (
+      e.target.id === "dtAddLineBtn" ||
+      e.target.id === "dtEmptyAddLineBtn"
+    ) {
+      showAddLineModal();
+      return;
+    }
+
+    if (e.target.id === "dtPreviewPostBtn") {
+      await showJournalPreview();
+      return;
+    }
+
+    if (e.target.id === "dtConfirmPostBtn") {
+      if (!confirm(
+        "Post this deferred-tax journal to the general ledger?"
+      )) {
+        return;
+      }
+
+      const button = e.target;
+      button.disabled = true;
+      button.textContent = "Posting...";
+
+      try {
+        await runAction("post");
+        closeModal();
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = "Post Journal";
+        throw error;
+      }
+
+      return;
     }
 
     if (e.target.id === "dtRecalculateBtn") {
@@ -42525,10 +42685,6 @@ async function saveEditModal() {
 
     if (e.target.id === "dtApproveBtn") {
       await runAction("approve");
-    }
-
-    if (e.target.id === "dtPostBtn") {
-      await runAction("post");
     }
 
     if (e.target.id === "dtVoidBtn") {

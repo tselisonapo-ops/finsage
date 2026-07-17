@@ -5728,6 +5728,88 @@ html, body {
   white-space: nowrap;
 }
 
+.dt-journal-header {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.dt-journal-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e4e7ec);
+  border-radius: 10px;
+  background: var(--surface-soft, #f9fafb);
+}
+
+.dt-journal-header > div.full {
+  grid-column: 1 / -1;
+}
+
+.dt-journal-header span {
+  color: var(--muted, #667085);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dt-journal-header strong {
+  overflow-wrap: anywhere;
+}
+
+.dt-journal-table {
+  min-width: 850px;
+}
+
+.dt-journal-table .dt-number,
+.dt-number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dt-journal-table tfoot th {
+  background: var(--surface-soft, #f9fafb);
+  border-top: 2px solid var(--border, #d0d5dd);
+}
+
+.dt-journal-balance {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.dt-journal-balance.balanced {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.dt-journal-balance.unbalanced {
+  background: #fef3f2;
+  color: #b42318;
+}
+
+.dt-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (max-width: 700px) {
+  .dt-journal-header {
+    grid-template-columns: 1fr;
+  }
+
+  .dt-journal-header > div.full {
+    grid-column: auto;
+  }
+}
   </style>
 
 </head>

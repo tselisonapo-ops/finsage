@@ -531,6 +531,7 @@ def deferred_tax_scan(cid: int, run_id: int):
         row = db_service.deferred_tax_scan_run(
             company_id,
             run_id,
+            user_id,
         )
 
         _audit(
@@ -1195,3 +1196,39 @@ def asset_tax_runs(cid: int):
             "asset_tax_runs failed"
         )
         return _error_response(str(e), 500)
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/runs/<int:run_id>/preview-post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_preview_post(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        body = request.get_json(silent=True) or {}
+
+        row = db_service.preview_deferred_tax_posting(
+            company_id=company_id,
+            run_id=run_id,
+            posting_date=body.get("posting_date"),
+            reference=body.get("reference"),
+            description=body.get("description"),
+            user_id=user_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_preview_post failed"
+        )
+        return _error_response(str(e))
