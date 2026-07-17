@@ -4949,474 +4949,715 @@ html, body {
   display: none !important;
 }
 
-/* ─── TAX ADMIN CONTAINER ───────────────────────────────── */
+/* =========================================================
+   IAS 12 DEFERRED TAX SCREEN
+   Consolidated responsive styling
+   ========================================================= */
 
-#taxAdminContainer h2 {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-#taxAdminContainer h3 {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-#taxAdminContainer h4 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #334155;
-}
-
-#taxAdminStatus {
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-/* ─── REGIME SELECTOR ───────────────────────────────────── */
-
-#taxAdminContainer label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-}
-
-#taxAdminRegime,
-#taxAdminYearLabel,
-#taxAdminYearBasis,
-#taxAdminYearFrom,
-#taxAdminYearTo {
+#screen-deferred-tax {
   width: 100%;
-  padding: 9px 12px;
-  font-size: 0.875rem;
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
-  background: #fff;
-  color: #1e293b;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  min-width: 0;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(15, 159, 181, 0.045),
+      transparent 32%
+    ),
+    #f7fafb;
+}
+
+#screen-deferred-tax *,
+#dtModal * {
   box-sizing: border-box;
 }
 
-#taxAdminRegime:focus,
-#taxAdminYearLabel:focus,
-#taxAdminYearBasis:focus,
-#taxAdminYearFrom:focus,
-#taxAdminYearTo:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-}
-
-/* ─── YEAR LIST (clickable cards) ───────────────────────── */
-
-#taxAdminYearList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.tax-admin-year-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  min-width: 240px;
-}
-
-.tax-admin-year-card:hover {
-  border-color: #2563eb;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
-}
-
-.tax-admin-year-card.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
-}
-
-.tax-admin-year-card .year-label {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: #0f172a;
-}
-
-.tax-admin-year-card .year-basis {
-  font-size: 0.75rem;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.tax-admin-year-card .year-dates {
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
-/* ─── YEAR FORM ─────────────────────────────────────────── */
-
-#taxAdminYearForm {
-  background: #f8fafc;
-}
-
-#taxAdminYearForm label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
-  display: block;
-}
-
-/* ─── BRACKETS TABLE ────────────────────────────────────── */
-
-#taxAdminBracketsTable {
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-#taxAdminBracketsTable thead {
-  background: #f1f5f9;
-}
-
-#taxAdminBracketsTable thead th {
-  padding: 10px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: left;
-  border-bottom: 2px solid var(--border, #e2e8f0);
-}
-
-#taxAdminBracketsTable tbody td {
-  padding: 8px 12px;
-  font-size: 0.875rem;
-  color: #334155;
-  border-bottom: 1px solid #f1f5f9;
-  vertical-align: middle;
-}
-
-#taxAdminBracketsTable tbody tr:last-child td {
-  border-bottom: none;
-}
-
-#taxAdminBracketsTable tbody tr:hover {
-  background: #f8fafc;
-}
-
-/* Inline inputs inside tables */
-
-#taxAdminBracketsTable input,
-#taxAdminParamsTable input,
-#taxAdminParamsTable select {
-  width: 100%;
-  padding: 6px 8px;
-  font-size: 0.85rem;
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 6px;
-  background: #fff;
-  color: #1e293b;
-  box-sizing: border-box;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-#taxAdminBracketsTable input:focus,
-#taxAdminParamsTable input:focus,
-#taxAdminParamsTable select:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
-}
-
-/* ─── PARAMETERS TABLE ──────────────────────────────────── */
-
-#taxAdminParamsTable {
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-#taxAdminParamsTable thead {
-  background: #f1f5f9;
-}
-
-#taxAdminParamsTable thead th {
-  padding: 10px 12px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: left;
-  border-bottom: 2px solid var(--border, #e2e8f0);
-}
-
-#taxAdminParamsTable tbody td {
-  padding: 8px 12px;
-  font-size: 0.875rem;
-  color: #334155;
-  border-bottom: 1px solid #f1f5f9;
-  vertical-align: middle;
-}
-
-#taxAdminParamsTable tbody tr:last-child td {
-  border-bottom: none;
-}
-
-#taxAdminParamsTable tbody tr:hover {
-  background: #f8fafc;
-}
-
-/* ─── DELETE BUTTON (inside tables) ─────────────────────── */
-
-.tax-admin-del-btn {
-  background: none;
-  border: none;
-  color: #ef4444;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-
-.tax-admin-del-btn:hover {
-  background: #fef2f2;
-}
-
-/* ─── SAVE BAR ──────────────────────────────────────────── */
-
-#taxAdminYearContent > .payroll-section > div:last-child {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 12px;
-}
+/* ---------------------------------------------------------
+   Page container
+   --------------------------------------------------------- */
 
 .dt-page {
-  max-width: 1450px;
+  width: 100%;
+  max-width: 1540px;
+  min-width: 0;
   margin: 0 auto;
-  padding: 28px;
-}
-
-.dt-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 22px;
-}
-
-.dt-header h2 {
-  margin: 4px 0 6px;
-  font-size: 28px;
+  padding: 30px 30px 48px;
   color: #102a43;
 }
 
+/* ---------------------------------------------------------
+   Header
+   --------------------------------------------------------- */
+
+.dt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 22px;
+}
+
+.dt-header > div:first-child {
+  min-width: 0;
+}
+
+.dt-header h2 {
+  margin: 8px 0 7px;
+  color: #102a43;
+  font-size: clamp(27px, 2vw, 34px);
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
 .dt-header p {
+  max-width: 650px;
   margin: 0;
-  color: #66788a;
+  color: #6b7f92;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .dt-tag {
   display: inline-flex;
-  padding: 5px 10px;
-  border-radius: 20px;
-  background: #e8f5f7;
+  align-items: center;
+  min-height: 27px;
+  padding: 4px 10px;
+  border: 1px solid #ccebed;
+  border-radius: 999px;
+  background: #eaf8f8;
   color: #087f8c;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 750;
+  letter-spacing: 0.035em;
 }
 
-.dt-actions,
+.dt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+/* Make only the main deferred-tax button prominent */
+
+#dtRefreshBtn,
+#dtNewAssetTaxRunBtn {
+  border: 1px solid #d9e2e8;
+  background: #ffffff;
+  color: #334e68;
+}
+
+#dtRefreshBtn:hover,
+#dtNewAssetTaxRunBtn:hover {
+  border-color: #a8bac8;
+  background: #f7fafc;
+}
+
+#dtNewRunBtn {
+  border-color: #0f9fb5;
+  background: #0f9fb5;
+  color: #ffffff;
+  box-shadow: 0 5px 13px rgba(15, 159, 181, 0.18);
+}
+
+#dtNewRunBtn:hover {
+  border-color: #087f8c;
+  background: #087f8c;
+}
+
+/* ---------------------------------------------------------
+   View tabs
+   --------------------------------------------------------- */
+
+.dt-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 22px;
+  border: 1px solid #dfe7ed;
+  border-radius: 11px;
+  background: #edf3f5;
+}
+
+.dt-view-tab {
+  min-height: 36px;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #62788c;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.dt-view-tab:hover {
+  color: #243b53;
+}
+
+.dt-view-tab.active {
+  background: #ffffff;
+  color: #087f8c;
+  box-shadow:
+    0 1px 3px rgba(16, 42, 67, 0.1),
+    0 3px 8px rgba(16, 42, 67, 0.05);
+}
+
+/* ---------------------------------------------------------
+   Dynamic content containers
+   --------------------------------------------------------- */
+
+#dtDeferredTaxView,
+#dtAssetTaxView,
+#dtRunList,
+#dtRunDetail,
+#dtAssetTaxRunList,
+#dtAssetTaxRunDetail {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------
+   Toolbar
+   --------------------------------------------------------- */
+
 .dt-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 16px;
 }
 
-.dt-toolbar {
-  margin-bottom: 18px;
+.dt-toolbar button {
+  min-height: 36px;
 }
+
+.dt-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+/* ---------------------------------------------------------
+   Landing-page summary cards
+   --------------------------------------------------------- */
 
 .dt-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
 
 .dt-summary-card {
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #dfe7ef;
-  border-radius: 12px;
-  box-shadow: 0 4px 14px rgba(16, 42, 67, 0.05);
+  position: relative;
+  min-width: 0;
+  min-height: 108px;
+  overflow: hidden;
+  padding: 18px 18px 17px;
+  border: 1px solid #dfe8ee;
+  border-radius: 13px;
+  background: #ffffff;
+  box-shadow: 0 5px 16px rgba(16, 42, 67, 0.05);
+}
+
+.dt-summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #20a8b8;
 }
 
 .dt-summary-card span {
   display: block;
-  margin-bottom: 7px;
-  color: #6b7c8f;
-  font-size: 13px;
+  margin-bottom: 9px;
+  color: #74889b;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .dt-summary-card strong {
+  display: block;
+  overflow: hidden;
   color: #102a43;
-  font-size: 23px;
+  font-size: clamp(20px, 1.55vw, 25px);
+  font-weight: 760;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.dt-table-wrap {
-  overflow-x: auto;
-  background: #fff;
-  border: 1px solid #dfe7ef;
+/* ---------------------------------------------------------
+   Workflow
+   Important: four columns instead of three
+   --------------------------------------------------------- */
+
+.dt-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0 20px;
+}
+
+.dt-step {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 70px;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid #dde6ec;
   border-radius: 12px;
-  box-shadow: 0 4px 14px rgba(16, 42, 67, 0.04);
+  background: #ffffff;
+  opacity: 0.58;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.dt-step > span {
+  display: grid;
+  flex: 0 0 31px;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9eff3;
+  color: #62788c;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dt-step > div {
+  min-width: 0;
+}
+
+.dt-step strong {
+  display: block;
+  overflow: hidden;
+  color: #243b53;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-step small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #7b8fa3;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-step.active {
+  border-color: #20a8b8;
+  background: #effafd;
+  opacity: 1;
+  box-shadow: 0 0 0 2px rgba(32, 168, 184, 0.08);
+}
+
+.dt-step.active > span {
+  background: #20a8b8;
+  color: #ffffff;
+}
+
+.dt-step.done {
+  border-color: #b6e2c4;
+  background: #f0fbf4;
+  opacity: 1;
+}
+
+.dt-step.done > span {
+  background: #18864c;
+  color: #ffffff;
+}
+
+/* ---------------------------------------------------------
+   Run information panel
+   --------------------------------------------------------- */
+
+.dt-run-info {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 18px;
+  padding: 16px 18px;
+  margin-bottom: 15px;
+  border: 1px solid #dfe8ee;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 3px 10px rgba(16, 42, 67, 0.035);
+}
+
+.dt-run-info > div {
+  min-width: 0;
+}
+
+.dt-run-info span,
+.dt-run-info strong {
+  display: block;
+}
+
+.dt-run-info span {
+  margin-bottom: 5px;
+  color: #7b8fa3;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.dt-run-info strong {
+  overflow: hidden;
+  color: #243b53;
+  font-size: 14px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------
+   Notices
+   --------------------------------------------------------- */
+
+.dt-lock-notice,
+.dt-help-card {
+  padding: 15px 17px;
+  margin-bottom: 17px;
+  border-radius: 11px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dt-lock-notice {
+  border: 1px solid #f0d28d;
+  background: #fff8e7;
+  color: #825c14;
+}
+
+.dt-help-card {
+  border: 1px solid #bce5eb;
+  background: #eefafd;
+  color: #285f73;
+}
+
+.dt-help-card strong {
+  color: #1f576a;
+}
+
+.dt-help-card p {
+  margin: 5px 0 0;
+}
+
+/* ---------------------------------------------------------
+   Tables
+   --------------------------------------------------------- */
+
+.dt-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid #dfe8ee;
+  border-radius: 13px;
+  background: #ffffff;
+  box-shadow: 0 5px 16px rgba(16, 42, 67, 0.045);
+  scrollbar-width: thin;
+  scrollbar-color: #b9c8d3 transparent;
+}
+
+#dtRunDetail .dt-table-wrap,
+#dtAssetTaxRunDetail .dt-table-wrap {
+  max-height: min(480px, calc(100vh - 340px));
 }
 
 .dt-table {
   width: 100%;
-  border-collapse: collapse;
+  min-width: 1000px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
 }
 
 .dt-table th,
 .dt-table td {
-  padding: 13px 15px;
-  border-bottom: 1px solid #edf1f5;
-  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf2f5;
+  color: #334e68;
+  font-size: 12px;
+  line-height: 1.4;
+  vertical-align: middle;
 }
 
-.dt-table th {
-  background: #f7fafc;
-  color: #526579;
-  font-size: 12px;
+.dt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid #dce5eb;
+  background: #f5f8fa;
+  color: #526b7e;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: left;
   text-transform: uppercase;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+.dt-table tbody tr {
+  transition: background 0.15s ease;
 }
 
 .dt-table tbody tr:hover {
-  background: #f8fbfc;
+  background: #f7fbfc;
 }
+
+.dt-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dt-table td:first-child {
+  color: #102a43;
+  font-weight: 650;
+}
+
+.dt-table td:nth-child(4),
+.dt-table td:nth-child(5),
+.dt-table td:nth-child(6),
+.dt-table td:nth-child(8),
+.dt-table th:nth-child(4),
+.dt-table th:nth-child(5),
+.dt-table th:nth-child(6),
+.dt-table th:nth-child(8),
+.dt-number {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Landing-page run list should not be unnecessarily wide */
+
+#dtRunList .dt-table,
+#dtAssetTaxRunList .dt-table {
+  min-width: 820px;
+}
+
+/* Detail table message column */
+
+#dtRunDetail .dt-table td:last-child,
+#dtAssetTaxRunDetail .dt-table td:last-child {
+  min-width: 230px;
+  max-width: 350px;
+  color: #62788c;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------
+   Status pills
+   --------------------------------------------------------- */
 
 .dt-status {
   display: inline-flex;
-  padding: 5px 9px;
-  border-radius: 20px;
-  background: #eef2f6;
-  color: #46596d;
-  font-size: 12px;
-  font-weight: 700;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #edf2f6;
+  color: #526579;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
   text-transform: capitalize;
+  white-space: nowrap;
 }
 
-.dt-status.draft {
-  background: #fff7df;
+.dt-status.draft,
+.dt-status.requires-review,
+.dt-status.review {
+  background: #fff3d6;
   color: #946200;
 }
 
 .dt-status.reviewed {
-  background: #e8f2ff;
+  background: #e8f1ff;
   color: #175cd3;
 }
 
 .dt-status.approved,
-.dt-status.posted {
-  background: #e8f8ee;
-  color: #067647;
+.dt-status.posted,
+.dt-status.resolved {
+  background: #e6f7ec;
+  color: #087443;
 }
 
 .dt-status.void,
-.dt-status.reversed {
-  background: #fdecec;
+.dt-status.reversed,
+.dt-status.error {
+  background: #fdebec;
   color: #b42318;
 }
+
+/* ---------------------------------------------------------
+   Empty, loading and error states
+   --------------------------------------------------------- */
 
 .dt-empty,
 .dt-loading,
 .dt-error {
-  padding: 45px 20px;
-  background: #fff;
-  border: 1px dashed #ccd7e2;
-  border-radius: 12px;
+  padding: 52px 24px;
+  border: 1px dashed #cbd7df;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #6b7f92;
   text-align: center;
-  color: #6b7c8f;
 }
 
 .dt-error {
+  border-color: #efc7c7;
+  background: #fffafa;
   color: #b42318;
 }
+
+/* ---------------------------------------------------------
+   Settings preview
+   --------------------------------------------------------- */
+
+.dt-setting-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dce6ec;
+  border-radius: 10px;
+  background: #f8fbfc;
+}
+
+.dt-setting-preview div {
+  min-width: 0;
+}
+
+.dt-setting-preview span {
+  display: block;
+  margin-bottom: 4px;
+  color: #74889b;
+  font-size: 12px;
+}
+
+.dt-setting-preview strong {
+  display: block;
+  overflow: hidden;
+  color: #102a43;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------
+   Modal
+   --------------------------------------------------------- */
 
 .dt-modal {
   position: fixed;
   inset: 0;
   z-index: 9999;
   display: grid;
+  padding: 24px;
   place-items: center;
 }
 
 .dt-modal.hidden {
-  display: none;
+  display: none !important;
 }
 
 .dt-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(10, 29, 46, 0.55);
+  background: rgba(10, 29, 46, 0.58);
+  backdrop-filter: blur(3px);
 }
 
 .dt-modal-card {
   position: relative;
-  width: min(700px, calc(100vw - 32px));
-  max-height: calc(100vh - 50px);
-  overflow-y: auto;
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.25);
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.27);
 }
 
 .dt-modal-header {
   display: flex;
-  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 2;
   align-items: center;
-  padding: 18px 20px;
-  border-bottom: 1px solid #e5eaf0;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 21px;
+  border-bottom: 1px solid #e2e9ee;
+  background: rgba(255, 255, 255, 0.97);
 }
 
 .dt-modal-header h3 {
   margin: 0;
   color: #102a43;
+  font-size: 18px;
+  font-weight: 750;
 }
 
 .dt-modal-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
   border: 0;
+  border-radius: 8px;
   background: transparent;
+  color: #62788c;
   font-size: 25px;
+  line-height: 1;
   cursor: pointer;
 }
 
-#dtModalBody {
-  padding: 20px;
+.dt-modal-close:hover {
+  background: #edf3f5;
+  color: #102a43;
 }
+
+#dtModalBody {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 21px;
+}
+
+/* ---------------------------------------------------------
+   Forms
+   --------------------------------------------------------- */
 
 .dt-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 15px;
 }
 
 .dt-field {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 6px;
 }
@@ -5426,323 +5667,70 @@ html, body {
 }
 
 .dt-field label {
-  font-size: 13px;
+  color: #344e63;
+  font-size: 12px;
   font-weight: 700;
-  color: #34495e;
 }
 
 .dt-field input,
 .dt-field select,
 .dt-field textarea {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ccd7e2;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #cbd7df;
   border-radius: 8px;
-  background: #fff;
+  outline: none;
+  background: #ffffff;
+  color: #243b53;
+  font: inherit;
+  font-size: 13px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .dt-field textarea {
-  min-height: 85px;
+  min-height: 88px;
   resize: vertical;
+}
+
+.dt-field input:focus,
+.dt-field select:focus,
+.dt-field textarea:focus {
+  border-color: #20a8b8;
+  box-shadow: 0 0 0 3px rgba(32, 168, 184, 0.13);
 }
 
 .dt-form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 9px;
   margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #edf1f4;
 }
 
-@media (max-width: 900px) {
-  .dt-summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 650px) {
-  .dt-page {
-    padding: 16px;
-  }
-
-  .dt-header {
-    flex-direction: column;
-  }
-
-  .dt-summary-grid,
-  .dt-form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.dt-workflow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin: 20px 0;
-}
-
-.dt-step {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #dfe7ef;
-  border-radius: 12px;
-  background: #fff;
-  opacity: 0.65;
-}
-
-.dt-step > span {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #edf2f7;
-  color: #526579;
-  font-weight: 700;
-}
-
-.dt-step strong,
-.dt-step small {
-  display: block;
-}
-
-.dt-step small {
-  margin-top: 3px;
-  color: #718096;
-}
-
-.dt-step.active {
-  opacity: 1;
-  border-color: #16a6b6;
-  background: #f0fbfc;
-}
-
-.dt-step.active > span {
-  background: #16a6b6;
-  color: #fff;
-}
-
-.dt-step.done {
-  opacity: 1;
-  border-color: #b7e4c7;
-  background: #f0fff4;
-}
-
-.dt-step.done > span {
-  background: #16834b;
-  color: #fff;
-}
-
-.dt-run-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 30px;
-  padding: 15px 18px;
-  margin-bottom: 16px;
-  border: 1px solid #dfe7ef;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.dt-run-info span,
-.dt-run-info strong {
-  display: block;
-}
-
-.dt-run-info span {
-  margin-bottom: 4px;
-  color: #718096;
-  font-size: 12px;
-}
-
-.dt-lock-notice,
-.dt-help-card {
-  padding: 14px 16px;
-  margin-bottom: 18px;
-  border-radius: 10px;
-}
-
-.dt-lock-notice {
-  color: #8a6116;
-  background: #fff8e6;
-  border: 1px solid #f6d88f;
-}
-
-.dt-help-card {
-  color: #24576b;
-  background: #edfafd;
-  border: 1px solid #bee8ef;
-}
-
-.dt-help-card p {
-  margin: 6px 0 0;
-}
-
-.dt-toolbar button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-@media (max-width: 800px) {
-  .dt-workflow {
-    grid-template-columns: 1fr;
-  }
-}
-
-.dt-setting-preview {
-  display: flex;
-  gap: 28px;
-  padding: 14px 16px;
-  border: 1px solid #dce6ee;
-  border-radius: 10px;
-  background: #f8fbfc;
-}
-
-.dt-setting-preview div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dt-setting-preview span {
-  color: #6b7c8f;
-  font-size: 12px;
-}
-
-.dt-setting-preview strong {
-  color: #102a43;
-  font-size: 15px;
-}
-
-.dt-page {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding: 22px 18px 36px;
-  box-sizing: border-box;
-}
-
-#screen-deferred-tax {
-  width: 100%;
-  max-width: none;
-}
-
-#dtRunList,
-#dtRunDetail {
-  width: 100%;
-  min-width: 0;
-}
-
-.dt-summary-grid {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
-}
-
-.dt-table-wrap {
-  width: 100%;
-  max-height: calc(100vh - 290px);
-  overflow: auto;
-  border: 1px solid #dfe7ef;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.dt-table {
-  width: 100%;
-  min-width: 1180px;
-  table-layout: fixed;
-  border-collapse: collapse;
-}
-
-.dt-table th,
-.dt-table td {
-  padding: 9px 10px;
-  font-size: 12px;
-  line-height: 1.3;
-  vertical-align: middle;
-}
-
-.dt-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #f5f8fb;
-  white-space: nowrap;
-}
-
-.dt-table th:nth-child(1),
-.dt-table td:nth-child(1) {
-  width: 220px;
-}
-
-.dt-table th:nth-child(2),
-.dt-table td:nth-child(2) {
-  width: 105px;
-}
-
-.dt-table th:nth-child(3),
-.dt-table td:nth-child(3) {
-  width: 90px;
-}
-
-.dt-table th:nth-child(4),
-.dt-table td:nth-child(4),
-.dt-table th:nth-child(5),
-.dt-table td:nth-child(5),
-.dt-table th:nth-child(6),
-.dt-table td:nth-child(6),
-.dt-table th:nth-child(8),
-.dt-table td:nth-child(8) {
-  width: 115px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.dt-table th:nth-child(7),
-.dt-table td:nth-child(7) {
-  width: 90px;
-}
-
-.dt-table th:nth-child(9),
-.dt-table td:nth-child(9) {
-  width: 130px;
-}
-
-.dt-table th:nth-child(10),
-.dt-table td:nth-child(10) {
-  width: 260px;
-}
-
-.dt-table td:nth-child(10) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  color: #66788a;
-}
-
-.dt-table tbody tr:hover {
-  background: #f8fbfd;
-}
-
-.dt-status {
-  white-space: nowrap;
-}
+/* ---------------------------------------------------------
+   Journal preview
+   --------------------------------------------------------- */
 
 .dt-journal-header {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .dt-journal-header > div {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 5px;
   padding: 12px 14px;
-  border: 1px solid var(--border, #e4e7ec);
+  border: 1px solid #e1e7ec;
   border-radius: 10px;
-  background: var(--surface-soft, #f9fafb);
+  background: #f8fafb;
 }
 
 .dt-journal-header > div.full {
@@ -5750,28 +5738,24 @@ html, body {
 }
 
 .dt-journal-header span {
-  color: var(--muted, #667085);
-  font-size: 12px;
+  color: #6f8294;
+  font-size: 11px;
   font-weight: 700;
+  text-transform: uppercase;
 }
 
 .dt-journal-header strong {
+  color: #243b53;
   overflow-wrap: anywhere;
 }
 
 .dt-journal-table {
-  min-width: 850px;
-}
-
-.dt-journal-table .dt-number,
-.dt-number {
-  text-align: right;
-  white-space: nowrap;
+  min-width: 760px;
 }
 
 .dt-journal-table tfoot th {
-  background: var(--surface-soft, #f9fafb);
-  border-top: 2px solid var(--border, #d0d5dd);
+  border-top: 2px solid #ccd7df;
+  background: #f5f8fa;
 }
 
 .dt-journal-balance {
@@ -5781,33 +5765,108 @@ html, body {
   margin-top: 14px;
   padding: 12px 14px;
   border-radius: 10px;
-  font-weight: 700;
+  font-weight: 750;
 }
 
 .dt-journal-balance.balanced {
-  background: #ecfdf3;
-  color: #027a48;
+  background: #e9f8ef;
+  color: #087443;
 }
 
 .dt-journal-balance.unbalanced {
-  background: #fef3f2;
+  background: #fdeceb;
   color: #b42318;
 }
 
-.dt-form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+/* ---------------------------------------------------------
+   Responsive
+   --------------------------------------------------------- */
+
+@media (max-width: 1180px) {
+  .dt-page {
+    padding: 26px 22px 42px;
+  }
+
+  .dt-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dt-workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 800px) {
+  .dt-header {
+    flex-direction: column;
+  }
+
+  .dt-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dt-run-info {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .dt-page {
+    padding: 18px 14px 34px;
+  }
+
+  .dt-header {
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .dt-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dt-actions .btn {
+    width: 100%;
+  }
+
+  .dt-view-tabs {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dt-summary-grid,
+  .dt-workflow,
+  .dt-run-info,
+  .dt-form-grid,
+  .dt-setting-preview,
   .dt-journal-header {
     grid-template-columns: 1fr;
   }
 
+  .dt-field.full,
   .dt-journal-header > div.full {
     grid-column: auto;
+  }
+
+  .dt-step strong,
+  .dt-step small {
+    white-space: normal;
+  }
+
+  .dt-modal {
+    padding: 10px;
+  }
+
+  .dt-modal-card {
+    max-height: calc(100vh - 20px);
+    border-radius: 12px;
+  }
+
+  #dtModalBody {
+    max-height: calc(100vh - 90px);
+    padding: 17px;
   }
 }
   </style>
@@ -15482,6 +15541,7 @@ html, body {
               type="button"
               class="dt-modal-close"
               data-dt-close
+              aria-label="Close modal"
             >
               ×
             </button>

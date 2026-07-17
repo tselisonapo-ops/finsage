@@ -82645,6 +82645,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     f"Resolver returned: {ifrs15_accounts}"
                 )
 
+            contract_number = contract.get("contract_number") or f"REV-CON-{contract_id}"
+            contract_title = contract.get("contract_title") or contract_number
+            customer_name = contract.get("customer_name") or "Customer"
+
             existing = self.fetch_one(
                 f"""
                 SELECT *
@@ -82652,15 +82656,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 WHERE company_id = %s
                 AND item_type = 'deferred_income'
                 AND (
-                        (
-                            source_module = 'ifrs15'
-                            AND source_id = %s
-                        )
+                        (source_module = 'ifrs15' AND source_id = %s)
                         OR source_revenue_contract_id = %s
-                        OR (
-                            source_module = 'ifrs15'
-                            AND source_reference = %s
-                        )
+                        OR (source_module = 'ifrs15' AND source_reference = %s)
                     )
                 ORDER BY id
                 LIMIT 1
@@ -82673,21 +82671,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     contract_number,
                 ),
                 cur=_cur,
-            )
-
-            contract_number = (
-                contract.get("contract_number")
-                or f"REV-CON-{contract_id}"
-            )
-
-            contract_title = (
-                contract.get("contract_title")
-                or contract_number
-            )
-
-            customer_name = (
-                contract.get("customer_name")
-                or "Customer"
             )
 
             start_date = (
@@ -82828,11 +82811,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 item = dict(_cur.fetchone())
 
             else:
-                item_number = self.accrual_deferral_next_number(
-                    company_id,
-                    prefix="IFRS15",
-                    cur=_cur,
-                )
+                item_number = f"IFRS15-{int(contract_id):05d}"
 
                 _cur.execute(
                     f"""
