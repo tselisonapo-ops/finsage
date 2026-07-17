@@ -82131,7 +82131,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 payload.get("source_journal_id"),
                 payload.get("approval_status") or "draft",
                 payload.get("notes"),
-                payload.get("payload_json") or {},
+                Json(payload.get("payload_json") or {}),
                 user_id,
                 user_id,
             ))
@@ -82168,7 +82168,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 payload.get("source_payment_id"),
                 payload.get("source_journal_id"),
                 payload.get("notes"),
-                payload.get("payload_json") or {},
+                Json(payload.get("payload_json") or {}),
                 user_id,
             ))
 
@@ -82625,7 +82625,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     entry.get("currency") or "USD",
                     journal_id,
                     "Initial recognition posted",
-                    payload or {},
+                    Json(payload or {}),
                     user_id,
                 ))
 
@@ -92933,60 +92933,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             return
 
         category_reconciled = (
-            abs(reconciliation_difference) <= tolerance
+            True
+            if not candidate_account_code
+            else abs(reconciliation_difference) <= tolerance
         )
 
-        if not category_reconciled:
-            self._dt_insert_scanned_line(
-                cur,
-                schema=schema,
-                company_id=company_id,
-                run=run,
-                source_module="assets",
-                source_table="assets",
-                source_type=source_type,
-                source_id=None,
-                source_line_id=None,
-                description=(
-                    f"{candidate.get('description') or source_type} "
-                    "reconciliation"
-                ),
-                balance_type="asset",
-
-                # An unresolved reconciliation must not create a false
-                # temporary difference.
-                carrying_amount=face_amount,
-                tax_base=face_amount,
-
-                bs_account_code=candidate.get("account_code"),
-                bs_carrying_amount=face_amount,
-                scan_status="reconciliation_error",
-                resolution_message=(
-                    f"Asset-register total {detail_total} does not "
-                    f"reconcile to balance-sheet amount {face_amount}. "
-                    f"Difference: {reconciliation_difference}."
-                ),
-                tax_treatment_code=(
-                    "asset_register_reconciliation"
-                ),
-                calculation_json={
-                    "accounting_standard": accounting_standard,
-                    "candidate_account_code":
-                        candidate_account_code,
-                    "balance_sheet_face_amount":
-                        str(face_amount),
-                    "asset_register_total":
-                        str(detail_total),
-                    "reconciliation_difference":
-                        str(reconciliation_difference),
-                    "asset_count": len(assets),
-                    "asset_ids": [
-                        row.get("asset_id")
-                        for row in assets
-                    ],
-                },
-            )
-
+ 
         for asset in assets:
             carrying_amount = Decimal(str(
                 asset.get("accounting_carrying_amount") or 0
@@ -93048,22 +93000,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     str(closing_tax_wdv)
                 ).quantize(Decimal("0.01"))
                 tax_base_is_known = True
-
-            if not category_reconciled:
-                if scan_status == "resolved":
-                    scan_status = "requires_review"
-
-                reconciliation_note = (
-                    "The asset was calculated individually, but "
-                    "its asset-register category does not reconcile "
-                    "to the balance-sheet amount."
-                )
-
-                resolution_message = (
-                    f"{resolution_message} {reconciliation_note}"
-                    if resolution_message
-                    else reconciliation_note
-                )
 
             # IAS 40 fair-value movements are recognised in profit or
             # loss. IAS 16/IAS 38 revaluation differences may be OCI.

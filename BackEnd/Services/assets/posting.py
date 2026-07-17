@@ -1235,17 +1235,47 @@ def _preview_impairment(
         "warnings": [],
     }
 
+def resolve_held_for_sale_account(cur, schema, company_id, asset):
+    code = (
+        asset.get("held_for_sale_account_code")
+        or coa_first_by_role(
+            cur,
+            schema,
+            company_id,
+            "held_for_sale_asset",
+        )
+        or coa_first_by_name_ilike(
+            cur,
+            schema,
+            company_id,
+            [
+                "%held for sale%",
+                "%assets held for sale%",
+                "%non-current assets held for sale%",
+            ],
+        )
+    )
+
+    return str(code).strip() if code else None
+
 def _preview_hfs(asset_row: dict, payload: dict, policy: dict, ca_before: float, cur=None) -> dict:
     et = (payload.get("event_type") or "").strip().lower()
     company_id = int(asset_row.get("company_id") or 0)
 
     asset_acct = _pick_asset_code(asset_row, "asset_account_code", policy)
-    hfs_acct = _pick_asset_code(
+    schema = company_schema(company_id)
+
+    hfs_acct = resolve_held_for_sale_account(
+        cur,
+        schema,
+        company_id,
         asset_row,
-        "held_for_sale_account_code",
-        policy,
-        "held_for_sale_asset",
     )
+
+    if not hfs_acct:
+        raise ValueError(
+            "Held-for-sale asset account is not configured."
+        )
 
     ca = D(ca_before)
     lines = []

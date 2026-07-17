@@ -41868,6 +41868,16 @@ async function saveEditModal() {
   function renderRun() {
     const run = selectedRun;
     const lines = run?.lines || [];
+    const visibleLines = lines.filter(x => x.tax_treatment_code !== "asset_register_reconciliation");
+    const ppeLines = visibleLines.filter(x => x.source_module === "assets" && x.source_type === "ppe" && x.source_id);
+
+    const ppeSummary = ppeLines.reduce((t, x) => {
+      t.carrying += Number(x.carrying_amount || 0);
+      t.taxBase += Number(x.tax_base || 0);
+      t.difference += Number(x.temporary_difference || 0);
+      t.deferredTax += Number(x.gross_deferred_tax || 0);
+      return t;
+    }, { carrying: 0, taxBase: 0, difference: 0, deferredTax: 0 });
 
     const isDraft = run.status === "draft";
     const isReviewed = run.status === "reviewed";
@@ -41964,6 +41974,22 @@ async function saveEditModal() {
       </tr>
     `).join("");
 
+    const ppeTotalRow = ppeLines.length ? `
+      <tr class="dt-total-row">
+        <td><strong>Total Property, Plant and Equipment</strong></td>
+        <td>assets</td>
+        <td>asset</td>
+        <td><strong>${money(ppeSummary.carrying)}</strong></td>
+        <td><strong>${money(ppeSummary.taxBase)}</strong></td>
+        <td><strong>${money(ppeSummary.difference)}</strong></td>
+        <td>-</td>
+        <td><strong>${money(ppeSummary.deferredTax)}</strong></td>
+        <td>Summary</td>
+        <td>${ppeLines.length} individual PPE assets</td>
+        ${isDraft ? "<td></td>" : ""}
+      </tr>
+    ` : "";
+
     const differencesSection = lines.length
       ? `
         <div class="dt-table-wrap">
@@ -41983,7 +42009,7 @@ async function saveEditModal() {
                 ${isDraft ? "<th></th>" : ""}
               </tr>
             </thead>
-            <tbody>${tableRows}</tbody>
+            <tbody>${tableRows}${ppeTotalRow}</tbody>
           </table>
         </div>
       `
