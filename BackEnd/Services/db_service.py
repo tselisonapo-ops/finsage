@@ -95380,6 +95380,87 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return run
 
+    def _dt_absorb_balance_difference(
+        self,
+        balance_sheet: Dict[str, Any],
+        balance_difference: Decimal,
+    ) -> Dict[str, Any]:
+        if abs(balance_difference) <= Decimal("0.05"):
+            return balance_sheet
+
+        equity = (
+            balance_sheet
+            .setdefault("equity_and_liabilities", {})
+            .setdefault("equity", {})
+        )
+
+        lines = equity.setdefault("lines", [])
+        totals = equity.setdefault("totals", {})
+        eql = (
+            balance_sheet["equity_and_liabilities"]
+            .setdefault("totals", {})
+            .setdefault("values", {})
+        )
+
+        amount = float(balance_difference)
+
+        if "total" in totals or "total" in eql:
+            values = {
+                "noncur": 0.0,
+                "cur": 0.0,
+                "total": amount,
+            }
+
+            totals["total"] = float(totals.get("total") or 0) + amount
+            eql["total"] = float(eql.get("total") or 0) + amount
+        else:
+            values = {"cur": amount}
+
+            totals["cur"] = float(totals.get("cur") or 0) + amount
+            eql["cur"] = float(eql.get("cur") or 0) + amount
+
+        lines.append({
+            "code": "DT_UNCLOSED_RESULT",
+            "name": (
+                "Unclosed prior-period profit"
+                if balance_difference > 0
+                else "Unclosed prior-period loss"
+            ),
+            "values": values,
+            "is_contra": False,
+            "meta": {
+                "row_type": "balancing_figure",
+                "is_deferred_tax_balancing_figure": True,
+                "requires_year_end_close": True,
+                "source_module": "year_end_close",
+                "source_type": "unclosed_profit_loss",
+                "role": "equity_retained_earnings",
+            },
+        })
+
+        balance_sheet["balance_check"] = {
+            "label": "Assets - (Equity + Liabilities)",
+            "values": (
+                {"noncur": 0.0, "cur": 0.0, "total": 0.0}
+                if "total" in values
+                else {"cur": 0.0}
+            ),
+        }
+
+        balance_sheet.setdefault("meta", {})[
+            "deferred_tax_balancing_figure"
+        ] = {
+            "amount": str(balance_difference),
+            "type": (
+                "unclosed_profit"
+                if balance_difference > 0
+                else "unclosed_loss"
+            ),
+            "requires_year_end_close": True,
+        }
+
+        return balance_sheet
+
     def deferred_tax_scan_run(
         self,
         company_id: int,
@@ -95441,14 +95522,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 raw_difference = values.get("total") if values.get("total") is not None else values.get("cur", 0)
                 balance_difference = Decimal(str(raw_difference or 0))
 
-                if abs(balance_difference) > Decimal("0.05"):
-                    result_type = "profit" if balance_difference > 0 else "loss"
+                absorbed_difference = Decimal("0.00")
 
-                    raise ValueError(
-                        f"The balance sheet has a difference of {abs(balance_difference):,.2f}. "
-                        f"This may represent prior-period {result_type} that has not yet been "
-                        f"transferred to retained earnings. Complete the Year-End Close, then "
-                        f"scan the deferred-tax run again."
+                if abs(balance_difference) > Decimal("0.05"):
+                    absorbed_difference = balance_difference
+
+                    balance_sheet = self._dt_absorb_balance_difference(
+                        balance_sheet,
+                        balance_difference,
                     )
 
                 candidates = extract_deferred_tax_candidates(
@@ -95530,6 +95611,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "candidate_count": len(candidates),
             "processed_candidate_count": scanned,
             "asset_tax_run_id": asset_tax_run_id,
+            "absorbed_balance_difference": str(absorbed_difference),
+            "year_end_close_required": abs(absorbed_difference) > Decimal("0.05"),
+            "warning": (
+                f"A balancing figure of {abs(absorbed_difference):,.2f} was temporarily "
+                f"absorbed as unclosed prior-period "
+                f"{'profit' if absorbed_difference > 0 else 'loss'}. "
+                f"Complete the Year-End Close to transfer it to retained earnings."
+                if abs(absorbed_difference) > Decimal("0.05")
+                else None
+            ),
         }
 
         return result
