@@ -24648,6 +24648,11 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS manual_tax_base NUMERIC(18,2) NULL,
         ADD COLUMN IF NOT EXISTS tax_treatment_notes TEXT NULL;
 
+        ALTER TABLE {schema}.accrual_deferral_items
+        ADD COLUMN IF NOT EXISTS source_revenue_contract_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS source_performance_obligation_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS source_billing_id BIGINT NULL;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -24689,6 +24694,39 @@ class DatabaseService:
                 '{schema}', '{schema}_accrual_deferral_items_status_ck');
             END IF;
         END $$;
+
+        DO $$
+        BEGIN
+            IF to_regclass(
+                '{schema}.revenue_contracts'
+            ) IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname =
+                    '{schema}_ad_revenue_contract_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                ALTER TABLE {schema}.accrual_deferral_items
+                ADD CONSTRAINT {schema}_ad_revenue_contract_fk
+                FOREIGN KEY (source_revenue_contract_id)
+                REFERENCES {schema}.revenue_contracts(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        {schema}_ad_source_revenue_billing_uq
+        ON {schema}.accrual_deferral_items (
+            company_id,
+            source_revenue_contract_id,
+            source_billing_id
+        )
+        WHERE source_revenue_contract_id IS NOT NULL
+        AND source_billing_id IS NOT NULL;
+
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_accrual_deferral_items_no_uq
         ON {schema}.accrual_deferral_items(company_id, item_number);
 
@@ -52609,6 +52647,16 @@ class DatabaseService:
         def money(x) -> float:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
+        def ifrs15_account_code(value) -> str:
+            if isinstance(value, dict):
+                return str(
+                    value.get("code")
+                    or value.get("account_code")
+                    or ""
+                ).strip()
+
+            return str(value or "").strip()
+
         schema = f"company_{company_id}"
 
         def _run(_cur):
@@ -52645,20 +52693,40 @@ class DatabaseService:
             revenue_contract_id = inv.get("revenue_contract_id")
             ifrs15_accounts = None
             settlement_pattern = None
+            billing_position = None
+            billing_event = None
 
             if revenue_contract_id:
                 ifrs15_accounts = self.resolve_ifrs15_accounts(company_id, cur=_cur)
 
                 contract = self.fetch_one(
                     f"""
-                    SELECT id, contract_number, payload_json
+                    SELECT
+                        id,
+                        company_id,
+                        customer_id,
+                        contract_number,
+                        contract_title,
+                        contract_currency,
+                        billed_to_date,
+                        recognized_revenue_to_date,
+                        payload_json
                     FROM {schema}.revenue_contracts
-                    WHERE id = %s
+                    WHERE company_id = %s
+                    AND id = %s
                     LIMIT 1
                     """,
-                    (int(revenue_contract_id),),
+                    (
+                        int(company_id),
+                        int(revenue_contract_id),
+                    ),
                     cur=_cur,
                 ) or {}
+
+                if not contract:
+                    raise ValueError(
+                        "Revenue contract linked to invoice was not found"
+                    )
 
                 payload_json = contract.get("payload_json") or {}
                 if isinstance(payload_json, str):
@@ -52710,6 +52778,90 @@ class DatabaseService:
 
             cust_id = inv.get("customer_id")
 
+            if revenue_contract_id:
+                contract_customer_id = contract.get("customer_id")
+
+                if not cust_id:
+                    raise ValueError(
+                        "IFRS 15 invoice must have a customer"
+                    )
+
+                if not contract_customer_id:
+                    raise ValueError(
+                        "Revenue contract must have a customer"
+                    )
+
+                if int(cust_id) != int(contract_customer_id):
+                    raise ValueError(
+                        "Invoice customer does not match "
+                        "the revenue contract customer"
+                    )
+                    
+            if revenue_contract_id:
+                invoice_net_amount = money(
+                    inv.get("subtotal_amount")
+                    or inv.get("net_amount")
+                    or inv.get("subtotal")
+                    or 0.0
+                )
+
+                if invoice_net_amount <= 0:
+                    raise ValueError(
+                        "IFRS 15 invoice net amount must be greater than zero"
+                    )
+
+                obligation_id = (
+                    inv.get("revenue_obligation_id")
+                    or inv.get("obligation_id")
+                )
+
+                billing_position = (
+                    self.calculate_revenue_billing_position(
+                        company_id=int(company_id),
+                        contract_id=int(revenue_contract_id),
+                        obligation_id=(
+                            int(obligation_id)
+                            if obligation_id not in (None, "", 0, "0")
+                            else None
+                        ),
+                        billing_amount=invoice_net_amount,
+                        cur=_cur,
+                    )
+                )
+
+                billing_event = self.record_revenue_billing_event(
+                    company_id=int(company_id),
+                    contract_id=int(revenue_contract_id),
+                    data={
+                        "obligation_id": (
+                            int(obligation_id)
+                            if obligation_id not in (None, "", 0, "0")
+                            else None
+                        ),
+                        "event_date": inv_date,
+                        "event_type": "invoice",
+                        "source_invoice_id": int(invoice_id),
+                        "amount": invoice_net_amount,
+                        "currency": (
+                            inv.get("currency")
+                            or contract.get("contract_currency")
+                            or "USD"
+                        ),
+                        "notes": f"Invoice {inv_no}",
+                        "payload_json": {
+                            "invoice_id": int(invoice_id),
+                            "invoice_number": inv_no,
+                            "customer_id": int(cust_id),
+                            "revenue_contract_id": int(
+                                revenue_contract_id
+                            ),
+                            "ifrs15_billing_position": billing_position,
+                        },
+                    },
+                    user_id=inv.get("created_by_user_id"),
+                    cur=_cur,
+                )
+
             # 3) credit enforcement (NO extra connections)
             if enforce_credit:
                 self.assert_credit_ok_for_invoice_post(company_id, inv, require_approved=require_approved)
@@ -52747,6 +52899,121 @@ class DatabaseService:
             if vat_row and vat_row[1]:
                 VAT_ACCOUNT = (vat_row[1] or "").strip()
 
+            if revenue_contract_id:
+                if not billing_position:
+                    raise ValueError(
+                        "IFRS 15 billing position was not calculated"
+                    )
+
+                invoice_net_amount = money(
+                    billing_position.get("billing_amount") or 0
+                )
+
+                contract_asset_release = money(
+                    billing_position.get(
+                        "contract_asset_release"
+                    ) or 0
+                )
+
+                contract_liability_increase = money(
+                    billing_position.get(
+                        "contract_liability_increase"
+                    ) or 0
+                )
+
+                vat_amount = money(
+                    inv.get("vat_amount")
+                    or inv.get("vat_total")
+                    or 0
+                )
+
+                gross_amount = money(
+                    invoice_net_amount + vat_amount
+                )
+
+                contract_asset_account = ifrs15_account_code(
+                    ifrs15_accounts.get("contract_asset")
+                    or ifrs15_accounts.get("CONTRACT_ASSET")
+                )
+
+                contract_liability_account = ifrs15_account_code(
+                    ifrs15_accounts.get("contract_liability")
+                    or ifrs15_accounts.get("CONTRACT_LIABILITY")
+                )
+
+                if contract_asset_release > 0:
+                    if not contract_asset_account:
+                        raise ValueError(
+                            "IFRS 15 contract asset account is not configured"
+                        )
+
+                if contract_liability_increase > 0:
+                    if not contract_liability_account:
+                        raise ValueError(
+                            "IFRS 15 contract liability account is not configured"
+                        )
+
+                jlines = [
+                    {
+                        "account_code": AR_ACCOUNT,
+                        "dc": "D",
+                        "amount": gross_amount,
+                        "description": f"Customer invoice {inv_no}",
+                    }
+                ]
+
+                if contract_asset_release > 0:
+                    jlines.append({
+                        "account_code": contract_asset_account,
+                        "dc": "C",
+                        "amount": contract_asset_release,
+                        "description": (
+                            "Transfer unbilled recognised revenue "
+                            "to trade receivables"
+                        ),
+                    })
+
+                if contract_liability_increase > 0:
+                    jlines.append({
+                        "account_code": contract_liability_account,
+                        "dc": "C",
+                        "amount": contract_liability_increase,
+                        "description": (
+                            "Billing in advance of revenue recognition"
+                        ),
+                    })
+
+                if vat_amount > 0:
+                    jlines.append({
+                        "account_code": VAT_ACCOUNT,
+                        "dc": "C",
+                        "amount": vat_amount,
+                        "description": f"Output VAT - invoice {inv_no}",
+                    })
+
+                debit_total = money(
+                    sum(
+                        float(line.get("amount") or 0)
+                        for line in jlines
+                        if line.get("dc") == "D"
+                    )
+                )
+
+                credit_total = money(
+                    sum(
+                        float(line.get("amount") or 0)
+                        for line in jlines
+                        if line.get("dc") == "C"
+                    )
+                )
+
+                if debit_total != credit_total:
+                    raise ValueError(
+                        "IFRS 15 invoice journal does not balance: "
+                        f"debits={debit_total:.2f}, "
+                        f"credits={credit_total:.2f}"
+                    )
+                
             # 5) description
             desc = (inv.get("notes") or "").strip() or f"Invoice {inv_no}"
 
@@ -52802,6 +53069,12 @@ class DatabaseService:
                 "revenue_contract_id": revenue_contract_id,
                 "ifrs15_settlement_pattern": settlement_pattern,
                 "ifrs15_accounts": ifrs15_accounts,
+                "ifrs15_billing_position": billing_position,
+                "revenue_billing_event_id": (
+                    billing_event.get("event", {}).get("id")
+                    if isinstance(billing_event, dict)
+                    else None
+                ),
             })
 
             journal_id = int(self.post_journal(company_id, journal_entry, cur=_cur) or 0)
@@ -52842,6 +53115,16 @@ class DatabaseService:
 
             if not posted_row.get("posted_journal_id"):
                 raise ValueError(f"Invoice {invoice_id} posted but posted_journal_id was not saved")
+
+            # Synchronize IFRS 15 deferred revenue mirror.
+            if revenue_contract_id:
+                self.sync_ifrs15_contract_to_accrual_item(
+                    company_id=int(company_id),
+                    contract_id=int(revenue_contract_id),
+                    source_invoice_id=int(invoice_id),
+                    user_id=inv.get("created_by_user_id"),
+                    cur=_cur,
+                )
 
             # 10) publish engagement posting activity only when invoice is engagement-linked
             try:
@@ -76225,7 +76508,202 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 conn.rollback()
                 raise
 
-    def record_revenue_billing_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
+    def calculate_revenue_billing_position(
+        self,
+        company_id: int,
+        contract_id: int,
+        *,
+        obligation_id: int | None = None,
+        billing_amount=0,
+        cur=None,
+    ) -> dict:
+        from decimal import Decimal, ROUND_HALF_UP
+
+        schema = self.company_schema(company_id)
+
+        def money(value):
+            return Decimal(str(value or 0)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        amount = money(billing_amount)
+
+        if amount <= Decimal("0.00"):
+            raise ValueError(
+                "Billing position calculation requires a positive amount"
+            )
+
+        # --------------------------------------------------
+        # Obligation-level position
+        # --------------------------------------------------
+        if obligation_id is not None:
+            obligation = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    contract_id,
+                    revenue_to_date
+                FROM {schema}.revenue_obligations
+                WHERE company_id = %s
+                AND contract_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    int(obligation_id),
+                ),
+                cur=cur,
+            )
+
+            if not obligation:
+                raise ValueError(
+                    "Revenue obligation not found"
+                )
+
+            recognised_to_date = money(
+                obligation.get("revenue_to_date")
+            )
+
+            billing_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(SUM(amount), 0) AS billed_to_date
+                FROM {schema}.revenue_billing_events
+                WHERE company_id = %s
+                AND contract_id = %s
+                AND obligation_id = %s
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                    int(obligation_id),
+                ),
+                cur=cur,
+            ) or {}
+
+        # --------------------------------------------------
+        # Contract-level position
+        # --------------------------------------------------
+        else:
+            contract = self.fetch_one(
+                f"""
+                SELECT
+                    id,
+                    recognized_revenue_to_date
+                FROM {schema}.revenue_contracts
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                ),
+                cur=cur,
+            )
+
+            if not contract:
+                raise ValueError(
+                    "Revenue contract not found"
+                )
+
+            recognised_to_date = money(
+                contract.get("recognized_revenue_to_date")
+            )
+
+            billing_row = self.fetch_one(
+                f"""
+                SELECT
+                    COALESCE(SUM(amount), 0) AS billed_to_date
+                FROM {schema}.revenue_billing_events
+                WHERE company_id = %s
+                AND contract_id = %s
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                ),
+                cur=cur,
+            ) or {}
+
+        billed_before_event = money(
+            billing_row.get("billed_to_date")
+        )
+
+        billed_after_event = money(
+            billed_before_event + amount
+        )
+
+        # Revenue already earned but not yet billed.
+        contract_asset_before = money(
+            max(
+                recognised_to_date - billed_before_event,
+                Decimal("0.00"),
+            )
+        )
+
+        # Portion of this invoice that clears the contract asset.
+        contract_asset_release = money(
+            min(
+                amount,
+                contract_asset_before,
+            )
+        )
+
+        # Any invoice amount above earned revenue becomes liability.
+        contract_liability_increase = money(
+            amount - contract_asset_release
+        )
+
+        position_after = money(
+            billed_after_event - recognised_to_date
+        )
+
+        if position_after > Decimal("0.00"):
+            position_type_after = "liability"
+        elif position_after < Decimal("0.00"):
+            position_type_after = "asset"
+        else:
+            position_type_after = "neutral"
+
+        return {
+            "billing_amount": float(amount),
+            "recognised_to_date": float(recognised_to_date),
+            "billed_before_event": float(billed_before_event),
+            "billed_after_event": float(billed_after_event),
+
+            "contract_asset_before": float(
+                contract_asset_before
+            ),
+            "contract_asset_release": float(
+                contract_asset_release
+            ),
+            "contract_liability_increase": float(
+                contract_liability_increase
+            ),
+
+            "position_after": float(
+                abs(position_after)
+            ),
+            "position_type_after": position_type_after,
+
+            "billing_before_revenue": (
+                contract_liability_increase
+                > Decimal("0.00")
+            ),
+        }
+
+    def record_revenue_billing_event(
+        self,
+        company_id: int,
+        contract_id: int,
+        data: dict,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
         import json
 
         schema = self.company_schema(company_id)
@@ -76298,6 +76776,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 if int(obligation_row.get("contract_id") or 0) != int(contract_id):
                     raise ValueError("Selected obligation does not belong to this contract")
 
+
+            billing_position = self.calculate_revenue_billing_position(
+                company_id=int(company_id),
+                contract_id=int(contract_id),
+                obligation_id=(
+                    int(obligation_id)
+                    if obligation_id is not None
+                    else None
+                ),
+                billing_amount=amount,
+                cur=cur,
+            )
+
             settlement_pattern = (
                 contract_payload.get("settlement_pattern")
                 or contract_payload.get("ifrs15_settlement_pattern")
@@ -76345,6 +76836,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload_json["contract_billing_method"] = method
             payload_json["effective_obligation_id"] = obligation_id
             payload_json["posted_via"] = "record_revenue_billing_event"
+
+            payload_json["ifrs15_billing_position"] = (
+                billing_position
+            )
+
+            payload_json["billing_before_revenue"] = bool(
+                billing_position.get(
+                    "billing_before_revenue"
+                )
+            )
+
+            payload_json["contract_asset_release"] = float(
+                billing_position.get(
+                    "contract_asset_release"
+                ) or 0
+            )
+
+            payload_json["contract_liability_increase"] = float(
+                billing_position.get(
+                    "contract_liability_increase"
+                ) or 0
+            )
+
+            payload_json["position_type_after"] = (
+                billing_position.get(
+                    "position_type_after"
+                )
+            )
 
             if obligation_row:
                 payload_json["obligation_code"] = obligation_row.get("obligation_code")
@@ -76405,7 +76924,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             conn.commit()
 
-        return {"event": row, "contract": updated_contract}
+        return {
+            "event": row,
+            "contract": updated_contract,
+            "billing_position": billing_position,
+        }
 
     def record_revenue_cash_event(self, company_id: int, contract_id: int, data: dict, user_id: int | None = None) -> dict:
         schema = self.company_schema(company_id)
@@ -81948,60 +82471,857 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tuple(params),
         ) or []    
 
-    def accrual_deferral_list_items(self, company_id: int, item_type=None, status=None):
+    def sync_ifrs15_contract_to_accrual_item(
+        self,
+        company_id: int,
+        contract_id: int,
+        *,
+        source_invoice_id=None,
+        user_id=None,
+        cur=None,
+    ):
+        """
+        Mirrors an IFRS 15 contract liability into accrual_deferral_items.
+
+        Important:
+        - This method does not create journals.
+        - This method does not generate schedule lines.
+        - Revenue recognition remains controlled by the IFRS 15 module.
+        """
+
+        from decimal import Decimal, ROUND_HALF_UP
+        from datetime import date as _date
+        from psycopg2.extras import Json
+
         schema = self.company_schema(company_id)
 
-        where = ["company_id = %s"]
+        def money(value) -> Decimal:
+            return Decimal(str(value or 0)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        def account_code(value) -> str:
+            if isinstance(value, dict):
+                return str(
+                    value.get("posting_code")
+                    or value.get("account_code")
+                    or value.get("code")
+                    or ""
+                ).strip()
+
+            if isinstance(value, (tuple, list)):
+                for candidate in value:
+                    if isinstance(candidate, str) and candidate.strip():
+                        return candidate.strip()
+
+            return str(value or "").strip()
+
+        def _run(_cur):
+            contract = self.fetch_one(
+                f"""
+                SELECT
+                    rc.id,
+                    rc.company_id,
+                    rc.customer_id,
+                    rc.contract_number,
+                    rc.contract_title,
+                    rc.contract_currency,
+                    rc.contract_date,
+                    rc.start_date,
+                    rc.end_date,
+                    rc.transaction_price,
+                    rc.billed_to_date,
+                    rc.recognized_revenue_to_date,
+                    rc.contract_liability_balance,
+                    rc.status,
+                    rc.payload_json,
+                    c.name AS customer_name
+                FROM {schema}.revenue_contracts rc
+                LEFT JOIN {schema}.customers c
+                ON c.id = rc.customer_id
+                WHERE rc.company_id = %s
+                AND rc.id = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                ),
+                cur=_cur,
+            )
+
+            if not contract:
+                raise ValueError(
+                    f"Revenue contract {contract_id} was not found"
+                )
+
+            billed_to_date = money(
+                contract.get("billed_to_date")
+            )
+
+            recognized_to_date = money(
+                contract.get("recognized_revenue_to_date")
+            )
+
+            calculated_liability = money(
+                max(
+                    billed_to_date - recognized_to_date,
+                    Decimal("0.00"),
+                )
+            )
+
+            stored_liability = money(
+                contract.get("contract_liability_balance")
+            )
+
+            # Prefer the calculated current position.
+            contract_liability = calculated_liability
+
+            # Fallback for older contracts where totals were not populated.
+            if (
+                contract_liability <= Decimal("0.00")
+                and stored_liability > Decimal("0.00")
+            ):
+                contract_liability = stored_liability
+
+            ifrs15_accounts = self.resolve_ifrs15_accounts(
+                company_id,
+                cur=_cur,
+            ) or {}
+
+            contract_liability_account = account_code(
+                ifrs15_accounts.get("contract_liability")
+                or ifrs15_accounts.get("CONTRACT_LIABILITY")
+            )
+
+            revenue_account = account_code(
+                ifrs15_accounts.get("contract_revenue")
+                or ifrs15_accounts.get("CONTRACT_REVENUE")
+                or ifrs15_accounts.get("revenue")
+                or ifrs15_accounts.get("REVENUE")
+            )
+
+            existing = self.fetch_one(
+                f"""
+                SELECT *
+                FROM {schema}.accrual_deferral_items
+                WHERE company_id = %s
+                AND source_module = 'ifrs15'
+                AND source_id = %s
+                AND item_type = 'deferred_income'
+                AND is_mirror_item = TRUE
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (
+                    int(company_id),
+                    int(contract_id),
+                ),
+                cur=_cur,
+            )
+
+            contract_number = (
+                contract.get("contract_number")
+                or f"REV-CON-{contract_id}"
+            )
+
+            contract_title = (
+                contract.get("contract_title")
+                or contract_number
+            )
+
+            customer_name = (
+                contract.get("customer_name")
+                or "Customer"
+            )
+
+            start_date = (
+                contract.get("start_date")
+                or contract.get("contract_date")
+                or _date.today()
+            )
+
+            end_date = (
+                contract.get("end_date")
+                or start_date
+            )
+
+            currency = (
+                contract.get("contract_currency")
+                or self.company_currency(company_id)
+                or "USD"
+            )
+
+            item_title = (
+                f"IFRS 15 Deferred Revenue - "
+                f"{contract_number}"
+            )
+
+            status = (
+                "active"
+                if contract_liability > Decimal("0.00")
+                else "completed"
+            )
+
+            payload_json = {
+                "mirror_only": True,
+                "accounting_owner": "ifrs15",
+                "contract_id": int(contract_id),
+                "contract_number": contract_number,
+                "contract_title": contract_title,
+                "customer_id": contract.get("customer_id"),
+                "customer_name": customer_name,
+                "billed_to_date": float(billed_to_date),
+                "recognized_revenue_to_date": float(
+                    recognized_to_date
+                ),
+                "contract_liability": float(
+                    contract_liability
+                ),
+                "source_invoice_id": (
+                    int(source_invoice_id)
+                    if source_invoice_id
+                    else None
+                ),
+                "warning": (
+                    "Mirror item only. Do not post recognition "
+                    "from the accrual and deferral module."
+                ),
+            }
+
+            if existing:
+                item_id = int(existing["id"])
+
+                _cur.execute(
+                    f"""
+                    UPDATE {schema}.accrual_deferral_items
+                    SET
+                        item_title = %s,
+                        status = %s,
+                        counterparty_type = 'customer',
+                        customer_id = %s,
+                        currency = %s,
+                        transaction_date = %s,
+                        start_date = %s,
+                        end_date = %s,
+
+                        original_amount = %s,
+                        recognized_to_date = %s,
+                        remaining_balance = %s,
+
+                        recognition_method = 'manual',
+                        frequency = 'manual',
+
+                        balance_account = %s,
+                        balance_account_role = 'contract_liability',
+                        recognition_account = %s,
+                        recognition_account_role = 'contract_revenue',
+
+                        source_invoice_id = COALESCE(%s, source_invoice_id),
+                        source_module = 'ifrs15',
+                        source_table = 'revenue_contracts',
+                        source_id = %s,
+                        source_reference = %s,
+                        source_revenue_contract_id = %s,
+
+                        is_system_generated = TRUE,
+                        is_mirror_item = TRUE,
+                        approval_status = 'approved',
+
+                        notes = %s,
+                        payload_json = %s,
+                        updated_by_user_id = %s,
+                        updated_at = NOW(),
+                        last_synced_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    RETURNING *
+                    """,
+                    (
+                        item_title,
+                        status,
+                        contract.get("customer_id"),
+                        currency,
+                        contract.get("contract_date") or start_date,
+                        start_date,
+                        end_date,
+                        contract_liability,
+                        recognized_to_date,
+                        contract_liability,
+                        contract_liability_account or None,
+                        revenue_account or None,
+                        (
+                            int(source_invoice_id)
+                            if source_invoice_id
+                            else None
+                        ),
+                        int(contract_id),
+                        contract_number,
+                        int(contract_id),
+                        (
+                            "System-generated IFRS 15 deferred "
+                            f"revenue mirror for {contract_number}. "
+                            "Do not post this item separately."
+                        ),
+                        Json(payload_json),
+                        int(user_id) if user_id else None,
+                        int(company_id),
+                        item_id,
+                    ),
+                )
+
+                item = dict(_cur.fetchone())
+
+            else:
+                item_number = self.accrual_deferral_next_number(
+                    company_id,
+                    prefix="IFRS15",
+                )
+
+                _cur.execute(
+                    f"""
+                    INSERT INTO {schema}.accrual_deferral_items (
+                        company_id,
+                        item_number,
+                        item_title,
+                        item_type,
+                        status,
+
+                        counterparty_type,
+                        customer_id,
+                        currency,
+
+                        transaction_date,
+                        start_date,
+                        end_date,
+
+                        original_amount,
+                        recognized_to_date,
+                        remaining_balance,
+
+                        recognition_method,
+                        frequency,
+
+                        balance_account,
+                        balance_account_role,
+                        recognition_account,
+                        recognition_account_role,
+
+                        vat_amount,
+                        tax_mode,
+
+                        source_invoice_id,
+                        source_module,
+                        source_table,
+                        source_id,
+                        source_reference,
+                        source_revenue_contract_id,
+
+                        is_system_generated,
+                        is_mirror_item,
+
+                        approval_status,
+                        approved_by_user_id,
+                        approved_at,
+
+                        notes,
+                        payload_json,
+
+                        created_by_user_id,
+                        updated_by_user_id,
+                        last_synced_at
+                    )
+                    VALUES (
+                        %s,%s,%s,'deferred_income',%s,
+                        'customer',%s,%s,
+                        %s,%s,%s,
+                        %s,%s,%s,
+                        'manual','manual',
+                        %s,'contract_liability',
+                        %s,'contract_revenue',
+                        0,'no_vat',
+                        %s,
+                        'ifrs15',
+                        'revenue_contracts',
+                        %s,%s,%s,
+                        TRUE,TRUE,
+                        'approved',%s,NOW(),
+                        %s,%s,
+                        %s,%s,NOW()
+                    )
+                    RETURNING *
+                    """,
+                    (
+                        int(company_id),
+                        item_number,
+                        item_title,
+                        status,
+                        contract.get("customer_id"),
+                        currency,
+                        contract.get("contract_date") or start_date,
+                        start_date,
+                        end_date,
+                        contract_liability,
+                        recognized_to_date,
+                        contract_liability,
+                        contract_liability_account or None,
+                        revenue_account or None,
+                        (
+                            int(source_invoice_id)
+                            if source_invoice_id
+                            else None
+                        ),
+                        int(contract_id),
+                        contract_number,
+                        int(contract_id),
+                        int(user_id) if user_id else None,
+                        (
+                            "System-generated IFRS 15 deferred "
+                            f"revenue mirror for {contract_number}. "
+                            "Do not post this item separately."
+                        ),
+                        Json(payload_json),
+                        int(user_id) if user_id else None,
+                        int(user_id) if user_id else None,
+                    ),
+                )
+
+                item = dict(_cur.fetchone())
+
+            # Mirror items must not contain accrual recognition schedules.
+            _cur.execute(
+                f"""
+                DELETE FROM {schema}.accrual_deferral_schedule_lines
+                WHERE company_id = %s
+                AND item_id = %s
+                AND status = 'pending'
+                """,
+                (
+                    int(company_id),
+                    int(item["id"]),
+                ),
+            )
+
+            return {
+                "item": item,
+                "contract_id": int(contract_id),
+                "contract_number": contract_number,
+                "contract_liability": float(contract_liability),
+                "status": status,
+            }
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, _cur):
+            try:
+                result = _run(_cur)
+                conn.commit()
+                return result
+            except Exception:
+                conn.rollback()
+                raise
+
+    def accrual_deferral_list_items(
+        self,
+        company_id: int,
+        item_type=None,
+        status=None,
+        source_module=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        where = ["adi.company_id = %s"]
         params = [int(company_id)]
 
         if item_type:
-            where.append("item_type = %s")
-            params.append(item_type)
+            where.append("adi.item_type = %s")
+            params.append(str(item_type).strip())
 
         if status:
-            where.append("status = %s")
-            params.append(status)
+            where.append("adi.status = %s")
+            params.append(str(status).strip())
 
-        return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.accrual_deferral_items
+        if source_module:
+            where.append("adi.source_module = %s")
+            params.append(str(source_module).strip())
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                adi.*,
+
+                c.name AS customer_name,
+                s.name AS supplier_name,
+
+                rc.contract_number,
+                rc.contract_title,
+                rc.billed_to_date AS ifrs15_billed_to_date,
+                rc.recognized_revenue_to_date
+                    AS ifrs15_recognized_to_date,
+                rc.contract_liability_balance
+                    AS ifrs15_contract_liability_balance,
+                rc.contract_asset_balance
+                    AS ifrs15_contract_asset_balance,
+
+                i.number AS source_invoice_number,
+                i.invoice_date AS source_invoice_date,
+
+                COALESCE(schedule_summary.schedule_line_count, 0)
+                    AS schedule_line_count,
+
+                COALESCE(schedule_summary.pending_line_count, 0)
+                    AS pending_line_count,
+
+                COALESCE(schedule_summary.posted_line_count, 0)
+                    AS posted_line_count,
+
+                CASE
+                    WHEN adi.is_mirror_item = TRUE
+                        THEN 'ifrs15_mirror'
+                    WHEN adi.source_module IS NOT NULL
+                        THEN adi.source_module
+                    ELSE 'manual'
+                END AS display_source_type
+
+            FROM {schema}.accrual_deferral_items adi
+
+            LEFT JOIN {schema}.customers c
+            ON c.id = adi.customer_id
+
+            LEFT JOIN {schema}.suppliers s
+            ON s.id = adi.supplier_id
+
+            LEFT JOIN {schema}.revenue_contracts rc
+            ON rc.id = adi.source_revenue_contract_id
+            AND adi.source_module = 'ifrs15'
+
+            LEFT JOIN {schema}.invoices i
+            ON i.id = adi.source_invoice_id
+
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) AS schedule_line_count,
+
+                    COUNT(*) FILTER (
+                        WHERE adsl.status = 'pending'
+                    ) AS pending_line_count,
+
+                    COUNT(*) FILTER (
+                        WHERE adsl.status = 'posted'
+                    ) AS posted_line_count
+
+                FROM {schema}.accrual_deferral_schedule_lines adsl
+                WHERE adsl.company_id = adi.company_id
+                AND adsl.item_id = adi.id
+            ) schedule_summary ON TRUE
+
             WHERE {" AND ".join(where)}
-            ORDER BY created_at DESC, id DESC
-        """, tuple(params))
 
+            ORDER BY
+                adi.is_mirror_item DESC,
+                adi.created_at DESC,
+                adi.id DESC
+            """,
+            tuple(params),
+        )
 
-    def accrual_deferral_get_item(self, company_id: int, item_id: int):
+    def accrual_deferral_get_item(
+        self,
+        company_id: int,
+        item_id: int,
+    ):
+        from decimal import Decimal, ROUND_HALF_UP
+
         schema = self.company_schema(company_id)
 
-        item = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.accrual_deferral_items
-            WHERE company_id = %s AND id = %s
-        """, (int(company_id), int(item_id)))
+        def money(value):
+            return Decimal(str(value or 0)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+
+        item = self.fetch_one(
+            f"""
+            SELECT
+                adi.*,
+
+                c.name AS customer_name,
+                s.name AS supplier_name,
+
+                rc.contract_number,
+                rc.contract_title,
+                rc.contract_currency,
+                rc.transaction_price,
+                rc.billed_to_date AS ifrs15_billed_to_date,
+                rc.recognized_revenue_to_date
+                    AS ifrs15_recognized_to_date,
+                rc.contract_asset_balance
+                    AS ifrs15_contract_asset_balance,
+                rc.contract_liability_balance
+                    AS ifrs15_contract_liability_balance,
+
+                i.number AS source_invoice_number,
+                i.invoice_date AS source_invoice_date,
+                i.status AS source_invoice_status,
+                i.posted_journal_id
+                    AS source_invoice_journal_id
+
+            FROM {schema}.accrual_deferral_items adi
+
+            LEFT JOIN {schema}.customers c
+            ON c.id = adi.customer_id
+
+            LEFT JOIN {schema}.suppliers s
+            ON s.id = adi.supplier_id
+
+            LEFT JOIN {schema}.revenue_contracts rc
+            ON rc.id = adi.source_revenue_contract_id
+            AND adi.source_module = 'ifrs15'
+
+            LEFT JOIN {schema}.invoices i
+            ON i.id = adi.source_invoice_id
+
+            WHERE adi.company_id = %s
+            AND adi.id = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(item_id),
+            ),
+        )
 
         if not item:
             return None
 
-        schedule = self.fetch_all(f"""
+        schedule = self.fetch_all(
+            f"""
             SELECT *
             FROM {schema}.accrual_deferral_schedule_lines
-            WHERE company_id = %s AND item_id = %s
+            WHERE company_id = %s
+            AND item_id = %s
             ORDER BY line_no
-        """, (int(company_id), int(item_id)))
+            """,
+            (
+                int(company_id),
+                int(item_id),
+            ),
+        )
 
-        events = self.fetch_all(f"""
+        events = self.fetch_all(
+            f"""
             SELECT *
             FROM {schema}.accrual_deferral_events
-            WHERE company_id = %s AND item_id = %s
+            WHERE company_id = %s
+            AND item_id = %s
             ORDER BY event_date DESC, id DESC
-        """, (int(company_id), int(item_id)))
+            """,
+            (
+                int(company_id),
+                int(item_id),
+            ),
+        )
+
+        original_amount = money(
+            item.get("original_amount")
+        )
+
+        recognized_to_date = money(
+            item.get("recognized_to_date")
+        )
+
+        remaining_balance = money(
+            item.get("remaining_balance")
+        )
+
+        if original_amount > 0:
+            recognized_percent = (
+                recognized_to_date
+                / original_amount
+                * Decimal("100")
+            ).quantize(Decimal("0.01"))
+        else:
+            recognized_percent = Decimal("0.00")
+
+        source = {
+            "module": item.get("source_module"),
+            "table": item.get("source_table"),
+            "id": item.get("source_id"),
+            "reference": item.get("source_reference"),
+            "invoice_id": item.get("source_invoice_id"),
+            "invoice_number": item.get(
+                "source_invoice_number"
+            ),
+            "revenue_contract_id": item.get(
+                "source_revenue_contract_id"
+            ),
+            "contract_number": item.get(
+                "contract_number"
+            ),
+            "contract_title": item.get(
+                "contract_title"
+            ),
+            "customer_id": item.get("customer_id"),
+            "customer_name": item.get(
+                "customer_name"
+            ),
+            "is_system_generated": bool(
+                item.get("is_system_generated")
+            ),
+            "is_mirror_item": bool(
+                item.get("is_mirror_item")
+            ),
+        }
+
+        balances = {
+            "original_amount": float(original_amount),
+            "recognized_to_date": float(
+                recognized_to_date
+            ),
+            "remaining_balance": float(
+                remaining_balance
+            ),
+            "recognized_percent": float(
+                recognized_percent
+            ),
+            "balance_account": item.get(
+                "balance_account"
+            ),
+            "balance_account_role": item.get(
+                "balance_account_role"
+            ),
+            "recognition_account": item.get(
+                "recognition_account"
+            ),
+            "recognition_account_role": item.get(
+                "recognition_account_role"
+            ),
+        }
+
+        ifrs15 = None
+
+        if item.get("source_module") == "ifrs15":
+            billed = money(
+                item.get("ifrs15_billed_to_date")
+            )
+
+            recognized = money(
+                item.get("ifrs15_recognized_to_date")
+            )
+
+            calculated_liability = money(
+                max(
+                    billed - recognized,
+                    Decimal("0.00"),
+                )
+            )
+
+            calculated_asset = money(
+                max(
+                    recognized - billed,
+                    Decimal("0.00"),
+                )
+            )
+
+            ifrs15 = {
+                "contract_number": item.get(
+                    "contract_number"
+                ),
+                "contract_title": item.get(
+                    "contract_title"
+                ),
+                "transaction_price": float(
+                    money(item.get("transaction_price"))
+                ),
+                "billed_to_date": float(billed),
+                "recognized_revenue_to_date": float(
+                    recognized
+                ),
+                "contract_liability": float(
+                    calculated_liability
+                ),
+                "contract_asset": float(
+                    calculated_asset
+                ),
+                "accounting_owner": "ifrs15",
+                "mirror_only": True,
+                "posting_allowed": False,
+            }
 
         return {
             "item": item,
             "schedule": schedule,
             "events": events,
+            "source": source,
+            "balances": balances,
+            "ifrs15": ifrs15,
         }
 
+    def backfill_ifrs15_deferred_revenue_items(
+        self,
+        company_id: int,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                contracts = self.fetch_all(
+                    f"""
+                    SELECT
+                        id,
+                        billed_to_date,
+                        recognized_revenue_to_date,
+                        contract_liability_balance
+                    FROM {schema}.revenue_contracts
+                    WHERE company_id = %s
+                    AND (
+                            COALESCE(billed_to_date, 0)
+                            >
+                            COALESCE(
+                                recognized_revenue_to_date,
+                                0
+                            )
+                            OR
+                            COALESCE(
+                                contract_liability_balance,
+                                0
+                            ) > 0
+                    )
+                    ORDER BY id
+                    """,
+                    (int(company_id),),
+                    cur=cur,
+                )
+
+                created_or_updated = []
+
+                for contract in contracts:
+                    result = (
+                        self.sync_ifrs15_contract_to_accrual_item(
+                            company_id=int(company_id),
+                            contract_id=int(contract["id"]),
+                            user_id=user_id,
+                            cur=cur,
+                        )
+                    )
+
+                    created_or_updated.append(result)
+
+                conn.commit()
+
+                return {
+                    "company_id": int(company_id),
+                    "contracts_found": len(contracts),
+                    "items_synced": len(created_or_updated),
+                    "items": created_or_updated,
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
 
     def accrual_deferral_next_number(self, company_id: int, prefix="AD"):
         schema = self.company_schema(company_id)
@@ -82028,26 +83348,125 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         # Global fallback
         return "USD"
 
-    def accrual_deferral_create_item(self, company_id: int, payload: dict, user_id=None):
+    def accrual_deferral_create_item(
+        self,
+        company_id: int,
+        payload: dict,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
 
-        item_type = payload.get("item_type") or "prepaid_expense"
-        item_number = payload.get("item_number") or self.accrual_deferral_next_number(company_id)
+        item_type = str(
+            payload.get("item_type") or "prepaid_expense"
+        ).strip()
 
+        requested_status = str(
+            payload.get("status") or "draft"
+        ).strip().lower()
+
+        item_number = (
+            payload.get("item_number")
+            or self.accrual_deferral_next_number(company_id)
+        )
+
+        # --------------------------------------------------
+        # Resolve balance-sheet account
+        # --------------------------------------------------
+        balance_account = str(
+            payload.get("balance_account") or ""
+        ).strip()
+
+        balance_account_role = str(
+            payload.get("balance_account_role")
+            or item_type
+        ).strip()
+
+        if not balance_account:
+            balance_row = self.accrual_deferral_account_by_role(
+                company_id,
+                balance_account_role,
+            )
+
+            balance_account = str(
+                balance_row.get("code") or ""
+            ).strip()
+
+        if not balance_account:
+            raise ValueError(
+                f"Balance account could not be resolved for {item_type}"
+            )
+
+        # --------------------------------------------------
+        # Resolve recognition expense/income account
+        # --------------------------------------------------
+        recognition_account = str(
+            payload.get("recognition_account") or ""
+        ).strip()
+
+        recognition_account_role = str(
+            payload.get("recognition_account_role") or ""
+        ).strip()
+
+        if not recognition_account and recognition_account_role:
+            recognition_row = self.accrual_deferral_account_by_role(
+                company_id,
+                recognition_account_role,
+            )
+
+            recognition_account = str(
+                recognition_row.get("code") or ""
+            ).strip()
+
+        if requested_status == "active" and not recognition_account:
+            raise ValueError(
+                "Select a recognition expense or income account "
+                "before activating this accrual/deferral item"
+            )
+
+        # --------------------------------------------------
+        # Other accounts
+        # --------------------------------------------------
+        settlement_account = str(
+            payload.get("settlement_account") or ""
+        ).strip() or None
+
+        settlement_role = str(
+            payload.get("settlement_role") or ""
+        ).strip() or None
+
+        tax_account = str(
+            payload.get("tax_account") or ""
+        ).strip() or None
+
+        # --------------------------------------------------
+        # Validate dates and amount
+        # --------------------------------------------------
         start_date = _date(payload.get("start_date"))
         end_date = _date(payload.get("end_date"))
-        transaction_date = _date(payload.get("transaction_date")) or start_date
+
+        transaction_date = (
+            _date(payload.get("transaction_date"))
+            or start_date
+        )
 
         if not start_date or not end_date:
-            raise ValueError("start_date and end_date are required")
+            raise ValueError(
+                "start_date and end_date are required"
+            )
 
         if end_date < start_date:
-            raise ValueError("end_date cannot be before start_date")
+            raise ValueError(
+                "end_date cannot be before start_date"
+            )
 
-        original_amount = _d(payload.get("original_amount"))
+        original_amount = _d(
+            payload.get("original_amount")
+        )
 
         if original_amount <= 0:
-            raise ValueError("original_amount must be greater than zero")
+            raise ValueError(
+                "original_amount must be greater than zero"
+            )
 
         with self.transaction() as (conn, cur):
             cur.execute(f"""
@@ -82071,7 +83490,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     recognition_method,
                     frequency,
                     balance_account,
+                    balance_account_role,
                     recognition_account,
+                    recognition_account_role,
+                    settlement_account,
+                    settlement_role,
                     tax_account,
                     vat_amount,
                     tax_mode,
@@ -82088,22 +83511,26 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 )
                 VALUES (
                     %s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,
-                    %s,%s,%s,%s,
-                    %s,0,%s,
-                    %s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,0,
                     %s,%s,%s,%s,%s,
                     %s,%s,%s,%s,%s,
-                    %s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
                     %s,%s
                 )
                 RETURNING *
             """, (
                 int(company_id),
                 item_number,
-                payload.get("item_title") or payload.get("title") or item_number,
+                (
+                    payload.get("item_title")
+                    or payload.get("title")
+                    or item_number
+                ),
                 item_type,
-                payload.get("status") or "draft",
+                requested_status,
+
                 payload.get("counterparty_type"),
                 payload.get("customer_id"),
                 payload.get("supplier_id"),
@@ -82112,23 +83539,33 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     payload.get("currency")
                     or self.company_currency(company_id)
                 ),
+
                 transaction_date,
                 start_date,
                 end_date,
                 original_amount,
+
                 original_amount,
                 payload.get("recognition_method") or "straight_line",
                 payload.get("frequency") or "monthly",
-                payload.get("balance_account"),
-                payload.get("recognition_account"),
-                payload.get("tax_account"),
+
+                balance_account,
+                balance_account_role,
+                recognition_account or None,
+                recognition_account_role or None,
+
+                settlement_account,
+                settlement_role,
+                tax_account,
                 _d(payload.get("vat_amount")),
                 payload.get("tax_mode") or "exclusive",
+
                 payload.get("source_invoice_id"),
                 payload.get("source_bill_id"),
                 payload.get("source_receipt_id"),
                 payload.get("source_payment_id"),
                 payload.get("source_journal_id"),
+
                 payload.get("approval_status") or "draft",
                 payload.get("notes"),
                 Json(payload.get("payload_json") or {}),
@@ -82155,7 +83592,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     payload_json,
                     created_by_user_id
                 )
-                VALUES (%s,%s,%s,'initial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (
+                    %s,%s,%s,'initial',
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s
+                )
             """, (
                 int(company_id),
                 item["id"],
@@ -82178,8 +83619,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 cur=cur,
             )
 
-        return self.accrual_deferral_get_item(company_id, item["id"])
-
+        return self.accrual_deferral_get_item(
+            company_id,
+            item["id"],
+        )
 
     def accrual_deferral_generate_schedule(self, company_id: int, item_id: int, cur=None):
         schema = self.company_schema(company_id)
@@ -82288,8 +83731,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             raise
 
 
-    def accrual_deferral_update_item(self, company_id: int, item_id: int, payload: dict, user_id=None):
+    def accrual_deferral_update_item(
+        self,
+        company_id: int,
+        item_id: int,
+        payload: dict,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
+
+        existing = self.accrual_deferral_get_item(
+            company_id,
+            item_id,
+        )
+
+        if not existing:
+            return None
 
         allowed = {
             "item_title",
@@ -82306,7 +83763,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "recognition_method",
             "frequency",
             "balance_account",
+            "balance_account_role",
             "recognition_account",
+            "recognition_account_role",
+            "settlement_account",
+            "settlement_role",
             "tax_account",
             "vat_amount",
             "tax_mode",
@@ -82314,6 +83775,198 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "notes",
             "payload_json",
         }
+
+        # --------------------------------------------------
+        # Resolve final status
+        # --------------------------------------------------
+        new_status = str(
+            payload.get("status")
+            if "status" in payload
+            else existing.get("status")
+            or "draft"
+        ).strip().lower()
+
+        if "status" in payload:
+            payload["status"] = new_status
+
+        # --------------------------------------------------
+        # Resolve balance account
+        # --------------------------------------------------
+        balance_account = str(
+            payload.get("balance_account")
+            if "balance_account" in payload
+            else existing.get("balance_account")
+            or ""
+        ).strip()
+
+        balance_account_role = str(
+            payload.get("balance_account_role")
+            if "balance_account_role" in payload
+            else existing.get("balance_account_role")
+            or existing.get("item_type")
+            or ""
+        ).strip()
+
+        if not balance_account and balance_account_role:
+            balance_row = self.accrual_deferral_account_by_role(
+                company_id,
+                balance_account_role,
+            )
+
+            balance_account = str(
+                balance_row.get("code") or ""
+            ).strip()
+
+            payload["balance_account"] = (
+                balance_account or None
+            )
+
+        if not balance_account:
+            raise ValueError(
+                "A balance-sheet account is required "
+                "for this accrual/deferral item"
+            )
+
+        if "balance_account_role" in payload:
+            payload["balance_account_role"] = (
+                balance_account_role or None
+            )
+
+        # --------------------------------------------------
+        # Resolve recognition account
+        # --------------------------------------------------
+        recognition_account = str(
+            payload.get("recognition_account")
+            if "recognition_account" in payload
+            else existing.get("recognition_account")
+            or ""
+        ).strip()
+
+        recognition_account_role = str(
+            payload.get("recognition_account_role")
+            if "recognition_account_role" in payload
+            else existing.get("recognition_account_role")
+            or ""
+        ).strip()
+
+        if not recognition_account and recognition_account_role:
+            recognition_row = self.accrual_deferral_account_by_role(
+                company_id,
+                recognition_account_role,
+            )
+
+            recognition_account = str(
+                recognition_row.get("code") or ""
+            ).strip()
+
+            payload["recognition_account"] = (
+                recognition_account or None
+            )
+
+        if "recognition_account_role" in payload:
+            payload["recognition_account_role"] = (
+                recognition_account_role or None
+            )
+
+        if new_status == "active" and not recognition_account:
+            raise ValueError(
+                "Select a recognition expense or income account "
+                "before activating this item"
+            )
+
+        # --------------------------------------------------
+        # Validate dates
+        # --------------------------------------------------
+        start_date = (
+            _date(payload.get("start_date"))
+            if "start_date" in payload
+            else _date(existing.get("start_date"))
+        )
+
+        end_date = (
+            _date(payload.get("end_date"))
+            if "end_date" in payload
+            else _date(existing.get("end_date"))
+        )
+
+        transaction_date = (
+            _date(payload.get("transaction_date"))
+            if "transaction_date" in payload
+            else _date(existing.get("transaction_date"))
+        )
+
+        if not start_date or not end_date:
+            raise ValueError(
+                "start_date and end_date are required"
+            )
+
+        if end_date < start_date:
+            raise ValueError(
+                "end_date cannot be before start_date"
+            )
+
+        if "start_date" in payload:
+            payload["start_date"] = start_date
+
+        if "end_date" in payload:
+            payload["end_date"] = end_date
+
+        if "transaction_date" in payload:
+            payload["transaction_date"] = transaction_date
+
+        # --------------------------------------------------
+        # Validate amount
+        # --------------------------------------------------
+        original_amount = (
+            _d(payload.get("original_amount"))
+            if "original_amount" in payload
+            else _d(existing.get("original_amount"))
+        )
+
+        recognized_to_date = _d(
+            existing.get("recognized_to_date")
+        )
+
+        if original_amount <= 0:
+            raise ValueError(
+                "original_amount must be greater than zero"
+            )
+
+        if original_amount < recognized_to_date:
+            raise ValueError(
+                "original_amount cannot be less than the amount "
+                "already recognised"
+            )
+
+        if "original_amount" in payload:
+            payload["original_amount"] = original_amount
+
+        # --------------------------------------------------
+        # Normalise other values
+        # --------------------------------------------------
+        if "vat_amount" in payload:
+            payload["vat_amount"] = _d(
+                payload.get("vat_amount")
+            )
+
+        if "payload_json" in payload:
+            payload["payload_json"] = Json(
+                payload.get("payload_json") or {}
+            )
+
+        for field in (
+            "balance_account",
+            "balance_account_role",
+            "recognition_account",
+            "recognition_account_role",
+            "settlement_account",
+            "settlement_role",
+            "tax_account",
+        ):
+            if field in payload and isinstance(payload[field], str):
+                payload[field] = (
+                    payload[field].strip() or None
+                )
 
         sets = []
         params = []
@@ -82323,21 +83976,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 sets.append(f"{key} = %s")
                 params.append(payload.get(key))
 
+        # Recalculate remaining balance when amount changes.
+        if "original_amount" in payload:
+            sets.append("""
+                remaining_balance =
+                    GREATEST(%s - recognized_to_date, 0)
+            """)
+            params.append(original_amount)
+
         if not sets:
-            return self.accrual_deferral_get_item(company_id, item_id)
+            return existing
 
         sets.append("updated_by_user_id = %s")
         params.append(user_id)
 
         sets.append("updated_at = NOW()")
 
-        params.extend([int(company_id), int(item_id)])
+        params.extend([
+            int(company_id),
+            int(item_id),
+        ])
+
+        schedule_fields = {
+            "start_date",
+            "end_date",
+            "original_amount",
+            "frequency",
+            "recognition_method",
+        }
+
+        regenerate_schedule = any(
+            key in payload
+            for key in schedule_fields
+        )
 
         with self.transaction() as (conn, cur):
             cur.execute(f"""
                 UPDATE {schema}.accrual_deferral_items
                 SET {", ".join(sets)}
-                WHERE company_id = %s AND id = %s
+                WHERE company_id = %s
+                AND id = %s
                 RETURNING *
             """, tuple(params))
 
@@ -82346,15 +84024,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not item:
                 return None
 
-            if any(k in payload for k in ("start_date", "end_date", "original_amount", "frequency")):
+            if regenerate_schedule:
                 self.accrual_deferral_generate_schedule(
                     company_id,
                     item_id,
                     cur=cur,
                 )
 
-        return self.accrual_deferral_get_item(company_id, item_id)
-
+        return self.accrual_deferral_get_item(
+            company_id,
+            item_id,
+        )
 
     def accrual_deferral_delete_item(self, company_id: int, item_id: int):
         schema = self.company_schema(company_id)

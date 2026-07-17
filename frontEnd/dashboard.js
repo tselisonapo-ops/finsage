@@ -1328,6 +1328,9 @@ const ENDPOINTS = {
 
     postRunByDate: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/post`,
+  
+    backfillIfrs15: (companyId) =>
+      `${API_BASE}/api/companies/${companyId}/accrual-deferrals/backfill-ifrs15`,
   },
 
   ifrs9: {
@@ -41013,6 +41016,14 @@ async function saveEditModal() {
       maximumFractionDigits: 2
     });
 
+  const isoDate = value => {
+    if (!value) return "";
+    const s = String(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  };
+
   const modal = () =>
     document.getElementById("dtModal");
 
@@ -42367,7 +42378,8 @@ async function saveEditModal() {
 
     try {
       const runId = selectedRun.id;
-      const date = String(selectedRun.reporting_date || "").slice(0, 10);
+      const date = isoDate(selectedRun.reporting_date);
+      new Error("The deferred-tax reporting date is invalid.");
       const reference = `DT-${runId}`;
       const description = `Deferred tax adjustment as at ${date}`;
 
@@ -42402,7 +42414,9 @@ async function saveEditModal() {
 
       const difference = totalDebit - totalCredit;
       const balanced = Math.abs(difference) <= 0.01;
-      const postingDate = String(journal.posting_date || journal.date || date).slice(0, 10) || "-";
+      const postingDate = isoDate(
+        journal.posting_date || journal.date || date
+      ) || "-";
       const journalReference = journal.reference || journal.ref || reference;
       const journalDescription = journal.description || description;
 
@@ -42477,8 +42491,12 @@ async function saveEditModal() {
         </div>
       `;
     } catch (error) {
-      closeModal();
-      throw error;
+      document.getElementById("dtModalBody").innerHTML = `
+        <div class="dt-error">${error.message || "Journal preview failed."}</div>
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>Close</button>
+        </div>
+      `;
     }
   }
 
@@ -57788,6 +57806,133 @@ function bindEventsOnce() {
     return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || CURRENT_COMPANY_ID;
   }
 
+  async function syncIfrs15DeferredRevenue() {
+    const cid = adCid();
+    const button = $("adSyncIfrs15Btn");
+
+    if (!cid) {
+      return alert("No active company selected.");
+    }
+
+    const confirmed = window.confirm(
+      "Synchronize existing IFRS 15 deferred revenue balances " +
+      "into the Accruals and Deferrals register?\n\n" +
+      "This will not create journals or duplicate recognition schedules."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const originalText =
+      button?.textContent ||
+      "Sync IFRS 15 Deferred Revenue";
+
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Synchronizing...";
+        button.classList.add(
+          "opacity-50",
+          "cursor-not-allowed"
+        );
+      }
+
+      const result = await apiFetch(
+        ENDPOINTS.accrualDeferrals.backfillIfrs15(cid),
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      );
+
+      const itemsSynced = Number(
+        result?.items_synced ||
+        result?.result?.items_synced ||
+        0
+      );
+
+      const contractsFound = Number(
+        result?.contracts_found ||
+        result?.result?.contracts_found ||
+        0
+      );
+
+      window.showToast?.(
+        (
+          result?.message ||
+          `${itemsSynced} IFRS 15 deferred revenue item(s) ` +
+          `synchronized from ${contractsFound} contract(s).`
+        ),
+        "success"
+      );
+
+      await loadAccrualDeferrals();
+    } catch (error) {
+      console.error(
+        "[AD] IFRS 15 synchronization failed:",
+        error
+      );
+
+      window.showToast?.(
+        error?.message ||
+        "Failed to synchronize IFRS 15 deferred revenue.",
+        "error"
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+        button.classList.remove(
+          "opacity-50",
+          "cursor-not-allowed"
+        );
+      }
+    }
+  }
+
+  function ensureAdIfrs15SyncButton() {
+    if ($("adSyncIfrs15Btn")) {
+      return;
+    }
+
+    const refreshButton = $("adRefreshBtn");
+    const newItemButton = $("adNewItemBtn");
+    const runButton = $("adOpenRunBtn");
+
+    const anchor =
+      refreshButton ||
+      newItemButton ||
+      runButton;
+
+    if (!anchor || !anchor.parentElement) {
+      console.warn(
+        "[AD] Could not find a toolbar location " +
+        "for the IFRS 15 sync button."
+      );
+
+      return;
+    }
+
+    const button = document.createElement("button");
+
+    button.id = "adSyncIfrs15Btn";
+    button.type = "button";
+    button.className = "btn text-sm";
+    button.textContent =
+      "Sync IFRS 15 Deferred Revenue";
+
+    button.addEventListener(
+      "click",
+      syncIfrs15DeferredRevenue
+    );
+
+    anchor.parentElement.insertBefore(
+      button,
+      anchor
+    );
+  }
+
   async function loadAccrualDeferrals() {
     const cid = adCid();
     if (!cid) throw new Error("No active company selected.");
@@ -57833,25 +57978,97 @@ function bindEventsOnce() {
       return;
     }
 
-    body.innerHTML = items.map((item) => `
-      <tr class="border-t hover:bg-slate-50">
-        <td class="p-3 font-semibold">${item.item_number || ""}</td>
-        <td class="p-3">${item.item_title || ""}</td>
-        <td class="p-3">${labelType(item.item_type)}</td>
-        <td class="p-3 text-right">${money(item.original_amount)}</td>
-        <td class="p-3 text-right">${money(item.recognized_to_date)}</td>
-        <td class="p-3 text-right">${money(item.remaining_balance)}</td>
-        <td class="p-3">
-          <span class="pill">${item.status || "draft"}</span>
-        </td>
+    body.innerHTML = items.map((item) => {
+      const isIfrs15Mirror =
+        item.is_mirror_item === true ||
+        item.source_module === "ifrs15" ||
+        item.display_source_type === "ifrs15_mirror";
+
+      const sourceBadge = isIfrs15Mirror
+        ? `
+          <div class="mt-1">
+            <span
+              class="inline-flex rounded-full bg-blue-50 px-2 py-0.5
+                    text-[11px] font-semibold text-blue-700"
+            >
+              Managed by IFRS 15
+            </span>
+          </div>
+        `
+        : "";
+
+      const actionButton = isIfrs15Mirror
+        ? `
+          <button
+            type="button"
+            class="btn text-xs opacity-60 cursor-not-allowed"
+            disabled
+            title="Recognition is managed by the IFRS 15 module"
+          >
+            IFRS 15 Managed
+          </button>
+        `
+        : `
+          <button
+            type="button"
+            class="btn-highlight text-xs"
+            data-ad-run-item="${item.id}"
+          >
+            Run Recognition
+          </button>
+        `;
+
+      return `
+        <tr class="border-t hover:bg-slate-50">
+          <td class="p-3 font-semibold">
+            ${escapeHtml(item.item_number || "")}
+          </td>
+
+          <td class="p-3">
+            <div>
+              ${escapeHtml(item.item_title || "")}
+            </div>
+            ${sourceBadge}
+          </td>
+
+          <td class="p-3">
+            ${escapeHtml(labelType(item.item_type))}
+          </td>
+
+          <td class="p-3 text-right">
+            ${money(item.original_amount)}
+          </td>
+
+          <td class="p-3 text-right">
+            ${money(item.recognized_to_date)}
+          </td>
+
+          <td class="p-3 text-right">
+            ${money(item.remaining_balance)}
+          </td>
+
+          <td class="p-3">
+            <span class="pill">
+              ${escapeHtml(item.status || "draft")}
+            </span>
+          </td>
+
           <td class="p-3 text-right">
             <div class="flex justify-end gap-2">
-              <button class="btn text-xs" data-ad-open="${item.id}">Open</button>
-              <button class="btn-highlight text-xs" data-ad-run-item="${item.id}">Run Recognition</button>
+              <button
+                type="button"
+                class="btn text-xs"
+                data-ad-open="${item.id}"
+              >
+                Open
+              </button>
+
+              ${actionButton}
             </div>
           </td>
-      </tr>
-    `).join("");
+        </tr>
+      `;
+    }).join("");
 
     body.querySelectorAll("[data-ad-open]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -57881,8 +58098,13 @@ function bindEventsOnce() {
     const panel = $("adDetailPanel");
     if (!panel) return;
 
-    const item = data.item || {};
-    const schedule = data.schedule || [];
+    const isIfrs15Mirror =
+      item.is_mirror_item === true ||
+      item.source_module === "ifrs15" ||
+      data?.ifrs15?.mirror_only === true;
+
+    const source = data.source || {};
+    const ifrs15 = data.ifrs15 || {};
 
     panel.classList.remove("hidden");
 
@@ -57899,8 +58121,35 @@ function bindEventsOnce() {
         </div>
 
         <div class="flex gap-2">
-          <button id="adRegenerateBtn" class="btn text-sm">Regenerate Schedule</button>
-          <button id="adActivateBtn" class="btn-highlight text-sm">Activate</button>
+          ${
+            isIfrs15Mirror
+              ? `
+                <span
+                  class="inline-flex items-center rounded-full
+                        bg-blue-50 px-3 py-1.5 text-sm
+                        font-semibold text-blue-700"
+                >
+                  Managed by IFRS 15
+                </span>
+              `
+              : `
+                <button
+                  id="adRegenerateBtn"
+                  type="button"
+                  class="btn text-sm"
+                >
+                  Regenerate Schedule
+                </button>
+
+                <button
+                  id="adActivateBtn"
+                  type="button"
+                  class="btn-highlight text-sm"
+                >
+                  Activate
+                </button>
+              `
+          }
         </div>
       </div>
 
@@ -57918,6 +58167,81 @@ function bindEventsOnce() {
           <p class="font-bold">${money(item.remaining_balance)}</p>
         </div>
       </div>
+
+      ${
+        isIfrs15Mirror
+          ? `
+            <div class="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div class="flex flex-col gap-3">
+                <div>
+                  <h4 class="font-bold text-blue-900">
+                    IFRS 15 Deferred Revenue Mirror
+                  </h4>
+
+                  <p class="mt-1 text-sm text-blue-800">
+                    This item reflects the current contract liability
+                    maintained by the Revenue Contracts module.
+                    No recognition journal may be posted from this screen.
+                  </p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-3 text-sm md:grid-cols-4">
+                  <div>
+                    <p class="text-xs text-blue-700">
+                      Contract
+                    </p>
+                    <p class="font-semibold text-blue-950">
+                      ${escapeHtml(
+                        source.contract_number ||
+                        ifrs15.contract_number ||
+                        item.source_reference ||
+                        "—"
+                      )}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p class="text-xs text-blue-700">
+                      Customer
+                    </p>
+                    <p class="font-semibold text-blue-950">
+                      ${escapeHtml(
+                        source.customer_name ||
+                        item.customer_name ||
+                        "—"
+                      )}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p class="text-xs text-blue-700">
+                      Billed to Date
+                    </p>
+                    <p class="font-semibold text-blue-950">
+                      ${money(
+                        ifrs15.billed_to_date ??
+                        item.ifrs15_billed_to_date
+                      )}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p class="text-xs text-blue-700">
+                      Revenue Recognised
+                    </p>
+                    <p class="font-semibold text-blue-950">
+                      ${money(
+                        ifrs15.recognized_revenue_to_date ??
+                        item.ifrs15_recognized_to_date
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `
+          : ""
+      }
 
       <div class="overflow-x-auto border rounded-lg">
         <table class="w-full text-sm">
@@ -57951,7 +58275,11 @@ function bindEventsOnce() {
                 : `
                   <tr>
                     <td colspan="6" class="p-4 text-center text-slate-500">
-                      No schedule lines found.
+                      ${
+                        isIfrs15Mirror
+                          ? "Recognition is managed by the IFRS 15 Revenue Contracts module."
+                          : "No schedule lines found."
+                      }
                     </td>
                   </tr>
                 `
@@ -57961,6 +58289,9 @@ function bindEventsOnce() {
       </div>
     `;
 
+    if (isIfrs15Mirror) {
+      return;
+    }
     $("adRegenerateBtn")?.addEventListener("click", async () => {
       const cid = adCid();
 
@@ -58441,6 +58772,32 @@ function bindEventsOnce() {
 
   function openAdRecognitionRunModal(ctx = {}) {
     let modal = document.getElementById("adRecognitionRunModal");
+
+    if (ctx.itemId) {
+      const selectedItem = AD_STATE.items.find(
+        (item) =>
+          Number(item.id) === Number(ctx.itemId)
+      );
+
+      const isIfrs15Mirror =
+        selectedItem?.is_mirror_item === true ||
+        selectedItem?.source_module === "ifrs15" ||
+        selectedItem?.display_source_type ===
+          "ifrs15_mirror";
+
+      if (isIfrs15Mirror) {
+        window.showToast?.(
+          (
+            "This item is managed by IFRS 15. " +
+            "Revenue recognition must be posted from " +
+            "the Revenue Contracts module."
+          ),
+          "info"
+        );
+
+        return;
+      }
+    }
 
     AD_RUN_STATE.itemId = ctx.itemId
       ? Number(ctx.itemId)
@@ -59753,18 +60110,36 @@ function bindEventsOnce() {
     }
   }
 
-  window.bindAccrualDeferralsScreen = async function bindAccrualDeferralsScreen() {
-    if (!AD_STATE.bound) {
-      $("adRefreshBtn")?.addEventListener("click", loadAccrualDeferrals);
-      $("adApplyFiltersBtn")?.addEventListener("click", loadAccrualDeferrals);
-      $("adNewItemBtn")?.addEventListener("click", openNewAccrualDeferralModal);
-      $("adOpenRunBtn")?.addEventListener("click", () => openAdRecognitionRunModal({}));
+  window.bindAccrualDeferralsScreen =
+    async function bindAccrualDeferralsScreen() {
+      ensureAdIfrs15SyncButton();
 
-      AD_STATE.bound = true;
-    }
+      if (!AD_STATE.bound) {
+        $("adRefreshBtn")?.addEventListener(
+          "click",
+          loadAccrualDeferrals
+        );
 
-    await loadAccrualDeferrals();
-  };
+        $("adApplyFiltersBtn")?.addEventListener(
+          "click",
+          loadAccrualDeferrals
+        );
+
+        $("adNewItemBtn")?.addEventListener(
+          "click",
+          openNewAccrualDeferralModal
+        );
+
+        $("adOpenRunBtn")?.addEventListener(
+          "click",
+          () => openAdRecognitionRunModal({})
+        );
+
+        AD_STATE.bound = true;
+      }
+
+      await loadAccrualDeferrals();
+    };
 })();
 
 (function () {

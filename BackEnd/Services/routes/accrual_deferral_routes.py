@@ -140,13 +140,41 @@ def api_ad_regenerate_schedule(company_id: int, item_id: int):
         return deny
 
     try:
+        existing = db_service.accrual_deferral_get_item(
+            company_id,
+            item_id,
+        )
+
+        if not existing:
+            return _json_error(
+                "Accrual/deferral item not found",
+                404,
+            )
+
+        existing_item = existing.get("item") or {}
+
+        if (
+            existing_item.get("is_mirror_item") is True
+            or existing_item.get("source_module") == "ifrs15"
+        ):
+            return _json_error(
+                (
+                    "This item is managed by the IFRS 15 module. "
+                    "Its schedule cannot be regenerated from "
+                    "Accruals and Deferrals."
+                ),
+                400,
+            )
+
         result = db_service.accrual_deferral_generate_schedule(
             company_id,
             item_id,
         )
 
-        item = db_service.accrual_deferral_get_item(company_id, item_id)
-
+        item = db_service.accrual_deferral_get_item(
+            company_id,
+            item_id,
+        )
         return jsonify({"ok": True, **result, **(item or {})}), 200
 
     except Exception as e:
@@ -450,6 +478,61 @@ def api_ad_post_run_by_date(company_id: int):
     except Exception as e:
         current_app.logger.exception(
             "api_ad_post_run_by_date failed"
+        )
+
+        return _json_error(str(e), 400)
+    
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/backfill-ifrs15",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_backfill_ifrs15(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        result = (
+            db_service.backfill_ifrs15_deferred_revenue_items(
+                company_id=int(company_id),
+                user_id=user.get("user_id"),
+            )
+        )
+
+        synced_count = int(
+            result.get("items_synced") or 0
+        )
+
+        contracts_found = int(
+            result.get("contracts_found") or 0
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                f"IFRS 15 synchronization completed. "
+                f"{synced_count} deferred revenue item(s) "
+                f"synchronized from {contracts_found} contract(s)."
+            ),
+            "contracts_found": contracts_found,
+            "items_synced": synced_count,
+            "result": result,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_ad_backfill_ifrs15 failed"
         )
 
         return _json_error(str(e), 400)
