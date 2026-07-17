@@ -82650,16 +82650,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 SELECT *
                 FROM {schema}.accrual_deferral_items
                 WHERE company_id = %s
-                AND source_module = 'ifrs15'
-                AND source_id = %s
                 AND item_type = 'deferred_income'
-                AND is_mirror_item = TRUE
+                AND (
+                        (
+                            source_module = 'ifrs15'
+                            AND source_id = %s
+                        )
+                        OR source_revenue_contract_id = %s
+                        OR (
+                            source_module = 'ifrs15'
+                            AND source_reference = %s
+                        )
+                    )
+                ORDER BY id
                 LIMIT 1
                 FOR UPDATE
                 """,
                 (
                     int(company_id),
                     int(contract_id),
+                    int(contract_id),
+                    contract_number,
                 ),
                 cur=_cur,
             )
@@ -82820,6 +82831,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 item_number = self.accrual_deferral_next_number(
                     company_id,
                     prefix="IFRS15",
+                    cur=_cur,
                 )
 
                 _cur.execute(
@@ -83367,17 +83379,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 conn.rollback()
                 raise
 
-    def accrual_deferral_next_number(self, company_id: int, prefix="AD"):
+    def accrual_deferral_next_number(
+        self,
+        company_id: int,
+        prefix: str = "AD",
+        cur=None,
+    ):
         schema = self.company_schema(company_id)
 
-        row = self.fetch_one(f"""
-            SELECT COUNT(*) + 1 AS next_no
+        row = self.fetch_one(
+            f"""
+            SELECT COALESCE(MAX(SUBSTRING(item_number FROM '([0-9]+)$')::INT),0)+1 next_number
             FROM {schema}.accrual_deferral_items
-            WHERE company_id = %s
-        """, (int(company_id),)) or {}
+            WHERE company_id=%s
+            AND item_number LIKE %s
+            """,
+            (company_id, f"{prefix}-%"),
+            cur=cur,
+        )
 
-        return f"{prefix}-{int(row.get('next_no') or 1):05d}"
-
+        return f"{prefix}-{row['next_number']:05d}"
+        
     def company_currency(self, company_id: int) -> str:
         row = self.fetch_one("""
             SELECT currency
