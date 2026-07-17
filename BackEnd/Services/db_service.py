@@ -82502,20 +82502,41 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
         def account_code(value) -> str:
+            if value is None:
+                return ""
+
+            if isinstance(value, str):
+                return value.strip()
+
             if isinstance(value, dict):
-                return str(
-                    value.get("posting_code")
-                    or value.get("account_code")
-                    or value.get("code")
-                    or ""
-                ).strip()
+
+                for key in (
+                    "posting_code",
+                    "account_code",
+                    "code",
+                    "account",
+                    "coa_code",
+                    "gl_code",
+                    "value",
+                ):
+                    v = value.get(key)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                return ""
 
             if isinstance(value, (tuple, list)):
-                for candidate in value:
-                    if isinstance(candidate, str) and candidate.strip():
-                        return candidate.strip()
 
-            return str(value or "").strip()
+                for candidate in value:
+
+                    code = account_code(candidate)
+
+                    if code:
+                        return code
+
+                return ""
+
+            return str(value).strip()
 
         def _run(_cur):
             contract = self.fetch_one(
@@ -82601,6 +82622,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 or ifrs15_accounts.get("revenue")
                 or ifrs15_accounts.get("REVENUE")
             )
+
+            print(
+                "Resolved accounts:",
+                contract_liability_account,
+                revenue_account,
+            )
+
+            if not contract_liability_account:
+                raise ValueError(
+                    f"Contract liability account could not be resolved. "
+                    f"Resolver returned: {ifrs15_accounts}"
+                )
+
+            if not revenue_account:
+                raise ValueError(
+                    f"Revenue account could not be resolved. "
+                    f"Resolver returned: {ifrs15_accounts}"
+                )
 
             existing = self.fetch_one(
                 f"""
@@ -82746,7 +82785,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         contract.get("contract_date") or start_date,
                         start_date,
                         end_date,
-                        contract_liability,
+                        billed_to_date,
                         recognized_to_date,
                         contract_liability,
                         contract_liability_account or None,
