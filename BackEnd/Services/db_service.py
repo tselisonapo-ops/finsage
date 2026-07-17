@@ -93400,73 +93400,72 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def deferred_tax_prepare_asset_tax_base(
         self,
-        *,
-        company_id: int,
+        company_id,
         reporting_date,
-        tax_authority_id: int,
-        user_id: int | None = None,
-    ) -> dict:
-        from datetime import date, timedelta
-
-        if isinstance(reporting_date, str):
-            reporting_date = date.fromisoformat(
-                reporting_date[:10]
-            )
-
+        tax_authority_id,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
 
         with self._conn_cursor() as (conn, cur):
-            run = self.fetch_one(f"""
-                SELECT *
-                FROM {schema}.asset_tax_runs
-                WHERE company_id = %s
-                AND tax_authority_id = %s
-                AND tax_year_end = %s
-                AND status <> 'void'
-                ORDER BY id DESC
-                LIMIT 1
-            """, (
-                company_id,
-                tax_authority_id,
-                reporting_date,
-            ), cur=cur)
-
-            if not run:
-                start_date = reporting_date.replace(
-                    year=reporting_date.year - 1
-                ) + timedelta(days=1)
-
+            try:
                 cur.execute(f"""
-                    INSERT INTO {schema}.asset_tax_runs (
-                        company_id,
-                        tax_authority_id,
-                        tax_year,
-                        tax_year_start,
-                        tax_year_end,
-                        status,
-                        created_by_user_id
-                    )
-                    VALUES (%s,%s,%s,%s,%s,'draft',%s)
-                    RETURNING *
+                    SELECT *
+                    FROM {schema}.asset_tax_runs
+                    WHERE company_id = %s
+                    AND tax_authority_id = %s
+                    AND tax_year_end = %s
+                    ORDER BY id DESC
+                    LIMIT 1;
                 """, (
                     company_id,
                     tax_authority_id,
-                    reporting_date.year,
-                    start_date,
                     reporting_date,
-                    user_id,
                 ))
 
-                run = self._row_to_dict(
-                    cur,
-                    cur.fetchone()
-                )
+                run = cur.fetchone()
+                run = dict(run) if run else None
 
-        if run["status"] not in (
-            "locked",
-            "posted",
-        ):
-            run = self.asset_tax_calculate_run(
+                if not run:
+                    start_date = reporting_date.replace(
+                        year=reporting_date.year - 1
+                    ) + timedelta(days=1)
+
+                    cur.execute(f"""
+                        INSERT INTO {schema}.asset_tax_runs (
+                            company_id,
+                            tax_authority_id,
+                            tax_year,
+                            tax_year_start,
+                            tax_year_end,
+                            status,
+                            created_by
+                        )
+                        VALUES (%s, %s, %s, %s, %s, 'draft', %s)
+                        RETURNING *;
+                    """, (
+                        company_id,
+                        tax_authority_id,
+                        reporting_date.year,
+                        start_date,
+                        reporting_date,
+                        user_id,
+                    ))
+
+                    run = cur.fetchone()
+                    run = dict(run) if run else None
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        if not run:
+            raise ValueError("Asset-tax run could not be prepared.")
+
+        if run["status"] in ("draft", "calculated"):
+            return self.asset_tax_calculate_run(
                 company_id,
                 int(run["id"]),
             )
