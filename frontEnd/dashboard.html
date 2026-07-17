@@ -15324,27 +15324,73 @@ html, body {
             <div>
               <span class="dt-tag">IAS 12</span>
               <h2>Deferred Tax</h2>
-              <p>Temporary differences, tax bases and recognition assessments.</p>
+              <p>
+                Temporary differences, tax bases and capital allowances.
+              </p>
             </div>
 
             <div class="dt-actions">
-              <button id="dtRefreshBtn" class="btn btn-secondary">
+              <button
+                id="dtRefreshBtn"
+                type="button"
+                class="btn btn-secondary"
+              >
                 Refresh
               </button>
 
-              <button id="dtNewRunBtn" class="btn btn-primary">
-                New Run
+              <button
+                id="dtNewRunBtn"
+                type="button"
+                class="btn btn-primary"
+              >
+                New Deferred Tax Run
+              </button>
+
+              <button
+                id="dtNewAssetTaxRunBtn"
+                type="button"
+                class="btn btn-primary"
+              >
+                New Capital Allowance Run
               </button>
             </div>
           </div>
 
-          <div id="dtRunList"></div>
-          <div id="dtRunDetail" class="hidden"></div>
+          <div class="dt-view-tabs">
+            <button
+              type="button"
+              class="dt-view-tab active"
+              data-dt-view="deferred-tax"
+            >
+              Deferred Tax
+            </button>
+
+            <button
+              type="button"
+              class="dt-view-tab"
+              data-dt-view="asset-tax"
+            >
+              Capital Allowances
+            </button>
+          </div>
+
+          <div id="dtDeferredTaxView">
+            <div id="dtRunList"></div>
+            <div id="dtRunDetail" class="hidden"></div>
+          </div>
+
+          <div id="dtAssetTaxView" class="hidden">
+            <div id="dtAssetTaxRunList"></div>
+            <div id="dtAssetTaxRunDetail" class="hidden"></div>
+          </div>
         </div>
       </section>
 
       <div id="dtModal" class="dt-modal hidden">
-        <div class="dt-modal-backdrop" data-dt-close></div>
+        <div
+          class="dt-modal-backdrop"
+          data-dt-close
+        ></div>
 
         <div class="dt-modal-card">
           <div class="dt-modal-header">

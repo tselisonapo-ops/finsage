@@ -1720,15 +1720,15 @@ const ENDPOINTS = {
     void: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/void`,
 
-    overrides: (cid) =>
+    overrides: cid =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/tax-base-overrides`,
 
     assessment: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/recognition-assessment`,
-  
+
     post: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/post`,
-  
+
     settings: cid =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/settings`,
 
@@ -1737,6 +1737,46 @@ const ENDPOINTS = {
 
     allowanceRules: (cid, authorityId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules?tax_authority_id=${authorityId}`,
+
+    // =========================================================
+    // ASSET TAX / CAPITAL ALLOWANCE
+    // =========================================================
+
+    assetTaxRuns: (cid, q = {}) => {
+      const qs = new URLSearchParams(q).toString();
+
+      return (
+        `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs` +
+        (qs ? `?${qs}` : "")
+      );
+    },
+
+    assetTaxRun: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}`,
+
+    assetTaxCalculate: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}/calculate`,
+
+    assetTaxApprove: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}/approve`,
+
+    assetTaxReturnToDraft: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}/return-to-draft`,
+
+    assetTaxLock: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}/lock`,
+
+    assetTaxVoid: (cid, runId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-runs/${runId}/void`,
+
+    assetTaxProfiles: (cid, q = {}) => {
+      const qs = new URLSearchParams(q).toString();
+
+      return (
+        `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles` +
+        (qs ? `?${qs}` : "")
+      );
+    }
   },
 
   assets: {
@@ -40957,6 +40997,8 @@ async function saveEditModal() {
 
 (() => {
   let selectedRun = null;
+  let selectedAssetTaxRun = null;
+  let activeDeferredTaxView = "deferred-tax";
 
   const cid = () =>
     getActiveCompanyId?.() ||
@@ -40980,6 +41022,749 @@ async function saveEditModal() {
   function closeModal() {
     modal().classList.add("hidden");
     document.getElementById("dtModalBody").innerHTML = "";
+  }
+
+  async function loadAssetTaxRuns() {
+    const mount = document.getElementById(
+      "dtAssetTaxRunList"
+    );
+
+    if (!mount) return;
+
+    mount.innerHTML = `
+      <div class="dt-loading">
+        Loading capital allowance runs...
+      </div>
+    `;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.deferredTax.assetTaxRuns(cid())
+      );
+
+      const rows = res?.data || [];
+
+      mount.innerHTML = rows.length
+        ? `
+          <div class="dt-table-wrap">
+            <table class="dt-table">
+              <thead>
+                <tr>
+                  <th>Tax Year</th>
+                  <th>Period</th>
+                  <th>Authority</th>
+                  <th>Status</th>
+                  <th>Calculated</th>
+                  <th>Approved</th>
+                  <th></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                ${rows.map(row => `
+                  <tr>
+                    <td>
+                      <strong>${row.tax_year || "-"}</strong>
+                    </td>
+
+                    <td>
+                      ${String(
+                        row.tax_year_start || ""
+                      ).slice(0, 10)}
+                      –
+                      ${String(
+                        row.tax_year_end || ""
+                      ).slice(0, 10)}
+                    </td>
+
+                    <td>
+                      ${
+                        row.tax_authority_code ||
+                        row.tax_authority_name ||
+                        row.tax_authority_id ||
+                        "-"
+                      }
+                    </td>
+
+                    <td>
+                      <span class="dt-status ${row.status}">
+                        ${row.status || "draft"}
+                      </span>
+                    </td>
+
+                    <td>
+                      ${
+                        row.calculated_at
+                          ? new Date(
+                              row.calculated_at
+                            ).toLocaleString()
+                          : "-"
+                      }
+                    </td>
+
+                    <td>
+                      ${
+                        row.approved_at
+                          ? new Date(
+                              row.approved_at
+                            ).toLocaleString()
+                          : "-"
+                      }
+                    </td>
+
+                    <td>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-secondary"
+                        data-dt-asset-tax-run="${row.id}"
+                      >
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `
+        : `
+          <div class="dt-empty">
+            <strong>No capital allowance runs</strong>
+            <p>
+              Create a tax-year run, then calculate the
+              capital allowances for the asset register.
+            </p>
+
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="dtEmptyNewAssetTaxRunBtn"
+            >
+              New Capital Allowance Run
+            </button>
+          </div>
+        `;
+    } catch (error) {
+      mount.innerHTML = `
+        <div class="dt-error">
+          ${error.message}
+        </div>
+      `;
+    }
+  }
+
+  async function showCreateAssetTaxRunModal() {
+    const settingsRes = await apiFetch(
+      ENDPOINTS.deferredTax.settings(cid())
+    );
+
+    const settings = settingsRes?.data || {};
+
+    if (!settings.tax_authority_id) {
+      throw new Error(
+        "Configure a tax authority before creating a capital allowance run."
+      );
+    }
+
+    const today = new Date();
+    const currentYear = today.getFullYear();
+
+    openModal("Create Capital Allowance Run", `
+      <form id="dtCreateAssetTaxRunForm">
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Tax year</label>
+
+            <input
+              type="number"
+              name="tax_year"
+              min="2000"
+              max="2200"
+              value="${currentYear}"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Tax authority</label>
+
+            <input
+              type="text"
+              value="${
+                settings.tax_authority_code ||
+                settings.tax_authority_name ||
+                settings.tax_authority_id
+              }"
+              readonly
+            >
+
+            <input
+              type="hidden"
+              name="tax_authority_id"
+              value="${settings.tax_authority_id}"
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Tax year start</label>
+
+            <input
+              type="date"
+              name="tax_year_start"
+              value="${currentYear - 1}-04-01"
+              required
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Tax year end</label>
+
+            <input
+              type="date"
+              name="tax_year_end"
+              value="${currentYear}-03-31"
+              required
+            >
+          </div>
+
+          <div class="dt-field full">
+            <small>
+              The calculation will use active asset tax
+              profiles and the allowance rules configured
+              for this tax authority.
+            </small>
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-dt-close
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            class="btn btn-primary"
+          >
+            Create Run
+          </button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function createAssetTaxRun(form) {
+    const data = Object.fromEntries(
+      new FormData(form).entries()
+    );
+
+    const startDate = data.tax_year_start;
+    const endDate = data.tax_year_end;
+
+    if (!startDate || !endDate) {
+      throw new Error(
+        "Tax year start and end dates are required."
+      );
+    }
+
+    if (startDate > endDate) {
+      throw new Error(
+        "Tax year start cannot be after tax year end."
+      );
+    }
+
+    const res = await apiFetch(
+      ENDPOINTS.deferredTax.assetTaxRuns(cid()),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          tax_authority_id: Number(
+            data.tax_authority_id
+          ),
+          tax_year: Number(data.tax_year),
+          tax_year_start: startDate,
+          tax_year_end: endDate
+        })
+      }
+    );
+
+    const run = res?.data?.run || res?.data;
+
+    if (!run?.id) {
+      throw new Error(
+        "The asset tax run was created but no run ID was returned."
+      );
+    }
+
+    closeModal();
+
+    await loadAssetTaxRuns();
+    await openAssetTaxRun(run.id);
+  }
+
+  async function openAssetTaxRun(runId) {
+    const res = await apiFetch(
+      ENDPOINTS.deferredTax.assetTaxRun(
+        cid(),
+        runId
+      )
+    );
+
+    selectedAssetTaxRun = res?.data || null;
+
+    if (!selectedAssetTaxRun) {
+      throw new Error(
+        "Capital allowance run was not returned."
+      );
+    }
+
+    document
+      .getElementById("dtAssetTaxRunList")
+      .classList.add("hidden");
+
+    document
+      .getElementById("dtAssetTaxRunDetail")
+      .classList.remove("hidden");
+
+    renderAssetTaxRun();
+  }
+
+  function renderAssetTaxRun() {
+    const run = selectedAssetTaxRun;
+
+    if (!run) return;
+
+    const lines =
+      run.lines ||
+      run.run_lines ||
+      run.asset_tax_run_lines ||
+      [];
+
+    const status = run.status || "draft";
+
+    const isDraft = status === "draft";
+    const isCalculated = status === "calculated";
+    const isApproved = status === "approved";
+    const isLocked = status === "locked";
+
+    const totalOpening = lines.reduce(
+      (sum, line) =>
+        sum + Number(line.opening_tax_wdv || 0),
+      0
+    );
+
+    const totalAdditions = lines.reduce(
+      (sum, line) =>
+        sum + Number(line.additions || 0),
+      0
+    );
+
+    const totalAllowance = lines.reduce(
+      (sum, line) =>
+        sum +
+        Number(
+          line.total_capital_allowance ??
+          line.annual_allowance ??
+          0
+        ),
+      0
+    );
+
+    const totalClosing = lines.reduce(
+      (sum, line) =>
+        sum + Number(line.closing_tax_wdv || 0),
+      0
+    );
+
+    const totalAdjustment = lines.reduce(
+      (sum, line) =>
+        sum + Number(line.tax_adjustment || 0),
+      0
+    );
+
+    const actionButtons = `
+      <button
+        type="button"
+        class="btn btn-secondary"
+        id="dtAssetTaxBackBtn"
+      >
+        ← Back to Runs
+      </button>
+
+      ${!isLocked ? `
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="dtAssetTaxCalculateBtn"
+        >
+          ${isDraft ? "Calculate Allowances" : "Recalculate"}
+        </button>
+      ` : ""}
+
+      ${isCalculated ? `
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="dtAssetTaxApproveBtn"
+        >
+          Approve Run
+        </button>
+      ` : ""}
+
+      ${isApproved ? `
+        <button
+          type="button"
+          class="btn btn-secondary"
+          id="dtAssetTaxReturnDraftBtn"
+        >
+          Return to Draft
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="dtAssetTaxLockBtn"
+        >
+          Lock Run
+        </button>
+      ` : ""}
+
+      ${!isLocked ? `
+        <button
+          type="button"
+          class="btn btn-danger"
+          id="dtAssetTaxVoidBtn"
+        >
+          Void Run
+        </button>
+      ` : ""}
+    `;
+
+    const lineRows = lines.map(line => `
+      <tr>
+        <td>
+          <strong>
+            ${line.asset_code || "-"}
+          </strong>
+          <br>
+          <small>
+            ${line.asset_name || ""}
+          </small>
+        </td>
+
+        <td>
+          ${line.rule_code || "Review required"}
+        </td>
+
+        <td>
+          ${line.calculation_method || "-"}
+        </td>
+
+        <td>
+          ${Number(
+            line.rate_percent || 0
+          ).toFixed(2)}%
+        </td>
+
+        <td>
+          ${money(line.opening_tax_wdv)}
+        </td>
+
+        <td>
+          ${money(line.additions)}
+        </td>
+
+        <td>
+          ${money(line.initial_allowance)}
+        </td>
+
+        <td>
+          ${money(line.annual_allowance)}
+        </td>
+
+        <td>
+          ${money(
+            line.total_capital_allowance ??
+            (
+              Number(line.initial_allowance || 0) +
+              Number(line.annual_allowance || 0)
+            )
+          )}
+        </td>
+
+        <td>
+          ${money(line.closing_tax_wdv)}
+        </td>
+
+        <td>
+          ${money(line.book_depreciation)}
+        </td>
+
+        <td>
+          ${money(line.tax_adjustment)}
+        </td>
+
+        <td>
+          ${money(line.temporary_difference)}
+        </td>
+
+        <td>
+          ${line.notes || "-"}
+        </td>
+      </tr>
+    `).join("");
+
+    document.getElementById(
+      "dtAssetTaxRunDetail"
+    ).innerHTML = `
+      <div class="dt-run-info">
+        <div>
+          <span>Tax year</span>
+          <strong>${run.tax_year || "-"}</strong>
+        </div>
+
+        <div>
+          <span>Period</span>
+          <strong>
+            ${String(
+              run.tax_year_start || ""
+            ).slice(0, 10)}
+            –
+            ${String(
+              run.tax_year_end || ""
+            ).slice(0, 10)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Tax authority</span>
+          <strong>
+            ${
+              run.tax_authority_code ||
+              run.tax_authority_name ||
+              run.tax_authority_id ||
+              "-"
+            }
+          </strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong class="dt-status ${status}">
+            ${status}
+          </strong>
+        </div>
+      </div>
+
+      <div class="dt-toolbar">
+        ${actionButtons}
+      </div>
+
+      ${
+        isDraft
+          ? `
+            <div class="dt-help-card">
+              <strong>Run not calculated</strong>
+              <p>
+                Calculate the run to create capital
+                allowance lines for active asset tax
+                profiles.
+              </p>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        isCalculated
+          ? `
+            <div class="dt-help-card">
+              <strong>Calculation completed</strong>
+              <p>
+                Review the rules, allowances and tax
+                adjustments before approving the run.
+              </p>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        isLocked
+          ? `
+            <div class="dt-lock-notice">
+              This capital allowance run is locked and
+              cannot be recalculated.
+            </div>
+          `
+          : ""
+      }
+
+      <div class="dt-summary-grid">
+        <div class="dt-summary-card">
+          <span>Opening Tax WDV</span>
+          <strong>${money(totalOpening)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Additions</span>
+          <strong>${money(totalAdditions)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Capital Allowance</span>
+          <strong>${money(totalAllowance)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Closing Tax WDV</span>
+          <strong>${money(totalClosing)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Tax Adjustment</span>
+          <strong>${money(totalAdjustment)}</strong>
+        </div>
+      </div>
+
+      <div class="dt-section-heading">
+        <div>
+          <h3>Asset Capital Allowances</h3>
+          <p>
+            Accounting depreciation compared with
+            allowable tax deductions.
+          </p>
+        </div>
+
+        <span>
+          ${lines.length}
+          asset${lines.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      ${
+        lines.length
+          ? `
+            <div class="dt-table-wrap">
+              <table class="dt-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Rule</th>
+                    <th>Method</th>
+                    <th>Rate</th>
+                    <th>Opening WDV</th>
+                    <th>Additions</th>
+                    <th>Initial</th>
+                    <th>Annual</th>
+                    <th>Total Allowance</th>
+                    <th>Closing WDV</th>
+                    <th>Book Depreciation</th>
+                    <th>Tax Adjustment</th>
+                    <th>Temporary Difference</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${lineRows}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `
+            <div class="dt-empty">
+              <strong>No calculation lines</strong>
+              <p>
+                Select Calculate Allowances to generate
+                the asset tax calculation.
+              </p>
+            </div>
+          `
+      }
+    `;
+  }
+
+  async function calculateAssetTaxRun() {
+    if (!selectedAssetTaxRun?.id) {
+      throw new Error(
+        "Select a capital allowance run first."
+      );
+    }
+
+    const confirmed = confirm(
+      "Calculate the capital allowances for this tax year? Existing calculation lines will be replaced."
+    );
+
+    if (!confirmed) return;
+
+    const response = await apiFetch(
+      ENDPOINTS.deferredTax.assetTaxCalculate(
+        cid(),
+        selectedAssetTaxRun.id
+      ),
+      {
+        method: "POST"
+      }
+    );
+
+    const result = response?.data || {};
+
+    const lineCount = Number(
+      result.line_count || 0
+    );
+
+    const reviewCount = Number(
+      result.review_count || 0
+    );
+
+    alert(
+      [
+        `Calculation completed.`,
+        `${lineCount} asset line(s) created.`,
+        reviewCount
+          ? `${reviewCount} line(s) require review.`
+          : "No rule-review exceptions were reported."
+      ].join("\n")
+    );
+
+    await openAssetTaxRun(
+      selectedAssetTaxRun.id
+    );
+  }
+
+  async function assetTaxRunAction(action) {
+    if (!selectedAssetTaxRun?.id) {
+      throw new Error(
+        "Select a capital allowance run first."
+      );
+    }
+
+    const endpointBuilder =
+      ENDPOINTS.deferredTax[action];
+
+    if (typeof endpointBuilder !== "function") {
+      throw new Error(
+        `Asset tax endpoint '${action}' is not configured.`
+      );
+    }
+
+    await apiFetch(
+      endpointBuilder(
+        cid(),
+        selectedAssetTaxRun.id
+      ),
+      {
+        method: "POST"
+      }
+    );
+
+    await openAssetTaxRun(
+      selectedAssetTaxRun.id
+    );
   }
 
   async function loadRuns() {
@@ -41561,6 +42346,11 @@ async function saveEditModal() {
       await createRun(e.target);
     }
 
+    if (e.target.id === "dtCreateAssetTaxRunForm") {
+      e.preventDefault();
+      await createAssetTaxRun(e.target);
+    }
+
     if (e.target.id === "dtAddLineForm") {
       e.preventDefault();
       await addLine(e.target);
@@ -41591,6 +42381,43 @@ async function saveEditModal() {
       );
 
       await openRun(selectedRun.id);
+      return;
+    }
+
+    const assetRunBtn = e.target.closest("[data-dt-asset-run]");
+
+    if (assetRunBtn) {
+      await openAssetTaxRun(
+        Number(assetRunBtn.dataset.dtAssetRun)
+      );
+      return;
+    }
+
+    if (e.target.id === "dtNewAssetTaxRunBtn") {
+      await showCreateAssetTaxRunModal();
+      return;
+    }
+
+    if (e.target.id === "dtAssetTaxCalculateBtn") {
+      await calculateAssetTaxRun();
+      return;
+    }
+
+    if (e.target.id === "dtAssetTaxApproveBtn") {
+      await runAssetTaxAction("assetTaxApprove");
+      return;
+    }
+
+    if (e.target.id === "dtAssetTaxBackBtn") {
+      document
+        .getElementById("dtAssetTaxRunDetail")
+        .classList.add("hidden");
+
+      document
+        .getElementById("dtAssetTaxRunList")
+        .classList.remove("hidden");
+
+      await loadAssetTaxRuns();
       return;
     }
 

@@ -1086,3 +1086,112 @@ def deferred_tax_revenue_profile_calculate(
         )
 
         return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "asset-tax-runs/<int:run_id>/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def asset_tax_calculate_run(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(company_id)
+
+        result = db_service.asset_tax_calculate_run(
+            company_id=company_id,
+            run_id=run_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="calculate_asset_tax_run",
+            entity_type="asset_tax_run",
+            entity_id=run_id,
+            after_json={
+                "run": result.get("run"),
+                "line_count": result.get("line_count"),
+                "review_count": result.get("review_count"),
+            },
+            message=f"Calculated asset tax run {run_id}",
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": result,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_calculate_run failed"
+        )
+        return _error_response(str(e), 500)
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/asset-tax-runs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def asset_tax_runs(cid: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(company_id)
+
+        if request.method == "GET":
+            rows = db_service.asset_tax_list_runs(
+                company_id=company_id,
+            ) or []
+
+            return jsonify({
+                "ok": True,
+                "data": rows,
+            }), 200
+
+        body = request.get_json(silent=True) or {}
+
+        row = db_service.asset_tax_create_run(
+            company_id=company_id,
+            payload=body,
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="create_asset_tax_run",
+            entity_type="asset_tax_run",
+            entity_id=row.get("id"),
+            entity_ref=str(row.get("tax_year") or ""),
+            after_json={"run": row},
+            message=f"Created asset tax run for {row.get('tax_year')}",
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 201
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_runs failed"
+        )
+        return _error_response(str(e), 500)
