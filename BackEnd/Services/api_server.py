@@ -1743,6 +1743,7 @@ def api_auth_resend_confirm():
     supports_credentials=True,
 )
 def api_auth_signin():
+    print("========== SIGNIN HIT ==========", flush=True)
     if request.method == "OPTIONS":
         return "", 204
 
