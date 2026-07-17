@@ -82612,12 +82612,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ) or {}
 
             contract_liability_account = account_code(
-                ifrs15_accounts.get("contract_liability")
+                ifrs15_accounts.get("contract_liability_account")
+                or ifrs15_accounts.get("contract_liability_code")
+                or ifrs15_accounts.get("contract_liability")
                 or ifrs15_accounts.get("CONTRACT_LIABILITY")
             )
 
             revenue_account = account_code(
-                ifrs15_accounts.get("contract_revenue")
+                ifrs15_accounts.get("contract_revenue_account")
+                or ifrs15_accounts.get("revenue_code")
+                or ifrs15_accounts.get("contract_revenue")
                 or ifrs15_accounts.get("CONTRACT_REVENUE")
                 or ifrs15_accounts.get("revenue")
                 or ifrs15_accounts.get("REVENUE")
@@ -82901,7 +82905,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         contract.get("contract_date") or start_date,
                         start_date,
                         end_date,
-                        contract_liability,
+                        billed_to_date,
                         recognized_to_date,
                         contract_liability,
                         contract_liability_account or None,
