@@ -370,3 +370,86 @@ def api_ad_create_and_post(company_id: int):
     except Exception as e:
         current_app.logger.exception("api_ad_create_and_post failed")
         return _json_error(str(e), 400)
+    
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/runs/preview",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_run_preview_by_date(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.accrual_deferral_preview_run_by_date(
+            company_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_ad_run_preview_by_date failed"
+        )
+
+        return _json_error(str(e), 400)
+
+
+@bp_accrual_deferral.route(
+    "/api/companies/<int:company_id>/accrual-deferrals/runs/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ad_post_run_by_date(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ad_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.accrual_deferral_post_run_by_date(
+            company_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_ad_post_run_by_date failed"
+        )
+
+        return _json_error(str(e), 400)

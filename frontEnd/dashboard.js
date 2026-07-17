@@ -42626,12 +42626,15 @@ async function saveEditModal() {
       await loadRuns();
     }
 
-    if (e.target.id === "dtScanBtn") {
-      if (!confirm(
-        "Scan the balance sheet and replace previously generated lines?"
-      )) return;
+    if (e.target.id === "dtScanBtn" || e.target.id === "dtEmptyScanBtn") {
+      if (!confirm("Scan the balance sheet and replace previously generated lines?")) return;
 
-      await runAction("scan");
+      try {
+        await runAction("scan");
+      } catch (err) {
+        alert(err.message || "The deferred-tax scan could not be completed.");
+      }
+      return;
     }
 
     if (e.target.id === "dtBackBtn") {
@@ -57727,6 +57730,13 @@ function bindEventsOnce() {
     selectedItem: null,
   };
 
+  let AD_RUN_STATE = {
+    runId: null,
+    itemId: null,
+    preview: null,
+    posting: false,
+  };
+
   const $ = (id) => document.getElementById(id);
 
   function money(v) {
@@ -57735,6 +57745,37 @@ function bindEventsOnce() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  }
+
+  function formatAdDate(value) {
+    if (!value) return "—";
+
+    const raw = String(value).slice(0, 10);
+    const parts = raw.split("-");
+
+    if (parts.length !== 3) return String(value);
+
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+
+    if (!year || !month || !day) return String(value);
+
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(year, month - 1, day));
+  }
+
+  function adTodayValue() {
+    const now = new Date();
+
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   }
 
   function labelType(t) {
@@ -57853,7 +57894,7 @@ function bindEventsOnce() {
           </p>
           <h3 class="text-lg font-bold">${item.item_number || ""} — ${item.item_title || ""}</h3>
           <p class="text-sm text-slate-500">
-            ${item.start_date || ""} to ${item.end_date || ""}
+            ${formatAdDate(item.start_date)} to ${formatAdDate(item.end_date)}
           </p>
         </div>
 
@@ -57896,7 +57937,11 @@ function bindEventsOnce() {
                 ? schedule.map((line) => `
                   <tr class="border-t">
                     <td class="p-2">${line.line_no}</td>
-                    <td class="p-2">${line.period_start} → ${line.period_end}</td>
+                    <td class="p-2">
+                      ${formatAdDate(line.period_start)}
+                      <span class="text-slate-400 mx-1">→</span>
+                      ${formatAdDate(line.period_end)}
+                    </td>
                     <td class="p-2 text-right">${money(line.opening_balance)}</td>
                     <td class="p-2 text-right">${money(line.recognition_amount)}</td>
                     <td class="p-2 text-right">${money(line.closing_balance)}</td>
@@ -57943,34 +57988,502 @@ function bindEventsOnce() {
     });
   }
 
+  function renderAdRunSchedule(lines = []) {
+    const host = $("adRunScheduleHost");
+    if (!host) return;
+
+    if (!Array.isArray(lines) || !lines.length) {
+      host.innerHTML = `
+        <div class="rounded-lg border border-dashed p-4 text-center text-slate-500">
+          No pending recognition lines were found up to the selected date.
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = `
+      <div class="border rounded-lg overflow-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 sticky top-0">
+            <tr>
+              <th class="p-2 text-left">Item</th>
+              <th class="p-2 text-left">Recognition Date</th>
+              <th class="p-2 text-right">Amount</th>
+              <th class="p-2 text-left">Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${lines.map((line) => `
+              <tr class="border-t">
+                <td class="p-2">
+                  <div class="font-semibold">
+                    ${escapeHtml(
+                      line.item_number ||
+                      line.item_title ||
+                      line.description ||
+                      `Line ${line.line_no || ""}`
+                    )}
+                  </div>
+
+                  ${
+                    line.item_number && line.item_title
+                      ? `<div class="text-slate-500">${escapeHtml(line.item_title)}</div>`
+                      : ""
+                  }
+                </td>
+
+                <td class="p-2">
+                  ${formatAdDate(
+                    line.recognition_date ||
+                    line.period_end ||
+                    line.run_date
+                  )}
+                </td>
+
+                <td class="p-2 text-right font-semibold">
+                  ${money(
+                    line.recognition_amount ??
+                    line.amount ??
+                    line.debit ??
+                    line.credit
+                  )}
+                </td>
+
+                <td class="p-2">
+                  <span class="pill">${escapeHtml(line.status || "pending")}</span>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderAdRunJournal(preview) {
+    const host = $("adRunJournalHost");
+    if (!host) return;
+
+    const journal =
+      preview?.journal ||
+      preview?.entry ||
+      preview?.journal_preview ||
+      preview ||
+      {};
+
+    const lines =
+      journal.lines ||
+      preview?.journal_lines ||
+      preview?.entries ||
+      [];
+
+    if (!Array.isArray(lines) || !lines.length) {
+      host.innerHTML = `
+        <div class="rounded-lg border border-dashed bg-white p-5 text-center text-slate-500">
+          No journal lines were generated.
+        </div>
+      `;
+      return;
+    }
+
+    const totalDebit = lines.reduce(
+      (sum, line) => sum + Number(line.debit || 0),
+      0
+    );
+
+    const totalCredit = lines.reduce(
+      (sum, line) => sum + Number(line.credit || 0),
+      0
+    );
+
+    const balanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+    host.innerHTML = `
+      <div class="bg-white border rounded-xl overflow-hidden">
+        <div class="p-4 border-b">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-slate-500">Journal date</span>
+              <div class="font-semibold">
+                ${formatAdDate(journal.date || journal.journal_date)}
+              </div>
+            </div>
+
+            <div>
+              <span class="text-slate-500">Reference</span>
+              <div class="font-semibold">
+                ${escapeHtml(
+                  journal.ref ||
+                  journal.reference ||
+                  journal.journal_reference ||
+                  "Recognition run"
+                )}
+              </div>
+            </div>
+
+            <div class="md:col-span-2">
+              <span class="text-slate-500">Description</span>
+              <div class="font-semibold">
+                ${escapeHtml(
+                  journal.description ||
+                  "Accrual and deferral recognition"
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50">
+              <tr>
+                <th class="p-3 text-left">Account</th>
+                <th class="p-3 text-right">Debit</th>
+                <th class="p-3 text-right">Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${lines.map((line) => `
+                <tr class="border-t">
+                  <td class="p-3">
+                    <div class="font-medium">
+                      ${escapeHtml(
+                        line.account_name ||
+                        line.account_label ||
+                        line.name ||
+                        line.account_code ||
+                        line.account ||
+                        ""
+                      )}
+                    </div>
+
+                    ${
+                      line.account_code &&
+                      line.account_name
+                        ? `<div class="text-xs text-slate-500">${escapeHtml(line.account_code)}</div>`
+                        : ""
+                    }
+                  </td>
+
+                  <td class="p-3 text-right">
+                    ${Number(line.debit || 0) ? money(line.debit) : "—"}
+                  </td>
+
+                  <td class="p-3 text-right">
+                    ${Number(line.credit || 0) ? money(line.credit) : "—"}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot class="border-t bg-slate-50 font-bold">
+              <tr>
+                <td class="p-3">
+                  <span class="${balanced ? "text-emerald-700" : "text-red-600"}">
+                    ${balanced ? "Balanced" : "Not balanced"}
+                  </span>
+                </td>
+                <td class="p-3 text-right">${money(totalDebit)}</td>
+                <td class="p-3 text-right">${money(totalCredit)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function resetAdRunPreview() {
+    AD_RUN_STATE.runId = null;
+    AD_RUN_STATE.preview = null;
+
+    renderAdRunSchedule([]);
+    renderAdRunJournal(null);
+
+    if ($("adRunScheduleHost")) {
+      $("adRunScheduleHost").innerHTML = `
+        <div class="rounded-lg border border-dashed p-4 text-center text-slate-500">
+          Select a date and click Preview.
+        </div>
+      `;
+    }
+
+    if ($("adRunJournalHost")) {
+      $("adRunJournalHost").innerHTML = `
+        <div class="rounded-lg border border-dashed bg-white p-5 text-center text-slate-500">
+          Journal preview will appear here.
+        </div>
+      `;
+    }
+
+    const postBtn = $("adRunPostBtn");
+
+    if (postBtn) {
+      postBtn.disabled = true;
+      postBtn.classList.add("opacity-50", "cursor-not-allowed");
+    }
+  }
+
+  async function previewAdRecognitionRun() {
+    const cid = adCid();
+    const runDate = $("adRunDate")?.value;
+    const itemType = $("adRunType")?.value || "";
+    const previewBtn = $("adRunPreviewBtn");
+    const postBtn = $("adRunPostBtn");
+
+    if (!cid) {
+      return alert("No active company selected.");
+    }
+
+    if (!runDate) {
+      return alert("Select a recognition date.");
+    }
+
+    const originalText = previewBtn?.textContent || "Preview";
+
+    try {
+      if (previewBtn) {
+        previewBtn.disabled = true;
+        previewBtn.textContent = "Loading...";
+      }
+
+      if (postBtn) {
+        postBtn.disabled = true;
+        postBtn.classList.add("opacity-50", "cursor-not-allowed");
+      }
+
+      $("adRunScheduleHost").innerHTML = `
+        <div class="p-4 text-center text-slate-500">
+          Loading pending schedule lines...
+        </div>
+      `;
+
+      $("adRunJournalHost").innerHTML = `
+        <div class="p-4 text-center text-slate-500">
+          Preparing journal preview...
+        </div>
+      `;
+
+      /*
+      * Step 1: Create a draft recognition run.
+      *
+      * Both run_date and recognition_date are sent so this remains
+      * compatible with either naming convention in db_service.
+      */
+      const created = await apiFetch(
+        ENDPOINTS.accrualDeferrals.runs(cid),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            period_start: `${runDate.slice(0, 7)}-01`,
+            period_end: runDate,
+            run_date: runDate,
+            recognition_date: runDate,
+
+            item_type: itemType || null,
+
+            item_id: AD_RUN_STATE.itemId
+              ? Number(AD_RUN_STATE.itemId)
+              : null,
+
+            run_scope: AD_RUN_STATE.itemId
+              ? "item"
+              : itemType
+                ? "type"
+                : "company",
+
+            run_reason: "manual",
+            status: "draft",
+          }),
+        }
+      );
+
+      const runId = Number(
+        created?.run?.id ||
+        created?.run_id ||
+        created?.id ||
+        created?.data?.run_id ||
+        created?.data?.id ||
+        0
+      );
+
+      if (!runId) {
+        throw new Error(
+          "The recognition run was created, but no run ID was returned."
+        );
+      }
+
+      AD_RUN_STATE.runId = runId;
+
+      // Step 2: Load the backend-generated preview.
+      const result = await apiFetch(
+        ENDPOINTS.accrualDeferrals.runPreview(cid, runId),
+        {
+          method: "GET",
+        }
+      );
+
+      const preview = result?.preview || {};
+      AD_RUN_STATE.preview = preview;
+
+      const pendingLines =
+        preview?.schedule ||
+        preview?.entries ||
+        [];
+
+      renderAdRunSchedule(pendingLines);
+      renderAdRunJournal(preview);
+
+      if (!pendingLines.length) {
+        window.showToast?.(
+          "No pending recognition lines were found for the selected date.",
+          "info"
+        );
+
+        return;
+      }
+
+      if (postBtn) {
+        postBtn.disabled = false;
+        postBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+    } catch (error) {
+      console.error("[AD] recognition preview failed:", error);
+
+      resetAdRunPreview();
+
+      window.showToast?.(
+        error?.message || "Failed to prepare recognition preview.",
+        "error"
+      );
+    } finally {
+      if (previewBtn) {
+        previewBtn.disabled = false;
+        previewBtn.textContent = originalText;
+      }
+    }
+  }
+
+  async function postAdRecognitionRun() {
+    const cid = adCid();
+    const runId = Number(AD_RUN_STATE.runId || 0);
+    const postBtn = $("adRunPostBtn");
+
+    if (!runId) {
+      return alert("Preview the recognition run before posting.");
+    }
+
+    const confirmed = window.confirm(
+      "Post this recognition journal? This will mark the included schedule lines as posted."
+    );
+
+    if (!confirmed) return;
+
+    const originalText = postBtn?.textContent || "Post Recognition";
+
+    try {
+      AD_RUN_STATE.posting = true;
+
+      if (postBtn) {
+        postBtn.disabled = true;
+        postBtn.textContent = "Posting...";
+      }
+
+      const result = await apiFetch(
+        ENDPOINTS.accrualDeferrals.postRun(cid, runId),
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      );
+
+      const journalId =
+        result?.journal_id ||
+        result?.journal?.id ||
+        result?.posted_journal_id ||
+        null;
+
+      window.showToast?.(
+        journalId
+          ? `Recognition posted successfully. Journal ${journalId}.`
+          : "Recognition posted successfully.",
+        "success"
+      );
+
+      closeAdRecognitionRunModal();
+
+      await loadAccrualDeferrals();
+
+      if (AD_RUN_STATE.itemId) {
+        await openAccrualDeferralItem(AD_RUN_STATE.itemId);
+      }
+    } catch (error) {
+      console.error("[AD] recognition posting failed:", error);
+
+      window.showToast?.(
+        error?.message || "Failed to post the recognition run.",
+        "error"
+      );
+
+      if (postBtn) {
+        postBtn.disabled = false;
+      }
+    } finally {
+      AD_RUN_STATE.posting = false;
+
+      if (postBtn) {
+        postBtn.textContent = originalText;
+      }
+    }
+  }
+
   function openAdRecognitionRunModal(ctx = {}) {
     let modal = document.getElementById("adRecognitionRunModal");
+
+    AD_RUN_STATE.itemId = ctx.itemId
+      ? Number(ctx.itemId)
+      : null;
 
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "adRecognitionRunModal";
-      modal.className = "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
+      modal.className =
+        "fixed inset-0 z-[110] bg-black/40 flex items-center justify-center";
+
       modal.innerHTML = `
         <div class="bg-white rounded-xl shadow-xl w-[1500px] max-w-[98vw] h-[92vh] overflow-hidden flex flex-col">
           <div class="p-4 border-b flex justify-between items-center shrink-0">
             <div>
-              <h3 class="text-lg font-bold">Recognition / Amortisation Run</h3>
-              <p class="text-sm text-slate-500">Post all pending recognition lines up to the selected date.</p>
+              <h3 class="text-lg font-bold">
+                Recognition / Amortisation Run
+              </h3>
+              <p class="text-sm text-slate-500">
+                Preview and post pending recognition lines up to the selected date.
+              </p>
             </div>
-            <button id="adRunCloseBtn" class="btn">✕</button>
+
+            <button id="adRunCloseBtn" type="button" class="btn">✕</button>
           </div>
 
           <div class="grid grid-cols-1 xl:grid-cols-[520px_1fr] gap-4 flex-1 overflow-hidden p-4">
             <div class="border rounded-xl bg-white overflow-auto p-4">
-              <div class="grid grid-cols-2 gap-3 mb-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <label class="text-sm">
                   Recognition Date
-                  <input id="adRunDate" type="date" class="input">
+                  <input
+                    id="adRunDate"
+                    type="date"
+                    class="input"
+                    required
+                  >
                 </label>
+
                 <label class="text-sm">
                   Type
                   <select id="adRunType" class="input">
-                    <option value="">All</option>
+                    <option value="">All types</option>
                     <option value="prepaid_expense">Prepaid Expense</option>
                     <option value="deferred_expense">Deferred Expense</option>
                     <option value="deferred_income">Deferred Income</option>
@@ -57981,13 +58494,15 @@ function bindEventsOnce() {
               </div>
 
               <h4 class="font-bold mb-2">Pending Schedule Lines</h4>
+
               <div id="adRunScheduleHost" class="text-sm text-slate-500">
-                Click Preview to load pending lines.
+                Select a date and click Preview.
               </div>
             </div>
 
             <div class="border rounded-xl bg-slate-50 overflow-auto p-4">
               <h4 class="font-bold">Journal Preview</h4>
+
               <div id="adRunJournalHost" class="text-sm text-slate-500 mt-3">
                 Journal preview will appear here.
               </div>
@@ -57996,13 +58511,34 @@ function bindEventsOnce() {
 
           <div class="flex justify-between items-center gap-2 border-t bg-white px-4 py-3 shrink-0">
             <div class="text-xs text-slate-500">
-              This run includes all pending schedule lines up to the selected date.
+              Only pending schedule lines due on or before the selected date will be included.
             </div>
 
             <div class="flex gap-2">
-              <button id="adRunCancelBtn" type="button" class="btn">Cancel</button>
-              <button id="adRunPreviewBtn" type="button" class="btn">Preview</button>
-              <button id="adRunPostBtn" type="button" class="btn-highlight">Post Recognition</button>
+              <button
+                id="adRunCancelBtn"
+                type="button"
+                class="btn"
+              >
+                Cancel
+              </button>
+
+              <button
+                id="adRunPreviewBtn"
+                type="button"
+                class="btn"
+              >
+                Preview
+              </button>
+
+              <button
+                id="adRunPostBtn"
+                type="button"
+                class="btn-highlight opacity-50 cursor-not-allowed"
+                disabled
+              >
+                Post Recognition
+              </button>
             </div>
           </div>
         </div>
@@ -58010,16 +58546,60 @@ function bindEventsOnce() {
 
       document.body.appendChild(modal);
 
-      $("adRunCloseBtn")?.addEventListener("click", closeAdRecognitionRunModal);
-      $("adRunCancelBtn")?.addEventListener("click", closeAdRecognitionRunModal);
+      $("adRunCloseBtn")?.addEventListener(
+        "click",
+        closeAdRecognitionRunModal
+      );
+
+      $("adRunCancelBtn")?.addEventListener(
+        "click",
+        closeAdRecognitionRunModal
+      );
+
+      $("adRunPreviewBtn")?.addEventListener(
+        "click",
+        previewAdRecognitionRun
+      );
+
+      $("adRunPostBtn")?.addEventListener(
+        "click",
+        postAdRecognitionRun
+      );
+
+      $("adRunDate")?.addEventListener("change", resetAdRunPreview);
+      $("adRunType")?.addEventListener("change", resetAdRunPreview);
     }
 
-    $("adRunDate").value = new Date().toISOString().slice(0, 10);
+    $("adRunDate").value = adTodayValue();
+
+    if (AD_RUN_STATE.itemId) {
+      const selectedItem = AD_STATE.items.find(
+        (item) => Number(item.id) === Number(AD_RUN_STATE.itemId)
+      );
+
+      if (selectedItem && $("adRunType")) {
+        $("adRunType").value = selectedItem.item_type || "";
+        $("adRunType").disabled = true;
+      }
+    } else if ($("adRunType")) {
+      $("adRunType").value = "";
+      $("adRunType").disabled = false;
+    }
+
+    resetAdRunPreview();
     modal.classList.remove("hidden");
   }
 
   function closeAdRecognitionRunModal() {
-    document.getElementById("adRecognitionRunModal")?.classList.add("hidden");
+    if (AD_RUN_STATE.posting) return;
+
+    document
+      .getElementById("adRecognitionRunModal")
+      ?.classList.add("hidden");
+
+    AD_RUN_STATE.runId = null;
+    AD_RUN_STATE.itemId = null;
+    AD_RUN_STATE.preview = null;
   }
 
   window.openAdRecognitionRunModal = openAdRecognitionRunModal;
@@ -58914,7 +59494,11 @@ function bindEventsOnce() {
             ${schedule.map((x, i) => `
               <tr class="border-t">
                 <td class="p-2">${x.line_no || i + 1}</td>
-                <td class="p-2">${x.period_start || ""} → ${x.period_end || ""}</td>
+                <td class="p-2">
+                  ${formatAdDate(x.period_start)}
+                  <span class="text-slate-400 mx-1">→</span>
+                  ${formatAdDate(x.period_end)}
+                </td>
                 <td class="p-2 text-right">${money(x.opening_balance)}</td>
                 <td class="p-2 text-right font-semibold">${money(x.recognition_amount)}</td>
                 <td class="p-2 text-right">${money(x.closing_balance)}</td>

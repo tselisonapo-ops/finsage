@@ -82380,15 +82380,224 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY period_end DESC, id DESC
         """, (int(company_id),))
 
+    def accrual_deferral_post_run_by_date(
+        self,
+        company_id: int,
+        payload: dict,
+        user_id=None,
+    ):
+        payload = payload or {}
+        schema = self.company_schema(company_id)
+        run = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.accrual_deferral_runs
+            WHERE company_id = %s
+            AND id = %s
+            FOR UPDATE
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
 
-    def accrual_deferral_create_run(self, company_id: int, payload: dict, user_id=None):
+        if not run:
+            raise ValueError(
+                "Accrual/deferral run not found"
+            )
+
+        if run.get("status") == "posted":
+            raise ValueError(
+                "This recognition run has already been posted"
+            )
+
+        if run.get("status") != "draft":
+            raise ValueError(
+                f"Cannot post a run with status '{run.get('status')}'"
+            )
+            
+        run_id = payload.get("run_id")
+
+        if run_id:
+            run_id = int(run_id)
+
+            run = self.accrual_deferral_get_run(
+                company_id,
+                run_id,
+            )
+
+            if not run:
+                raise ValueError(
+                    "Accrual/deferral run not found"
+                )
+
+            run_row = run.get("run") or {}
+
+            if run_row.get("status") != "draft":
+                raise ValueError(
+                    "Only a draft recognition run can be posted"
+                )
+
+        else:
+            normalised = self.accrual_deferral_normalise_run_payload(
+                company_id,
+                payload,
+            )
+
+            created = self.accrual_deferral_create_run(
+                company_id,
+                normalised,
+                user_id=user_id,
+            )
+
+            run_row = created.get("run") or {}
+
+            if not run_row.get("id"):
+                raise ValueError(
+                    "Recognition run was created but no run ID was returned"
+                )
+
+            run_id = int(run_row["id"])
+
+        posted = self.accrual_deferral_post_run(
+            company_id,
+            run_id,
+            user_id=user_id,
+        )
+
+        return {
+            "run_id": run_id,
+            **posted,
+        }
+
+    def accrual_deferral_preview_run_by_date(
+        self,
+        company_id: int,
+        payload: dict,
+        user_id=None,
+    ):
+        normalised = self.accrual_deferral_normalise_run_payload(
+            company_id,
+            payload,
+        )
+
+        created = self.accrual_deferral_create_run(
+            company_id,
+            normalised,
+            user_id=user_id,
+        )
+
+        run = created.get("run") if isinstance(created, dict) else None
+
+        if not run or not run.get("id"):
+            raise ValueError(
+                "Recognition run was created but no run ID was returned"
+            )
+
+        run_id = int(run["id"])
+
+        preview = self.accrual_deferral_build_recognition_preview(
+            company_id,
+            run_id,
+        )
+
+        return {
+            "run_id": run_id,
+            "run": run,
+            "preview": preview,
+        }
+
+    def accrual_deferral_normalise_run_payload(
+        self,
+        company_id: int,
+        payload: dict,
+    ):
+        payload = payload or {}
+
+        recognition_date = _date(
+            payload.get("recognition_date")
+            or payload.get("run_date")
+            or payload.get("period_end")
+        )
+
+        if not recognition_date:
+            raise ValueError("recognition_date is required")
+
+        period_start = _date(
+            payload.get("period_start")
+        )
+
+        if not period_start:
+            period_start = date(
+                recognition_date.year,
+                recognition_date.month,
+                1,
+            )
+
+        if period_start > recognition_date:
+            raise ValueError(
+                "period_start cannot be after recognition_date"
+            )
+
+        item_id = payload.get("item_id")
+
+        if item_id in ("", None):
+            item_id = None
+        else:
+            item_id = int(item_id)
+
+        item_type = str(
+            payload.get("item_type") or ""
+        ).strip() or None
+
+        return {
+            "period_start": period_start,
+            "period_end": recognition_date,
+            "recognition_date": recognition_date,
+            "run_date": recognition_date,
+            "item_id": item_id,
+            "item_type": item_type,
+            "run_scope": (
+                "item"
+                if item_id
+                else "type"
+                if item_type
+                else "company"
+            ),
+            "run_reason": (
+                payload.get("run_reason")
+                or "manual"
+            ),
+            "payload_json": payload,
+        }
+
+    def accrual_deferral_create_run(
+        self,
+        company_id: int,
+        payload: dict,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
 
         period_start = _date(payload.get("period_start"))
-        period_end = _date(payload.get("period_end"))
+        period_end = _date(
+            payload.get("period_end")
+            or payload.get("recognition_date")
+            or payload.get("run_date")
+        )
 
-        if not period_start or not period_end:
-            raise ValueError("period_start and period_end are required")
+        if not period_end:
+            raise ValueError("period_end is required")
+
+        if not period_start:
+            period_start = date(
+                period_end.year,
+                period_end.month,
+                1,
+            )
+
+        if period_start > period_end:
+            raise ValueError(
+                "period_start cannot be after period_end"
+            )
 
         item_id = payload.get("item_id")
         item_type = payload.get("item_type")
@@ -82407,24 +82616,35 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     requested_by_user_id,
                     payload_json
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,%s,%s)
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,
+                    'draft',%s,%s,%s
+                )
                 RETURNING *
             """, (
                 int(company_id),
-                item_id,
-                payload.get("run_scope") or ("item" if item_id else "company"),
-                item_type,
+                int(item_id) if item_id else None,
+                payload.get("run_scope") or (
+                    "item"
+                    if item_id
+                    else "type"
+                    if item_type
+                    else "company"
+                ),
+                item_type or None,
                 period_start,
                 period_end,
                 payload.get("run_reason") or "period_end",
                 user_id,
-                payload.get("payload_json") or {},
+                Json(payload.get("payload_json") or {}),
             ))
 
             run = cur.fetchone()
 
-        return self.accrual_deferral_get_run(company_id, run["id"])
-
+        return self.accrual_deferral_get_run(
+            company_id,
+            run["id"],
+        )
 
     def accrual_deferral_get_run(self, company_id: int, run_id: int):
         schema = self.company_schema(company_id)
@@ -82779,23 +82999,70 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "run": run,
         }
 
-    def accrual_deferral_post_run(self, company_id: int, run_id: int, user_id=None):
+    def accrual_deferral_post_run(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
 
-        preview = self.accrual_deferral_build_recognition_preview(company_id, run_id)
+        # Build the recognition preview first.
+        preview = self.accrual_deferral_build_recognition_preview(
+            company_id,
+            run_id,
+        )
 
         journal = preview.get("journal") or {}
-        if not journal.get("lines"):
-            raise ValueError("No pending schedule lines found for this run")
 
-        preview["created_by_user_id"] = user_id
-        preview["prepared_by_user_id"] = user_id
+        if not journal.get("lines"):
+            raise ValueError(
+                "No pending schedule lines found for this run"
+            )
+
+        journal["created_by_user_id"] = user_id
+        journal["prepared_by_user_id"] = user_id
 
         with self._conn_cursor() as (conn, cur):
             try:
-                journal_id = self.post_journal(company_id, journal, cur=cur, conn=conn)
+                # Prevent posting the same run twice.
+                cur.execute(f"""
+                    SELECT id, status, journal_id
+                    FROM {schema}.accrual_deferral_runs
+                    WHERE company_id = %s
+                    AND id = %s
+                    FOR UPDATE
+                """, (
+                    int(company_id),
+                    int(run_id),
+                ))
 
-                for e in preview["entries"]:
+                run_row = cur.fetchone()
+
+                if not run_row:
+                    raise ValueError(
+                        "Accrual/deferral run not found"
+                    )
+
+                if run_row.get("status") == "posted":
+                    raise ValueError(
+                        "This recognition run has already been posted"
+                    )
+
+                if run_row.get("status") != "draft":
+                    raise ValueError(
+                        f"Cannot post a run with status "
+                        f"'{run_row.get('status')}'"
+                    )
+
+                journal_id = self.post_journal(
+                    company_id,
+                    journal,
+                    cur=cur,
+                    conn=conn,
+                )
+
+                for e in preview.get("entries") or []:
                     cur.execute(f"""
                         INSERT INTO {schema}.accrual_deferral_entries (
                             company_id,
@@ -82813,7 +83080,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             source_basis,
                             payload_json
                         )
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'system',%s)
+                        VALUES (
+                            %s,%s,%s,%s,%s,%s,%s,
+                            %s,%s,%s,%s,%s,
+                            'system',%s
+                        )
                     """, (
                         int(company_id),
                         int(run_id),
@@ -82827,16 +83098,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                         e["closing_balance"],
                         e["debit_account"],
                         e["credit_account"],
-                        {},
+                        Json({}),
                     ))
 
                     cur.execute(f"""
                         UPDATE {schema}.accrual_deferral_schedule_lines
-                        SET status='posted',
-                            journal_id=%s,
-                            posted_at=NOW(),
-                            posted_by_user_id=%s
-                        WHERE company_id=%s AND id=%s
+                        SET status = 'posted',
+                            journal_id = %s,
+                            posted_at = NOW(),
+                            posted_by_user_id = %s
+                        WHERE company_id = %s
+                        AND id = %s
+                        AND status = 'pending'
                     """, (
                         journal_id,
                         user_id,
@@ -82846,12 +83119,27 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                     cur.execute(f"""
                         UPDATE {schema}.accrual_deferral_items
-                        SET recognized_to_date = recognized_to_date + %s,
-                            remaining_balance = GREATEST(remaining_balance - %s, 0),
+                        SET recognized_to_date =
+                                recognized_to_date + %s,
+                            remaining_balance =
+                                GREATEST(
+                                    remaining_balance - %s,
+                                    0
+                                ),
+                            status = CASE
+                                WHEN GREATEST(
+                                    remaining_balance - %s,
+                                    0
+                                ) = 0
+                                THEN 'completed'
+                                ELSE status
+                            END,
                             updated_by_user_id = %s,
                             updated_at = NOW()
-                        WHERE company_id=%s AND id=%s
+                        WHERE company_id = %s
+                        AND id = %s
                     """, (
+                        e["recognition_amount"],
                         e["recognition_amount"],
                         e["recognition_amount"],
                         user_id,
@@ -82861,26 +83149,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
                 cur.execute(f"""
                     UPDATE {schema}.accrual_deferral_runs
-                    SET status='posted',
-                        journal_id=%s,
-                        total_recognition_amount=%s,
-                        posted_by_user_id=%s,
-                        posted_at=NOW()
-                    WHERE company_id=%s AND id=%s
+                    SET status = 'posted',
+                        journal_id = %s,
+                        total_recognition_amount = %s,
+                        posted_by_user_id = %s,
+                        posted_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    RETURNING *
                 """, (
                     journal_id,
-                    preview["total"],
+                    preview.get("total") or 0,
                     user_id,
                     int(company_id),
                     int(run_id),
                 ))
+
+                posted_run = cur.fetchone()
 
                 conn.commit()
 
                 return {
                     "journal_id": journal_id,
                     "preview": preview,
-                    "run": self.accrual_deferral_get_run(company_id, run_id),
+                    "run": posted_run,
                 }
 
             except Exception:
@@ -93459,21 +93751,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             try:
                 as_at = run["reporting_date"]
 
-                balance_sheet = self.deferred_tax_build_balance_sheet(
-                    company_id,
-                    as_at,
-                )
+                balance_sheet = self.deferred_tax_build_balance_sheet(company_id, as_at)
 
-                balance_difference = Decimal(str(
-                    balance_sheet
-                    .get("balance_check", {})
-                    .get("values", {})
-                    .get("cur", 0)
-                ))
+                if "data" in balance_sheet and isinstance(balance_sheet.get("data"), dict):
+                    balance_sheet = balance_sheet["data"]
+
+                check = balance_sheet.get("balance_check") or {}
+                values = check.get("values") or {}
+                raw_difference = values.get("total") if values.get("total") is not None else values.get("cur", 0)
+                balance_difference = Decimal(str(raw_difference or 0))
 
                 if abs(balance_difference) > Decimal("0.05"):
+                    result_type = "profit" if balance_difference > 0 else "loss"
+
                     raise ValueError(
-                        "Balance sheet is not balanced at the reporting date."
+                        f"The balance sheet has a difference of {abs(balance_difference):,.2f}. "
+                        f"This may represent prior-period {result_type} that has not yet been "
+                        f"transferred to retained earnings. Complete the Year-End Close, then "
+                        f"scan the deferred-tax run again."
                     )
 
                 candidates = extract_deferred_tax_candidates(
