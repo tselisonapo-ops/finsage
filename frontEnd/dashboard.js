@@ -57912,6 +57912,21 @@ function bindEventsOnce() {
         );
       });
 
+    } else if (tab === "reports") {
+      loadPayrollReports()
+        .catch(error => {
+          console.error(
+            "Payroll reports failed:",
+            error
+          );
+
+          showPayrollStatus?.(
+            error.message ||
+            "Failed to load payroll reports.",
+            "error"
+          );
+        });
+
     } else if (tab === "tax-admin") {
       taxAdminInit();
 
@@ -57935,6 +57950,600 @@ function bindEventsOnce() {
         });
       });
     }
+  }
+
+  payrollState.reports = payrollState.reports || {
+    period: "this_month",
+    employees: [],
+    runs: [],
+    calendars: [],
+    benefits: {},
+    diagnostics: null,
+  };
+
+  function payrollReportItems(response) {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.items)) return response.items;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.items)) return response.data.items;
+    return [];
+  }
+
+  function payrollReportNum(value) {
+    const number = Number(value || 0);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function payrollReportDate(value) {
+    if (!value) return "—";
+
+    const raw = String(value).slice(0, 10);
+    const parsed = new Date(`${raw}T00:00:00`);
+
+    if (Number.isNaN(parsed.getTime())) return raw;
+
+    return parsed.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+    });
+  }
+
+  function setPayrollReportText(elementId, value) {
+    const element = $(elementId);
+    if (element) element.textContent = value;
+  }
+
+  async function loadPayrollReports() {
+    const companyId = cid();
+
+    if (!companyId) {
+      throw new Error("No active company selected.");
+    }
+
+    const reportingDate = new Date().toISOString().slice(0, 10);
+
+    const benefitsRequest = ENDPOINTS.payroll.employeeBenefitsDashboard
+      ? apiFetch(
+          ENDPOINTS.payroll.employeeBenefitsDashboard(companyId, reportingDate)
+        ).catch(error => {
+          console.warn("Employee-benefit dashboard unavailable:", error);
+          return null;
+        })
+      : Promise.resolve(null);
+
+    const diagnosticsRequest = ENDPOINTS.payroll.employeeBenefitDiagnostics
+      ? apiFetch(
+          ENDPOINTS.payroll.employeeBenefitDiagnostics(companyId)
+        ).catch(error => {
+          console.warn("Employee-benefit diagnostics unavailable:", error);
+          return null;
+        })
+      : Promise.resolve(null);
+
+    const [
+      employeesResponse,
+      runsResponse,
+      calendarsResponse,
+      benefitsResponse,
+      diagnosticsResponse,
+    ] = await Promise.all([
+      apiFetch(ENDPOINTS.payroll.employees(companyId, { status: "" })),
+      apiFetch(ENDPOINTS.payroll.runs(companyId)),
+      apiFetch(ENDPOINTS.payroll.calendars(companyId)),
+      benefitsRequest,
+      diagnosticsRequest,
+    ]);
+
+    payrollState.reports.employees = payrollReportItems(employeesResponse);
+    payrollState.reports.runs = payrollReportItems(runsResponse);
+    payrollState.reports.calendars = payrollReportItems(calendarsResponse);
+    payrollState.reports.benefits = benefitsResponse?.data || {};
+    payrollState.reports.diagnostics = diagnosticsResponse?.data || null;
+
+    renderPayrollReports();
+  }
+
+  function renderPayrollReports() {
+    const employees = payrollState.reports.employees || [];
+    const benefits = payrollState.reports.benefits || {};
+
+    const runs = (payrollState.reports.runs || []).filter(run => {
+      const status = String(run.status || "").toLowerCase();
+      return ["calculated", "approved", "posted"].includes(status);
+    });
+
+    const activeEmployees = employees.filter(employee => {
+      return String(employee.employment_status || "active").toLowerCase() === "active";
+    });
+
+    const gross = runs.reduce(
+      (total, run) => total + payrollReportNum(run.gross_pay),
+      0
+    );
+
+    const net = runs.reduce(
+      (total, run) => total + payrollReportNum(run.net_pay),
+      0
+    );
+
+    const contributions = runs.reduce(
+      (total, run) =>
+        total + payrollReportNum(run.total_employer_contributions),
+      0
+    );
+
+    const employerCost = gross + contributions;
+
+    const benefitsLiability =
+      payrollReportNum(benefits.current_liability) +
+      payrollReportNum(benefits.noncurrent_liability);
+
+    const averageCost = activeEmployees.length
+      ? employerCost / activeEmployees.length
+      : 0;
+
+    setPayrollReportText("payrollReportEmployeeCount", activeEmployees.length);
+    setPayrollReportText("payrollReportGrossPayroll", money(gross));
+    setPayrollReportText("payrollReportNetPayroll", money(net));
+    setPayrollReportText(
+      "payrollReportEmployerContributions",
+      money(contributions)
+    );
+    setPayrollReportText(
+      "payrollReportBenefitsLiability",
+      money(benefitsLiability)
+    );
+    setPayrollReportText("payrollReportAverageCost", money(averageCost));
+    setPayrollReportText(
+      "payrollReportLeaveLiability",
+      money(benefits.leave_liability)
+    );
+    setPayrollReportText(
+      "payrollReportBonusLiability",
+      money(benefits.bonus_liability)
+    );
+    setPayrollReportText(
+      "payrollReportTerminationLiability",
+      money(benefits.termination_liability)
+    );
+    setPayrollReportText("payrollReportOci", money(benefits.oci));
+
+    renderPayrollReportTrend(runs);
+    renderPayrollReportCompliance(runs);
+    renderPayrollReportEmployeeComposition(employees);
+    renderPayrollReportCalendar();
+    renderPayrollReportRuns(runs);
+    renderPayrollReportInsights({
+      activeEmployees,
+      runs,
+      gross,
+      net,
+      contributions,
+      benefits,
+    });
+  }
+
+  function renderPayrollReportTrend(runs) {
+    const container = $("payrollReportTrendChart");
+    if (!container) return;
+
+    const items = [...runs]
+      .sort((a, b) =>
+        String(a.payment_date || "").localeCompare(
+          String(b.payment_date || "")
+        )
+      )
+      .slice(-8);
+
+    if (!items.length) {
+      container.innerHTML = `
+        <div class="payroll-report-empty">
+          No calculated or posted payroll runs.
+        </div>
+      `;
+      return;
+    }
+
+    const maximum = Math.max(
+      ...items.flatMap(run => {
+        const gross = payrollReportNum(run.gross_pay);
+        const net = payrollReportNum(run.net_pay);
+        const cost =
+          gross + payrollReportNum(run.total_employer_contributions);
+
+        return [gross, net, cost];
+      }),
+      1
+    );
+
+    const barHeight = value => {
+      return Math.max(3, Math.round((payrollReportNum(value) / maximum) * 190));
+    };
+
+    container.innerHTML = items
+      .map(run => {
+        const gross = payrollReportNum(run.gross_pay);
+        const net = payrollReportNum(run.net_pay);
+        const cost =
+          gross + payrollReportNum(run.total_employer_contributions);
+
+        const label = run.run_no || payrollReportDate(run.payment_date);
+
+        return `
+          <div class="payroll-trend-column">
+            <div class="payroll-trend-bars">
+              <span
+                class="payroll-trend-bar"
+                style="height:${barHeight(gross)}px"
+                title="Gross ${money(gross)}"
+              ></span>
+
+              <span
+                class="payroll-trend-bar net"
+                style="height:${barHeight(net)}px"
+                title="Net ${money(net)}"
+              ></span>
+
+              <span
+                class="payroll-trend-bar cost"
+                style="height:${barHeight(cost)}px"
+                title="Employer cost ${money(cost)}"
+              ></span>
+            </div>
+
+            <div class="payroll-trend-label">${esc(label)}</div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function renderPayrollReportCompliance(runs) {
+    const container = $("payrollReportComplianceList");
+    if (!container) return;
+
+    const diagnostics = payrollState.reports.diagnostics;
+    const hasCalculatedRun = runs.length > 0;
+    const hasPostedRun = runs.some(
+      run => String(run.status || "").toLowerCase() === "posted"
+    );
+
+    const checks = [
+      {
+        ok: hasCalculatedRun,
+        warning: false,
+        label: hasCalculatedRun
+          ? "Payroll has been calculated"
+          : "No calculated payroll run",
+      },
+      {
+        ok: hasPostedRun,
+        warning: false,
+        label: hasPostedRun
+          ? "Payroll journal has been posted"
+          : "Payroll journal requires posting",
+      },
+      {
+        ok: diagnostics?.ok === true,
+        warning: !diagnostics,
+        label: diagnostics
+          ? diagnostics.ok
+            ? "IAS 19 diagnostics passed"
+            : "IAS 19 diagnostics require attention"
+          : "IAS 19 diagnostics not available",
+      },
+    ];
+
+    container.innerHTML = checks
+      .map(check => {
+        const cssClass = check.ok ? "" : check.warning ? "warning" : "error";
+        const icon = check.ok ? "✓" : check.warning ? "!" : "×";
+
+        return `
+          <div class="payroll-compliance-item ${cssClass}">
+            <span class="status-icon">${icon}</span>
+            <span>${esc(check.label)}</span>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function renderPayrollReportEmployeeComposition(employees) {
+    const container = $("payrollReportEmployeeComposition");
+    if (!container) return;
+
+    const statusMap = new Map();
+
+    employees.forEach(employee => {
+      const status = String(
+        employee.employment_status || "active"
+      ).toLowerCase();
+
+      statusMap.set(status, (statusMap.get(status) || 0) + 1);
+    });
+
+    const items = [...statusMap.entries()].sort((a, b) => b[1] - a[1]);
+    const maximum = Math.max(...items.map(([, count]) => count), 1);
+
+    if (!items.length) {
+      container.innerHTML = `
+        <div class="payroll-report-empty">
+          No employee records.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(([status, count]) => {
+        const label = status.charAt(0).toUpperCase() + status.slice(1);
+        const width = Math.round((count / maximum) * 100);
+
+        return `
+          <div class="payroll-breakdown-item">
+            <span>${esc(label)}</span>
+
+            <div class="payroll-breakdown-bar">
+              <span style="width:${width}%"></span>
+            </div>
+
+            <strong>${count}</strong>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function renderPayrollReportCalendar() {
+    const container = $("payrollReportUpcomingCalendar");
+    if (!container) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    const items = (payrollState.reports.calendars || [])
+      .filter(calendar => {
+        const paymentDate = String(calendar.payment_date || "");
+        const status = String(calendar.status || "").toLowerCase();
+
+        return (
+          paymentDate >= today &&
+          !["closed", "processed"].includes(status)
+        );
+      })
+      .sort((a, b) =>
+        String(a.payment_date || "").localeCompare(
+          String(b.payment_date || "")
+        )
+      )
+      .slice(0, 5);
+
+    if (!items.length) {
+      container.innerHTML = `
+        <div class="payroll-report-empty">
+          No upcoming open payroll periods.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(calendar => {
+        return `
+          <div class="payroll-calendar-item">
+            <div>
+              <strong>${esc(calendar.frequency || "Payroll")}</strong>
+              <small>
+                ${payrollReportDate(calendar.period_start)}
+                –
+                ${payrollReportDate(calendar.period_end)}
+              </small>
+            </div>
+
+            <span>${payrollReportDate(calendar.payment_date)}</span>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function renderPayrollReportRuns(runs) {
+    const tableBody = $("payrollReportRunsBody");
+    if (!tableBody) return;
+
+    const items = [...runs]
+      .sort((a, b) =>
+        String(b.payment_date || "").localeCompare(
+          String(a.payment_date || "")
+        )
+      )
+      .slice(0, 10);
+
+    if (!items.length) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="8">No calculated or posted payroll runs.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    tableBody.innerHTML = items
+      .map(run => {
+        const runName = run.run_no || `Run ${run.id}`;
+
+        return `
+          <tr>
+            <td><strong>${esc(runName)}</strong></td>
+
+            <td>
+              ${payrollReportDate(run.period_start)}
+              –
+              ${payrollReportDate(run.period_end)}
+            </td>
+
+            <td>${payrollReportDate(run.payment_date)}</td>
+
+            <td>
+              <span class="payroll-pill">
+                ${esc(run.status || "draft")}
+              </span>
+            </td>
+
+            <td class="num">${money(run.gross_pay)}</td>
+            <td class="num">${money(run.total_deductions)}</td>
+            <td class="num">${money(run.net_pay)}</td>
+
+            <td>
+              <button
+                type="button"
+                class="payroll-link-button"
+                data-open-payroll-run="${esc(run.id)}"
+              >
+                Open
+              </button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    tableBody.querySelectorAll("[data-open-payroll-run]").forEach(button => {
+      button.addEventListener("click", () => {
+        const runId = Number(button.dataset.openPayrollRun);
+
+        payrollState.selectedRunId = runId;
+        switchPayrollTab("runs");
+        openPayrollRun?.(runId);
+      });
+    });
+  }
+
+  function renderPayrollReportInsights(context) {
+    const container = $("payrollReportInsights");
+    if (!container) return;
+
+    const {
+      activeEmployees,
+      runs,
+      gross,
+      net,
+      contributions,
+      benefits,
+    } = context;
+
+    const insights = [];
+
+    if (runs.length) {
+      const deductionRate = gross ? ((gross - net) / gross) * 100 : 0;
+
+      insights.push(
+        `Payroll deductions represent ${deductionRate.toFixed(1)}% of gross payroll.`
+      );
+
+      insights.push(
+        `Employer contributions add ${money(contributions)} to total payroll cost.`
+      );
+    } else {
+      insights.push("No calculated or posted payroll run is available.");
+    }
+
+    insights.push(
+      `${activeEmployees.length} active employee${
+        activeEmployees.length === 1 ? "" : "s"
+      } are included in payroll reporting.`
+    );
+
+    const leaveLiability = payrollReportNum(benefits.leave_liability);
+
+    insights.push(
+      leaveLiability > 0
+        ? `The closing leave provision is ${money(leaveLiability)}.`
+        : "No closing leave provision has been calculated."
+    );
+
+    const bonusLiability = payrollReportNum(benefits.bonus_liability);
+
+    if (bonusLiability > 0) {
+      insights.push(
+        `The recognised bonus obligation is ${money(bonusLiability)}.`
+      );
+    }
+
+    if (payrollState.reports.diagnostics?.ok === false) {
+      insights.push("IAS 19 configuration contains unresolved issues.");
+    }
+
+    container.innerHTML = insights
+      .map(insight => {
+        return `
+          <div class="payroll-insight-item">
+            ${esc(insight)}
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function bindPayrollReportsEvents() {
+    $("payrollReportsRefreshBtn")?.addEventListener("click", () => {
+      loadPayrollReports().catch(error => {
+        console.error("Payroll reports failed:", error);
+
+        showPayrollStatus?.(
+          error.message || "Failed to load payroll reports.",
+          "error"
+        );
+      });
+    });
+
+    $("payrollReportsPeriod")?.addEventListener("change", () => {
+      payrollState.reports.period = $("payrollReportsPeriod").value;
+
+      loadPayrollReports().catch(error => {
+        console.error("Payroll reports failed:", error);
+
+        showPayrollStatus?.(
+          error.message || "Failed to load payroll reports.",
+          "error"
+        );
+      });
+    });
+
+    $("payrollOpenBenefitsWorkspaceBtn")?.addEventListener("click", () => {
+      switchPayrollTab("employee-benefits");
+    });
+
+    document.querySelectorAll("[data-payroll-report]").forEach(button => {
+      button.addEventListener("click", () => {
+        openPayrollReport(button.dataset.payrollReport);
+      });
+    });
+  }
+
+  function openPayrollReport(reportKey) {
+    const reportNames = {
+      "payroll-register": "Payroll Register",
+      payslips: "Payslips",
+      "employee-cost": "Employee Cost",
+      "department-cost": "Department Cost",
+      "tax-report": "Payroll Tax Report",
+      "leave-liability": "Leave Liability",
+      "bonus-provision": "Bonus Provision",
+      "benefit-disclosure": "IAS 19 Disclosure",
+      "journal-report": "Payroll Journals",
+      "gl-reconciliation": "GL Reconciliation",
+    };
+
+    const reportName = reportNames[reportKey] || "Payroll Report";
+
+    showPayrollStatus?.(
+      `${reportName} selected. The report endpoint can now be connected.`,
+      "info"
+    );
+
+    console.log("Selected payroll report:", reportKey);
   }
 
   function switchPayrollEmpTab(tab) {
@@ -58526,7 +59135,7 @@ function bindEventsOnce() {
 
   function bindPayrollEventsOnce() {
     if (payrollState.bound) return;
-
+    bindPayrollReportsEvents();
     try {
 
     const payrollScreen =

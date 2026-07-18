@@ -2634,6 +2634,401 @@ html, body {
   margin-bottom: 14px;
 }
 
+.payroll-reports-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.payroll-reports-toolbar label {
+  display: grid;
+  gap: 5px;
+  color: #52606d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payroll-reports-toolbar select {
+  min-width: 150px;
+  border: 1px solid #d9e2ec;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 9px 11px;
+}
+
+.payroll-report-kpis {
+  display: grid;
+  grid-template-columns:
+    repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.payroll-report-kpis article,
+.payroll-report-card {
+  border: 1px solid #e4eaf2;
+  border-radius: 15px;
+  background: #ffffff;
+  padding: 17px;
+  box-shadow:
+    0 10px 25px
+    rgba(16, 42, 67, 0.045);
+}
+
+.payroll-report-kpis span {
+  display: block;
+  min-height: 30px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payroll-report-kpis strong {
+  display: block;
+  margin: 8px 0 6px;
+  color: #102a43;
+  font-size: 22px;
+}
+
+.payroll-report-kpis small {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.payroll-report-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.payroll-report-grid-main {
+  grid-template-columns:
+    minmax(0, 2fr)
+    minmax(280px, 1fr);
+}
+
+.payroll-report-card-wide {
+  grid-column: span 2;
+}
+
+.payroll-report-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.payroll-report-card-head h3 {
+  margin: 0 0 5px;
+  color: #102a43;
+  font-size: 16px;
+}
+
+.payroll-report-card-head p {
+  margin: 0;
+}
+
+.payroll-trend-chart {
+  min-height: 250px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 18px 4px 5px;
+  border-top: 1px solid #eef2f6;
+}
+
+.payroll-trend-column {
+  min-width: 72px;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+}
+
+.payroll-trend-bars {
+  min-height: 195px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 5px;
+}
+
+.payroll-trend-bar {
+  width: 15px;
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  background: #1f6fb2;
+}
+
+.payroll-trend-bar.net {
+  background: #37a36b;
+}
+
+.payroll-trend-bar.cost {
+  background: #9b7ad8;
+}
+
+.payroll-trend-label {
+  overflow: hidden;
+  color: #52606d;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payroll-report-empty {
+  width: 100%;
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: #98a2b3;
+  text-align: center;
+}
+
+.payroll-compliance-list,
+.payroll-breakdown-list,
+.payroll-calendar-list,
+.payroll-insights-list {
+  display: grid;
+  gap: 10px;
+}
+
+.payroll-compliance-item,
+.payroll-breakdown-item,
+.payroll-calendar-item,
+.payroll-insight-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #edf1f5;
+  border-radius: 11px;
+  background: #fbfcfe;
+  padding: 11px 12px;
+}
+
+.payroll-compliance-item .status-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #e7f8ef;
+  color: #18864b;
+  font-weight: 900;
+}
+
+.payroll-compliance-item.error
+.status-icon {
+  background: #feecec;
+  color: #c93636;
+}
+
+.payroll-compliance-item.warning
+.status-icon {
+  background: #fff4df;
+  color: #b56b00;
+}
+
+.payroll-breakdown-item {
+  display: grid;
+  grid-template-columns:
+    minmax(90px, auto)
+    1fr
+    auto;
+}
+
+.payroll-breakdown-bar {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9eef4;
+}
+
+.payroll-breakdown-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1f6fb2;
+}
+
+.payroll-benefit-report-summary {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.payroll-benefit-report-summary > div {
+  border: 1px solid #edf1f5;
+  border-radius: 11px;
+  background: #fbfcfe;
+  padding: 12px;
+}
+
+.payroll-benefit-report-summary span {
+  display: block;
+  color: #667085;
+  font-size: 11px;
+}
+
+.payroll-benefit-report-summary strong {
+  display: block;
+  margin-top: 6px;
+  color: #102a43;
+  font-size: 17px;
+}
+
+.payroll-calendar-item {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.payroll-calendar-item strong,
+.payroll-calendar-item span,
+.payroll-calendar-item small {
+  display: block;
+}
+
+.payroll-calendar-item small {
+  margin-top: 4px;
+  color: #98a2b3;
+}
+
+.payroll-report-library {
+  margin-bottom: 16px;
+}
+
+.payroll-report-library-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(5, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.payroll-report-library-grid button {
+  min-height: 90px;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid #e4eaf2;
+  border-radius: 13px;
+  background: #ffffff;
+  padding: 13px;
+  color: #102a43;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.payroll-report-library-grid button:hover {
+  transform: translateY(-2px);
+  border-color: #97b5d0;
+  box-shadow:
+    0 9px 20px
+    rgba(16, 42, 67, 0.07);
+}
+
+.payroll-report-library-grid strong,
+.payroll-report-library-grid small {
+  display: block;
+}
+
+.payroll-report-library-grid strong {
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.payroll-report-library-grid small {
+  color: #7b8794;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.report-icon {
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf5fc;
+  color: #155d95;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.payroll-link-button {
+  border: 0;
+  background: transparent;
+  color: #155d95;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payroll-insight-item {
+  align-items: flex-start;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.payroll-insight-item::before {
+  content: "•";
+  color: #1f6fb2;
+  font-size: 18px;
+}
+
+@media (max-width: 1350px) {
+  .payroll-report-kpis {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr));
+  }
+
+  .payroll-report-library-grid {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .payroll-report-grid,
+  .payroll-report-grid-main {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-report-card-wide {
+    grid-column: auto;
+  }
+
+  .payroll-report-library-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .payroll-reports-toolbar {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .payroll-report-kpis,
+  .payroll-report-library-grid,
+  .payroll-benefit-report-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 .payroll-benefit-kpis {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -15364,23 +15759,131 @@ select:focus {
 
           <div id="payrollTabReports" class="payroll-panel hidden">
             <div class="payroll-section-navigation">
-              <button
-                type="button"
-                class="payroll-back-btn"
-                data-payroll-back-dashboard
-              >
+              <button type="button" class="payroll-back-btn" data-payroll-back-dashboard>
                 ← Back to Payroll Dashboard
               </button>
 
               <div>
                 <h3>Payroll Reports</h3>
-                <p class="payroll-muted">Review payslips, payroll costs and statutory outputs.</p>
+                <p class="payroll-muted">
+                  Payroll analytics, statutory outputs and IAS 19 employee-benefit reporting.
+                </p>
+              </div>
+
+              <div class="payroll-reports-toolbar">
+                <label>
+                  Period
+                  <select id="payrollReportsPeriod">
+                    <option value="this_month">This month</option>
+                    <option value="last_month">Last month</option>
+                    <option value="this_quarter">This quarter</option>
+                    <option value="this_year">This year</option>
+                  </select>
+                </label>
+
+                <button id="payrollReportsRefreshBtn" type="button" class="payroll-secondary dark">
+                  Refresh
+                </button>
               </div>
             </div>
-            <div class="payroll-card">
-              <h3>Payroll Reports</h3>
-              <p class="payroll-muted">Payslips, employee cost summaries and statutory reports will appear here.</p>
-            </div>
+
+            <section class="payroll-report-kpis">
+              <article><span>Employees</span><strong id="payrollReportEmployeeCount">0</strong><small>Active employees</small></article>
+              <article><span>Gross Payroll</span><strong id="payrollReportGrossPayroll">0.00</strong><small>Calculated and posted runs</small></article>
+              <article><span>Net Payroll</span><strong id="payrollReportNetPayroll">0.00</strong><small>Payable to employees</small></article>
+              <article><span>Employer Contributions</span><strong id="payrollReportEmployerContributions">0.00</strong><small>Pension and statutory cost</small></article>
+              <article><span>Benefits Liability</span><strong id="payrollReportBenefitsLiability">0.00</strong><small>Leave, bonus and termination</small></article>
+              <article><span>Average Cost / Employee</span><strong id="payrollReportAverageCost">0.00</strong><small>Total employer cost</small></article>
+            </section>
+
+            <section class="payroll-report-grid payroll-report-grid-main">
+              <article class="payroll-report-card payroll-report-card-wide">
+                <div class="payroll-report-card-head">
+                  <div><h3>Payroll Cost Trend</h3><p class="payroll-muted">Gross, net and total employer cost by run.</p></div>
+                </div>
+                <div id="payrollReportTrendChart" class="payroll-trend-chart"></div>
+              </article>
+
+              <article class="payroll-report-card">
+                <div class="payroll-report-card-head">
+                  <div><h3>Compliance Status</h3><p class="payroll-muted">Payroll, GL and IAS 19 controls.</p></div>
+                </div>
+                <div id="payrollReportComplianceList" class="payroll-compliance-list"></div>
+              </article>
+            </section>
+
+            <section class="payroll-report-grid">
+              <article class="payroll-report-card">
+                <div class="payroll-report-card-head">
+                  <div><h3>Employee Composition</h3><p class="payroll-muted">Employees by status.</p></div>
+                </div>
+                <div id="payrollReportEmployeeComposition" class="payroll-breakdown-list"></div>
+              </article>
+
+              <article class="payroll-report-card">
+                <div class="payroll-report-card-head">
+                  <div><h3>IAS 19 Employee Benefits</h3><p class="payroll-muted">Closing benefit obligations.</p></div>
+                  <button id="payrollOpenBenefitsWorkspaceBtn" type="button" class="payroll-link-button">Open workspace</button>
+                </div>
+
+                <div class="payroll-benefit-report-summary">
+                  <div><span>Leave liability</span><strong id="payrollReportLeaveLiability">0.00</strong></div>
+                  <div><span>Bonus liability</span><strong id="payrollReportBonusLiability">0.00</strong></div>
+                  <div><span>Termination liability</span><strong id="payrollReportTerminationLiability">0.00</strong></div>
+                  <div><span>OCI remeasurement</span><strong id="payrollReportOci">0.00</strong></div>
+                </div>
+              </article>
+
+              <article class="payroll-report-card">
+                <div class="payroll-report-card-head">
+                  <div><h3>Upcoming Payroll</h3><p class="payroll-muted">Open pay periods and payment dates.</p></div>
+                </div>
+                <div id="payrollReportUpcomingCalendar" class="payroll-calendar-list"></div>
+              </article>
+            </section>
+
+            <section class="payroll-report-card payroll-report-library">
+              <div class="payroll-report-card-head">
+                <div><h3>Reports Library</h3><p class="payroll-muted">Generate and review payroll reports.</p></div>
+              </div>
+
+              <div class="payroll-report-library-grid">
+                <button type="button" data-payroll-report="payroll-register"><span class="report-icon">PR</span><span><strong>Payroll Register</strong><small>Earnings, deductions and net pay</small></span></button>
+                <button type="button" data-payroll-report="payslips"><span class="report-icon">PS</span><span><strong>Payslips</strong><small>Employee payslip pack</small></span></button>
+                <button type="button" data-payroll-report="employee-cost"><span class="report-icon">EC</span><span><strong>Employee Cost</strong><small>Gross pay and benefits</small></span></button>
+                <button type="button" data-payroll-report="department-cost"><span class="report-icon">DC</span><span><strong>Department Cost</strong><small>Cost by department</small></span></button>
+                <button type="button" data-payroll-report="tax-report"><span class="report-icon">TX</span><span><strong>Payroll Tax</strong><small>PAYE and statutory deductions</small></span></button>
+                <button type="button" data-payroll-report="leave-liability"><span class="report-icon">LV</span><span><strong>Leave Liability</strong><small>IAS 19 leave provision</small></span></button>
+                <button type="button" data-payroll-report="bonus-provision"><span class="report-icon">BN</span><span><strong>Bonus Provision</strong><small>Expected bonus obligation</small></span></button>
+                <button type="button" data-payroll-report="benefit-disclosure"><span class="report-icon">19</span><span><strong>IAS 19 Disclosure</strong><small>Benefit expense and liability note</small></span></button>
+                <button type="button" data-payroll-report="journal-report"><span class="report-icon">JR</span><span><strong>Payroll Journals</strong><small>Payroll journal entries</small></span></button>
+                <button type="button" data-payroll-report="gl-reconciliation"><span class="report-icon">GL</span><span><strong>GL Reconciliation</strong><small>Control-account reconciliation</small></span></button>
+              </div>
+            </section>
+
+            <section class="payroll-report-grid payroll-report-grid-main">
+              <article class="payroll-report-card payroll-report-card-wide">
+                <div class="payroll-report-card-head">
+                  <div><h3>Recent Payroll Runs</h3><p class="payroll-muted">Latest calculations and postings.</p></div>
+                </div>
+
+                <div class="payroll-table-wrap">
+                  <table class="payroll-preview-table">
+                    <thead>
+                      <tr><th>Run</th><th>Period</th><th>Payment</th><th>Status</th><th class="num">Gross</th><th class="num">Deductions</th><th class="num">Net</th><th></th></tr>
+                    </thead>
+                    <tbody id="payrollReportRunsBody"></tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="payroll-report-card">
+                <div class="payroll-report-card-head">
+                  <div><h3>Payroll Insights</h3><p class="payroll-muted">Automated observations.</p></div>
+                </div>
+                <div id="payrollReportInsights" class="payroll-insights-list"></div>
+              </article>
+            </section>
           </div>
 
         </div>
