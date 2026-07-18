@@ -49874,15 +49874,15 @@ async function saveEditModal() {
           </button>
         </div>
 
-        <table class="table">
+        <table class="table bf-variance-table">
           <thead>
             <tr>
               <th>Month</th>
               <th>Account</th>
-              <th>Budget</th>
-              <th>Actual</th>
-              <th>Variance</th>
-              <th>%</th>
+              <th class="bf-variance-header-left">Budget</th>
+              <th class="bf-variance-header-left">Actual</th>
+              <th class="bf-variance-header-left">Variance</th>
+              <th class="bf-variance-header-left">%</th>
             </tr>
           </thead>
 
