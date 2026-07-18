@@ -1533,6 +1533,415 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-context${qs ? `?${qs}` : ""}`;
     },  
 
+    // =====================================================
+    // IAS 19 EMPLOYEE BENEFITS
+    // =====================================================
+
+    employeeBenefitsDashboard: (
+      companyId,
+      reportingDate = ""
+    ) => {
+      const params = new URLSearchParams();
+
+      if (reportingDate) {
+        params.set("reporting_date", reportingDate);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/dashboard${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeBenefitSettings: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/settings`,
+
+    // -----------------------------------------------------
+    // Leave accruals
+    // -----------------------------------------------------
+
+    leavePolicies: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-policies`,
+
+    leavePolicy: (companyId, policyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-policies/${encodeURIComponent(policyId)}`,
+
+    employeeLeaveBalances: (
+      companyId,
+      {
+        employeeId = "",
+        leaveTypeId = "",
+        asOfDate = "",
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+
+      if (employeeId) {
+        params.set("employee_id", String(employeeId));
+      }
+
+      if (leaveTypeId) {
+        params.set("leave_type_id", String(leaveTypeId));
+      }
+
+      if (asOfDate) {
+        params.set("as_of_date", asOfDate);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-balances${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeLeaveBalance: (
+      companyId,
+      employeeId,
+      leaveTypeId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-balances/${encodeURIComponent(employeeId)}/${encodeURIComponent(leaveTypeId)}`,
+
+    leaveAccrualRuns: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs`,
+
+    leaveAccrualRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs/${encodeURIComponent(runId)}`,
+
+    calculateLeaveAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs/${encodeURIComponent(runId)}/calculate`,
+
+    leaveAccrualPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs/${encodeURIComponent(runId)}/journal-preview`,
+
+    postLeaveAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs/${encodeURIComponent(runId)}/post`,
+
+    reverseLeaveAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-accrual-runs/${encodeURIComponent(runId)}/reverse`,
+
+    // -----------------------------------------------------
+    // Bonus and profit-sharing accruals
+    // -----------------------------------------------------
+
+    bonusSchemes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-schemes`,
+
+    bonusScheme: (companyId, schemeId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-schemes/${encodeURIComponent(schemeId)}`,
+
+    employeeBonusAssignments: (
+      companyId,
+      schemeId = ""
+    ) => {
+      const params = new URLSearchParams();
+
+      if (schemeId) {
+        params.set("scheme_id", String(schemeId));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-assignments${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeBonusAssignment: (
+      companyId,
+      assignmentId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-assignments/${encodeURIComponent(assignmentId)}`,
+
+    bonusAccrualRuns: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs`,
+
+    bonusAccrualRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs/${encodeURIComponent(runId)}`,
+
+    calculateBonusAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs/${encodeURIComponent(runId)}/calculate`,
+
+    bonusAccrualPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs/${encodeURIComponent(runId)}/journal-preview`,
+
+    postBonusAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs/${encodeURIComponent(runId)}/post`,
+
+    reverseBonusAccrual: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/bonus-accrual-runs/${encodeURIComponent(runId)}/reverse`,
+
+    // -----------------------------------------------------
+    // Post-employment plans
+    // -----------------------------------------------------
+
+    benefitPlans: (
+      companyId,
+      planType = ""
+    ) => {
+      const params = new URLSearchParams();
+
+      if (planType) {
+        params.set("plan_type", planType);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/plans${qs ? `?${qs}` : ""}`;
+    },
+
+    benefitPlan: (companyId, planId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/plans/${encodeURIComponent(planId)}`,
+
+    planMembers: (companyId, planId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/plans/${encodeURIComponent(planId)}/members`,
+
+    planMember: (
+      companyId,
+      planId,
+      memberId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/plans/${encodeURIComponent(planId)}/members/${encodeURIComponent(memberId)}`,
+
+    definedContributionRuns: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs`,
+
+    definedContributionRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs/${encodeURIComponent(runId)}`,
+
+    definedContributionPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs/${encodeURIComponent(runId)}/journal-preview`,
+
+    postDefinedContribution: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs/${encodeURIComponent(runId)}/post`,
+
+    // -----------------------------------------------------
+    // Defined benefit actuarial valuations
+    // -----------------------------------------------------
+
+    actuarialValuations: (
+      companyId,
+      planId = ""
+    ) => {
+      const params = new URLSearchParams();
+
+      if (planId) {
+        params.set("plan_id", String(planId));
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations${qs ? `?${qs}` : ""}`;
+    },
+
+    actuarialValuation: (companyId, valuationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}`,
+
+    actuarialAssumptions: (
+      companyId,
+      valuationId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/assumptions`,
+
+    actuarialReconciliation: (
+      companyId,
+      valuationId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/reconciliation`,
+
+    actuarialJournalPreview: (
+      companyId,
+      valuationId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/journal-preview`,
+
+    postActuarialValuation: (
+      companyId,
+      valuationId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/post`,
+
+    reverseActuarialValuation: (
+      companyId,
+      valuationId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/reverse`,
+
+    importActuarialValuation: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/import`,
+
+    // -----------------------------------------------------
+    // Other long-term benefits
+    // -----------------------------------------------------
+
+    longTermBenefitSchemes: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-schemes`,
+
+    longTermBenefitScheme: (
+      companyId,
+      schemeId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-schemes/${encodeURIComponent(schemeId)}`,
+
+    longTermBenefitRuns: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs`,
+
+    longTermBenefitRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}`,
+
+    calculateLongTermBenefits: (
+      companyId,
+      runId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/calculate`,
+
+    longTermBenefitPreview: (
+      companyId,
+      runId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/journal-preview`,
+
+    postLongTermBenefits: (
+      companyId,
+      runId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/post`,
+
+    // -----------------------------------------------------
+    // Termination benefits
+    // -----------------------------------------------------
+
+    terminationPlans: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans`,
+
+    terminationPlan: (companyId, planId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}`,
+
+    terminationPlanEmployees: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/employees`,
+
+    terminationCalculation: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/calculate`,
+
+    terminationJournalPreview: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/journal-preview`,
+
+    recogniseTerminationBenefits: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/recognise`,
+
+    settleTerminationBenefits: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/settle`,
+
+    reverseTerminationBenefits: (
+      companyId,
+      planId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/reverse`,
+
+    // -----------------------------------------------------
+    // Employee-benefit journals and reporting
+    // -----------------------------------------------------
+
+    employeeBenefitJournals: (
+      companyId,
+      {
+        sourceType = "",
+        dateFrom = "",
+        dateTo = "",
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+
+      if (sourceType) {
+        params.set("source_type", sourceType);
+      }
+
+      if (dateFrom) {
+        params.set("date_from", dateFrom);
+      }
+
+      if (dateTo) {
+        params.set("date_to", dateTo);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/journals${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeBenefitJournal: (
+      companyId,
+      journalId
+    ) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/journals/${encodeURIComponent(journalId)}`,
+
+    employeeBenefitDisclosure: (
+      companyId,
+      {
+        dateFrom = "",
+        dateTo = "",
+        reportingDate = "",
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+
+      if (dateFrom) {
+        params.set("date_from", dateFrom);
+      }
+
+      if (dateTo) {
+        params.set("date_to", dateTo);
+      }
+
+      if (reportingDate) {
+        params.set("reporting_date", reportingDate);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/disclosure${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeBenefitMovementReport: (
+      companyId,
+      {
+        dateFrom = "",
+        dateTo = "",
+        benefitClass = "",
+      } = {}
+    ) => {
+      const params = new URLSearchParams();
+
+      if (dateFrom) {
+        params.set("date_from", dateFrom);
+      }
+
+      if (dateTo) {
+        params.set("date_to", dateTo);
+      }
+
+      if (benefitClass) {
+        params.set("benefit_class", benefitClass);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/movement-report${qs ? `?${qs}` : ""}`;
+    },
+
+    employeeBenefitDiagnostics: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/diagnostics`,
+
     taxTables: {
       regimes: (companyId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-tables/regimes`,
@@ -51766,6 +52175,764 @@ function bindEventsOnce() {
     },
   }
 
+  payrollState.employeeBenefits = payrollState.employeeBenefits || {
+    reportingDate: new Date().toISOString().slice(0, 10),
+    dashboard: null,
+    settings: null,
+    leavePolicies: [],
+    leaveRuns: [],
+    selectedLeaveRun: null,
+    bonusSchemes: [],
+    actuarialValuations: [],
+    disclosure: null,
+    diagnostics: null,
+    activeTab: "overview",
+    loaded: false,
+  };
+
+  function payrollBenefitPanelId(tab) {
+    const map = {
+      overview: "payrollBenefitPanelOverview",
+      leave: "payrollBenefitPanelLeave",
+      bonuses: "payrollBenefitPanelBonuses",
+      actuarial: "payrollBenefitPanelActuarial",
+      disclosures: "payrollBenefitPanelDisclosures",
+      settings: "payrollBenefitPanelSettings",
+    };
+    return map[tab];
+  }
+
+  async function switchPayrollBenefitTab(tab) {
+    payrollState.employeeBenefits.activeTab = tab;
+
+    document
+      .querySelectorAll("[data-payroll-benefit-tab]")
+      .forEach(button => {
+        button.classList.toggle(
+          "active",
+          button.dataset.payrollBenefitTab === tab
+        );
+      });
+
+    [
+      "payrollBenefitPanelOverview",
+      "payrollBenefitPanelLeave",
+      "payrollBenefitPanelBonuses",
+      "payrollBenefitPanelActuarial",
+      "payrollBenefitPanelDisclosures",
+      "payrollBenefitPanelSettings",
+    ].forEach(id => $(id)?.classList.add("hidden"));
+
+    $(payrollBenefitPanelId(tab))?.classList.remove("hidden");
+
+    if (tab === "overview") await loadPayrollEmployeeBenefitsWorkspace();
+    if (tab === "leave") await loadPayrollLeaveWorkspace();
+    if (tab === "bonuses") await loadPayrollBonusWorkspace();
+    if (tab === "actuarial") await loadPayrollActuarialWorkspace();
+    if (tab === "disclosures") await loadPayrollBenefitDisclosure();
+    if (tab === "settings") await loadPayrollBenefitSettings();
+  }
+
+  async function loadPayrollEmployeeBenefitsWorkspace() {
+    const companyId = cid();
+    const reportingDate =
+      $("payrollBenefitReportingDate")?.value ||
+      payrollState.employeeBenefits.reportingDate;
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitsDashboard(
+        companyId,
+        reportingDate
+      )
+    );
+
+    payrollState.employeeBenefits.dashboard = res?.data || {};
+    payrollState.employeeBenefits.reportingDate = reportingDate;
+    payrollState.employeeBenefits.loaded = true;
+
+    renderPayrollEmployeeBenefitsDashboard();
+  }
+
+  function renderPayrollEmployeeBenefitsDashboard() {
+    const data = payrollState.employeeBenefits.dashboard || {};
+
+    if ($("payrollBenefitReportingDate")) {
+      $("payrollBenefitReportingDate").value =
+        payrollState.employeeBenefits.reportingDate;
+    }
+
+    setTxt(
+      "payrollBenefitCurrentLiability",
+      money(data.current_liability)
+    );
+    setTxt(
+      "payrollBenefitNonCurrentLiability",
+      money(data.noncurrent_liability)
+    );
+    setTxt("payrollBenefitPlanAssets", money(data.plan_assets));
+    setTxt("payrollBenefitExpense", money(data.expense));
+    setTxt("payrollBenefitOci", money(data.oci));
+
+    const panel = $("payrollBenefitPanelOverview");
+    if (!panel) return;
+
+    panel.innerHTML = `
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Employee-benefit position</h3>
+            <p class="payroll-muted">
+              IAS 19 obligations and movements at
+              ${esc(data.reporting_date || "")}.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            id="payrollBenefitRunDiagnosticsBtn"
+            class="payroll-secondary dark"
+          >
+            Run Diagnostics
+          </button>
+        </div>
+
+        <div class="payroll-benefit-summary-grid">
+          <div>
+            <span>Leave liability</span>
+            <strong>${money(data.leave_liability)}</strong>
+          </div>
+          <div>
+            <span>Bonus liability</span>
+            <strong>${money(data.bonus_liability)}</strong>
+          </div>
+          <div>
+            <span>Termination liability</span>
+            <strong>${money(data.termination_liability)}</strong>
+          </div>
+        </div>
+
+        <div id="payrollBenefitDiagnosticsResult"></div>
+      </div>
+    `;
+
+    $("payrollBenefitRunDiagnosticsBtn")?.addEventListener(
+      "click",
+      runPayrollBenefitDiagnostics
+    );
+  }
+
+  async function runPayrollBenefitDiagnostics() {
+    const res = await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitDiagnostics(cid())
+    );
+    const data = res?.data || {};
+    payrollState.employeeBenefits.diagnostics = data;
+
+    const el = $("payrollBenefitDiagnosticsResult");
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="${data.ok ? "notice success" : "notice error"}">
+        ${data.ok
+          ? "IAS 19 configuration checks passed."
+          : "IAS 19 configuration requires attention."}
+      </div>
+
+      <div class="payroll-benefit-checks">
+        ${(data.checks || []).map(check => `
+          <div class="payroll-check-item ${check.ok ? "ok" : "fail"}">
+            <span>${check.ok ? "✓" : "✕"}</span>
+            <strong>${esc(check.message || check.key)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  async function loadPayrollLeaveWorkspace() {
+    const companyId = cid();
+    const [policiesRes, runsRes] = await Promise.all([
+      apiFetch(ENDPOINTS.payroll.leavePolicies(companyId)),
+      apiFetch(ENDPOINTS.payroll.leaveAccrualRuns(companyId)),
+    ]);
+
+    payrollState.employeeBenefits.leavePolicies =
+      policiesRes?.items || [];
+    payrollState.employeeBenefits.leaveRuns =
+      runsRes?.items || [];
+
+    renderPayrollLeaveWorkspace();
+  }
+
+  function renderPayrollLeaveWorkspace() {
+    const panel = $("payrollBenefitPanelLeave");
+    if (!panel) return;
+
+    const policies = payrollState.employeeBenefits.leavePolicies || [];
+    const runs = payrollState.employeeBenefits.leaveRuns || [];
+
+    panel.innerHTML = `
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Leave policies</h3>
+            <p class="payroll-muted">
+              Configure accumulating leave and provision accounts.
+            </p>
+          </div>
+          <button
+            id="payrollNewLeavePolicyBtn"
+            class="payroll-primary"
+            type="button"
+          >
+            + Leave Policy
+          </button>
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Policy</th>
+                <th>Entitlement</th>
+                <th>Vesting</th>
+                <th>Provision</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${policies.length ? policies.map(p => `
+                <tr>
+                  <td>
+                    <strong>${esc(p.name)}</strong>
+                    <div class="payroll-muted">
+                      ${esc(p.leave_type_name || p.leave_code || "")}
+                    </div>
+                  </td>
+                  <td>${money(p.annual_entitlement_days)} days</td>
+                  <td>${p.vesting ? "Vesting" : "Non-vesting"}</td>
+                  <td>${p.provision_required ? "Required" : "Not required"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-edit-leave-policy="${esc(p.id)}"
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              `).join("") : `
+                <tr><td colspan="5">No leave policies configured.</td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Leave accrual runs</h3>
+            <p class="payroll-muted">
+              Measure and post earned but untaken leave.
+            </p>
+          </div>
+          <button
+            id="payrollNewLeaveRunBtn"
+            class="payroll-primary"
+            type="button"
+          >
+            + New Accrual Run
+          </button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${runs.length ? runs.map(run => `
+            <div class="payroll-mini-row">
+              <strong>${esc(run.run_no)}</strong>
+              <span>${esc(String(run.reporting_date || ""))}</span>
+              <span>${money(run.total_movement)}</span>
+              <span class="payroll-pill">${esc(run.status)}</span>
+              <button
+                type="button"
+                class="payroll-link"
+                data-open-leave-run="${esc(run.id)}"
+              >
+                Open
+              </button>
+            </div>
+          `).join("") : `<p class="payroll-muted">No leave accrual runs.</p>`}
+        </div>
+
+        <div id="payrollLeaveRunDetail"></div>
+      </div>
+    `;
+
+    $("payrollNewLeavePolicyBtn")?.addEventListener(
+      "click",
+      () => openPayrollLeavePolicyModal()
+    );
+    $("payrollNewLeaveRunBtn")?.addEventListener(
+      "click",
+      createPayrollLeaveRun
+    );
+
+    panel
+      .querySelectorAll("[data-edit-leave-policy]")
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          const policy = policies.find(
+            x => Number(x.id) === Number(button.dataset.editLeavePolicy)
+          );
+          openPayrollLeavePolicyModal(policy);
+        });
+      });
+
+    panel
+      .querySelectorAll("[data-open-leave-run]")
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          openPayrollLeaveRun(Number(button.dataset.openLeaveRun));
+        });
+      });
+  }
+
+  function openPayrollLeavePolicyModal(policy = null) {
+    $("payrollLeavePolicyId").value = policy?.id || "";
+    $("payrollLeavePolicyName").value = policy?.name || "";
+    $("payrollLeavePolicyTypeId").value = policy?.leave_type_id || "";
+    $("payrollLeavePolicyEntitlement").value =
+      policy?.annual_entitlement_days || 0;
+    $("payrollLeavePolicyMethod").value =
+      policy?.accrual_method || "straight_line";
+    $("payrollLeavePolicyMonthlyDays").value =
+      policy?.monthly_accrual_days || "";
+    $("payrollLeavePolicyRateBasis").value =
+      policy?.daily_rate_basis || "monthly_div_21_67";
+    $("payrollLeavePolicyExpenseAccount").value =
+      policy?.expense_account_code || "";
+    $("payrollLeavePolicyLiabilityAccount").value =
+      policy?.liability_account_code || "";
+    $("payrollLeavePolicyVesting").checked = !!policy?.vesting;
+    $("payrollLeavePolicyProvisionRequired").checked =
+      policy?.provision_required !== false;
+
+    $("payrollLeavePolicyModal")?.classList.remove("hidden");
+  }
+
+  async function savePayrollLeavePolicy() {
+    const companyId = cid();
+    const policyId = Number($("payrollLeavePolicyId")?.value || 0);
+
+    const payload = {
+      leave_type_id: Number($("payrollLeavePolicyTypeId").value || 0),
+      name: $("payrollLeavePolicyName").value.trim(),
+      annual_entitlement_days:
+        Number($("payrollLeavePolicyEntitlement").value || 0),
+      accrual_method: $("payrollLeavePolicyMethod").value,
+      monthly_accrual_days:
+        Number($("payrollLeavePolicyMonthlyDays").value || 0) || null,
+      daily_rate_basis: $("payrollLeavePolicyRateBasis").value,
+      expense_account_code:
+        $("payrollLeavePolicyExpenseAccount").value || null,
+      liability_account_code:
+        $("payrollLeavePolicyLiabilityAccount").value || null,
+      vesting: $("payrollLeavePolicyVesting").checked,
+      provision_required:
+        $("payrollLeavePolicyProvisionRequired").checked,
+      is_active: true,
+    };
+
+    await apiFetch(
+      policyId
+        ? ENDPOINTS.payroll.leavePolicy(companyId, policyId)
+        : ENDPOINTS.payroll.leavePolicies(companyId),
+      {
+        method: policyId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    $("payrollLeavePolicyModal")?.classList.add("hidden");
+    await loadPayrollLeaveWorkspace();
+    showPayrollStatus("Leave policy saved.", "success");
+  }
+
+  async function createPayrollLeaveRun() {
+    const reportingDate =
+      $("payrollBenefitReportingDate")?.value ||
+      new Date().toISOString().slice(0, 10);
+
+    const first = `${reportingDate.slice(0, 7)}-01`;
+
+    await apiFetch(
+      ENDPOINTS.payroll.leaveAccrualRuns(cid()),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          period_start: first,
+          period_end: reportingDate,
+          reporting_date: reportingDate,
+        }),
+      }
+    );
+
+    await loadPayrollLeaveWorkspace();
+    showPayrollStatus("Leave accrual run created.", "success");
+  }
+
+  async function openPayrollLeaveRun(runId) {
+    const res = await apiFetch(
+      ENDPOINTS.payroll.leaveAccrualRun(cid(), runId)
+    );
+    payrollState.employeeBenefits.selectedLeaveRun = res?.data;
+    renderPayrollLeaveRunDetail();
+  }
+
+  function renderPayrollLeaveRunDetail() {
+    const run = payrollState.employeeBenefits.selectedLeaveRun;
+    const el = $("payrollLeaveRunDetail");
+    if (!el || !run) return;
+
+    el.innerHTML = `
+      <div class="payroll-posting-card">
+        <div>
+          <h3>${esc(run.run_no)}</h3>
+          <p class="payroll-muted">
+            ${esc(String(run.period_start))} — ${esc(String(run.period_end))}
+          </p>
+        </div>
+        <div class="payroll-run-actions">
+          <button id="payrollCalculateLeaveRunBtn"
+            class="payroll-secondary dark" type="button">
+            Calculate
+          </button>
+          <button id="payrollPreviewLeaveRunBtn"
+            class="payroll-secondary dark" type="button">
+            Preview Journal
+          </button>
+          <button id="payrollPostLeaveRunBtn"
+            class="payroll-primary" type="button">
+            Post
+          </button>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Leave</th>
+              <th>Closing days</th>
+              <th>Daily rate</th>
+              <th>Movement</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(run.lines || []).map(line => `
+              <tr>
+                <td>${esc(
+                  `${line.employee_no || ""} ${line.first_name || ""} ${line.last_name || ""}`
+                )}</td>
+                <td>${esc(line.leave_type_name || "")}</td>
+                <td>${money(line.closing_days)}</td>
+                <td>${money(line.daily_rate)}</td>
+                <td>${money(line.movement_amount)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div id="payrollLeaveJournalPreview"></div>
+    `;
+
+    $("payrollCalculateLeaveRunBtn")?.addEventListener(
+      "click",
+      calculatePayrollLeaveRun
+    );
+    $("payrollPreviewLeaveRunBtn")?.addEventListener(
+      "click",
+      previewPayrollLeaveRun
+    );
+    $("payrollPostLeaveRunBtn")?.addEventListener(
+      "click",
+      postPayrollLeaveRun
+    );
+  }
+
+  async function calculatePayrollLeaveRun() {
+    const runId = payrollState.employeeBenefits.selectedLeaveRun?.id;
+    await apiFetch(
+      ENDPOINTS.payroll.calculateLeaveAccrual(cid(), runId),
+      { method: "POST", body: "{}" }
+    );
+    await openPayrollLeaveRun(runId);
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Leave accrual calculated.", "success");
+  }
+
+  async function previewPayrollLeaveRun() {
+    const runId = payrollState.employeeBenefits.selectedLeaveRun?.id;
+    const res = await apiFetch(
+      ENDPOINTS.payroll.leaveAccrualPreview(cid(), runId)
+    );
+    renderPayrollBenefitJournal(
+      $("payrollLeaveJournalPreview"),
+      res?.data
+    );
+  }
+
+  async function postPayrollLeaveRun() {
+    const runId = payrollState.employeeBenefits.selectedLeaveRun?.id;
+    await apiFetch(
+      ENDPOINTS.payroll.postLeaveAccrual(cid(), runId),
+      { method: "POST", body: "{}" }
+    );
+    await openPayrollLeaveRun(runId);
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Leave accrual posted.", "success");
+  }
+
+  function renderPayrollBenefitJournal(container, preview) {
+    if (!container) return;
+
+    const lines = preview?.lines || [];
+
+    container.innerHTML = `
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th class="num">Debit</th>
+              <th class="num">Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map(line => `
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(line.account_name || line.account_code || "")}
+                  </strong>
+                </td>
+                <td>${esc(line.description || "")}</td>
+                <td class="num">
+                  ${Number(line.debit || 0) ? money(line.debit) : "—"}
+                </td>
+                <td class="num">
+                  ${Number(line.credit || 0) ? money(line.credit) : "—"}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="2">Total</th>
+              <th class="num">${money(preview?.debits)}</th>
+              <th class="num">${money(preview?.credits)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="${preview?.ready_to_post ? "notice success" : "notice error"}">
+        ${preview?.ready_to_post
+          ? "Journal is balanced and ready to post."
+          : esc(
+              (preview?.missing_mappings || []).join(", ") ||
+              "Journal is not ready to post."
+            )}
+      </div>
+    `;
+  }
+
+  async function loadPayrollBonusWorkspace() {
+    const res = await apiFetch(
+      ENDPOINTS.payroll.bonusSchemes(cid())
+    );
+    payrollState.employeeBenefits.bonusSchemes = res?.items || [];
+
+    const panel = $("payrollBenefitPanelBonuses");
+    if (!panel) return;
+
+    panel.innerHTML = `
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Bonus and profit-sharing schemes</h3>
+            <p class="payroll-muted">
+              Recognition requires a present legal or constructive obligation
+              and a reliable estimate.
+            </p>
+          </div>
+          <button id="payrollNewBonusSchemeBtn"
+            class="payroll-primary" type="button">
+            + Bonus Scheme
+          </button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${(payrollState.employeeBenefits.bonusSchemes || []).map(s => `
+            <div class="payroll-mini-row">
+              <strong>${esc(s.code)} — ${esc(s.name)}</strong>
+              <span>${esc(s.scheme_type)}</span>
+              <span>${money(s.target_percentage)}%</span>
+            </div>
+          `).join("") || `<p class="payroll-muted">No bonus schemes.</p>`}
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadPayrollActuarialWorkspace() {
+    const res = await apiFetch(
+      ENDPOINTS.payroll.actuarialValuations(cid())
+    );
+    payrollState.employeeBenefits.actuarialValuations =
+      res?.items || [];
+
+    const panel = $("payrollBenefitPanelActuarial");
+    if (!panel) return;
+
+    panel.innerHTML = `
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Defined-benefit actuarial valuations</h3>
+            <p class="payroll-muted">
+              Import and reconcile valuation outputs supplied by an actuary.
+            </p>
+          </div>
+        </div>
+
+        <div class="notice info">
+          FinSage records, validates, posts and discloses actuarial results.
+          It does not replace the professional actuarial valuation.
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Valuation date</th>
+                <th>DBO</th>
+                <th>Plan assets</th>
+                <th>Net liability</th>
+                <th>OCI</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(payrollState.employeeBenefits.actuarialValuations || [])
+                .map(v => `
+                  <tr>
+                    <td>${esc(v.plan_name || v.plan_code || "")}</td>
+                    <td>${esc(String(v.valuation_date || ""))}</td>
+                    <td>${money(v.closing_dbo)}</td>
+                    <td>${money(v.closing_plan_assets)}</td>
+                    <td>${money(v.net_defined_benefit_liability)}</td>
+                    <td>${money(v.oci_remeasurement_amount)}</td>
+                  </tr>
+                `).join("") ||
+                `<tr><td colspan="6">No actuarial valuations.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadPayrollBenefitDisclosure() {
+    const reportingDate =
+      $("payrollBenefitReportingDate")?.value ||
+      new Date().toISOString().slice(0, 10);
+
+    const res = await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitDisclosure(
+        cid(),
+        { reportingDate }
+      )
+    );
+
+    const data = res?.data || {};
+    payrollState.employeeBenefits.disclosure = data;
+
+    const panel = $("payrollBenefitPanelDisclosures");
+    if (!panel) return;
+
+    panel.innerHTML = `
+      <div class="payroll-card">
+        <h3>IAS 19 disclosure summary</h3>
+
+        <div class="payroll-benefit-summary-grid">
+          <div>
+            <span>Opening leave provision</span>
+            <strong>${money(data.leave_reconciliation?.opening)}</strong>
+          </div>
+          <div>
+            <span>Leave movement</span>
+            <strong>${money(data.leave_reconciliation?.movement)}</strong>
+          </div>
+          <div>
+            <span>Closing leave provision</span>
+            <strong>${money(data.leave_reconciliation?.closing)}</strong>
+          </div>
+        </div>
+
+        <p class="payroll-muted">${esc(data.note || "")}</p>
+      </div>
+    `;
+  }
+
+  async function loadPayrollBenefitSettings() {
+    const res = await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitSettings(cid())
+    );
+
+    payrollState.employeeBenefits.settings = res?.data || {};
+    const s = payrollState.employeeBenefits.settings;
+
+    $("payrollBenefitCurrency").value = s.reporting_currency || "";
+    $("payrollBenefitDailyRateBasis").value =
+      s.default_daily_rate_basis || "monthly_div_21_67";
+    $("payrollBenefitWorkingDays").value =
+      s.working_days_per_year || 260;
+    $("payrollBenefitApprovalRequired").checked =
+      !!s.approval_required;
+  }
+
+  async function savePayrollBenefitSettings() {
+    await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitSettings(cid()),
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          reporting_currency:
+            $("payrollBenefitCurrency").value.trim(),
+          default_daily_rate_basis:
+            $("payrollBenefitDailyRateBasis").value,
+          working_days_per_year:
+            Number($("payrollBenefitWorkingDays").value || 260),
+          approval_required:
+            $("payrollBenefitApprovalRequired").checked,
+        }),
+      }
+    );
+
+    showPayrollStatus(
+      "Employee-benefit settings saved.",
+      "success"
+    );
+  }
+
+  /*
+  * Add these handlers inside the existing bindPayrollEvents() function.
+  */
+
   function cid() {
     return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   }
@@ -57396,6 +58563,48 @@ function bindEventsOnce() {
       event.preventDefault();
       switchPayrollTab("overview");
     });
+
+    document
+      .querySelectorAll("[data-payroll-benefit-tab]")
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          switchPayrollBenefitTab(
+            button.dataset.payrollBenefitTab
+          ).catch(error => {
+            showPayrollStatus(error.message, "error");
+          });
+        });
+      });
+
+    $("payrollBenefitReportingDate")?.addEventListener(
+      "change",
+      () => {
+        payrollState.employeeBenefits.reportingDate =
+          $("payrollBenefitReportingDate").value;
+        loadPayrollEmployeeBenefitsWorkspace().catch(error => {
+          showPayrollStatus(error.message, "error");
+        });
+      }
+    );
+
+    $("payrollLeavePolicySaveBtn")?.addEventListener(
+      "click",
+      () => savePayrollLeavePolicy().catch(error => {
+        showPayrollStatus(error.message, "error");
+      })
+    );
+
+    $("payrollLeavePolicyCloseBtn")?.addEventListener(
+      "click",
+      () => $("payrollLeavePolicyModal")?.classList.add("hidden")
+    );
+
+    $("payrollBenefitSaveSettingsBtn")?.addEventListener(
+      "click",
+      () => savePayrollBenefitSettings().catch(error => {
+        showPayrollStatus(error.message, "error");
+      })
+    );
 
     $("payrollRefreshTaxContextBtn")
       ?.addEventListener(

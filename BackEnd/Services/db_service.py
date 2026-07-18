@@ -7384,6 +7384,438 @@ class DatabaseService:
             company_id,
             pay_setup_id
         );
+
+        -- FinSage IAS 19 company-schema migration.
+        -- Replace {schema} with company_N before executing, or execute from Python with f-string interpolation.
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefit_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            reporting_currency TEXT,
+            default_daily_rate_basis TEXT NOT NULL DEFAULT 'monthly_div_21_67',
+            working_days_per_year NUMERIC(9,2) NOT NULL DEFAULT 260,
+            approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+            leave_accrual_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            bonus_accrual_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            defined_contribution_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            defined_benefit_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            long_term_benefit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            termination_benefit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_employee_benefit_settings UNIQUE (company_id),
+            CONSTRAINT chk_ias19_daily_rate_basis CHECK (
+                default_daily_rate_basis IN (
+                    'annual_div_260',
+                    'monthly_div_21_67',
+                    'monthly_div_working_days',
+                    'custom'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policies (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            leave_type_id BIGINT NOT NULL,
+            name TEXT NOT NULL,
+            annual_entitlement_days NUMERIC(9,2) NOT NULL DEFAULT 0,
+            accrual_method TEXT NOT NULL DEFAULT 'straight_line',
+            monthly_accrual_days NUMERIC(9,4),
+            maximum_balance_days NUMERIC(9,2),
+            maximum_carry_forward_days NUMERIC(9,2),
+            carry_forward_expiry_months INT,
+            vesting BOOLEAN NOT NULL DEFAULT FALSE,
+            cash_settleable BOOLEAN NOT NULL DEFAULT FALSE,
+            forfeitable BOOLEAN NOT NULL DEFAULT TRUE,
+            provision_required BOOLEAN NOT NULL DEFAULT TRUE,
+            daily_rate_basis TEXT NOT NULL DEFAULT 'monthly_div_21_67',
+            custom_daily_rate NUMERIC(18,4),
+            include_fixed_allowances BOOLEAN NOT NULL DEFAULT FALSE,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_leave_policy UNIQUE (company_id, leave_type_id),
+            CONSTRAINT chk_payroll_leave_policy_method CHECK (
+                accrual_method IN ('straight_line','monthly_fixed','manual')
+            ),
+            CONSTRAINT chk_payroll_leave_policy_rate_basis CHECK (
+                daily_rate_basis IN (
+                    'annual_div_260',
+                    'monthly_div_21_67',
+                    'monthly_div_working_days',
+                    'custom'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_leave_movements (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            leave_type_id BIGINT NOT NULL,
+            movement_date DATE NOT NULL,
+            movement_type TEXT NOT NULL,
+            days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            source_type TEXT,
+            source_id BIGINT,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT chk_payroll_leave_movement_type CHECK (
+                movement_type IN (
+                    'opening','accrual','taken','forfeited','adjustment',
+                    'cash_settlement','termination_settlement','carry_forward','expiry'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_leave_movements_lookup
+        ON {schema}.payroll_employee_leave_movements (
+            company_id, employee_id, leave_type_id, movement_date
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_leave_balances (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            leave_type_id BIGINT NOT NULL,
+            as_of_date DATE NOT NULL,
+            opening_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            accrued_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            taken_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            forfeited_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            adjusted_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            settled_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            closing_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            daily_rate NUMERIC(18,4) NOT NULL DEFAULT 0,
+            opening_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            provision_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_leave_balance UNIQUE (
+                company_id, employee_id, leave_type_id, as_of_date
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_accrual_runs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_no TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            reporting_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            total_opening_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_closing_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            posted_at TIMESTAMPTZ,
+            reversed_at TIMESTAMPTZ,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_leave_accrual_run UNIQUE (company_id, reporting_date),
+            CONSTRAINT chk_payroll_leave_accrual_status CHECK (
+                status IN ('draft','calculated','approved','posted','reversed')
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_accrual_run_lines (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            leave_type_id BIGINT NOT NULL,
+            opening_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            accrued_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            taken_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            forfeited_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            closing_days NUMERIC(9,4) NOT NULL DEFAULT 0,
+            daily_rate NUMERIC(18,4) NOT NULL DEFAULT 0,
+            opening_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_provision NUMERIC(18,2) NOT NULL DEFAULT 0,
+            movement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            CONSTRAINT uq_payroll_leave_accrual_line UNIQUE (
+                company_id, run_id, employee_id, leave_type_id
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_schemes (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            scheme_type TEXT NOT NULL DEFAULT 'performance_bonus',
+            measurement_basis TEXT NOT NULL DEFAULT 'basic_salary',
+            target_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            probability_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            performance_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            required_service_months INT NOT NULL DEFAULT 12,
+            payment_due_date DATE,
+            is_short_term BOOLEAN NOT NULL DEFAULT TRUE,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_bonus_scheme UNIQUE (company_id, code),
+            CONSTRAINT chk_payroll_bonus_scheme_type CHECK (
+                scheme_type IN (
+                    'performance_bonus','profit_sharing','thirteenth_cheque',
+                    'retention_bonus','commission_accrual','other'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_bonus_assignments (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            scheme_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            target_percentage NUMERIC(9,4),
+            probability_percentage NUMERIC(9,4),
+            performance_percentage NUMERIC(9,4),
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_accrual_runs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_no TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            reporting_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            total_expected_bonus NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_opening_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_closing_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_bonus_accrual_run UNIQUE (company_id, reporting_date),
+            CONSTRAINT chk_payroll_bonus_accrual_status CHECK (
+                status IN ('draft','calculated','approved','posted','reversed')
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_accrual_run_lines (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_id BIGINT NOT NULL,
+            scheme_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            eligible_remuneration NUMERIC(18,2) NOT NULL DEFAULT 0,
+            target_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            probability_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            performance_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            service_completion_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            expected_bonus NUMERIC(18,2) NOT NULL DEFAULT 0,
+            opening_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            movement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            CONSTRAINT uq_payroll_bonus_accrual_line UNIQUE (
+                company_id, run_id, scheme_id, employee_id
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_benefit_plans (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            plan_type TEXT NOT NULL,
+            provider_name TEXT,
+            registration_number TEXT,
+            funded BOOLEAN NOT NULL DEFAULT FALSE,
+            employee_contribution_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            employer_contribution_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            payable_account_code TEXT,
+            liability_account_code TEXT,
+            asset_account_code TEXT,
+            oci_account_code TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_benefit_plan UNIQUE (company_id, code),
+            CONSTRAINT chk_payroll_benefit_plan_type CHECK (
+                plan_type IN (
+                    'defined_contribution','defined_benefit',
+                    'medical_post_employment','other_post_employment'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_benefit_plan_members (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            plan_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            membership_number TEXT,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            employee_percentage NUMERIC(9,4),
+            employer_percentage NUMERIC(9,4),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_plan_member UNIQUE (
+                company_id, plan_id, employee_id, effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_valuations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            plan_id BIGINT NOT NULL,
+            valuation_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            opening_dbo NUMERIC(18,2) NOT NULL DEFAULT 0,
+            current_service_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            past_service_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            benefits_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            settlements NUMERIC(18,2) NOT NULL DEFAULT 0,
+            curtailments NUMERIC(18,2) NOT NULL DEFAULT 0,
+            actuarial_gain_loss_obligation NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_dbo NUMERIC(18,2) NOT NULL DEFAULT 0,
+            opening_plan_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_income_plan_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employer_contributions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employee_contributions NUMERIC(18,2) NOT NULL DEFAULT 0,
+            return_on_assets_excluding_interest NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_plan_assets NUMERIC(18,2) NOT NULL DEFAULT 0,
+            asset_ceiling NUMERIC(18,2) NOT NULL DEFAULT 0,
+            effect_of_asset_ceiling NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_defined_benefit_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            net_defined_benefit_asset NUMERIC(18,2) NOT NULL DEFAULT 0,
+            profit_or_loss_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            oci_remeasurement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            actuary_name TEXT,
+            actuary_reference TEXT,
+            source_filename TEXT,
+            source_hash TEXT,
+            posted_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_actuarial_valuation UNIQUE (
+                company_id, plan_id, valuation_date
+            ),
+            CONSTRAINT chk_payroll_actuarial_status CHECK (
+                status IN ('draft','validated','approved','posted','reversed')
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_assumptions (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            valuation_id BIGINT NOT NULL,
+            assumption_key TEXT NOT NULL,
+            numeric_value NUMERIC(18,6),
+            text_value TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_actuarial_assumption UNIQUE (
+                company_id, valuation_id, assumption_key
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_long_term_benefit_schemes (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            scheme_type TEXT NOT NULL,
+            benefit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            service_years_required NUMERIC(9,2) NOT NULL DEFAULT 0,
+            probability_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            discount_rate_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            salary_growth_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_long_term_scheme UNIQUE (company_id, code),
+            CONSTRAINT chk_payroll_long_term_scheme_type CHECK (
+                scheme_type IN (
+                    'long_service_award','long_term_disability','sabbatical_leave',
+                    'deferred_bonus','jubilee_award','other'
+                )
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_termination_plans (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            plan_no TEXT NOT NULL,
+            name TEXT NOT NULL,
+            communication_date DATE,
+            withdrawal_offer_expiry_date DATE,
+            restructuring_recognition_date DATE,
+            recognition_date DATE,
+            expected_settlement_date DATE,
+            cannot_withdraw_offer BOOLEAN NOT NULL DEFAULT FALSE,
+            status TEXT NOT NULL DEFAULT 'draft',
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            total_recognised NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_settled NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id BIGINT,
+            settlement_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_termination_plan UNIQUE (company_id, plan_no),
+            CONSTRAINT chk_payroll_termination_status CHECK (
+                status IN ('draft','measured','recognised','part_settled','settled','reversed')
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_termination_plan_employees (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            plan_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            service_years NUMERIC(9,4) NOT NULL DEFAULT 0,
+            monthly_salary NUMERIC(18,2) NOT NULL DEFAULT 0,
+            severance_weeks_per_year NUMERIC(9,4) NOT NULL DEFAULT 0,
+            notice_pay NUMERIC(18,2) NOT NULL DEFAULT 0,
+            other_benefits NUMERIC(18,2) NOT NULL DEFAULT 0,
+            measured_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            settled_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            notes TEXT,
+            CONSTRAINT uq_payroll_termination_employee UNIQUE (
+                company_id, plan_id, employee_id
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefit_journal_links (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            source_type TEXT NOT NULL,
+            source_id BIGINT NOT NULL,
+            journal_id BIGINT NOT NULL,
+            journal_role TEXT NOT NULL DEFAULT 'posting',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_employee_benefit_journal_link UNIQUE (
+                company_id, source_type, source_id, journal_role
+            )
+        );
         """)
 
     def ensure_company_forecast(self, company_id: int):
@@ -84605,9 +85037,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "l.status = 'pending'",
             "l.recognition_date <= %s",
             "i.status = 'active'",
+            "COALESCE(i.is_mirror_item, FALSE) = FALSE",
         ]
-        params = [int(company_id), run["period_end"]]
 
+        params = [
+            int(company_id),
+            run["period_end"],
+        ]
         if run.get("item_id"):
             where.append("i.id = %s")
             params.append(int(run["item_id"]))
@@ -84616,19 +85052,40 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             where.append("i.item_type = %s")
             params.append(run["item_type"])
 
-        lines_src = self.fetch_all(f"""
-            SELECT
-                l.*,
-                i.item_title,
-                i.item_type,
-                i.balance_account,
-                i.recognition_account,
-                i.currency
-            FROM {schema}.accrual_deferral_schedule_lines l
-            JOIN {schema}.accrual_deferral_items i ON i.id = l.item_id
-            WHERE {" AND ".join(where)}
-            ORDER BY l.recognition_date, l.item_id, l.line_no
-        """, tuple(params))
+        lines_src = self.fetch_all(
+            f"""
+            WITH eligible_lines AS (
+                SELECT
+                    l.*,
+                    i.item_title,
+                    i.item_type,
+                    i.balance_account,
+                    i.recognition_account,
+                    i.currency
+                FROM {schema}.accrual_deferral_schedule_lines l
+                JOIN {schema}.accrual_deferral_items i
+                ON i.id = l.item_id
+                AND i.company_id = l.company_id
+                WHERE {" AND ".join(where)}
+            ),
+            latest_period AS (
+                SELECT MAX(recognition_date) AS recognition_date
+                FROM eligible_lines
+            )
+            SELECT e.*
+            FROM eligible_lines e
+            JOIN latest_period p
+            ON p.recognition_date = e.recognition_date
+            ORDER BY e.item_id, e.line_no
+            """,
+            tuple(params),
+        )
+
+        posting_date = (
+            lines_src[0]["recognition_date"]
+            if lines_src
+            else run["period_end"]
+        )
 
         journal_lines = []
         entries = []
@@ -84708,9 +85165,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return {
             "journal": {
-                "date": str(run["period_end"]),
+                "date": str(posting_date),
                 "ref": f"AD-RUN-{run_id}",
-                "description": f"Accruals/Deferrals recognition run to {run['period_end']}",
+                "description": (
+                    f"Accruals/Deferrals recognition for "
+                    f"{posting_date}"
+                ),
                 "source": "accrual_deferral_run",
                 "source_id": int(run_id),
                 "module_name": "accrual_deferrals",
@@ -84723,6 +85183,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "entries": entries,
             "schedule": entries,
             "total": total_debit,
+            "posting_date": str(posting_date),
             "run": run,
         }
 
