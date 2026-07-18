@@ -86607,7 +86607,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 i.id AS invoice_id,
                 c.id AS customer_id,
                 c.name AS customer_name,
-                COALESCE(i.invoice_number, i.id::text) AS invoice_reference,
+                COALESCE(NULLIF(i.number, ''), i.id::text) AS invoice_reference,
                 i.invoice_date,
                 i.due_date,
                 GREATEST(0, (%s::date - COALESCE(i.due_date, i.invoice_date))::int) AS days_past_due,
@@ -86623,8 +86623,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE i.company_id = %s
             AND i.invoice_date <= %s::date
             AND COALESCE(i.status, '') NOT IN ('void', 'cancelled', 'draft')
-            AND COALESCE(i.reversed_journal_id, 0) = 0
-            AND COALESCE(i.writeoff_journal_id, 0) = 0
+            AND i.reversed_journal_id IS NULL
+            AND i.writeoff_journal_id IS NULL
             AND COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0) > 0
             ORDER BY days_past_due DESC, c.name, i.id
         """, (int(company_id), reporting_date, int(company_id), reporting_date))
