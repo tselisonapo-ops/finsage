@@ -574,3 +574,26 @@ def api_ifrs9_ap_exposure(company_id: int):
     except Exception as e:
         current_app.logger.exception("ifrs9_ap_exposure failed")
         return _json_error(str(e), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_calculate_ecl(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+        result = db_service.ifrs9_calculate_trade_receivables_ecl(company_id, payload)
+        return jsonify({"ok": True, **result}), 200
+    except Exception as e:
+        current_app.logger.exception("ifrs9_calculate_ecl failed")
+        return _json_error(str(e), 400)
+    

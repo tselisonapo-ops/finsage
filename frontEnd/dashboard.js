@@ -1381,6 +1381,15 @@ const ENDPOINTS = {
 
     apExposure: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/ap-exposure`,
+  
+    coaReadiness: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/coa/readiness`,
+
+    coaMappings: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/coa/mappings`,
+
+    eclCalculate: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/calculate`,
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -59078,10 +59087,29 @@ function bindEventsOnce() {
   }
 
   function openPayrollReportPreview(report, filters, data) {
-    $("payrollReportPreviewTitle").textContent = report.name;
-    $("payrollReportPreviewSubtitle").textContent = buildPayrollReportFilterLabel(filters);
-
+    const modal = $("payrollReportPreviewModal");
+    const title = $("payrollReportPreviewTitle");
+    const subtitle = $("payrollReportPreviewSubtitle");
     const content = $("payrollReportPreviewContent");
+
+    if (!modal || !title || !subtitle || !content) {
+      console.error("Payroll report preview modal elements are missing.", {
+        modal,
+        title,
+        subtitle,
+        content,
+      });
+
+      showPayrollStatus?.(
+        "Payroll report preview modal is missing from the HTML.",
+        "error"
+      );
+
+      return;
+    }
+
+    title.textContent = report.name;
+    subtitle.textContent = buildPayrollReportFilterLabel(filters);
 
     if (data.message) {
       content.innerHTML = `
@@ -59096,7 +59124,7 @@ function bindEventsOnce() {
       `;
     }
 
-    $("payrollReportPreviewModal")?.classList.remove("hidden");
+    modal.classList.remove("hidden");
   }
 
   function renderPayrollReportSummary(summary = {}) {
@@ -62950,36 +62978,33 @@ function bindEventsOnce() {
     eclRuns: [],
     eclModels: [],
     arExposure: [],
-    apExposure: [],
+    readiness: null,
+    calculation: null,
+    selectedModelId: null,
     previewRunId: null,
   };
 
-  const $ = (id) => document.getElementById(id);
+  const $ = id => document.getElementById(id);
+  const cid = () => getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+  const money = value => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const label = value => String(value || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase());
 
-  function cid() {
-    return getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || window.CURRENT_COMPANY?.id;
+  function setMsg(message) {
+    if ($("ifrs9Message")) $("ifrs9Message").textContent = message || "";
   }
 
-  function setMsg(msg) {
-    const el = $("ifrs9Message");
-    if (el) el.textContent = msg || "";
-  }
-
-  function money(v) {
-    return Number(v || 0).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+  function dateText(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value).slice(0, 10) : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
   }
 
   function showTab(tab) {
-    document.querySelectorAll("[data-ifrs9-tab]").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.ifrs9Tab === tab);
-    });
-
+    document.querySelectorAll("[data-ifrs9-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.ifrs9Tab === tab));
     $("ifrs9TabRegister")?.classList.toggle("hidden", tab !== "register");
     $("ifrs9TabEclRuns")?.classList.toggle("hidden", tab !== "ecl-runs");
     $("ifrs9TabEclModels")?.classList.toggle("hidden", tab !== "ecl-models");
+    $("ifrs9TabAccounts")?.classList.toggle("hidden", tab !== "accounts");
   }
 
   async function loadAll() {
@@ -62988,60 +63013,69 @@ function bindEventsOnce() {
 
     setMsg("Loading IFRS 9 data...");
 
-    const [inst, runs, models, arExp] = await Promise.all([
-      apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
-      apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
-      apiFetch(ENDPOINTS.ifrs9.eclModels(companyId)),
-      apiFetch(ENDPOINTS.ifrs9.arExposure(companyId)),
-    ]);
+    try {
+      const [inst, runs, models, exposure, readiness] = await Promise.all([
+        apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.eclModels(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.arExposure(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.coaReadiness(companyId)),
+      ]);
 
-    IFRS9.instruments = inst.items || [];
-    IFRS9.eclRuns = runs.items || [];
-    IFRS9.eclModels = models.items || [];
-    IFRS9.arExposure = arExp.items || [];
+      IFRS9.instruments = inst.items || [];
+      IFRS9.eclRuns = runs.items || [];
+      IFRS9.eclModels = models.items || [];
+      IFRS9.arExposure = exposure.items || [];
+      IFRS9.readiness = readiness;
 
-    renderInstruments();
-    renderRuns();
-    renderModels();
-    renderArExposure();
-
-    setMsg("");
+      renderInstruments();
+      renderRuns();
+      renderModels();
+      renderArExposure();
+      renderModelOptions();
+      renderReadiness();
+      setMsg("");
+    } catch (error) {
+      setMsg(error.message || "Failed to load IFRS 9 data.");
+    }
   }
 
   function renderArExposure() {
     const el = $("ifrs9ArExposureList");
     if (!el) return;
 
-    const rows = IFRS9.arExposure || [];
-
-    if (!rows.length) {
+    if (!IFRS9.arExposure.length) {
       el.innerHTML = `<p class="muted">No open trade receivables exposure found.</p>`;
       return;
     }
 
     el.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Customer</th>
-            <th>Open Balance</th>
-            <th>Open Invoices</th>
-            <th>Oldest Due</th>
-            <th>Days Past Due</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(r => `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr><th>Customer</th><th>Open Balance</th><th>Open Invoices</th><th>Oldest Due</th><th>Days Past Due</th></tr>
+          </thead>
+          <tbody>
+            ${IFRS9.arExposure.map(row => `
+              <tr>
+                <td>${row.customer_name || "—"}</td>
+                <td>${money(row.open_balance)}</td>
+                <td>${row.open_invoices_count || 0}</td>
+                <td>${dateText(row.oldest_due_date)}</td>
+                <td>${row.days_past_due || 0}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>
             <tr>
-              <td>${r.customer_name || ""}</td>
-              <td>${money(r.open_balance)}</td>
-              <td>${r.open_invoices_count || 0}</td>
-              <td>${String(r.oldest_due_date || "").slice(0, 10)}</td>
-              <td>${r.days_past_due || 0}</td>
+              <th>Total</th>
+              <th>${money(IFRS9.arExposure.reduce((sum, row) => sum + Number(row.open_balance || 0), 0))}</th>
+              <th>${IFRS9.arExposure.reduce((sum, row) => sum + Number(row.open_invoices_count || 0), 0)}</th>
+              <th colspan="2"></th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
+          </tfoot>
+        </table>
+      </div>
     `;
   }
 
@@ -63049,34 +63083,40 @@ function bindEventsOnce() {
     const el = $("ifrs9InstrumentList");
     if (!el) return;
 
-    if (!IFRS9.instruments.length) {
-      el.innerHTML = `
-        <p class="muted">
-          No financial instruments found. Click <b>Discover Financial Instruments</b>.
-        </p>
-      `;
+    const type = $("ifrs9InstrumentTypeFilter")?.value || "";
+    const rows = type ? IFRS9.instruments.filter(row => row.instrument_type === type) : IFRS9.instruments;
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No financial instruments found. Click <b>Discover Financial Instruments</b>.</p>`;
       return;
     }
 
     el.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th><th>Type</th><th>Measurement</th><th>Amount</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${IFRS9.instruments.map(r => `
+      <div class="table-responsive">
+        <table>
+          <thead>
             <tr>
-              <td>${r.instrument_name || ""}</td>
-              <td>${r.instrument_type || ""}</td>
-              <td>${r.measurement_category || ""}</td>
-              <td>${money(r.carrying_amount)}</td>
-              <td>${r.status || ""}</td>
+              <th>Instrument</th><th>Counterparty</th><th>Type</th><th>Recognition</th>
+              <th>Carrying Amount</th><th>Classification</th><th>Measurement</th><th>Status</th><th></th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td>${row.instrument_name || "—"}</td>
+                <td>${row.counterparty_name || "—"}</td>
+                <td>${label(row.instrument_type)}</td>
+                <td>${dateText(row.recognition_date)}</td>
+                <td>${money(row.carrying_amount)}</td>
+                <td>${label(row.classification_status)}</td>
+                <td>${label(row.measurement_category || "Unclassified")}</td>
+                <td>${label(row.status)}</td>
+                <td><button class="btn btn-secondary btn-sm" data-ifrs9-open-instrument="${row.id}">Open</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -63090,29 +63130,35 @@ function bindEventsOnce() {
     }
 
     el.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th><th>Exposure</th><th>ECL</th><th>Status</th><th>Journal</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${IFRS9.eclRuns.map(r => `
-            <tr>
-              <td>${String(r.reporting_date || "").slice(0,10)}</td>
-              <td>${money(r.total_exposure)}</td>
-              <td>${money(r.total_ecl)}</td>
-              <td>${r.status || ""}</td>
-              <td>${r.journal_id || "-"}</td>
-              <td>
-                <button class="btn btn-secondary" data-ifrs9-preview-run="${r.id}">
-                  Preview
-                </button>
-              </td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Model</th><th>Exposure</th><th>ECL</th><th>Movement</th><th>Status</th><th>Journal</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${IFRS9.eclRuns.map(row => {
+              const meta = row.meta_json || {};
+              const model = IFRS9.eclModels.find(item => Number(item.id) === Number(row.model_id));
+
+              return `
+                <tr>
+                  <td>${dateText(row.reporting_date)}</td>
+                  <td>${model?.model_name || "—"}</td>
+                  <td>${money(row.total_exposure)}</td>
+                  <td>${money(row.total_ecl)}</td>
+                  <td>${money(meta.movement_ecl)}</td>
+                  <td>${label(row.status)}</td>
+                  <td>${row.journal_id || "—"}</td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm" data-ifrs9-view-run="${row.id}">View</button>
+                    ${row.status === "draft" ? `<button class="btn btn-primary btn-sm" data-ifrs9-preview-run="${row.id}">Preview</button>` : ""}
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -63126,24 +63172,64 @@ function bindEventsOnce() {
     }
 
     el.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>Model</th><th>Type</th><th>Applies To</th><th>Basis</th><th>Active</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${IFRS9.eclModels.map(r => `
-            <tr>
-              <td>${r.model_name || ""}</td>
-              <td>${r.model_type || ""}</td>
-              <td>${r.applies_to || ""}</td>
-              <td>${r.basis || ""}</td>
-              <td>${r.is_active ? "Yes" : "No"}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr><th>Model</th><th>Type</th><th>Applies To</th><th>Basis</th><th>Active</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${IFRS9.eclModels.map(row => `
+              <tr>
+                <td>${row.model_name || "—"}</td>
+                <td>${label(row.model_type)}</td>
+                <td>${label(row.applies_to)}</td>
+                <td>${label(row.basis)}</td>
+                <td>${row.is_active ? "Yes" : "No"}</td>
+                <td><button class="btn btn-secondary btn-sm" data-ifrs9-configure-model="${row.id}">Configure Matrix</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderModelOptions() {
+    const select = $("ifrs9EclModelSelect");
+    if (!select) return;
+
+    const current = select.value;
+    const models = IFRS9.eclModels.filter(row => row.is_active && row.applies_to === "trade_receivable");
+
+    select.innerHTML = `<option value="">Select an ECL model</option>${models.map(row => `<option value="${row.id}">${row.model_name}</option>`).join("")}`;
+    if (models.some(row => String(row.id) === current)) select.value = current;
+  }
+
+  function renderReadiness() {
+    const el = $("ifrs9AccountReadiness");
+    if (!el) return;
+
+    const rows = IFRS9.readiness?.items || [];
+
+    el.innerHTML = `
+      <div class="status-banner ${IFRS9.readiness?.ready ? "success" : "warning"}">
+        ${IFRS9.readiness?.ready ? "IFRS 9 account setup is ready." : `${IFRS9.readiness?.missing?.length || 0} account mappings are missing.`}
+      </div>
+
+      <div class="table-responsive">
+        <table>
+          <thead><tr><th>Purpose</th><th>Account</th><th>Status</th></tr></thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td>${label(row.mapping_key)}</td>
+                <td>${row.account?.posting_code || row.account_code || "Not mapped"}</td>
+                <td>${row.ok ? "Ready" : "Missing"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -63153,115 +63239,404 @@ function bindEventsOnce() {
 
     setMsg("Discovering financial instruments...");
 
-    const res = await apiFetch(ENDPOINTS.ifrs9.discover(companyId), {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    try {
+      const result = await apiFetch(ENDPOINTS.ifrs9.discover(companyId), { method: "POST", body: "{}" });
+      await loadAll();
 
-    setMsg(
-      `Discovered: loans ${res.loan_payables_created || 0}, ` +
-      `receivables ${res.trade_receivables_created || 0}, ` +
-      `payables ${res.trade_payables_created || 0}, ` +
-      `bank accounts ${res.bank_accounts_created || 0}.`
-    );
-
-    await loadAll();
+      setMsg(
+        `Discovery complete. Loans: ${result.loan_payables_created || 0}, ` +
+        `receivables: ${result.trade_receivables_created || 0}, ` +
+        `payables: ${result.trade_payables_created || 0}, ` +
+        `bank accounts: ${result.bank_accounts_created || 0}.`
+      );
+    } catch (error) {
+      setMsg(error.message || "Financial instrument discovery failed.");
+    }
   }
 
   async function createEclModel() {
     const companyId = cid();
 
     const payload = {
-      model_name: $("ifrs9ModelName")?.value || "",
+      model_name: $("ifrs9ModelName")?.value.trim(),
       model_type: $("ifrs9ModelType")?.value || "simplified",
       applies_to: $("ifrs9ModelAppliesTo")?.value || "trade_receivable",
       basis: $("ifrs9ModelBasis")?.value || "provision_matrix",
       is_active: true,
     };
 
-    if (!payload.model_name.trim()) {
-      alert("Model name is required.");
+    if (!payload.model_name) return alert("Model name is required.");
+
+    try {
+      const result = await apiFetch(ENDPOINTS.ifrs9.eclModels(companyId), { method: "POST", body: JSON.stringify(payload) });
+      $("ifrs9ModelName").value = "";
+      await loadAll();
+      await configureModel(result.item.id);
+      setMsg("ECL model created. Configure its provision matrix below.");
+    } catch (error) {
+      setMsg(error.message || "Failed to create ECL model.");
+    }
+  }
+
+  async function configureModel(modelId) {
+    const companyId = cid();
+
+    try {
+      const result = await apiFetch(ENDPOINTS.ifrs9.eclModel(companyId, modelId));
+      IFRS9.selectedModelId = Number(modelId);
+
+      $("ifrs9MatrixTitle").textContent = `${result.model.model_name} – Provision Matrix`;
+      $("ifrs9MatrixCard").classList.remove("hidden");
+
+      const bands = result.bands?.length ? result.bands : [
+        { band_label: "Current", days_from: 0, days_to: 0, loss_rate: 0.005 },
+        { band_label: "1–30 days", days_from: 1, days_to: 30, loss_rate: 0.015 },
+        { band_label: "31–60 days", days_from: 31, days_to: 60, loss_rate: 0.04 },
+        { band_label: "61–90 days", days_from: 61, days_to: 90, loss_rate: 0.10 },
+        { band_label: "91–120 days", days_from: 91, days_to: 120, loss_rate: 0.25 },
+        { band_label: "Over 120 days", days_from: 121, days_to: null, loss_rate: 0.60 },
+      ];
+
+      renderBands(bands);
+      $("ifrs9MatrixCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      setMsg(error.message || "Failed to load ECL model.");
+    }
+  }
+
+  function renderBands(bands) {
+    $("ifrs9BandList").innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead><tr><th>Band</th><th>Days From</th><th>Days To</th><th>Loss Rate %</th><th></th></tr></thead>
+          <tbody id="ifrs9BandRows">
+            ${bands.map(bandRow).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function bandRow(band = {}) {
+    const rate = Number(band.loss_rate || 0) * 100;
+
+    return `
+      <tr data-ifrs9-band-row>
+        <td><input data-band-label value="${band.band_label || ""}" placeholder="Band name"></td>
+        <td><input data-band-from type="number" min="0" value="${band.days_from ?? 0}"></td>
+        <td><input data-band-to type="number" min="0" value="${band.days_to ?? ""}" placeholder="Open"></td>
+        <td><input data-band-rate type="number" min="0" max="100" step="0.0001" value="${rate}"></td>
+        <td><button class="btn btn-danger btn-sm" data-ifrs9-remove-band>Remove</button></td>
+      </tr>
+    `;
+  }
+
+  function addBand() {
+    $("ifrs9BandRows")?.insertAdjacentHTML("beforeend", bandRow());
+  }
+
+  async function saveBands() {
+    if (!IFRS9.selectedModelId) return alert("Select an ECL model.");
+
+    const bands = [...document.querySelectorAll("[data-ifrs9-band-row]")].map(row => ({
+      band_label: row.querySelector("[data-band-label]").value.trim(),
+      days_from: Number(row.querySelector("[data-band-from]").value || 0),
+      days_to: row.querySelector("[data-band-to]").value === "" ? null : Number(row.querySelector("[data-band-to]").value),
+      loss_rate: Number(row.querySelector("[data-band-rate]").value || 0) / 100,
+    }));
+
+    if (!bands.length) return alert("At least one ageing band is required.");
+    if (bands.some(row => !row.band_label)) return alert("Every ageing band requires a name.");
+    if (bands.some(row => row.days_to !== null && row.days_to < row.days_from)) return alert("Days To cannot be less than Days From.");
+
+    try {
+      await apiFetch(ENDPOINTS.ifrs9.eclBands(cid(), IFRS9.selectedModelId), {
+        method: "PUT",
+        body: JSON.stringify({ bands }),
+      });
+
+      setMsg("Provision matrix saved.");
+      await configureModel(IFRS9.selectedModelId);
+    } catch (error) {
+      setMsg(error.message || "Failed to save provision matrix.");
+    }
+  }
+
+  async function calculateEcl() {
+    const modelId = $("ifrs9EclModelSelect")?.value;
+    const reportingDate = $("ifrs9EclReportingDate")?.value;
+
+    if (!reportingDate) return alert("Reporting date is required.");
+    if (!modelId) return alert("Select an ECL model.");
+
+    setMsg("Calculating expected credit loss...");
+
+    try {
+      IFRS9.calculation = await apiFetch(ENDPOINTS.ifrs9.eclCalculate(cid()), {
+        method: "POST",
+        body: JSON.stringify({ model_id: Number(modelId), reporting_date: reportingDate }),
+      });
+
+      $("ifrs9EclExposure").value = IFRS9.calculation.total_exposure || 0;
+      $("ifrs9PreviousEcl").value = IFRS9.calculation.previous_ecl || 0;
+      $("ifrs9TotalEcl").value = IFRS9.calculation.total_ecl || 0;
+      $("ifrs9MovementEcl").value = IFRS9.calculation.movement_ecl || 0;
+      $("ifrs9CreateEclRunBtn").disabled = Number(IFRS9.calculation.movement_ecl || 0) === 0;
+
+      renderCalculation();
+      setMsg("Expected credit loss calculated.");
+    } catch (error) {
+      IFRS9.calculation = null;
+      $("ifrs9CreateEclRunBtn").disabled = true;
+      setMsg(error.message || "ECL calculation failed.");
+    }
+  }
+
+  function renderCalculation() {
+    const el = $("ifrs9CalculationPreview");
+    const rows = IFRS9.calculation?.lines || [];
+
+    if (!rows.length) {
+      el.innerHTML = `<p class="muted">No ECL calculation lines found.</p>`;
       return;
     }
 
-    await apiFetch(ENDPOINTS.ifrs9.eclModels(companyId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-
-    setMsg("ECL model created.");
-    await loadAll();
+    el.innerHTML = `
+      <h4>Calculation Details</h4>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr><th>Customer</th><th>Invoice</th><th>Due Date</th><th>Days</th><th>Exposure</th><th>Band</th><th>Rate</th><th>ECL</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td>${row.customer_name || "—"}</td>
+                <td>${row.invoice_reference || row.invoice_id || "—"}</td>
+                <td>${dateText(row.due_date)}</td>
+                <td>${row.days_past_due || 0}</td>
+                <td>${money(row.gross_exposure)}</td>
+                <td>${row.ageing_band || "—"}</td>
+                <td>${(Number(row.loss_rate || 0) * 100).toFixed(2)}%</td>
+                <td>${money(row.expected_credit_loss)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th colspan="4">Total</th>
+              <th>${money(IFRS9.calculation.total_exposure)}</th>
+              <th colspan="2"></th>
+              <th>${money(IFRS9.calculation.total_ecl)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
   }
 
   async function createRun() {
-    const companyId = cid();
-
-    const totalEcl = Number($("ifrs9TotalEcl")?.value || 0);
-    const previousEcl = Number($("ifrs9PreviousEcl")?.value || 0);
+    if (!IFRS9.calculation) return alert("Calculate ECL before creating the run.");
 
     const payload = {
-      reporting_date: $("ifrs9EclReportingDate")?.value,
-      total_exposure: Number($("ifrs9EclExposure")?.value || 0),
-      previous_ecl: previousEcl,
-      total_ecl: totalEcl,
-      movement_ecl: totalEcl - previousEcl,
+      model_id: Number($("ifrs9EclModelSelect").value),
+      reporting_date: $("ifrs9EclReportingDate").value,
       run_type: "period_end",
     };
 
-    if (!payload.reporting_date) {
-      alert("Reporting date is required.");
-      return;
+    try {
+      await apiFetch(ENDPOINTS.ifrs9.eclRuns(cid()), { method: "POST", body: JSON.stringify(payload) });
+      IFRS9.calculation = null;
+      $("ifrs9CalculationPreview").innerHTML = "";
+      $("ifrs9CreateEclRunBtn").disabled = true;
+      await loadAll();
+      showTab("ecl-runs");
+      setMsg("ECL run created.");
+    } catch (error) {
+      setMsg(error.message || "Failed to create ECL run.");
     }
+  }
 
-    await apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  async function viewRun(runId) {
+    try {
+      const result = await apiFetch(ENDPOINTS.ifrs9.eclRun(cid(), runId));
+      const run = result.run || {};
+      const lines = result.lines || [];
+      const meta = run.meta_json || {};
 
-    setMsg("ECL run created.");
-    await loadAll();
-    showTab("ecl-runs");
+      $("ifrs9InstrumentBody").innerHTML = `
+        <div class="form-grid">
+          <div><b>Reporting Date</b><p>${dateText(run.reporting_date)}</p></div>
+          <div><b>Total Exposure</b><p>${money(run.total_exposure)}</p></div>
+          <div><b>Previous ECL</b><p>${money(meta.previous_ecl)}</p></div>
+          <div><b>Total ECL</b><p>${money(run.total_ecl)}</p></div>
+          <div><b>Movement</b><p>${money(meta.movement_ecl)}</p></div>
+          <div><b>Status</b><p>${label(run.status)}</p></div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>Customer</th><th>Invoice</th><th>Days</th><th>Band</th><th>Exposure</th><th>Rate</th><th>ECL</th></tr></thead>
+            <tbody>
+              ${lines.map(line => {
+                const data = line.meta_json || {};
+
+                return `
+                  <tr>
+                    <td>${data.customer_name || line.customer_id || "—"}</td>
+                    <td>${data.invoice_reference || line.invoice_id || "—"}</td>
+                    <td>${line.days_past_due || 0}</td>
+                    <td>${line.ageing_band || "—"}</td>
+                    <td>${money(line.gross_exposure)}</td>
+                    <td>${(Number(line.loss_rate || 0) * 100).toFixed(2)}%</td>
+                    <td>${money(line.expected_credit_loss)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9InstrumentModal").classList.remove("hidden");
+    } catch (error) {
+      setMsg(error.message || "Failed to load ECL run.");
+    }
+  }
+
+  async function openInstrument(instrumentId) {
+    try {
+      const result = await apiFetch(ENDPOINTS.ifrs9.instrument(cid(), instrumentId));
+      const item = result.item || {};
+
+      $("ifrs9InstrumentBody").innerHTML = `
+        <div class="form-grid">
+          <div><b>Instrument</b><p>${item.instrument_name || "—"}</p></div>
+          <div><b>Counterparty</b><p>${item.counterparty_name || "—"}</p></div>
+          <div><b>Type</b><p>${label(item.instrument_type)}</p></div>
+          <div><b>Recognition Date</b><p>${dateText(item.recognition_date)}</p></div>
+          <div><b>Original Amount</b><p>${money(item.original_amount)}</p></div>
+          <div><b>Carrying Amount</b><p>${money(item.carrying_amount)}</p></div>
+          <div><b>Business Model</b><p>${label(item.business_model || "Not assessed")}</p></div>
+          <div><b>SPPI Result</b><p>${label(item.sppi_result || "Not assessed")}</p></div>
+          <div><b>Measurement</b><p>${label(item.measurement_category || "Unclassified")}</p></div>
+          <div><b>Effective Interest Rate</b><p>${item.effective_interest_rate ?? "—"}</p></div>
+          <div><b>Status</b><p>${label(item.status)}</p></div>
+        </div>
+
+        <hr>
+
+        <h3>Classification</h3>
+
+        <div class="form-grid">
+          <label>
+            Classification Date
+            <input id="ifrs9ClassificationDate" type="date" value="${new Date().toISOString().slice(0, 10)}">
+          </label>
+
+          <label>
+            Business Model
+            <select id="ifrs9BusinessModel">
+              <option value="hold_to_collect">Hold to Collect</option>
+              <option value="hold_to_collect_and_sell">Hold to Collect and Sell</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <label>
+            SPPI Result
+            <select id="ifrs9SppiResult">
+              <option value="pass">Pass</option>
+              <option value="fail">Fail</option>
+              <option value="not_applicable">Not Applicable</option>
+            </select>
+          </label>
+
+          <label>
+            Measurement Category
+            <select id="ifrs9MeasurementCategory">
+              <option value="amortised_cost">Amortised Cost</option>
+              <option value="fvoci">FVOCI</option>
+              <option value="fvpl">FVPL</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          Classification Reason
+          <textarea id="ifrs9ClassificationReason" rows="3"></textarea>
+        </label>
+
+        <button class="btn btn-primary" data-ifrs9-save-classification="${item.id}">Save Classification</button>
+      `;
+
+      $("ifrs9InstrumentModal").classList.remove("hidden");
+    } catch (error) {
+      setMsg(error.message || "Failed to load financial instrument.");
+    }
+  }
+
+  async function saveClassification(instrumentId) {
+    const payload = {
+      classification_date: $("ifrs9ClassificationDate").value,
+      business_model: $("ifrs9BusinessModel").value,
+      sppi_result: $("ifrs9SppiResult").value,
+      measurement_category: $("ifrs9MeasurementCategory").value,
+      reason: $("ifrs9ClassificationReason").value.trim(),
+    };
+
+    try {
+      await apiFetch(ENDPOINTS.ifrs9.classify(cid(), instrumentId), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      closeInstrumentModal();
+      await loadAll();
+      setMsg("Financial instrument classified.");
+    } catch (error) {
+      setMsg(error.message || "Classification failed.");
+    }
   }
 
   async function previewRun(runId) {
-    const companyId = cid();
-    IFRS9.previewRunId = runId;
+    try {
+      IFRS9.previewRunId = Number(runId);
+      const result = await apiFetch(ENDPOINTS.ifrs9.eclRunPreview(cid(), runId));
+      const preview = result.preview || {};
 
-    const res = await apiFetch(ENDPOINTS.ifrs9.eclRunPreview(companyId, runId));
-    const p = res.preview || {};
+      $("ifrs9PreviewBody").innerHTML = `
+        <div class="journal-preview-header">
+          <p><b>Date:</b> ${dateText(preview.date)}</p>
+          <p><b>Reference:</b> ${preview.ref || "—"}</p>
+          <p><b>Description:</b> ${preview.description || "—"}</p>
+        </div>
 
-    $("ifrs9PreviewBody").innerHTML = `
-      <div class="journal-preview-header">
-        <p><b>Date:</b> ${p.date || ""}</p>
-        <p><b>Reference:</b> ${p.ref || ""}</p>
-        <p><b>Description:</b> ${p.description || ""}</p>
-      </div>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
+            <tbody>
+              ${(preview.lines || []).map(line => `
+                <tr>
+                  <td>${line.account_name || line.account_code || "—"}</td>
+                  <td>${line.description || "—"}</td>
+                  <td>${money(line.debit)}</td>
+                  <td>${money(line.credit)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+            <tfoot>
+              <tr><th colspan="2">Total</th><th>${money(preview.dr_total)}</th><th>${money(preview.cr_total)}</th></tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
 
-      <table>
-        <thead>
-          <tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr>
-        </thead>
-        <tbody>
-          ${(p.lines || []).map(l => `
-            <tr>
-              <td>${l.account_code || ""}</td>
-              <td>${l.description || ""}</td>
-              <td>${money(l.debit)}</td>
-              <td>${money(l.credit)}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th colspan="2">Total</th>
-            <th>${money(p.dr_total)}</th>
-            <th>${money(p.cr_total)}</th>
-          </tr>
-        </tfoot>
-      </table>
-    `;
-
-    $("ifrs9JournalPreviewModal")?.classList.remove("hidden");
+      $("ifrs9JournalPreviewModal").classList.remove("hidden");
+    } catch (error) {
+      IFRS9.previewRunId = null;
+      setMsg(error.message || "Failed to preview ECL journal.");
+    }
   }
 
   function closePreview() {
@@ -63269,19 +63644,26 @@ function bindEventsOnce() {
     $("ifrs9JournalPreviewModal")?.classList.add("hidden");
   }
 
+  function closeInstrumentModal() {
+    $("ifrs9InstrumentModal")?.classList.add("hidden");
+    if ($("ifrs9InstrumentBody")) $("ifrs9InstrumentBody").innerHTML = "";
+  }
+
   async function postRun() {
     if (!IFRS9.previewRunId) return;
 
-    const companyId = cid();
+    try {
+      await apiFetch(ENDPOINTS.ifrs9.postEclRun(cid(), IFRS9.previewRunId), {
+        method: "POST",
+        body: "{}",
+      });
 
-    await apiFetch(ENDPOINTS.ifrs9.postEclRun(companyId, IFRS9.previewRunId), {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-
-    closePreview();
-    setMsg("ECL journal posted.");
-    await loadAll();
+      closePreview();
+      await loadAll();
+      setMsg("ECL journal posted.");
+    } catch (error) {
+      setMsg(error.message || "Failed to post ECL journal.");
+    }
   }
 
   window.bindIFRS9Screen = async function bindIFRS9Screen() {
@@ -63289,24 +63671,40 @@ function bindEventsOnce() {
       IFRS9.bound = true;
 
       $("ifrs9RefreshBtn")?.addEventListener("click", loadAll);
-      $("ifrs9CreateEclRunBtn")?.addEventListener("click", createRun);
       $("ifrs9DiscoverBtn")?.addEventListener("click", discoverFinancialInstruments);
+      $("ifrs9CreateModelBtn")?.addEventListener("click", createEclModel);
+      $("ifrs9AddBandBtn")?.addEventListener("click", addBand);
+      $("ifrs9SaveBandsBtn")?.addEventListener("click", saveBands);
+      $("ifrs9CalculateEclBtn")?.addEventListener("click", calculateEcl);
+      $("ifrs9CreateEclRunBtn")?.addEventListener("click", createRun);
+      $("ifrs9InstrumentTypeFilter")?.addEventListener("change", renderInstruments);
       $("ifrs9PreviewCloseBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewCancelBtn")?.addEventListener("click", closePreview);
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);
-      $("ifrs9CreateModelBtn")?.addEventListener("click", createEclModel);
+      $("ifrs9InstrumentCloseBtn")?.addEventListener("click", closeInstrumentModal);
+      $("ifrs9InstrumentCancelBtn")?.addEventListener("click", closeInstrumentModal);
 
-      document.addEventListener("click", async (e) => {
-        const tab = e.target.closest("[data-ifrs9-tab]");
-        if (tab) {
-          showTab(tab.dataset.ifrs9Tab);
-          return;
-        }
+      document.addEventListener("click", async event => {
+        const tab = event.target.closest("[data-ifrs9-tab]");
+        if (tab) return showTab(tab.dataset.ifrs9Tab);
 
-        const preview = e.target.closest("[data-ifrs9-preview-run]");
-        if (preview) {
-          await previewRun(Number(preview.dataset.ifrs9PreviewRun));
-        }
+        const model = event.target.closest("[data-ifrs9-configure-model]");
+        if (model) return configureModel(Number(model.dataset.ifrs9ConfigureModel));
+
+        const removeBand = event.target.closest("[data-ifrs9-remove-band]");
+        if (removeBand) return removeBand.closest("[data-ifrs9-band-row]")?.remove();
+
+        const instrument = event.target.closest("[data-ifrs9-open-instrument]");
+        if (instrument) return openInstrument(Number(instrument.dataset.ifrs9OpenInstrument));
+
+        const classification = event.target.closest("[data-ifrs9-save-classification]");
+        if (classification) return saveClassification(Number(classification.dataset.ifrs9SaveClassification));
+
+        const viewRunButton = event.target.closest("[data-ifrs9-view-run]");
+        if (viewRunButton) return viewRun(Number(viewRunButton.dataset.ifrs9ViewRun));
+
+        const preview = event.target.closest("[data-ifrs9-preview-run]");
+        if (preview) return previewRun(Number(preview.dataset.ifrs9PreviewRun));
       });
     }
 

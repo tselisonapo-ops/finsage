@@ -86590,6 +86590,128 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             v = default
         return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    def ifrs9_trade_receivable_lines(self, company_id: int, reporting_date):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            WITH paid AS (
+                SELECT ra.invoice_id, COALESCE(SUM(ra.amount), 0) AS amount_paid
+                FROM {schema}.receipt_allocations ra
+                JOIN {schema}.receipts r ON r.id = ra.receipt_id AND r.company_id = ra.company_id
+                WHERE ra.company_id = %s
+                AND COALESCE(r.status, 'posted') NOT IN ('void', 'cancelled', 'reversed')
+                GROUP BY ra.invoice_id
+            )
+            SELECT
+                fi.id AS instrument_id,
+                i.id AS invoice_id,
+                c.id AS customer_id,
+                c.name AS customer_name,
+                COALESCE(i.invoice_number, i.id::text) AS invoice_reference,
+                i.invoice_date,
+                i.due_date,
+                GREATEST(0, (%s::date - COALESCE(i.due_date, i.invoice_date))::int) AS days_past_due,
+                COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0) AS gross_exposure
+            FROM {schema}.invoices i
+            JOIN {schema}.customers c ON c.id = i.customer_id AND c.company_id = i.company_id
+            JOIN {schema}.ifrs9_financial_instruments fi
+            ON fi.company_id = c.company_id
+            AND fi.instrument_type = 'trade_receivable'
+            AND fi.source_table = 'customers'
+            AND fi.source_id = c.id
+            LEFT JOIN paid p ON p.invoice_id = i.id
+            WHERE i.company_id = %s
+            AND i.invoice_date <= %s::date
+            AND COALESCE(i.status, '') NOT IN ('void', 'cancelled', 'draft')
+            AND COALESCE(i.reversed_journal_id, 0) = 0
+            AND COALESCE(i.writeoff_journal_id, 0) = 0
+            AND COALESCE(i.total_amount, 0) - COALESCE(p.amount_paid, 0) > 0
+            ORDER BY days_past_due DESC, c.name, i.id
+        """, (int(company_id), reporting_date, int(company_id), reporting_date))
+
+
+    def ifrs9_previous_posted_ecl(self, company_id: int, reporting_date):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT total_ecl
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id = %s
+            AND status = 'posted'
+            AND reporting_date < %s
+            ORDER BY reporting_date DESC, id DESC
+            LIMIT 1
+        """, (int(company_id), reporting_date))
+
+        return self._money2(row.get("total_ecl") if row else 0)
+
+
+    def ifrs9_calculate_trade_receivables_ecl(self, company_id: int, payload: dict):
+        model_id = payload.get("model_id")
+        reporting_date = payload.get("reporting_date")
+
+        if not model_id:
+            raise ValueError("model_id is required")
+
+        if not reporting_date:
+            raise ValueError("reporting_date is required")
+
+        model_data = self.ifrs9_get_ecl_model(company_id, int(model_id))
+        if not model_data:
+            raise ValueError("ECL model not found")
+
+        model = model_data["model"]
+        bands = model_data.get("bands") or []
+
+        if model.get("basis") != "provision_matrix":
+            raise ValueError("Only provision matrix models are currently supported")
+
+        if not bands:
+            raise ValueError("The selected ECL model has no provision matrix bands")
+
+        exposures = self.ifrs9_trade_receivable_lines(company_id, reporting_date)
+        calculated = []
+        total_exposure = Decimal("0.00")
+        total_ecl = Decimal("0.00")
+
+        for row in exposures:
+            days = int(row.get("days_past_due") or 0)
+            band = next((
+                b for b in bands
+                if days >= int(b.get("days_from") or 0)
+                and (b.get("days_to") is None or days <= int(b["days_to"]))
+            ), None)
+
+            if not band:
+                raise ValueError(f"No ECL band covers {days} days past due")
+
+            exposure = self._money2(row.get("gross_exposure"))
+            rate = Decimal(str(band.get("loss_rate") or 0))
+            ecl = self._money2(exposure * rate)
+
+            calculated.append({
+                **row,
+                "ageing_band": band.get("band_label"),
+                "loss_rate": float(rate),
+                "expected_credit_loss": float(ecl),
+            })
+
+            total_exposure += exposure
+            total_ecl += ecl
+
+        total_exposure = self._money2(total_exposure)
+        total_ecl = self._money2(total_ecl)
+        previous_ecl = self.ifrs9_previous_posted_ecl(company_id, reporting_date)
+        movement_ecl = self._money2(total_ecl - previous_ecl)
+
+        return {
+            "model": model,
+            "lines": calculated,
+            "total_exposure": float(total_exposure),
+            "previous_ecl": float(previous_ecl),
+            "total_ecl": float(total_ecl),
+            "movement_ecl": float(movement_ecl),
+        }
 
     def ifrs9_account_by_role(self, company_id: int, role: str, *, required=True):
         schema = self.company_schema(company_id)
@@ -86713,45 +86835,49 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def ifrs9_create_ecl_run(self, company_id: int, payload: dict, *, user_id=None):
         schema = self.company_schema(company_id)
-
+        model_id = payload.get("model_id")
         reporting_date = payload.get("reporting_date")
+
+        if not model_id:
+            raise ValueError("model_id is required")
+
         if not reporting_date:
             raise ValueError("reporting_date is required")
 
-        total_exposure = self._money2(payload.get("total_exposure"))
-        total_ecl = self._money2(payload.get("total_ecl"))
-        previous_ecl = self._money2(payload.get("previous_ecl"))
-        movement_ecl = self._money2(payload.get("movement_ecl", total_ecl - previous_ecl))
+        calculated = self.ifrs9_calculate_trade_receivables_ecl(company_id, {
+            "model_id": model_id,
+            "reporting_date": reporting_date,
+        })
+
+        total_exposure = self._money2(calculated["total_exposure"])
+        previous_ecl = self._money2(calculated["previous_ecl"])
+        total_ecl = self._money2(calculated["total_ecl"])
+        movement_ecl = self._money2(calculated["movement_ecl"])
+
+        if total_exposure <= 0:
+            raise ValueError("No open trade receivables were found")
 
         if movement_ecl == 0:
-            raise ValueError("movement_ecl cannot be zero")
+            raise ValueError("No ECL movement exists for this reporting date")
 
         with self.transaction() as (conn, cur):
             cur.execute(f"""
                 INSERT INTO {schema}.ifrs9_ecl_runs (
-                    company_id,
-                    model_id,
-                    run_date,
-                    reporting_date,
-                    run_type,
-                    total_exposure,
-                    total_ecl,
-                    journal_id,
-                    status,
-                    created_by,
-                    meta_json
+                    company_id, model_id, run_date, reporting_date, run_type,
+                    total_exposure, total_ecl, journal_id, status, created_by, meta_json
                 )
-                VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,NULL,'draft',%s,
+                VALUES (
+                    %s, %s, CURRENT_DATE, %s, %s, %s, %s, NULL, 'draft', %s,
                     jsonb_build_object(
                         'previous_ecl', %s,
                         'movement_ecl', %s,
-                        'input', COALESCE(%s::jsonb, '{{}}'::jsonb)
+                        'calculation_basis', 'provision_matrix'
                     )
                 )
                 RETURNING *
             """, (
                 int(company_id),
-                payload.get("model_id"),
+                int(model_id),
                 reporting_date,
                 payload.get("run_type") or "period_end",
                 total_exposure,
@@ -86759,13 +86885,52 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 user_id,
                 previous_ecl,
                 movement_ecl,
-                payload.get("meta_json"),
             ))
 
             run = cur.fetchone()
 
-        return run
+            for line in calculated["lines"]:
+                cur.execute(f"""
+                    INSERT INTO {schema}.ifrs9_ecl_run_lines (
+                        company_id, run_id, instrument_id, invoice_id, customer_id,
+                        days_past_due, ageing_band, stage, gross_exposure, loss_rate,
+                        expected_credit_loss, previous_ecl, movement_ecl, meta_json
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, 1, %s, %s,
+                        %s, 0, %s,
+                        jsonb_build_object(
+                            'customer_name', %s,
+                            'invoice_reference', %s,
+                            'invoice_date', %s,
+                            'due_date', %s
+                        )
+                    )
+                """, (
+                    int(company_id),
+                    int(run["id"]),
+                    int(line["instrument_id"]),
+                    line.get("invoice_id"),
+                    line.get("customer_id"),
+                    int(line.get("days_past_due") or 0),
+                    line.get("ageing_band"),
+                    self._money2(line.get("gross_exposure")),
+                    Decimal(str(line.get("loss_rate") or 0)),
+                    self._money2(line.get("expected_credit_loss")),
+                    self._money2(line.get("expected_credit_loss")),
+                    line.get("customer_name"),
+                    line.get("invoice_reference"),
+                    line.get("invoice_date"),
+                    line.get("due_date"),
+                ))
 
+        return {
+            **run,
+            "previous_ecl": float(previous_ecl),
+            "movement_ecl": float(movement_ecl),
+            "lines": calculated["lines"],
+        }
 
     def ifrs9_get_ecl_run(self, company_id: int, run_id: int):
         schema = self.company_schema(company_id)

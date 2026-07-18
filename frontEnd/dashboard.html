@@ -8535,7 +8535,7 @@ select:focus {
           <div class="screen-header">
             <div>
               <h1>IFRS 9 Financial Instruments</h1>
-              <p class="muted">Classification, ECL, effective interest and journal posting.</p>
+              <p class="muted">Classification, expected credit loss, effective interest and journal posting.</p>
             </div>
 
             <div class="screen-actions">
@@ -8548,13 +8548,30 @@ select:focus {
             <button class="tab active" data-ifrs9-tab="register">Register</button>
             <button class="tab" data-ifrs9-tab="ecl-runs">ECL Runs</button>
             <button class="tab" data-ifrs9-tab="ecl-models">ECL Models</button>
+            <button class="tab" data-ifrs9-tab="accounts">Account Setup</button>
           </div>
 
-          <div id="ifrs9Message" class="muted" style="margin: 10px 0;"></div>
+          <div id="ifrs9Message" class="muted" style="margin:10px 0;"></div>
 
           <div id="ifrs9TabRegister" class="ifrs9-tab-panel">
             <div class="card">
-              <h3>Financial Instrument Register</h3>
+              <div class="card-header-row">
+                <div>
+                  <h3>Financial Instrument Register</h3>
+                  <p class="muted">Financial assets and liabilities discovered from the company records.</p>
+                </div>
+
+                <select id="ifrs9InstrumentTypeFilter">
+                  <option value="">All instrument types</option>
+                  <option value="trade_receivable">Trade Receivables</option>
+                  <option value="trade_payable">Trade Payables</option>
+                  <option value="loan_payable">Loan Payables</option>
+                  <option value="loan_receivable">Loan Receivables</option>
+                  <option value="deposit_asset">Bank and Deposit Assets</option>
+                  <option value="investment">Investments</option>
+                </select>
+              </div>
+
               <div id="ifrs9InstrumentList"></div>
             </div>
           </div>
@@ -8562,7 +8579,7 @@ select:focus {
           <div id="ifrs9TabEclRuns" class="ifrs9-tab-panel hidden">
             <div class="card">
               <h3>Trade Receivables Exposure</h3>
-              <p class="muted">Open customer balances used for IFRS 9 expected credit loss.</p>
+              <p class="muted">Open customer balances available for expected credit loss calculation.</p>
               <div id="ifrs9ArExposureList"></div>
             </div>
 
@@ -8576,22 +8593,39 @@ select:focus {
                 </label>
 
                 <label>
+                  ECL Model
+                  <select id="ifrs9EclModelSelect">
+                    <option value="">Select an ECL model</option>
+                  </select>
+                </label>
+
+                <label>
                   Total Exposure
-                  <input id="ifrs9EclExposure" type="number" step="0.01" value="0">
+                  <input id="ifrs9EclExposure" type="number" step="0.01" value="0" readonly>
                 </label>
 
                 <label>
                   Previous ECL
-                  <input id="ifrs9PreviousEcl" type="number" step="0.01" value="0">
+                  <input id="ifrs9PreviousEcl" type="number" step="0.01" value="0" readonly>
                 </label>
 
                 <label>
-                  Total ECL
-                  <input id="ifrs9TotalEcl" type="number" step="0.01" value="0">
+                  Calculated ECL
+                  <input id="ifrs9TotalEcl" type="number" step="0.01" value="0" readonly>
+                </label>
+
+                <label>
+                  Movement
+                  <input id="ifrs9MovementEcl" type="number" step="0.01" value="0" readonly>
                 </label>
               </div>
 
-              <button id="ifrs9CreateEclRunBtn" class="btn btn-primary">Create ECL Run</button>
+              <div class="screen-actions" style="margin-top:12px;">
+                <button id="ifrs9CalculateEclBtn" class="btn btn-secondary">Calculate ECL</button>
+                <button id="ifrs9CreateEclRunBtn" class="btn btn-primary" disabled>Create ECL Run</button>
+              </div>
+
+              <div id="ifrs9CalculationPreview" style="margin-top:16px;"></div>
             </div>
 
             <div class="card">
@@ -8615,6 +8649,7 @@ select:focus {
                   <select id="ifrs9ModelType">
                     <option value="simplified">Simplified</option>
                     <option value="general">General</option>
+                    <option value="manual">Manual</option>
                   </select>
                 </label>
 
@@ -8623,6 +8658,7 @@ select:focus {
                   <select id="ifrs9ModelAppliesTo">
                     <option value="trade_receivable">Trade Receivables</option>
                     <option value="loan_receivable">Loan Receivables</option>
+                    <option value="deposit_asset">Deposit Assets</option>
                     <option value="other_financial_asset">Other Financial Assets</option>
                   </select>
                 </label>
@@ -8632,6 +8668,7 @@ select:focus {
                   <select id="ifrs9ModelBasis">
                     <option value="provision_matrix">Provision Matrix</option>
                     <option value="pd_lgd_ead">PD / LGD / EAD</option>
+                    <option value="manual">Manual</option>
                   </select>
                 </label>
               </div>
@@ -8643,8 +8680,62 @@ select:focus {
               <h3>ECL Models</h3>
               <div id="ifrs9EclModelList"></div>
             </div>
+
+            <div id="ifrs9MatrixCard" class="card hidden">
+              <div class="card-header-row">
+                <div>
+                  <h3 id="ifrs9MatrixTitle">Provision Matrix</h3>
+                  <p class="muted">Enter loss rates as percentages, for example 2.50 for 2.50%.</p>
+                </div>
+
+                <button id="ifrs9AddBandBtn" class="btn btn-secondary">Add Band</button>
+              </div>
+
+              <div id="ifrs9BandList"></div>
+
+              <button id="ifrs9SaveBandsBtn" class="btn btn-primary">Save Provision Matrix</button>
+            </div>
+          </div>
+
+          <div id="ifrs9TabAccounts" class="ifrs9-tab-panel hidden">
+            <div class="card">
+              <h3>IFRS 9 Account Readiness</h3>
+              <p class="muted">Posting accounts required by the IFRS 9 module.</p>
+              <div id="ifrs9AccountReadiness"></div>
+            </div>
           </div>
         </section>
+
+        <div id="ifrs9JournalPreviewModal" class="modal hidden">
+          <div class="modal-content wide">
+            <div class="modal-header">
+              <h2>Journal Preview</h2>
+              <button id="ifrs9PreviewCloseBtn" class="btn btn-light">×</button>
+            </div>
+
+            <div id="ifrs9PreviewBody"></div>
+
+            <div class="modal-footer">
+              <button id="ifrs9PreviewPostBtn" class="btn btn-primary">Post Journal</button>
+              <button id="ifrs9PreviewCancelBtn" class="btn btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="ifrs9InstrumentModal" class="modal hidden">
+          <div class="modal-content wide">
+            <div class="modal-header">
+              <h2>Financial Instrument</h2>
+              <button id="ifrs9InstrumentCloseBtn" class="btn btn-light">×</button>
+            </div>
+
+            <div id="ifrs9InstrumentBody"></div>
+
+            <div class="modal-footer">
+              <button id="ifrs9InstrumentCancelBtn" class="btn btn-secondary">Close</button>
+            </div>
+          </div>
+        </div>
 
         <div id="ifrs9JournalPreviewModal" class="modal hidden">
           <div class="modal-content wide">
@@ -16178,6 +16269,55 @@ select:focus {
             </section>
           </div>
 
+          <div id="payrollReportPreviewModal" class="modal hidden">
+            <div class="modal-card payroll-report-preview-modal">
+              <div class="modal-head">
+                <div>
+                  <h3 id="payrollReportPreviewTitle">Payroll Report</h3>
+                  <p id="payrollReportPreviewSubtitle" class="payroll-muted"></p>
+                </div>
+
+                <button
+                  id="payrollCloseReportPreviewBtn"
+                  type="button"
+                  class="icon-btn"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div
+                id="payrollReportPreviewContent"
+                class="payroll-report-preview-content"
+              ></div>
+
+              <div class="payroll-modal-footer">
+                <button
+                  id="payrollExportReportCsvBtn"
+                  type="button"
+                  class="payroll-secondary dark"
+                >
+                  Export CSV
+                </button>
+
+                <button
+                  id="payrollExportReportExcelBtn"
+                  type="button"
+                  class="payroll-secondary dark"
+                >
+                  Export Excel
+                </button>
+
+                <button
+                  id="payrollExportReportPdfBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  Export PDF
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
