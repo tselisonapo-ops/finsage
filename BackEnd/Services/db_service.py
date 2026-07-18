@@ -85057,6 +85057,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WITH eligible_lines AS (
                 SELECT
                     l.*,
+                    i.item_number,
                     i.item_title,
                     i.item_type,
                     i.balance_account,
@@ -85086,6 +85087,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if lines_src
             else run["period_end"]
         )
+
+        def gl_name(account_code):
+            row = self.fetch_one(
+                f"""
+                SELECT name
+                FROM {schema}.coa
+                WHERE company_id = %s
+                AND code = %s
+                LIMIT 1
+                """,
+                (
+                    int(company_id),
+                    account_code,
+                ),
+            ) or {}
+
+            return row.get("name") or account_code
 
         journal_lines = []
         entries = []
@@ -85136,12 +85154,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             journal_lines.append({
                 "account_code": debit_account,
+                "account_name": gl_name(debit_account),
                 "debit": amount,
                 "credit": 0,
                 "description": row.get("item_title"),
             })
+
             journal_lines.append({
                 "account_code": credit_account,
+                "account_name": gl_name(credit_account),
                 "debit": 0,
                 "credit": amount,
                 "description": row.get("item_title"),

@@ -57790,6 +57790,7 @@ function bindEventsOnce() {
       "employees",
       "calendars",
       "runs",
+      "employee-benefits",
       "reports",
       "tax-admin",
       "settings",
@@ -57831,7 +57832,7 @@ function bindEventsOnce() {
     * Dashboard:
     *   show the top payroll navigation.
     *
-    * Employees / Calendars / Runs / Reports / Settings:
+    * Other workspaces:
     *   hide the top navigation and use the Back button.
     */
     mainTabs?.classList.toggle(
@@ -57850,15 +57851,19 @@ function bindEventsOnce() {
         );
       });
 
-      const panelMap = {
-        overview: "payrollTabOverview",
-        employees: "payrollTabEmployees",
-        calendars: "payrollTabCalendars",
-        runs: "payrollTabRuns",
-        reports: "payrollTabReports",
-        "tax-admin": "payrollTabTaxAdmin",   // ← add this
-        settings: "payrollTabSettings",
-      };
+    const panelMap = {
+      overview: "payrollTabOverview",
+      employees: "payrollTabEmployees",
+      calendars: "payrollTabCalendars",
+      runs: "payrollTabRuns",
+
+      "employee-benefits":
+        "payrollTabEmployeeBenefits",
+
+      reports: "payrollTabReports",
+      "tax-admin": "payrollTabTaxAdmin",
+      settings: "payrollTabSettings",
+    };
 
     Object.entries(panelMap).forEach(
       ([name, panelId]) => {
@@ -57871,7 +57876,6 @@ function bindEventsOnce() {
 
     /*
     * Make the selected workspace move upward.
-    * The tab row disappears, so the active panel occupies that space.
     */
     document
       .querySelector(
@@ -57884,13 +57888,40 @@ function bindEventsOnce() {
 
     if (tab === "employees") {
       renderPayrollEmployees();
+
     } else if (tab === "calendars") {
       loadPayrollCalendars();
+
     } else if (tab === "runs") {
       loadPayrollRuns();
+
+    } else if (tab === "employee-benefits") {
+      switchPayrollBenefitTab(
+        payrollState.employeeBenefits?.activeTab ||
+        "overview"
+      ).catch(error => {
+        console.error(
+          "Failed to load employee benefits:",
+          error
+        );
+
+        showPayrollStatus?.(
+          error.message ||
+          "Failed to load employee benefits.",
+          "error"
+        );
+      });
+
     } else if (tab === "tax-admin") {
       taxAdminInit();
+
+    } else if (tab === "reports") {
+      loadPayrollReports?.();
+
+    } else if (tab === "settings") {
+      loadPayrollSettings?.();
     }
+
     if (scroll) {
       const target =
         isDashboard
