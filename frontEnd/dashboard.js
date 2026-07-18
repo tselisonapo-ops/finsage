@@ -63377,17 +63377,48 @@ function bindEventsOnce() {
         body: JSON.stringify({ model_id: Number(modelId), reporting_date: reportingDate }),
       });
 
+      const movement = Number(IFRS9.calculation.movement_ecl || 0);
+      const hasLines = (IFRS9.calculation.lines || []).length > 0;
+      const createBtn = $("ifrs9CreateEclRunBtn");
+
       $("ifrs9EclExposure").value = IFRS9.calculation.total_exposure || 0;
       $("ifrs9PreviousEcl").value = IFRS9.calculation.previous_ecl || 0;
       $("ifrs9TotalEcl").value = IFRS9.calculation.total_ecl || 0;
-      $("ifrs9MovementEcl").value = IFRS9.calculation.movement_ecl || 0;
-      $("ifrs9CreateEclRunBtn").disabled = Number(IFRS9.calculation.movement_ecl || 0) === 0;
+      $("ifrs9MovementEcl").value = movement;
+
+      if (createBtn) {
+        createBtn.disabled = !hasLines || movement === 0;
+        createBtn.title = !hasLines
+          ? "No receivable invoices exist at the selected reporting date."
+          : movement === 0
+            ? "There is no ECL movement to post."
+            : "";
+      }
 
       renderCalculation();
-      setMsg("Expected credit loss calculated.");
+
+      setMsg(
+        !hasLines
+          ? "No open receivable invoices existed at the selected reporting date."
+          : movement === 0
+            ? "ECL calculated, but there is no movement from the previous allowance."
+            : "Expected credit loss calculated. You may now create the ECL run."
+      );
     } catch (error) {
       IFRS9.calculation = null;
-      $("ifrs9CreateEclRunBtn").disabled = true;
+
+      $("ifrs9EclExposure").value = 0;
+      $("ifrs9PreviousEcl").value = 0;
+      $("ifrs9TotalEcl").value = 0;
+      $("ifrs9MovementEcl").value = 0;
+
+      const createBtn = $("ifrs9CreateEclRunBtn");
+      if (createBtn) {
+        createBtn.disabled = true;
+        createBtn.title = "";
+      }
+
+      $("ifrs9CalculationPreview").innerHTML = "";
       setMsg(error.message || "ECL calculation failed.");
     }
   }
@@ -63436,24 +63467,39 @@ function bindEventsOnce() {
   }
 
   async function createRun() {
-    if (!IFRS9.calculation) return alert("Calculate ECL before creating the run.");
+    const modelId = Number($("ifrs9EclModelSelect")?.value || 0);
+    const reportingDate = $("ifrs9EclReportingDate")?.value;
 
-    const payload = {
-      model_id: Number($("ifrs9EclModelSelect").value),
-      reporting_date: $("ifrs9EclReportingDate").value,
-      run_type: "period_end",
-    };
+    if (!reportingDate) return alert("Reporting date is required.");
+    if (!modelId) return alert("Select an ECL model.");
+    if (!IFRS9.calculation) return alert("Calculate ECL before creating the run.");
+    if (!(IFRS9.calculation.lines || []).length) return alert("There are no ECL calculation lines to save.");
+    if (Number(IFRS9.calculation.movement_ecl || 0) === 0) return alert("There is no ECL movement to post.");
+
+    const btn = $("ifrs9CreateEclRunBtn");
+    btn.disabled = true;
+    btn.textContent = "Creating...";
 
     try {
-      await apiFetch(ENDPOINTS.ifrs9.eclRuns(cid()), { method: "POST", body: JSON.stringify(payload) });
+      await apiFetch(ENDPOINTS.ifrs9.eclRuns(cid()), {
+        method: "POST",
+        body: JSON.stringify({
+          model_id: modelId,
+          reporting_date: reportingDate,
+          run_type: "period_end",
+        }),
+      });
+
       IFRS9.calculation = null;
       $("ifrs9CalculationPreview").innerHTML = "";
-      $("ifrs9CreateEclRunBtn").disabled = true;
       await loadAll();
       showTab("ecl-runs");
       setMsg("ECL run created.");
     } catch (error) {
       setMsg(error.message || "Failed to create ECL run.");
+    } finally {
+      btn.textContent = "Create ECL Run";
+      btn.disabled = !IFRS9.calculation || Number(IFRS9.calculation.movement_ecl || 0) === 0;
     }
   }
 
