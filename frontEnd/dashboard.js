@@ -2161,6 +2161,9 @@ const ENDPOINTS = {
     previewSubsequentMeasurement: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/subsequent-measurements/preview`,
 
+    subsequentMeasurementContext: (companyId, assetId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/assets/${encodeURIComponent(assetId)}/subsequent-measurement-context`,
+
     reporting: {
       refresh: (companyId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/reporting/refresh`,
@@ -36618,6 +36621,7 @@ async function saveEditModal() {
           `/api/companies/${cid}/assets/${assetId}/subsequent-measurement/group-preview`,
 
       smAssetContext: (assetId) =>
+        A.subsequentMeasurementContext?.(cid, assetId) ||
         `/api/companies/${cid}/assets/${assetId}/subsequent-measurement-context`,
 
       valuationGet: (id) =>
