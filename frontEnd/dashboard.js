@@ -36617,6 +36617,9 @@ async function saveEditModal() {
       smGroupPreview: (assetId) =>
           `/api/companies/${cid}/assets/${assetId}/subsequent-measurement/group-preview`,
 
+      smAssetContext: (assetId) =>
+        `/api/companies/${cid}/assets/${assetId}/subsequent-measurement-context`,
+
       valuationGet: (id) =>
         (A.valuation?.get?.(cid, id) || `/api/companies/${cid}/asset-revaluations/${id}`),
 
@@ -37302,18 +37305,66 @@ async function saveEditModal() {
       : { ok: false, reason: "Not enabled in policy for this class" };
   }
 
-  function renderAssetMeta(asset) {
+  function renderAssetMeta(asset, ctx = SM_ASSET_CONTEXT) {
     const box = $("smAssetMeta");
     const badge = $("smRevalBadge");
     if (!box) return;
 
     if (!asset) {
-      box.innerHTML = `Select an asset on the left to view details.`;
+      box.textContent = "Select an asset on the left to view details.";
       if (badge) badge.innerHTML = "";
       return;
     }
 
+    const type = $("smEventType")?.value || "add_cost";
     const elig = isRevaluationEligible(asset);
+    const cost = asset.cost_total ?? asset.cost ?? 0;
+    const carrying = asset.carrying_amount ?? asset.nbv ?? 0;
+    const additions = ctx?.additions || {};
+    const impairment = ctx?.impairment || {};
+    const latest = ctx?.latest_impairment || {};
+    const revaluations = ctx?.revaluations || {};
+    const latestReval = ctx?.latest_revaluation || {};
+    let extra = "";
+
+    if (type === "add_cost") {
+      extra = `
+        <div class="mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div><span class="text-slate-400">Current gross cost:</span> ${fmtMoney2(cost)}</div>
+          <div><span class="text-slate-400">Capital additions:</span> ${fmtMoney2(additions.total)}</div>
+          <div><span class="text-slate-400">Last addition:</span> ${fmtDate(additions.last_date)}</div>
+        </div>`;
+    }
+
+    if (type === "impairment_loss" || type === "impairment_reversal") {
+      extra = `
+        <div class="mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div><span class="text-slate-400">Impairment losses:</span> ${fmtMoney2(impairment.losses)}</div>
+          <div><span class="text-slate-400">Reversed:</span> ${fmtMoney2(impairment.reversals)}</div>
+          <div><span class="text-slate-400">Remaining impairment:</span> <span class="font-medium">${fmtMoney2(impairment.balance)}</span></div>
+          <div><span class="text-slate-400">Last impairment date:</span> ${fmtDate(latest.impairment_date)}</div>
+          <div><span class="text-slate-400">Last recoverable amount:</span> ${fmtMoney2(latest.recoverable_amount)}</div>
+          <div><span class="text-slate-400">Journal:</span> ${latest.posted_journal_id ? `#${latest.posted_journal_id}` : "—"}</div>
+        </div>`;
+    }
+
+    if (type === "revaluation" || Number(revaluations.count || 0) > 0) {
+      extra = `
+        <div class="mt-3 pt-3 border-t">
+          <div class="font-medium mb-2">Previous revaluation</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div><span class="text-slate-400">Upward revaluations:</span> ${fmtMoney2(revaluations.increases)}</div>
+            <div><span class="text-slate-400">Downward revaluations:</span> ${fmtMoney2(revaluations.decreases)}</div>
+            <div><span class="text-slate-400">Net movement:</span> ${fmtMoney2(revaluations.net_change)}</div>
+            <div><span class="text-slate-400">Last revaluation:</span> ${fmtDate(latestReval.revaluation_date)}</div>
+            <div><span class="text-slate-400">Last fair value:</span> ${fmtMoney2(latestReval.fair_value)}</div>
+            <div><span class="text-slate-400">Previous carrying amount:</span> ${fmtMoney2(latestReval.carrying_amount_before)}</div>
+            <div><span class="text-slate-400">Last movement:</span> ${fmtMoney2(latestReval.revaluation_change)}</div>
+            <div><span class="text-slate-400">Valuation basis:</span> ${esc(latestReval.valuation_basis || "—")}</div>
+            <div><span class="text-slate-400">Journal:</span> ${latestReval.posted_journal_id ? `#${latestReval.posted_journal_id}` : "—"}</div>
+          </div>
+        </div>`;
+    }
 
     if (badge) {
       badge.innerHTML = elig.ok
@@ -37323,36 +37374,18 @@ async function saveEditModal() {
 
     box.innerHTML = `
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div><span class="text-slate-400">Name:</span> <span class="font-medium">${asset.asset_name || asset.name || "—"}</span></div>
-        <div><span class="text-slate-400">Code:</span> ${asset.asset_code || "—"}</div>
-
-        <div><span class="text-slate-400">Class:</span> ${asset.asset_class || asset.class || "—"}</div>
-        <div><span class="text-slate-400">Basis:</span> ${asset.measurement_basis || "—"}</div>
-
-        <div><span class="text-slate-400">Cost:</span> ${fmtMoney2(asset.cost)}</div>
+        <div><span class="text-slate-400">Name:</span> <span class="font-medium">${esc(assetName(asset))}</span></div>
+        <div><span class="text-slate-400">Code:</span> ${esc(asset.asset_code || "—")}</div>
+        <div><span class="text-slate-400">Class:</span> ${esc(asset.asset_class || asset.class || "—")}</div>
+        <div><span class="text-slate-400">Standard:</span> ${(ctx?.standard || asset.accounting_standard || "ias16").toUpperCase()}</div>
+        <div><span class="text-slate-400">Cost:</span> ${fmtMoney2(cost)}</div>
         <div><span class="text-slate-400">Accum dep:</span> ${fmtMoney2(asset.accumulated_depreciation ?? asset.acc_dep)}</div>
-
-        <div><span class="text-slate-400">Carrying amount:</span> ${fmtMoney2(asset.carrying_amount ?? asset.nbv)}</div>
+        <div><span class="text-slate-400">Carrying amount:</span> ${fmtMoney2(carrying)}</div>
         <div><span class="text-slate-400">Residual value:</span> ${fmtMoney2(asset.residual_value)}</div>
-
-        <div><span class="text-slate-400">Acquired:</span> ${fmtDate(asset.acquisition_date)}</div>
-        <div><span class="text-slate-400">Available for use:</span> ${fmtDate(asset.available_for_use_date)}</div>
-
-        <div><span class="text-slate-400">Dep method:</span> ${asset.depreciation_method || "—"}</div>
-        <div>
-        <span class="text-slate-400">Useful life:</span> ${
-          asset.useful_life_months
-            ? (asset.useful_life_months / 12) + " years"
-            : "—"
-        }
-        </div>
-        <div><span class="text-slate-400">Location:</span> ${asset.location || "—"}</div>
-
-        <div class="sm:col-span-2">
-          <span class="text-slate-400">Reval rule:</span> ${elig.reason}
-        </div>
+        <div><span class="text-slate-400">Useful life:</span> ${asset.useful_life_months ? `${asset.useful_life_months / 12} years` : "—"}</div>
+        <div><span class="text-slate-400">Status:</span> ${esc(ctx?.status || asset.status || "active")}</div>
       </div>
-    `;
+      ${extra}`;
   }
 
   function setSwitch(policy, std, from, to, classKey, on) {
@@ -38463,6 +38496,35 @@ async function saveEditModal() {
   let assetsLoaded = false;
   let SELECTED_SM_ASSET = null;
 
+  let SM_ASSET_CONTEXT = null;
+  let smContextRequest = 0;
+
+  const SM_TYPE_LABELS = {
+    add_cost: "Add cost (capitalise)",
+    change_estimate: "Change estimate (no journal)",
+    impairment_loss: "Impairment Testing",
+    impairment_reversal: "Impairment reversal",
+    revaluation: "Revaluation (IAS 16)",
+    fair_value_valuation: "Fair value valuation (IAS 40)",
+    held_for_sale_classify: "Classify as held for sale",
+    held_for_sale_unclassify: "Remove held for sale",
+    transfer_ppe_to_ip: "Transfer PPE → Investment property",
+    transfer_ip_to_ppe: "Transfer Investment property → PPE",
+  };
+
+  function renderSmTypeOptions(allowed) {
+    const select = $("smEventType");
+    if (!select || !allowed?.length) return;
+
+    const current = select.value;
+    select.innerHTML = allowed.map(value =>
+      `<option value="${value}">${SM_TYPE_LABELS[value] || value}</option>`
+    ).join("");
+
+    select.value = allowed.includes(current) ? current : allowed[0];
+    applySmTypeUI();
+  }
+
   function assetName(a) {
     return (
       a?.asset_name ||
@@ -38499,6 +38561,22 @@ async function saveEditModal() {
     return !!SELECTED_SM_ASSET?.is_component_group;
   }
 
+  async function loadSmAssetContext(asset) {
+    const requestId = ++smContextRequest;
+
+    if (!asset?.id) {
+      SM_ASSET_CONTEXT = null;
+      return;
+    }
+
+    const out = await api(EP().smAssetContext(asset.id));
+    if (requestId !== smContextRequest) return;
+
+    SM_ASSET_CONTEXT = out;
+    renderSmTypeOptions(out.allowed_event_types);
+    renderAssetMeta(asset, out);
+  }
+
   function setSelectedAsset(assetOrId) {
 
     invalidateSmPreview();
@@ -38525,7 +38603,9 @@ async function saveEditModal() {
         : (id ? `Selected: Asset ID ${id}` : "No asset selected");
     }
 
+    SM_ASSET_CONTEXT = null;
     renderAssetMeta(a);
+    loadSmAssetContext(a).catch(e => setMsg($("smFormMsg"), e.message, "error"));
     renderSmCurrentValues();
     renderGroupFairValueFields();
     prefillSmFieldsFromAsset();
@@ -39747,6 +39827,7 @@ async function saveEditModal() {
     $("smEventType")?.addEventListener("change", () => {
       invalidateSmPreview();
       applySmTypeUI();
+      renderAssetMeta(SELECTED_SM_ASSET);
       refreshSmActionButtons();
       loadSmPreview().catch(() => {});
     });

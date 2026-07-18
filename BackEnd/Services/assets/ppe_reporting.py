@@ -4710,6 +4710,125 @@ def subsequent_measurements_list_or_create(company_id):
         current_app.logger.exception("create_subsequent_measurement failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route("/api/companies/<int:company_id>/assets/<int:asset_id>/subsequent-measurement-context", methods=["GET", "OPTIONS"])
+@require_auth
+def subsequent_measurement_context(company_id, asset_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    deny = _deny_if_wrong_company(request.jwt_payload or {}, company_id, db_service=db_service)
+    if deny:
+        return deny
+
+    schema = company_schema(company_id)
+
+    try:
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                asset = service.fetch_asset_row(cur, company_id, asset_id)
+                if not asset:
+                    return _json_error("Asset not found", 404)
+
+                cur.execute(_q(schema, """
+                    SELECT
+                        COALESCE(SUM(amount),0) AS total,
+                        COUNT(*) AS count,
+                        MAX(event_date) AS last_date
+                    FROM {schema}.asset_subsequent_measurements
+                    WHERE company_id=%s AND asset_id=%s
+                      AND status='posted' AND event_type='add_cost'
+                """), (company_id, asset_id))
+                additions = cur.fetchone() or {}
+
+                cur.execute(_q(schema, """
+                    SELECT
+                        COALESCE(SUM(impairment_amount-reversal_amount),0) AS balance,
+                        COALESCE(SUM(impairment_amount),0) AS losses,
+                        COALESCE(SUM(reversal_amount),0) AS reversals,
+                        MAX(impairment_date) AS last_date
+                    FROM {schema}.asset_impairments
+                    WHERE company_id=%s AND asset_id=%s AND status='posted'
+                """), (company_id, asset_id))
+                impairment = cur.fetchone() or {}
+
+                cur.execute(_q(schema, """
+                    SELECT impairment_date, recoverable_amount,
+                           impairment_amount, reversal_amount,
+                           reason, posted_journal_id
+                    FROM {schema}.asset_impairments
+                    WHERE company_id=%s AND asset_id=%s AND status='posted'
+                    ORDER BY impairment_date DESC, id DESC
+                    LIMIT 1
+                """), (company_id, asset_id))
+                latest_impairment = cur.fetchone()
+
+                cur.execute(_q(schema, """
+                    SELECT
+                        COALESCE(SUM(CASE WHEN revaluation_change > 0 THEN revaluation_change ELSE 0 END),0) AS increases,
+                        COALESCE(SUM(CASE WHEN revaluation_change < 0 THEN ABS(revaluation_change) ELSE 0 END),0) AS decreases,
+                        COALESCE(SUM(revaluation_change),0) AS net_change,
+                        COUNT(*) AS count,
+                        MAX(revaluation_date) AS last_date
+                    FROM {schema}.asset_revaluations
+                    WHERE company_id=%s AND asset_id=%s AND status='posted'
+                """), (company_id, asset_id))
+                revaluations = cur.fetchone() or {}
+
+                cur.execute(_q(schema, """
+                    SELECT revaluation_date, fair_value, carrying_amount_before,
+                        revaluation_change, posted_journal_id, valuation_basis
+                    FROM {schema}.asset_revaluations
+                    WHERE company_id=%s AND asset_id=%s AND status='posted'
+                    ORDER BY revaluation_date DESC, id DESC
+                    LIMIT 1
+                """), (company_id, asset_id))
+                latest_revaluation = cur.fetchone()
+
+                standard = str(asset.get("accounting_standard") or "ias16").lower()
+                model = str(asset.get("measurement_basis") or "cost").lower()
+                status = str(asset.get("status") or "active").lower()
+                impairment_balance = float(impairment.get("balance") or 0)
+
+                allowed = ["add_cost", "change_estimate", "impairment_loss"]
+
+                if impairment_balance > 0:
+                    allowed.append("impairment_reversal")
+
+                if standard in ("ias16", "ias38") and model == "revaluation":
+                    allowed.append("revaluation")
+
+                if standard == "ias40":
+                    allowed.extend(["fair_value_valuation", "transfer_ip_to_ppe"])
+                elif standard == "ias16":
+                    allowed.append("transfer_ppe_to_ip")
+
+                if status == "held_for_sale":
+                    allowed = ["impairment_loss", "held_for_sale_unclassify"]
+                    if impairment_balance > 0:
+                        allowed.insert(1, "impairment_reversal")
+                elif standard != "ias40":
+                    allowed.append("held_for_sale_classify")
+
+                if status in ("disposed", "inactive"):
+                    allowed = []
+
+                return jsonify({
+                    "ok": True,
+                    "standard": standard,
+                    "model": model,
+                    "status": status,
+                    "allowed_event_types": allowed,
+                    "additions": additions,
+                    "impairment": impairment,
+                    "latest_impairment": latest_impairment,
+                    "revaluations": revaluations,
+                    "latest_revaluation": latest_revaluation,
+                })
+
+    except Exception as e:
+        current_app.logger.exception("subsequent_measurement_context failed")
+        return _json_error(str(e), 400)
+    
 @ppe_bp.route("/api/companies/<int:company_id>/subsequent-measurements/preview", methods=["POST", "OPTIONS"])
 @require_auth
 def subsequent_measurements_preview(company_id):
