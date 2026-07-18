@@ -2731,6 +2731,210 @@ html, body {
   margin: 0;
 }
 
+.payroll-report-centre,
+.payroll-generated-reports {
+  margin-bottom: 16px;
+}
+
+.payroll-report-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid #e4eaf2;
+  border-radius: 13px;
+  background: #f8fafc;
+}
+
+.payroll-report-filters label {
+  display: grid;
+  gap: 6px;
+  color: #52606d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.payroll-report-filters input,
+.payroll-report-filters select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #d9e2ec;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 9px 11px;
+  color: #102a43;
+}
+
+.payroll-report-filter-actions {
+  display: flex;
+  align-items: end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.payroll-report-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e4eaf2;
+  border-radius: 12px;
+}
+
+.payroll-report-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.payroll-report-list-table th,
+.payroll-report-list-table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #edf1f5;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.payroll-report-list-table th {
+  background: #f3f6fa;
+  color: #52606d;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.payroll-report-list-table td {
+  color: #344054;
+  font-size: 12px;
+}
+
+.payroll-report-list-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.payroll-report-list-table tbody tr:hover {
+  background: #fafcff;
+}
+
+.payroll-report-name {
+  display: grid;
+  gap: 4px;
+}
+
+.payroll-report-name strong {
+  color: #102a43;
+  font-size: 13px;
+}
+
+.payroll-report-name small {
+  color: #98a2b3;
+}
+
+.payroll-report-category {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  background: #edf5fc;
+  color: #155d95;
+  padding: 4px 9px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.payroll-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.payroll-report-action-btn {
+  border: 1px solid #d8e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #155d95;
+  cursor: pointer;
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.payroll-report-action-btn:hover {
+  border-color: #97b5d0;
+  background: #f5f9fd;
+}
+
+.payroll-report-preview-modal {
+  width: min(1120px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.payroll-report-preview-content {
+  min-height: 250px;
+  overflow: auto;
+  padding: 4px;
+}
+
+.payroll-report-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.payroll-report-preview-summary > div {
+  border: 1px solid #e4eaf2;
+  border-radius: 11px;
+  background: #f8fafc;
+  padding: 13px;
+}
+
+.payroll-report-preview-summary span {
+  display: block;
+  color: #667085;
+  font-size: 11px;
+}
+
+.payroll-report-preview-summary strong {
+  display: block;
+  margin-top: 6px;
+  color: #102a43;
+  font-size: 17px;
+}
+
+.payroll-report-empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: #98a2b3;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .payroll-report-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payroll-report-preview-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .payroll-report-filters,
+  .payroll-report-preview-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-report-filter-actions {
+    justify-content: stretch;
+  }
+
+  .payroll-report-filter-actions button {
+    flex: 1;
+  }
+}
+
 .payroll-trend-chart {
   min-height: 250px;
   display: flex;
@@ -15842,22 +16046,110 @@ select:focus {
               </article>
             </section>
 
-            <section class="payroll-report-card payroll-report-library">
+            <section class="payroll-report-card payroll-report-centre">
               <div class="payroll-report-card-head">
-                <div><h3>Reports Library</h3><p class="payroll-muted">Generate and review payroll reports.</p></div>
+                <div>
+                  <h3>Payroll Reports</h3>
+                  <p class="payroll-muted">
+                    Select a report and reporting criteria, then preview or export it.
+                  </p>
+                </div>
               </div>
 
-              <div class="payroll-report-library-grid">
-                <button type="button" data-payroll-report="payroll-register"><span class="report-icon">PR</span><span><strong>Payroll Register</strong><small>Earnings, deductions and net pay</small></span></button>
-                <button type="button" data-payroll-report="payslips"><span class="report-icon">PS</span><span><strong>Payslips</strong><small>Employee payslip pack</small></span></button>
-                <button type="button" data-payroll-report="employee-cost"><span class="report-icon">EC</span><span><strong>Employee Cost</strong><small>Gross pay and benefits</small></span></button>
-                <button type="button" data-payroll-report="department-cost"><span class="report-icon">DC</span><span><strong>Department Cost</strong><small>Cost by department</small></span></button>
-                <button type="button" data-payroll-report="tax-report"><span class="report-icon">TX</span><span><strong>Payroll Tax</strong><small>PAYE and statutory deductions</small></span></button>
-                <button type="button" data-payroll-report="leave-liability"><span class="report-icon">LV</span><span><strong>Leave Liability</strong><small>IAS 19 leave provision</small></span></button>
-                <button type="button" data-payroll-report="bonus-provision"><span class="report-icon">BN</span><span><strong>Bonus Provision</strong><small>Expected bonus obligation</small></span></button>
-                <button type="button" data-payroll-report="benefit-disclosure"><span class="report-icon">19</span><span><strong>IAS 19 Disclosure</strong><small>Benefit expense and liability note</small></span></button>
-                <button type="button" data-payroll-report="journal-report"><span class="report-icon">JR</span><span><strong>Payroll Journals</strong><small>Payroll journal entries</small></span></button>
-                <button type="button" data-payroll-report="gl-reconciliation"><span class="report-icon">GL</span><span><strong>GL Reconciliation</strong><small>Control-account reconciliation</small></span></button>
+              <div class="payroll-report-filters">
+                <label>
+                  Report
+                  <select id="payrollReportType">
+                    <option value="payroll-register">Payroll Register</option>
+                    <option value="payslips">Payslips</option>
+                    <option value="payroll-summary">Payroll Summary</option>
+                    <option value="employee-cost">Employee Cost</option>
+                    <option value="department-cost">Department Cost</option>
+                    <option value="tax-report">Payroll Tax Report</option>
+                    <option value="employer-contributions">Employer Contributions</option>
+                    <option value="leave-liability">Leave Liability</option>
+                    <option value="bonus-provision">Bonus Provision</option>
+                    <option value="termination-benefits">Termination Benefits</option>
+                    <option value="benefit-disclosure">IAS 19 Disclosure</option>
+                    <option value="journal-report">Payroll Journals</option>
+                    <option value="gl-reconciliation">GL Reconciliation</option>
+                  </select>
+                </label>
+
+                <label>
+                  Payroll run
+                  <select id="payrollReportRunId">
+                    <option value="">All payroll runs</option>
+                  </select>
+                </label>
+
+                <label>
+                  Department
+                  <select id="payrollReportDepartmentId">
+                    <option value="">All departments</option>
+                  </select>
+                </label>
+
+                <label>
+                  Employee
+                  <select id="payrollReportEmployeeId">
+                    <option value="">All employees</option>
+                  </select>
+                </label>
+
+                <label>
+                  Date from
+                  <input id="payrollReportDateFrom" type="date">
+                </label>
+
+                <label>
+                  Date to
+                  <input id="payrollReportDateTo" type="date">
+                </label>
+
+                <label>
+                  Output format
+                  <select id="payrollReportFormat">
+                    <option value="preview">Preview</option>
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                    <option value="csv">CSV</option>
+                  </select>
+                </label>
+
+                <div class="payroll-report-filter-actions">
+                  <button
+                    id="payrollClearReportFiltersBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Clear
+                  </button>
+
+                  <button
+                    id="payrollGenerateReportBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    Generate Report
+                  </button>
+                </div>
+              </div>
+
+              <div class="payroll-report-table-wrap">
+                <table class="payroll-report-list-table">
+                  <thead>
+                    <tr>
+                      <th>Report</th>
+                      <th>Category</th>
+                      <th>Description</th>
+                      <th>Last Generated</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="payrollReportLibraryBody"></tbody>
+                </table>
               </div>
             </section>
 
