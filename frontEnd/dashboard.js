@@ -45057,6 +45057,9 @@ async function saveEditModal() {
     capexItems: [],
     selectedCapexId: null,
     varianceRows: [],
+    variancePeriodStart: "",
+    variancePeriodEnd: "",
+    varianceBudget: null,
     activeTab: "budgets",
     bound: false,
       workspaceForm: {
@@ -49282,84 +49285,188 @@ async function saveEditModal() {
     renderImports();
   }
 
+  function bfTitleCase(value) {
+    return String(value || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
   function renderBudgets() {
     const el = $("bfBudgetsPane");
     if (!el) return;
 
     if (!BF.budgets.length) {
       el.innerHTML = `
-        <div class="card empty-state">
-          <h3>No budgets yet</h3>
-          <p class="muted">Create the first budget. The backend will create the forecast tables only when needed.</p>
-          <button class="btn primary" data-bf-action="create-budget">Create Budget</button>
+        <div class="card bf-budget-empty">
+          <div class="bf-empty-icon">📊</div>
+          <h3>No budgets created yet</h3>
+          <p class="muted">
+            Create a budget to begin planning, forecasting and variance analysis.
+          </p>
+
+          <button class="btn primary" data-bf-action="create-budget">
+            + Create First Budget
+          </button>
         </div>
       `;
       return;
     }
 
+    const statusCounts = BF.budgets.reduce((counts, budget) => {
+      const status = String(budget.status || "draft").toLowerCase();
+      counts[status] = (counts[status] || 0) + 1;
+      return counts;
+    }, {});
+
+    const rows = BF.budgets.map((budget) => {
+      const status = String(budget.status || "draft").toLowerCase();
+      const canForecast = ["approved", "locked"].includes(status);
+      const startDate = bfDisplayDate(budget.period_start);
+      const endDate = bfDisplayDate(budget.period_end);
+      const description = String(budget.description || "").trim();
+
+      return `
+        <tr class="bf-budget-row">
+          <td>
+            <div class="bf-budget-name">
+              <strong>${esc(budget.name || "Untitled Budget")}</strong>
+
+              ${
+                description
+                  ? `<span class="muted">${esc(description)}</span>`
+                  : `<span class="muted">No description provided</span>`
+              }
+            </div>
+          </td>
+
+          <td>
+            <span class="bf-budget-type">
+              ${esc(bfTitleCase(budget.budget_type || "original"))}
+            </span>
+          </td>
+
+          <td>
+            <strong>${esc(budget.financial_year || "—")}</strong>
+          </td>
+
+          <td>
+            <div class="bf-budget-period">
+              <span>${esc(startDate || "—")}</span>
+              <span class="bf-period-arrow">→</span>
+              <span>${esc(endDate || "—")}</span>
+            </div>
+          </td>
+
+          <td>
+            <span class="bf-currency-badge">
+              ${esc(budget.currency || companyCurrency())}
+            </span>
+          </td>
+
+          <td>
+            <span class="bf-status-badge bf-status-${esc(status)}">
+              ${esc(bfTitleCase(status))}
+            </span>
+          </td>
+
+          <td>
+            <div class="bf-budget-actions">
+              <button
+                type="button"
+                class="btn small"
+                data-bf-open-budget="${budget.id}"
+                title="Open budget"
+              >
+                Open
+              </button>
+
+              <button
+                type="button"
+                class="btn small"
+                data-bf-budget-variance="${budget.id}"
+                title="View budget variance"
+              >
+                Variance
+              </button>
+
+              <button
+                type="button"
+                class="btn small ${canForecast ? "primary" : ""}"
+                data-bf-budget-forecast="${budget.id}"
+                ${canForecast ? "" : "disabled"}
+                title="${
+                  canForecast
+                    ? "Create forecast from this budget"
+                    : "Approve the budget before creating a forecast"
+                }"
+              >
+                Forecast
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
     el.innerHTML = `
-      <div class="card">
-        <div class="section-head">
-          <h3>Budgets</h3>
-          <span class="muted">${BF.budgets.length} record(s)</span>
+      <div class="bf-budget-summary">
+        <div class="bf-summary-card">
+          <span>Total Budgets</span>
+          <strong>${BF.budgets.length}</strong>
         </div>
 
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>FY</th>
-              <th>Period</th>
-              <th>Currency</th>
-              <th>Status</th>
-              <th class="right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${BF.budgets.map((b) => {
-              const canForecast = ["approved", "locked"].includes(
-                String(b.status || "").toLowerCase()
-              );
+        <div class="bf-summary-card">
+          <span>Draft</span>
+          <strong>${statusCounts.draft || 0}</strong>
+        </div>
 
-              return `
-                <tr>
-                  <td>
-                    <strong>${esc(b.name)}</strong><br>
-                    <span class="muted">${esc(b.description || "")}</span>
-                  </td>
-                  <td>${esc(b.budget_type)}</td>
-                  <td>${esc(b.financial_year || "")}</td>
-                  <td>
-                    ${esc(String(b.period_start || "").slice(0, 10))}
-                    →
-                    ${esc(String(b.period_end || "").slice(0, 10))}
-                  </td>
-                  <td>${esc(b.currency || "")}</td>
-                  <td><span class="pill">${esc(b.status)}</span></td>
-                  <td class="right">
-                    <button class="btn small" data-bf-open-budget="${b.id}">
-                      Open
-                    </button>
+        <div class="bf-summary-card">
+          <span>Submitted</span>
+          <strong>${statusCounts.submitted || 0}</strong>
+        </div>
 
-                    <button class="btn small" data-bf-budget-variance="${b.id}">
-                      Variance
-                    </button>
+        <div class="bf-summary-card">
+          <span>Approved / Locked</span>
+          <strong>
+            ${(statusCounts.approved || 0) + (statusCounts.locked || 0)}
+          </strong>
+        </div>
+      </div>
 
-                    <button
-                      class="btn small"
-                      data-bf-budget-forecast="${b.id}"
-                      ${canForecast ? "" : "disabled"}
-                      title="${canForecast ? "Create forecast" : "Approve the budget first"}"
-                    >
-                      Forecast
-                    </button>
-                  </td>
-                </tr>
-              `;
-            }).join("")}
-          </tbody>
-        </table>
+      <div class="card bf-budget-list-card">
+        <div class="section-head bf-budget-list-head">
+          <div>
+            <h3>Budgets</h3>
+            <p class="muted">
+              Manage financial plans and create forecasts from approved budgets.
+            </p>
+          </div>
+
+          <span class="bf-record-count">
+            ${BF.budgets.length}
+            ${BF.budgets.length === 1 ? "budget" : "budgets"}
+          </span>
+        </div>
+
+        <div class="bf-budget-table-wrap">
+          <table class="table bf-budget-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Financial Year</th>
+                <th>Budget Period</th>
+                <th>Currency</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -49716,9 +49823,33 @@ async function saveEditModal() {
     await openBudget(BF.selectedBudgetId);
   }
 
-  async function loadVariance(budgetId) {
+  async function loadVariance(
+    budgetId,
+    periodStart = null,
+    periodEnd = null
+  ) {
     BF.selectedBudgetId = Number(budgetId);
 
+    const budget =
+      BF.budgets.find(
+        (row) => Number(row.id) === Number(budgetId)
+      ) || BF.selectedBudget || null;
+
+    BF.varianceBudget = budget;
+
+    BF.variancePeriodStart = bfToInputDate(
+      periodStart,
+      BF.variancePeriodStart ||
+      budget?.period_start ||
+      ""
+    );
+
+    BF.variancePeriodEnd = bfToInputDate(
+      periodEnd,
+      BF.variancePeriodEnd ||
+      budget?.period_end ||
+      ""
+    );
     showTab("variance");
     setStatus("Loading budget vs actual...");
 
@@ -49728,90 +49859,219 @@ async function saveEditModal() {
         budgetId,
         {
           version_id: BF.selectedVersionId,
-          period_start: BF.selectedVersion?.period_start,
-          period_end: BF.selectedVersion?.period_end,
+          period_start: BF.variancePeriodStart,
+          period_end: BF.variancePeriodEnd,
         }
       )
     );
 
-    BF.varianceRows = (unwrap(res)?.rows || []).filter((row) => {
+    const data = unwrap(res) || {};
+
+    BF.varianceRows = (data.rows || []).filter((row) => {
       const planned = Number(
-        row.planned_amount ??
-        row.budget_amount ??
-        0
+        row.planned_amount ?? row.budget_amount ?? 0
       );
 
-      const actual = Number(
-        row.actual_amount ?? 0
-      );
-
-      const variance = Number(
-        row.variance_amount ?? 0
-      );
+      const actual = Number(row.actual_amount ?? 0);
+      const variance = Number(row.variance_amount ?? 0);
 
       return planned !== 0 || actual !== 0 || variance !== 0;
     });
 
-    renderVariance();
+    BF.variancePeriodStart = bfToInputDate(
+      data.period_start,
+      BF.variancePeriodStart
+    );
 
+    BF.variancePeriodEnd = bfToInputDate(
+      data.period_end,
+      BF.variancePeriodEnd
+    );
+
+    renderVariance();
     setStatus("");
   }
 
-  function renderVarianceLanding() {
+  function renderVariance() {
     const el = $("bfVariancePane");
     if (!el) return;
 
-    const budgets = BF.budgets || [];
+    const rows = BF.varianceRows || [];
+    const budget = BF.varianceBudget || {};
+
+    const body = rows.length
+      ? rows.map((row) => {
+          const planned = Number(
+            row.planned_amount ?? row.budget_amount ?? 0
+          );
+
+          const actual = Number(row.actual_amount ?? 0);
+          const variance = Number(row.variance_amount ?? 0);
+
+          const variancePercent =
+            row.variance_percent ??
+            row.variance_pct ??
+            null;
+
+          return `
+            <tr>
+              <td>${esc(bfDisplayDate(row.period_month))}</td>
+              <td>${esc(row.account_name || "Unnamed account")}</td>
+              <td class="right">${money(planned)}</td>
+              <td class="right">${money(actual)}</td>
+              <td class="right">${money(variance)}</td>
+              <td class="right">
+                ${
+                  variancePercent == null
+                    ? "—"
+                    : `${esc(Number(variancePercent).toFixed(2))}%`
+                }
+              </td>
+            </tr>
+          `;
+        }).join("")
+      : `
+        <tr>
+          <td colspan="6" class="muted">
+            No activity was found for the selected date range.
+          </td>
+        </tr>
+      `;
 
     el.innerHTML = `
       <div class="card">
         <div class="section-head">
           <div>
             <h3>Budget vs Actual</h3>
-            <p class="muted">Select a budget to compare against actual ledger results.</p>
+            <p class="muted">
+              ${esc(budget.name || "Selected budget")}
+            </p>
+          </div>
+
+          <button class="btn" data-bf-action="back-budgets">
+            Back to Budgets
+          </button>
+        </div>
+
+        <div class="bf-variance-filter">
+          <div class="bf-variance-filter-fields">
+            <label>
+              From
+
+              <input
+                id="bfVarianceStart"
+                type="date"
+                value="${esc(BF.variancePeriodStart || "")}"
+              >
+            </label>
+
+            <label>
+              To
+
+              <input
+                id="bfVarianceEnd"
+                type="date"
+                value="${esc(BF.variancePeriodEnd || "")}"
+              >
+            </label>
+          </div>
+
+          <div class="bf-variance-filter-actions">
+            <button
+              type="button"
+              class="btn primary"
+              id="bfApplyVarianceRange"
+            >
+              Apply
+            </button>
+
+            <button
+              type="button"
+              class="btn"
+              id="bfResetVarianceRange"
+            >
+              Reset
+            </button>
           </div>
         </div>
 
-        ${
-          budgets.length
-            ? `
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Budget</th>
-                    <th>FY</th>
-                    <th>Period</th>
-                    <th>Status</th>
-                    <th class="right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${budgets.map((b) => `
-                    <tr>
-                      <td><strong>${esc(b.name || "")}</strong></td>
-                      <td>${esc(b.financial_year || "")}</td>
-                      <td>${esc(String(b.period_start || "").slice(0, 10))} → ${esc(String(b.period_end || "").slice(0, 10))}</td>
-                      <td><span class="pill">${esc(b.status || "")}</span></td>
-                      <td class="right">
-                        <button class="btn small" data-bf-budget-variance="${b.id}">
-                          View Variance
-                        </button>
-                      </td>
-                    </tr>
-                  `).join("")}
-                </tbody>
-              </table>
-            `
-            : `
-              <div class="empty-state">
-                <h3>No budgets available</h3>
-                <p class="muted">Create a budget first, then variance analysis will appear here.</p>
-                <button class="btn primary" data-bf-action="create-budget">Create Budget</button>
-              </div>
-            `
-        }
+        <div class="bf-variance-range-summary">
+          Showing
+          <strong>${esc(
+            bfDisplayDate(BF.variancePeriodStart)
+          )}</strong>
+          to
+          <strong>${esc(
+            bfDisplayDate(BF.variancePeriodEnd)
+          )}</strong>
+        </div>
+
+        <div class="bf-variance-table-wrap">
+          <table class="table bf-variance-table">
+            <thead class="bf-variance-head">
+              <tr>
+                <th>Date</th>
+                <th>Account</th>
+                <th>Budget</th>
+                <th>Actual</th>
+                <th>Variance</th>
+                <th>%</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${body}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
+
+    bindVarianceFilters();
+  }
+
+  function bindVarianceFilters() {
+    $("bfApplyVarianceRange")?.addEventListener("click", async () => {
+      const start = $("bfVarianceStart")?.value || "";
+      const end = $("bfVarianceEnd")?.value || "";
+
+      if (!start || !end) {
+        alert("Select both the start and end dates.");
+        return;
+      }
+
+      if (end < start) {
+        alert("The end date cannot be before the start date.");
+        return;
+      }
+
+      BF.variancePeriodStart = start;
+      BF.variancePeriodEnd = end;
+
+      await loadVariance(
+        BF.selectedBudgetId,
+        start,
+        end
+      );
+    });
+
+    $("bfResetVarianceRange")?.addEventListener("click", async () => {
+      const budget = BF.varianceBudget || {};
+
+      BF.variancePeriodStart = bfToInputDate(
+        budget.period_start
+      );
+
+      BF.variancePeriodEnd = bfToInputDate(
+        budget.period_end
+      );
+
+      await loadVariance(
+        BF.selectedBudgetId,
+        BF.variancePeriodStart,
+        BF.variancePeriodEnd
+      );
+    });
   }
 
   function renderVariance() {
@@ -52105,20 +52365,68 @@ function bindEventsOnce() {
       if (t.id === "bfRefreshBtn") return onTab(BF.activeTab);
       if (t.id === "bfCreateBudgetBtn") return openCreateBudgetModal();
 
-      if (t.dataset?.bfOpenBudget) return openBudget(Number(t.dataset.bfOpenBudget));
-      if (t.dataset?.bfBudgetVariance) return loadVariance(Number(t.dataset.bfBudgetVariance));
+      const openBudgetButton = t.closest("[data-bf-open-budget]");
 
-      if (t.dataset?.bfBudgetForecast) {
-        BF.selectedBudgetId = Number(t.dataset.bfBudgetForecast);
-        BF.selectedBudget = BF.budgets.find((b) => Number(b.id) === BF.selectedBudgetId) || null;
+      if (openBudgetButton) {
+        return openBudget(
+          Number(openBudgetButton.dataset.bfOpenBudget)
+        );
+      }
+
+      const varianceButton = t.closest("[data-bf-budget-variance]");
+
+      if (varianceButton) {
+        BF.variancePeriodStart = "";
+        BF.variancePeriodEnd = "";
+
+        return loadVariance(
+          Number(varianceButton.dataset.bfBudgetVariance)
+        );
+      }
+
+      const forecastButton = t.closest("[data-bf-budget-forecast]");
+
+      if (forecastButton) {
+        if (forecastButton.disabled) return;
+
+        BF.selectedBudgetId = Number(
+          forecastButton.dataset.bfBudgetForecast
+        );
+
+        BF.selectedBudget =
+          BF.budgets.find(
+            (budget) =>
+              Number(budget.id) === BF.selectedBudgetId
+          ) || null;
+
         showTab("forecast");
         await loadVersions();
         return;
       }
 
-      if (t.dataset?.bfEditLine) return openBudgetLineModal(Number(t.dataset.bfEditLine));
-      if (t.dataset?.bfDeleteLine) return deleteBudgetLine(Number(t.dataset.bfDeleteLine));
-      if (t.dataset?.bfOpenVersion) return openVersion(Number(t.dataset.bfOpenVersion));
+      const editLineButton = t.closest("[data-bf-edit-line]");
+
+      if (editLineButton) {
+        return openBudgetLineModal(
+          Number(editLineButton.dataset.bfEditLine)
+        );
+      }
+
+      const deleteLineButton = t.closest("[data-bf-delete-line]");
+
+      if (deleteLineButton) {
+        return deleteBudgetLine(
+          Number(deleteLineButton.dataset.bfDeleteLine)
+        );
+      }
+
+      const openVersionButton = t.closest("[data-bf-open-version]");
+
+      if (openVersionButton) {
+        return openVersion(
+          Number(openVersionButton.dataset.bfOpenVersion)
+        );
+      }
     });
   }
 

@@ -97284,28 +97284,83 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "taxable_revenue_to_date": taxable_to_date,
         }
 
-    def get_deferred_tax_posting_accounts(
-        self,
-        company_id: int,
-    ) -> dict:
-        settings = self.get_company_account_settings(
-            company_id
-        ) or {}
+    def get_deferred_tax_posting_accounts(self, company_id: int) -> dict:
+        settings = self.get_company_account_settings(company_id) or {}
+        schema = company_schema(company_id)
 
-        return {
-            "deferred_tax_asset":
-                settings.get("deferred_tax_asset"),
-            "deferred_tax_liability":
-                settings.get("deferred_tax_liability"),
-            "deferred_tax_expense":
-                settings.get("deferred_tax_expense"),
-            "deferred_tax_income":
-                settings.get("deferred_tax_income"),
-            "deferred_tax_oci":
-                settings.get("deferred_tax_oci"),
-            "deferred_tax_equity":
-                settings.get("deferred_tax_equity"),
+        rules = {
+            "deferred_tax_asset": (
+                ["deferred_tax_asset"],
+                ["deferred tax asset"],
+                ["asset"],
+            ),
+            "deferred_tax_liability": (
+                ["deferred_tax_liability"],
+                ["deferred tax liability", "deferred tax"],
+                ["liability"],
+            ),
+            "deferred_tax_expense": (
+                ["income_tax_expense_deferred", "deferred_tax_expense"],
+                ["income tax expense - deferred", "deferred tax expense"],
+                ["expense"],
+            ),
+            "deferred_tax_income": (
+                ["deferred_tax_income", "income_tax_benefit_deferred"],
+                ["deferred tax income", "deferred tax benefit"],
+                [],
+            ),
+            "deferred_tax_oci": (
+                ["deferred_tax_oci"],
+                ["deferred tax oci", "tax on other comprehensive income"],
+                [],
+            ),
+            "deferred_tax_equity": (
+                ["deferred_tax_equity", "equity_retained_earnings"],
+                ["deferred tax equity", "retained earnings"],
+                ["equity"],
+            ),
         }
+
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    sql.SQL("""
+                        SELECT code, name, section, role
+                        FROM {}.coa
+                        WHERE COALESCE(posting, TRUE) = TRUE
+                    """).format(sql.Identifier(schema))
+                )
+                coa = cur.fetchall()
+
+        def find(roles, names, sections):
+            for row in coa:
+                role = str(row.get("role") or "").strip().lower()
+                name = str(row.get("name") or "").strip().lower()
+                section = str(row.get("section") or "").strip().lower()
+
+                if role in roles or (
+                    any(value in name for value in names)
+                    and (not sections or section in sections)
+                ):
+                    return str(row["code"]).strip()
+
+            return None
+
+        accounts = {}
+
+        for key, (roles, names, sections) in rules.items():
+            accounts[key] = settings.get(key) or find(
+                [value.lower() for value in roles],
+                [value.lower() for value in names],
+                [value.lower() for value in sections],
+            )
+
+        accounts["deferred_tax_income"] = (
+            accounts["deferred_tax_income"]
+            or accounts["deferred_tax_expense"]
+        )
+
+        return accounts
 
     def preview_deferred_tax_posting(
         self,
