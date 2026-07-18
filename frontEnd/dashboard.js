@@ -52447,10 +52447,13 @@ function bindEventsOnce() {
             ${lines.map(line => `
               <tr>
                 <td>
-                  <strong>${esc(line.account_code || "")}</strong>
-                  <div class="payroll-muted">
-                    ${esc(line.account_name || "")}
-                  </div>
+                  <strong>
+                    ${esc(
+                      line.account_name ||
+                      line.account_code ||
+                      "Unmapped account"
+                    )}
+                  </strong>
                 </td>
 
                 <td>${esc(line.description || "")}</td>

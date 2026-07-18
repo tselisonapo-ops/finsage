@@ -2626,6 +2626,14 @@ html, body {
   background: #f4f7fb;
 }
 
+.payroll-run-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
 .payroll-setup-tabs button,
 .payroll-run-tabs button {
   border: 0;
@@ -14031,13 +14039,23 @@ html, body {
 
               <div class="payroll-run-header">
                 <div>
-                  <button
-                    id="payrollBackToRunsBtn"
-                    type="button"
-                    class="payroll-back-btn"
-                  >
-                    &larr; All payroll runs
-                  </button>
+                  <div class="payroll-run-header-actions">
+                    <button
+                      type="button"
+                      class="payroll-back-btn"
+                      data-payroll-back-dashboard
+                    >
+                      ← Back to Payroll Dashboard
+                    </button>
+
+                    <button
+                      id="payrollBackToRunsBtn"
+                      type="button"
+                      class="payroll-back-btn"
+                    >
+                      ← All Payroll Runs
+                    </button>
+                  </div>
 
                   <div class="payroll-run-title-row">
                     <div>

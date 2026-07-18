@@ -8444,7 +8444,9 @@ class DatabaseService:
                         ''accrual_deferral_initial_reversal'',
                         ''accrual_deferral_run_reversal'',
                         ''deferred_tax'',
-                        ''deferred_tax_reversal''
+                        ''deferred_tax_reversal'',
+                        ''payroll_run'',
+                        ''payroll_run_reversal''
                     ]::text[])
                 )',
                 '{schema}',
