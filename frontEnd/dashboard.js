@@ -52015,192 +52015,86 @@ async function saveEditModal() {
     return { version, lines, drivers };
   }
 
-function bindEventsOnce() {
-  if (BF.bound) return;
+  function bindEventsOnce() {
+    if (BF.bound) return;
+    BF.bound = true;
 
-  BF.bound = true;
-
-  document.addEventListener(
-    "click",
-    async (e) => {
+    document.addEventListener("click", async (e) => {
       const t = e.target;
+      if (!(t instanceof Element)) return;
 
-      if (!(t instanceof Element)) {
-        return;
-      }
-
-      /*
-      * Use closest() because users may click a <strong>, <span>,
-      * icon or any other element inside the actual button.
-      */
-      const tabButton =
-        t.closest("[data-bf-tab]");
+      const tabButton = t.closest("[data-bf-tab]");
 
       if (tabButton) {
-        const tab =
-          tabButton.dataset.bfTab;
-
-        if (tab) {
-          await onTab(tab);
-        }
-
+        const tab = tabButton.dataset.bfTab;
+        if (tab) await onTab(tab);
         return;
       }
 
-      const actionButton =
-        t.closest("[data-bf-action]");
+      const actionButton = t.closest("[data-bf-action]");
+      const action = actionButton?.dataset.bfAction || "";
 
-      const action =
-        actionButton?.dataset?.bfAction || "";
-
-      if (
-        action ===
-        "save-local-draft"
-      ) {
-        saveForecastDraftLocally();
-        return;
-      }
-
-      /*
-       * Save one driver draft locally.
-       * PLACE THE BLOCK HERE.
-       */
-      const saveDriverButton =
-        t.closest?.(
-          "[data-bf-save-driver]"
-        );
+      const saveDriverButton = t.closest("[data-bf-save-driver]");
 
       if (saveDriverButton) {
-        const index =
-          Number(
-            saveDriverButton
-              .dataset
-              .bfSaveDriver
-          );
+        const index = Number(saveDriverButton.dataset.bfSaveDriver);
+        const driver = BF.driverDraftRows[index];
 
-        const driver =
-          BF.driverDraftRows[index];
+        if (!driver) return;
 
-        if (!driver) {
+        if (!driver.driver_name?.trim()) {
+          alert("Enter a driver name before saving the draft.");
           return;
         }
 
-        if (
-          !driver.driver_name
-            ?.trim()
-        ) {
-          alert(
-            "Enter a driver name before saving the draft."
-          );
-
-          return;
-        }
-
-        if (
-          !driver.account_code
-        ) {
-          alert(
-            "Select a target account before saving the driver draft."
-          );
-
+        if (!driver.account_code) {
+          alert("Select a target account before saving the driver draft.");
           return;
         }
 
         saveForecastDraftLocally();
-
-        saveDriverButton
-          .textContent =
-            "Saved";
+        saveDriverButton.textContent = "Saved";
 
         setTimeout(() => {
-          if (
-            document.body.contains(
-              saveDriverButton
-            )
-          ) {
-            saveDriverButton
-              .textContent =
-                "Save Driver Draft";
+          if (document.body.contains(saveDriverButton)) {
+            saveDriverButton.textContent = "Save Driver Draft";
           }
         }, 1500);
 
         return;
       }
 
-      /*
-       * Keep your driver remove block after it.
-       */
-      const removeDriverButton =
-        t.closest?.("[data-bf-remove-driver]");
+      const removeDriverButton = t.closest("[data-bf-remove-driver]");
 
       if (removeDriverButton) {
-        const index =
-          Number(
-            removeDriverButton.dataset.bfRemoveDriver
-          );
-
-        const driver =
-          BF.driverDraftRows[index];
+        const index = Number(removeDriverButton.dataset.bfRemoveDriver);
+        const driver = BF.driverDraftRows[index];
 
         if (!driver) return;
 
-        const confirmed =
-          confirm(
-            `Delete the driver "${
-              driver.driver_name ||
-              "Unnamed driver"
-            }"?`
-          );
+        const name = driver.driver_name || "Unnamed driver";
+        if (!confirm(`Delete the driver "${name}"?`)) return;
 
-        if (!confirmed) return;
-
-        BF.driverDraftRows.splice(
-          index,
-          1
-        );
-
-        saveForecastDraftLocally({
-          silent: true,
-        });
-
+        BF.driverDraftRows.splice(index, 1);
+        saveForecastDraftLocally({ silent: true });
         renderCreateForecastWorkspace();
-
         return;
       }
 
-      const addDriverButton =
-        t.closest?.("[data-bf-add-driver-group]");
+      const addDriverButton = t.closest("[data-bf-add-driver-group]");
 
       if (addDriverButton) {
-        const group =
-          String(
-            addDriverButton.dataset.bfAddDriverGroup ||
-            "revenue"
-          );
-
-        const accountCode =
-          String(
-            addDriverButton.dataset.bfAddDriverAccount ||
-            ""
-          );
-
         return addDriverDraftRow({
-          group,
-          accountCode,
+          group: String(addDriverButton.dataset.bfAddDriverGroup || "revenue"),
+          accountCode: String(addDriverButton.dataset.bfAddDriverAccount || ""),
         });
       }
 
-      const collapseDriverButton =
-        t.closest?.("[data-bf-collapse-driver]");
+      const collapseDriverButton = t.closest("[data-bf-collapse-driver]");
 
       if (collapseDriverButton) {
-        const index =
-          Number(
-            collapseDriverButton.dataset.bfCollapseDriver
-          );
-
-        const driver =
-          BF.driverDraftRows[index];
+        const index = Number(collapseDriverButton.dataset.bfCollapseDriver);
+        const driver = BF.driverDraftRows[index];
 
         if (!driver) return;
 
@@ -52215,141 +52109,79 @@ function bindEventsOnce() {
         }
 
         driver.expanded = false;
+        saveForecastDraftLocally({ silent: true });
 
-        saveForecastDraftLocally({
-          silent: true,
+        return renderCreateForecastWorkspace();
+      }
+
+      const expandDriverButton = t.closest("[data-bf-expand-driver]");
+
+      if (expandDriverButton) {
+        const index = Number(expandDriverButton.dataset.bfExpandDriver);
+
+        BF.driverDraftRows.forEach((driver, driverIndex) => {
+          driver.expanded = driverIndex === index;
         });
 
         return renderCreateForecastWorkspace();
       }
 
-
-      const expandDriverButton =
-        t.closest?.("[data-bf-expand-driver]");
-
-      if (expandDriverButton) {
-        const index =
-          Number(
-            expandDriverButton.dataset.bfExpandDriver
-          );
-
-        BF.driverDraftRows.forEach(
-          (driver, driverIndex) => {
-            driver.expanded =
-              driverIndex === index;
-          }
-        );
-
-        return renderCreateForecastWorkspace();
-      }
-      // keep the rest of your action checks below
-      if (
-        action ===
-        "create-budget"
-      ) {
-        return openCreateBudgetModal();
-      }
-
-      if (action === "save-local-draft") {
-        return saveForecastDraftLocally();
-      }
       if (action === "create-budget") return openCreateBudgetModal();
+      if (action === "save-local-draft") return saveForecastDraftLocally();
       if (action === "back-budgets") return loadBudgets();
       if (action === "add-budget-line") return openBudgetLineModal();
       if (action === "bulk-months") return openBulkMonthsModal();
       if (action === "submit-budget") return submitBudget();
       if (action === "approve-budget") return approveBudget();
       if (action === "lock-budget") return lockBudget();
-      if (action === "create-version") {
-        return openCreateVersionWorkspace(BF.selectedBudgetId);
-      }
-      if (action === "add-capex-item") {
-        return openCapexItemForm();
-      }
-      if (action === "save-capex-item") {
-        return saveCapexItem();
-      }
-
-      if (action === "back-capex") {
-        return loadCapexItems();
-      }
-      if (action === "save-budget-grid") {
-        return saveBudgetGrid();
-      }
-      if (action === "create-version-workspace") {
-        return createVersionFromWorkspace();
-      }
-
-      if (action === "cancel-create-version") {
-        BF.forecastWorkspaceMode = null;
-        return loadVersions();
-      }
-
-      if (action === "save-version-grid") {
-        return saveForecastGrid();
-      }
-
-      if (action === "refresh-version") {
-        if (BF.selectedVersionId) {
-          return openVersion(BF.selectedVersionId);
-        }
-      }
-      if (action === "planning-mode-manual") {
-        if (BF.planningMode === "manual") {
-          return;
-        }
-
-        captureForecastWorkspaceForm();
-
-        /*
-        * Save the current driver work before leaving driver mode.
-        */
-        saveForecastDraftLocally({
-          silent: true,
-        });
-
-        BF.planningMode = "manual";
-
-        renderCreateForecastWorkspace();
-        return;
-      }
-
-      if (action === "planning-mode-driver") {
-        if (BF.planningMode === "driver_based") {
-          return;
-        }
-
-        captureForecastWorkspaceForm();
-        captureVisibleManualForecastValues();
-
-        /*
-        * Save manual entries before replacing the grid.
-        */
-        saveForecastDraftLocally({
-          silent: true,
-        });
-
-        BF.planningMode = "driver_based";
-
-        renderCreateForecastWorkspace();
-        return;
-      }
-
-      if (action === "add-driver-row") {
-        return addDriverDraftRow();
-      }
-      if (action === "back-versions") return loadVersions();
+      if (action === "add-capex-item") return openCapexItemForm();
+      if (action === "save-capex-item") return saveCapexItem();
+      if (action === "back-capex") return loadCapexItems();
+      if (action === "save-budget-grid") return saveBudgetGrid();
+      if (action === "create-version-workspace") return createVersionFromWorkspace();
+      if (action === "save-version-grid") return saveForecastGrid();
+      if (action === "add-driver-row") return addDriverDraftRow();
       if (action === "add-forecast-line") return openForecastLineModal();
       if (action === "add-driver") return openDriverModal();
       if (action === "refresh-imports") return loadImports();
 
-      if (action === "back-from-driver") {
-        if (BF.forecastWorkspaceMode === "create") {
-          return renderCreateForecastWorkspace();
-        }
+      if (action === "create-version") {
+        return openCreateVersionWorkspace(BF.selectedBudgetId);
+      }
 
+      if (action === "refresh-version" && BF.selectedVersionId) {
         return openVersion(BF.selectedVersionId);
       }
+
+      if (action === "planning-mode-manual") {
+        if (BF.planningMode === "manual") return;
+
+        captureForecastWorkspaceForm();
+        saveForecastDraftLocally({ silent: true });
+
+        BF.planningMode = "manual";
+
+        return renderCreateForecastWorkspace();
+      }
+
+      if (action === "planning-mode-driver") {
+        if (BF.planningMode === "driver_based") return;
+
+        captureForecastWorkspaceForm();
+        captureVisibleManualForecastValues();
+        saveForecastDraftLocally({ silent: true });
+
+        BF.planningMode = "driver_based";
+
+        return renderCreateForecastWorkspace();
+      }
+
+      if (action === "back-from-driver") {
+        return BF.forecastWorkspaceMode === "create"
+          ? renderCreateForecastWorkspace()
+          : openVersion(BF.selectedVersionId);
+      }
+
       if (
         action === "cancel-create-version" ||
         action === "back-versions"
@@ -52362,15 +52194,19 @@ function bindEventsOnce() {
 
         return loadVersions();
       }
-      if (t.id === "bfRefreshBtn") return onTab(BF.activeTab);
-      if (t.id === "bfCreateBudgetBtn") return openCreateBudgetModal();
+
+      if (t.closest("#bfRefreshBtn")) {
+        return onTab(BF.activeTab);
+      }
+
+      if (t.closest("#bfCreateBudgetBtn")) {
+        return openCreateBudgetModal();
+      }
 
       const openBudgetButton = t.closest("[data-bf-open-budget]");
 
       if (openBudgetButton) {
-        return openBudget(
-          Number(openBudgetButton.dataset.bfOpenBudget)
-        );
+        return openBudget(Number(openBudgetButton.dataset.bfOpenBudget));
       }
 
       const varianceButton = t.closest("[data-bf-budget-variance]");
@@ -52387,7 +52223,7 @@ function bindEventsOnce() {
       const forecastButton = t.closest("[data-bf-budget-forecast]");
 
       if (forecastButton) {
-        if (forecastButton.disabled) return;
+        if (forecastButton.matches(":disabled")) return;
 
         BF.selectedBudgetId = Number(
           forecastButton.dataset.bfBudgetForecast
@@ -52395,8 +52231,7 @@ function bindEventsOnce() {
 
         BF.selectedBudget =
           BF.budgets.find(
-            (budget) =>
-              Number(budget.id) === BF.selectedBudgetId
+            (budget) => Number(budget.id) === BF.selectedBudgetId
           ) || null;
 
         showTab("forecast");

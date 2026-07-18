@@ -97286,7 +97286,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def get_deferred_tax_posting_accounts(self, company_id: int) -> dict:
         settings = self.get_company_account_settings(company_id) or {}
-        schema = company_schema(company_id)
+        schema = self.company_schema(company_id)
 
         rules = {
             "deferred_tax_asset": (
@@ -97321,16 +97321,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         }
 
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    sql.SQL("""
-                        SELECT code, name, section, role
-                        FROM {}.coa
-                        WHERE COALESCE(posting, TRUE) = TRUE
-                    """).format(sql.Identifier(schema))
-                )
-                coa = cur.fetchall()
+        with self._conn_cursor() as (_, cur):
+            cur.execute_sql(f"""
+                SELECT code, name, section, role
+                FROM {schema}.coa
+                WHERE COALESCE(posting, TRUE) = TRUE
+            """)
+            coa = cur.fetchall()
 
         def find(roles, names, sections):
             for row in coa:
@@ -97346,14 +97343,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             return None
 
-        accounts = {}
-
-        for key, (roles, names, sections) in rules.items():
-            accounts[key] = settings.get(key) or find(
+        accounts = {
+            key: settings.get(key) or find(
                 [value.lower() for value in roles],
                 [value.lower() for value in names],
                 [value.lower() for value in sections],
             )
+            for key, (roles, names, sections) in rules.items()
+        }
 
         accounts["deferred_tax_income"] = (
             accounts["deferred_tax_income"]
@@ -97361,7 +97358,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         return accounts
-
+    
     def preview_deferred_tax_posting(
         self,
         *,
