@@ -37320,6 +37320,14 @@ async function saveEditModal() {
       return;
     }
 
+    const standard = String(ctx?.standard || asset.accounting_standard || "ias16").toUpperCase();
+    const model = String(ctx?.model || asset.measurement_basis || "cost").toLowerCase();
+
+    const modelLabel =
+      model === "revaluation" ? "Revaluation model" :
+      model === "fair_value" ? "Fair value model" :
+      "Cost model";
+
     const type = $("smEventType")?.value || "add_cost";
     const elig = isRevaluationEligible(asset);
     const cost = asset.cost_total ?? asset.cost ?? 0;
@@ -37375,9 +37383,10 @@ async function saveEditModal() {
     }
 
     if (badge) {
-      badge.innerHTML = elig.ok
-        ? `<span class="inline-flex px-2 py-0.5 rounded border text-emerald-700 bg-emerald-50 border-emerald-200">Revaluation: YES</span>`
-        : `<span class="inline-flex px-2 py-0.5 rounded border text-slate-700 bg-slate-50 border-slate-200">Revaluation: NO</span>`;
+      badge.innerHTML = `
+        <span class="inline-flex px-2 py-0.5 rounded border bg-slate-50 border-slate-200">
+          ${esc(modelLabel)}
+        </span>`;
     }
 
     box.innerHTML = `
@@ -37385,7 +37394,8 @@ async function saveEditModal() {
         <div><span class="text-slate-400">Name:</span> <span class="font-medium">${esc(assetName(asset))}</span></div>
         <div><span class="text-slate-400">Code:</span> ${esc(asset.asset_code || "—")}</div>
         <div><span class="text-slate-400">Class:</span> ${esc(asset.asset_class || asset.class || "—")}</div>
-        <div><span class="text-slate-400">Standard:</span> ${(ctx?.standard || asset.accounting_standard || "ias16").toUpperCase()}</div>
+        <div><span class="text-slate-400">Standard:</span> ${esc(standard)}</div>
+        <div><span class="text-slate-400">Measurement basis:</span> ${esc(modelLabel)}</div>
         <div><span class="text-slate-400">Cost:</span> ${fmtMoney2(cost)}</div>
         <div><span class="text-slate-400">Accum dep:</span> ${fmtMoney2(asset.accumulated_depreciation ?? asset.acc_dep)}</div>
         <div><span class="text-slate-400">Carrying amount:</span> ${fmtMoney2(carrying)}</div>

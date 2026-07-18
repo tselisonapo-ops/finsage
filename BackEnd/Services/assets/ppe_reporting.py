@@ -4730,10 +4730,7 @@ def subsequent_measurement_context(company_id, asset_id):
                     return _json_error("Asset not found", 404)
 
                 cur.execute(_q(schema, """
-                    SELECT
-                        COALESCE(SUM(amount),0) AS total,
-                        COUNT(*) AS count,
-                        MAX(event_date) AS last_date
+                    SELECT COALESCE(SUM(amount),0) total, COUNT(*) count, MAX(event_date) last_date
                     FROM {schema}.asset_subsequent_measurements
                     WHERE company_id=%s AND asset_id=%s
                       AND status='posted' AND event_type='add_cost'
@@ -4742,19 +4739,18 @@ def subsequent_measurement_context(company_id, asset_id):
 
                 cur.execute(_q(schema, """
                     SELECT
-                        COALESCE(SUM(impairment_amount-reversal_amount),0) AS balance,
-                        COALESCE(SUM(impairment_amount),0) AS losses,
-                        COALESCE(SUM(reversal_amount),0) AS reversals,
-                        MAX(impairment_date) AS last_date
+                        COALESCE(SUM(impairment_amount-reversal_amount),0) balance,
+                        COALESCE(SUM(impairment_amount),0) losses,
+                        COALESCE(SUM(reversal_amount),0) reversals,
+                        MAX(impairment_date) last_date
                     FROM {schema}.asset_impairments
                     WHERE company_id=%s AND asset_id=%s AND status='posted'
                 """), (company_id, asset_id))
                 impairment = cur.fetchone() or {}
 
                 cur.execute(_q(schema, """
-                    SELECT impairment_date, recoverable_amount,
-                           impairment_amount, reversal_amount,
-                           reason, posted_journal_id
+                    SELECT impairment_date, recoverable_amount, impairment_amount,
+                           reversal_amount, reason, posted_journal_id
                     FROM {schema}.asset_impairments
                     WHERE company_id=%s AND asset_id=%s AND status='posted'
                     ORDER BY impairment_date DESC, id DESC
@@ -4764,11 +4760,11 @@ def subsequent_measurement_context(company_id, asset_id):
 
                 cur.execute(_q(schema, """
                     SELECT
-                        COALESCE(SUM(CASE WHEN revaluation_change > 0 THEN revaluation_change ELSE 0 END),0) AS increases,
-                        COALESCE(SUM(CASE WHEN revaluation_change < 0 THEN ABS(revaluation_change) ELSE 0 END),0) AS decreases,
-                        COALESCE(SUM(revaluation_change),0) AS net_change,
-                        COUNT(*) AS count,
-                        MAX(revaluation_date) AS last_date
+                        COALESCE(SUM(CASE WHEN revaluation_change > 0 THEN revaluation_change ELSE 0 END),0) increases,
+                        COALESCE(SUM(CASE WHEN revaluation_change < 0 THEN ABS(revaluation_change) ELSE 0 END),0) decreases,
+                        COALESCE(SUM(revaluation_change),0) net_change,
+                        COUNT(*) count,
+                        MAX(revaluation_date) last_date
                     FROM {schema}.asset_revaluations
                     WHERE company_id=%s AND asset_id=%s AND status='posted'
                 """), (company_id, asset_id))
@@ -4776,10 +4772,9 @@ def subsequent_measurement_context(company_id, asset_id):
 
                 cur.execute(_q(schema, """
                     SELECT revaluation_date, fair_value, carrying_amount_before,
-                        carrying_amount_after, revaluation_change,
-                        oci_revaluation_surplus, pnl_revaluation_gain,
-                        pnl_revaluation_loss, method, reason,
-                        posted_journal_id
+                           carrying_amount_after, revaluation_change,
+                           oci_revaluation_surplus, pnl_revaluation_gain,
+                           pnl_revaluation_loss, method, reason, posted_journal_id
                     FROM {schema}.asset_revaluations
                     WHERE company_id=%s AND asset_id=%s AND status='posted'
                     ORDER BY revaluation_date DESC, id DESC
@@ -4787,11 +4782,28 @@ def subsequent_measurement_context(company_id, asset_id):
                 """), (company_id, asset_id))
                 latest_revaluation = cur.fetchone()
 
-                standard = str(asset.get("accounting_standard") or "ias16").lower()
-                model = str(asset.get("measurement_basis") or "cost").lower()
-                status = str(asset.get("status") or "active").lower()
-                impairment_balance = float(impairment.get("balance") or 0)
+                standard = str(asset.get("accounting_standard") or "").strip().lower()
+                model = str(asset.get("measurement_basis") or "").strip().lower()
+                status = str(asset.get("status") or "active").strip().lower()
+                asset_class = str(asset.get("asset_class") or "").strip().lower()
+                category = str(asset.get("category") or "").strip().lower()
 
+                if standard not in ("ias16", "ias38", "ias40"):
+                    text = f"{asset_class} {category}"
+                    standard = "ias40" if "investment property" in text else "ias38" if "intangible" in text or "goodwill" in text else "ias16"
+
+                if standard == "ias40" and bool(asset.get("fair_value_model")):
+                    model = "fair_value"
+                elif model not in ("cost", "revaluation", "fair_value"):
+                    model = "cost"
+
+                model_label = {
+                    "cost": "Cost model",
+                    "revaluation": "Revaluation model",
+                    "fair_value": "Fair value model",
+                }[model]
+
+                impairment_balance = float(impairment.get("balance") or 0)
                 allowed = ["add_cost", "change_estimate", "impairment_loss"]
 
                 if impairment_balance > 0:
@@ -4801,7 +4813,9 @@ def subsequent_measurement_context(company_id, asset_id):
                     allowed.append("revaluation")
 
                 if standard == "ias40":
-                    allowed.extend(["fair_value_valuation", "transfer_ip_to_ppe"])
+                    if model == "fair_value":
+                        allowed.append("fair_value_valuation")
+                    allowed.append("transfer_ip_to_ppe")
                 elif standard == "ias16":
                     allowed.append("transfer_ppe_to_ip")
 
@@ -4819,6 +4833,7 @@ def subsequent_measurement_context(company_id, asset_id):
                     "ok": True,
                     "standard": standard,
                     "model": model,
+                    "model_label": model_label,
                     "status": status,
                     "allowed_event_types": allowed,
                     "additions": additions,
