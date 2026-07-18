@@ -94987,106 +94987,113 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         self,
         company_id: int,
         run_id: int,
-        user_id: int = None,
+        user_id: int | None = None,
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
-        run = self.fetch_one(f"""
+        run = self.fetch_one(
+            f"""
             SELECT *
             FROM {schema}.deferred_tax_runs
-            WHERE company_id=%s AND id=%s
+            WHERE company_id = %s
+            AND id = %s
             LIMIT 1;
-        """, (company_id, run_id))
+            """,
+            (
+                company_id,
+                run_id,
+            ),
+        )
 
         if not run:
             raise ValueError("Deferred-tax run not found.")
 
-        if run["status"] != "approved":
-            raise ValueError("Only an approved run can be posted.")
-
-        if run.get("journal_id"):
-            raise ValueError("Deferred-tax run is already posted.")
-
-        net = Decimal(str(run.get("net_deferred_tax") or 0))
-
-        if net == 0:
-            return self.fetch_one(f"""
-                UPDATE {schema}.deferred_tax_runs
-                SET status='posted',
-                    posted_at=NOW()
-                WHERE company_id=%s AND id=%s
-                RETURNING *;
-            """, (company_id, run_id))
-
-        roles = {
-            row["role"]: row["code"]
-            for row in self.fetch_all(f"""
-                SELECT role, code
-                FROM {schema}.coa
-                WHERE role IN (
-                    'deferred_tax_asset',
-                    'deferred_tax_liability',
-                    'deferred_tax_expense',
-                    'deferred_tax_income'
-                );
-            """)
-        }
-
-        required = {
-            "deferred_tax_asset",
-            "deferred_tax_liability",
-            "deferred_tax_expense",
-            "deferred_tax_income",
-        }
-
-        missing = required - roles.keys()
-        if missing:
+        if run.get("status") != "approved":
             raise ValueError(
-                "Missing deferred-tax COA roles: "
-                + ", ".join(sorted(missing))
+                "Only an approved run can be posted."
             )
 
-        amount = abs(net)
+        if run.get("journal_id"):
+            raise ValueError(
+                "Deferred-tax run is already posted."
+            )
 
-        if net > 0:
-            lines = [
-                {
-                    "account_code": roles["deferred_tax_expense"],
-                    "debit": float(amount),
-                    "credit": 0.0,
-                    "memo": "Deferred tax expense",
-                },
-                {
-                    "account_code": roles["deferred_tax_liability"],
-                    "debit": 0.0,
-                    "credit": float(amount),
-                    "memo": "Deferred tax liability",
-                },
-            ]
-        else:
-            lines = [
-                {
-                    "account_code": roles["deferred_tax_asset"],
-                    "debit": float(amount),
-                    "credit": 0.0,
-                    "memo": "Deferred tax asset",
-                },
-                {
-                    "account_code": roles["deferred_tax_income"],
-                    "debit": 0.0,
-                    "credit": float(amount),
-                    "memo": "Deferred tax income",
-                },
-            ]
+        reporting_date = str(
+            run.get("reporting_date") or ""
+        )[:10]
+
+        preview = self.preview_deferred_tax_posting(
+            company_id=company_id,
+            run_id=run_id,
+            posting_date=reporting_date,
+            reference=f"DT-{run_id}",
+            description=(
+                f"Deferred tax adjustment at "
+                f"{reporting_date}"
+            ),
+            user_id=user_id,
+        )
+
+        lines = (
+            preview.get("preview_journal_lines")
+            or []
+        )
+
+        if not lines:
+            return self.fetch_one(
+                f"""
+                UPDATE {schema}.deferred_tax_runs
+                SET status = 'posted',
+                    posted_at = NOW()
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    run_id,
+                ),
+            )
+
+        totals = preview.get("totals") or {}
+
+        total_debit = Decimal(
+            str(totals.get("debit") or 0)
+        )
+
+        total_credit = Decimal(
+            str(totals.get("credit") or 0)
+        )
+
+        if total_debit != total_credit:
+            raise ValueError(
+                "Deferred-tax journal does not balance: "
+                f"debits {total_debit}, "
+                f"credits {total_credit}"
+            )
+
+        preview_header = (
+            preview.get("preview_journal")
+            or {}
+        )
 
         journal_id = self.post_journal(
             company_id,
             {
-                "date": str(run["reporting_date"])[:10],
-                "ref": f"DT-{run_id}",
+                "date": (
+                    preview_header.get("date")
+                    or reporting_date
+                ),
+                "ref": (
+                    preview_header.get("ref")
+                    or f"DT-{run_id}"
+                ),
                 "description": (
-                    f"Deferred tax adjustment at "
-                    f"{str(run['reporting_date'])[:10]}"
+                    preview_header.get("description")
+                    or (
+                        f"Deferred tax adjustment at "
+                        f"{reporting_date}"
+                    )
                 ),
                 "source": "deferred_tax",
                 "source_id": run_id,
@@ -95097,19 +95104,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             },
         )
 
-        return self.fetch_one(f"""
+        return self.fetch_one(
+            f"""
             UPDATE {schema}.deferred_tax_runs
-            SET status='posted',
-                journal_id=%s,
-                posted_at=NOW()
-            WHERE company_id=%s AND id=%s
+            SET status = 'posted',
+                journal_id = %s,
+                posted_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
             RETURNING *;
-        """, (
-            journal_id,
-            company_id,
-            run_id,
-        ))
-
+            """,
+            (
+                journal_id,
+                company_id,
+                run_id,
+            ),
+        )
+        
     def deferred_tax_build_balance_sheet(
         self,
         company_id: int,
