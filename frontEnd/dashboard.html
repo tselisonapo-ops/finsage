@@ -6379,56 +6379,64 @@ select:focus {
 }
 
 .dt-journal-preview-modal .dt-modal-content {
-  width: min(1000px, 94vw);
-  max-width: 1000px;
-  max-height: 92vh;
+  width: min(1100px, 96vw) !important;
+  max-width: 1100px !important;
+  max-height: 94vh;
 }
 
 .dt-journal-preview-modal .dt-modal-body {
-  max-height: calc(92vh - 68px);
+  max-height: calc(94vh - 68px);
   overflow-y: auto;
 }
 
 .dt-journal-preview-modal .dt-table-wrap {
-  max-height: 380px;
-  overflow: auto;
+  width: 100%;
+  max-width: 100%;
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .dt-journal-preview-modal .dt-journal-table {
-  min-width: 880px;
+  width: 100%;
+  min-width: 0 !important;
+  table-layout: fixed;
+}
+
+.dt-journal-preview-modal .dt-journal-table th:nth-child(1),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(1) {
+  width: 6%;
+}
+
+.dt-journal-preview-modal .dt-journal-table th:nth-child(2),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(2) {
+  width: 28%;
+}
+
+.dt-journal-preview-modal .dt-journal-table th:nth-child(3),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(3) {
+  width: 38%;
+}
+
+.dt-journal-preview-modal .dt-journal-table th:nth-child(4),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(4),
+.dt-journal-preview-modal .dt-journal-table th:nth-child(5),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(5) {
+  width: 14%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.dt-journal-preview-modal .dt-journal-table td:nth-child(2),
+.dt-journal-preview-modal .dt-journal-table td:nth-child(3) {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dt-journal-preview-modal .dt-form-actions {
   position: sticky;
   bottom: 0;
-  background: #fff;
-  padding-top: 14px;
-  margin-top: 16px;
-}
-
-.dt-journal-preview-modal .dt-modal-content {
-  width: min(1000px, 94vw);
-  max-width: 1000px;
-  max-height: 92vh;
-}
-
-.dt-journal-preview-modal .dt-modal-body {
-  max-height: calc(92vh - 68px);
-  overflow-y: auto;
-}
-
-.dt-journal-preview-modal .dt-table-wrap {
-  max-height: 380px;
-  overflow: auto;
-}
-
-.dt-journal-preview-modal .dt-journal-table {
-  min-width: 880px;
-}
-
-.dt-journal-preview-modal .dt-form-actions {
-  position: sticky;
-  bottom: 0;
+  z-index: 2;
   background: #fff;
   padding-top: 14px;
   margin-top: 16px;

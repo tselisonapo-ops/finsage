@@ -50713,6 +50713,24 @@ async function saveEditModal() {
     setStatus("");
   }
 
+  function renderVarianceEmptyState() {
+    const el = $("bfVariancePane");
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="card empty-state">
+        <h3>Variance Analysis</h3>
+        <p class="muted">
+          Select a budget and click Variance to compare budget, actual and forecast results.
+        </p>
+
+        <button class="btn primary" data-bf-action="back-budgets">
+          View Budgets
+        </button>
+      </div>
+    `;
+  }
+
   function renderVariance() {
     const el = $("bfVariancePane");
     if (!el) return;
@@ -52747,7 +52765,14 @@ async function saveEditModal() {
     if (tab === "forecast") await loadVersions();
 
     if (tab === "variance") {
-      renderVarianceLanding();
+      showTab("variance");
+
+      if (BF.varianceRows?.length) {
+        renderVariance();
+      } else {
+        renderVarianceEmptyState();
+      }
+
       return;
     }
 
