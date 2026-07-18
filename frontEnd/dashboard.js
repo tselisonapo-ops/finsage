@@ -59843,13 +59843,6 @@ function bindEventsOnce() {
                         ""
                       )}
                     </div>
-
-                    ${
-                      line.account_code &&
-                      line.account_name
-                        ? `<div class="text-xs text-slate-500">${escapeHtml(line.account_code)}</div>`
-                        : ""
-                    }
                   </td>
 
                   <td class="p-3 text-right">
