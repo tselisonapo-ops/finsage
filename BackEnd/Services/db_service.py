@@ -86750,31 +86750,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             required=True,
         )
 
-        schema = company_schema(company_id)
+        schema = self.company_schema(company_id)
 
-        with get_conn(company_id) as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    sql.SQL("""
-                        SELECT code, name
-                        FROM {}.coa
-                        WHERE code = ANY(%s)
-                    """).format(sql.Identifier(schema)),
-                    ([expense_code, allowance_code],),
-                )
+        with self._conn_cursor() as (_conn, cur):
+            cur.execute(
+                f"""
+                SELECT code, name
+                FROM {schema}.coa
+                WHERE code = ANY(%s)
+                """,
+                ([expense_code, allowance_code],),
+            )
 
-                accounts = {
-                    row["code"]: row
-                    for row in cur.fetchall()
-                }
+            accounts = {
+                row["code"]: row["name"]
+                for row in cur.fetchall()
+            }
 
         expense_name = (
-            accounts.get(expense_code, {}).get("name")
+            accounts.get(expense_code)
             or "Expected Credit Loss Expense"
         )
 
         allowance_name = (
-            accounts.get(allowance_code, {}).get("name")
+            accounts.get(allowance_code)
             or "Allowance for Doubtful Debts"
         )
 
@@ -86815,8 +86814,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 },
             ]
 
-        dr_total = sum(float(x.get("debit") or 0) for x in lines)
-        cr_total = sum(float(x.get("credit") or 0) for x in lines)
+        dr_total = sum(float(line.get("debit") or 0) for line in lines)
+        cr_total = sum(float(line.get("credit") or 0) for line in lines)
 
         if round(dr_total, 2) != round(cr_total, 2):
             raise ValueError(
