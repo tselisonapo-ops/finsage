@@ -45027,6 +45027,19 @@ async function saveEditModal() {
     cid: null,
     budgets: [],
     versions: [],
+    budgetDashboardId: null,
+    budgetDashboard: {
+      loading: false,
+      budgetTotal: 0,
+      actualYtd: 0,
+      forecastTotal: null,
+      forecastVariance: null,
+      budgetUsedPercent: 0,
+      remainingBudget: 0,
+      favourableCount: 0,
+      unfavourableCount: 0,
+      latestVersion: null,
+    },
     drivers: [],
     imports: [],
     coa: [],
@@ -49250,12 +49263,149 @@ async function saveEditModal() {
       `;
   }
 
+  function bfSum(rows, field) {
+    return (rows || []).reduce((total, row) => {
+      return total + Number(row?.[field] || 0);
+    }, 0);
+  }
+
+  function bfDashboardBudget() {
+    return BF.budgets.find(
+      (budget) => Number(budget.id) === Number(BF.budgetDashboardId)
+    ) || BF.budgets[0] || null;
+  }
+
+  function bfLatestVersion(versions) {
+    return [...(versions || [])].sort((a, b) => {
+      return Number(b.id || 0) - Number(a.id || 0);
+    })[0] || null;
+  }
+
+  function bfDashboardValue(value, available = true) {
+    return available ? money(value) : "Not available";
+  }
+
+  async function loadBudgetDashboard(budgetId) {
+    const budget = BF.budgets.find(
+      (row) => Number(row.id) === Number(budgetId)
+    );
+
+    if (!budget) return;
+
+    BF.budgetDashboardId = Number(budgetId);
+    BF.budgetDashboard.loading = true;
+    renderBudgets();
+
+    try {
+      const [linesRes, versionsRes, varianceRes] = await Promise.all([
+        apiFetch(ENDPOINTS.forecast.budgetLines(BF.cid, budget.id)),
+        apiFetch(ENDPOINTS.forecast.versions(BF.cid, {
+          budget_id: budget.id,
+        })),
+        apiFetch(ENDPOINTS.forecast.budgetVariance(BF.cid, budget.id, {
+          period_start: bfToInputDate(budget.period_start),
+          period_end: bfToInputDate(budget.period_end),
+        })),
+      ]);
+
+      const budgetLines = unwrap(linesRes) || [];
+      const versions = unwrap(versionsRes) || [];
+      const varianceData = unwrap(varianceRes) || {};
+      const varianceRows = varianceData.rows || [];
+      const latestVersion = bfLatestVersion(versions);
+
+      const budgetTotal = bfSum(budgetLines, "amount");
+      const actualYtd = bfSum(varianceRows, "actual_amount");
+      const remainingBudget = budgetTotal - actualYtd;
+      const budgetUsedPercent = budgetTotal
+        ? actualYtd / Math.abs(budgetTotal) * 100
+        : 0;
+
+      let forecastTotal = null;
+
+      if (latestVersion) {
+        const versionRes = await apiFetch(
+          ENDPOINTS.forecast.version(BF.cid, latestVersion.id)
+        );
+
+        const version = unwrap(versionRes) || {};
+        const cutoff = bfMonthKey(version.actuals_to_date);
+        const futureForecast = (version.lines || []).reduce((total, line) => {
+          const month = bfMonthKey(line.period_month);
+
+          if (cutoff && month <= cutoff) return total;
+          return total + Number(line.amount || 0);
+        }, 0);
+
+        const actualToCutoff = varianceRows.reduce((total, row) => {
+          const month = bfMonthKey(row.period_month);
+
+          if (cutoff && month > cutoff) return total;
+          return total + Number(row.actual_amount || 0);
+        }, 0);
+
+        forecastTotal = actualToCutoff + futureForecast;
+      }
+
+      BF.budgetDashboard = {
+        loading: false,
+        budgetTotal,
+        actualYtd,
+        forecastTotal,
+        forecastVariance:
+          forecastTotal == null ? null : forecastTotal - budgetTotal,
+        budgetUsedPercent,
+        remainingBudget,
+        favourableCount: varianceRows.filter(
+          (row) => row.variance_classification === "favourable"
+        ).length,
+        unfavourableCount: varianceRows.filter(
+          (row) => row.variance_classification === "unfavourable"
+        ).length,
+        latestVersion,
+      };
+    } catch (error) {
+      console.error("[Budget dashboard] load failed", error);
+
+      BF.budgetDashboard = {
+        ...BF.budgetDashboard,
+        loading: false,
+      };
+    }
+
+    renderBudgets();
+  }
+
   async function loadBudgets() {
     BF.cid = cid();
     setStatus("Loading budgets...");
+
     const res = await apiFetch(ENDPOINTS.forecast.budgets(BF.cid));
     BF.budgets = unwrap(res) || [];
+
+    if (!BF.budgets.length) {
+      BF.budgetDashboardId = null;
+      renderBudgets();
+      setStatus("");
+      return;
+    }
+
+    const selectedExists = BF.budgets.some(
+      (budget) => Number(budget.id) === Number(BF.budgetDashboardId)
+    );
+
+    if (!selectedExists) {
+      const preferred = BF.budgets.find((budget) =>
+        ["approved", "locked"].includes(
+          String(budget.status || "").toLowerCase()
+        )
+      ) || BF.budgets[0];
+
+      BF.budgetDashboardId = Number(preferred.id);
+    }
+
     renderBudgets();
+    await loadBudgetDashboard(BF.budgetDashboardId);
     setStatus("");
   }
 
@@ -49289,6 +49439,165 @@ async function saveEditModal() {
     return String(value || "")
       .replace(/[_-]+/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function renderBudgetDashboardSummary() {
+    const budget = bfDashboardBudget();
+    const data = BF.budgetDashboard;
+    const currency = budget?.currency || companyCurrency();
+    const hasForecast = data.forecastTotal != null;
+    const forecastVariance = Number(data.forecastVariance || 0);
+
+    const forecastVarianceClass = !hasForecast
+      ? ""
+      : forecastVariance > 0
+        ? "is-unfavourable"
+        : forecastVariance < 0
+          ? "is-favourable"
+          : "is-neutral";
+
+    return `
+      <div class="bf-dashboard-toolbar">
+        <div>
+          <h3>Planning Overview</h3>
+          <p class="muted">
+            Budget, actual and latest forecast performance.
+          </p>
+        </div>
+
+        <label class="bf-dashboard-budget-picker">
+          Budget
+          <select id="bfDashboardBudgetSelect">
+            ${BF.budgets.map((row) => `
+              <option
+                value="${row.id}"
+                ${Number(row.id) === Number(BF.budgetDashboardId)
+                  ? "selected"
+                  : ""}
+              >
+                ${esc(row.name || "Untitled Budget")}
+              </option>
+            `).join("")}
+          </select>
+        </label>
+      </div>
+
+      <div class="bf-financial-summary">
+        <div class="bf-financial-card">
+          <span>Total Budget</span>
+          <strong>
+            ${data.loading ? "Loading…" : `${esc(currency)} ${money(data.budgetTotal)}`}
+          </strong>
+          <small>${esc(budget?.financial_year || "—")} financial year</small>
+        </div>
+
+        <div class="bf-financial-card">
+          <span>Actual YTD</span>
+          <strong>
+            ${data.loading ? "Loading…" : `${esc(currency)} ${money(data.actualYtd)}`}
+          </strong>
+          <small>Posted ledger activity</small>
+        </div>
+
+        <div class="bf-financial-card">
+          <span>Forecast Total</span>
+          <strong>
+            ${
+              data.loading
+                ? "Loading…"
+                : hasForecast
+                  ? `${esc(currency)} ${money(data.forecastTotal)}`
+                  : "Not available"
+            }
+          </strong>
+          <small>
+            ${data.latestVersion
+              ? esc(data.latestVersion.name || "Latest forecast")
+              : "No forecast created"}
+          </small>
+        </div>
+
+        <div class="bf-financial-card ${forecastVarianceClass}">
+          <span>Budget vs Forecast</span>
+          <strong>
+            ${
+              data.loading
+                ? "Loading…"
+                : hasForecast
+                  ? `${esc(currency)} ${money(forecastVariance)}`
+                  : "Not available"
+            }
+          </strong>
+          <small>
+            ${
+              !hasForecast
+                ? "Create a forecast to compare"
+                : forecastVariance > 0
+                  ? "Above budget"
+                  : forecastVariance < 0
+                    ? "Below budget"
+                    : "On budget"
+            }
+          </small>
+        </div>
+
+        <div class="bf-financial-card">
+          <span>Budget Used</span>
+          <strong>
+            ${data.loading
+              ? "Loading…"
+              : `${Number(data.budgetUsedPercent || 0).toFixed(1)}%`}
+          </strong>
+
+          <div class="bf-budget-progress">
+            <span style="width:${Math.min(
+              Math.max(Number(data.budgetUsedPercent || 0), 0),
+              100
+            )}%"></span>
+          </div>
+        </div>
+
+        <div class="bf-financial-card">
+          <span>Remaining Budget</span>
+          <strong>
+            ${data.loading
+              ? "Loading…"
+              : `${esc(currency)} ${money(data.remainingBudget)}`}
+          </strong>
+          <small>Budget less actual activity</small>
+        </div>
+      </div>
+
+      <div class="bf-budget-attention">
+        <div>
+          <span>Favourable accounts</span>
+          <strong>${data.loading ? "—" : data.favourableCount}</strong>
+        </div>
+
+        <div>
+          <span>Unfavourable accounts</span>
+          <strong>${data.loading ? "—" : data.unfavourableCount}</strong>
+        </div>
+
+        <div>
+          <span>Budget status</span>
+          <strong>${esc(bfTitleCase(budget?.status || "draft"))}</strong>
+        </div>
+
+        <div>
+          <span>Forecast readiness</span>
+          <strong>
+            ${
+              ["approved", "locked"].includes(
+                String(budget?.status || "").toLowerCase()
+              )
+                ? "Ready"
+                : "Approval required"
+            }
+          </strong>
+        </div>
+      </div>
+    `;
   }
 
   function renderBudgets() {
@@ -49409,30 +49718,7 @@ async function saveEditModal() {
     }).join("");
 
     el.innerHTML = `
-      <div class="bf-budget-summary">
-        <div class="bf-summary-card">
-          <span>Total Budgets</span>
-          <strong>${BF.budgets.length}</strong>
-        </div>
-
-        <div class="bf-summary-card">
-          <span>Draft</span>
-          <strong>${statusCounts.draft || 0}</strong>
-        </div>
-
-        <div class="bf-summary-card">
-          <span>Submitted</span>
-          <strong>${statusCounts.submitted || 0}</strong>
-        </div>
-
-        <div class="bf-summary-card">
-          <span>Approved / Locked</span>
-          <strong>
-            ${(statusCounts.approved || 0) + (statusCounts.locked || 0)}
-          </strong>
-        </div>
-      </div>
-
+    ${renderBudgetDashboardSummary()}
       <div class="card bf-budget-list-card">
         <div class="section-head bf-budget-list-head">
           <div>
@@ -49469,6 +49755,10 @@ async function saveEditModal() {
         </div>
       </div>
     `;
+
+    $("bfDashboardBudgetSelect")?.addEventListener("change", async (e) => {
+      await loadBudgetDashboard(Number(e.target.value));
+    });
   }
 
   function openCreateBudgetModal() {

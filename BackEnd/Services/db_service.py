@@ -97371,6 +97371,62 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return accounts
     
+    def deferred_tax_list_lines(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> list[dict]:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor(
+            company_id,
+            dict_rows=True,
+        ) as (_, cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.deferred_tax_run_lines
+                WHERE company_id = %s
+                AND run_id = %s
+                ORDER BY id
+                """,
+                (
+                    int(company_id),
+                    int(run_id),
+                ),
+            )
+
+            rows = cur.fetchall() or []
+
+        result = []
+
+        for row in rows:
+            line = dict(row)
+
+            line["recognition_destination"] = (
+                str(
+                    line.get("recognition_destination")
+                    or "profit_or_loss"
+                )
+                .strip()
+                .lower()
+            )
+
+            line["deferred_tax_type"] = (
+                str(
+                    line.get("deferred_tax_type")
+                    or line.get("tax_type")
+                    or line.get("balance_type")
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
+
+            result.append(line)
+
+        return result
+
     def preview_deferred_tax_posting(
         self,
         *,
@@ -97381,21 +97437,43 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         description: str | None = None,
         user_id: int | None = None,
     ) -> dict:
-        from decimal import Decimal, ROUND_HALF_UP
         from datetime import date
+        from decimal import Decimal, ROUND_HALF_UP
 
-        def money(value):
+        ZERO = Decimal("0.00")
+
+        def money(value) -> Decimal:
             return Decimal(str(value or 0)).quantize(
                 Decimal("0.01"),
                 rounding=ROUND_HALF_UP,
             )
 
-        def account_name(code):
+        def account_name(code: str) -> str:
             row = self.get_account_row_for_posting(
                 company_id,
                 code,
             )
-            return row[0] if row else code
+            return str(row[0] if row else code)
+
+        def add_line(
+            code: str,
+            amount: Decimal,
+            *,
+            debit: bool,
+            memo: str,
+        ) -> None:
+            amount = money(abs(amount))
+
+            if amount == ZERO:
+                return
+
+            journal_lines.append({
+                "account_code": code,
+                "account_name": account_name(code),
+                "debit": float(amount) if debit else 0.0,
+                "credit": 0.0 if debit else float(amount),
+                "memo": memo,
+            })
 
         run = self.deferred_tax_get_run(
             company_id,
@@ -97410,10 +97488,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "approved",
         ):
             raise ValueError(
-                "Deferred tax run must be reviewed or approved before preview"
+                "Deferred tax run must be reviewed or approved "
+                "before preview"
             )
 
-        post_date = posting_date or run.get("reporting_date")
+        post_date = (
+            posting_date
+            or run.get("reporting_date")
+        )
 
         if isinstance(post_date, str):
             post_date = date.fromisoformat(
@@ -97424,12 +97506,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             company_id
         )
 
-        def resolve(value, label):
+        def resolve(value, label: str) -> str:
             value = str(value or "").strip()
 
             if not value:
                 raise ValueError(
-                    f"Missing {label} account in company settings"
+                    f"Missing {label} account"
                 )
 
             row = self.get_account_row_for_posting(
@@ -97490,32 +97572,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             or []
         )
 
-        journal_lines = []
-        totals = {
-            "profit_or_loss": money(0),
-            "oci": money(0),
-            "equity": money(0),
-            "business_combination": money(0),
-        }
-
-        for line in lines_data:
-            amount = money(
-                line.get("recognized_amount")
-            )
-
-            if amount == 0:
-                continue
-
-            destination = (
-                line.get("recognition_destination")
-                or "profit_or_loss"
-            )
-
-            totals[destination] = money(
-                totals.get(destination, money(0))
-                + amount
-            )
-
         recognized_dta = money(
             run.get("recognized_dta")
         )
@@ -97524,113 +97580,211 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             run.get("recognized_dtl")
         )
 
-        if recognized_dta > 0:
-            journal_lines.append({
-                "account_code": dta_code,
-                "account_name": account_name(dta_code),
-                "debit": float(recognized_dta),
-                "credit": 0.0,
-                "memo": "Deferred tax asset recognized",
-            })
-
-        if recognized_dtl > 0:
-            journal_lines.append({
-                "account_code": dtl_code,
-                "account_name": account_name(dtl_code),
-                "debit": 0.0,
-                "credit": float(recognized_dtl),
-                "memo": "Deferred tax liability recognized",
-            })
-
         net_movement = money(
             recognized_dtl - recognized_dta
         )
+
+        destination_totals = {
+            "profit_or_loss": ZERO,
+            "oci": ZERO,
+            "equity": ZERO,
+            "business_combination": ZERO,
+        }
+
+        for line in lines_data:
+            amount = money(
+                line.get("recognized_amount")
+                or line.get("deferred_tax_amount")
+            )
+
+            if amount == ZERO:
+                continue
+
+            destination = str(
+                line.get("recognition_destination")
+                or "profit_or_loss"
+            ).strip().lower()
+
+            if destination not in destination_totals:
+                destination = "profit_or_loss"
+
+            tax_type = str(
+                line.get("deferred_tax_type")
+                or line.get("tax_type")
+                or line.get("balance_type")
+                or ""
+            ).strip().lower()
+
+            dta_amount = money(
+                line.get("recognized_dta")
+                or line.get("dta_amount")
+            )
+
+            dtl_amount = money(
+                line.get("recognized_dtl")
+                or line.get("dtl_amount")
+            )
+
+            if dtl_amount != ZERO or dta_amount != ZERO:
+                signed_amount = money(
+                    dtl_amount - dta_amount
+                )
+
+            elif tax_type in (
+                "asset",
+                "dta",
+                "deferred_tax_asset",
+                "deductible",
+            ):
+                signed_amount = -abs(amount)
+
+            elif tax_type in (
+                "liability",
+                "dtl",
+                "deferred_tax_liability",
+                "taxable",
+            ):
+                signed_amount = abs(amount)
+
+            else:
+                temporary_difference = money(
+                    line.get("temporary_difference")
+                    or line.get("difference")
+                )
+
+                if temporary_difference < ZERO:
+                    signed_amount = -abs(amount)
+                else:
+                    signed_amount = abs(amount)
+
+            destination_totals[destination] = money(
+                destination_totals[destination]
+                + signed_amount
+            )
+
+        allocated_total = money(
+            sum(destination_totals.values(), ZERO)
+        )
+
+        difference = money(
+            net_movement - allocated_total
+        )
+
+        if difference != ZERO:
+            destination_totals["profit_or_loss"] = money(
+                destination_totals["profit_or_loss"]
+                + difference
+            )
+
+        journal_lines = []
 
         base_memo = (
             str(description or "").strip()
             or f"Deferred tax adjustment – Run {run_id}"
         )
 
-        if totals["oci"] != 0:
+        # Balance-sheet side
+        if recognized_dta > ZERO:
+            add_line(
+                dta_code,
+                recognized_dta,
+                debit=True,
+                memo="Deferred tax asset recognised",
+            )
+
+        if recognized_dtl > ZERO:
+            add_line(
+                dtl_code,
+                recognized_dtl,
+                debit=False,
+                memo="Deferred tax liability recognised",
+            )
+
+        # Offset side:
+        # Positive = net DTL increase -> debit expense/OCI/equity.
+        # Negative = net DTA increase -> credit benefit/OCI/equity.
+        pnl_amount = destination_totals[
+            "profit_or_loss"
+        ]
+
+        if pnl_amount > ZERO:
+            add_line(
+                tax_expense_code,
+                pnl_amount,
+                debit=True,
+                memo=f"{base_memo} [tax expense]",
+            )
+
+        elif pnl_amount < ZERO:
+            add_line(
+                tax_income_code,
+                pnl_amount,
+                debit=False,
+                memo=f"{base_memo} [tax income]",
+            )
+
+        oci_amount = destination_totals["oci"]
+
+        if oci_amount != ZERO:
             if not oci_code:
                 raise ValueError(
                     "Deferred tax OCI account is not configured"
                 )
 
-            amount = abs(totals["oci"])
+            add_line(
+                oci_code,
+                oci_amount,
+                debit=oci_amount > ZERO,
+                memo=f"{base_memo} [OCI]",
+            )
 
-            journal_lines.append({
-                "account_code": oci_code,
-                "account_name": account_name(oci_code),
-                "debit": float(amount)
-                if totals["oci"] < 0 else 0.0,
-                "credit": float(amount)
-                if totals["oci"] > 0 else 0.0,
-                "memo": f"{base_memo} [OCI]",
-            })
+        equity_amount = destination_totals["equity"]
 
-        if totals["equity"] != 0:
+        if equity_amount != ZERO:
             if not equity_code:
                 raise ValueError(
                     "Deferred tax equity account is not configured"
                 )
 
-            amount = abs(totals["equity"])
+            add_line(
+                equity_code,
+                equity_amount,
+                debit=equity_amount > ZERO,
+                memo=f"{base_memo} [equity]",
+            )
 
-            journal_lines.append({
-                "account_code": equity_code,
-                "account_name": account_name(equity_code),
-                "debit": float(amount)
-                if totals["equity"] < 0 else 0.0,
-                "credit": float(amount)
-                if totals["equity"] > 0 else 0.0,
-                "memo": f"{base_memo} [equity]",
-            })
+        business_combination_amount = destination_totals[
+            "business_combination"
+        ]
 
-        pnl_amount = money(
-            net_movement
-            - totals["oci"]
-            - totals["equity"]
-        )
-
-        if pnl_amount > 0:
-            journal_lines.append({
-                "account_code": tax_expense_code,
-                "account_name": account_name(
-                    tax_expense_code
-                ),
-                "debit": float(pnl_amount),
-                "credit": 0.0,
-                "memo": f"{base_memo} [tax expense]",
-            })
-
-        elif pnl_amount < 0:
-            amount = abs(pnl_amount)
-
-            journal_lines.append({
-                "account_code": tax_income_code,
-                "account_name": account_name(
-                    tax_income_code
-                ),
-                "debit": 0.0,
-                "credit": float(amount),
-                "memo": f"{base_memo} [tax income]",
-            })
+        if business_combination_amount != ZERO:
+            raise ValueError(
+                "Deferred tax relating to a business combination "
+                "requires a dedicated acquisition account"
+            )
 
         debit_total = money(sum(
-            Decimal(str(line.get("debit") or 0))
-            for line in journal_lines
+            (
+                Decimal(str(line.get("debit") or 0))
+                for line in journal_lines
+            ),
+            ZERO,
         ))
 
         credit_total = money(sum(
-            Decimal(str(line.get("credit") or 0))
-            for line in journal_lines
+            (
+                Decimal(str(line.get("credit") or 0))
+                for line in journal_lines
+            ),
+            ZERO,
         ))
 
         if debit_total != credit_total:
             raise ValueError(
-                f"Deferred tax journal does not balance: "
-                f"debits {debit_total}, credits {credit_total}"
+                "Deferred tax journal does not balance: "
+                f"debits {debit_total}, "
+                f"credits {credit_total}, "
+                f"difference {money(debit_total - credit_total)}"
             )
 
         ref = (
@@ -97655,23 +97809,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 else None
             ),
             "summary": {
-                "recognized_dta": str(
-                    recognized_dta
-                ),
-                "recognized_dtl": str(
-                    recognized_dtl
-                ),
-                "net_movement": str(
-                    net_movement
-                ),
-                "profit_or_loss": str(
-                    pnl_amount
-                ),
-                "oci": str(
-                    totals["oci"]
-                ),
-                "equity": str(
-                    totals["equity"]
+                "recognized_dta": str(recognized_dta),
+                "recognized_dtl": str(recognized_dtl),
+                "net_movement": str(net_movement),
+                "profit_or_loss": str(pnl_amount),
+                "oci": str(oci_amount),
+                "equity": str(equity_amount),
+                "business_combination": str(
+                    business_combination_amount
                 ),
             },
             "preview_journal": {
