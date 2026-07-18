@@ -55488,11 +55488,29 @@ function bindEventsOnce() {
   window.formatPayrollDate = formatPayrollDate;
 
   var TAX_ADMIN_HTML = `
-  <div id="taxAdminContainer" style="max-width:1100px;">
-    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-      <h2 style="margin:0;">Tax Tables</h2>
-      <div id="taxAdminStatus"></div>
-    </div>
+    <div id="taxAdminContainer" style="max-width:1100px;">
+
+      <div class="payroll-section-navigation">
+        <button
+          type="button"
+          class="payroll-back-btn"
+          data-payroll-back-dashboard
+        >
+          ← Back to Payroll Dashboard
+        </button>
+
+        <div>
+          <h2 style="margin:0;">Tax Tables</h2>
+          <p class="payroll-muted" style="margin:4px 0 0;">
+            Manage payroll tax regimes, tax years, brackets and parameters.
+          </p>
+        </div>
+      </div>
+
+      <div
+        id="taxAdminStatus"
+        style="margin-top:12px;"
+      ></div>
 
     <!-- REGIME SELECTOR -->
     <div class="payroll-section" style="margin-top:16px;">
@@ -55585,23 +55603,6 @@ function bindEventsOnce() {
     </div>
   </div>
   `;
-
-  /* ═══════════════════════════════════════════════════════════
-    SECTION B — COUNTRY PAYE SCHEMAS
-    ═══════════════════════════════════════════════════════════ */
-
-  /*
-  * Each schema defines:
-  *   label           — heading shown to the user
-  *   description     — short explanation
-  *   bracketColumns  — override which bracket columns to show
-  *   params          — array of { key, label, hint } for known params
-  *   defaultParams   — { key: defaultValue } when creating a new year
-  *
-  * The generic bracket + param tables always render below this.
-  * The schema just adds a country-specific "quick settings" panel
-  * at the top of the year content area.
-  */
 
   var TAX_COUNTRY_SCHEMAS = {
     LS: {
@@ -57385,6 +57386,17 @@ function bindEventsOnce() {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
       
+    document.addEventListener("click", function (event) {
+      const backButton = event.target.closest(
+        "[data-payroll-back-dashboard]"
+      );
+
+      if (!backButton) return;
+
+      event.preventDefault();
+      switchPayrollTab("overview");
+    });
+
     $("payrollRefreshTaxContextBtn")
       ?.addEventListener(
         "click",
