@@ -49836,7 +49836,7 @@ async function saveEditModal() {
 
           return `
             <tr>
-              <td>${esc(bfFormatMonth(row.period_month))}</td>
+              <td>${esc(bfDisplayDate(row.period_month))}</td>
               <td>${esc(row.account_name || "Unnamed account")}</td>
               <td class="right">${money(planned)}</td>
               <td class="right">${money(actual)}</td>
@@ -49879,10 +49879,10 @@ async function saveEditModal() {
             <tr>
               <th>Month</th>
               <th>Account</th>
-              <th class="bf-variance-header-left">Budget</th>
-              <th class="bf-variance-header-left">Actual</th>
-              <th class="bf-variance-header-left">Variance</th>
-              <th class="bf-variance-header-left">%</th>
+              <th style="text-align:left !important;">Budget</th>
+              <th style="text-align:left !important;">Actual</th>
+              <th style="text-align:left !important;">Variance</th>
+              <th style="text-align:left !important;">%</th>
             </tr>
           </thead>
 
