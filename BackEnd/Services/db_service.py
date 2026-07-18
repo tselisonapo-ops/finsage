@@ -97292,17 +97292,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "deferred_tax_asset": (
                 ["deferred_tax_asset"],
                 ["deferred tax asset"],
-                ["asset"],
+                ["asset", "assets"],
             ),
             "deferred_tax_liability": (
                 ["deferred_tax_liability"],
                 ["deferred tax liability", "deferred tax"],
-                ["liability"],
+                ["liability", "liabilities"],
             ),
             "deferred_tax_expense": (
                 ["income_tax_expense_deferred", "deferred_tax_expense"],
                 ["income tax expense - deferred", "deferred tax expense"],
-                ["expense"],
+                ["expense", "expenses"],
             ),
             "deferred_tax_income": (
                 ["deferred_tax_income", "income_tax_benefit_deferred"],
@@ -97322,7 +97322,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
         with self._conn_cursor() as (_, cur):
-            cur.execute_sql(f"""
+            cur.execute(f"""
                 SELECT code, name, section, role
                 FROM {schema}.coa
                 WHERE COALESCE(posting, TRUE) = TRUE
