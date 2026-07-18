@@ -87637,25 +87637,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if status in ("approved", "locked"):
             raise ValueError(f"Cannot edit {label.lower()} in status '{status}'.")
 
-
-    def forecast_validate_account(self, company_id: int, account_code: str) -> Dict[str, Any]:
-        self.ensure_company_forecast(company_id)
-        schema = self.company_schema(company_id)
-
-        row = self.fetch_one(f"""
-            SELECT code, name, section, category, posting
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND code = %s
-            AND posting = TRUE
-            LIMIT 1;
-        """, (int(company_id), account_code))
-
-        if not row:
-            raise ValueError(f"Invalid posting account code: {account_code}")
-
-        return row
-
     def forecast_upsert_budget_line(self, company_id: int, budget_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
@@ -87777,39 +87758,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             {where}
             ORDER BY created_at DESC, id DESC;
         """, tuple(params))
-
-
-    def forecast_get_version(self, company_id: int, version_id: int) -> Optional[Dict[str, Any]]:
-        self.ensure_company_forecast(company_id)
-        schema = self.company_schema(company_id)
-
-        version = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.forecast_versions
-            WHERE company_id = %s AND id = %s
-            LIMIT 1;
-        """, (int(company_id), int(version_id)))
-
-        if not version:
-            return None
-
-        version["lines"] = self.fetch_all(f"""
-            SELECT
-                l.*,
-                c.name AS account_name,
-                c.section,
-                c.category
-            FROM {schema}.forecast_lines l
-            LEFT JOIN {schema}.coa c
-                ON c.company_id = l.company_id
-            AND c.code = l.account_code
-            WHERE l.company_id = %s
-            AND l.version_id = %s
-            ORDER BY l.period_month, l.account_code;
-        """, (int(company_id), int(version_id)))
-
-        return version
-
 
     def forecast_upsert_line(self, company_id: int, version_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
@@ -88605,27 +88553,40 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ))
 
 
-    def forecast_create_version(self, company_id: int, payload: Dict[str, Any], user_id: Optional[int] = None) -> Dict[str, Any]:
+    def forecast_create_version(
+        self,
+        company_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
 
         name = (payload.get("name") or "").strip()
-        if not name:
-            raise ValueError("Forecast name is required.")
-
+        budget_id = payload.get("budget_id")
         period_start = payload.get("period_start")
         period_end = payload.get("period_end")
-
-        if not period_start:
-            raise ValueError("period_start is required.")
-        if not period_end:
-            raise ValueError("period_end is required.")
-
+        actuals_to_date = payload.get("actuals_to_date")
         version_type = payload.get("version_type") or "forecast"
-        if version_type not in ("forecast", "scenario", "rolling", "year_end"):
-            raise ValueError("Invalid version_type.")
 
-        row = self.fetch_one(f"""
+        if not name:
+            raise ValueError("Forecast name is required.")
+        if not budget_id:
+            raise ValueError("An approved budget is required.")
+        if not period_start or not period_end:
+            raise ValueError("Forecast period start and end are required.")
+        if str(period_end) < str(period_start):
+            raise ValueError("Forecast period end cannot be before its start.")
+        if actuals_to_date and not (str(period_start) <= str(actuals_to_date) <= str(period_end)):
+            raise ValueError("Actuals-to-date must fall inside the forecast period.")
+        if version_type not in {"forecast", "scenario", "rolling", "year_end"}:
+            raise ValueError("Invalid forecast version type.")
+
+        budget = self.forecast_get_budget_required(company_id, int(budget_id))
+        if str(budget.get("status") or "").lower() not in {"approved", "locked"}:
+            raise ValueError("The budget must be approved before creating a forecast.")
+
+        return self.fetch_one(f"""
             INSERT INTO {schema}.forecast_versions (
                 company_id, budget_id, name, version_type, scenario_name,
                 actuals_to_date, period_start, period_end, currency,
@@ -88635,20 +88596,82 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             RETURNING *;
         """, (
             int(company_id),
-            payload.get("budget_id"),
+            int(budget_id),
             name,
             version_type,
             payload.get("scenario_name"),
-            payload.get("actuals_to_date"),
+            actuals_to_date,
             period_start,
             period_end,
-            payload.get("currency"),
+            payload.get("currency") or budget.get("currency"),
             user_id,
             json.dumps(payload.get("meta_json") or {}),
         ))
 
-        return row
+    def forecast_seed_version_from_budget(
+        self,
+        company_id: int,
+        version_id: int,
+    ) -> Dict[str, Any]:
+        self.ensure_company_forecast(company_id)
+        schema = self.company_schema(company_id)
+        version = self.forecast_get_version_required(company_id, version_id)
 
+        budget_id = version.get("budget_id")
+        if not budget_id:
+            raise ValueError("Forecast version is not linked to a budget.")
+
+        actuals_to_date = version.get("actuals_to_date")
+
+        result = self.fetch_one(f"""
+            WITH inserted AS (
+                INSERT INTO {schema}.forecast_lines (
+                    company_id,
+                    version_id,
+                    account_code,
+                    period_month,
+                    amount,
+                    source_type,
+                    source_ref,
+                    meta_json
+                )
+                SELECT
+                    b.company_id,
+                    %s,
+                    b.account_code,
+                    b.period_month,
+                    b.amount,
+                    'budget_seed',
+                    %s,
+                    jsonb_build_object(
+                        'budget_id', %s,
+                        'seeded_from_budget', TRUE
+                    )
+                FROM {schema}.forecast_budget_lines b
+                WHERE b.company_id = %s
+                AND b.budget_id = %s
+                AND (
+                        %s::date IS NULL
+                        OR b.period_month > DATE_TRUNC('month', %s::date)::date
+                )
+                ON CONFLICT (version_id, account_code, period_month)
+                DO NOTHING
+                RETURNING id
+            )
+            SELECT COUNT(*)::int AS count
+            FROM inserted;
+        """, (
+            int(version_id),
+            f"budget:{int(budget_id)}",
+            int(budget_id),
+            int(company_id),
+            int(budget_id),
+            actuals_to_date,
+            actuals_to_date,
+        ))
+
+        return {"count": int((result or {}).get("count") or 0)}
+        
     # ============================================================
     # Forecast / Budget helpers
     # ============================================================
@@ -88704,78 +88727,100 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return row
 
-    def forecast_get_version_required(self, company_id: int, version_id: int) -> Dict[str, Any]:
+    def forecast_projected_full_year(
+        self,
+        company_id: int,
+        version_id: int,
+    ) -> Dict[str, Any]:
         self.ensure_company_forecast(company_id)
         schema = self.company_schema(company_id)
-
-        row = self.fetch_one(f"""
-            SELECT *
-            FROM {schema}.forecast_versions
-            WHERE company_id=%s AND id=%s
-            LIMIT 1;
-        """, (int(company_id), int(version_id)))
-
-        if not row:
-            raise ValueError("Forecast version not found.")
-
-        return row
-
-    def forecast_projected_full_year(self, company_id: int, version_id: int) -> List[Dict[str, Any]]:
-        self.ensure_company_forecast(company_id)
-        schema = self.company_schema(company_id)
-
         version = self.forecast_get_version_required(company_id, version_id)
 
-        return self.fetch_all(f"""
-            WITH actuals AS (
+        start_date = str(version["period_start"])[:10]
+        end_date = str(version["period_end"])[:10]
+        actuals_to_date = str(version.get("actuals_to_date") or start_date)[:10]
+
+        rows = self.fetch_all(f"""
+            WITH actual AS (
                 SELECT
-                    company_id,
-                    account AS account_code,
-                    date_trunc('month', date)::date AS period_month,
-                    SUM(debit - credit) AS actual_amount
-                FROM {schema}.ledger
-                WHERE company_id=%s
-                AND date BETWEEN %s AND COALESCE(%s, %s)
-                GROUP BY company_id, account, date_trunc('month', date)::date
+                    jl.account_code,
+                    DATE_TRUNC('month', j.date)::date AS period_month,
+                    SUM(
+                        CASE
+                            WHEN LOWER(COALESCE(c.section, '')) IN ('income', 'revenue')
+                                THEN COALESCE(jl.credit, 0) - COALESCE(jl.debit, 0)
+                            ELSE COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)
+                        END
+                    )::numeric(18,2) AS amount
+                FROM {schema}.journals j
+                JOIN {schema}.journal_lines jl
+                ON jl.journal_id = j.id
+                AND jl.company_id = j.company_id
+                LEFT JOIN {schema}.coa c
+                ON c.company_id = jl.company_id
+                AND c.code = jl.account_code
+                WHERE j.company_id = %s
+                AND j.date >= %s::date
+                AND j.date <= %s::date
+                AND COALESCE(j.status, 'posted') = 'posted'
+                GROUP BY jl.account_code, DATE_TRUNC('month', j.date)::date
             ),
-            fc AS (
+            forecast AS (
                 SELECT
-                    company_id,
                     account_code,
-                    period_month,
-                    SUM(amount) AS forecast_amount
+                    DATE_TRUNC('month', period_month)::date AS period_month,
+                    SUM(amount)::numeric(18,2) AS amount
                 FROM {schema}.forecast_lines
-                WHERE company_id=%s
-                AND version_id=%s
-                GROUP BY company_id, account_code, period_month
+                WHERE company_id = %s
+                AND version_id = %s
+                AND period_month > DATE_TRUNC('month', %s::date)::date
+                AND period_month <= %s::date
+                GROUP BY account_code, DATE_TRUNC('month', period_month)::date
+            ),
+            combined AS (
+                SELECT account_code, period_month, amount, 'actual' AS source
+                FROM actual
+
+                UNION ALL
+
+                SELECT account_code, period_month, amount, 'forecast' AS source
+                FROM forecast
             )
             SELECT
-                COALESCE(a.account_code, fc.account_code) AS account_code,
+                x.account_code,
                 c.name AS account_name,
                 c.section,
                 c.category,
-                COALESCE(SUM(a.actual_amount), 0) AS actual_ytd,
-                COALESCE(SUM(fc.forecast_amount), 0) AS forecast_remaining,
-                COALESCE(SUM(a.actual_amount), 0) + COALESCE(SUM(fc.forecast_amount), 0) AS projected_full_year
-            FROM actuals a
-            FULL OUTER JOIN fc
-                ON fc.company_id=a.company_id
-            AND fc.account_code=a.account_code
-            AND fc.period_month=a.period_month
+                SUM(x.amount) FILTER (WHERE x.source = 'actual')::numeric(18,2)
+                    AS actual_ytd,
+                SUM(x.amount) FILTER (WHERE x.source = 'forecast')::numeric(18,2)
+                    AS forecast_remaining,
+                SUM(x.amount)::numeric(18,2) AS projected_full_year
+            FROM combined x
             LEFT JOIN {schema}.coa c
-                ON c.company_id=COALESCE(a.company_id, fc.company_id)
-            AND c.code=COALESCE(a.account_code, fc.account_code)
-            GROUP BY COALESCE(a.account_code, fc.account_code), c.name, c.section, c.category
-            ORDER BY COALESCE(a.account_code, fc.account_code);
+            ON c.company_id = %s
+            AND c.code = x.account_code
+            GROUP BY x.account_code, c.name, c.section, c.category
+            ORDER BY c.section, c.category, x.account_code;
         """, (
             int(company_id),
-            version["period_start"],
-            version.get("actuals_to_date"),
-            version["period_end"],
+            start_date,
+            actuals_to_date,
             int(company_id),
             int(version_id),
+            actuals_to_date,
+            end_date,
+            int(company_id),
         ))
-        
+
+        return {
+            "version": version,
+            "period_start": start_date,
+            "period_end": end_date,
+            "actuals_to_date": actuals_to_date,
+            "rows": rows,
+        }
+            
     def forecast_assert_editable(self, row: Dict[str, Any], label: str = "Record"):
         status = (row.get("status") or "").lower()
         if status in ("approved", "locked"):

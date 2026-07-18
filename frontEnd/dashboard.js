@@ -46515,6 +46515,19 @@ async function saveEditModal() {
     ].join("-");
   }
 
+  function bfIsActualMonth(
+    month,
+    actualsToDate = BF.workspaceForm?.actualsToDate
+  ) {
+    const monthKey = bfMonthKey(month);
+    const cutoffKey = bfMonthKey(actualsToDate);
+
+    return Boolean(
+      monthKey &&
+      cutoffKey &&
+      monthKey <= cutoffKey
+    );
+  }
 
   function bfMonthLabel(value) {
     const date = bfParseDate(value);
@@ -47208,13 +47221,11 @@ async function saveEditModal() {
       "bfWorkspaceVersionType",
       "bfWorkspaceScenario",
       "bfWorkspaceScenarioName",
-      "bfWorkspaceActualsTo",
       "bfWorkspaceCurrency",
     ];
 
     ids.forEach((id) => {
       const element = $(id);
-
       if (!element) return;
 
       const saveMeta = () => {
@@ -47222,98 +47233,66 @@ async function saveEditModal() {
         scheduleForecastDraftSave();
       };
 
-      element.addEventListener(
-        "change",
-        saveMeta
-      );
-
-      element.addEventListener(
-        "input",
-        saveMeta
-      );
+      element.addEventListener("change", saveMeta);
+      element.addEventListener("input", saveMeta);
     });
 
-    $("bfWorkspacePeriodStart")
-      ?.addEventListener("change", () => {
-        captureForecastWorkspaceForm();
+    $("bfWorkspaceActualsTo")?.addEventListener("change", () => {
+      if (BF.planningMode === "manual") {
+        captureVisibleManualForecastValues();
+      }
 
-        const start = bfToInputDate(
-          BF.workspaceForm.periodStart
-        );
+      captureForecastWorkspaceForm();
+      saveForecastDraftLocally({ silent: true });
+      renderCreateForecastWorkspace();
+    });
 
-        const end = bfToInputDate(
-          BF.workspaceForm.periodEnd
-        );
+    $("bfWorkspaceActualsTo")?.addEventListener("input", () => {
+      captureForecastWorkspaceForm();
+      scheduleForecastDraftSave();
+    });
 
-        if (!start || !end) {
-          return;
-        }
+    $("bfWorkspacePeriodStart")?.addEventListener("change", () => {
+      captureForecastWorkspaceForm();
 
-        if (end < start) {
-          alert(
-            "Period end cannot be before period start."
-          );
+      const start = bfToInputDate(BF.workspaceForm.periodStart);
+      const end = bfToInputDate(BF.workspaceForm.periodEnd);
 
-          return;
-        }
+      if (!start || !end) return;
 
-        /*
-        * Save all current work before rerendering
-        * the forecast workspace with new months.
-        */
-        if (
-          BF.planningMode === "manual"
-        ) {
-          captureVisibleManualForecastValues();
-        }
+      if (end < start) {
+        alert("Period end cannot be before period start.");
+        return;
+      }
 
-        saveForecastDraftLocally({
-          silent: true,
-        });
+      if (BF.planningMode === "manual") {
+        captureVisibleManualForecastValues();
+      }
 
-        renderCreateForecastWorkspace();
-      });
+      saveForecastDraftLocally({ silent: true });
+      renderCreateForecastWorkspace();
+    });
 
-    $("bfWorkspacePeriodEnd")
-      ?.addEventListener("change", () => {
-        captureForecastWorkspaceForm();
+    $("bfWorkspacePeriodEnd")?.addEventListener("change", () => {
+      captureForecastWorkspaceForm();
 
-        const start = bfToInputDate(
-          BF.workspaceForm.periodStart
-        );
+      const start = bfToInputDate(BF.workspaceForm.periodStart);
+      const end = bfToInputDate(BF.workspaceForm.periodEnd);
 
-        const end = bfToInputDate(
-          BF.workspaceForm.periodEnd
-        );
+      if (!start || !end) return;
 
-        if (!start || !end) {
-          return;
-        }
+      if (end < start) {
+        alert("Period end cannot be before period start.");
+        return;
+      }
 
-        if (end < start) {
-          alert(
-            "Period end cannot be before period start."
-          );
+      if (BF.planningMode === "manual") {
+        captureVisibleManualForecastValues();
+      }
 
-          return;
-        }
-
-        /*
-        * Save all current work before rerendering
-        * the forecast workspace with new months.
-        */
-        if (
-          BF.planningMode === "manual"
-        ) {
-          captureVisibleManualForecastValues();
-        }
-
-        saveForecastDraftLocally({
-          silent: true,
-        });
-
-        renderCreateForecastWorkspace();
-      });
+      saveForecastDraftLocally({ silent: true });
+      renderCreateForecastWorkspace();
+    });
   }
 
   function renderManualForecastGrid({
@@ -48697,6 +48676,8 @@ async function saveEditModal() {
     const el = $("bfForecastPane");
     if (!el) return;
 
+    captureForecastWorkspaceForm();
+
     const budget = BF.selectedBudget || {};
 
     const savedForm = BF.workspaceForm || {};
@@ -48764,20 +48745,26 @@ async function saveEditModal() {
               <strong>${esc(bfAccountName(account))}</strong>
             </td>
 
-            ${months.map((month) => `
-              <td>
-                <input
-                  type="number"
-                  step="0.01"
-                  class="bf-forecast-cell bf-draft-forecast-cell"
-                  value="${esc(
-                    bfGetDraftValue(accountCode, month)
-                  )}"
-                  data-bf-account-code="${esc(accountCode)}"
-                  data-bf-month="${esc(month)}"
-                >
-              </td>
-            `).join("")}
+            ${months.map((month) => {
+              const isActual = bfIsActualMonth(
+                month,
+                savedForm.actualsToDate
+              );
+
+              return `
+                <td class="${isActual ? "bf-actual-month" : "bf-forecast-month"}">
+                  <input
+                    type="number"
+                    step="0.01"
+                    class="bf-forecast-cell bf-draft-forecast-cell"
+                    value="${esc(bfGetDraftValue(accountCode, month))}"
+                    data-bf-account-code="${esc(accountCode)}"
+                    data-bf-month="${esc(month)}"
+                    ${isActual ? "readonly" : ""}
+                  >
+                </td>
+              `;
+            }).join("")}
 
             <td
               class="right bf-annual-total"
@@ -49315,21 +49302,47 @@ async function saveEditModal() {
             </tr>
           </thead>
           <tbody>
-            ${BF.budgets.map((b) => `
-              <tr>
-                <td><strong>${esc(b.name)}</strong><br><span class="muted">${esc(b.description || "")}</span></td>
-                <td>${esc(b.budget_type)}</td>
-                <td>${esc(b.financial_year || "")}</td>
-                <td>${esc(String(b.period_start || "").slice(0, 10))} → ${esc(String(b.period_end || "").slice(0, 10))}</td>
-                <td>${esc(b.currency || "")}</td>
-                <td><span class="pill">${esc(b.status)}</span></td>
-                <td class="right">
-                  <button class="btn small" data-bf-open-budget="${b.id}">Open</button>
-                  <button class="btn small" data-bf-budget-variance="${b.id}">Variance</button>
-                  <button class="btn small" data-bf-budget-forecast="${b.id}">Forecast</button>
-                </td>
-              </tr>
-            `).join("")}
+            ${BF.budgets.map((b) => {
+              const canForecast = ["approved", "locked"].includes(
+                String(b.status || "").toLowerCase()
+              );
+
+              return `
+                <tr>
+                  <td>
+                    <strong>${esc(b.name)}</strong><br>
+                    <span class="muted">${esc(b.description || "")}</span>
+                  </td>
+                  <td>${esc(b.budget_type)}</td>
+                  <td>${esc(b.financial_year || "")}</td>
+                  <td>
+                    ${esc(String(b.period_start || "").slice(0, 10))}
+                    →
+                    ${esc(String(b.period_end || "").slice(0, 10))}
+                  </td>
+                  <td>${esc(b.currency || "")}</td>
+                  <td><span class="pill">${esc(b.status)}</span></td>
+                  <td class="right">
+                    <button class="btn small" data-bf-open-budget="${b.id}">
+                      Open
+                    </button>
+
+                    <button class="btn small" data-bf-budget-variance="${b.id}">
+                      Variance
+                    </button>
+
+                    <button
+                      class="btn small"
+                      data-bf-budget-forecast="${b.id}"
+                      ${canForecast ? "" : "disabled"}
+                      title="${canForecast ? "Create forecast" : "Approve the budget first"}"
+                    >
+                      Forecast
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
         </table>
       </div>
@@ -49877,6 +49890,15 @@ async function saveEditModal() {
       BF.selectedBudget ||
       null;
 
+    const budgetStatus = String(
+      BF.selectedBudget?.status || ""
+    ).toLowerCase();
+
+    if (!["approved", "locked"].includes(budgetStatus)) {
+      alert("The budget must be approved before creating a forecast.");
+      return;
+    }
+
     BF.forecastWorkspaceMode =
       "create";
 
@@ -50218,37 +50240,21 @@ async function saveEditModal() {
   function bindDraftForecastGrid(grouped) {
     document
       .querySelectorAll(
-        "#bfForecastPane .bf-draft-forecast-cell"
+        "#bfForecastPane .bf-draft-forecast-cell:not([readonly])"
       )
       .forEach((input) => {
-        input.addEventListener(
-          "input",
-          () => {
-            const accountCode =
-              input.dataset.bfAccountCode;
+        input.addEventListener("input", () => {
+          const accountCode = input.dataset.bfAccountCode;
+          const month = input.dataset.bfMonth;
 
-            const month =
-              input.dataset.bfMonth;
+          bfSetDraftValue(accountCode, month, input.value);
+          input.classList.add("is-dirty");
 
-            bfSetDraftValue(
-              accountCode,
-              month,
-              input.value
-            );
-
-            input.classList.add(
-              "is-dirty"
-            );
-
-            recalculateDraftForecastGrid(
-              grouped
-            );
-
-            scheduleForecastDraftSave();
-          }
-        );
+          recalculateDraftForecastGrid(grouped);
+          scheduleForecastDraftSave();
+        });
       });
-    }
+  }
 
 
   function refreshDraftForecastPeriod() {
@@ -51596,179 +51602,89 @@ async function saveEditModal() {
   }
 
   function buildForecastWorkspacePayload() {
-    const scenarioMode =
-      $("bfWorkspaceScenario")?.value ||
-      "base";
+    captureForecastWorkspaceForm();
 
-    const scenarioName =
-      scenarioMode === "custom"
-        ? $("bfWorkspaceScenarioName")
-            ?.value?.trim()
-        : {
-            base: "Base Case",
-            best: "Best Case",
-            worst: "Worst Case",
-          }[scenarioMode];
+    const scenario = BF.workspaceForm.scenario || "base";
+    const scenarioName = scenario === "custom"
+      ? BF.workspaceForm.customScenario.trim()
+      : { base: "Base Case", best: "Best Case", worst: "Worst Case" }[scenario];
 
     const version = {
-      budget_id:
-        BF.selectedBudgetId || null,
-
-      name:
-        $("bfWorkspaceVersionName")
-          ?.value?.trim(),
-
-      version_type:
-        $("bfWorkspaceVersionType")
-          ?.value ||
-        "forecast",
-
-      scenario_name:
-        scenarioName || null,
-
-      actuals_to_date:
-        $("bfWorkspaceActualsTo")
-          ?.value ||
-        null,
-
-      period_start:
-        $("bfWorkspacePeriodStart")
-          ?.value,
-
-      period_end:
-        $("bfWorkspacePeriodEnd")
-          ?.value,
-
-      currency:
-        $("bfWorkspaceCurrency")
-          ?.value?.trim() ||
-        companyCurrency(),
-
+      budget_id: BF.selectedBudgetId || null,
+      name: BF.workspaceForm.name.trim(),
+      version_type: BF.workspaceForm.versionType || "forecast",
+      scenario_name: scenarioName || null,
+      actuals_to_date: BF.workspaceForm.actualsToDate || null,
+      period_start: BF.workspaceForm.periodStart,
+      period_end: BF.workspaceForm.periodEnd,
+      currency: BF.workspaceForm.currency || companyCurrency(),
       meta_json: {
-        presentation:
-          "management_profit_or_loss",
-
-        planning_mode:
-          BF.planningMode,
+        presentation: "management_profit_or_loss",
+        planning_mode: BF.planningMode,
       },
     };
 
-    let lines = [];
-    let drivers = [];
+    const lines = [];
+    const drivers = [];
+    const cutoffMonth = bfMonthKey(version.actuals_to_date);
 
     if (BF.planningMode === "manual") {
-      lines = Array.from(
-        document.querySelectorAll(
-          "#bfForecastPane .bf-draft-forecast-cell"
-        )
-      ).map((input) => ({
-        account_code:
-          input.dataset.bfAccountCode,
+      document.querySelectorAll("#bfForecastPane .bf-draft-forecast-cell").forEach((input) => {
+        const month = bfMonthKey(input.dataset.bfMonth);
+        if (cutoffMonth && month <= cutoffMonth) return;
 
-        period_month:
-          input.dataset.bfMonth,
-
-        amount:
-          Number(input.value || 0),
-
-        source_type:
-          "manual",
-
-        source_ref:
-          null,
-      }));
+        lines.push({
+          account_code: input.dataset.bfAccountCode,
+          period_month: month,
+          amount: Number(input.value || 0),
+          source_type: "manual",
+          source_ref: null,
+        });
+      });
     }
 
     if (BF.planningMode === "driver_based") {
-      BF.driverDraftRows.forEach(
-        (driver) => {
-          Object.entries(
-            driver.values || {}
-          ).forEach(([month, value]) => {
-            drivers.push({
-              account_code:
-                driver.account_code,
+      BF.driverDraftRows.forEach((driver) => {
+        Object.entries(driver.values || {}).forEach(([monthValue, value]) => {
+          const month = bfMonthKey(monthValue);
+          if (cutoffMonth && month <= cutoffMonth) return;
 
-              driver_name:
-                driver.driver_name,
+          const definition =
+            BF_DRIVER_DEFINITIONS[driver.driver_type]?.label ||
+            driver.driver_type;
 
-              driver_group:
-                driver.driver_group,
+          const amount = Number(value.amount || 0);
 
-              driver_type:
-                driver.driver_type,
-
-              period_month:
-                month,
-
-              quantity:
-                Number(value.basis || 0),
-
-              rate:
-                Number(value.rate || 0),
-
-              amount:
-                Number(value.amount || 0),
-
-              formula_text:
-                BF_DRIVER_DEFINITIONS[
-                  driver.driver_type
-                ]?.label ||
-                driver.driver_type,
-
-              meta_json: {
-                driver_group:
-                  driver.driver_group,
-
-                industry:
-                  bfCurrentIndustry(),
-
-                factor:
-                  Number(value.factor || 0),
-
-                definition:
-                  BF_DRIVER_DEFINITIONS[
-                    driver.driver_type
-                  ]?.label ||
-                  driver.driver_type,
-              },
-            });
-
-            lines.push({
-              account_code:
-                driver.account_code,
-
-              period_month:
-                month,
-
-              amount:
-                Number(value.amount || 0),
-
-              source_type:
-                "driver_based",
-
-              source_ref:
-                driver.driver_name,
-            });
+          drivers.push({
+            account_code: driver.account_code,
+            driver_name: driver.driver_name,
+            driver_group: driver.driver_group,
+            driver_type: driver.driver_type,
+            period_month: month,
+            quantity: Number(value.basis || 0),
+            rate: Number(value.rate || 0),
+            amount,
+            formula_text: definition,
+            meta_json: {
+              driver_group: driver.driver_group,
+              industry: bfCurrentIndustry(),
+              factor: Number(value.factor || 0),
+              definition,
+            },
           });
-        }
-      );
+
+          lines.push({
+            account_code: driver.account_code,
+            period_month: month,
+            amount,
+            source_type: "driver_based",
+            source_ref: driver.driver_name,
+          });
+        });
+      });
     }
 
-    return {
-      version,
-      lines: lines.filter(
-        (line) =>
-          line.account_code &&
-          line.period_month
-      ),
-      drivers: drivers.filter(
-        (driver) =>
-          driver.account_code &&
-          driver.period_month &&
-          driver.driver_name
-      ),
-    };
+    return { version, lines, drivers };
   }
 
 function bindEventsOnce() {
