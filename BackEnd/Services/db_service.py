@@ -97310,9 +97310,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 [],
             ),
             "deferred_tax_oci": (
-                ["deferred_tax_oci"],
-                ["deferred tax oci", "tax on other comprehensive income"],
-                [],
+                [
+                    "deferred_tax_oci",
+                    "deferred_tax_oci_reserve",
+                ],
+                [
+                    "deferred tax oci",
+                    "deferred tax on revaluation",
+                    "deferred tax reserve",
+                ],
+                ["equity"],
             ),
             "deferred_tax_equity": (
                 ["deferred_tax_equity", "equity_retained_earnings"],
@@ -97355,6 +97362,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         accounts["deferred_tax_income"] = (
             accounts["deferred_tax_income"]
             or accounts["deferred_tax_expense"]
+        )
+
+        accounts["deferred_tax_oci"] = (
+            accounts["deferred_tax_oci"]
+            or accounts["deferred_tax_equity"]
         )
 
         return accounts

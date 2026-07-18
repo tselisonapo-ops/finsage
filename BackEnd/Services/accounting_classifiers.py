@@ -1462,6 +1462,24 @@ def _coa_role_from_text(
         ):
             return "ifrs9_financial_asset_fvpl"
 
+    # ----------------------------
+    # IAS 12 / Deferred tax in OCI
+    # ----------------------------
+    if "equity" in sec:
+        if has_any(
+            "deferred tax on revaluation",
+            "deferred tax revaluation reserve",
+            "deferred tax - revaluation",
+        ):
+            return "deferred_tax_revaluation_reserve"
+
+        if has_any(
+            "deferred tax on fvoci",
+            "deferred tax fvoci reserve",
+            "deferred tax - fvoci",
+        ):
+            return "deferred_tax_fvoci_reserve"
+        
     # IFRS 9 equity / OCI reserve
     if "equity" in sec:
         if has_any(
@@ -1745,13 +1763,19 @@ def _coa_role_from_text(
         ):
             return "equity_regulatory_reserve"
 
-        if has_any("revaluation reserve"):
+        if (
+            has_any("revaluation reserve")
+            and not has_any("deferred tax")
+        ):
             return "equity_revaluation_reserve"
 
         if has_any("foreign currency translation reserve"):
             return "equity_fx_translation_reserve"
 
-        if has_any("oci reserve", "other comprehensive income reserve"):
+        if (
+            has_any("oci reserve", "other comprehensive income reserve")
+            and not has_any("deferred tax")
+        ):
             return "equity_oci_reserve"
 
         if has_any(
