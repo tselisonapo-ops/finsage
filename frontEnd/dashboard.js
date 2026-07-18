@@ -37359,12 +37359,16 @@ async function saveEditModal() {
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div><span class="text-slate-400">Upward revaluations:</span> ${fmtMoney2(revaluations.increases)}</div>
             <div><span class="text-slate-400">Downward revaluations:</span> ${fmtMoney2(revaluations.decreases)}</div>
-            <div><span class="text-slate-400">Net movement:</span> ${fmtMoney2(revaluations.net_change)}</div>
+            <div><span class="text-slate-400">Current reserve:</span> ${fmtMoney2(revaluations.net_change)}</div>
+
             <div><span class="text-slate-400">Last revaluation:</span> ${fmtDate(latestReval.revaluation_date)}</div>
             <div><span class="text-slate-400">Last fair value:</span> ${fmtMoney2(latestReval.fair_value)}</div>
-            <div><span class="text-slate-400">Previous carrying amount:</span> ${fmtMoney2(latestReval.carrying_amount_before)}</div>
-            <div><span class="text-slate-400">Last movement:</span> ${fmtMoney2(latestReval.revaluation_change)}</div>
-            <div><span class="text-slate-400">Valuation basis:</span> ${esc(latestReval.valuation_basis || "—")}</div>
+            <div><span class="text-slate-400">Carrying amount before:</span> ${fmtMoney2(latestReval.carrying_amount_before)}</div>
+
+            <div><span class="text-slate-400">Revaluation movement:</span> ${fmtMoney2(latestReval.revaluation_change)}</div>
+            <div><span class="text-slate-400">Method:</span> ${esc(latestReval.method || "—")}</div>
+            <div><span class="text-slate-400">Reason:</span> ${esc(latestReval.reason || "—")}</div>
+
             <div><span class="text-slate-400">Journal:</span> ${latestReval.posted_journal_id ? `#${latestReval.posted_journal_id}` : "—"}</div>
           </div>
         </div>`;

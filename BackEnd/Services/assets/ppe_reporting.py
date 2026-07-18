@@ -4776,7 +4776,10 @@ def subsequent_measurement_context(company_id, asset_id):
 
                 cur.execute(_q(schema, """
                     SELECT revaluation_date, fair_value, carrying_amount_before,
-                        revaluation_change, posted_journal_id, valuation_basis
+                        carrying_amount_after, revaluation_change,
+                        oci_revaluation_surplus, pnl_revaluation_gain,
+                        pnl_revaluation_loss, method, reason,
+                        posted_journal_id
                     FROM {schema}.asset_revaluations
                     WHERE company_id=%s AND asset_id=%s AND status='posted'
                     ORDER BY revaluation_date DESC, id DESC
