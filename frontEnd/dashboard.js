@@ -45591,6 +45591,21 @@ async function saveEditModal() {
     ).trim();
   }
 
+  function bfFormatMonth(value) {
+    if (!value) return "";
+
+    const d = new Date(value);
+
+    if (Number.isNaN(d.getTime())) {
+      return "";
+    }
+
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      year: "numeric",
+    });
+  }
+
   function bfRevenueDriverTypes() {
     const industry = bfCurrentIndustry();
 
@@ -49821,7 +49836,7 @@ async function saveEditModal() {
 
           return `
             <tr>
-              <td>${esc(String(row.period_month || "").slice(0, 10))}</td>
+              <td>${esc(bfFormatMonth(row.period_month))}</td>
               <td>${esc(row.account_name || "Unnamed account")}</td>
               <td class="right">${money(planned)}</td>
               <td class="right">${money(actual)}</td>
@@ -49864,10 +49879,10 @@ async function saveEditModal() {
             <tr>
               <th>Month</th>
               <th>Account</th>
-              <th class="right">Budget</th>
-              <th class="right">Actual</th>
-              <th class="right">Variance</th>
-              <th class="right">%</th>
+              <th>Budget</th>
+              <th>Actual</th>
+              <th>Variance</th>
+              <th>%</th>
             </tr>
           </thead>
 
