@@ -676,26 +676,39 @@ def _asset_carrying_amount(asset_row: dict) -> float:
             return float(v or 0)
 
     cost = D(
-        asset_row.get("cost")
-        or asset_row.get("opening_cost")
-        or asset_row.get("gross_carrying_amount")
-        or 0
+        asset_row.get("cost_total")
+        if asset_row.get("cost_total") is not None
+        else asset_row.get("cost")
+        if asset_row.get("cost") is not None
+        else asset_row.get("opening_cost")
+        if asset_row.get("opening_cost") is not None
+        else asset_row.get("gross_carrying_amount")
+        if asset_row.get("gross_carrying_amount") is not None
+        else 0
     )
 
     accum_dep = D(
         asset_row.get("accumulated_depreciation")
-        or asset_row.get("acc_dep")
-        or asset_row.get("opening_accum_dep")
-        or 0
+        if asset_row.get("accumulated_depreciation") is not None
+        else asset_row.get("acc_dep")
+        if asset_row.get("acc_dep") is not None
+        else asset_row.get("opening_accum_dep")
+        if asset_row.get("opening_accum_dep") is not None
+        else 0
     )
 
     impairment = D(
-        asset_row.get("accumulated_impairment")
-        or asset_row.get("opening_impairment")
-        or 0
+        asset_row.get("imp_net")
+        if asset_row.get("imp_net") is not None
+        else asset_row.get("accumulated_impairment")
+        if asset_row.get("accumulated_impairment") is not None
+        else asset_row.get("opening_impairment")
+        if asset_row.get("opening_impairment") is not None
+        else 0
     )
 
-    return float(cost - accum_dep - impairment)
+    revaluation = D(asset_row.get("reval_net") or 0)
+    return float(cost + revaluation - accum_dep - impairment)
 
 def _build_group_sm_preview(
     *,

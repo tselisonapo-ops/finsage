@@ -4871,7 +4871,12 @@ def subsequent_measurements_preview(company_id):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
 
                 policy_doc = company_asset_rules(company_id) or {}
-                asset = service.fetch_asset_row(cur, company_id, asset_id)
+                asset = service.get_asset_with_balances(
+                    cur,
+                    company_id,
+                    asset_id,
+                    as_at=d,
+                )
 
                 if not asset:
                     return _json_error("Asset not found", 404)
