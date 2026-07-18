@@ -41544,10 +41544,19 @@ async function saveEditModal() {
   const modal = () =>
     document.getElementById("dtModal");
 
-  function openModal(title, body = "") {
+  function openModal(title, body, modalClass = "") {
+    const modal = document.getElementById("dtModal");
+
     document.getElementById("dtModalTitle").textContent = title;
     document.getElementById("dtModalBody").innerHTML = body;
-    document.getElementById("dtModal").classList.remove("hidden");
+
+    modal.classList.remove("dt-journal-preview-modal");
+
+    if (modalClass) {
+      modal.classList.add(modalClass);
+    }
+
+    modal.classList.remove("hidden");
   }
 
   function closeModal() {
@@ -42891,12 +42900,19 @@ async function saveEditModal() {
   async function showJournalPreview() {
     if (!selectedRun?.id) throw new Error("No deferred-tax run is selected.");
 
-    openModal("Deferred Tax Journal Preview", `<div class="dt-loading">Preparing journal preview...</div>`);
-
+    openModal(
+      "Deferred Tax Journal Preview",
+      `<div class="dt-loading">Preparing journal preview...</div>`,
+      "dt-journal-preview-modal"
+    );
     try {
       const runId = selectedRun.id;
       const date = isoDate(selectedRun.reporting_date);
-      new Error("The deferred-tax reporting date is invalid.");
+      if (!date) {
+        throw new Error(
+          "The deferred-tax reporting date is invalid."
+        );
+      }      
       const reference = `DT-${runId}`;
       const description = `Deferred tax adjustment as at ${date}`;
 
@@ -42940,7 +42956,6 @@ async function saveEditModal() {
       const rows = lines.map((line, index) => `
         <tr>
           <td>${index + 1}</td>
-          <td><strong>${line.account_code || line.account || "-"}</strong></td>
           <td>${line.account_name || line.name || "-"}</td>
           <td>${line.description || line.memo || "-"}</td>
           <td class="dt-number">${money(line.debit)}</td>
@@ -42971,7 +42986,6 @@ async function saveEditModal() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Account Code</th>
                   <th>Account</th>
                   <th>Description</th>
                   <th class="dt-number">Debit</th>
@@ -42981,7 +42995,7 @@ async function saveEditModal() {
               <tbody>${rows}</tbody>
               <tfoot>
                 <tr>
-                  <th colspan="4">Journal Totals</th>
+                  <th colspan="3">Journal Totals</th>
                   <th class="dt-number">${money(totalDebit)}</th>
                   <th class="dt-number">${money(totalCredit)}</th>
                 </tr>
@@ -45028,6 +45042,13 @@ async function saveEditModal() {
     budgets: [],
     versions: [],
     budgetDashboardId: null,
+    controllerPeriodStart: "",
+    controllerPeriodEnd: "",
+    controllerBudgetId: null,
+    controllerVersionId: null,
+    controllerRows: [],
+    controllerForecastRows: [],
+    controllerLoading: false,
     budgetDashboard: {
       loading: false,
       budgetTotal: 0,
@@ -46681,7 +46702,8 @@ async function saveEditModal() {
         </div>
 
         <div class="tabs bf-tabs">
-          <button class="tab active" data-bf-tab="budgets">Budgets</button>
+          <button class="tab active" data-bf-tab="controller">Controller</button>
+          <button class="tab" data-bf-tab="budgets">Budgets</button>
           <button class="tab" data-bf-tab="forecast">Forecasts</button>
           <button class="tab" data-bf-tab="variance">Variance</button>
           <button class="tab" data-bf-tab="capex">Capital Expenditure</button>
@@ -46692,7 +46714,8 @@ async function saveEditModal() {
         <div id="bfStatus" class="muted"></div>
       </div>
 
-      <div id="bfBudgetsPane"></div>
+      <div id="bfControllerPane"></div>
+      <div id="bfBudgetsPane" class="hidden"></div>
       <div id="bfForecastPane" class="hidden"></div>
       <div id="bfVariancePane" class="hidden"></div>
       <div id="bfDriversPane" class="hidden"></div>
@@ -46758,16 +46781,86 @@ async function saveEditModal() {
   function showTab(tab) {
     BF.activeTab = tab;
 
-    document.querySelectorAll("[data-bf-tab]").forEach((b) => {
-      b.classList.toggle("active", b.dataset.bfTab === tab);
+    document.querySelectorAll("[data-bf-tab]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.bfTab === tab);
     });
 
+    $("bfControllerPane")?.classList.toggle("hidden", tab !== "controller");
     $("bfBudgetsPane")?.classList.toggle("hidden", tab !== "budgets");
     $("bfForecastPane")?.classList.toggle("hidden", tab !== "forecast");
     $("bfVariancePane")?.classList.toggle("hidden", tab !== "variance");
     $("bfDriversPane")?.classList.toggle("hidden", tab !== "drivers");
     $("bfImportsPane")?.classList.toggle("hidden", tab !== "imports");
     $("bfCapexPane")?.classList.toggle("hidden", tab !== "capex");
+  }
+
+  function bfCompanyReportingPeriod() {
+    const company = window.CURRENT_COMPANY || {};
+    const today = new Date();
+
+    const explicitStart = bfToInputDate(
+      company.reporting_period_start ||
+      company.period_start ||
+      company.financial_period_start ||
+      ""
+    );
+
+    const explicitEnd = bfToInputDate(
+      company.reporting_period_end ||
+      company.period_end ||
+      company.financial_period_end ||
+      ""
+    );
+
+    if (explicitStart && explicitEnd) {
+      return {
+        start: explicitStart,
+        end: explicitEnd,
+      };
+    }
+
+    const startMonth = Number(
+      company.financial_year_start_month ||
+      company.fy_start_month ||
+      company.reporting_start_month ||
+      1
+    );
+
+    const startDay = Number(
+      company.financial_year_start_day ||
+      company.fy_start_day ||
+      company.reporting_start_day ||
+      1
+    );
+
+    let startYear = today.getFullYear();
+
+    const currentMonth = today.getMonth() + 1;
+    const currentDay = today.getDate();
+
+    if (
+      currentMonth < startMonth ||
+      (currentMonth === startMonth && currentDay < startDay)
+    ) {
+      startYear -= 1;
+    }
+
+    const start = new Date(startYear, startMonth - 1, startDay);
+    const end = new Date(startYear + 1, startMonth - 1, startDay);
+    end.setDate(end.getDate() - 1);
+
+    return {
+      start: bfLocalDateKey(start),
+      end: bfLocalDateKey(end),
+    };
+  }
+
+  function bfLocalDateKey(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
   }
 
   function modal(title, bodyHtml, footerHtml = "") {
@@ -49376,6 +49469,442 @@ async function saveEditModal() {
     renderBudgets();
   }
 
+  function bfControllerBudget() {
+    const selected = BF.budgets.find(
+      (budget) =>
+        Number(budget.id) === Number(BF.controllerBudgetId)
+    );
+
+    if (selected) return selected;
+
+    const approved = BF.budgets.find((budget) => {
+      const status = String(budget.status || "").toLowerCase();
+
+      return (
+        ["approved", "locked"].includes(status) &&
+        bfPeriodsOverlap(
+          budget.period_start,
+          budget.period_end,
+          BF.controllerPeriodStart,
+          BF.controllerPeriodEnd
+        )
+      );
+    });
+
+    const overlapping = BF.budgets.find((budget) =>
+      bfPeriodsOverlap(
+        budget.period_start,
+        budget.period_end,
+        BF.controllerPeriodStart,
+        BF.controllerPeriodEnd
+      )
+    );
+
+    return approved || overlapping || BF.budgets[0] || null;
+  }
+
+  function bfPeriodsOverlap(startA, endA, startB, endB) {
+    const aStart = bfToInputDate(startA);
+    const aEnd = bfToInputDate(endA);
+    const bStart = bfToInputDate(startB);
+    const bEnd = bfToInputDate(endB);
+
+    return Boolean(
+      aStart &&
+      aEnd &&
+      bStart &&
+      bEnd &&
+      aStart <= bEnd &&
+      aEnd >= bStart
+    );
+  }
+
+  async function loadController() {
+    const pane = $("bfControllerPane");
+    if (!pane) return;
+
+    const budget = bfControllerBudget();
+
+    if (!budget) {
+      BF.controllerRows = [];
+      BF.controllerForecastRows = [];
+      renderController();
+      return;
+    }
+
+    BF.controllerBudgetId = Number(budget.id);
+    BF.controllerLoading = true;
+
+    renderController();
+    setStatus("Loading planning controller...");
+
+    try {
+      const versionsResponse = await apiFetch(
+        ENDPOINTS.forecast.versions(BF.cid, {
+          budget_id: budget.id,
+        })
+      );
+
+      const versions = unwrap(versionsResponse) || [];
+
+      const latestVersion = [...versions]
+        .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
+
+      BF.controllerVersionId = latestVersion?.id || null;
+
+      const budgetResponse = await apiFetch(
+        ENDPOINTS.forecast.budgetVariance(
+          BF.cid,
+          budget.id,
+          {
+            period_start: BF.controllerPeriodStart,
+            period_end: BF.controllerPeriodEnd,
+          }
+        )
+      );
+
+      BF.controllerRows =
+        (unwrap(budgetResponse)?.rows || []).filter(bfControllerPnlRow);
+
+      if (latestVersion) {
+        const forecastResponse = await apiFetch(
+          ENDPOINTS.forecast.budgetVariance(
+            BF.cid,
+            budget.id,
+            {
+              version_id: latestVersion.id,
+              period_start: BF.controllerPeriodStart,
+              period_end: BF.controllerPeriodEnd,
+            }
+          )
+        );
+
+        BF.controllerForecastRows =
+          (unwrap(forecastResponse)?.rows || []).filter(bfControllerPnlRow);
+      } else {
+        BF.controllerForecastRows = [];
+      }
+    } catch (error) {
+      console.error("[Planning Controller] load failed", error);
+
+      BF.controllerRows = [];
+      BF.controllerForecastRows = [];
+
+      setStatus(
+        error?.message || "Unable to load planning controller.",
+        "error"
+      );
+    } finally {
+      BF.controllerLoading = false;
+      renderController();
+    }
+
+    setStatus("");
+  }
+
+  function bfControllerPnlRow(row) {
+    const code = String(row.account_code || "").toUpperCase();
+    const section = bfNormalizeToken(row.section);
+
+    if (code.startsWith("BS_") && !code.startsWith("BS_PL_")) {
+      return false;
+    }
+
+    return (
+      code.startsWith("PL_") ||
+      code.startsWith("BS_PL_") ||
+      ["income", "expense", "profit or loss", "adjustment"].includes(section)
+    );
+  }
+
+  function bfControllerTotals(rows, amountField) {
+    return (rows || []).reduce(
+      (totals, row) => {
+        const amount = Number(row[amountField] || 0);
+        const group = bfPnlGroup(row);
+
+        if (group === "revenue" || group === "other_income") {
+          totals.income += amount;
+        } else if (
+          group === "cost_of_revenue" ||
+          group === "operating_expenses" ||
+          group === "finance_costs" ||
+          group === "income_tax"
+        ) {
+          totals.expenses += amount;
+        }
+
+        totals.netProfit = totals.income - totals.expenses;
+
+        return totals;
+      },
+      {
+        income: 0,
+        expenses: 0,
+        netProfit: 0,
+      }
+    );
+  }
+
+  function renderController() {
+    const el = $("bfControllerPane");
+    if (!el) return;
+
+    const budget = bfControllerBudget();
+    const currency = budget?.currency || companyCurrency();
+
+    const budgetTotals = bfControllerTotals(
+      BF.controllerRows,
+      "planned_amount"
+    );
+
+    const actualTotals = bfControllerTotals(
+      BF.controllerRows,
+      "actual_amount"
+    );
+
+    const forecastTotals = bfControllerTotals(
+      BF.controllerForecastRows,
+      "planned_amount"
+    );
+
+    const hasForecast = BF.controllerForecastRows.length > 0;
+
+    const forecastVariance = hasForecast
+      ? forecastTotals.netProfit - budgetTotals.netProfit
+      : null;
+
+    const favourable = forecastVariance != null && forecastVariance >= 0;
+
+    el.innerHTML = `
+      <div class="bf-controller-head">
+        <div>
+          <span class="bf-eyebrow">Planning & Performance</span>
+          <h2>Controller</h2>
+          <p class="muted">
+            Budget, actual and forecast performance for the selected reporting period.
+          </p>
+        </div>
+
+        <div class="bf-controller-controls">
+          <label>
+            From
+            <input
+              id="bfControllerPeriodStart"
+              type="date"
+              value="${esc(BF.controllerPeriodStart)}"
+            >
+          </label>
+
+          <label>
+            To
+            <input
+              id="bfControllerPeriodEnd"
+              type="date"
+              value="${esc(BF.controllerPeriodEnd)}"
+            >
+          </label>
+
+          <label>
+            Budget
+            <select id="bfControllerBudgetSelect">
+              ${BF.budgets.map((row) => `
+                <option
+                  value="${row.id}"
+                  ${Number(row.id) === Number(BF.controllerBudgetId)
+                    ? "selected"
+                    : ""}
+                >
+                  ${esc(row.name || "Untitled Budget")}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            class="btn primary"
+            id="bfApplyControllerPeriod"
+          >
+            Apply
+          </button>
+
+          <button
+            type="button"
+            class="btn"
+            id="bfResetControllerPeriod"
+          >
+            Reporting Period
+          </button>
+        </div>
+      </div>
+
+      <div class="bf-controller-period">
+        <span>Reporting period</span>
+        <strong>
+          ${esc(bfDisplayDate(BF.controllerPeriodStart))}
+          →
+          ${esc(bfDisplayDate(BF.controllerPeriodEnd))}
+        </strong>
+      </div>
+
+      <div class="bf-financial-summary">
+        ${bfControllerCard(
+          "Budget Revenue",
+          budgetTotals.income,
+          currency,
+          "Planned income"
+        )}
+
+        ${bfControllerCard(
+          "Budget Expenses",
+          budgetTotals.expenses,
+          currency,
+          "Planned costs and expenses"
+        )}
+
+        ${bfControllerCard(
+          "Budget Net Profit",
+          budgetTotals.netProfit,
+          currency,
+          "Budget revenue less expenses"
+        )}
+
+        ${bfControllerCard(
+          "Actual Net Profit",
+          actualTotals.netProfit,
+          currency,
+          "Posted ledger performance"
+        )}
+
+        ${
+          hasForecast
+            ? bfControllerCard(
+                "Forecast Net Profit",
+                forecastTotals.netProfit,
+                currency,
+                "Latest forecast version"
+              )
+            : bfControllerUnavailableCard(
+                "Forecast Net Profit",
+                "No forecast available"
+              )
+        }
+
+        ${
+          forecastVariance != null
+            ? bfControllerCard(
+                "Forecast vs Budget",
+                forecastVariance,
+                currency,
+                favourable
+                  ? "Favourable net-profit variance"
+                  : "Unfavourable net-profit variance",
+                favourable ? "is-favourable" : "is-unfavourable"
+              )
+            : bfControllerUnavailableCard(
+                "Forecast vs Budget",
+                "Create a forecast to compare"
+              )
+        }
+      </div>
+
+      <div class="card bf-controller-status">
+        <div>
+          <span>Selected budget</span>
+          <strong>${esc(budget?.name || "No budget")}</strong>
+        </div>
+
+        <div>
+          <span>Budget status</span>
+          <strong>${esc(bfTitleCase(budget?.status || "draft"))}</strong>
+        </div>
+
+        <div>
+          <span>Forecast version</span>
+          <strong>
+            ${BF.controllerVersionId
+              ? `Version ${esc(BF.controllerVersionId)}`
+              : "Not available"}
+          </strong>
+        </div>
+
+        <div>
+          <span>Controller status</span>
+          <strong>
+            ${BF.controllerLoading ? "Loading…" : "Current"}
+          </strong>
+        </div>
+      </div>
+    `;
+
+    bindControllerFilters();
+  }
+
+  function bfControllerCard(
+    label,
+    value,
+    currency,
+    note,
+    className = ""
+  ) {
+    return `
+      <div class="bf-financial-card ${className}">
+        <span>${esc(label)}</span>
+        <strong>${esc(currency)} ${money(value)}</strong>
+        <small>${esc(note)}</small>
+      </div>
+    `;
+  }
+
+  function bfControllerUnavailableCard(label, note) {
+    return `
+      <div class="bf-financial-card">
+        <span>${esc(label)}</span>
+        <strong>Not available</strong>
+        <small>${esc(note)}</small>
+      </div>
+    `;
+  }
+
+  function bindControllerFilters() {
+    $("bfApplyControllerPeriod")?.addEventListener("click", async () => {
+      const start = $("bfControllerPeriodStart")?.value || "";
+      const end = $("bfControllerPeriodEnd")?.value || "";
+
+      if (!start || !end) {
+        alert("Select both reporting-period dates.");
+        return;
+      }
+
+      if (end < start) {
+        alert("The reporting period end cannot be before its start.");
+        return;
+      }
+
+      BF.controllerPeriodStart = start;
+      BF.controllerPeriodEnd = end;
+      BF.controllerBudgetId =
+        Number($("bfControllerBudgetSelect")?.value || 0) || null;
+
+      await loadController();
+    });
+
+    $("bfResetControllerPeriod")?.addEventListener("click", async () => {
+      const period = bfCompanyReportingPeriod();
+
+      BF.controllerPeriodStart = period.start;
+      BF.controllerPeriodEnd = period.end;
+
+      await loadController();
+    });
+
+    $("bfControllerBudgetSelect")?.addEventListener("change", async (event) => {
+      BF.controllerBudgetId = Number(event.target.value) || null;
+      await loadController();
+    });
+  }
+
   async function loadBudgets() {
     BF.cid = cid();
     setStatus("Loading budgets...");
@@ -49385,6 +49914,8 @@ async function saveEditModal() {
 
     if (!BF.budgets.length) {
       BF.budgetDashboardId = null;
+      await loadBudgetList();
+      showTab("budgets");
       renderBudgets();
       setStatus("");
       return;
@@ -50889,6 +51420,15 @@ async function saveEditModal() {
     renderCreateForecastWorkspace();
   }
 
+  async function loadBudgetList() {
+    BF.cid = cid();
+
+    const response = await apiFetch(
+      ENDPOINTS.forecast.budgets(BF.cid)
+    );
+
+    BF.budgets = unwrap(response) || [];
+  }
 
   function recalculateDraftForecastGrid(grouped) {
     const months = BF.draftForecastMonths || [];
@@ -52202,6 +52742,7 @@ async function saveEditModal() {
   async function onTab(tab) {
     showTab(tab);
 
+    if (tab === "controller") return loadController();
     if (tab === "budgets") await loadBudgets();
     if (tab === "forecast") await loadVersions();
 
@@ -52559,6 +53100,7 @@ async function saveEditModal() {
     BF.cid = cid();
 
     const root = $("bfRoot");
+
     if (!root) {
       console.warn("[Budgeting] #bfRoot not found");
       return;
@@ -52567,8 +53109,15 @@ async function saveEditModal() {
     root.innerHTML = rootHtml();
     bindEventsOnce();
 
-    showTab("budgets");
-    await loadBudgets();
+    const period = bfCompanyReportingPeriod();
+
+    BF.controllerPeriodStart = period.start;
+    BF.controllerPeriodEnd = period.end;
+
+    await loadBudgetList();
+
+    showTab("controller");
+    await loadController();
   };
 })();
 
