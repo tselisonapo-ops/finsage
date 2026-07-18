@@ -49719,7 +49719,23 @@ async function saveEditModal() {
       )
     );
 
-    BF.varianceRows = unwrap(res)?.rows || [];
+    BF.varianceRows = (unwrap(res)?.rows || []).filter((row) => {
+      const planned = Number(
+        row.planned_amount ??
+        row.budget_amount ??
+        0
+      );
+
+      const actual = Number(
+        row.actual_amount ?? 0
+      );
+
+      const variance = Number(
+        row.variance_amount ?? 0
+      );
+
+      return planned !== 0 || actual !== 0 || variance !== 0;
+    });
 
     renderVariance();
 
@@ -49787,13 +49803,60 @@ async function saveEditModal() {
     const el = $("bfVariancePane");
     if (!el) return;
 
-    const rows = BF.varianceRows || [];
+    const rows = (BF.varianceRows || []).filter((row) => {
+      const planned = Number(row.planned_amount ?? row.budget_amount ?? 0);
+      const actual = Number(row.actual_amount ?? 0);
+      const variance = Number(row.variance_amount ?? 0);
+
+      return planned !== 0 || actual !== 0 || variance !== 0;
+    });
+
+    const body = rows.length
+      ? rows.map((row) => {
+          const planned = Number(row.planned_amount ?? row.budget_amount ?? 0);
+          const actual = Number(row.actual_amount ?? 0);
+          const variance = Number(row.variance_amount ?? 0);
+          const variancePercent =
+            row.variance_percent ?? row.variance_pct ?? null;
+
+          return `
+            <tr>
+              <td>${esc(String(row.period_month || "").slice(0, 10))}</td>
+              <td>${esc(row.account_name || "Unnamed account")}</td>
+              <td class="right">${money(planned)}</td>
+              <td class="right">${money(actual)}</td>
+              <td class="right">${money(variance)}</td>
+              <td class="right">
+                ${
+                  variancePercent == null
+                    ? "—"
+                    : `${esc(Number(variancePercent).toFixed(2))}%`
+                }
+              </td>
+            </tr>
+          `;
+        }).join("")
+      : `
+        <tr>
+          <td colspan="6" class="muted">
+            No non-zero variance rows found.
+          </td>
+        </tr>
+      `;
 
     el.innerHTML = `
       <div class="card">
         <div class="section-head">
-          <h3>Budget vs Actual</h3>
-          <button class="btn" data-bf-action="back-budgets">Back to Budgets</button>
+          <div>
+            <h3>Budget vs Actual</h3>
+            <p class="muted">
+              Showing accounts with budget or actual activity only.
+            </p>
+          </div>
+
+          <button class="btn" data-bf-action="back-budgets">
+            Back to Budgets
+          </button>
         </div>
 
         <table class="table">
@@ -49807,19 +49870,9 @@ async function saveEditModal() {
               <th class="right">%</th>
             </tr>
           </thead>
+
           <tbody>
-            ${rows.length ? rows.map((r) => `
-              <tr>
-                <td>${esc(String(r.period_month || "").slice(0, 10))}</td>
-                <td>${esc(r.account_code)} — ${esc(r.account_name || "")}</td>
-                <td class="right">${money(r.budget_amount)}</td>
-                <td class="right">${money(r.actual_amount)}</td>
-                <td class="right">${money(r.variance_amount)}</td>
-                <td class="right">${r.variance_pct == null ? "" : esc(r.variance_pct + "%")}</td>
-              </tr>
-            `).join("") : `
-              <tr><td colspan="6" class="muted">No variance rows found.</td></tr>
-            `}
+            ${body}
           </tbody>
         </table>
       </div>
@@ -63580,7 +63633,7 @@ function bindEventsOnce() {
             <tbody>
               ${(preview.lines || []).map(line => `
                 <tr>
-                  <td>${line.account_name || line.account_code || "—"}</td>
+                  <td>${line.account_name || "—"}</td>
                   <td>${line.description || "—"}</td>
                   <td>${money(line.debit)}</td>
                   <td>${money(line.credit)}</td>

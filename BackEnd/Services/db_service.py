@@ -86738,16 +86738,44 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if movement_ecl == 0:
             raise ValueError("movement_ecl cannot be zero")
 
-        expense_account = self.ifrs9_account_by_role(
+        expense_code = self.ifrs9_account_by_role(
             company_id,
             "ifrs9_ecl_impairment_loss",
             required=True,
         )
 
-        allowance_account = self.ifrs9_account_by_role(
+        allowance_code = self.ifrs9_account_by_role(
             company_id,
             "ifrs9_ecl_allowance_trade_receivables",
             required=True,
+        )
+
+        schema = company_schema(company_id)
+
+        with get_conn(company_id) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    sql.SQL("""
+                        SELECT code, name
+                        FROM {}.coa
+                        WHERE code = ANY(%s)
+                    """).format(sql.Identifier(schema)),
+                    ([expense_code, allowance_code],),
+                )
+
+                accounts = {
+                    row["code"]: row
+                    for row in cur.fetchall()
+                }
+
+        expense_name = (
+            accounts.get(expense_code, {}).get("name")
+            or "Expected Credit Loss Expense"
+        )
+
+        allowance_name = (
+            accounts.get(allowance_code, {}).get("name")
+            or "Allowance for Doubtful Debts"
         )
 
         amount = abs(movement_ecl)
@@ -86755,13 +86783,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if movement_ecl > 0:
             lines = [
                 {
-                    "account_code": expense_account,
+                    "account_code": expense_code,
+                    "account_name": expense_name,
                     "description": "IFRS 9 expected credit loss expense",
                     "debit": float(amount),
                     "credit": 0.0,
                 },
                 {
-                    "account_code": allowance_account,
+                    "account_code": allowance_code,
+                    "account_name": allowance_name,
                     "description": "IFRS 9 loss allowance",
                     "debit": 0.0,
                     "credit": float(amount),
@@ -86770,13 +86800,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         else:
             lines = [
                 {
-                    "account_code": allowance_account,
+                    "account_code": allowance_code,
+                    "account_name": allowance_name,
                     "description": "IFRS 9 loss allowance reversal",
                     "debit": float(amount),
                     "credit": 0.0,
                 },
                 {
-                    "account_code": expense_account,
+                    "account_code": expense_code,
+                    "account_name": expense_name,
                     "description": "IFRS 9 expected credit loss reversal",
                     "debit": 0.0,
                     "credit": float(amount),
@@ -86787,13 +86819,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         cr_total = sum(float(x.get("credit") or 0) for x in lines)
 
         if round(dr_total, 2) != round(cr_total, 2):
-            raise ValueError(f"IFRS 9 ECL journal not balanced D={dr_total} C={cr_total}")
+            raise ValueError(
+                f"IFRS 9 ECL journal not balanced D={dr_total} C={cr_total}"
+            )
 
         return {
             "journal_lines": lines,
             "resolved_accounts": {
-                "ifrs9_ecl_impairment_loss": expense_account,
-                "ifrs9_ecl_allowance_trade_receivables": allowance_account,
+                "ifrs9_ecl_impairment_loss": {
+                    "code": expense_code,
+                    "name": expense_name,
+                },
+                "ifrs9_ecl_allowance_trade_receivables": {
+                    "code": allowance_code,
+                    "name": allowance_name,
+                },
             },
             "dr_total": dr_total,
             "cr_total": cr_total,
