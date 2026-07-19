@@ -41565,6 +41565,140 @@ async function saveEditModal() {
     document.getElementById("dtModalBody").innerHTML = "";
   }
 
+  function dtNumber(value) {
+    const number = Number(value || 0);
+
+    return number.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function dtPercent(value) {
+    const number = Number(value || 0);
+
+    return `${number.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}%`;
+  }
+
+  function dtDate(value) {
+    if (!value) return "—";
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  }
+
+  function dtEscape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function dtStatusLabel(status) {
+    const value = String(status || "draft")
+      .trim()
+      .toLowerCase();
+
+    const labels = {
+      draft: "Draft",
+      prepared: "Prepared",
+      reviewed: "Reviewed",
+      approved: "Approved",
+      posted: "Posted",
+      reversed: "Reversed"
+    };
+
+    return labels[value] || value;
+  }
+
+  function updateDeferredTaxSummary(runs = []) {
+    const latest = runs[0] || {};
+
+    const dta = Number(
+      latest.recognized_dta ??
+      latest.recognised_dta ??
+      latest.deferred_tax_asset ??
+      0
+    );
+
+    const dtl = Number(
+      latest.recognized_dtl ??
+      latest.recognised_dtl ??
+      latest.deferred_tax_liability ??
+      0
+    );
+
+    const net = Number(
+      latest.net_deferred_tax ??
+      latest.net ??
+      dtl - dta
+    );
+
+    const rate = Number(
+      latest.tax_rate ??
+      latest.income_tax_rate ??
+      0
+    );
+
+    const authority =
+      latest.tax_authority_code ||
+      latest.authority_code ||
+      latest.tax_authority_name ||
+      "No authority selected";
+
+    const dtaEl = document.getElementById("dtSummaryDta");
+    const dtlEl = document.getElementById("dtSummaryDtl");
+    const netEl = document.getElementById("dtSummaryNet");
+    const rateEl = document.getElementById("dtSummaryRate");
+    const authorityEl = document.getElementById(
+      "dtSummaryAuthority"
+    );
+    const netHintEl = document.getElementById(
+      "dtSummaryNetHint"
+    );
+    const runCountEl = document.getElementById(
+      "dtRunCount"
+    );
+
+    if (dtaEl) dtaEl.textContent = dtNumber(dta);
+    if (dtlEl) dtlEl.textContent = dtNumber(dtl);
+    if (netEl) netEl.textContent = dtNumber(Math.abs(net));
+    if (rateEl) rateEl.textContent = dtPercent(rate);
+    if (authorityEl) authorityEl.textContent = authority;
+
+    if (netHintEl) {
+      if (net > 0) {
+        netHintEl.textContent = "Net deferred tax liability";
+        netHintEl.className = "dt-net-liability";
+      } else if (net < 0) {
+        netHintEl.textContent = "Net deferred tax asset";
+        netHintEl.className = "dt-net-asset";
+      } else {
+        netHintEl.textContent = "No recognised position";
+        netHintEl.className = "";
+      }
+    }
+
+    if (runCountEl) {
+      runCountEl.textContent =
+        `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+    }
+  }
+
   async function loadAssetTaxRuns() {
     const mount = document.getElementById(
       "dtAssetTaxRunList"
@@ -84228,140 +84362,6 @@ async function renderARStatements() {
         </div>
       </div>
     `;
-  }
-
-  function dtNumber(value) {
-    const number = Number(value || 0);
-
-    return number.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    });
-  }
-
-  function dtPercent(value) {
-    const number = Number(value || 0);
-
-    return `${number.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}%`;
-  }
-
-  function dtDate(value) {
-    if (!value) return "—";
-
-    const parsed = new Date(value);
-
-    if (Number.isNaN(parsed.getTime())) {
-      return String(value).slice(0, 10);
-    }
-
-    return parsed.toLocaleDateString(undefined, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric"
-    });
-  }
-
-  function dtEscape(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  function dtStatusLabel(status) {
-    const value = String(status || "draft")
-      .trim()
-      .toLowerCase();
-
-    const labels = {
-      draft: "Draft",
-      prepared: "Prepared",
-      reviewed: "Reviewed",
-      approved: "Approved",
-      posted: "Posted",
-      reversed: "Reversed"
-    };
-
-    return labels[value] || value;
-  }
-
-  function updateDeferredTaxSummary(runs = []) {
-    const latest = runs[0] || {};
-
-    const dta = Number(
-      latest.recognized_dta ??
-      latest.recognised_dta ??
-      latest.deferred_tax_asset ??
-      0
-    );
-
-    const dtl = Number(
-      latest.recognized_dtl ??
-      latest.recognised_dtl ??
-      latest.deferred_tax_liability ??
-      0
-    );
-
-    const net = Number(
-      latest.net_deferred_tax ??
-      latest.net ??
-      dtl - dta
-    );
-
-    const rate = Number(
-      latest.tax_rate ??
-      latest.income_tax_rate ??
-      0
-    );
-
-    const authority =
-      latest.tax_authority_code ||
-      latest.authority_code ||
-      latest.tax_authority_name ||
-      "No authority selected";
-
-    const dtaEl = document.getElementById("dtSummaryDta");
-    const dtlEl = document.getElementById("dtSummaryDtl");
-    const netEl = document.getElementById("dtSummaryNet");
-    const rateEl = document.getElementById("dtSummaryRate");
-    const authorityEl = document.getElementById(
-      "dtSummaryAuthority"
-    );
-    const netHintEl = document.getElementById(
-      "dtSummaryNetHint"
-    );
-    const runCountEl = document.getElementById(
-      "dtRunCount"
-    );
-
-    if (dtaEl) dtaEl.textContent = dtNumber(dta);
-    if (dtlEl) dtlEl.textContent = dtNumber(dtl);
-    if (netEl) netEl.textContent = dtNumber(Math.abs(net));
-    if (rateEl) rateEl.textContent = dtPercent(rate);
-    if (authorityEl) authorityEl.textContent = authority;
-
-    if (netHintEl) {
-      if (net > 0) {
-        netHintEl.textContent = "Net deferred tax liability";
-        netHintEl.className = "dt-net-liability";
-      } else if (net < 0) {
-        netHintEl.textContent = "Net deferred tax asset";
-        netHintEl.className = "dt-net-asset";
-      } else {
-        netHintEl.textContent = "No recognised position";
-        netHintEl.className = "";
-      }
-    }
-
-    if (runCountEl) {
-      runCountEl.textContent =
-        `${runs.length} run${runs.length === 1 ? "" : "s"}`;
-    }
   }
 
   async function renderRuns() {
