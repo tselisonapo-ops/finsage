@@ -13399,6 +13399,33 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
 
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS tax_treatment_rule_id INT NULL;
+
+        DO $fk_leases_tax_treatment_rule$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_leases_tax_treatment_rule'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.leases
+                    ADD CONSTRAINT fk_leases_tax_treatment_rule
+                    FOREIGN KEY (tax_treatment_rule_id)
+                    REFERENCES public.lease_tax_treatment_rules(id)',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_leases_tax_treatment_rule$;
+
+        CREATE INDEX IF NOT EXISTS
+        {schema}_leases_tax_treatment_rule_idx
+        ON {schema}.leases(tax_treatment_rule_id);
         -- ==================================================
         -- Safe additive evolution (leases)
         -- ==================================================
@@ -13489,6 +13516,77 @@ class DatabaseService:
         -- ==================================================
         ALTER TABLE {schema}.leases
         ADD COLUMN IF NOT EXISTS lessor_id INT;
+
+        -- ==================================================
+        -- IAS 12 tax treatment for lessee leases
+        -- ==================================================
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS tax_deduction_basis TEXT NULL,
+        ADD COLUMN IF NOT EXISTS tax_deduction_percent NUMERIC(7,4)
+            NOT NULL DEFAULT 100,
+        ADD COLUMN IF NOT EXISTS rou_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS liability_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_notes TEXT NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
+
+        DO $ck_leases_tax_deduction_basis$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_leases_tax_deduction_basis'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.leases
+                    ADD CONSTRAINT ck_leases_tax_deduction_basis
+                    CHECK (
+                        tax_deduction_basis IS NULL
+                        OR tax_deduction_basis IN (
+                            ''lease_payments'',
+                            ''rou_asset'',
+                            ''none'',
+                            ''manual''
+                        )
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_leases_tax_deduction_basis$;
+
+        DO $ck_leases_tax_deduction_percent$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_leases_tax_deduction_percent'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.leases
+                    ADD CONSTRAINT ck_leases_tax_deduction_percent
+                    CHECK (
+                        tax_deduction_percent >= 0
+                        AND tax_deduction_percent <= 100
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_leases_tax_deduction_percent$;
+
+        CREATE INDEX IF NOT EXISTS
+        {schema}_leases_tax_deduction_basis_idx
+        ON {schema}.leases(
+            company_id,
+            tax_deduction_basis
+        );
 
         CREATE INDEX IF NOT EXISTS {schema}_leases_lessor_id_idx
         ON {schema}.leases(lessor_id);
@@ -96121,6 +96219,858 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         row = cur.fetchone()
         return row["id"] if isinstance(row, dict) else row[0]
 
+    def deferred_tax_update_lease_tax_treatment(
+        self,
+        company_id: int,
+        lease_id: int,
+        payload: Dict[str, Any],
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        schema = self.company_schema(company_id)
+
+        deduction_basis = str(
+            payload.get("tax_deduction_basis") or ""
+        ).strip().lower()
+
+        valid_basis = {
+            "lease_payments",
+            "rou_asset",
+            "none",
+            "manual",
+        }
+
+        if deduction_basis not in valid_basis:
+            raise ValueError(
+                "tax_deduction_basis must be one of: "
+                "lease_payments, rou_asset, none or manual."
+            )
+
+        deduction_percent = Decimal(str(
+            payload.get("tax_deduction_percent", 100)
+        ))
+
+        if deduction_percent < 0 or deduction_percent > 100:
+            raise ValueError(
+                "tax_deduction_percent must be between 0 and 100."
+            )
+
+        rou_override = payload.get(
+            "rou_tax_base_override"
+        )
+
+        liability_override = payload.get(
+            "liability_tax_base_override"
+        )
+
+        if deduction_basis == "manual":
+            if rou_override in (None, ""):
+                raise ValueError(
+                    "rou_tax_base_override is required "
+                    "for manual lease tax treatment."
+                )
+
+            if liability_override in (None, ""):
+                raise ValueError(
+                    "liability_tax_base_override is required "
+                    "for manual lease tax treatment."
+                )
+
+        lease = self.fetch_one(f"""
+            UPDATE {schema}.leases
+            SET
+                tax_deduction_basis = %s,
+                tax_deduction_percent = %s,
+                rou_tax_base_override = %s,
+                liability_tax_base_override = %s,
+                lease_tax_treatment_notes = %s,
+                lease_tax_treatment_updated_at = NOW(),
+                lease_tax_treatment_updated_by = %s,
+                updated_at = NOW()
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *;
+        """, (
+            deduction_basis,
+            deduction_percent,
+            (
+                Decimal(str(rou_override))
+                if rou_override not in (None, "")
+                else None
+            ),
+            (
+                Decimal(str(liability_override))
+                if liability_override not in (None, "")
+                else None
+            ),
+            payload.get("lease_tax_treatment_notes"),
+            int(user_id) if user_id else None,
+            int(company_id),
+            int(lease_id),
+        ))
+
+        if not lease:
+            raise ValueError("Lease not found.")
+
+        return lease
+
+    def _dt_get_lessee_lease_balances(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        reporting_date,
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns lessee ROU asset and lease liability balances
+        as at the IAS 12 reporting date.
+
+        The active lease schedule is used for both depreciation
+        and closing liability.
+        """
+        return self.fetch_all(f"""
+            WITH active_versions AS (
+                SELECT
+                    ls.lease_id,
+                    MAX(ls.version_no) AS version_no
+                FROM {schema}.lease_schedule ls
+                WHERE ls.company_id = %s
+                AND COALESCE(ls.is_active, TRUE) = TRUE
+                GROUP BY ls.lease_id
+            ),
+
+            schedule_totals AS (
+                SELECT
+                    ls.lease_id,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN ls.period_end <= %s
+                            THEN ls.depreciation
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS accumulated_depreciation,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN ls.period_end <= %s
+                            THEN ls.interest
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS accumulated_interest,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN ls.period_end <= %s
+                            THEN ls.principal
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS accumulated_principal,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN ls.period_end > %s
+                            THEN ls.net_payment
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS future_net_lease_payments,
+
+                    COALESCE((
+                        SELECT ls2.closing_liability
+                        FROM {schema}.lease_schedule ls2
+                        WHERE ls2.lease_id = ls.lease_id
+                        AND ls2.version_no = ls.version_no
+                        AND COALESCE(ls2.is_active, TRUE) = TRUE
+                        AND ls2.period_end <= %s
+                        ORDER BY
+                            ls2.period_end DESC,
+                            ls2.period_no DESC,
+                            ls2.id DESC
+                        LIMIT 1
+                    ), 0)::numeric(18,2)
+                        AS schedule_closing_liability,
+
+                    MIN(ls.period_start)
+                        AS first_schedule_date,
+
+                    MAX(ls.period_end)
+                        AS final_schedule_date
+
+                FROM {schema}.lease_schedule ls
+
+                JOIN active_versions av
+                    ON av.lease_id = ls.lease_id
+                    AND av.version_no = ls.version_no
+
+                WHERE ls.company_id = %s
+                AND COALESCE(ls.is_active, TRUE) = TRUE
+
+                GROUP BY
+                    ls.lease_id,
+                    ls.version_no
+            ),
+
+            posted_modifications AS (
+                SELECT
+                    lm.lease_id,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN lm.modification_date <= %s
+                            AND lm.status = 'posted'
+                            THEN lm.rou_adjustment
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS rou_adjustments,
+
+                    COALESCE(SUM(
+                        CASE
+                            WHEN lm.modification_date <= %s
+                            AND lm.status = 'posted'
+                            THEN lm.liability_adjustment
+                            ELSE 0
+                        END
+                    ), 0)::numeric(18,2)
+                        AS liability_adjustments
+
+                FROM {schema}.lease_modifications lm
+                WHERE lm.company_id = %s
+                GROUP BY lm.lease_id
+            ),
+
+            posted_terminations AS (
+                SELECT
+                    lt.lease_id,
+                    MAX(lt.termination_date) AS termination_date,
+                    COALESCE(MAX(lt.rou_nbv), 0)::numeric(18,2)
+                        AS terminated_rou_nbv,
+                    COALESCE(MAX(
+                        lt.liability_carrying_amount
+                    ), 0)::numeric(18,2)
+                        AS terminated_liability
+                FROM {schema}.lease_terminations lt
+                WHERE lt.company_id = %s
+                AND lt.status = 'posted'
+                AND lt.termination_date <= %s
+                GROUP BY lt.lease_id
+            )
+
+            SELECT
+                l.id AS lease_id,
+                l.lease_name,
+                l.role,
+                l.start_date,
+                l.end_date,
+                l.status,
+                l.termination_date,
+
+                l.opening_rou_asset,
+                l.opening_lease_liability,
+                l.initial_direct_costs,
+
+                l.tax_treatment_rule_id,
+                l.tax_deduction_basis,
+                l.tax_deduction_percent,
+                l.rou_tax_base_override,
+                l.liability_tax_base_override,
+                l.lease_tax_treatment_notes,
+
+                COALESCE(
+                    st.accumulated_depreciation,
+                    0
+                )::numeric(18,2)
+                    AS accumulated_depreciation,
+
+                COALESCE(
+                    st.accumulated_interest,
+                    0
+                )::numeric(18,2)
+                    AS accumulated_interest,
+
+                COALESCE(
+                    st.accumulated_principal,
+                    0
+                )::numeric(18,2)
+                    AS accumulated_principal,
+
+                COALESCE(
+                    st.future_net_lease_payments,
+                    0
+                )::numeric(18,2)
+                    AS future_net_lease_payments,
+
+                COALESCE(
+                    st.schedule_closing_liability,
+                    l.opening_lease_liability
+                )::numeric(18,2)
+                    AS schedule_closing_liability,
+
+                COALESCE(
+                    pm.rou_adjustments,
+                    0
+                )::numeric(18,2)
+                    AS rou_adjustments,
+
+                COALESCE(
+                    pm.liability_adjustments,
+                    0
+                )::numeric(18,2)
+                    AS liability_adjustments,
+
+                CASE
+                    WHEN pt.lease_id IS NOT NULL
+                    THEN 0
+                    ELSE GREATEST(
+                        0,
+                        l.opening_rou_asset
+                        + COALESCE(pm.rou_adjustments, 0)
+                        - COALESCE(
+                            st.accumulated_depreciation,
+                            0
+                        )
+                    )
+                END::numeric(18,2)
+                    AS rou_carrying_amount,
+
+                CASE
+                    WHEN pt.lease_id IS NOT NULL
+                    THEN 0
+                    ELSE GREATEST(
+                        0,
+                        COALESCE(
+                            st.schedule_closing_liability,
+                            l.opening_lease_liability
+                        )
+                    )
+                END::numeric(18,2)
+                    AS liability_carrying_amount,
+
+                st.first_schedule_date,
+                st.final_schedule_date
+
+            FROM {schema}.leases l
+
+            LEFT JOIN schedule_totals st
+                ON st.lease_id = l.id
+
+            LEFT JOIN posted_modifications pm
+                ON pm.lease_id = l.id
+
+            LEFT JOIN posted_terminations pt
+                ON pt.lease_id = l.id
+
+            WHERE l.company_id = %s
+            AND LOWER(COALESCE(l.role, '')) = 'lessee'
+            AND l.start_date <= %s
+            AND (
+                l.end_date >= %s
+                OR pt.lease_id IS NULL
+            )
+
+            ORDER BY
+                l.lease_name,
+                l.id;
+        """, (
+            int(company_id),
+            reporting_date,
+            reporting_date,
+            reporting_date,
+            reporting_date,
+            reporting_date,
+            int(company_id),
+            reporting_date,
+            reporting_date,
+            int(company_id),
+            int(company_id),
+            reporting_date,
+            int(company_id),
+            reporting_date,
+            reporting_date,
+        ), cur=cur) or []
+
+    def _dt_get_lease_tax_rule(
+        self,
+        cur,
+        *,
+        tax_authority_id: int,
+        lease_role: str,
+        as_at,
+        rule_id: int = None,
+    ):
+        """
+        Returns the applicable public lease tax-treatment rule.
+
+        Priority:
+        1. Explicit rule_id, when supplied.
+        2. Active default for the authority and lease role.
+        """
+        normalized_role = str(
+            lease_role or "lessee"
+        ).strip().lower()
+
+        valid_roles = {
+            "lessee",
+            "lessor_operating",
+            "lessor_finance",
+        }
+
+        if normalized_role not in valid_roles:
+            normalized_role = "lessee"
+
+        if rule_id:
+            rule = self.fetch_one("""
+                SELECT
+                    r.*,
+                    ta.code AS tax_authority_code,
+                    ta.name AS tax_authority_name
+                FROM public.lease_tax_treatment_rules r
+                JOIN public.tax_authorities ta
+                    ON ta.id = r.tax_authority_id
+                WHERE r.id = %s
+                AND r.tax_authority_id = %s
+                AND r.lease_role = %s
+                AND r.is_active = TRUE
+                AND r.effective_from <= %s
+                AND (
+                    r.effective_to IS NULL
+                    OR r.effective_to >= %s
+                )
+                LIMIT 1;
+            """, (
+                int(rule_id),
+                int(tax_authority_id),
+                normalized_role,
+                as_at,
+                as_at,
+            ), cur=cur)
+
+            if rule:
+                return rule
+
+        return self.fetch_one("""
+            SELECT
+                r.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name
+            FROM public.lease_tax_treatment_rules r
+            JOIN public.tax_authorities ta
+                ON ta.id = r.tax_authority_id
+            WHERE r.tax_authority_id = %s
+            AND r.lease_role = %s
+            AND r.is_default = TRUE
+            AND r.is_active = TRUE
+            AND r.effective_from <= %s
+            AND (
+                r.effective_to IS NULL
+                OR r.effective_to >= %s
+            )
+            ORDER BY
+                r.effective_from DESC,
+                r.id DESC
+            LIMIT 1;
+        """, (
+            int(tax_authority_id),
+            normalized_role,
+            as_at,
+            as_at,
+        ), cur=cur)
+
+    def _dt_scan_lessee_leases(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        run: Dict[str, Any],
+    ):
+        """
+        Scans lessee IFRS 16 leases as paired IAS 12 items:
+
+        1. ROU asset
+        2. Lease liability
+
+        The ordinary asset scanner must continue excluding ROU assets.
+        """
+        reporting_date = run["reporting_date"]
+        tax_authority_id = int(run["tax_authority_id"])
+
+        leases = self._dt_get_lessee_lease_balances(
+            cur,
+            schema=schema,
+            company_id=company_id,
+            reporting_date=reporting_date,
+        )
+
+        for lease in leases:
+            lease_id = int(lease["lease_id"])
+
+            rou_carrying = Decimal(str(
+                lease.get("rou_carrying_amount") or 0
+            )).quantize(Decimal("0.01"))
+
+            liability_carrying = Decimal(str(
+                lease.get("liability_carrying_amount") or 0
+            )).quantize(Decimal("0.01"))
+
+            future_payments = Decimal(str(
+                lease.get("future_net_lease_payments") or 0
+            )).quantize(Decimal("0.01"))
+
+            rule = self._dt_get_lease_tax_rule(
+                cur,
+                tax_authority_id=tax_authority_id,
+                lease_role="lessee",
+                as_at=reporting_date,
+                rule_id=lease.get("tax_treatment_rule_id"),
+            )
+
+            lease_basis_override = str(
+                lease.get("tax_deduction_basis") or ""
+            ).strip().lower()
+
+            if lease_basis_override:
+                tax_basis = lease_basis_override
+            else:
+                tax_basis = str(
+                    rule.get("deduction_basis")
+                    if rule
+                    else "requires_review"
+                ).strip().lower()
+
+            lease_percent = lease.get(
+                "tax_deduction_percent"
+            )
+
+            if (
+                lease_basis_override
+                and lease_percent is not None
+            ):
+                deduction_percent = Decimal(str(
+                    lease_percent
+                ))
+            else:
+                deduction_percent = Decimal(str(
+                    (
+                        rule.get("deduction_percent")
+                        if rule
+                        else 100
+                    ) or 100
+                ))
+
+            deduction_percent = max(
+                Decimal("0"),
+                min(
+                    Decimal("100"),
+                    deduction_percent,
+                ),
+            )
+
+            rou_tax_base_method = str(
+                (
+                    rule.get("rou_tax_base_method")
+                    if rule
+                    else "requires_review"
+                ) or "requires_review"
+            ).strip().lower()
+
+            liability_tax_base_method = str(
+                (
+                    rule.get("liability_tax_base_method")
+                    if rule
+                    else "requires_review"
+                ) or "requires_review"
+            ).strip().lower()
+
+            has_lease_override = bool(
+                lease_basis_override
+            )
+
+            rule_requires_review = bool(
+                tax_basis == "requires_review"
+                or (
+                    not has_lease_override
+                    and (
+                        not rule
+                        or bool(rule.get("requires_review"))
+                        or rou_tax_base_method
+                            == "requires_review"
+                        or liability_tax_base_method
+                            == "requires_review"
+                    )
+                )
+            )
+
+            deduction_factor = (
+                deduction_percent / Decimal("100")
+            )
+
+            future_deductions = (
+                future_payments * deduction_factor
+            ).quantize(Decimal("0.01"))
+
+            scan_status = "resolved"
+            resolution_message = None
+
+            if rule_requires_review:
+                scan_status = "requires_review"
+
+                if not rule:
+                    resolution_message = (
+                        "No active lease tax-treatment rule was "
+                        "found for the selected tax authority, "
+                        "lease role and reporting date."
+                    )
+                else:
+                    resolution_message = (
+                        f"{rule.get('rule_name') or 'The applicable lease tax rule'} "
+                        "requires review before deferred tax can "
+                        "be recognised."
+                    )
+
+                rou_tax_base = rou_carrying
+                liability_tax_base = liability_carrying
+                future_deductions = Decimal("0.00")
+
+            elif tax_basis == "lease_payments":
+                rou_tax_base = Decimal("0.00")
+
+                liability_tax_base = max(
+                    Decimal("0.00"),
+                    liability_carrying - future_deductions,
+                ).quantize(Decimal("0.01"))
+
+            elif tax_basis == "rou_asset":
+                rou_override = lease.get(
+                    "rou_tax_base_override"
+                )
+
+                if rou_override is None:
+                    scan_status = "requires_review"
+                    resolution_message = (
+                        "The lease tax treatment says deductions "
+                        "relate to the ROU asset, but no remaining "
+                        "ROU tax base has been provided."
+                    )
+
+                    rou_tax_base = rou_carrying
+                    liability_tax_base = liability_carrying
+
+                else:
+                    rou_tax_base = Decimal(str(
+                        rou_override
+                    )).quantize(Decimal("0.01"))
+
+                    liability_tax_base = (
+                        liability_carrying
+                    )
+
+            elif tax_basis == "none":
+                rou_tax_base = Decimal("0.00")
+                liability_tax_base = liability_carrying
+                future_deductions = Decimal("0.00")
+
+            elif tax_basis == "manual":
+                rou_override = lease.get(
+                    "rou_tax_base_override"
+                )
+
+                liability_override = lease.get(
+                    "liability_tax_base_override"
+                )
+
+                if (
+                    rou_override is None
+                    or liability_override is None
+                ):
+                    scan_status = "requires_review"
+                    resolution_message = (
+                        "Manual lease tax treatment requires both "
+                        "the ROU asset tax base and lease liability "
+                        "tax base."
+                    )
+
+                    rou_tax_base = rou_carrying
+                    liability_tax_base = liability_carrying
+
+                else:
+                    rou_tax_base = Decimal(str(
+                        rou_override
+                    )).quantize(Decimal("0.01"))
+
+                    liability_tax_base = Decimal(str(
+                        liability_override
+                    )).quantize(Decimal("0.01"))
+
+            else:
+                scan_status = "requires_review"
+                resolution_message = (
+                    "Select the lease tax deduction basis: "
+                    "lease payments, ROU asset, none or manual."
+                )
+
+                rou_tax_base = rou_carrying
+                liability_tax_base = liability_carrying
+
+            common_json = {
+                "lease_id": lease_id,
+                "lease_name": lease.get("lease_name"),
+                "role": lease.get("role"),
+                "lease_start_date": str(
+                    lease.get("start_date") or ""
+                ),
+                "lease_end_date": str(
+                    lease.get("end_date") or ""
+                ),
+                "reporting_date": str(reporting_date),
+                "tax_deduction_basis": tax_basis,
+                "tax_deduction_percent":
+                    str(deduction_percent),
+                "future_net_lease_payments":
+                    str(future_payments),
+                "future_deductible_amount":
+                    str(future_deductions),
+                "opening_rou_asset": str(
+                    lease.get("opening_rou_asset") or 0
+                ),
+                "opening_lease_liability": str(
+                    lease.get(
+                        "opening_lease_liability"
+                    ) or 0
+                ),
+                "accumulated_depreciation": str(
+                    lease.get(
+                        "accumulated_depreciation"
+                    ) or 0
+                ),
+                "accumulated_interest": str(
+                    lease.get(
+                        "accumulated_interest"
+                    ) or 0
+                ),
+                "accumulated_principal": str(
+                    lease.get(
+                        "accumulated_principal"
+                    ) or 0
+                ),
+                "rou_adjustments": str(
+                    lease.get("rou_adjustments") or 0
+                ),
+                "liability_adjustments": str(
+                    lease.get(
+                        "liability_adjustments"
+                    ) or 0
+                ),
+                "tax_treatment_notes":
+                    lease.get(
+                        "lease_tax_treatment_notes"
+                    ),
+            }
+
+            # ------------------------------------------
+            # ROU asset line
+            # ------------------------------------------
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="leases",
+                source_table="leases",
+                source_type="lessee_rou_asset",
+                source_id=lease_id,
+                source_line_id=None,
+                description=(
+                    f"{lease.get('lease_name') or 'Lease'} "
+                    f"— ROU asset"
+                ),
+                balance_type="asset",
+                carrying_amount=rou_carrying,
+                tax_base=rou_tax_base,
+                bs_account_code=None,
+                bs_carrying_amount=rou_carrying,
+                scan_status=scan_status,
+                resolution_message=resolution_message,
+                tax_treatment_code=(
+                    f"ifrs16_lessee|{tax_basis or 'unknown'}"
+                    "|rou_asset"
+                ),
+                destination="profit_or_loss",
+                calculation_json={
+                    **common_json,
+                    "lease_component": "rou_asset",
+                    "carrying_amount": str(
+                        rou_carrying
+                    ),
+                    "tax_base": str(rou_tax_base),
+                    "tax_base_formula": (
+                        "manual override"
+                        if tax_basis == "manual"
+                        else (
+                            "remaining ROU tax basis"
+                            if tax_basis == "rou_asset"
+                            else "zero"
+                        )
+                    ),
+                },
+            )
+
+            # ------------------------------------------
+            # Lease liability line
+            # ------------------------------------------
+            self._dt_insert_scanned_line(
+                cur,
+                schema=schema,
+                company_id=company_id,
+                run=run,
+                source_module="leases",
+                source_table="leases",
+                source_type="lessee_lease_liability",
+                source_id=lease_id,
+                source_line_id=None,
+                description=(
+                    f"{lease.get('lease_name') or 'Lease'} "
+                    f"— lease liability"
+                ),
+                balance_type="liability",
+                carrying_amount=liability_carrying,
+                tax_base=liability_tax_base,
+                bs_account_code=None,
+                bs_carrying_amount=liability_carrying,
+                scan_status=scan_status,
+                resolution_message=resolution_message,
+                tax_treatment_code=(
+                    f"ifrs16_lessee|{tax_basis or 'unknown'}"
+                    "|lease_liability"
+                ),
+                destination="profit_or_loss",
+                calculation_json={
+                    **common_json,
+                    "lease_component":
+                        "lease_liability",
+                    "carrying_amount": str(
+                        liability_carrying
+                    ),
+                    "tax_base": str(
+                        liability_tax_base
+                    ),
+                    "tax_base_formula": (
+                        "carrying amount less future "
+                        "deductible lease payments"
+                        if tax_basis == "lease_payments"
+                        else (
+                            "manual override"
+                            if tax_basis == "manual"
+                            else "carrying amount"
+                        )
+                    ),
+                },
+            )
+
     def _dt_scan_assets(
         self,
         cur,
@@ -97227,6 +98177,54 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                             candidate=candidate,
                         )
                         scanned += 1
+                        continue
+
+
+                # Run once after all balance-sheet candidates have been scanned.
+                lease_lines_before = self.fetch_one(
+                    f"""
+                    SELECT COUNT(*)::int AS line_count
+                    FROM {schema}.deferred_tax_run_lines
+                    WHERE company_id = %s
+                    AND run_id = %s
+                    AND source_module = 'leases'
+                    AND is_manual = FALSE;
+                    """,
+                    (
+                        int(company_id),
+                        int(run_id),
+                    ),
+                    cur=cur,
+                ) or {}
+
+                self._dt_scan_lessee_leases(
+                    cur,
+                    schema=schema,
+                    company_id=company_id,
+                    run=run,
+                )
+
+                lease_lines_after = self.fetch_one(
+                    f"""
+                    SELECT COUNT(*)::int AS line_count
+                    FROM {schema}.deferred_tax_run_lines
+                    WHERE company_id = %s
+                    AND run_id = %s
+                    AND source_module = 'leases'
+                    AND is_manual = FALSE;
+                    """,
+                    (
+                        int(company_id),
+                        int(run_id),
+                    ),
+                    cur=cur,
+                ) or {}
+
+                scanned += max(
+                    0,
+                    int(lease_lines_after.get("line_count") or 0)
+                    - int(lease_lines_before.get("line_count") or 0),
+                )
 
                 conn.commit()
 
