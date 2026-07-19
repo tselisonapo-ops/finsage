@@ -1274,3 +1274,315 @@ def asset_tax_get_run(cid: int, run_id: int):
             "asset_tax_get_run failed"
         )
         return _error_response(str(e), 500)
+    
+def _bool_arg(name, default=False):
+    value = request.args.get(name)
+
+    if value is None:
+        return default
+
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/allowance-rules",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_allowance_rules(cid):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(company_id)
+
+        rows = db_service.asset_tax_rules_list(
+            company_id,
+            tax_authority_id=request.args.get(
+                "tax_authority_id",
+                type=int,
+            ),
+            active_only=_bool_arg("active_only"),
+            as_at=(request.args.get("as_at") or "").strip() or None,
+        )
+
+        return jsonify({"ok": True, "data": rows}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_allowance_rules failed"
+        )
+        return _error_response(str(e))
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/company-allowance-rules",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def asset_tax_company_rule_create_route(cid):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.asset_tax_company_rule_create(
+            company_id,
+            request.get_json(silent=True) or {},
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="create_asset_tax_company_rule",
+            entity_type="asset_tax_rule_override",
+            entity_id=row.get("id"),
+            entity_ref=row.get("rule_code"),
+            after_json={"rule": row},
+        )
+
+        return jsonify({"ok": True, "data": row}), 201
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_company_rule_create failed"
+        )
+        return _error_response(str(e), 500)
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/company-allowance-rules/<int:rule_id>",
+    methods=["GET", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+@require_auth
+def asset_tax_company_rule_detail(cid, rule_id):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        before = db_service.asset_tax_company_rule_get(
+            company_id,
+            rule_id,
+        )
+
+        if not before:
+            return _error_response(
+                "Company capital allowance rule not found.",
+                404,
+            )
+
+        if request.method == "GET":
+            return jsonify({"ok": True, "data": before}), 200
+
+        if request.method == "DELETE":
+            row = db_service.asset_tax_company_rule_delete(
+                company_id,
+                rule_id,
+                user_id=user_id,
+            )
+            action = "delete_asset_tax_company_rule"
+        else:
+            row = db_service.asset_tax_company_rule_update(
+                company_id,
+                rule_id,
+                request.get_json(silent=True) or {},
+                user_id=user_id,
+            )
+            action = "update_asset_tax_company_rule"
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action=action,
+            entity_type="asset_tax_rule_override",
+            entity_id=rule_id,
+            entity_ref=before.get("rule_code"),
+            before_json={"rule": before},
+            after_json={"rule": row},
+        )
+
+        return jsonify({"ok": True, "data": row}), 200
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_company_rule_detail failed"
+        )
+        return _error_response(str(e), 500)
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/allowance-rules/"
+    "<int:default_rule_id>/override",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def asset_tax_override_default_rule(cid, default_rule_id):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.asset_tax_default_rule_override(
+            company_id,
+            default_rule_id,
+            request.get_json(silent=True) or {},
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="override_default_asset_tax_rule",
+            entity_type="asset_tax_rule_override",
+            entity_id=row.get("id"),
+            entity_ref=row.get("rule_code"),
+            after_json={"rule": row},
+        )
+
+        return jsonify({"ok": True, "data": row}), 200
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_override_default_rule failed"
+        )
+        return _error_response(str(e), 500)
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/allowance-rules/"
+    "<int:default_rule_id>/disable",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def asset_tax_disable_default_rule(cid, default_rule_id):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.asset_tax_default_rule_disable(
+            company_id,
+            default_rule_id,
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="disable_default_asset_tax_rule",
+            entity_type="asset_tax_rule_override",
+            entity_id=row.get("id"),
+            entity_ref=row.get("rule_code"),
+            after_json={"rule": row},
+            severity="warning",
+        )
+
+        return jsonify({"ok": True, "data": row}), 200
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_disable_default_rule failed"
+        )
+        return _error_response(str(e), 500)
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/asset-tax-profiles",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_asset_tax_profiles(cid):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        rows = db_service.asset_tax_profiles_list(
+            company_id,
+            tax_authority_id=request.args.get(
+                "tax_authority_id",
+                type=int,
+            ),
+            active_only=_bool_arg("active_only"),
+        )
+
+        return jsonify({"ok": True, "data": rows}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_asset_tax_profiles failed"
+        )
+        return _error_response(str(e), 500)
+
+
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/asset-tax-profiles/"
+    "<int:profile_id>",
+    methods=["PUT", "PATCH", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_asset_tax_profile_update(cid, profile_id):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        row = db_service.asset_tax_profile_update_rule(
+            company_id,
+            profile_id,
+            request.get_json(silent=True) or {},
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="update_asset_tax_profile",
+            entity_type="asset_tax_profile",
+            entity_id=profile_id,
+            entity_ref=str(row.get("asset_id") or ""),
+            after_json={"profile": row},
+        )
+
+        return jsonify({"ok": True, "data": row}), 200
+
+    except ValueError as e:
+        return _error_response(str(e))
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_asset_tax_profile_update failed"
+        )
+        return _error_response(str(e), 500)
+

@@ -2200,7 +2200,40 @@ const ENDPOINTS = {
         `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles` +
         (qs ? `?${qs}` : "")
       );
-    }
+    },
+  
+    allowanceRules: (cid, authorityId = null, q = {}) => {
+      const params = new URLSearchParams(q);
+
+      if (authorityId) {
+        params.set("tax_authority_id", authorityId);
+      }
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules${qs ? `?${qs}` : ""}`;
+    },
+
+    allowanceRuleOverride: (cid, ruleId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules/${ruleId}/override`,
+
+    allowanceRuleDisable: (cid, ruleId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules/${ruleId}/disable`,
+
+    companyAllowanceRules: cid =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/company-allowance-rules`,
+
+    companyAllowanceRule: (cid, ruleId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/company-allowance-rules/${ruleId}`,
+
+    assetTaxProfiles: (cid, q = {}) => {
+      const qs = new URLSearchParams(q).toString();
+
+      return `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles${qs ? `?${qs}` : ""}`;
+    },
+
+    assetTaxProfile: (cid, profileId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles/${profileId}`,
   },
 
   assets: {
@@ -41522,6 +41555,8 @@ async function saveEditModal() {
   let selectedRun = null;
   let selectedAssetTaxRun = null;
   let activeDeferredTaxView = "deferred-tax";
+  let assetTaxRules = [];
+  let assetTaxProfiles = [];
 
   const cid = () =>
     getActiveCompanyId?.() ||
@@ -42015,6 +42050,571 @@ async function saveEditModal() {
         </div>
       </form>
     `);
+  }
+
+  function assetTaxRuleLabel(rule) {
+    const labels = {
+      default: "Authority Default",
+      override: "Company Override",
+      custom: "Company Rule",
+      disabled_default: "Disabled"
+    };
+
+    const source = labels[rule.rule_source] || rule.rule_source || "Rule";
+    const rate = rule.rate_percent ?? rule.annual_allowance_percent;
+
+    return [
+      rule.rule_name || "Unnamed rule",
+      rule.method || "—",
+      rate != null ? `${Number(rate).toFixed(2)}%` : "No rate",
+      source
+    ].join(" · ");
+  }
+
+  function dtRuleValue(value) {
+    return value == null ? "" : value;
+  }
+
+  function dtRulePercent(value) {
+    return value == null ? "—" : `${Number(value).toFixed(2)}%`;
+  }
+
+  function dtRuleSourceLabel(source) {
+    return ({
+      default: "Authority Default",
+      override: "Company Override",
+      custom: "Company Rule",
+      disabled_default: "Disabled"
+    })[source] || source || "—";
+  }
+
+  async function loadAssetTaxRules(activeOnly = false) {
+    const settings = (
+      await apiFetch(ENDPOINTS.deferredTax.settings(cid()))
+    )?.data || {};
+
+    const res = await apiFetch(
+      ENDPOINTS.deferredTax.allowanceRules(
+        cid(),
+        settings.tax_authority_id,
+        activeOnly ? { active_only: true } : {}
+      )
+    );
+
+    assetTaxRules = res?.data || [];
+    return settings;
+  }
+
+
+  async function showAssetTaxRulesManager() {
+    openModal(
+      "Capital Allowance Rules",
+      `<div class="dt-loading">Loading capital allowance rules...</div>`,
+      "dt-rules-modal"
+    );
+
+    try {
+      renderAssetTaxRulesManager(await loadAssetTaxRules());
+    } catch (error) {
+      document.getElementById("dtModalBody").innerHTML = `
+        <div class="dt-error">${dtEscape(error.message)}</div>
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary" data-dt-close>Close</button>
+        </div>
+      `;
+    }
+  }
+
+
+  function renderAssetTaxRulesManager(settings = {}) {
+    const body = document.getElementById("dtModalBody");
+    if (!body) return;
+
+    const rows = assetTaxRules.map(rule => {
+      const source = rule.rule_source || "default";
+      const status = rule.is_disabled_for_company
+        ? "Disabled"
+        : rule.is_active
+          ? "Active"
+          : "Inactive";
+
+      let actions = `<span class="dt-muted">No actions</span>`;
+
+      if (source === "default") {
+        actions = `
+          <button type="button" class="btn btn-sm btn-secondary"
+            data-dt-rule-override="${rule.default_rule_id}">Override</button>
+          <button type="button" class="btn btn-sm btn-danger"
+            data-dt-rule-disable="${rule.default_rule_id}">Disable</button>
+        `;
+      } else if (source !== "disabled_default") {
+        const id = rule.override_rule_id || rule.rule_id;
+
+        actions = `
+          <button type="button" class="btn btn-sm btn-secondary"
+            data-dt-rule-edit="${id}">Edit</button>
+          <button type="button" class="btn btn-sm btn-danger"
+            data-dt-rule-delete="${id}">Delete</button>
+        `;
+      }
+
+      return `
+        <tr>
+          <td>
+            <strong>${dtEscape(rule.rule_name || "—")}</strong>
+            <small>${dtEscape(rule.rule_code || "")}</small>
+          </td>
+          <td>${dtEscape(rule.asset_category_hint || "Any category")}</td>
+          <td>${dtEscape(rule.method || "—")}</td>
+          <td class="dt-number">${dtRulePercent(rule.rate_percent)}</td>
+          <td class="dt-number">${dtRulePercent(rule.initial_allowance_percent)}</td>
+          <td class="dt-number">${dtRulePercent(rule.annual_allowance_percent)}</td>
+          <td>
+            <span class="dt-rule-source ${source}">
+              ${dtEscape(dtRuleSourceLabel(source))}
+            </span>
+          </td>
+          <td><span class="dt-status ${status.toLowerCase()}">${status}</span></td>
+          <td class="dt-rule-actions">${actions}</td>
+        </tr>
+      `;
+    }).join("");
+
+    body.innerHTML = `
+      <div class="dt-rule-manager-header">
+        <div>
+          <span>Tax authority</span>
+          <strong>${dtEscape(
+            settings.tax_authority_code
+            || settings.tax_authority_name
+            || "Not configured"
+          )}</strong>
+        </div>
+
+        <button type="button" class="btn btn-primary"
+          id="dtAddCompanyAllowanceRuleBtn">
+          + Add Company Rule
+        </button>
+      </div>
+
+      ${rows ? `
+        <div class="dt-table-wrap">
+          <table class="dt-table dt-rules-table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Category</th>
+                <th>Method</th>
+                <th class="dt-number">Rate</th>
+                <th class="dt-number">Initial</th>
+                <th class="dt-number">Annual</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="dt-empty">
+          <strong>No allowance rules found</strong>
+          <p>Add a company rule or configure authority defaults.</p>
+        </div>
+      `}
+
+      <div class="dt-form-actions">
+        <button type="button" class="btn btn-secondary" data-dt-close>Close</button>
+      </div>
+    `;
+  }
+
+
+  async function showAssetTaxRuleForm({
+    mode = "create",
+    rule = null,
+    defaultRuleId = null
+  } = {}) {
+    const settings = (
+      await apiFetch(ENDPOINTS.deferredTax.settings(cid()))
+    )?.data || {};
+
+    const override = mode === "override";
+    const title = override
+      ? "Override Capital Allowance Rule"
+      : mode === "edit"
+        ? "Edit Company Allowance Rule"
+        : "Add Company Allowance Rule";
+
+    openModal(title, `
+      <form id="dtAssetTaxRuleForm">
+        <input type="hidden" name="mode" value="${mode}">
+        <input type="hidden" name="rule_id"
+          value="${dtRuleValue(rule?.override_rule_id || rule?.id)}">
+        <input type="hidden" name="default_rule_id"
+          value="${dtRuleValue(defaultRuleId || rule?.default_rule_id)}">
+        <input type="hidden" name="tax_authority_id"
+          value="${dtRuleValue(settings.tax_authority_id || rule?.tax_authority_id)}">
+
+        <div class="dt-form-grid">
+          <div class="dt-field">
+            <label>Rule code</label>
+            <input name="rule_code" required ${override ? "readonly" : ""}
+              value="${dtEscape(rule?.rule_code || "")}">
+          </div>
+
+          <div class="dt-field">
+            <label>Rule name</label>
+            <input name="rule_name" required
+              value="${dtEscape(rule?.rule_name || "")}">
+          </div>
+
+          <div class="dt-field full">
+            <label>Asset category hint</label>
+            <input name="asset_category_hint"
+              value="${dtEscape(rule?.asset_category_hint || "")}"
+              placeholder="Vehicles, Computers, Furniture...">
+          </div>
+
+          <div class="dt-field">
+            <label>Method</label>
+            <select name="method" required>
+              ${["WDV", "SL", "IMMEDIATE", "CUSTOM"].map(method => `
+                <option value="${method}"
+                  ${String(rule?.method || "WDV").toUpperCase() === method ? "selected" : ""}>
+                  ${method}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Rate percent</label>
+            <input type="number" name="rate_percent" min="0" max="100"
+              step="0.0001" value="${dtRuleValue(rule?.rate_percent)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Initial allowance %</label>
+            <input type="number" name="initial_allowance_percent" min="0"
+              max="100" step="0.0001"
+              value="${dtRuleValue(rule?.initial_allowance_percent)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Annual allowance %</label>
+            <input type="number" name="annual_allowance_percent" min="0"
+              max="100" step="0.0001"
+              value="${dtRuleValue(rule?.annual_allowance_percent)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Useful life</label>
+            <input type="number" name="useful_life_years" min="0" step="0.01"
+              value="${dtRuleValue(rule?.useful_life_years)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Effective from</label>
+            <input type="date" name="effective_from" required
+              value="${isoDate(rule?.effective_from || new Date())}">
+          </div>
+
+          <div class="dt-field">
+            <label>Effective to</label>
+            <input type="date" name="effective_to"
+              value="${isoDate(rule?.effective_to)}">
+          </div>
+
+          <div class="dt-field full">
+            <label>Notes</label>
+            <textarea name="notes" rows="3">${dtEscape(rule?.notes || "")}</textarea>
+          </div>
+
+          <div class="dt-field full">
+            <label class="dt-checkbox">
+              <input type="checkbox" name="is_active"
+                ${rule?.is_active === false ? "" : "checked"}>
+              <span>Rule is active</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary"
+            id="dtBackToRulesBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Rule</button>
+        </div>
+      </form>
+    `);
+  }
+
+
+  async function saveAssetTaxRule(form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    const payload = {
+      tax_authority_id: Number(data.tax_authority_id),
+      rule_code: data.rule_code,
+      rule_name: data.rule_name,
+      asset_category_hint: data.asset_category_hint || null,
+      method: data.method,
+      rate_percent: data.rate_percent || null,
+      initial_allowance_percent: data.initial_allowance_percent || null,
+      annual_allowance_percent: data.annual_allowance_percent || null,
+      useful_life_years: data.useful_life_years || null,
+      effective_from: data.effective_from,
+      effective_to: data.effective_to || null,
+      notes: data.notes || null,
+      is_active: form.elements.is_active.checked
+    };
+
+    let url;
+    let method;
+
+    if (data.mode === "override") {
+      url = ENDPOINTS.deferredTax.allowanceRuleOverride(
+        cid(),
+        data.default_rule_id
+      );
+      method = "POST";
+    } else if (data.mode === "edit") {
+      url = ENDPOINTS.deferredTax.companyAllowanceRule(
+        cid(),
+        data.rule_id
+      );
+      method = "PUT";
+    } else {
+      url = ENDPOINTS.deferredTax.companyAllowanceRules(cid());
+      method = "POST";
+    }
+
+    await apiFetch(url, {
+      method,
+      body: JSON.stringify(payload)
+    });
+
+    await showAssetTaxRulesManager();
+  }
+
+  async function showAssetTaxProfilesManager() {
+    openModal(
+      "Asset Tax Profiles",
+      `<div class="dt-loading">Loading asset tax profiles...</div>`,
+      "dt-profiles-modal"
+    );
+
+    try {
+      const settings = (
+        await apiFetch(ENDPOINTS.deferredTax.settings(cid()))
+      )?.data || {};
+
+      const [profilesRes, rulesRes] = await Promise.all([
+        apiFetch(ENDPOINTS.deferredTax.assetTaxProfiles(cid(), {
+          tax_authority_id: settings.tax_authority_id
+        })),
+        apiFetch(ENDPOINTS.deferredTax.allowanceRules(
+          cid(),
+          settings.tax_authority_id,
+          { active_only: true }
+        ))
+      ]);
+
+      assetTaxProfiles = profilesRes?.data || [];
+      assetTaxRules = rulesRes?.data || [];
+
+      renderAssetTaxProfilesManager();
+    } catch (error) {
+      document.getElementById("dtModalBody").innerHTML =
+        `<div class="dt-error">${dtEscape(error.message)}</div>`;
+    }
+  }
+
+  function renderAssetTaxProfilesManager() {
+    const body = document.getElementById("dtModalBody");
+    if (!body) return;
+
+    const rows = assetTaxProfiles.map(profile => `
+      <tr>
+        <td>
+          <strong>${dtEscape(profile.asset_name || "—")}</strong>
+          <small>${dtEscape(profile.asset_code || "")}</small>
+        </td>
+        <td>${dtEscape(profile.asset_class || profile.asset_category || "—")}</td>
+        <td>${dtEscape(profile.rule_name || "Not configured")}</td>
+        <td>${dtEscape(
+          profile.effective_rule_source || profile.rule_source || "—"
+        )}</td>
+        <td class="dt-number">${money(profile.tax_cost)}</td>
+        <td>
+          <span class="dt-status ${profile.is_active ? "active" : "inactive"}">
+            ${profile.is_active ? "Active" : "Inactive"}
+          </span>
+        </td>
+        <td>
+          <button type="button" class="btn btn-sm btn-secondary"
+            data-dt-profile-edit="${profile.id}">
+            Configure
+          </button>
+        </td>
+      </tr>
+    `).join("");
+
+    body.innerHTML = `
+      <div class="dt-profile-manager-header">
+        <div>
+          <h3>Asset Tax Profiles</h3>
+          <p>Assign allowance rules and tax values to individual assets.</p>
+        </div>
+      </div>
+
+      ${rows ? `
+        <div class="dt-table-wrap">
+          <table class="dt-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Class</th>
+                <th>Rule</th>
+                <th>Source</th>
+                <th class="dt-number">Tax Cost</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="dt-empty">
+          <strong>No asset tax profiles found</strong>
+        </div>
+      `}
+
+      <div class="dt-form-actions">
+        <button type="button" class="btn btn-secondary" data-dt-close>Close</button>
+      </div>
+    `;
+  }
+
+  function showAssetTaxProfileForm(profile) {
+    const options = assetTaxRules.map(rule => {
+      const source = rule.rule_source;
+      const id = source === "default"
+        ? rule.default_rule_id
+        : rule.override_rule_id || rule.rule_id;
+
+      const selected = source === "default"
+        ? Number(profile.default_rule_id || profile.allowance_rule_id) === Number(id)
+        : Number(profile.override_rule_id) === Number(id);
+
+      return `
+        <option value="${source}:${id}" ${selected ? "selected" : ""}>
+          ${dtEscape(assetTaxRuleLabel(rule))}
+        </option>
+      `;
+    }).join("");
+
+    openModal("Configure Asset Tax Profile", `
+      <form id="dtAssetTaxProfileForm">
+        <input type="hidden" name="profile_id" value="${profile.id}">
+
+        <div class="dt-profile-asset-heading">
+          <strong>${dtEscape(profile.asset_name || "Asset")}</strong>
+          <span>${dtEscape(profile.asset_code || "")}</span>
+        </div>
+
+        <div class="dt-form-grid">
+          <div class="dt-field full">
+            <label>Allowance rule</label>
+            <select name="selected_rule" required>
+              <option value="">Select allowance rule</option>
+              ${options}
+            </select>
+          </div>
+
+          <div class="dt-field">
+            <label>Tax cost</label>
+            <input type="number" name="tax_cost" step="0.01"
+              value="${dtRuleValue(profile.tax_cost)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Tax start date</label>
+            <input type="date" name="tax_start_date"
+              value="${isoDate(profile.tax_start_date)}">
+          </div>
+
+          <div class="dt-field">
+            <label>Qualifying %</label>
+            <input type="number" name="qualifying_percent" min="0" max="100"
+              step="0.01" value="${profile.qualifying_percent ?? 100}">
+          </div>
+
+          <div class="dt-field">
+            <label>Private use %</label>
+            <input type="number" name="private_use_percent" min="0" max="100"
+              step="0.01" value="${profile.private_use_percent ?? 0}">
+          </div>
+
+          <div class="dt-field full">
+            <label class="dt-checkbox">
+              <input type="checkbox" name="is_tax_depreciable"
+                ${profile.is_tax_depreciable ? "checked" : ""}>
+              <span>Asset qualifies for capital allowances</span>
+            </label>
+          </div>
+
+          <div class="dt-field full">
+            <label class="dt-checkbox">
+              <input type="checkbox" name="is_active"
+                ${profile.is_active === false ? "" : "checked"}>
+              <span>Profile is active</span>
+            </label>
+          </div>
+
+          <div class="dt-field full">
+            <label>Notes</label>
+            <textarea name="notes" rows="3">${dtEscape(profile.notes || "")}</textarea>
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button type="button" class="btn btn-secondary"
+            id="dtBackToProfilesBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Profile</button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function saveAssetTaxProfile(form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    const [source, ruleId] = String(data.selected_rule || "").split(":");
+
+    if (!source || !ruleId) {
+      throw new Error("Select a capital allowance rule.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.deferredTax.assetTaxProfile(cid(), data.profile_id),
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          rule_source: source,
+          default_rule_id: source === "default" ? Number(ruleId) : null,
+          override_rule_id: source === "default" ? null : Number(ruleId),
+          tax_cost: data.tax_cost || null,
+          tax_start_date: data.tax_start_date || null,
+          qualifying_percent: Number(data.qualifying_percent || 100),
+          private_use_percent: Number(data.private_use_percent || 0),
+          is_tax_depreciable: form.elements.is_tax_depreciable.checked,
+          is_active: form.elements.is_active.checked,
+          notes: data.notes || null
+        })
+      }
+    );
+
+    await showAssetTaxProfilesManager();
   }
 
   async function createAssetTaxRun(form) {
@@ -43479,6 +44079,134 @@ async function saveEditModal() {
 
       if (e.target.id === "dtVoidBtn") {
         await runAction("void");
+      }
+
+      if (e.target.id === "dtAssetTaxRuleForm") {
+        e.preventDefault();
+        await saveAssetTaxRule(e.target);
+        return;
+      }
+
+      if (e.target.id === "dtAssetTaxProfileForm") {
+        e.preventDefault();
+        await saveAssetTaxProfile(e.target);
+        return;
+      }
+
+      if (e.target.id === "dtManageAssetTaxRulesBtn") {
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      if (e.target.id === "dtManageAssetTaxProfilesBtn") {
+        await showAssetTaxProfilesManager();
+        return;
+      }
+
+      if (e.target.id === "dtAddCompanyAllowanceRuleBtn") {
+        await showAssetTaxRuleForm();
+        return;
+      }
+
+      if (e.target.id === "dtBackToRulesBtn") {
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      if (e.target.id === "dtBackToProfilesBtn") {
+        await showAssetTaxProfilesManager();
+        return;
+      }
+
+      const overrideBtn = e.target.closest("[data-dt-rule-override]");
+
+      if (overrideBtn) {
+        const id = Number(overrideBtn.dataset.dtRuleOverride);
+        const rule = assetTaxRules.find(
+          item => Number(item.default_rule_id) === id
+        );
+
+        await showAssetTaxRuleForm({
+          mode: "override",
+          rule,
+          defaultRuleId: id
+        });
+        return;
+      }
+
+      const editRuleBtn = e.target.closest("[data-dt-rule-edit]");
+
+      if (editRuleBtn) {
+        const res = await apiFetch(
+          ENDPOINTS.deferredTax.companyAllowanceRule(
+            cid(),
+            editRuleBtn.dataset.dtRuleEdit
+          )
+        );
+
+        await showAssetTaxRuleForm({
+          mode: "edit",
+          rule: res?.data
+        });
+        return;
+      }
+
+      const disableBtn = e.target.closest("[data-dt-rule-disable]");
+
+      if (disableBtn) {
+        if (!confirm("Disable this default rule for this company?")) return;
+
+        await apiFetch(
+          ENDPOINTS.deferredTax.allowanceRuleDisable(
+            cid(),
+            disableBtn.dataset.dtRuleDisable
+          ),
+          { method: "POST" }
+        );
+
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      const deleteRuleBtn = e.target.closest("[data-dt-rule-delete]");
+
+      if (deleteRuleBtn) {
+        if (!confirm("Delete this company capital allowance rule?")) return;
+
+        await apiFetch(
+          ENDPOINTS.deferredTax.companyAllowanceRule(
+            cid(),
+            deleteRuleBtn.dataset.dtRuleDelete
+          ),
+          { method: "DELETE" }
+        );
+
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      const profileBtn = e.target.closest("[data-dt-profile-edit]");
+
+      if (profileBtn) {
+        const profile = assetTaxProfiles.find(
+          item => Number(item.id) === Number(profileBtn.dataset.dtProfileEdit)
+        );
+
+        if (!profile) {
+          throw new Error("Asset tax profile was not found.");
+        }
+
+        showAssetTaxProfileForm(profile);
+        return;
+      }
+
+      if ([
+        "dtNewAssetTaxRunBtn",
+        "dtAssetTaxWorkspaceNewRunBtn",
+        "dtEmptyNewAssetTaxRunBtn"
+      ].includes(e.target.id)) {
+        await showCreateAssetTaxRunModal();
+        return;
       }
     });
 

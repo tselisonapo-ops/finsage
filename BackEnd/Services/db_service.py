@@ -63073,13 +63073,66 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     LIMIT 1
                 """, (company_id, asset_id, authority_id, start_date), cur=cur)
 
-                accounting_cost = q2(
+                acquisition_cost = q2(
                     acquisition.get("capitalised_cost")
-                    or p.get("opening_cost")
-                    or p.get("register_cost")
                 )
-                tax_cost = q2(p["tax_cost"] if p.get("tax_cost") is not None else accounting_cost)
-                qualifying_factor = D(p.get("qualifying_percent") or 100) / D(100)
+
+                opening_cost = q2(
+                    p.get("opening_cost")
+                )
+
+                register_cost = q2(
+                    p.get("register_cost")
+                )
+
+                profile_tax_cost = (
+                    q2(p.get("tax_cost"))
+                    if p.get("tax_cost") is not None
+                    else None
+                )
+
+                # Posted acquisition records are the strongest source because
+                # they contain the actual VAT treatment.
+                if acquisition_cost > 0:
+                    accounting_cost = acquisition_cost
+                    tax_cost = acquisition_cost
+                    tax_cost_source = "vat_adjusted_acquisition"
+
+                # Opening-balance assets may not have an acquisition record.
+                elif opening_cost > 0:
+                    accounting_cost = opening_cost
+
+                    tax_cost = (
+                        profile_tax_cost
+                        if profile_tax_cost is not None
+                        else opening_cost
+                    )
+
+                    tax_cost_source = (
+                        "profile_override"
+                        if profile_tax_cost is not None
+                        else "opening_balance"
+                    )
+
+                else:
+                    accounting_cost = register_cost
+
+                    tax_cost = (
+                        profile_tax_cost
+                        if profile_tax_cost is not None
+                        else register_cost
+                    )
+
+                    tax_cost_source = (
+                        "profile_override"
+                        if profile_tax_cost is not None
+                        else "asset_register"
+                    )
+
+                qualifying_factor = (
+                    D(p.get("qualifying_percent") or 100)
+                    / D(100)
+                )
                 business_factor = (D(100) - D(p.get("private_use_percent") or 0)) / D(100)
                 qualifying_cost = q2(tax_cost * qualifying_factor * business_factor)
 
@@ -63156,9 +63209,28 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     notes.append("Accounting revaluation left tax WDV unchanged.")
                 if D(movements.get("impairment_losses")) or D(movements.get("impairment_reversals")):
                     notes.append("Accounting impairment left tax WDV unchanged.")
-                if p.get("tax_cost") is None:
-                    notes.append("Tax cost derived from VAT-adjusted capitalised cost.")
+                if tax_cost_source == "vat_adjusted_acquisition":
+                    notes.append(
+                        "Capital-allowance cost derived from the "
+                        "VAT-adjusted posted acquisition."
+                    )
 
+                elif tax_cost_source == "profile_override":
+                    notes.append(
+                        "Capital-allowance cost uses the tax-profile override."
+                    )
+
+                elif tax_cost_source == "opening_balance":
+                    notes.append(
+                        "Capital-allowance cost derived from the "
+                        "asset opening balance."
+                    )
+
+                else:
+                    notes.append(
+                        "Capital-allowance cost derived from the "
+                        "asset register."
+                    )
                 cur.execute(f"""
                     INSERT INTO {schema}.asset_tax_run_lines (
                         run_id, company_id, asset_tax_profile_id, asset_id,
@@ -63196,6 +63268,242 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             conn.commit()
 
         return {"run": updated_run, "line_count": inserted, "review_count": review_count}
+
+    def _asset_tax_cost_basis(
+        self,
+        cur,
+        *,
+        schema: str,
+        company_id: int,
+        asset_id: int,
+        tax_year_end,
+    ):
+        """
+        Returns the asset's tax-cost additions up to the tax year end.
+
+        Tax cost excludes recoverable input VAT and includes only
+        non-recoverable VAT that forms part of the asset's cost.
+        """
+        cur.execute(
+            f"""
+            SELECT
+                aa.id,
+                aa.acquisition_date,
+                aa.posting_date,
+                aa.amount,
+                aa.vat_treatment,
+                COALESCE(aa.net_amount, 0) AS net_amount,
+                COALESCE(aa.gross_amount, 0) AS gross_amount,
+                COALESCE(aa.vat_amount, 0) AS vat_amount,
+                COALESCE(
+                    aa.non_recoverable_vat_amount,
+                    0
+                ) AS non_recoverable_vat_amount,
+                COALESCE(
+                    aa.vat_input_claimable,
+                    FALSE
+                ) AS vat_input_claimable,
+                COALESCE(
+                    aa.vat_recovery_percent,
+                    100
+                ) AS vat_recovery_percent,
+                COALESCE(
+                    aa.nonrecoverable_vat_capitalized,
+                    FALSE
+                ) AS nonrecoverable_vat_capitalized,
+                aa.status
+            FROM {schema}.asset_acquisitions aa
+            WHERE aa.company_id = %s
+            AND aa.asset_id = %s
+            AND COALESCE(
+                    aa.posting_date,
+                    aa.acquisition_date
+                ) <= %s
+            AND aa.status NOT IN (
+                    'void',
+                    'reversed'
+                )
+            ORDER BY
+                COALESCE(
+                    aa.posting_date,
+                    aa.acquisition_date
+                ),
+                aa.id;
+            """,
+            (
+                int(company_id),
+                int(asset_id),
+                tax_year_end,
+            ),
+        )
+
+        acquisitions = cur.fetchall() or []
+
+        total_tax_cost = Decimal("0")
+        total_net = Decimal("0")
+        total_gross = Decimal("0")
+        total_vat = Decimal("0")
+        total_recoverable_vat = Decimal("0")
+        total_non_recoverable_vat = Decimal("0")
+        basis_sources = []
+
+        for acquisition in acquisitions:
+            amount = Decimal(str(
+                acquisition.get("amount") or 0
+            ))
+
+            net_amount = Decimal(str(
+                acquisition.get("net_amount") or 0
+            ))
+
+            gross_amount = Decimal(str(
+                acquisition.get("gross_amount") or 0
+            ))
+
+            vat_amount = Decimal(str(
+                acquisition.get("vat_amount") or 0
+            ))
+
+            non_recoverable_vat = Decimal(str(
+                acquisition.get(
+                    "non_recoverable_vat_amount"
+                ) or 0
+            ))
+
+            vat_claimable = bool(
+                acquisition.get("vat_input_claimable")
+            )
+
+            recovery_percent = Decimal(str(
+                acquisition.get(
+                    "vat_recovery_percent"
+                ) or 0
+            ))
+
+            recovery_percent = max(
+                Decimal("0"),
+                min(Decimal("100"), recovery_percent),
+            )
+
+            vat_treatment = str(
+                acquisition.get("vat_treatment")
+                or "no_vat"
+            ).strip().lower()
+
+            # Backward-compatible reconstruction for older acquisitions.
+            if gross_amount <= 0:
+                if vat_treatment == "exclusive":
+                    gross_amount = amount + vat_amount
+                else:
+                    gross_amount = amount
+
+            if net_amount <= 0:
+                if vat_treatment == "inclusive":
+                    net_amount = max(
+                        Decimal("0"),
+                        gross_amount - vat_amount,
+                    )
+                elif vat_treatment == "exclusive":
+                    net_amount = amount
+                else:
+                    net_amount = amount
+
+            if vat_amount <= 0:
+                vat_amount = max(
+                    Decimal("0"),
+                    gross_amount - net_amount,
+                )
+
+            recoverable_vat = Decimal("0")
+
+            if vat_claimable and vat_amount > 0:
+                recoverable_vat = (
+                    vat_amount
+                    * recovery_percent
+                    / Decimal("100")
+                )
+
+            # Use stored non-recoverable VAT where available.
+            if non_recoverable_vat <= 0:
+                non_recoverable_vat = max(
+                    Decimal("0"),
+                    vat_amount - recoverable_vat,
+                )
+
+            # Tax cost is net value plus VAT that cannot be recovered.
+            tax_cost = (
+                net_amount + non_recoverable_vat
+            ).quantize(Decimal("0.01"))
+
+            total_tax_cost += tax_cost
+            total_net += net_amount
+            total_gross += gross_amount
+            total_vat += vat_amount
+            total_recoverable_vat += recoverable_vat
+            total_non_recoverable_vat += (
+                non_recoverable_vat
+            )
+
+            basis_sources.append({
+                "acquisition_id": acquisition.get("id"),
+                "vat_treatment": vat_treatment,
+                "vat_input_claimable": vat_claimable,
+                "vat_recovery_percent":
+                    str(recovery_percent),
+                "net_amount": str(
+                    net_amount.quantize(
+                        Decimal("0.01")
+                    )
+                ),
+                "gross_amount": str(
+                    gross_amount.quantize(
+                        Decimal("0.01")
+                    )
+                ),
+                "vat_amount": str(
+                    vat_amount.quantize(
+                        Decimal("0.01")
+                    )
+                ),
+                "recoverable_vat": str(
+                    recoverable_vat.quantize(
+                        Decimal("0.01")
+                    )
+                ),
+                "non_recoverable_vat": str(
+                    non_recoverable_vat.quantize(
+                        Decimal("0.01")
+                    )
+                ),
+                "tax_cost": str(tax_cost),
+            })
+
+        return {
+            "tax_cost": total_tax_cost.quantize(
+                Decimal("0.01")
+            ),
+            "net_amount": total_net.quantize(
+                Decimal("0.01")
+            ),
+            "gross_amount": total_gross.quantize(
+                Decimal("0.01")
+            ),
+            "vat_amount": total_vat.quantize(
+                Decimal("0.01")
+            ),
+            "recoverable_vat": (
+                total_recoverable_vat
+            ).quantize(Decimal("0.01")),
+            "non_recoverable_vat": (
+                total_non_recoverable_vat
+            ).quantize(Decimal("0.01")),
+            "basis_source": (
+                "asset_acquisitions"
+                if acquisitions
+                else "asset_register_fallback"
+            ),
+            "acquisitions": basis_sources,
+        }
 
     def asset_tax_get_run(self, company_id: int, run_id: int) -> dict:
         schema = self.company_schema(company_id)
@@ -95413,9 +95721,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ).quantize(Decimal("0.01"))
 
         if scan_status == "resolved":
+            recognition_percent = Decimal("100")
             recognized_amount = gross_tax
             unrecognized_amount = Decimal("0")
         else:
+            recognition_percent = Decimal("0")
             recognized_amount = Decimal("0")
             unrecognized_amount = gross_tax
 
@@ -95451,7 +95761,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             VALUES (
                 %s,%s,%s,%s,%s,%s,%s,%s,%s,
                 %s,%s,%s,%s,%s,%s,
-                100,%s,%s,%s,%s,FALSE,
+                %s,%s,%s,%s,%s,FALSE,
                 %s,%s,%s,%s,%s::jsonb
             );
         """, (
@@ -97998,6 +98308,1028 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "credit": str(credit_total),
             },
         }
+
+    def _asset_tax_decimal(self, value, field_name="Value", allow_none=True):
+        if value in (None, ""):
+            return None if allow_none else Decimal("0")
+
+        try:
+            return Decimal(str(value))
+        except (TypeError, ValueError):
+            raise ValueError(f"{field_name} must be a valid number.")
+
+
+    def _asset_tax_date(self, value, field_name="Date", allow_none=True):
+        if value in (None, ""):
+            if allow_none:
+                return None
+            raise ValueError(f"{field_name} is required.")
+
+        if isinstance(value, date):
+            return value
+
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except (TypeError, ValueError):
+            raise ValueError(f"{field_name} must be a valid date.")
+
+
+    def _normalize_asset_tax_method(self, value):
+        method = str(value or "WDV").strip().upper()
+
+        if method not in {"WDV", "SL", "IMMEDIATE", "CUSTOM"}:
+            raise ValueError(
+                "Capital allowance method must be WDV, SL, IMMEDIATE or CUSTOM."
+            )
+
+        return method
+
+
+    def _asset_tax_text(self, value):
+        value = str(value or "").strip()
+        return value or None
+
+
+    def _asset_tax_rule_payload(self, payload, current=None):
+        current = current or {}
+
+        def pick(key, default=None):
+            return payload[key] if key in payload else current.get(key, default)
+
+        effective_from = self._asset_tax_date(
+            pick("effective_from", date.today()),
+            "Effective from",
+            False,
+        )
+        effective_to = self._asset_tax_date(
+            pick("effective_to"),
+            "Effective to",
+        )
+
+        if effective_to and effective_to < effective_from:
+            raise ValueError(
+                "Effective-to date cannot be before effective-from date."
+            )
+
+        rule_code = str(pick("rule_code") or "").strip().upper()
+        rule_name = str(pick("rule_name") or "").strip()
+
+        if not rule_code:
+            raise ValueError("Rule code is required.")
+
+        if not rule_name:
+            raise ValueError("Rule name is required.")
+
+        return {
+            "rule_code": rule_code,
+            "rule_name": rule_name,
+            "asset_category_hint": self._asset_tax_text(
+                pick("asset_category_hint")
+            ),
+            "method": self._normalize_asset_tax_method(pick("method")),
+            "rate_percent": self._asset_tax_decimal(
+                pick("rate_percent"),
+                "Rate",
+            ),
+            "useful_life_years": self._asset_tax_decimal(
+                pick("useful_life_years"),
+                "Useful life",
+            ),
+            "initial_allowance_percent": self._asset_tax_decimal(
+                pick("initial_allowance_percent"),
+                "Initial allowance percentage",
+            ),
+            "annual_allowance_percent": self._asset_tax_decimal(
+                pick("annual_allowance_percent"),
+                "Annual allowance percentage",
+            ),
+            "effective_from": effective_from,
+            "effective_to": effective_to,
+            "notes": self._asset_tax_text(pick("notes")),
+            "is_active": bool(pick("is_active", True)),
+        }
+
+
+    def _asset_tax_company_rule_save(
+        self,
+        company_id,
+        values,
+        *,
+        rule_id=None,
+        tax_authority_id=None,
+        default_rule_id=None,
+        override_type="custom",
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        params = (
+            tax_authority_id,
+            default_rule_id,
+            values["rule_code"],
+            values["rule_name"],
+            values["asset_category_hint"],
+            values["method"],
+            values["rate_percent"],
+            values["useful_life_years"],
+            values["initial_allowance_percent"],
+            values["annual_allowance_percent"],
+            values["effective_from"],
+            values["effective_to"],
+            override_type,
+            values["notes"],
+            values["is_active"],
+            user_id,
+        )
+
+        if rule_id:
+            return self.fetch_one(f"""
+                UPDATE {schema}.asset_tax_rule_overrides
+                SET tax_authority_id=%s,
+                    default_rule_id=%s,
+                    rule_code=%s,
+                    rule_name=%s,
+                    asset_category_hint=%s,
+                    method=%s,
+                    rate_percent=%s,
+                    useful_life_years=%s,
+                    initial_allowance_percent=%s,
+                    annual_allowance_percent=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    override_type=%s,
+                    notes=%s,
+                    is_active=%s,
+                    is_deleted=FALSE,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *;
+            """, params + (company_id, rule_id))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.asset_tax_rule_overrides (
+                company_id,
+                tax_authority_id,
+                default_rule_id,
+                rule_code,
+                rule_name,
+                asset_category_hint,
+                method,
+                rate_percent,
+                useful_life_years,
+                initial_allowance_percent,
+                annual_allowance_percent,
+                effective_from,
+                effective_to,
+                override_type,
+                notes,
+                is_active,
+                is_deleted,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,FALSE,%s,%s
+            )
+            RETURNING *;
+        """, (
+            company_id,
+            tax_authority_id,
+            default_rule_id,
+            values["rule_code"],
+            values["rule_name"],
+            values["asset_category_hint"],
+            values["method"],
+            values["rate_percent"],
+            values["useful_life_years"],
+            values["initial_allowance_percent"],
+            values["annual_allowance_percent"],
+            values["effective_from"],
+            values["effective_to"],
+            override_type,
+            values["notes"],
+            values["is_active"],
+            user_id,
+            user_id,
+        ))
+
+    def asset_tax_rules_list(
+        self,
+        company_id,
+        *,
+        tax_authority_id=None,
+        active_only=False,
+        as_at=None,
+    ):
+        schema = self.company_schema(company_id)
+        settings = self.deferred_tax_get_settings(company_id) or {}
+        authority_id = tax_authority_id or settings.get("tax_authority_id")
+
+        if not authority_id:
+            return []
+
+        as_at = self._asset_tax_date(
+            as_at or date.today(),
+            "Rule date",
+            False,
+        )
+
+        rows = self.fetch_all(f"""
+            WITH defaults AS (
+                SELECT
+                    r.id::BIGINT AS rule_id,
+                    r.id AS default_rule_id,
+                    NULL::BIGINT AS override_rule_id,
+                    r.tax_authority_id,
+                    ta.code AS tax_authority_code,
+                    ta.name AS tax_authority_name,
+                    r.rule_code,
+                    r.rule_name,
+                    r.asset_category_hint,
+                    r.method,
+                    r.rate_percent,
+                    r.useful_life_years,
+                    r.initial_allowance_percent,
+                    r.annual_allowance_percent,
+                    r.effective_from,
+                    r.effective_to,
+                    r.notes,
+                    r.is_active,
+                    'default'::TEXT AS rule_source,
+                    FALSE AS is_company_rule,
+                    FALSE AS is_override,
+                    FALSE AS is_disabled_for_company,
+                    NULL::TEXT AS override_type,
+                    NULL::TIMESTAMPTZ AS updated_at
+                FROM public.tax_allowance_rules r
+                JOIN public.tax_authorities ta
+                ON ta.id=r.tax_authority_id
+                WHERE r.tax_authority_id=%s
+                AND r.effective_from<=%s
+                AND (r.effective_to IS NULL OR r.effective_to>=%s)
+            ),
+            company_rules AS (
+                SELECT
+                    o.id AS rule_id,
+                    o.default_rule_id,
+                    o.id AS override_rule_id,
+                    o.tax_authority_id,
+                    ta.code AS tax_authority_code,
+                    ta.name AS tax_authority_name,
+                    o.rule_code,
+                    o.rule_name,
+                    o.asset_category_hint,
+                    o.method,
+                    o.rate_percent,
+                    o.useful_life_years,
+                    o.initial_allowance_percent,
+                    o.annual_allowance_percent,
+                    o.effective_from,
+                    o.effective_to,
+                    o.notes,
+                    o.is_active,
+                    CASE
+                        WHEN o.override_type='custom' THEN 'custom'
+                        WHEN o.override_type='override' THEN 'override'
+                        ELSE 'disabled_default'
+                    END AS rule_source,
+                    TRUE AS is_company_rule,
+                    o.override_type='override' AS is_override,
+                    o.override_type='disabled_default' AS is_disabled_for_company,
+                    o.override_type,
+                    o.updated_at
+                FROM {schema}.asset_tax_rule_overrides o
+                JOIN public.tax_authorities ta
+                ON ta.id=o.tax_authority_id
+                WHERE o.company_id=%s
+                AND o.tax_authority_id=%s
+                AND o.is_deleted=FALSE
+                AND o.effective_from<=%s
+                AND (o.effective_to IS NULL OR o.effective_to>=%s)
+            )
+            SELECT *
+            FROM defaults d
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM company_rules c
+                WHERE c.default_rule_id=d.default_rule_id
+                AND c.override_type IN ('override','disabled_default')
+            )
+
+            UNION ALL
+
+            SELECT * FROM company_rules
+
+            ORDER BY is_disabled_for_company, rule_name, effective_from DESC;
+        """, (
+            authority_id,
+            as_at,
+            as_at,
+            company_id,
+            authority_id,
+            as_at,
+            as_at,
+        )) or []
+
+        if active_only:
+            rows = [
+                row for row in rows
+                if row.get("is_active")
+                and not row.get("is_disabled_for_company")
+            ]
+
+        for row in rows:
+            source = row.get("rule_source")
+            row["can_edit"] = source in {"override", "custom"}
+            row["can_delete"] = bool(row.get("is_company_rule"))
+            row["can_override"] = source == "default"
+
+        return rows
+
+
+    def asset_tax_company_rule_get(self, company_id, rule_id):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                o.*,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+                d.rule_code AS default_rule_code,
+                d.rule_name AS default_rule_name
+            FROM {schema}.asset_tax_rule_overrides o
+            JOIN public.tax_authorities ta
+            ON ta.id=o.tax_authority_id
+            LEFT JOIN public.tax_allowance_rules d
+            ON d.id=o.default_rule_id
+            WHERE o.company_id=%s
+            AND o.id=%s
+            AND o.is_deleted=FALSE
+            LIMIT 1;
+        """, (company_id, rule_id))
+
+
+    def asset_tax_company_rule_create(
+        self,
+        company_id,
+        payload,
+        *,
+        user_id=None,
+    ):
+        settings = self.deferred_tax_get_settings(company_id) or {}
+        authority_id = payload.get("tax_authority_id") or settings.get(
+            "tax_authority_id"
+        )
+
+        if not authority_id:
+            raise ValueError("A tax authority is required.")
+
+        values = self._asset_tax_rule_payload(payload)
+
+        return self._asset_tax_company_rule_save(
+            company_id,
+            values,
+            tax_authority_id=authority_id,
+            override_type="custom",
+            user_id=user_id,
+        )
+
+
+    def asset_tax_company_rule_update(
+        self,
+        company_id,
+        rule_id,
+        payload,
+        *,
+        user_id=None,
+    ):
+        current = self.asset_tax_company_rule_get(company_id, rule_id)
+
+        if not current:
+            raise ValueError("Company capital allowance rule not found.")
+
+        if current.get("override_type") == "disabled_default":
+            raise ValueError(
+                "A disabled default cannot be edited. Restore or override it first."
+            )
+
+        values = self._asset_tax_rule_payload(payload, current)
+
+        return self._asset_tax_company_rule_save(
+            company_id,
+            values,
+            rule_id=rule_id,
+            tax_authority_id=current["tax_authority_id"],
+            default_rule_id=current.get("default_rule_id"),
+            override_type=current["override_type"],
+            user_id=user_id,
+        )
+
+
+    def asset_tax_company_rule_delete(
+        self,
+        company_id,
+        rule_id,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+        current = self.asset_tax_company_rule_get(company_id, rule_id)
+
+        if not current:
+            raise ValueError("Company capital allowance rule not found.")
+
+        used = self.fetch_one(f"""
+            SELECT EXISTS (
+                SELECT 1
+                FROM {schema}.asset_tax_profiles
+                WHERE company_id=%s
+                AND override_rule_id=%s
+            ) AS used;
+        """, (company_id, rule_id))
+
+        if used and used.get("used"):
+            raise ValueError(
+                "This rule is assigned to asset tax profiles. Reassign them first."
+            )
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.asset_tax_rule_overrides
+            SET is_active=FALSE,
+                is_deleted=TRUE,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """, (user_id, company_id, rule_id))
+
+    def asset_tax_default_rule_override(
+        self,
+        company_id,
+        default_rule_id,
+        payload,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        default_rule = self.fetch_one("""
+            SELECT *
+            FROM public.tax_allowance_rules
+            WHERE id=%s
+            LIMIT 1;
+        """, (default_rule_id,))
+
+        if not default_rule:
+            raise ValueError("Default capital allowance rule not found.")
+
+        values = self._asset_tax_rule_payload(payload, default_rule)
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.asset_tax_rule_overrides
+            WHERE company_id=%s
+            AND default_rule_id=%s
+            AND is_deleted=FALSE
+            ORDER BY id DESC
+            LIMIT 1;
+        """, (company_id, default_rule_id))
+
+        return self._asset_tax_company_rule_save(
+            company_id,
+            values,
+            rule_id=existing["id"] if existing else None,
+            tax_authority_id=default_rule["tax_authority_id"],
+            default_rule_id=default_rule_id,
+            override_type="override",
+            user_id=user_id,
+        )
+
+
+    def asset_tax_default_rule_disable(
+        self,
+        company_id,
+        default_rule_id,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        default_rule = self.fetch_one("""
+            SELECT *
+            FROM public.tax_allowance_rules
+            WHERE id=%s
+            LIMIT 1;
+        """, (default_rule_id,))
+
+        if not default_rule:
+            raise ValueError("Default capital allowance rule not found.")
+
+        existing = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.asset_tax_rule_overrides
+            WHERE company_id=%s
+            AND default_rule_id=%s
+            AND is_deleted=FALSE
+            ORDER BY id DESC
+            LIMIT 1;
+        """, (company_id, default_rule_id))
+
+        values = self._asset_tax_rule_payload(
+            {
+                **default_rule,
+                "effective_from": date.today(),
+                "effective_to": None,
+                "notes": "Disabled for this company.",
+                "is_active": False,
+            }
+        )
+
+        return self._asset_tax_company_rule_save(
+            company_id,
+            values,
+            rule_id=existing["id"] if existing else None,
+            tax_authority_id=default_rule["tax_authority_id"],
+            default_rule_id=default_rule_id,
+            override_type="disabled_default",
+            user_id=user_id,
+        )
+
+    def asset_tax_profiles_list(
+        self,
+        company_id,
+        *,
+        tax_authority_id=None,
+        active_only=False,
+    ):
+        schema = self.company_schema(company_id)
+        where = ["p.company_id=%s"]
+        params = [company_id]
+
+        if tax_authority_id:
+            where.append("p.tax_authority_id=%s")
+            params.append(tax_authority_id)
+
+        if active_only:
+            where.append("p.is_active=TRUE")
+
+        return self.fetch_all(f"""
+            SELECT
+                p.*,
+                a.asset_code,
+                a.name AS asset_name,
+                a.category AS asset_category,
+                a.asset_class,
+                ta.code AS tax_authority_code,
+                ta.name AS tax_authority_name,
+                COALESCE(o.rule_code,d.rule_code) AS rule_code,
+                COALESCE(o.rule_name,d.rule_name) AS rule_name,
+                COALESCE(o.method,d.method) AS rule_method,
+                COALESCE(o.rate_percent,d.rate_percent) AS rule_rate_percent,
+                CASE
+                    WHEN p.override_rule_id IS NOT NULL
+                        THEN COALESCE(p.rule_source,o.override_type,'override')
+                    WHEN p.default_rule_id IS NOT NULL
+                        THEN 'default'
+                    ELSE COALESCE(p.rule_source,'manual')
+                END AS effective_rule_source
+            FROM {schema}.asset_tax_profiles p
+            JOIN {schema}.assets a
+            ON a.id=p.asset_id
+            AND a.company_id=p.company_id
+            LEFT JOIN public.tax_authorities ta
+            ON ta.id=p.tax_authority_id
+            LEFT JOIN public.tax_allowance_rules d
+            ON d.id=p.default_rule_id
+            LEFT JOIN {schema}.asset_tax_rule_overrides o
+            ON o.id=p.override_rule_id
+            AND o.company_id=p.company_id
+            AND o.is_deleted=FALSE
+            WHERE {" AND ".join(where)}
+            ORDER BY a.asset_code,a.name,p.id;
+        """, tuple(params)) or []
+
+
+    def asset_tax_profile_update_rule(
+        self,
+        company_id,
+        profile_id,
+        payload,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        current = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.asset_tax_profiles
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+        """, (company_id, profile_id))
+
+        if not current:
+            raise ValueError("Asset tax profile not found.")
+
+        source = str(
+            payload.get("rule_source", current.get("rule_source") or "default")
+        ).strip().lower()
+
+        if source not in {"default", "override", "custom", "manual"}:
+            raise ValueError("Invalid capital allowance rule source.")
+
+        default_rule_id = payload.get("default_rule_id")
+        override_rule_id = payload.get("override_rule_id")
+        authority_id = payload.get("tax_authority_id") or current.get(
+            "tax_authority_id"
+        )
+
+        if source == "default":
+            rule = self.fetch_one("""
+                SELECT id,tax_authority_id
+                FROM public.tax_allowance_rules
+                WHERE id=%s
+                AND is_active=TRUE
+                LIMIT 1;
+            """, (default_rule_id,))
+
+            if not rule:
+                raise ValueError("Selected default allowance rule was not found.")
+
+            authority_id = rule["tax_authority_id"]
+            override_rule_id = None
+
+        elif source in {"override", "custom"}:
+            rule = self.fetch_one(f"""
+                SELECT id,tax_authority_id,default_rule_id,override_type
+                FROM {schema}.asset_tax_rule_overrides
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                AND is_deleted=FALSE
+                LIMIT 1;
+            """, (company_id, override_rule_id))
+
+            if not rule:
+                raise ValueError("Selected company allowance rule was not found.")
+
+            authority_id = rule["tax_authority_id"]
+            default_rule_id = rule.get("default_rule_id")
+
+        else:
+            default_rule_id = None
+            override_rule_id = None
+
+        tax_cost = self._asset_tax_decimal(
+            payload.get("tax_cost", current.get("tax_cost")),
+            "Tax cost",
+        )
+        qualifying = self._asset_tax_decimal(
+            payload.get("qualifying_percent", current.get("qualifying_percent", 100)),
+            "Qualifying percentage",
+            False,
+        )
+        private_use = self._asset_tax_decimal(
+            payload.get("private_use_percent", current.get("private_use_percent", 0)),
+            "Private-use percentage",
+            False,
+        )
+
+        if not Decimal("0") <= qualifying <= Decimal("100"):
+            raise ValueError("Qualifying percentage must be between 0 and 100.")
+
+        if not Decimal("0") <= private_use <= Decimal("100"):
+            raise ValueError("Private-use percentage must be between 0 and 100.")
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.asset_tax_profiles
+            SET tax_authority_id=%s,
+                default_rule_id=%s,
+                override_rule_id=%s,
+                rule_source=%s,
+                tax_cost=%s,
+                tax_start_date=%s,
+                qualifying_percent=%s,
+                private_use_percent=%s,
+                is_tax_depreciable=%s,
+                is_active=%s,
+                notes=%s,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """, (
+            authority_id,
+            default_rule_id,
+            override_rule_id,
+            source,
+            tax_cost,
+            self._asset_tax_date(
+                payload.get("tax_start_date", current.get("tax_start_date")),
+                "Tax start date",
+            ),
+            qualifying,
+            private_use,
+            bool(payload.get(
+                "is_tax_depreciable",
+                current.get("is_tax_depreciable"),
+            )),
+            bool(payload.get("is_active", current.get("is_active"))),
+            self._asset_tax_text(payload.get("notes", current.get("notes"))),
+            user_id,
+            company_id,
+            profile_id,
+        ))
+
+    def _asset_tax_rule_select(self, table_alias="r", source="'default'"):
+        return f"""
+            {table_alias}.id AS rule_id,
+            {table_alias}.default_rule_id,
+            {table_alias}.override_rule_id,
+            {table_alias}.tax_authority_id,
+            {table_alias}.rule_code,
+            {table_alias}.rule_name,
+            {table_alias}.asset_category_hint,
+            {table_alias}.method,
+            {table_alias}.rate_percent,
+            {table_alias}.useful_life_years,
+            {table_alias}.initial_allowance_percent,
+            {table_alias}.annual_allowance_percent,
+            {table_alias}.effective_from,
+            {table_alias}.effective_to,
+            {table_alias}.notes,
+            {source}::TEXT AS rule_source
+        """
+
+
+    def resolve_asset_tax_rule(
+        self,
+        company_id,
+        *,
+        profile,
+        asset,
+        tax_authority_id,
+        as_at,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+        as_at = self._asset_tax_date(as_at, "Calculation date", False)
+        override_id = profile.get("override_rule_id")
+        default_id = profile.get("default_rule_id") or profile.get(
+            "allowance_rule_id"
+        )
+
+        def one(query, params):
+            return self.fetch_one(query, params, cur=cur)
+
+        if override_id:
+            rule = one(f"""
+                SELECT
+                    o.id AS rule_id,
+                    o.default_rule_id,
+                    o.id AS override_rule_id,
+                    o.tax_authority_id,
+                    o.rule_code,
+                    o.rule_name,
+                    o.asset_category_hint,
+                    o.method,
+                    o.rate_percent,
+                    o.useful_life_years,
+                    o.initial_allowance_percent,
+                    o.annual_allowance_percent,
+                    o.effective_from,
+                    o.effective_to,
+                    o.notes,
+                    o.override_type AS rule_source
+                FROM {schema}.asset_tax_rule_overrides o
+                WHERE o.company_id=%s
+                AND o.id=%s
+                AND o.tax_authority_id=%s
+                AND o.override_type IN ('override','custom')
+                AND o.is_active=TRUE
+                AND o.is_deleted=FALSE
+                AND o.effective_from<=%s
+                AND (o.effective_to IS NULL OR o.effective_to>=%s)
+                LIMIT 1;
+            """, (company_id, override_id, tax_authority_id, as_at, as_at))
+
+            if rule:
+                return rule
+
+        if default_id:
+            company_rule = one(f"""
+                SELECT
+                    o.id AS rule_id,
+                    o.default_rule_id,
+                    o.id AS override_rule_id,
+                    o.tax_authority_id,
+                    o.rule_code,
+                    o.rule_name,
+                    o.asset_category_hint,
+                    o.method,
+                    o.rate_percent,
+                    o.useful_life_years,
+                    o.initial_allowance_percent,
+                    o.annual_allowance_percent,
+                    o.effective_from,
+                    o.effective_to,
+                    o.notes,
+                    o.override_type AS rule_source
+                FROM {schema}.asset_tax_rule_overrides o
+                WHERE o.company_id=%s
+                AND o.default_rule_id=%s
+                AND o.tax_authority_id=%s
+                AND o.is_deleted=FALSE
+                ORDER BY o.effective_from DESC,o.id DESC
+                LIMIT 1;
+            """, (company_id, default_id, tax_authority_id))
+
+            if company_rule:
+                if company_rule["rule_source"] == "disabled_default":
+                    return None
+                if company_rule.get("is_active", True):
+                    return company_rule
+
+            rule = one("""
+                SELECT
+                    r.id AS rule_id,
+                    r.id AS default_rule_id,
+                    NULL::BIGINT AS override_rule_id,
+                    r.tax_authority_id,
+                    r.rule_code,
+                    r.rule_name,
+                    r.asset_category_hint,
+                    r.method,
+                    r.rate_percent,
+                    r.useful_life_years,
+                    r.initial_allowance_percent,
+                    r.annual_allowance_percent,
+                    r.effective_from,
+                    r.effective_to,
+                    r.notes,
+                    'default'::TEXT AS rule_source
+                FROM public.tax_allowance_rules r
+                WHERE r.id=%s
+                AND r.tax_authority_id=%s
+                AND r.is_active=TRUE
+                AND r.effective_from<=%s
+                AND (r.effective_to IS NULL OR r.effective_to>=%s)
+                LIMIT 1;
+            """, (default_id, tax_authority_id, as_at, as_at))
+
+            if rule:
+                return rule
+
+        category = " ".join(
+            str(asset.get(key) or "").strip()
+            for key in (
+                "asset_class",
+                "category",
+                "asset_category",
+                "asset_class_group",
+                "component_type",
+            )
+        ).lower()
+
+        if not category:
+            return None
+
+        rules = self.asset_tax_rules_list(
+            company_id,
+            tax_authority_id=tax_authority_id,
+            active_only=True,
+            as_at=as_at,
+        )
+
+        for rule in rules:
+            hint = str(rule.get("asset_category_hint") or "").strip().lower()
+            if hint and hint in category:
+                return rule
+
+        return None
+
+
+    def asset_tax_rule_snapshot(self, rule):
+        if not rule:
+            return {}
+
+        keys = (
+            "rule_id",
+            "default_rule_id",
+            "override_rule_id",
+            "rule_source",
+            "tax_authority_id",
+            "rule_code",
+            "rule_name",
+            "asset_category_hint",
+            "method",
+            "rate_percent",
+            "useful_life_years",
+            "initial_allowance_percent",
+            "annual_allowance_percent",
+            "effective_from",
+            "effective_to",
+        )
+
+        return {key: rule.get(key) for key in keys}
+
+    def _asset_tax_rule_values(self, rule):
+        if not rule:
+            return {
+                "method": "CUSTOM",
+                "rate_percent": Decimal("0"),
+                "initial_percent": Decimal("0"),
+                "annual_percent": Decimal("0"),
+                "useful_life_years": None,
+                "requires_review": True,
+            }
+
+        return {
+            "method": str(rule.get("method") or "WDV").upper(),
+            "rate_percent": Decimal(str(
+                rule.get("rate_percent")
+                or rule.get("annual_allowance_percent")
+                or 0
+            )),
+            "initial_percent": Decimal(str(
+                rule.get("initial_allowance_percent") or 0
+            )),
+            "annual_percent": Decimal(str(
+                rule.get("annual_allowance_percent")
+                or rule.get("rate_percent")
+                or 0
+            )),
+            "useful_life_years": (
+                Decimal(str(rule["useful_life_years"]))
+                if rule.get("useful_life_years") not in (None, "")
+                else None
+            ),
+            "requires_review": False,
+        }
+
+
+    def _asset_tax_calculate_allowance(
+        self,
+        *,
+        opening_tax_wdv,
+        additions,
+        rule,
+    ):
+        zero = Decimal("0")
+        hundred = Decimal("100")
+        values = self._asset_tax_rule_values(rule)
+
+        opening_tax_wdv = Decimal(str(opening_tax_wdv or 0))
+        additions = Decimal(str(additions or 0))
+        available = opening_tax_wdv + additions
+
+        initial = zero
+        annual = zero
+        method = values["method"]
+
+        if not rule:
+            notes = "No active allowance rule was resolved. Review required."
+        elif method == "IMMEDIATE":
+            annual = available
+            notes = f"Immediate write-off using {rule['rule_source']} rule."
+        elif method == "SL":
+            life = values["useful_life_years"]
+            annual = (
+                available / life
+                if life and life > zero
+                else available * values["annual_percent"] / hundred
+            )
+            notes = f"Straight-line allowance using {rule['rule_source']} rule."
+        else:
+            initial = additions * values["initial_percent"] / hundred
+            annual = available * values["annual_percent"] / hundred
+            notes = (
+                f"Written-down-value allowance using {rule['rule_source']} rule."
+                if method == "WDV"
+                else "Custom allowance method. Review the calculated amount."
+            )
+            values["requires_review"] = method == "CUSTOM"
+
+        total = min(initial + annual, available)
+        closing = max(available - total, zero)
+
+        return {
+            **values,
+            "opening_tax_wdv": opening_tax_wdv,
+            "additions": additions,
+            "available_base": available,
+            "initial_allowance": initial,
+            "annual_allowance": annual,
+            "total_capital_allowance": total,
+            "closing_tax_wdv": closing,
+            "notes": notes,
+        }
+
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"
