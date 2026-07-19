@@ -42686,7 +42686,6 @@ async function saveEditModal() {
 
   function renderAssetTaxRun() {
     const run = selectedAssetTaxRun;
-
     if (!run) return;
 
     const lines =
@@ -42696,27 +42695,22 @@ async function saveEditModal() {
       [];
 
     const status = run.status || "draft";
-
     const isDraft = status === "draft";
     const isCalculated = status === "calculated";
     const isApproved = status === "approved";
     const isLocked = status === "locked";
 
-    const totalOpening = lines.reduce(
-      (sum, line) =>
-        sum + Number(line.opening_tax_wdv || 0),
-      0
-    );
+    const sum = key =>
+      lines.reduce((total, line) => total + Number(line[key] || 0), 0);
 
-    const totalAdditions = lines.reduce(
-      (sum, line) =>
-        sum + Number(line.additions || 0),
-      0
-    );
+    const totalOpening = sum("opening_tax_wdv");
+    const totalAdditions = sum("additions");
+    const totalClosing = sum("closing_tax_wdv");
+    const totalAdjustment = sum("tax_adjustment");
 
     const totalAllowance = lines.reduce(
-      (sum, line) =>
-        sum +
+      (total, line) =>
+        total +
         Number(
           line.total_capital_allowance ??
           line.annual_allowance ??
@@ -42725,153 +42719,104 @@ async function saveEditModal() {
       0
     );
 
-    const totalClosing = lines.reduce(
-      (sum, line) =>
-        sum + Number(line.closing_tax_wdv || 0),
-      0
-    );
-
-    const totalAdjustment = lines.reduce(
-      (sum, line) =>
-        sum + Number(line.tax_adjustment || 0),
-      0
-    );
+    const ruleSourceLabel = source => ({
+      default: "Authority Default",
+      override: "Company Override",
+      custom: "Company Rule",
+      manual: "Manual",
+      disabled_default: "Disabled"
+    })[source] || "Authority Default";
 
     const actionButtons = `
-      <button
-        type="button"
-        class="btn btn-secondary"
-        id="dtAssetTaxBackBtn"
-      >
+      <button type="button" class="btn btn-secondary"
+        id="dtAssetTaxBackBtn">
         ← Back to Runs
       </button>
 
       ${!isLocked ? `
-        <button
-          type="button"
-          class="btn btn-primary"
-          id="dtAssetTaxCalculateBtn"
-        >
+        <button type="button" class="btn btn-primary"
+          id="dtAssetTaxCalculateBtn">
           ${isDraft ? "Calculate Allowances" : "Recalculate"}
         </button>
       ` : ""}
 
       ${isCalculated ? `
-        <button
-          type="button"
-          class="btn btn-primary"
-          id="dtAssetTaxApproveBtn"
-        >
+        <button type="button" class="btn btn-primary"
+          id="dtAssetTaxApproveBtn">
           Approve Run
         </button>
       ` : ""}
 
       ${isApproved ? `
-        <button
-          type="button"
-          class="btn btn-secondary"
-          id="dtAssetTaxReturnDraftBtn"
-        >
+        <button type="button" class="btn btn-secondary"
+          id="dtAssetTaxReturnDraftBtn">
           Return to Draft
         </button>
 
-        <button
-          type="button"
-          class="btn btn-primary"
-          id="dtAssetTaxLockBtn"
-        >
+        <button type="button" class="btn btn-primary"
+          id="dtAssetTaxLockBtn">
           Lock Run
         </button>
       ` : ""}
 
       ${!isLocked ? `
-        <button
-          type="button"
-          class="btn btn-danger"
-          id="dtAssetTaxVoidBtn"
-        >
+        <button type="button" class="btn btn-danger"
+          id="dtAssetTaxVoidBtn">
           Void Run
         </button>
       ` : ""}
     `;
 
-    const lineRows = lines.map(line => `
-      <tr>
-        <td>
-          <strong>
-            ${line.asset_code || "-"}
-          </strong>
-          <br>
-          <small>
-            ${line.asset_name || ""}
-          </small>
-        </td>
+    const lineRows = lines.map(line => {
+      const source = line.rule_source || "default";
+      const total =
+        line.total_capital_allowance ??
+        (
+          Number(line.initial_allowance || 0) +
+          Number(line.annual_allowance || 0)
+        );
 
-        <td>
-          ${line.rule_code || "Review required"}
-        </td>
+      return `
+        <tr>
+          <td>
+            <strong>${dtEscape(line.asset_code || "-")}</strong>
+            <br>
+            <small>${dtEscape(line.asset_name || "")}</small>
+          </td>
 
-        <td>
-          ${line.calculation_method || "-"}
-        </td>
+          <td>
+            ${dtEscape(line.rule_code || "Review required")}
+          </td>
 
-        <td>
-          ${Number(
-            line.rate_percent || 0
-          ).toFixed(2)}%
-        </td>
+          <td>
+            <span class="dt-rule-source ${source}">
+              ${dtEscape(ruleSourceLabel(source))}
+            </span>
+          </td>
 
-        <td>
-          ${money(line.opening_tax_wdv)}
-        </td>
+          <td>
+            ${dtEscape(line.calculation_method || "-")}
+          </td>
 
-        <td>
-          ${money(line.additions)}
-        </td>
+          <td>
+            ${Number(line.rate_percent || 0).toFixed(2)}%
+          </td>
 
-        <td>
-          ${money(line.initial_allowance)}
-        </td>
+          <td>${money(line.opening_tax_wdv)}</td>
+          <td>${money(line.additions)}</td>
+          <td>${money(line.initial_allowance)}</td>
+          <td>${money(line.annual_allowance)}</td>
+          <td>${money(total)}</td>
+          <td>${money(line.closing_tax_wdv)}</td>
+          <td>${money(line.book_depreciation)}</td>
+          <td>${money(line.tax_adjustment)}</td>
+          <td>${money(line.temporary_difference)}</td>
+          <td>${dtEscape(line.notes || "-")}</td>
+        </tr>
+      `;
+    }).join("");
 
-        <td>
-          ${money(line.annual_allowance)}
-        </td>
-
-        <td>
-          ${money(
-            line.total_capital_allowance ??
-            (
-              Number(line.initial_allowance || 0) +
-              Number(line.annual_allowance || 0)
-            )
-          )}
-        </td>
-
-        <td>
-          ${money(line.closing_tax_wdv)}
-        </td>
-
-        <td>
-          ${money(line.book_depreciation)}
-        </td>
-
-        <td>
-          ${money(line.tax_adjustment)}
-        </td>
-
-        <td>
-          ${money(line.temporary_difference)}
-        </td>
-
-        <td>
-          ${line.notes || "-"}
-        </td>
-      </tr>
-    `).join("");
-
-    document.getElementById(
-      "dtAssetTaxRunDetail"
-    ).innerHTML = `
+    document.getElementById("dtAssetTaxRunDetail").innerHTML = `
       <div class="dt-run-info">
         <div>
           <span>Tax year</span>
@@ -42881,13 +42826,9 @@ async function saveEditModal() {
         <div>
           <span>Period</span>
           <strong>
-            ${String(
-              run.tax_year_start || ""
-            ).slice(0, 10)}
+            ${String(run.tax_year_start || "").slice(0, 10)}
             –
-            ${String(
-              run.tax_year_end || ""
-            ).slice(0, 10)}
+            ${String(run.tax_year_end || "").slice(0, 10)}
           </strong>
         </div>
 
@@ -42906,7 +42847,7 @@ async function saveEditModal() {
         <div>
           <span>Status</span>
           <strong class="dt-status ${status}">
-            ${status}
+            ${dtEscape(status)}
           </strong>
         </div>
       </div>
@@ -42915,45 +42856,32 @@ async function saveEditModal() {
         ${actionButtons}
       </div>
 
-      ${
-        isDraft
-          ? `
-            <div class="dt-help-card">
-              <strong>Run not calculated</strong>
-              <p>
-                Calculate the run to create capital
-                allowance lines for active asset tax
-                profiles.
-              </p>
-            </div>
-          `
-          : ""
-      }
+      ${isDraft ? `
+        <div class="dt-help-card">
+          <strong>Run not calculated</strong>
+          <p>
+            Calculate the run to create capital allowance
+            lines for active asset tax profiles.
+          </p>
+        </div>
+      ` : ""}
 
-      ${
-        isCalculated
-          ? `
-            <div class="dt-help-card">
-              <strong>Calculation completed</strong>
-              <p>
-                Review the rules, allowances and tax
-                adjustments before approving the run.
-              </p>
-            </div>
-          `
-          : ""
-      }
+      ${isCalculated ? `
+        <div class="dt-help-card">
+          <strong>Calculation completed</strong>
+          <p>
+            Review the rules, allowances and tax
+            adjustments before approving the run.
+          </p>
+        </div>
+      ` : ""}
 
-      ${
-        isLocked
-          ? `
-            <div class="dt-lock-notice">
-              This capital allowance run is locked and
-              cannot be recalculated.
-            </div>
-          `
-          : ""
-      }
+      ${isLocked ? `
+        <div class="dt-lock-notice">
+          This capital allowance run is locked and
+          cannot be recalculated.
+        </div>
+      ` : ""}
 
       <div class="dt-summary-grid">
         <div class="dt-summary-card">
@@ -42997,46 +42925,43 @@ async function saveEditModal() {
         </span>
       </div>
 
-      ${
-        lines.length
-          ? `
-            <div class="dt-table-wrap">
-              <table class="dt-table">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    <th>Rule</th>
-                    <th>Method</th>
-                    <th>Rate</th>
-                    <th>Opening WDV</th>
-                    <th>Additions</th>
-                    <th>Initial</th>
-                    <th>Annual</th>
-                    <th>Total Allowance</th>
-                    <th>Closing WDV</th>
-                    <th>Book Depreciation</th>
-                    <th>Tax Adjustment</th>
-                    <th>Temporary Difference</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
+      ${lines.length ? `
+        <div class="dt-table-wrap">
+          <table class="dt-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Rule</th>
+                <th>Source</th>
+                <th>Method</th>
+                <th>Rate</th>
+                <th>Opening<br>Tax WDV</th>
+                <th>Additions</th>
+                <th>Initial<br>Allowance</th>
+                <th>Annual<br>Allowance</th>
+                <th>Total<br>Allowance</th>
+                <th>Closing<br>Tax WDV</th>
+                <th>Book<br>Depreciation</th>
+                <th>Tax<br>Adjustment</th>
+                <th>Temporary<br>Difference</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
 
-                <tbody>
-                  ${lineRows}
-                </tbody>
-              </table>
-            </div>
-          `
-          : `
-            <div class="dt-empty">
-              <strong>No calculation lines</strong>
-              <p>
-                Select Calculate Allowances to generate
-                the asset tax calculation.
-              </p>
-            </div>
-          `
-      }
+            <tbody>
+              ${lineRows}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="dt-empty">
+          <strong>No calculation lines</strong>
+          <p>
+            Select Calculate Allowances to generate
+            the asset tax calculation.
+          </p>
+        </div>
+      `}
     `;
   }
 
@@ -43826,6 +43751,17 @@ async function saveEditModal() {
         e.preventDefault();
         await addLine(e.target);
       }
+
+      if (
+        e.target.id ===
+        "dtAssetTaxProfileForm"
+      ) {
+        e.preventDefault();
+        await saveAssetTaxProfile(
+          e.target
+        );
+        return;
+      }
     });
 
     document.addEventListener("click", async e => {
@@ -43860,6 +43796,188 @@ async function saveEditModal() {
 
       if (e.target.closest("[data-dt-close]")) {
         closeModal();
+        return;
+      }
+
+      if (
+        e.target.id ===
+        "dtManageAssetTaxRulesBtn"
+      ) {
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      if (
+        e.target.id ===
+        "dtManageAssetTaxProfilesBtn"
+      ) {
+        await showAssetTaxProfilesManager();
+        return;
+      }
+
+      if (
+        e.target.id ===
+        "dtAddCompanyAllowanceRuleBtn"
+      ) {
+        await showAssetTaxRuleForm({
+          mode: "create"
+        });
+        return;
+      }
+
+      if (
+        e.target.id ===
+        "dtBackToRulesBtn"
+      ) {
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      if (
+        e.target.id ===
+        "dtBackToProfilesBtn"
+      ) {
+        await showAssetTaxProfilesManager();
+        return;
+      }
+
+      const overrideRuleBtn =
+        e.target.closest(
+          "[data-dt-rule-override]"
+        );
+
+      if (overrideRuleBtn) {
+        const defaultRuleId = Number(
+          overrideRuleBtn.dataset
+            .dtRuleOverride
+        );
+
+        const rule = assetTaxRules.find(
+          item =>
+            Number(
+              item.default_rule_id
+            ) === defaultRuleId
+        );
+
+        await showAssetTaxRuleForm({
+          mode: "override",
+          rule,
+          defaultRuleId
+        });
+
+        return;
+      }
+
+      const editRuleBtn =
+        e.target.closest(
+          "[data-dt-rule-edit]"
+        );
+
+      if (editRuleBtn) {
+        const ruleId = Number(
+          editRuleBtn.dataset.dtRuleEdit
+        );
+
+        const response = await apiFetch(
+          ENDPOINTS.deferredTax
+            .companyAllowanceRule(
+              cid(),
+              ruleId
+            )
+        );
+
+        await showAssetTaxRuleForm({
+          mode: "edit",
+          rule: response?.data || null
+        });
+
+        return;
+      }
+
+      const disableRuleBtn =
+        e.target.closest(
+          "[data-dt-rule-disable]"
+        );
+
+      if (disableRuleBtn) {
+        const confirmed = confirm(
+          "Disable this default rule for this company?"
+        );
+
+        if (!confirmed) return;
+
+        await apiFetch(
+          ENDPOINTS.deferredTax
+            .allowanceRuleDisable(
+              cid(),
+              Number(
+                disableRuleBtn.dataset
+                  .dtRuleDisable
+              )
+            ),
+          {
+            method: "POST"
+          }
+        );
+
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      const deleteRuleBtn =
+        e.target.closest(
+          "[data-dt-rule-delete]"
+        );
+
+      if (deleteRuleBtn) {
+        const confirmed = confirm(
+          "Delete this company capital allowance rule?"
+        );
+
+        if (!confirmed) return;
+
+        await apiFetch(
+          ENDPOINTS.deferredTax
+            .companyAllowanceRule(
+              cid(),
+              Number(
+                deleteRuleBtn.dataset
+                  .dtRuleDelete
+              )
+            ),
+          {
+            method: "DELETE"
+          }
+        );
+
+        await showAssetTaxRulesManager();
+        return;
+      }
+
+      const profileEditBtn =
+        e.target.closest(
+          "[data-dt-profile-edit]"
+        );
+
+      if (profileEditBtn) {
+        const profileId = Number(
+          profileEditBtn.dataset
+            .dtProfileEdit
+        );
+
+        const profile =
+          assetTaxProfiles.find(
+            item =>
+              Number(item.id) === profileId
+          );
+
+        if (!profile) {
+          throw new Error(
+            "Asset tax profile was not found."
+          );
+        }
+
+        showAssetTaxProfileForm(profile);
         return;
       }
 
@@ -44125,8 +44243,6 @@ async function saveEditModal() {
         return;
       }
 
-      const editRuleBtn = e.target.closest("[data-dt-rule-edit]");
-
       if (editRuleBtn) {
         const res = await apiFetch(
           ENDPOINTS.deferredTax.companyAllowanceRule(
@@ -44158,8 +44274,6 @@ async function saveEditModal() {
         await showAssetTaxRulesManager();
         return;
       }
-
-      const deleteRuleBtn = e.target.closest("[data-dt-rule-delete]");
 
       if (deleteRuleBtn) {
         if (!confirm("Delete this company capital allowance rule?")) return;

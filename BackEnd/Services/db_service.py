@@ -84211,7 +84211,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 adi.*,
 
                 c.name AS customer_name,
-                s.name AS supplier_name,
+                v.name AS supplier_name,
 
                 rc.contract_number,
                 rc.contract_title,
@@ -84332,8 +84332,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             LEFT JOIN {schema}.customers c
             ON c.id = adi.customer_id
 
-            LEFT JOIN {schema}.suppliers s
-            ON s.id = adi.supplier_id
+            LEFT JOIN {schema}.vendors v
+            ON v.id = adi.supplier_id
 
             LEFT JOIN {schema}.revenue_contracts rc
             ON rc.id = adi.source_revenue_contract_id

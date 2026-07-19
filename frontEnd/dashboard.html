@@ -6675,6 +6675,179 @@ select:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.dt-asset-tax-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  margin-bottom: 16px;
+  padding: 18px 20px;
+
+  background: #ffffff;
+  border: 1px solid #d9e7ec;
+  border-radius: 14px;
+
+  box-shadow:
+    0 5px 18px rgba(15, 55, 75, 0.05);
+}
+
+.dt-asset-tax-toolbar h3,
+.dt-asset-tax-toolbar p {
+  margin: 0;
+}
+
+.dt-asset-tax-toolbar p {
+  margin-top: 4px;
+  color: #64748b;
+}
+
+.dt-asset-tax-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dt-rules-modal .dt-modal-panel,
+.dt-profiles-modal .dt-modal-panel {
+  width: min(1280px, 96vw);
+  max-width: 1280px;
+}
+
+.dt-rule-manager-header,
+.dt-profile-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+
+  margin-bottom: 16px;
+}
+
+.dt-rule-manager-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dt-rule-source {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 4px 8px;
+  border-radius: 999px;
+
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+
+  background: #eef3f6;
+  color: #38536a;
+}
+
+.dt-rule-source.default {
+  background: #edf4ff;
+  color: #285ea8;
+}
+
+.dt-rule-source.override {
+  background: #e7f8fb;
+  color: #087b8e;
+}
+
+.dt-rule-source.custom {
+  background: #edf9ef;
+  color: #28793a;
+}
+
+.dt-rule-source.disabled_default {
+  background: #f5f5f5;
+  color: #7b7b7b;
+}
+
+.dt-rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dt-profile-asset-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 16px;
+  padding: 13px 15px;
+
+  background: #f3fafc;
+  border: 1px solid #d8eaee;
+  border-radius: 10px;
+}
+
+#dtAssetTaxRunDetail .dt-table th {
+  min-width: 78px;
+  max-width: 125px;
+
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+
+  line-height: 1.2;
+  vertical-align: bottom;
+}
+
+#dtAssetTaxRunDetail .dt-table th:first-child {
+  min-width: 180px;
+  max-width: 230px;
+}
+
+#dtAssetTaxRunDetail .dt-table td {
+  vertical-align: top;
+}
+
+#dtAssetTaxRunDetail
+.dt-table
+td:not(:first-child):not(:last-child) {
+  white-space: nowrap;
+}
+
+#dtAssetTaxRunDetail .dt-table-wrap {
+  background: #ffffff;
+  border: 1px solid #dbe8ed;
+  border-radius: 12px;
+}
+
+#dtAssetTaxRunDetail .dt-table thead {
+  background: #eaf7f9;
+}
+
+#dtAssetTaxRunDetail
+.dt-table
+tbody tr:nth-child(even) {
+  background: #fbfdfe;
+}
+
+#dtAssetTaxRunDetail
+.dt-table
+tbody tr:hover {
+  background: #f1fafc;
+}
+
+#dtAssetTaxView {
+  background: transparent;
+}
+
+@media (max-width: 900px) {
+  .dt-asset-tax-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dt-asset-tax-toolbar-actions {
+    width: 100%;
+  }
+}
+
 .dt-net-position {
   display: inline-flex;
   flex-direction: column;
