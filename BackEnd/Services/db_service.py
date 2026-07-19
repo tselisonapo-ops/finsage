@@ -19781,6 +19781,10 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS rule_snapshot JSONB
             NOT NULL DEFAULT '{{}}'::jsonb;
 
+        ALTER TABLE {schema}.asset_tax_run_lines
+        ADD COLUMN IF NOT EXISTS requires_review
+        BOOLEAN NOT NULL DEFAULT FALSE;
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -96593,17 +96597,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ).quantize(Decimal("0.01"))
                 tax_base_is_known = True
 
-            if (
-                scan_status == "resolved"
-                and not category_reconciled
-            ):
-                scan_status = "reconciliation_error"
-                resolution_message = (
-                    "The asset-register carrying amounts do not "
-                    "reconcile to the related balance-sheet amount. "
-                    f"Difference: {reconciliation_difference}."
-                )
-                tax_base_is_known = False
+        elif closing_tax_wdv is None:
+            scan_status = "requires_review"
+            resolution_message = (
+                "Unable to determine the tax base."
+            )
+            tax_base = carrying_amount
             # IAS 40 fair-value movements are recognised in profit or
             # loss. IAS 16/IAS 38 revaluation differences may be OCI.
             recognition_destination = "profit_or_loss"
