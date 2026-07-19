@@ -41694,6 +41694,89 @@ async function saveEditModal() {
     }
   }
 
+  function renderDeferredTaxRunList(runs = []) {
+    const el = $id("dtRunList");
+    if (!el) return;
+
+    updateDeferredTaxSummary(runs);
+
+    if (!runs.length) {
+      el.innerHTML = `
+        <div class="dt-empty-state">
+          <div class="dt-empty-state-icon">IAS 12</div>
+          <h3>No deferred-tax runs yet</h3>
+          <p>Create a run to identify temporary differences and calculate deferred-tax assets and liabilities.</p>
+          <button type="button" class="btn btn-primary" id="dtEmptyNewRunBtn">
+            New Deferred Tax Run
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="dt-runs-table-wrap">
+        <table class="dt-runs-table">
+          <thead>
+            <tr>
+              <th>Reporting Date</th>
+              <th>Authority</th>
+              <th>Tax Rate</th>
+              <th class="dt-number">DTA</th>
+              <th class="dt-number">DTL</th>
+              <th class="dt-number">Net Position</th>
+              <th>Status</th>
+              <th class="dt-action-column">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${runs.map(run => {
+              const dta = Number(run.recognized_dta ?? run.recognised_dta ?? run.deferred_tax_asset ?? 0);
+              const dtl = Number(run.recognized_dtl ?? run.recognised_dtl ?? run.deferred_tax_liability ?? 0);
+              const net = Number(run.net_deferred_tax ?? run.net ?? dtl - dta);
+              const status = String(run.status || "draft").toLowerCase();
+              const netClass = net > 0 ? "liability" : net < 0 ? "asset" : "zero";
+              const netLabel = net > 0 ? "Liability" : net < 0 ? "Asset" : "Nil";
+              const authority = run.tax_authority_code || run.authority_code || "—";
+
+              return `
+                <tr>
+                  <td>
+                    <div class="dt-date-cell">
+                      <strong>${dtEscape(dtDate(run.reporting_date))}</strong>
+                      <span>Run #${dtEscape(run.id)}</span>
+                    </div>
+                  </td>
+                  <td><strong>${dtEscape(authority)}</strong></td>
+                  <td>${dtPercent(run.tax_rate ?? run.income_tax_rate ?? 0)}</td>
+                  <td class="dt-number">${dtNumber(dta)}</td>
+                  <td class="dt-number">${dtNumber(dtl)}</td>
+                  <td class="dt-number">
+                    <div class="dt-net-position ${netClass}">
+                      <strong>${dtNumber(Math.abs(net))}</strong>
+                      <span>${netLabel}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="dt-run-status ${status}">
+                      ${dtEscape(dtStatusLabel(status))}
+                    </span>
+                  </td>
+                  <td class="dt-action-column">
+                    <button type="button" class="dt-open-run-btn"
+                      data-dt-open="${dtEscape(run.id)}">
+                      Open <span>›</span>
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   async function showCreateAssetTaxRunModal() {
     const settingsRes = await apiFetch(
       ENDPOINTS.deferredTax.settings(cid())
@@ -43061,14 +43144,49 @@ async function saveEditModal() {
   });
 
   document.addEventListener("click", async e => {
+    const viewBtn = e.target.closest("[data-dt-view]");
+
+    if (viewBtn) {
+      activeDeferredTaxView = viewBtn.dataset.dtView;
+
+      document.querySelectorAll(".dt-view-tab").forEach(btn => {
+        btn.classList.toggle("active", btn === viewBtn);
+      });
+
+      const isDeferredTax =
+        activeDeferredTaxView === "deferred-tax";
+
+      document
+        .getElementById("dtDeferredTaxView")
+        ?.classList.toggle("hidden", !isDeferredTax);
+
+      document
+        .getElementById("dtAssetTaxView")
+        ?.classList.toggle("hidden", isDeferredTax);
+
+      if (isDeferredTax) {
+        await loadRuns();
+      } else {
+        await loadAssetTaxRuns();
+      }
+
+      return;
+    }
+
     if (e.target.closest("[data-dt-close]")) {
       closeModal();
       return;
     }
 
-    const runBtn = e.target.closest("[data-dt-run]");
+    const runBtn = e.target.closest("[data-dt-open]");
+
     if (runBtn) {
-      await openRun(Number(runBtn.dataset.dtRun));
+      await openRun(Number(runBtn.dataset.dtOpen));
+      return;
+    }
+
+    if (e.target.id === "dtEmptyNewRunBtn") {
+      await showCreateRunModal();
       return;
     }
 
@@ -43087,11 +43205,11 @@ async function saveEditModal() {
       return;
     }
 
-    const assetRunBtn = e.target.closest("[data-dt-asset-run]");
+    const assetRunBtn = e.target.closest("[data-dt-asset-tax-run]");
 
     if (assetRunBtn) {
       await openAssetTaxRun(
-        Number(assetRunBtn.dataset.dtAssetRun)
+        Number(assetRunBtn.dataset.dtAssetTaxRun)
       );
       return;
     }
@@ -43107,7 +43225,7 @@ async function saveEditModal() {
     }
 
     if (e.target.id === "dtAssetTaxApproveBtn") {
-      await runAssetTaxAction("assetTaxApprove");
+      await assetTaxRunAction("assetTaxApprove");
       return;
     }
 
@@ -43270,7 +43388,36 @@ async function saveEditModal() {
     }
   });
 
-  window.bindDeferredTaxScreen = loadRuns;
+  window.bindDeferredTaxScreen = async function bindDeferredTaxScreen() {
+    const screen = document.getElementById("screen-deferred-tax");
+    if (!screen) return;
+
+    selectedRun = null;
+    selectedAssetTaxRun = null;
+    activeDeferredTaxView = "deferred-tax";
+
+    document.getElementById("dtDeferredTaxView")?.classList.remove("hidden");
+    document.getElementById("dtAssetTaxView")?.classList.add("hidden");
+
+    document.getElementById("dtRunList")?.classList.remove("hidden");
+    document.getElementById("dtRunDetail")?.classList.add("hidden");
+
+    document.getElementById("dtAssetTaxRunList")?.classList.remove("hidden");
+    document.getElementById("dtAssetTaxRunDetail")?.classList.add("hidden");
+
+    document.querySelectorAll(".dt-view-tab").forEach(btn => {
+      btn.classList.toggle(
+        "active",
+        btn.dataset.dtView === "deferred-tax"
+      );
+    });
+
+    await loadRuns();
+  };
+
+  window.renderDeferredTaxScreen =
+    window.bindDeferredTaxScreen;
+
 })();
 
 (function () {
@@ -69194,17 +69341,37 @@ async function renderContractPreview(c = {}) {
   }
 
   async function loadRuns() {
-    const cid = state.cid;
-    if (!cid) return;
+    const mount = $id("dtRunList");
+    if (!mount) return;
+
+    mount.innerHTML = `
+      <div class="dt-loading">
+        Loading deferred tax runs...
+      </div>
+    `;
 
     try {
-      const data = await apiFetch(`${ENDPOINTS.revenue.runs(cid)}?limit=50`);
-      state.runs = data?.items || data?.data?.items || data?.data || [];
-      renderRunList(state.runs);
-    } catch (e) {
-      console.warn("[Revenue] runs load failed", e);
-      state.runs = [];
-      renderRunList([]);
+      const res = await apiFetch(
+        ENDPOINTS.deferredTax.runs(cid())
+      );
+
+      const rows =
+        res?.data?.runs ||
+        res?.data ||
+        res?.items ||
+        res?.runs ||
+        [];
+
+      renderDeferredTaxRunList(rows);
+    } catch (error) {
+      mount.innerHTML = `
+        <div class="dt-error">
+          ${dtEscape(
+            error.message ||
+            "Deferred-tax runs could not be loaded."
+          )}
+        </div>
+      `;
     }
   }
 
@@ -84104,6 +84271,140 @@ async function renderARStatements() {
         </div>
       </div>
     `;
+  }
+
+  function dtNumber(value) {
+    const number = Number(value || 0);
+
+    return number.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function dtPercent(value) {
+    const number = Number(value || 0);
+
+    return `${number.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}%`;
+  }
+
+  function dtDate(value) {
+    if (!value) return "—";
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
+  }
+
+  function dtEscape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function dtStatusLabel(status) {
+    const value = String(status || "draft")
+      .trim()
+      .toLowerCase();
+
+    const labels = {
+      draft: "Draft",
+      prepared: "Prepared",
+      reviewed: "Reviewed",
+      approved: "Approved",
+      posted: "Posted",
+      reversed: "Reversed"
+    };
+
+    return labels[value] || value;
+  }
+
+  function updateDeferredTaxSummary(runs = []) {
+    const latest = runs[0] || {};
+
+    const dta = Number(
+      latest.recognized_dta ??
+      latest.recognised_dta ??
+      latest.deferred_tax_asset ??
+      0
+    );
+
+    const dtl = Number(
+      latest.recognized_dtl ??
+      latest.recognised_dtl ??
+      latest.deferred_tax_liability ??
+      0
+    );
+
+    const net = Number(
+      latest.net_deferred_tax ??
+      latest.net ??
+      dtl - dta
+    );
+
+    const rate = Number(
+      latest.tax_rate ??
+      latest.income_tax_rate ??
+      0
+    );
+
+    const authority =
+      latest.tax_authority_code ||
+      latest.authority_code ||
+      latest.tax_authority_name ||
+      "No authority selected";
+
+    const dtaEl = document.getElementById("dtSummaryDta");
+    const dtlEl = document.getElementById("dtSummaryDtl");
+    const netEl = document.getElementById("dtSummaryNet");
+    const rateEl = document.getElementById("dtSummaryRate");
+    const authorityEl = document.getElementById(
+      "dtSummaryAuthority"
+    );
+    const netHintEl = document.getElementById(
+      "dtSummaryNetHint"
+    );
+    const runCountEl = document.getElementById(
+      "dtRunCount"
+    );
+
+    if (dtaEl) dtaEl.textContent = dtNumber(dta);
+    if (dtlEl) dtlEl.textContent = dtNumber(dtl);
+    if (netEl) netEl.textContent = dtNumber(Math.abs(net));
+    if (rateEl) rateEl.textContent = dtPercent(rate);
+    if (authorityEl) authorityEl.textContent = authority;
+
+    if (netHintEl) {
+      if (net > 0) {
+        netHintEl.textContent = "Net deferred tax liability";
+        netHintEl.className = "dt-net-liability";
+      } else if (net < 0) {
+        netHintEl.textContent = "Net deferred tax asset";
+        netHintEl.className = "dt-net-asset";
+      } else {
+        netHintEl.textContent = "No recognised position";
+        netHintEl.className = "";
+      }
+    }
+
+    if (runCountEl) {
+      runCountEl.textContent =
+        `${runs.length} run${runs.length === 1 ? "" : "s"}`;
+    }
   }
 
   async function renderRuns() {

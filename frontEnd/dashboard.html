@@ -6347,6 +6347,443 @@ select:focus {
 /* ---------------------------------------------------------
    Page container
    --------------------------------------------------------- */
+.dt-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 28px 34px 44px;
+}
+
+.dt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.dt-header-copy h2 {
+  margin: 8px 0 4px;
+  font-size: clamp(1.7rem, 2.4vw, 2.25rem);
+  line-height: 1.08;
+  color: var(--fs-navy, #0d2f4f);
+}
+
+.dt-header-copy p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.94rem;
+}
+
+.dt-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 4px 10px;
+  border: 1px solid #bde8eb;
+  border-radius: 999px;
+  background: #ecfeff;
+  color: #087f8c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.dt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.dt-view-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dbe5ec;
+  border-radius: 11px;
+  background: #eef4f7;
+}
+
+.dt-view-tab {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 9px 16px;
+  color: #587086;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dt-view-tab.active {
+  background: #ffffff;
+  color: #087f8c;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.08),
+    0 5px 14px rgba(15, 23, 42, 0.05);
+}
+
+.dt-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.dt-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid #dfe8ee;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 8px 25px rgba(15, 23, 42, 0.04);
+}
+
+.dt-summary-card::before {
+  content: "";
+  align-self: stretch;
+  width: 3px;
+  border-radius: 99px;
+  background: #90a4b5;
+}
+
+.dt-summary-card-dta::before {
+  background: #16a3b6;
+}
+
+.dt-summary-card-dtl::before {
+  background: #e5a531;
+}
+
+.dt-summary-card-net::before {
+  background: #233f5d;
+}
+
+.dt-summary-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #eff6f8;
+  color: #24445f;
+  font-size: 0.67rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.dt-summary-card > div:last-child {
+  min-width: 0;
+}
+
+.dt-summary-card span {
+  display: block;
+  margin-bottom: 5px;
+  color: #6b7f90;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.dt-summary-card strong {
+  display: block;
+  color: #102f4b;
+  font-size: 1.38rem;
+  line-height: 1.15;
+}
+
+.dt-summary-card small {
+  display: block;
+  margin-top: 6px;
+  color: #8292a0;
+  font-size: 0.74rem;
+}
+
+.dt-net-liability {
+  color: #ad6a00 !important;
+}
+
+.dt-net-asset {
+  color: #087f8c !important;
+}
+
+.dt-workspace-card {
+  overflow: hidden;
+  border: 1px solid #dfe8ee;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+}
+
+.dt-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e8eef2;
+}
+
+.dt-workspace-heading h3 {
+  margin: 0;
+  color: #12324f;
+  font-size: 1.04rem;
+}
+
+.dt-workspace-heading p {
+  margin: 5px 0 0;
+  color: #738493;
+  font-size: 0.84rem;
+}
+
+.dt-workspace-meta {
+  display: flex;
+  align-items: center;
+}
+
+.dt-workspace-meta span {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eff5f7;
+  color: #5a7082;
+  font-size: 0.73rem;
+  font-weight: 800;
+}
+
+.dt-runs-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.dt-runs-table {
+  width: 100%;
+  min-width: 960px;
+  border-collapse: collapse;
+}
+
+.dt-runs-table th {
+  padding: 12px 15px;
+  border-bottom: 1px solid #dfe8ee;
+  background: #f6f9fb;
+  color: #5b7083;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.dt-runs-table td {
+  padding: 16px 15px;
+  border-bottom: 1px solid #e8eef2;
+  color: #334b60;
+  font-size: 0.82rem;
+  vertical-align: middle;
+}
+
+.dt-runs-table tbody tr {
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.dt-runs-table tbody tr:hover {
+  background: #f8fbfc;
+}
+
+.dt-runs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dt-date-cell,
+.dt-authority-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dt-date-cell strong,
+.dt-authority-cell strong {
+  color: #173a57;
+}
+
+.dt-date-cell span,
+.dt-authority-cell span {
+  color: #8a99a6;
+  font-size: 0.72rem;
+}
+
+.dt-number {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-net-position {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 100px;
+}
+
+.dt-net-position strong {
+  color: #173a57;
+}
+
+.dt-net-position span {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.dt-net-position.liability span {
+  background: #fff2d5;
+  color: #9a6200;
+}
+
+.dt-net-position.asset span {
+  background: #dff8f4;
+  color: #08766f;
+}
+
+.dt-net-position.zero span {
+  background: #edf2f5;
+  color: #617587;
+}
+
+.dt-run-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.dt-run-status.draft {
+  background: #fff0cf;
+  color: #a26700;
+}
+
+.dt-run-status.prepared,
+.dt-run-status.reviewed {
+  background: #e6f1ff;
+  color: #27659b;
+}
+
+.dt-run-status.approved {
+  background: #dcf6e7;
+  color: #137445;
+}
+
+.dt-run-status.posted {
+  background: #dcf6e7;
+  color: #0c7040;
+}
+
+.dt-run-status.reversed {
+  background: #f5e8eb;
+  color: #944056;
+}
+
+.dt-action-column {
+  width: 100px;
+  text-align: right !important;
+}
+
+.dt-open-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #d6e1e7;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #25455f;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dt-open-run-btn:hover {
+  border-color: #21a5b4;
+  background: #f2fcfd;
+  color: #087f8c;
+}
+
+.dt-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 54px 24px;
+  text-align: center;
+}
+
+.dt-empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  background: #e8f8fa;
+  color: #087f8c;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.dt-empty-state h3 {
+  margin: 0;
+  color: #153651;
+}
+
+.dt-empty-state p {
+  max-width: 520px;
+  margin: 8px auto 18px;
+  color: #728495;
+  line-height: 1.55;
+}
+
+@media (max-width: 1100px) {
+  .dt-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dt-page {
+    padding: 20px 15px 34px;
+  }
+
+  .dt-header {
+    flex-direction: column;
+  }
+
+  .dt-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dt-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dt-workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
 
 .dt-page {
   width: 100%;
@@ -17475,12 +17912,16 @@ select:focus {
 
       <section id="screen-deferred-tax" class="screen hidden">
         <div class="dt-page">
+
           <div class="dt-header">
-            <div>
+            <div class="dt-header-copy">
               <span class="dt-tag">IAS 12</span>
+
               <h2>Deferred Tax</h2>
+
               <p>
-                Temporary differences, tax bases and capital allowances.
+                Review temporary differences, deferred-tax balances
+                and capital allowances.
               </p>
             </div>
 
@@ -17504,7 +17945,7 @@ select:focus {
               <button
                 id="dtNewAssetTaxRunBtn"
                 type="button"
-                class="btn btn-primary"
+                class="btn btn-secondary"
               >
                 New Capital Allowance Run
               </button>
@@ -17530,13 +17971,101 @@ select:focus {
           </div>
 
           <div id="dtDeferredTaxView">
-            <div id="dtRunList"></div>
-            <div id="dtRunDetail" class="hidden"></div>
+
+            <div class="dt-summary-grid">
+              <article class="dt-summary-card dt-summary-card-dta">
+                <div class="dt-summary-icon">DTA</div>
+
+                <div>
+                  <span>Deferred Tax Assets</span>
+                  <strong id="dtSummaryDta">0.00</strong>
+                  <small id="dtSummaryDtaHint">
+                    Recognised deductible differences
+                  </small>
+                </div>
+              </article>
+
+              <article class="dt-summary-card dt-summary-card-dtl">
+                <div class="dt-summary-icon">DTL</div>
+
+                <div>
+                  <span>Deferred Tax Liabilities</span>
+                  <strong id="dtSummaryDtl">0.00</strong>
+                  <small id="dtSummaryDtlHint">
+                    Recognised taxable differences
+                  </small>
+                </div>
+              </article>
+
+              <article class="dt-summary-card dt-summary-card-net">
+                <div class="dt-summary-icon">NET</div>
+
+                <div>
+                  <span>Net Deferred Tax</span>
+                  <strong id="dtSummaryNet">0.00</strong>
+                  <small id="dtSummaryNetHint">
+                    No recognised position
+                  </small>
+                </div>
+              </article>
+
+              <article class="dt-summary-card">
+                <div class="dt-summary-icon">%</div>
+
+                <div>
+                  <span>Latest Tax Rate</span>
+                  <strong id="dtSummaryRate">0.00%</strong>
+                  <small id="dtSummaryAuthority">
+                    No authority selected
+                  </small>
+                </div>
+              </article>
+            </div>
+
+            <div class="dt-workspace-card">
+              <div class="dt-workspace-heading">
+                <div>
+                  <h3>Deferred Tax Runs</h3>
+                  <p>
+                    Review, approve and post deferred-tax calculations.
+                  </p>
+                </div>
+
+                <div class="dt-workspace-meta">
+                  <span id="dtRunCount">0 runs</span>
+                </div>
+              </div>
+
+              <div id="dtRunList"></div>
+            </div>
+
+            <div
+              id="dtRunDetail"
+              class="hidden"
+            ></div>
           </div>
 
-          <div id="dtAssetTaxView" class="hidden">
-            <div id="dtAssetTaxRunList"></div>
-            <div id="dtAssetTaxRunDetail" class="hidden"></div>
+          <div
+            id="dtAssetTaxView"
+            class="hidden"
+          >
+            <div class="dt-workspace-card">
+              <div class="dt-workspace-heading">
+                <div>
+                  <h3>Capital Allowance Runs</h3>
+                  <p>
+                    Review tax written-down values and allowance calculations.
+                  </p>
+                </div>
+              </div>
+
+              <div id="dtAssetTaxRunList"></div>
+            </div>
+
+            <div
+              id="dtAssetTaxRunDetail"
+              class="hidden"
+            ></div>
           </div>
         </div>
       </section>
