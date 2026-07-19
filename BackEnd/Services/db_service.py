@@ -84307,7 +84307,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 adi.*,
 
                 c.name AS customer_name,
-                s.name AS supplier_name,
+                v.name AS supplier_name,
 
                 rc.contract_number,
                 rc.contract_title,
