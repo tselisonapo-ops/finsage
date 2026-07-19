@@ -96597,12 +96597,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ).quantize(Decimal("0.01"))
                 tax_base_is_known = True
 
-        elif closing_tax_wdv is None:
-            scan_status = "requires_review"
-            resolution_message = (
-                "Unable to determine the tax base."
-            )
-            tax_base = carrying_amount
             # IAS 40 fair-value movements are recognised in profit or
             # loss. IAS 16/IAS 38 revaluation differences may be OCI.
             recognition_destination = "profit_or_loss"
