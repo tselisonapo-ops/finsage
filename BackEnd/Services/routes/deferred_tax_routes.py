@@ -1232,3 +1232,45 @@ def deferred_tax_preview_post(cid: int, run_id: int):
             "deferred_tax_preview_post failed"
         )
         return _error_response(str(e))
+    
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "asset-tax-runs/<int:run_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def asset_tax_get_run(cid: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, _, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(company_id)
+
+        row = db_service.asset_tax_get_run(
+            company_id=company_id,
+            run_id=run_id,
+        )
+
+        if not row:
+            return _error_response(
+                "Capital allowance run not found.",
+                404,
+            )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 404)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "asset_tax_get_run failed"
+        )
+        return _error_response(str(e), 500)
