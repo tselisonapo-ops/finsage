@@ -41544,6 +41544,9 @@ async function saveEditModal() {
   const modal = () =>
     document.getElementById("dtModal");
 
+  const $id = id =>
+    document.getElementById(id);
+
   function openModal(title, body, modalClass = "") {
     const modal = document.getElementById("dtModal");
 
