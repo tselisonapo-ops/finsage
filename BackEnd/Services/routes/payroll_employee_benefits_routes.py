@@ -318,6 +318,145 @@ def actuarial_valuation(company_id, valuation_id):
         return _error("ias19 actuarial valuation update failed", error)
 
 
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/leave-balances", methods=["GET","OPTIONS"])
+@require_auth
+def leave_balances(company_id):
+    if request.method == "OPTIONS": return _options()
+    deny = _guard(company_id)
+    if deny: return deny
+    try:
+        items = service.leave_balances_list(company_id,request.args.get("employee_id"),request.args.get("leave_type_id"),request.args.get("as_of_date"))
+        return jsonify({"ok":True,"items":items}),200
+    except Exception as error: return _error("ias19 leave balances failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/leave-balances/<int:employee_id>/<int:leave_type_id>", methods=["POST","PATCH","OPTIONS"])
+@require_auth
+def leave_balance(company_id,employee_id,leave_type_id):
+    if request.method == "OPTIONS": return _options()
+    deny = _guard(company_id)
+    if deny: return deny
+    try:
+        out=service.leave_balance_adjust(company_id,employee_id,leave_type_id,_body(),_user_id())
+        return jsonify({"ok":True,"data":out}),200
+    except Exception as error: return _error("ias19 leave balance adjustment failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/leave-accrual-runs/<int:run_id>/reverse", methods=["POST","OPTIONS"])
+@require_auth
+def reverse_leave(company_id,run_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try: return jsonify({"ok":True,"data":service.leave_reverse(company_id,run_id,_user_id())}),200
+    except Exception as error: return _error("ias19 leave reversal failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/bonus-assignments", methods=["GET","POST","OPTIONS"])
+@require_auth
+def bonus_assignments(company_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        if request.method=="GET": return jsonify({"ok":True,"items":service.bonus_assignments_list(company_id,request.args.get("scheme_id"))}),200
+        return jsonify({"ok":True,"data":service.bonus_assignment_save(company_id,_body(),user_id=_user_id())}),201
+    except Exception as error: return _error("ias19 bonus assignments failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/bonus-assignments/<int:assignment_id>", methods=["PATCH","OPTIONS"])
+@require_auth
+def bonus_assignment(company_id,assignment_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try: return jsonify({"ok":True,"data":service.bonus_assignment_save(company_id,_body(),assignment_id,_user_id())}),200
+    except Exception as error: return _error("ias19 bonus assignment update failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/bonus-accrual-runs", methods=["GET","POST","OPTIONS"])
+@require_auth
+def bonus_runs(company_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        if request.method=="GET": return jsonify({"ok":True,"items":service.bonus_runs_list(company_id)}),200
+        return jsonify({"ok":True,"data":service.bonus_run_create(company_id,_body(),_user_id())}),201
+    except Exception as error: return _error("ias19 bonus runs failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/bonus-accrual-runs/<int:run_id>", methods=["GET","OPTIONS"])
+@require_auth
+def bonus_run(company_id,run_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try: return jsonify({"ok":True,"data":service.bonus_run_get(company_id,run_id)}),200
+    except Exception as error: return _error("ias19 bonus run failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/bonus-accrual-runs/<int:run_id>/<action>", methods=["GET","POST","OPTIONS"])
+@require_auth
+def bonus_run_action(company_id,run_id,action):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        actions={"calculate":lambda:service.bonus_run_calculate(company_id,run_id),"journal-preview":lambda:service.bonus_journal_preview(company_id,run_id),"post":lambda:service.bonus_post(company_id,run_id,_user_id()),"reverse":lambda:service.bonus_reverse(company_id,run_id,_user_id())}
+        if action not in actions: return jsonify({"ok":False,"error":"Unsupported bonus action"}),404
+        return jsonify({"ok":True,"data":actions[action]()}),200
+    except Exception as error: return _error(f"ias19 bonus {action} failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/plans", methods=["GET","POST","OPTIONS"])
+@require_auth
+def benefit_plans(company_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        if request.method=="GET": return jsonify({"ok":True,"items":service.benefit_plans_list(company_id,request.args.get("plan_type"))}),200
+        return jsonify({"ok":True,"data":service.benefit_plan_save(company_id,_body(),user_id=_user_id())}),201
+    except Exception as error: return _error("ias19 benefit plans failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/plans/<int:plan_id>", methods=["PATCH","OPTIONS"])
+@require_auth
+def benefit_plan(company_id,plan_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try: return jsonify({"ok":True,"data":service.benefit_plan_save(company_id,_body(),plan_id,_user_id())}),200
+    except Exception as error: return _error("ias19 benefit plan update failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/actuarial-valuations/<int:valuation_id>/assumptions", methods=["GET","POST","PATCH","OPTIONS"])
+@require_auth
+def actuarial_assumptions(company_id,valuation_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        if request.method=="GET": return jsonify({"ok":True,"items":service.actuarial_valuation_get(company_id,valuation_id).get("assumptions",[])}),200
+        return jsonify({"ok":True,"items":service.actuarial_assumptions_save(company_id,valuation_id,_body())}),200
+    except Exception as error: return _error("ias19 assumptions failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/actuarial-valuations/<int:valuation_id>/<action>", methods=["GET","POST","OPTIONS"])
+@require_auth
+def actuarial_action(company_id,valuation_id,action):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        actions={"reconciliation":lambda:service.actuarial_reconciliation(company_id,valuation_id),"journal-preview":lambda:service.actuarial_journal_preview(company_id,valuation_id),"post":lambda:service.actuarial_post(company_id,valuation_id,_user_id()),"reverse":lambda:service.actuarial_reverse(company_id,valuation_id,_user_id())}
+        if action not in actions: return jsonify({"ok":False,"error":"Unsupported actuarial action"}),404
+        return jsonify({"ok":True,"data":actions[action]()}),200
+    except Exception as error: return _error(f"ias19 actuarial {action} failed",error)
+
+@payroll_employee_benefits_bp.route("/api/companies/<int:company_id>/payroll/employee-benefits/movement-report", methods=["GET","OPTIONS"])
+@require_auth
+def movement_report(company_id):
+    if request.method == "OPTIONS": return _options()
+    deny=_guard(company_id)
+    if deny: return deny
+    try:
+        data=service.movement_report(company_id,request.args.get("date_from"),request.args.get("date_to"),request.args.get("benefit_class"))
+        return jsonify({"ok":True,"data":data}),200
+    except Exception as error: return _error("ias19 movement report failed",error)
+
+
 @payroll_employee_benefits_bp.route(
     "/api/companies/<int:company_id>/payroll/employee-benefits/disclosure",
     methods=["GET", "OPTIONS"],

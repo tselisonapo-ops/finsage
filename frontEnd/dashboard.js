@@ -53424,7 +53424,12 @@ async function saveEditModal() {
     leaveRuns: [],
     selectedLeaveRun: null,
     bonusSchemes: [],
+    bonusAssignments: [],
+    bonusRuns: [],
+    selectedBonusRun: null,
+    benefitPlans: [],
     actuarialValuations: [],
+    selectedActuarialValuation: null,
     disclosure: null,
     diagnostics: null,
     activeTab: "overview",
@@ -53845,18 +53850,18 @@ async function saveEditModal() {
           </p>
         </div>
         <div class="payroll-run-actions">
-          <button id="payrollCalculateLeaveRunBtn"
-            class="payroll-secondary dark" type="button">
-            Calculate
-          </button>
-          <button id="payrollPreviewLeaveRunBtn"
-            class="payroll-secondary dark" type="button">
+          <button id="payrollCalculateLeaveRunBtn" class="payroll-secondary dark" type="button"
+            ${["posted","reversed"].includes(status) ? "disabled" : ""}>Calculate</button>
+
+          <button id="payrollPreviewLeaveRunBtn" class="payroll-secondary dark" type="button">
             Preview Journal
           </button>
-          <button id="payrollPostLeaveRunBtn"
-            class="payroll-primary" type="button">
-            Post
-          </button>
+
+          <button id="payrollPostLeaveRunBtn" class="payroll-primary" type="button"
+            ${["posted","reversed"].includes(status) ? "disabled" : ""}>Post</button>
+
+          <button id="payrollReverseLeaveRunBtn" class="payroll-secondary" type="button"
+            ${status !== "posted" ? "disabled" : ""}>Reverse</button>
         </div>
       </div>
 
@@ -53902,6 +53907,22 @@ async function saveEditModal() {
       "click",
       postPayrollLeaveRun
     );
+    $("payrollReverseLeaveRunBtn")?.addEventListener("click", reversePayrollLeaveRun);
+  }
+
+  async function reversePayrollLeaveRun() {
+    const runId = payrollState.employeeBenefits.selectedLeaveRun?.id;
+    if (!runId || !confirm("Reverse this posted leave accrual journal?")) return;
+
+    await apiFetch(ENDPOINTS.payroll.reverseLeaveAccrual(cid(), runId), {
+      method: "POST",
+      body: "{}",
+    });
+
+    await openPayrollLeaveRun(runId);
+    await loadPayrollLeaveWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Leave accrual reversed.", "success");
   }
 
   async function calculatePayrollLeaveRun() {
@@ -53992,13 +54013,25 @@ async function saveEditModal() {
   }
 
   async function loadPayrollBonusWorkspace() {
-    const res = await apiFetch(
-      ENDPOINTS.payroll.bonusSchemes(cid())
-    );
-    payrollState.employeeBenefits.bonusSchemes = res?.items || [];
+    const companyId = cid();
+
+    const [schemesRes, assignmentsRes, runsRes] = await Promise.all([
+      apiFetch(ENDPOINTS.payroll.bonusSchemes(companyId)),
+      apiFetch(ENDPOINTS.payroll.employeeBonusAssignments(companyId)),
+      apiFetch(ENDPOINTS.payroll.bonusAccrualRuns(companyId)),
+    ]);
+
+    const state = payrollState.employeeBenefits;
+    state.bonusSchemes = schemesRes?.items || [];
+    state.bonusAssignments = assignmentsRes?.items || [];
+    state.bonusRuns = runsRes?.items || [];
 
     const panel = $("payrollBenefitPanelBonuses");
     if (!panel) return;
+
+    const schemes = state.bonusSchemes;
+    const assignments = state.bonusAssignments;
+    const runs = state.bonusRuns;
 
     panel.innerHTML = `
       <div class="payroll-card">
@@ -54006,27 +54039,271 @@ async function saveEditModal() {
           <div>
             <h3>Bonus and profit-sharing schemes</h3>
             <p class="payroll-muted">
-              Recognition requires a present legal or constructive obligation
-              and a reliable estimate.
+              Recognition requires a present legal or constructive obligation and a reliable estimate.
             </p>
           </div>
-          <button id="payrollNewBonusSchemeBtn"
-            class="payroll-primary" type="button">
+
+          <button id="payrollNewBonusSchemeBtn" class="payroll-primary" type="button">
             + Bonus Scheme
           </button>
         </div>
 
         <div class="payroll-sublist">
-          ${(payrollState.employeeBenefits.bonusSchemes || []).map(s => `
+          ${schemes.map(s => `
             <div class="payroll-mini-row">
               <strong>${esc(s.code)} — ${esc(s.name)}</strong>
-              <span>${esc(s.scheme_type)}</span>
+              <span>${esc(s.scheme_type || "")}</span>
               <span>${money(s.target_percentage)}%</span>
+
+              <button class="payroll-link" type="button" data-edit-bonus-scheme="${s.id}">
+                Edit
+              </button>
             </div>
           `).join("") || `<p class="payroll-muted">No bonus schemes.</p>`}
         </div>
       </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Employee assignments</h3>
+            <p class="payroll-muted">Assign employees to bonus schemes and override percentages.</p>
+          </div>
+
+          <button id="payrollNewBonusAssignmentBtn" class="payroll-primary" type="button">
+            + Assignment
+          </button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${assignments.map(a => `
+            <div class="payroll-mini-row">
+              <strong>
+                ${esc([a.employee_no, a.first_name, a.last_name].filter(Boolean).join(" "))}
+              </strong>
+
+              <span>${esc(a.scheme_name || a.scheme_code || "")}</span>
+              <span>${payrollDate(a.effective_from)}</span>
+
+              <button class="payroll-link" type="button" data-edit-bonus-assignment="${a.id}">
+                Edit
+              </button>
+            </div>
+          `).join("") || `<p class="payroll-muted">No employee assignments.</p>`}
+        </div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Bonus accrual runs</h3>
+            <p class="payroll-muted">Calculate, preview and post bonus provisions.</p>
+          </div>
+
+          <button id="payrollNewBonusRunBtn" class="payroll-primary" type="button">
+            + New Run
+          </button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${runs.map(r => `
+            <div class="payroll-mini-row">
+              <strong>${esc(r.run_no || "")}</strong>
+              <span>${payrollDate(r.reporting_date)}</span>
+              <span>${money(r.total_movement)}</span>
+              <span class="payroll-pill">${esc(r.status || "draft")}</span>
+
+              <button class="payroll-link" type="button" data-open-bonus-run="${r.id}">
+                Open
+              </button>
+            </div>
+          `).join("") || `<p class="payroll-muted">No bonus accrual runs.</p>`}
+        </div>
+
+        <div id="payrollBonusRunDetail"></div>
+      </div>
     `;
+
+    $("payrollNewBonusSchemeBtn")?.addEventListener("click", () => openPayrollBonusScheme());
+    $("payrollNewBonusAssignmentBtn")?.addEventListener("click", () => openPayrollBonusAssignment());
+    $("payrollNewBonusRunBtn")?.addEventListener("click", createPayrollBonusRun);
+
+    panel.querySelectorAll("[data-edit-bonus-scheme]").forEach(btn => {
+      btn.onclick = () => {
+        const item = schemes.find(s => Number(s.id) === Number(btn.dataset.editBonusScheme));
+        openPayrollBonusScheme(item || {});
+      };
+    });
+
+    panel.querySelectorAll("[data-edit-bonus-assignment]").forEach(btn => {
+      btn.onclick = () => {
+        const item = assignments.find(a => Number(a.id) === Number(btn.dataset.editBonusAssignment));
+        openPayrollBonusAssignment(item || {});
+      };
+    });
+
+    panel.querySelectorAll("[data-open-bonus-run]").forEach(btn => {
+      btn.onclick = () => openPayrollBonusRun(Number(btn.dataset.openBonusRun));
+    });
+  }
+
+  async function openPayrollBonusScheme(item = {}) {
+    const payload = await payrollForm(item.id ? "Edit bonus scheme" : "New bonus scheme", [
+      { name: "code", label: "Code", required: true },
+      { name: "name", label: "Name", required: true },
+      {
+        name: "scheme_type",
+        label: "Scheme type",
+        type: "select",
+        options: [
+          { value: "performance_bonus", label: "Performance bonus" },
+          { value: "profit_sharing", label: "Profit sharing" },
+          { value: "thirteenth_cheque", label: "Thirteenth cheque" },
+          { value: "retention_bonus", label: "Retention bonus" },
+          { value: "commission_accrual", label: "Commission accrual" },
+          { value: "other", label: "Other" },
+        ],
+      },
+      {
+        name: "measurement_basis",
+        label: "Measurement basis",
+        type: "select",
+        options: [
+          { value: "basic_salary", label: "Basic salary" },
+          { value: "gross_pay", label: "Gross pay" },
+          { value: "manual", label: "Manual" },
+        ],
+      },
+      { name: "target_percentage", label: "Target %", type: "number", step: "0.01" },
+      { name: "probability_percentage", label: "Probability %", type: "number", step: "0.01" },
+      { name: "performance_percentage", label: "Performance %", type: "number", step: "0.01" },
+      { name: "required_service_months", label: "Required service months", type: "number" },
+      { name: "payment_due_date", label: "Payment due date", type: "date" },
+      { name: "expense_account_code", label: "Expense account code" },
+      { name: "liability_account_code", label: "Liability account code" },
+      { name: "is_short_term", label: "Short-term benefit", type: "checkbox", value: true },
+      { name: "is_active", label: "Active", type: "checkbox", value: true },
+    ], item);
+
+    await apiFetch(
+      item.id
+        ? ENDPOINTS.payroll.bonusScheme(cid(), item.id)
+        : ENDPOINTS.payroll.bonusSchemes(cid()),
+      {
+        method: item.id ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    await loadPayrollBonusWorkspace();
+    showPayrollStatus("Bonus scheme saved.", "success");
+  }
+
+  async function openPayrollBonusAssignment(item = {}) {
+    const employees = payrollState.employees || [];
+    const schemes = payrollState.employeeBenefits.bonusSchemes || [];
+
+    if (!employees.length) return showPayrollStatus("Create or load payroll employees first.", "error");
+    if (!schemes.length) return showPayrollStatus("Create a bonus scheme first.", "error");
+
+    const payload = await payrollForm(item.id ? "Edit bonus assignment" : "New bonus assignment", [
+      {
+        name: "employee_id",
+        label: "Employee",
+        type: "select",
+        required: true,
+        options: employees.map(e => ({
+          value: e.id,
+          label: [e.employee_no, e.first_name, e.last_name].filter(Boolean).join(" "),
+        })),
+      },
+      {
+        name: "scheme_id",
+        label: "Scheme",
+        type: "select",
+        required: true,
+        options: schemes.map(s => ({ value: s.id, label: `${s.code} — ${s.name}` })),
+      },
+      {
+        name: "effective_from",
+        label: "Effective from",
+        type: "date",
+        required: true,
+        value: new Date().toISOString().slice(0, 10),
+      },
+      { name: "effective_to", label: "Effective to", type: "date" },
+      { name: "target_percentage", label: "Override target %", type: "number", step: "0.01" },
+      { name: "probability_percentage", label: "Override probability %", type: "number", step: "0.01" },
+      { name: "performance_percentage", label: "Override performance %", type: "number", step: "0.01" },
+      { name: "is_active", label: "Active", type: "checkbox", value: true },
+    ], item);
+
+    await apiFetch(
+      item.id
+        ? ENDPOINTS.payroll.employeeBonusAssignment(cid(), item.id)
+        : ENDPOINTS.payroll.employeeBonusAssignments(cid()),
+      {
+        method: item.id ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      }
+    );
+
+    await loadPayrollBonusWorkspace();
+    showPayrollStatus("Bonus assignment saved.", "success");
+  }
+
+  async function createPayrollBonusRun() {
+    const date = $("payrollBenefitReportingDate")?.value || new Date().toISOString().slice(0, 10);
+
+    await apiFetch(ENDPOINTS.payroll.bonusAccrualRuns(cid()), {
+      method: "POST",
+      body: JSON.stringify({
+        period_start: `${date.slice(0, 7)}-01`,
+        period_end: date,
+        reporting_date: date,
+      }),
+    });
+
+    await loadPayrollBonusWorkspace();
+    showPayrollStatus("Bonus accrual run created.", "success");
+  }
+
+  async function calculatePayrollBonusRun(runId) {
+    await apiFetch(ENDPOINTS.payroll.calculateBonusAccrual(cid(), runId), {
+      method: "POST",
+      body: "{}",
+    });
+
+    await openPayrollBonusRun(runId);
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Bonus accrual calculated.", "success");
+  }
+
+  async function previewPayrollBonusRun(runId) {
+    const res = await apiFetch(ENDPOINTS.payroll.bonusAccrualPreview(cid(), runId));
+    renderPayrollBenefitJournal($("payrollBonusJournalPreview"), res?.data);
+  }
+  async function postPayrollBonusRun(runId) {
+    await apiFetch(ENDPOINTS.payroll.postBonusAccrual(cid(), runId), {
+      method: "POST",
+      body: "{}",
+    });
+
+    await loadPayrollBonusWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Bonus accrual posted.", "success");
+  }
+  async function reversePayrollBonusRun(runId) {
+    if (!confirm("Reverse this posted bonus accrual journal?")) return;
+
+    await apiFetch(ENDPOINTS.payroll.reverseBonusAccrual(cid(), runId), {
+      method: "POST",
+      body: "{}",
+    });
+
+    await loadPayrollBonusWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Bonus accrual reversed.", "success");
   }
 
   async function loadPayrollActuarialWorkspace() {
@@ -55010,6 +55287,91 @@ async function saveEditModal() {
     }
   }
 
+  function payrollDate(v) {
+    if (!v) return "—";
+    const raw = String(v).slice(0, 10);
+    const d = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? raw : d.toLocaleDateString();
+  }
+
+  function payrollNumber(v) {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function payrollForm(title, fields, values = {}) {
+    $("payrollBenefitDynamicModal")?.remove();
+
+    const modal = document.createElement("div");
+    modal.id = "payrollBenefitDynamicModal";
+    modal.className = "payroll-modal";
+
+    const html = fields.map(f => {
+      const value = values[f.name] ?? f.value ?? "";
+
+      if (f.type === "checkbox") return `
+        <label class="payroll-check">
+          <input name="${f.name}" type="checkbox" ${value ? "checked" : ""}>
+          ${esc(f.label)}
+        </label>`;
+
+      if (f.type === "select") return `
+        <label>${esc(f.label)}
+          <select name="${f.name}" ${f.required ? "required" : ""}>
+            ${(f.options || []).map(o => `
+              <option value="${esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>
+                ${esc(o.label)}
+              </option>`).join("")}
+          </select>
+        </label>`;
+
+      return `
+        <label>${esc(f.label)}
+          <input name="${f.name}" type="${f.type || "text"}" value="${esc(value)}"
+            ${f.step ? `step="${f.step}"` : ""} ${f.required ? "required" : ""}>
+        </label>`;
+    }).join("");
+
+    modal.innerHTML = `
+      <div class="payroll-modal-card">
+        <div class="payroll-card-head">
+          <h3>${esc(title)}</h3>
+          <button type="button" data-close>×</button>
+        </div>
+
+        <form id="payrollBenefitDynamicForm" class="payroll-form-grid">
+          ${html}
+          <div class="payroll-modal-actions">
+            <button type="button" class="payroll-secondary" data-close>Cancel</button>
+            <button type="submit" class="payroll-primary">Save</button>
+          </div>
+        </form>
+      </div>`;
+
+    document.body.appendChild(modal);
+    modal.querySelectorAll("[data-close]").forEach(btn => btn.onclick = () => modal.remove());
+
+    return new Promise(resolve => {
+      modal.querySelector("form").onsubmit = e => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const data = new FormData(form);
+        const out = {};
+
+        fields.forEach(f => {
+          const control = form.elements[f.name];
+          if (f.type === "checkbox") out[f.name] = control.checked;
+          else if (f.type === "number") {
+            const raw = data.get(f.name);
+            out[f.name] = raw === "" || raw == null ? null : Number(raw);
+          } else out[f.name] = data.get(f.name);
+        });
+
+        modal.remove();
+        resolve(out);
+      };
+    });
+  }
 
   function renderPayrollPostingControls(run) {
     const status = String(run?.status || "draft").toLowerCase();

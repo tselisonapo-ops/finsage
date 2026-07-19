@@ -202,6 +202,57 @@
     min-width:220px;
   }
 
+  #screen-reports .fs-notes-actions,
+  #screen-reports .stmt-toolbar,
+  #screen-reports .stmt-custom-range {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+
+  #screen-reports .stmt-toolbar > select,
+  #screen-reports .stmt-toolbar > button,
+  #screen-reports .fs-notes-actions > select,
+  #screen-reports .fs-notes-actions > button {
+    width: auto !important;
+    flex: 0 0 auto;
+  }
+
+  #stmtType { min-width: 200px; }
+  #stmtPreset { min-width: 170px; }
+  #stmtCfMethod { min-width: 140px; }
+  #stmtTemplate { min-width: 145px; }
+  #stmtBasis { min-width: 165px; }
+  #stmtCompare { min-width: 145px; }
+  #stmtComparisonYears { min-width: 105px; }
+  #stmtColsMode { min-width: 130px; }
+  #stmtFormat { min-width: 145px; }
+  #stmtDetail { min-width: 135px; }
+
+  #stmtFromDate,
+  #stmtToDate {
+    width: 132px !important;
+  }
+
+  @media (max-width: 900px) {
+    #screen-reports .stmt-toolbar > select,
+    #screen-reports .stmt-toolbar > button {
+      flex: 1 1 180px;
+      min-width: 0;
+    }
+
+    #screen-reports .stmt-custom-range {
+      width: 100%;
+    }
+
+    #stmtFromDate,
+    #stmtToDate {
+      flex: 1 1 140px;
+      width: auto !important;
+    }
+  }
+  
   /* 📘 Ledger styling */
   #ledgerTable{
     background:#ffffff;
@@ -8935,7 +8986,7 @@ select:focus {
                 </p>
               </div>
 
-              <div class="flex flex-wrap gap-2 items-center">
+              <div class="fs-notes-actions">
                 <span class="text-xs font-medium text-slate-500">Statements Notes</span>
 
                 <select id="notesPack" class="px-3 py-2 border rounded text-sm">
@@ -9009,7 +9060,7 @@ select:focus {
               <span id="stmtPeriodLabel" class="text-xs text-slate-500"></span>
             </div>
 
-            <div class="mt-2 flex flex-wrap gap-2 items-center">
+            <div class="stmt-toolbar mt-2">
               <select id="stmtType" class="px-3 py-2 border rounded text-sm">
                 <option value="pnl">Profit &amp; Loss</option>
                 <option value="bs">Balance Sheet</option>
@@ -9031,7 +9082,7 @@ select:focus {
                 <option value="custom">Custom period range</option>
               </select>
 
-              <div id="stmtCustomRange" class="hidden flex items-center gap-2">
+              <div id="stmtCustomRange" class="stmt-custom-range hidden">
                   <input
                       id="stmtFromDate"
                       type="date"
@@ -18045,17 +18096,56 @@ select:focus {
             ></div>
           </div>
 
-          <div
-            id="dtAssetTaxView"
-            class="hidden"
-          >
+          <div id="dtAssetTaxView" class="hidden">
+
+            <div class="dt-asset-tax-toolbar">
+              <div class="dt-asset-tax-toolbar-copy">
+                <h3>Capital Allowance Configuration</h3>
+
+                <p>
+                  Review tax-authority defaults and configure
+                  company-specific allowance rules.
+                </p>
+              </div>
+
+              <div class="dt-asset-tax-toolbar-actions">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  id="dtManageAssetTaxRulesBtn"
+                >
+                  Manage Allowance Rules
+                </button>
+
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  id="dtManageAssetTaxProfilesBtn"
+                >
+                  Asset Tax Profiles
+                </button>
+              </div>
+            </div>
+
             <div class="dt-workspace-card">
               <div class="dt-workspace-heading">
                 <div>
                   <h3>Capital Allowance Runs</h3>
+
                   <p>
-                    Review tax written-down values and allowance calculations.
+                    Review tax written-down values and
+                    allowance calculations.
                   </p>
+                </div>
+
+                <div class="dt-workspace-heading-actions">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    id="dtAssetTaxWorkspaceNewRunBtn"
+                  >
+                    New Capital Allowance Run
+                  </button>
                 </div>
               </div>
 

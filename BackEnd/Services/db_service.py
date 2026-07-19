@@ -2338,7 +2338,7 @@ class DatabaseService:
         INSERT INTO public.tax_authorities (code, name, country_code, currency_code)
         VALUES
         ('RSL',  'Revenue Services Lesotho', 'LS', 'LSL'),
-        ('SARS', 'South African Revenue Service', 'ZA', 'USD'),
+        ('SARS', 'South African Revenue Service', 'ZA', 'ZAR'),
         ('BURS', 'Botswana Unified Revenue Service', 'BW', 'BWP')
         ON CONFLICT (code) DO UPDATE
         SET name = EXCLUDED.name,
@@ -19555,6 +19555,11 @@ class DatabaseService:
             updated_at TIMESTAMPTZ NULL
         );
 
+        ALTER TABLE {schema}.asset_tax_profiles
+        ADD COLUMN IF NOT EXISTS default_rule_id INT NULL,
+        ADD COLUMN IF NOT EXISTS override_rule_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS rule_source TEXT NOT NULL DEFAULT 'default';
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -19602,6 +19607,64 @@ class DatabaseService:
             END IF;
         END $$;
 
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname =
+                    'asset_tax_profiles_default_rule_fk'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT asset_tax_profiles_default_rule_fk
+                FOREIGN KEY (default_rule_id)
+                REFERENCES public.tax_allowance_rules(id)
+                ON DELETE SET NULL;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname =
+                    'asset_tax_profiles_override_rule_fk'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT asset_tax_profiles_override_rule_fk
+                FOREIGN KEY (override_rule_id)
+                REFERENCES {schema}.asset_tax_rule_overrides(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname =
+                    'ck_asset_tax_profile_rule_source'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT ck_asset_tax_profile_rule_source
+                CHECK (
+                    rule_source IN (
+                        'default',
+                        'override',
+                        'custom',
+                        'manual'
+                    )
+                );
+            END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.asset_tax_runs (
             id SERIAL PRIMARY KEY,
@@ -19710,6 +19773,13 @@ class DatabaseService:
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.asset_tax_run_lines
+        ADD COLUMN IF NOT EXISTS default_rule_id INT NULL,
+        ADD COLUMN IF NOT EXISTS override_rule_id BIGINT NULL,
+        ADD COLUMN IF NOT EXISTS rule_source TEXT NULL,
+        ADD COLUMN IF NOT EXISTS rule_snapshot JSONB
+            NOT NULL DEFAULT '{{}}'::jsonb;
 
         DO $$
         BEGIN
@@ -26564,6 +26634,91 @@ class DatabaseService:
                     )
                 )
         );
+
+        CREATE TABLE IF NOT EXISTS {schema}.asset_tax_rule_overrides (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+            tax_authority_id INT NOT NULL
+                REFERENCES public.tax_authorities(id),
+
+            default_rule_id INT NULL
+                REFERENCES public.tax_allowance_rules(id)
+                ON DELETE SET NULL,
+
+            rule_code TEXT NOT NULL,
+            rule_name TEXT NOT NULL,
+
+            asset_category_hint TEXT NULL,
+
+            method TEXT NOT NULL DEFAULT 'WDV',
+
+            rate_percent NUMERIC(8,4) NULL,
+            useful_life_years NUMERIC(8,2) NULL,
+
+            initial_allowance_percent NUMERIC(8,4) NULL,
+            annual_allowance_percent NUMERIC(8,4) NULL,
+
+            effective_from DATE NOT NULL
+                DEFAULT DATE '1900-01-01',
+
+            effective_to DATE NULL,
+
+            override_type TEXT NOT NULL DEFAULT 'custom',
+
+            notes TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_asset_tax_rule_override_method
+                CHECK (
+                    method IN (
+                        'WDV',
+                        'SL',
+                        'IMMEDIATE',
+                        'CUSTOM'
+                    )
+                ),
+
+            CONSTRAINT ck_asset_tax_rule_override_type
+                CHECK (
+                    override_type IN (
+                        'override',
+                        'custom',
+                        'disabled_default'
+                    )
+                ),
+
+            CONSTRAINT uq_asset_tax_rule_override
+                UNIQUE (
+                    company_id,
+                    tax_authority_id,
+                    rule_code,
+                    effective_from
+                )
+        );
+    
+        CREATE INDEX IF NOT EXISTS
+        {schema}_asset_tax_rule_override_authority_idx
+        ON {schema}.asset_tax_rule_overrides (
+            company_id,
+            tax_authority_id,
+            is_active
+        );
+
+        CREATE INDEX IF NOT EXISTS
+        {schema}_asset_tax_rule_override_default_idx
+        ON {schema}.asset_tax_rule_overrides (
+            default_rule_id
+        )
+        WHERE default_rule_id IS NOT NULL;
         """
         ddl_ap = """
         -- ==================================================
