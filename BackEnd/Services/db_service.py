@@ -84248,9 +84248,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             LEFT JOIN {schema}.customers c
             ON c.id = adi.customer_id
 
-            LEFT JOIN {schema}.vendors s
-            ON s.id = adi.supplier_id
-            AND s.company_id = adi.company_id
+            LEFT JOIN {schema}.vendors v
+            ON v.id = adi.supplier_id
+            AND v.company_id = adi.company_id
 
             LEFT JOIN {schema}.revenue_contracts rc
             ON rc.id = adi.source_revenue_contract_id
