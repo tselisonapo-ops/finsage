@@ -42393,75 +42393,32 @@ async function saveEditModal() {
 
   async function loadRuns() {
     const mount = document.getElementById("dtRunList");
-    mount.innerHTML = `<div class="dt-loading">Loading deferred tax runs...</div>`;
+
+    if (!mount) return;
+
+    mount.innerHTML = `
+      <div class="dt-loading">
+        Loading deferred tax runs...
+      </div>
+    `;
 
     try {
       const res = await apiFetch(
         ENDPOINTS.deferredTax.runs(cid())
       );
 
-      const rows = res?.data || [];
+      const rows = Array.isArray(res?.data)
+        ? res.data
+        : [];
 
-      mount.innerHTML = rows.length
-        ? `
-          <div class="dt-table-wrap">
-            <table class="dt-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Authority</th>
-                  <th>Rate</th>
-                  <th>Status</th>
-                  <th>DTA</th>
-                  <th>DTL</th>
-                  <th>Net</th>
-                  <th></th>
-                </tr>
-              </thead>
-
-              <tbody>
-                ${rows.map(row => `
-                  <tr>
-                    <td>${String(row.reporting_date).slice(0, 10)}</td>
-                    <td>
-                      ${row.tax_authority_code ||
-                        row.tax_authority_name ||
-                        "-"}
-                    </td>
-                    <td>
-                      ${Number(row.tax_rate || 0).toFixed(2)}%
-                    </td>
-                    <td>
-                      <span class="dt-status ${row.status}">
-                        ${row.status}
-                      </span>
-                    </td>
-                    <td>${money(row.gross_dta)}</td>
-                    <td>${money(row.gross_dtl)}</td>
-                    <td>${money(row.net_deferred_tax)}</td>
-                    <td>
-                      <button
-                        class="btn btn-sm btn-secondary"
-                        data-dt-run="${row.id}"
-                      >
-                        Open
-                      </button>
-                    </td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        `
-        : `
-          <div class="dt-empty">
-            No deferred tax runs have been created.
-          </div>
-        `;
-    } catch (e) {
+      renderDeferredTaxRunList(rows);
+    } catch (error) {
       mount.innerHTML = `
         <div class="dt-error">
-          ${e.message}
+          ${dtEscape(
+            error?.message ||
+            "Deferred-tax runs could not be loaded."
+          )}
         </div>
       `;
     }
@@ -43124,269 +43081,269 @@ async function saveEditModal() {
     );
 
     await openRun(selectedRun.id);
-  }
-
-  document.addEventListener("submit", async e => {
-    if (e.target.id === "dtCreateRunForm") {
-      e.preventDefault();
-      await createRun(e.target);
     }
 
-    if (e.target.id === "dtCreateAssetTaxRunForm") {
-      e.preventDefault();
-      await createAssetTaxRun(e.target);
-    }
-
-    if (e.target.id === "dtAddLineForm") {
-      e.preventDefault();
-      await addLine(e.target);
-    }
-  });
-
-  document.addEventListener("click", async e => {
-    const viewBtn = e.target.closest("[data-dt-view]");
-
-    if (viewBtn) {
-      activeDeferredTaxView = viewBtn.dataset.dtView;
-
-      document.querySelectorAll(".dt-view-tab").forEach(btn => {
-        btn.classList.toggle("active", btn === viewBtn);
-      });
-
-      const isDeferredTax =
-        activeDeferredTaxView === "deferred-tax";
-
-      document
-        .getElementById("dtDeferredTaxView")
-        ?.classList.toggle("hidden", !isDeferredTax);
-
-      document
-        .getElementById("dtAssetTaxView")
-        ?.classList.toggle("hidden", isDeferredTax);
-
-      if (isDeferredTax) {
-        await loadRuns();
-      } else {
-        await loadAssetTaxRuns();
+    document.addEventListener("submit", async e => {
+      if (e.target.id === "dtCreateRunForm") {
+        e.preventDefault();
+        await createRun(e.target);
       }
 
-      return;
-    }
+      if (e.target.id === "dtCreateAssetTaxRunForm") {
+        e.preventDefault();
+        await createAssetTaxRun(e.target);
+      }
 
-    if (e.target.closest("[data-dt-close]")) {
-      closeModal();
-      return;
-    }
+      if (e.target.id === "dtAddLineForm") {
+        e.preventDefault();
+        await addLine(e.target);
+      }
+    });
 
-    const runBtn = e.target.closest("[data-dt-open]");
+    document.addEventListener("click", async e => {
+      const viewBtn = e.target.closest("[data-dt-view]");
 
-    if (runBtn) {
-      await openRun(Number(runBtn.dataset.dtOpen));
-      return;
-    }
+      if (viewBtn) {
+        activeDeferredTaxView = viewBtn.dataset.dtView;
 
-    if (e.target.id === "dtEmptyNewRunBtn") {
-      await showCreateRunModal();
-      return;
-    }
+        document.querySelectorAll(".dt-view-tab").forEach(btn => {
+          btn.classList.toggle("active", btn === viewBtn);
+        });
 
-    const deleteBtn = e.target.closest("[data-dt-delete]");
-    if (deleteBtn) {
-      await apiFetch(
-        ENDPOINTS.deferredTax.line(
-          cid(),
-          selectedRun.id,
-          deleteBtn.dataset.dtDelete
-        ),
-        { method: "DELETE" }
-      );
+        const isDeferredTax =
+          activeDeferredTaxView === "deferred-tax";
 
-      await openRun(selectedRun.id);
-      return;
-    }
+        document
+          .getElementById("dtDeferredTaxView")
+          ?.classList.toggle("hidden", !isDeferredTax);
 
-    const assetRunBtn = e.target.closest("[data-dt-asset-tax-run]");
+        document
+          .getElementById("dtAssetTaxView")
+          ?.classList.toggle("hidden", isDeferredTax);
 
-    if (assetRunBtn) {
-      await openAssetTaxRun(
-        Number(assetRunBtn.dataset.dtAssetTaxRun)
-      );
-      return;
-    }
-
-    if (e.target.id === "dtNewAssetTaxRunBtn") {
-      await showCreateAssetTaxRunModal();
-      return;
-    }
-
-    if (e.target.id === "dtAssetTaxCalculateBtn") {
-      await calculateAssetTaxRun();
-      return;
-    }
-
-    if (e.target.id === "dtAssetTaxApproveBtn") {
-      await assetTaxRunAction("assetTaxApprove");
-      return;
-    }
-
-    if (e.target.id === "dtAssetTaxBackBtn") {
-      document
-        .getElementById("dtAssetTaxRunDetail")
-        .classList.add("hidden");
-
-      document
-        .getElementById("dtAssetTaxRunList")
-        .classList.remove("hidden");
-
-      await loadAssetTaxRuns();
-      return;
-    }
-
-    if (e.target.id === "dtSettingsForm") {
-      e.preventDefault();
-
-      const form = e.target;
-      const data = new FormData(form);
-
-      await apiFetch(
-        ENDPOINTS.deferredTax.settings(cid()),
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            tax_authority_id: Number(
-              data.get("tax_authority_id")
-            ),
-            income_tax_rate: Number(
-              data.get("income_tax_rate")
-            ),
-            deferred_tax_enabled:
-              data.get("deferred_tax_enabled") === "on",
-            deferred_tax_settings: {
-              default_recovery_method:
-                data.get("default_recovery_method"),
-              reconciliation_tolerance: Number(
-                data.get("reconciliation_tolerance") || 0.05
-              ),
-              auto_scan_assets:
-                data.get("auto_scan_assets") === "on",
-              auto_scan_accrual_deferrals:
-                data.get("auto_scan_accrual_deferrals") === "on",
-              require_dta_recoverability_review:
-                data.get("require_dta_recoverability_review") === "on"
-            }
-          })
+        if (isDeferredTax) {
+          await loadRuns();
+        } else {
+          await loadAssetTaxRuns();
         }
-      );
 
-      closeModal();
-    }
-
-    if (e.target.id === "dtSettingsBtn") {
-      await showDeferredTaxSettings();
-    }
-
-    if (e.target.id === "dtNewRunBtn") {
-      await showCreateRunModal();
-    }
-
-    if (e.target.id === "dtRefreshBtn") {
-      await loadRuns();
-    }
-
-    if (e.target.id === "dtScanBtn" || e.target.id === "dtEmptyScanBtn") {
-      if (!confirm("Scan the balance sheet and replace previously generated lines?")) return;
-
-      try {
-        await runAction("scan");
-      } catch (err) {
-        alert(err.message || "The deferred-tax scan could not be completed.");
-      }
-      return;
-    }
-
-    if (e.target.id === "dtBackBtn") {
-      document
-        .getElementById("dtRunDetail")
-        .classList.add("hidden");
-
-      document
-        .getElementById("dtRunList")
-        .classList.remove("hidden");
-
-      await loadRuns();
-    }
-
-    if (
-      e.target.id === "dtAddLineBtn" ||
-      e.target.id === "dtEmptyAddLineBtn"
-    ) {
-      showAddLineModal();
-    }
-
-    if (
-      e.target.id === "dtAddLineBtn" ||
-      e.target.id === "dtEmptyAddLineBtn"
-    ) {
-      showAddLineModal();
-      return;
-    }
-
-    if (e.target.id === "dtPreviewPostBtn") {
-      await showJournalPreview();
-      return;
-    }
-
-    if (e.target.id === "dtConfirmPostBtn") {
-      if (!confirm(
-        "Post this deferred-tax journal to the general ledger?"
-      )) {
         return;
       }
 
-      const button = e.target;
-      button.disabled = true;
-      button.textContent = "Posting...";
-
-      try {
-        await runAction("post");
+      if (e.target.closest("[data-dt-close]")) {
         closeModal();
-      } catch (error) {
-        button.disabled = false;
-        button.textContent = "Post Journal";
-        throw error;
+        return;
       }
 
-      return;
-    }
+      const runBtn = e.target.closest("[data-dt-open]");
 
-    if (e.target.id === "dtRecalculateBtn") {
-      await runAction("recalculate");
-    }
+      if (runBtn) {
+        await openRun(Number(runBtn.dataset.dtOpen));
+        return;
+      }
 
-    if (e.target.id === "dtReturnDraftBtn") {
-      await apiFetch(
-        ENDPOINTS.deferredTax.returnToDraft(
-          cid(),
-          selectedRun.id
-        ),
-        { method: "POST" }
-      );
+      if (e.target.id === "dtEmptyNewRunBtn") {
+        await showCreateRunModal();
+        return;
+      }
 
-      await openRun(selectedRun.id);
-    }
+      const deleteBtn = e.target.closest("[data-dt-delete]");
+      if (deleteBtn) {
+        await apiFetch(
+          ENDPOINTS.deferredTax.line(
+            cid(),
+            selectedRun.id,
+            deleteBtn.dataset.dtDelete
+          ),
+          { method: "DELETE" }
+        );
 
-    if (e.target.id === "dtReviewBtn") {
-      await runAction("review");
-    }
+        await openRun(selectedRun.id);
+        return;
+      }
 
-    if (e.target.id === "dtApproveBtn") {
-      await runAction("approve");
-    }
+      const assetRunBtn = e.target.closest("[data-dt-asset-tax-run]");
 
-    if (e.target.id === "dtVoidBtn") {
-      await runAction("void");
-    }
-  });
+      if (assetRunBtn) {
+        await openAssetTaxRun(
+          Number(assetRunBtn.dataset.dtAssetTaxRun)
+        );
+        return;
+      }
+
+      if (e.target.id === "dtNewAssetTaxRunBtn") {
+        await showCreateAssetTaxRunModal();
+        return;
+      }
+
+      if (e.target.id === "dtAssetTaxCalculateBtn") {
+        await calculateAssetTaxRun();
+        return;
+      }
+
+      if (e.target.id === "dtAssetTaxApproveBtn") {
+        await assetTaxRunAction("assetTaxApprove");
+        return;
+      }
+
+      if (e.target.id === "dtAssetTaxBackBtn") {
+        document
+          .getElementById("dtAssetTaxRunDetail")
+          .classList.add("hidden");
+
+        document
+          .getElementById("dtAssetTaxRunList")
+          .classList.remove("hidden");
+
+        await loadAssetTaxRuns();
+        return;
+      }
+
+      if (e.target.id === "dtSettingsForm") {
+        e.preventDefault();
+
+        const form = e.target;
+        const data = new FormData(form);
+
+        await apiFetch(
+          ENDPOINTS.deferredTax.settings(cid()),
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              tax_authority_id: Number(
+                data.get("tax_authority_id")
+              ),
+              income_tax_rate: Number(
+                data.get("income_tax_rate")
+              ),
+              deferred_tax_enabled:
+                data.get("deferred_tax_enabled") === "on",
+              deferred_tax_settings: {
+                default_recovery_method:
+                  data.get("default_recovery_method"),
+                reconciliation_tolerance: Number(
+                  data.get("reconciliation_tolerance") || 0.05
+                ),
+                auto_scan_assets:
+                  data.get("auto_scan_assets") === "on",
+                auto_scan_accrual_deferrals:
+                  data.get("auto_scan_accrual_deferrals") === "on",
+                require_dta_recoverability_review:
+                  data.get("require_dta_recoverability_review") === "on"
+              }
+            })
+          }
+        );
+
+        closeModal();
+      }
+
+      if (e.target.id === "dtSettingsBtn") {
+        await showDeferredTaxSettings();
+      }
+
+      if (e.target.id === "dtNewRunBtn") {
+        await showCreateRunModal();
+      }
+
+      if (e.target.id === "dtRefreshBtn") {
+        await loadRuns();
+      }
+
+      if (e.target.id === "dtScanBtn" || e.target.id === "dtEmptyScanBtn") {
+        if (!confirm("Scan the balance sheet and replace previously generated lines?")) return;
+
+        try {
+          await runAction("scan");
+        } catch (err) {
+          alert(err.message || "The deferred-tax scan could not be completed.");
+        }
+        return;
+      }
+
+      if (e.target.id === "dtBackBtn") {
+        document
+          .getElementById("dtRunDetail")
+          .classList.add("hidden");
+
+        document
+          .getElementById("dtRunList")
+          .classList.remove("hidden");
+
+        await loadRuns();
+      }
+
+      if (
+        e.target.id === "dtAddLineBtn" ||
+        e.target.id === "dtEmptyAddLineBtn"
+      ) {
+        showAddLineModal();
+      }
+
+      if (
+        e.target.id === "dtAddLineBtn" ||
+        e.target.id === "dtEmptyAddLineBtn"
+      ) {
+        showAddLineModal();
+        return;
+      }
+
+      if (e.target.id === "dtPreviewPostBtn") {
+        await showJournalPreview();
+        return;
+      }
+
+      if (e.target.id === "dtConfirmPostBtn") {
+        if (!confirm(
+          "Post this deferred-tax journal to the general ledger?"
+        )) {
+          return;
+        }
+
+        const button = e.target;
+        button.disabled = true;
+        button.textContent = "Posting...";
+
+        try {
+          await runAction("post");
+          closeModal();
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Post Journal";
+          throw error;
+        }
+
+        return;
+      }
+
+      if (e.target.id === "dtRecalculateBtn") {
+        await runAction("recalculate");
+      }
+
+      if (e.target.id === "dtReturnDraftBtn") {
+        await apiFetch(
+          ENDPOINTS.deferredTax.returnToDraft(
+            cid(),
+            selectedRun.id
+          ),
+          { method: "POST" }
+        );
+
+        await openRun(selectedRun.id);
+      }
+
+      if (e.target.id === "dtReviewBtn") {
+        await runAction("review");
+      }
+
+      if (e.target.id === "dtApproveBtn") {
+        await runAction("approve");
+      }
+
+      if (e.target.id === "dtVoidBtn") {
+        await runAction("void");
+      }
+    });
 
   window.bindDeferredTaxScreen = async function bindDeferredTaxScreen() {
     const screen = document.getElementById("screen-deferred-tax");
