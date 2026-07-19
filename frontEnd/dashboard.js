@@ -2159,9 +2159,6 @@ const ENDPOINTS = {
     authorities: cid =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/authorities`,
 
-    allowanceRules: (cid, authorityId) =>
-      `${API_BASE}/api/companies/${cid}/deferred-tax/allowance-rules?tax_authority_id=${authorityId}`,
-
     // =========================================================
     // ASSET TAX / CAPITAL ALLOWANCE
     // =========================================================
@@ -2225,12 +2222,6 @@ const ENDPOINTS = {
 
     companyAllowanceRule: (cid, ruleId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/company-allowance-rules/${ruleId}`,
-
-    assetTaxProfiles: (cid, q = {}) => {
-      const qs = new URLSearchParams(q).toString();
-
-      return `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles${qs ? `?${qs}` : ""}`;
-    },
 
     assetTaxProfile: (cid, profileId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles/${profileId}`,

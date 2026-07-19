@@ -617,34 +617,6 @@ def deferred_tax_authorities(cid: int):
         "data": rows,
     }), 200
 
-@deferred_tax_bp.get(
-    "/api/companies/<int:cid>/deferred-tax/allowance-rules"
-)
-@require_auth
-def deferred_tax_allowance_rules(cid: int):
-    company_id, _, deny = _auth_context(cid)
-    if deny:
-        return deny
-
-    authority_id = request.args.get(
-        "tax_authority_id",
-        type=int,
-    )
-
-    if not authority_id:
-        settings = db_service.deferred_tax_get_settings(
-            company_id
-        )
-        authority_id = settings.get("tax_authority_id")
-
-    rows = db_service.deferred_tax_list_allowance_rules(
-        authority_id
-    ) if authority_id else []
-
-    return jsonify({
-        "ok": True,
-        "data": rows,
-    }), 200
 
 @deferred_tax_bp.route(
     "/api/companies/<int:cid>/deferred-tax/"
@@ -1300,24 +1272,46 @@ def deferred_tax_allowance_rules(cid):
 
         db_service.ensure_company_schema(company_id)
 
-        rows = db_service.asset_tax_rules_list(
-            company_id,
-            tax_authority_id=request.args.get(
-                "tax_authority_id",
-                type=int,
-            ),
-            active_only=_bool_arg("active_only"),
-            as_at=(request.args.get("as_at") or "").strip() or None,
+        authority_id = request.args.get(
+            "tax_authority_id",
+            type=int,
         )
 
-        return jsonify({"ok": True, "data": rows}), 200
+        if not authority_id:
+            settings = (
+                db_service.deferred_tax_get_settings(
+                    company_id
+                )
+                or {}
+            )
+
+            authority_id = settings.get(
+                "tax_authority_id"
+            )
+
+        rows = db_service.asset_tax_rules_list(
+            company_id,
+            tax_authority_id=authority_id,
+            active_only=_bool_arg(
+                "active_only"
+            ),
+            as_at=(
+                request.args.get("as_at")
+                or ""
+            ).strip() or None,
+        ) or []
+
+        return jsonify({
+            "ok": True,
+            "data": rows,
+        }), 200
 
     except Exception as e:
         current_app.logger.exception(
             "deferred_tax_allowance_rules failed"
         )
-        return _error_response(str(e))
 
+        return _error_response(str(e))
 
 @deferred_tax_bp.route(
     "/api/companies/<int:cid>/deferred-tax/company-allowance-rules",
