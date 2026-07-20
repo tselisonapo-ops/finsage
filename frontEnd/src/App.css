@@ -864,3 +864,193 @@ button {
 .fs-tip:focus-within .fs-tip-box {
   display: block !important;
 }
+
+/* =========================================
+   IFRS 16 Lessor Wizard
+========================================= */
+
+.lease-wizard[data-role="lessor"] {
+  width: 100%;
+}
+
+.lease-wizard[data-role="lessor"] .lease-step {
+  border-top: 4px solid var(--fs-accent);
+}
+
+.lease-wizard[data-role="lessor"] .lease-step-1 {
+  display: block;
+}
+
+.lease-wizard[data-role="lessor"] .lease-trigger-account {
+  margin: 14px 0 18px;
+  padding: 10px 14px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: #f0f9ff;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lease-trigger-account-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lease-trigger-account-value {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.lease-wizard[data-role="lessor"] textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid #d7dde8;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: #f9fbff;
+  color: var(--fs-text-main);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.lease-wizard[data-role="lessor"] textarea:focus {
+  border-color: var(--fs-accent);
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.15);
+  background: #ffffff;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-classification-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #99f6e4;
+  border-radius: 14px;
+  background: #f0fdfa;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-classification-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #115e59;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-classification-text {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-classification-badge {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-preview-panel {
+  margin-top: 18px;
+  border: 1px solid var(--fs-border-subtle);
+  border-radius: 14px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-preview-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fs-border-subtle);
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-preview-panel pre {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.lease-wizard[data-role="lessor"]
+  .lessor-success-note {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Make both lessor action buttons primary */
+.lease-wizard[data-role="lessor"]
+  .wizard-buttons button:first-child {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.lease-wizard[data-role="lessor"]
+  .wizard-buttons button:last-child {
+  background: var(--fs-accent);
+  color: #ffffff;
+}
+
+/* Lessor advanced GL account fields */
+.lease-wizard[data-role="lessor"]
+  .advanced-gl-grid input {
+  font-family: ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* Wider form inside the iframe */
+.lease-wizard[data-role="lessor"] .lease-step-1 {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+/* Responsive lessor layout */
+@media (max-width: 900px) {
+  .lease-wizard[data-role="lessor"]
+    .lessor-classification-banner {
+    flex-direction: column;
+  }
+
+  .lease-wizard[data-role="lessor"]
+    .wizard-buttons {
+    flex-direction: column;
+  }
+
+  .lease-wizard[data-role="lessor"]
+    .wizard-buttons button {
+    width: 100%;
+  }
+}

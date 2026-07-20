@@ -10600,7 +10600,19 @@ function openLeaseWizard(ctx = {}) {
     role,
     source: "journal",
     ctx: {
-      mode: ctx?.mode || "existing", // existing lease / opening balance path
+      mode: ctx?.mode || "existing",
+
+      leaseRole: [
+        "BS_CA_1710",
+        "BS_NCA_1720",
+      ].includes(
+        String(ctx?.accountCode || "")
+          .trim()
+          .toUpperCase()
+      )
+        ? "lessor"
+        : "lessee",
+
       accountCode: ctx?.accountCode || "",
       accountName: ctx?.accountName || "",
       defaults: {

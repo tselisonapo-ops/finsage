@@ -40,6 +40,16 @@ def _auth(company_id: int):
 
     return user_id, None
 
+def _json_error(message, status=400, **extra):
+    body = {"ok": False, "error": message}
+    if extra:
+        body.update(extra)
+    return _corsify(make_response(jsonify(body), status))
+
+
+def _opt():
+    return _corsify(make_response("", 204))
+
 
 def _date(value, name: str, required: bool = True):
     if value in (None, ""):
@@ -119,6 +129,21 @@ def _lessor_payload(data: dict) -> dict:
         "notes": (data.get("notes") or "").strip() or None,
         "revenue_account_code": (
             data.get("revenue_account_code") or ""
+        ).strip() or None,
+        "finance_income_account_code": (
+            data.get("finance_income_account_code") or ""
+        ).strip() or None,
+
+        "net_investment_current_account_code": (
+            data.get(
+                "net_investment_current_account_code"
+            ) or ""
+        ).strip() or None,
+
+        "net_investment_noncurrent_account_code": (
+            data.get(
+                "net_investment_noncurrent_account_code"
+            ) or ""
         ).strip() or None,
         "vat_output_account_code": (
             data.get("vat_output_account_code") or ""
@@ -1114,3 +1139,169 @@ def post_lessor_schedule_through(
             "ok": False,
             "error": str(e),
         }), 500
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lessor_lease_id>/schedule/"
+    "<int:schedule_id>/invoice-preview",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_schedule_invoice_preview(
+    company_id,
+    lessor_lease_id,
+    schedule_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    deny = _deny_if_wrong_company(
+        request.jwt_payload or {},
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        result = (
+            db_service.preview_lessor_schedule_invoice(
+                company_id,
+                lessor_lease_id,
+                schedule_id,
+            )
+        )
+
+        return jsonify(result), 200
+
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "lessor_schedule_invoice_preview failed"
+        )
+
+        return _json_error(str(exc), 500)
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lessor_lease_id>/schedule/"
+    "<int:schedule_id>/invoice",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def lessor_schedule_create_invoice(
+    company_id,
+    lessor_lease_id,
+    schedule_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    deny = _deny_if_wrong_company(
+        request.jwt_payload or {},
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.jwt_payload or {}
+
+        user_id = (
+            payload.get("user_id")
+            or payload.get("sub")
+        )
+
+        result = (
+            db_service.create_lessor_schedule_invoice(
+                company_id,
+                lessor_lease_id,
+                schedule_id,
+                user_id=user_id,
+            )
+        )
+
+        return jsonify(result), 201
+
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "lessor_schedule_create_invoice failed"
+        )
+
+        return _json_error(str(exc), 500)
+    
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lessor_lease_id>/invoices/create-through",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def lessor_create_invoices_through(
+    company_id,
+    lessor_lease_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    deny = _deny_if_wrong_company(
+        request.jwt_payload or {},
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        body = request.get_json(silent=True) or {}
+
+        through_date = body.get("through_date")
+
+        if not through_date:
+            return _json_error(
+                "through_date is required",
+                400,
+            )
+
+        jwt_payload = request.jwt_payload or {}
+
+        user_id = (
+            jwt_payload.get("user_id")
+            or jwt_payload.get("sub")
+        )
+
+        result = (
+            db_service.create_lessor_invoices_through(
+                company_id,
+                lessor_lease_id,
+                through_date,
+                user_id=user_id,
+            )
+        )
+
+        status = (
+            200
+            if result.get("failed_count") == 0
+            else 207
+        )
+
+        return jsonify(result), status
+
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "lessor_create_invoices_through failed"
+        )
+
+        return _json_error(str(exc), 500)
+    

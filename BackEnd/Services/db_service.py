@@ -29,7 +29,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from decimal import InvalidOperation
 from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 from datetime import date as _date
-from flask import current_app, g, request
+from flask import (
+    jsonify,
+    request,
+    current_app,
+    g,
+    make_response  
+)
 import hashlib
 from werkzeug.security import generate_password_hash
 import secrets
@@ -112,7 +118,6 @@ def _tb_signed(r: Dict[str, Any]) -> float:
     """Signed closing balance using TB convention: debit - credit."""
     dr, cr = _tb_dr_cr(r)
     return dr - cr
-
 
 def _money2(v) -> Decimal:
     return _d(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -23266,6 +23271,7 @@ class DatabaseService:
             contractual_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             straight_line_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            initial_direct_cost_expense NUMERIC(18,2) NOT NULL DEFAULT 0,
             accrued_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
             deferred_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
 
@@ -23283,7 +23289,10 @@ class DatabaseService:
             receipt_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             status TEXT NOT NULL DEFAULT 'scheduled',
+            posted_at TIMESTAMPTZ NULL,
+            posted_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL,
 
             FOREIGN KEY (lessor_lease_id)
             REFERENCES {schema}.lessor_leases(id)
@@ -23294,6 +23303,12 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS recognition_journal_id INT NULL,
         ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ NULL,
         ADD COLUMN IF NOT EXISTS posted_by_user_id INT NULL;
+
+
+        ALTER TABLE {schema}.lessor_lease_schedule
+        ADD COLUMN IF NOT EXISTS billed_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS billed_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS billing_error TEXT NULL;
 
         DO $fk_lessor_schedule_journal$
         BEGIN
@@ -23319,6 +23334,21 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_journal_idx
         ON {schema}.lessor_lease_schedule(recognition_journal_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_uq_lessor_schedule_invoice
+        ON {schema}.lessor_lease_schedule(invoice_id)
+        WHERE invoice_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_idx_lessor_schedule_billing
+        ON {schema}.lessor_lease_schedule(
+            company_id,
+            lessor_lease_id,
+            is_active,
+            payment_date,
+            status
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
             id SERIAL PRIMARY KEY,
@@ -37170,7 +37200,6 @@ class DatabaseService:
             WHERE company_id=%s
             AND lessor_lease_id=%s
             AND id=%s
-            AND is_active=TRUE
             LIMIT 1
             """,
             (
@@ -37249,16 +37278,16 @@ class DatabaseService:
                 row.get("straight_line_income")
             )
 
-            contractual_net = money(
-                row.get("contractual_net")
+            contractual_income = money(
+                row.get("contractual_income")
             )
 
             accrued_movement = money(
-                row.get("accrued_rental_movement")
+                row.get("accrued_rent_movement")
             )
 
             deferred_movement = money(
-                row.get("deferred_rental_movement")
+                row.get("deferred_rent_movement")
             )
 
             direct_cost_expense = money(
@@ -37268,7 +37297,7 @@ class DatabaseService:
             # The invoice normally recognises contractual rental income.
             # This journal posts only the straight-line difference.
             adjustment = money(
-                straight_line_income - contractual_net
+                straight_line_income - contractual_income
             )
 
             if adjustment > 0:
@@ -38603,15 +38632,11 @@ class DatabaseService:
                     "noncurrent_portion": (
                         row.get("noncurrent_portion") or 0
                     ),
-                    "invoice_id": row.get("invoice_id"),
-                    "invoice_line_id": row.get("invoice_line_id"),
-                    "recognition_journal_id": (
-                        row.get("recognition_journal_id")
-                    ),
-                    "receipt_amount": (
-                        row.get("receipt_amount") or 0
-                    ),
-                    "status": row.get("status") or "scheduled",
+                    "invoice_id": None,
+                    "invoice_line_id": None,
+                    "recognition_journal_id": None,
+                    "receipt_amount": 0,
+                    "status": "scheduled",
                 },
                 cur=cur,
             )
@@ -38645,6 +38670,694 @@ class DatabaseService:
             (int(company_id), int(lessor_lease_id)),
             cur=cur,
         ) or []
+
+    def _lessor_money(self, value) -> Decimal:
+        return Decimal(str(value or 0)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+
+
+    def _lessor_iso_date(self, value):
+        if value is None:
+            return None
+
+        if isinstance(value, datetime):
+            return value.date()
+
+        if isinstance(value, date):
+            return value
+
+        return date.fromisoformat(str(value)[:10])
+
+    def get_lessor_billable_period(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                s.*,
+
+                l.lease_number,
+                l.lease_name,
+                l.classification,
+                l.status AS lease_status,
+                l.customer_id,
+                l.currency,
+                l.revenue_account_code,
+                l.vat_output_account_code,
+                l.ar_account_code,
+                l.finance_income_account_code,
+                l.net_investment_current_account_code,
+                l.net_investment_noncurrent_account_code
+
+            FROM {schema}.lessor_lease_schedule s
+
+            JOIN {schema}.lessor_leases l
+            ON l.id=s.lessor_lease_id
+            AND l.company_id=s.company_id
+
+            WHERE s.company_id=%s
+            AND s.lessor_lease_id=%s
+            AND s.id=%s
+            AND s.is_active=TRUE
+
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+                int(schedule_id),
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                "Active lessor lease schedule period not found"
+            )
+
+        return row
+
+    def build_lessor_invoice_payload(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        row = self.get_lessor_billable_period(
+            company_id,
+            lessor_lease_id,
+            schedule_id,
+            cur=cur,
+        )
+
+        if row.get("invoice_id"):
+            raise ValueError(
+                "This lease schedule period has already been invoiced"
+            )
+
+        lease_status = str(
+            row.get("lease_status") or ""
+        ).strip().lower()
+
+        if lease_status not in {
+            "active",
+            "commenced",
+        }:
+            raise ValueError(
+                "Only an active or commenced lease can be billed"
+            )
+
+        customer_id = row.get("customer_id")
+
+        if not customer_id:
+            raise ValueError(
+                "The lessor lease does not have a customer"
+            )
+
+        classification = str(
+            row.get("classification") or ""
+        ).strip().lower()
+
+        if classification not in {
+            "operating",
+            "finance",
+        }:
+            raise ValueError(
+                "The lease must be classified before billing"
+            )
+
+        contractual_net = self._lessor_money(
+            row.get("contractual_net")
+        )
+
+        vat_amount = self._lessor_money(
+            row.get("vat_amount")
+        )
+
+        contractual_gross = self._lessor_money(
+            row.get("contractual_gross")
+        )
+
+        if contractual_gross == 0:
+            contractual_gross = self._lessor_money(
+                contractual_net + vat_amount
+            )
+
+        if contractual_net < 0:
+            raise ValueError(
+                "Contractual net billing amount cannot be negative"
+            )
+
+        if vat_amount < 0:
+            raise ValueError(
+                "VAT amount cannot be negative"
+            )
+
+        if contractual_gross <= 0:
+            raise ValueError(
+                "Invoice amount must be greater than zero"
+            )
+
+        invoice_date = self._lessor_iso_date(
+            row.get("payment_date")
+            or row.get("period_end")
+        )
+
+        due_date = self._lessor_iso_date(
+            row.get("due_date")
+            or row.get("payment_date")
+            or row.get("period_end")
+        )
+
+        lease_number = (
+            row.get("lease_number")
+            or f"LEASE-{lessor_lease_id}"
+        )
+
+        period_no = int(row.get("period_no") or 0)
+
+        description = (
+            f"Lease rental {lease_number} "
+            f"— period {period_no}"
+        )
+
+        if classification == "operating":
+            credit_account_code = row.get(
+                "revenue_account_code"
+            )
+
+            accounting_treatment = "rental_income"
+
+            if not credit_account_code:
+                raise ValueError(
+                    "Operating lease revenue account is not configured"
+                )
+
+        else:
+            credit_account_code = row.get(
+                "net_investment_current_account_code"
+            ) or row.get(
+                "net_investment_noncurrent_account_code"
+            )
+
+            accounting_treatment = "net_investment_recovery"
+
+            if not credit_account_code:
+                raise ValueError(
+                    "Finance lease net investment account is not configured"
+                )
+
+        if vat_amount and not row.get(
+            "vat_output_account_code"
+        ):
+            raise ValueError(
+                "VAT output account is not configured"
+            )
+
+        if not row.get("ar_account_code"):
+            raise ValueError(
+                "Accounts receivable account is not configured"
+            )
+
+        return {
+            "company_id": int(company_id),
+            "lessor_lease_id": int(lessor_lease_id),
+            "schedule_id": int(schedule_id),
+            "customer_id": int(customer_id),
+            "classification": classification,
+            "accounting_treatment": accounting_treatment,
+            "invoice_date": invoice_date,
+            "due_date": due_date,
+            "currency": row.get("currency"),
+            "reference": (
+                f"LESSOR-{lessor_lease_id}-P{period_no}"
+            ),
+            "description": description,
+            "period_no": period_no,
+            "period_start": row.get("period_start"),
+            "period_end": row.get("period_end"),
+            "net_amount": contractual_net,
+            "vat_amount": vat_amount,
+            "gross_amount": contractual_gross,
+            "quantity": Decimal("1.00"),
+            "unit_price": contractual_net,
+            "ar_account_code": row.get(
+                "ar_account_code"
+            ),
+            "credit_account_code": credit_account_code,
+            "vat_output_account_code": row.get(
+                "vat_output_account_code"
+            ),
+            "source": "lessor_lease_billing",
+            "module_name": "ifrs16_lessor",
+            "source_id": int(schedule_id),
+        }
+
+    def _create_lessor_sales_invoice(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+        cur=None,
+    ) -> dict:
+        invoice_payload = {
+            "customer_id": payload["customer_id"],
+            "invoice_date": payload["invoice_date"],
+            "due_date": payload["due_date"],
+            "currency": payload.get("currency"),
+            "reference": payload["reference"],
+            "description": payload["description"],
+            "source": payload["source"],
+            "source_id": payload["source_id"],
+            "module_name": payload["module_name"],
+
+            # The lessor engine controls the accounting treatment.
+            "posting_mode": "custom_accounts",
+
+            "ar_account_code": (
+                payload["ar_account_code"]
+            ),
+
+            "lines": [
+                {
+                    "description": payload["description"],
+                    "quantity": payload["quantity"],
+                    "unit_price": payload["unit_price"],
+                    "net_amount": payload["net_amount"],
+                    "vat_amount": payload["vat_amount"],
+                    "gross_amount": payload["gross_amount"],
+
+                    # Operating lease:
+                    #   Credit rental income
+                    #
+                    # Finance lease:
+                    #   Credit net investment recovery
+                    "account_code": (
+                        payload["credit_account_code"]
+                    ),
+
+                    "vat_account_code": (
+                        payload.get(
+                            "vat_output_account_code"
+                        )
+                    ),
+
+                    "source": "lessor_lease_billing",
+                    "source_id": payload["schedule_id"],
+                }
+            ],
+        }
+
+        result = self.create_customer_invoice(
+            company_id,
+            invoice_payload,
+            user_id=user_id,
+            cur=cur,
+        )
+
+        if not result:
+            raise ValueError(
+                "Customer invoice could not be created"
+            )
+
+        invoice = result.get("invoice") or result
+
+        invoice_id = (
+            invoice.get("id")
+            or invoice.get("invoice_id")
+        )
+
+        if not invoice_id:
+            raise ValueError(
+                "Invoice creation did not return an invoice ID"
+            )
+
+        lines = (
+            result.get("lines")
+            or invoice.get("lines")
+            or []
+        )
+
+        invoice_line_id = None
+
+        if lines:
+            invoice_line_id = (
+                lines[0].get("id")
+                or lines[0].get("invoice_line_id")
+            )
+
+        return {
+            "invoice_id": int(invoice_id),
+            "invoice_line_id": (
+                int(invoice_line_id)
+                if invoice_line_id
+                else None
+            ),
+            "invoice": invoice,
+            "lines": lines,
+            "result": result,
+        }
+
+    def create_lessor_schedule_invoice(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+        *,
+        user_id=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                locked = self.fetch_one(
+                    f"""
+                    SELECT
+                        id,
+                        invoice_id,
+                        status,
+                        is_active
+                    FROM {schema}.lessor_lease_schedule
+                    WHERE company_id=%s
+                    AND lessor_lease_id=%s
+                    AND id=%s
+                    FOR UPDATE
+                    """,
+                    (
+                        int(company_id),
+                        int(lessor_lease_id),
+                        int(schedule_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not locked:
+                    raise ValueError(
+                        "Lessor lease schedule period not found"
+                    )
+
+                if not locked.get("is_active"):
+                    raise ValueError(
+                        "Inactive schedule versions cannot be billed"
+                    )
+
+                if locked.get("invoice_id"):
+                    raise ValueError(
+                        "This schedule period has already been invoiced"
+                    )
+
+                payload = self.build_lessor_invoice_payload(
+                    company_id,
+                    lessor_lease_id,
+                    schedule_id,
+                    cur=cur,
+                )
+
+                created = self._create_lessor_sales_invoice(
+                    company_id,
+                    payload,
+                    user_id=user_id,
+                    cur=cur,
+                )
+
+                invoice_id = created["invoice_id"]
+                invoice_line_id = created.get(
+                    "invoice_line_id"
+                )
+
+                schedule = self.fetch_one(
+                    f"""
+                    UPDATE {schema}.lessor_lease_schedule
+                    SET
+                        invoice_id=%s,
+                        invoice_line_id=%s,
+                        billed_at=NOW(),
+                        billed_by_user_id=%s,
+                        billing_error=NULL,
+                        status=CASE
+                            WHEN recognition_journal_id IS NOT NULL
+                                THEN 'posted'
+                            ELSE 'billed'
+                        END,
+                        updated_at=NOW()
+
+                    WHERE company_id=%s
+                    AND lessor_lease_id=%s
+                    AND id=%s
+                    AND is_active=TRUE
+                    AND invoice_id IS NULL
+
+                    RETURNING *
+                    """,
+                    (
+                        int(invoice_id),
+                        invoice_line_id,
+                        user_id,
+                        int(company_id),
+                        int(lessor_lease_id),
+                        int(schedule_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not schedule:
+                    raise ValueError(
+                        "Schedule period was billed by another process"
+                    )
+
+                self.fetch_one(
+                    f"""
+                    INSERT INTO {schema}.lessor_lease_events (
+                        company_id,
+                        lessor_lease_id,
+                        event_type,
+                        event_date,
+                        description,
+                        reference_id,
+                        reference_type,
+                        created_by_user_id
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        'invoice_created',
+                        %s,
+                        %s,
+                        %s,
+                        'invoice',
+                        %s
+                    )
+                    RETURNING id
+                    """,
+                    (
+                        int(company_id),
+                        int(lessor_lease_id),
+                        payload["invoice_date"],
+                        (
+                            f"Invoice created for period "
+                            f"{payload['period_no']}"
+                        ),
+                        int(invoice_id),
+                        user_id,
+                    ),
+                    cur=cur,
+                )
+
+                conn.commit()
+
+                return {
+                    "ok": True,
+                    "invoice_id": int(invoice_id),
+                    "invoice_line_id": invoice_line_id,
+                    "schedule": schedule,
+                    "invoice": created.get("invoice"),
+                    "payload": payload,
+                }
+
+            except Exception as exc:
+                conn.rollback()
+
+                try:
+                    with conn.cursor() as error_cur:
+                        error_cur.execute(
+                            f"""
+                            UPDATE {schema}.lessor_lease_schedule
+                            SET
+                                billing_error=%s,
+                                updated_at=NOW()
+                            WHERE company_id=%s
+                            AND lessor_lease_id=%s
+                            AND id=%s
+                            """,
+                            (
+                                str(exc),
+                                int(company_id),
+                                int(lessor_lease_id),
+                                int(schedule_id),
+                            ),
+                        )
+
+                        conn.commit()
+
+                except Exception:
+                    conn.rollback()
+
+                raise
+
+    def create_lessor_invoices_through(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        through_date,
+        *,
+        user_id=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        through_date = self._lessor_iso_date(
+            through_date
+        )
+
+        if not through_date:
+            raise ValueError(
+                "through_date is required"
+            )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                period_no,
+                payment_date,
+                due_date,
+                contractual_gross
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND is_active=TRUE
+            AND invoice_id IS NULL
+            AND COALESCE(
+                payment_date,
+                due_date,
+                period_end
+            ) <= %s
+            ORDER BY
+                period_no,
+                id
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+                through_date,
+            ),
+        ) or []
+
+        created = []
+        failed = []
+
+        for row in rows:
+            try:
+                result = self.create_lessor_schedule_invoice(
+                    company_id,
+                    lessor_lease_id,
+                    int(row["id"]),
+                    user_id=user_id,
+                )
+
+                created.append({
+                    "schedule_id": int(row["id"]),
+                    "period_no": int(
+                        row.get("period_no") or 0
+                    ),
+                    "invoice_id": result["invoice_id"],
+                    "gross_amount": row.get(
+                        "contractual_gross"
+                    ),
+                })
+
+            except Exception as exc:
+                failed.append({
+                    "schedule_id": int(row["id"]),
+                    "period_no": int(
+                        row.get("period_no") or 0
+                    ),
+                    "error": str(exc),
+                })
+
+        return {
+            "ok": len(failed) == 0,
+            "lessor_lease_id": int(lessor_lease_id),
+            "through_date": str(through_date),
+            "eligible_count": len(rows),
+            "created_count": len(created),
+            "failed_count": len(failed),
+            "created": created,
+            "failed": failed,
+        }
+
+    def preview_lessor_schedule_invoice(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+    ) -> dict:
+        payload = self.build_lessor_invoice_payload(
+            company_id,
+            lessor_lease_id,
+            schedule_id,
+        )
+
+        return {
+            "ok": True,
+            "invoice": {
+                "customer_id": payload["customer_id"],
+                "invoice_date": str(
+                    payload["invoice_date"]
+                ),
+                "due_date": str(
+                    payload["due_date"]
+                ),
+                "reference": payload["reference"],
+                "description": payload["description"],
+                "currency": payload.get("currency"),
+                "classification": payload[
+                    "classification"
+                ],
+                "accounting_treatment": payload[
+                    "accounting_treatment"
+                ],
+                "net_amount": float(
+                    payload["net_amount"]
+                ),
+                "vat_amount": float(
+                    payload["vat_amount"]
+                ),
+                "gross_amount": float(
+                    payload["gross_amount"]
+                ),
+                "ar_account_code": payload[
+                    "ar_account_code"
+                ],
+                "credit_account_code": payload[
+                    "credit_account_code"
+                ],
+                "vat_output_account_code": payload.get(
+                    "vat_output_account_code"
+                ),
+            },
+        }
 
 
     def update_lessor_classification(
@@ -72349,6 +73062,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 prepared_by_user_id = EXCLUDED.prepared_by_user_id,
                 reviewer_user_id = EXCLUDED.reviewer_user_id,
                 status = EXCLUDED.status,
+                updated_at = NOW()
                 amount = EXCLUDED.amount,
                 currency_code = EXCLUDED.currency_code,
                 notes = EXCLUDED.notes,
