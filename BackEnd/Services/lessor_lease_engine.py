@@ -1,0 +1,1411 @@
+from __future__ import annotations
+
+from calendar import monthrange
+from dataclasses import dataclass, asdict
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Any, Dict, List, Optional
+
+from dateutil.relativedelta import relativedelta
+
+
+@dataclass
+class LessorBillingPeriod:
+    period_no: int
+    period_start: date
+    period_end: date
+    bill_date: date
+    due_date: date
+    amount_net: float
+    vat_amount: float
+    amount_gross: float
+
+@dataclass
+class LessorClassificationResult:
+    classification: str
+    proposed_classification: str
+    overridden: bool
+    override_reason: Optional[str]
+    indicators: Dict[str, bool]
+    lease_term_months: int
+    economic_life_months: int
+    lease_term_ratio: float
+    pv_fair_value_ratio: float
+    present_value_lease_payments: float
+    fair_value: float
+    reasons: List[str]
+    warnings: List[str]
+
+@dataclass
+class FinanceLeasePeriod:
+    period_no: int
+    period_start: date
+    period_end: date
+    payment_date: date
+    opening_net_investment: float
+    lease_payment: float
+    finance_income: float
+    principal_reduction: float
+    closing_net_investment: float
+
+
+@dataclass
+class OperatingLeasePeriod:
+    period_no: int
+    period_start: date
+    period_end: date
+    contractual_income: float
+    straight_line_income: float
+    initial_direct_cost_expense: float
+    accrued_rent_movement: float
+    deferred_rent_movement: float
+    accrued_rent_balance: float
+    deferred_rent_balance: float
+
+def _money(value: Any) -> float:
+    return round(float(value or 0.0), 2)
+
+
+def _frequency_delta(frequency: str) -> relativedelta:
+    frequency = (frequency or "monthly").strip().lower()
+
+    if frequency == "weekly":
+        return relativedelta(weeks=1)
+
+    if frequency == "monthly":
+        return relativedelta(months=1)
+
+    if frequency == "quarterly":
+        return relativedelta(months=3)
+
+    if frequency == "annually":
+        return relativedelta(years=1)
+
+    raise ValueError(f"Unsupported billing frequency: {frequency}")
+
+
+def _bill_date_for_period(
+    period_start: date,
+    period_end: date,
+    *,
+    billing_timing: str,
+    bill_day_of_month: Optional[int],
+) -> date:
+    base = (
+        period_start
+        if (billing_timing or "arrears").lower() == "advance"
+        else period_end
+    )
+
+    if not bill_day_of_month:
+        return base
+
+    day = min(
+        max(int(bill_day_of_month), 1),
+        monthrange(base.year, base.month)[1],
+    )
+
+    return date(base.year, base.month, day)
+
+
+def _split_amount(
+    billing_amount: float,
+    billing_basis: str,
+    vat_rate: float,
+) -> tuple[float, float, float]:
+    amount = _money(billing_amount)
+    vat_rate = float(vat_rate or 0.0)
+    basis = (billing_basis or "gross").lower()
+
+    if basis == "net":
+        net = amount
+        vat = _money(net * vat_rate)
+        gross = _money(net + vat)
+        return net, vat, gross
+
+    gross = amount
+
+    if vat_rate <= 0:
+        return gross, 0.0, gross
+
+    net = _money(gross / (1 + vat_rate))
+    vat = _money(gross - net)
+
+    return net, vat, gross
+
+
+def build_lessor_billing_schedule(
+    lease: Dict[str, Any],
+    *,
+    through_date: Optional[date] = None,
+) -> List[Dict[str, Any]]:
+    start_date = lease.get("start_date")
+    end_date = lease.get("end_date") or through_date
+
+    if not isinstance(start_date, date):
+        raise ValueError("Lessor lease start_date is required")
+
+    if not end_date:
+        raise ValueError(
+            "An end_date or through_date is required for schedule generation"
+        )
+
+    if not isinstance(end_date, date):
+        raise ValueError("Invalid lessor lease end_date")
+
+    if end_date < start_date:
+        raise ValueError("end_date cannot be before start_date")
+
+    delta = _frequency_delta(lease.get("billing_frequency"))
+    timing = (lease.get("billing_timing") or "arrears").lower()
+    terms_days = int(lease.get("payment_terms_days") or 0)
+
+    net, vat, gross = _split_amount(
+        lease.get("billing_amount"),
+        lease.get("billing_basis"),
+        lease.get("vat_rate"),
+    )
+
+    rows: List[LessorBillingPeriod] = []
+    period_start = start_date
+    period_no = 1
+
+    while period_start <= end_date:
+        next_start = period_start + delta
+        period_end = min(next_start - timedelta(days=1), end_date)
+
+        bill_date = _bill_date_for_period(
+            period_start,
+            period_end,
+            billing_timing=timing,
+            bill_day_of_month=lease.get("bill_day_of_month"),
+        )
+
+        rows.append(
+            LessorBillingPeriod(
+                period_no=period_no,
+                period_start=period_start,
+                period_end=period_end,
+                bill_date=bill_date,
+                due_date=bill_date + timedelta(days=terms_days),
+                amount_net=net,
+                vat_amount=vat,
+                amount_gross=gross,
+            )
+        )
+
+        period_start = next_start
+        period_no += 1
+
+    return [
+        {
+            **asdict(row),
+            "period_start": row.period_start.isoformat(),
+            "period_end": row.period_end.isoformat(),
+            "bill_date": row.bill_date.isoformat(),
+            "due_date": row.due_date.isoformat(),
+        }
+        for row in rows
+    ]
+
+class LessorLeaseEngine:
+    VALID_CLASSIFICATIONS = {"operating", "finance"}
+
+    def build_billing_schedule(
+        self,
+        lease: Dict[str, Any],
+        *,
+        through_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        return build_lessor_billing_schedule(
+            lease,
+            through_date=through_date,
+        )
+
+    def classify_lessor_lease(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            raise ValueError("Classification data must be an object")
+
+        term = self._positive_int(
+            data.get("lease_term_months")
+        )
+
+        life = self._positive_int(
+            data.get("economic_life_months")
+        )
+
+        fair_value = self._decimal(
+            data.get("fair_value")
+        )
+
+        pv = self._decimal(
+            data.get("pv_lease_payments")
+            or data.get("present_value_lease_payments")
+        )
+
+        major_threshold = self._rate(
+            data.get("major_part_threshold"),
+            Decimal("0.75"),
+        )
+
+        fair_value_threshold = self._rate(
+            data.get("substantially_all_threshold"),
+            Decimal("0.90"),
+        )
+
+        life_ratio = (
+            Decimal(term) / Decimal(life)
+            if life > 0
+            else Decimal("0")
+        )
+
+        pv_ratio = (
+            pv / fair_value
+            if fair_value > 0
+            else Decimal("0")
+        )
+
+        indicators = {
+            "ownership_transfers": self._bool(
+                data.get("transfer_of_ownership")
+            ),
+            "purchase_option_reasonably_certain": self._bool(
+                data.get("purchase_option_expected")
+                or data.get(
+                    "purchase_option_reasonably_certain"
+                )
+            ),
+            "major_part_of_economic_life": (
+                life > 0
+                and life_ratio >= major_threshold
+            ),
+            "substantially_all_fair_value": (
+                fair_value > 0
+                and pv_ratio >= fair_value_threshold
+            ),
+            "specialised_asset": self._bool(
+                data.get("specialised_asset")
+            ),
+        }
+
+        proposed = (
+            "finance"
+            if any(indicators.values())
+            else "operating"
+        )
+
+        override = str(
+            data.get("classification_override") or ""
+        ).strip().lower()
+
+        override_reason = str(
+            data.get("classification_override_reason") or ""
+        ).strip() or None
+
+        if override and override not in self.VALID_CLASSIFICATIONS:
+            raise ValueError(
+                "classification_override must be "
+                "operating or finance"
+            )
+
+        overridden = bool(
+            override and override != proposed
+        )
+
+        if overridden and not override_reason:
+            raise ValueError(
+                "classification_override_reason is required"
+            )
+
+        classification = override or proposed
+
+        result = LessorClassificationResult(
+            classification=classification,
+            proposed_classification=proposed,
+            overridden=overridden,
+            override_reason=override_reason,
+            indicators=indicators,
+            lease_term_months=term,
+            economic_life_months=life,
+            lease_term_ratio=self._decimal_float(
+                life_ratio
+            ),
+            pv_fair_value_ratio=self._decimal_float(
+                pv_ratio
+            ),
+            present_value_lease_payments=float(
+                pv.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            ),
+            fair_value=float(
+                fair_value.quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            ),
+            reasons=self._classification_reasons(
+                indicators,
+                life_ratio,
+                pv_ratio,
+            ),
+            warnings=self._classification_warnings(
+                term,
+                life,
+                fair_value,
+                pv,
+            ),
+        )
+
+        return asdict(result)
+
+    def classify_and_validate(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        self.validate_classification_data(data)
+        return self.classify_lessor_lease(data)
+
+    def validate_classification_data(
+        self,
+        data: Dict[str, Any],
+    ) -> None:
+        if not isinstance(data, dict):
+            raise ValueError("Classification data must be an object")
+
+        term = self._positive_int(
+            data.get("lease_term_months")
+        )
+
+        if term <= 0:
+            raise ValueError(
+                "lease_term_months must be greater than zero"
+            )
+
+        if self._decimal(data.get("fair_value")) < 0:
+            raise ValueError("fair_value cannot be negative")
+
+        if self._decimal(
+            data.get("pv_lease_payments")
+            or data.get("present_value_lease_payments")
+        ) < 0:
+            raise ValueError(
+                "present value cannot be negative"
+            )
+
+    @staticmethod
+    def _classification_reasons(
+        indicators: Dict[str, bool],
+        life_ratio: Decimal,
+        pv_ratio: Decimal,
+    ) -> List[str]:
+        reasons = []
+
+        if indicators["ownership_transfers"]:
+            reasons.append(
+                "Ownership transfers at the end of the lease."
+            )
+
+        if indicators[
+            "purchase_option_reasonably_certain"
+        ]:
+            reasons.append(
+                "The purchase option is reasonably certain "
+                "to be exercised."
+            )
+
+        if indicators["major_part_of_economic_life"]:
+            reasons.append(
+                "The lease term covers a major part of the "
+                f"asset's economic life "
+                f"({float(life_ratio * 100):.2f}%)."
+            )
+
+        if indicators[
+            "substantially_all_fair_value"
+        ]:
+            reasons.append(
+                "The present value represents substantially "
+                f"all of the fair value "
+                f"({float(pv_ratio * 100):.2f}%)."
+            )
+
+        if indicators["specialised_asset"]:
+            reasons.append(
+                "The underlying asset is specialised."
+            )
+
+        if not reasons:
+            reasons.append(
+                "No finance lease indicator was identified."
+            )
+
+        return reasons
+
+    @staticmethod
+    def _classification_warnings(
+        term: int,
+        life: int,
+        fair_value: Decimal,
+        pv: Decimal,
+    ) -> List[str]:
+        warnings = []
+
+        if term <= 0:
+            warnings.append("Lease term was not supplied.")
+
+        if life <= 0:
+            warnings.append(
+                "Economic life was not supplied; the "
+                "economic-life test was not performed."
+            )
+
+        if fair_value <= 0:
+            warnings.append(
+                "Fair value was not supplied; the "
+                "fair-value test was not performed."
+            )
+
+        if pv <= 0:
+            warnings.append(
+                "Present value of lease payments was "
+                "not supplied."
+            )
+
+        return warnings
+
+    @staticmethod
+    def _decimal(
+        value: Any,
+        default: Decimal = Decimal("0"),
+    ) -> Decimal:
+        if value in (None, ""):
+            return default
+
+        try:
+            return Decimal(
+                str(value).replace(",", "").strip()
+            )
+        except (
+            InvalidOperation,
+            TypeError,
+            ValueError,
+        ):
+            return default
+
+    @classmethod
+    def _rate(
+        cls,
+        value: Any,
+        default: Decimal,
+    ) -> Decimal:
+        rate = cls._decimal(value, default)
+
+        if rate > 1:
+            rate /= Decimal("100")
+
+        return max(
+            Decimal("0"),
+            min(rate, Decimal("1")),
+        )
+
+    @staticmethod
+    def _positive_int(value: Any) -> int:
+        try:
+            return max(int(value or 0), 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+
+        return str(value or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+
+    @staticmethod
+    def _decimal_float(value: Decimal) -> float:
+        return float(
+            value.quantize(
+                Decimal("0.000001"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+
+    # =========================================================
+    # FINANCE LEASE
+    # =========================================================
+
+    def build_finance_lease_schedule(
+        self,
+        lease: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        start_date = self._date_value(
+            lease.get("start_date")
+            or lease.get("commencement_date"),
+            "start_date",
+        )
+
+        end_date = self._date_value(
+            lease.get("end_date"),
+            "end_date",
+        )
+
+        frequency = (
+            lease.get("billing_frequency") or "monthly"
+        ).strip().lower()
+
+        delta = _frequency_delta(frequency)
+
+        payment = self._decimal(
+            lease.get("billing_amount")
+            or lease.get("lease_payment")
+        )
+
+        if payment <= 0:
+            raise ValueError(
+                "billing_amount must be greater than zero"
+            )
+
+        timing = (
+            lease.get("billing_timing") or "arrears"
+        ).strip().lower()
+
+        if timing not in {"advance", "arrears"}:
+            raise ValueError(
+                "billing_timing must be advance or arrears"
+            )
+
+        annual_rate = self._annual_rate(
+            lease.get("discount_rate")
+            or lease.get("implicit_interest_rate")
+        )
+
+        periods_per_year = self._periods_per_year(
+            frequency
+        )
+
+        periodic_rate = (
+            annual_rate / Decimal(periods_per_year)
+        )
+
+        unguaranteed_residual = self._decimal(
+            lease.get("unguaranteed_residual_value")
+        )
+
+        guaranteed_residual = self._decimal(
+            lease.get("guaranteed_residual_value")
+        )
+
+        initial_direct_costs = self._decimal(
+            lease.get("initial_direct_costs")
+        )
+
+        rows_meta = []
+        period_start = start_date
+        period_no = 1
+
+        while period_start <= end_date:
+            next_start = period_start + delta
+            period_end = min(
+                next_start - timedelta(days=1),
+                end_date,
+            )
+
+            payment_date = (
+                period_start
+                if timing == "advance"
+                else period_end
+            )
+
+            rows_meta.append({
+                "period_no": period_no,
+                "period_start": period_start,
+                "period_end": period_end,
+                "payment_date": payment_date,
+            })
+
+            period_start = next_start
+            period_no += 1
+
+        period_count = len(rows_meta)
+
+        if period_count <= 0:
+            raise ValueError(
+                "No finance lease periods were generated"
+            )
+
+        net_investment = self._finance_present_value(
+            payment=payment,
+            period_count=period_count,
+            periodic_rate=periodic_rate,
+            timing=timing,
+            residual_value=(
+                guaranteed_residual
+                + unguaranteed_residual
+            ),
+        )
+
+        net_investment += initial_direct_costs
+
+        explicit_net_investment = self._decimal(
+            lease.get("initial_net_investment")
+        )
+
+        if explicit_net_investment > 0:
+            net_investment = explicit_net_investment
+
+        opening = net_investment
+        rows: List[FinanceLeasePeriod] = []
+
+        for meta in rows_meta:
+            if timing == "advance":
+                cash_payment = min(payment, opening)
+
+                finance_income = (
+                    Decimal("0")
+                    if meta["period_no"] == 1
+                    else self._money_decimal(
+                        opening * periodic_rate
+                    )
+                )
+
+                principal = self._money_decimal(
+                    cash_payment - finance_income
+                )
+
+                closing = self._money_decimal(
+                    opening + finance_income - cash_payment
+                )
+            else:
+                finance_income = self._money_decimal(
+                    opening * periodic_rate
+                )
+
+                principal = self._money_decimal(
+                    payment - finance_income
+                )
+
+                closing = self._money_decimal(
+                    opening + finance_income - payment
+                )
+
+            if (
+                meta["period_no"] == period_count
+                and timing == "arrears"
+            ):
+                expected_closing = self._money_decimal(
+                    guaranteed_residual
+                    + unguaranteed_residual
+                )
+
+                finance_income = self._money_decimal(
+                    payment
+                    + expected_closing
+                    - opening
+                )
+
+                principal = self._money_decimal(
+                    payment - finance_income
+                )
+
+                closing = expected_closing
+
+            rows.append(
+                FinanceLeasePeriod(
+                    period_no=meta["period_no"],
+                    period_start=meta["period_start"],
+                    period_end=meta["period_end"],
+                    payment_date=meta["payment_date"],
+                    opening_net_investment=float(
+                        self._money_decimal(opening)
+                    ),
+                    lease_payment=float(
+                        self._money_decimal(payment)
+                    ),
+                    finance_income=float(
+                        self._money_decimal(finance_income)
+                    ),
+                    principal_reduction=float(
+                        self._money_decimal(principal)
+                    ),
+                    closing_net_investment=float(
+                        self._money_decimal(closing)
+                    ),
+                )
+            )
+
+            opening = closing
+
+        return [
+            {
+                **asdict(row),
+                "period_start": row.period_start.isoformat(),
+                "period_end": row.period_end.isoformat(),
+                "payment_date": row.payment_date.isoformat(),
+            }
+            for row in rows
+        ]
+
+    def finance_lease_summary(
+        self,
+        lease: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        schedule = self.build_finance_lease_schedule(
+            lease
+        )
+
+        gross_investment = sum(
+            self._decimal(row["lease_payment"])
+            for row in schedule
+        )
+
+        gross_investment += self._decimal(
+            lease.get("guaranteed_residual_value")
+        )
+
+        gross_investment += self._decimal(
+            lease.get("unguaranteed_residual_value")
+        )
+
+        initial_net_investment = (
+            self._decimal(
+                schedule[0]["opening_net_investment"]
+            )
+            if schedule
+            else Decimal("0")
+        )
+
+        unearned_finance_income = (
+            gross_investment - initial_net_investment
+        )
+
+        return {
+            "classification": "finance",
+            "period_count": len(schedule),
+            "gross_investment": float(
+                self._money_decimal(gross_investment)
+            ),
+            "initial_net_investment": float(
+                self._money_decimal(
+                    initial_net_investment
+                )
+            ),
+            "unearned_finance_income": float(
+                self._money_decimal(
+                    unearned_finance_income
+                )
+            ),
+            "total_finance_income": round(
+                sum(
+                    float(row["finance_income"])
+                    for row in schedule
+                ),
+                2,
+            ),
+            "schedule": schedule,
+        }
+
+    # =========================================================
+    # OPERATING LEASE
+    # =========================================================
+
+    def build_operating_lease_schedule(
+        self,
+        lease: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        billing_rows = build_lessor_billing_schedule(
+            lease
+        )
+
+        if not billing_rows:
+            return []
+
+        incentives = self._decimal(
+            lease.get("lease_incentives")
+            or lease.get("incentive_amount")
+        )
+
+        initial_direct_costs = self._decimal(
+            lease.get("initial_direct_costs")
+        )
+
+        total_contractual = sum(
+            self._decimal(row["amount_net"])
+            for row in billing_rows
+        )
+
+        total_income = total_contractual - incentives
+        period_count = len(billing_rows)
+
+        straight_line = self._money_decimal(
+            total_income / Decimal(period_count)
+        )
+
+        direct_cost_expense = self._money_decimal(
+            initial_direct_costs / Decimal(period_count)
+        )
+
+        accrued_balance = Decimal("0")
+        deferred_balance = Decimal("0")
+        rows: List[OperatingLeasePeriod] = []
+
+        for billing in billing_rows:
+            contractual = self._decimal(
+                billing["amount_net"]
+            )
+
+            difference = self._money_decimal(
+                straight_line - contractual
+            )
+
+            accrued_movement = Decimal("0")
+            deferred_movement = Decimal("0")
+
+            if difference > 0:
+                accrued_movement = difference
+                accrued_balance += difference
+            elif difference < 0:
+                deferred_movement = abs(difference)
+                deferred_balance += abs(difference)
+
+            net_balance = accrued_balance - deferred_balance
+
+            if net_balance > 0:
+                accrued_balance = net_balance
+                deferred_balance = Decimal("0")
+            elif net_balance < 0:
+                accrued_balance = Decimal("0")
+                deferred_balance = abs(net_balance)
+            else:
+                accrued_balance = Decimal("0")
+                deferred_balance = Decimal("0")
+
+            rows.append(
+                OperatingLeasePeriod(
+                    period_no=int(billing["period_no"]),
+                    period_start=self._date_value(
+                        billing["period_start"],
+                        "period_start",
+                    ),
+                    period_end=self._date_value(
+                        billing["period_end"],
+                        "period_end",
+                    ),
+                    contractual_income=float(
+                        self._money_decimal(contractual)
+                    ),
+                    straight_line_income=float(straight_line),
+                    initial_direct_cost_expense=float(
+                        direct_cost_expense
+                    ),
+                    accrued_rent_movement=float(
+                        self._money_decimal(accrued_movement)
+                    ),
+                    deferred_rent_movement=float(
+                        self._money_decimal(deferred_movement)
+                    ),
+                    accrued_rent_balance=float(
+                        self._money_decimal(accrued_balance)
+                    ),
+                    deferred_rent_balance=float(
+                        self._money_decimal(deferred_balance)
+                    ),
+                )
+            )
+
+        total_recognised = sum(
+            self._decimal(row.straight_line_income)
+            for row in rows
+        )
+
+        rounding_difference = self._money_decimal(
+            total_income - total_recognised
+        )
+
+        if rows and rounding_difference:
+            last = rows[-1]
+
+            last.straight_line_income = float(
+                self._money_decimal(
+                    self._decimal(
+                        last.straight_line_income
+                    )
+                    + rounding_difference
+                )
+            )
+
+        return [
+            {
+                **asdict(row),
+                "period_start": row.period_start.isoformat(),
+                "period_end": row.period_end.isoformat(),
+            }
+            for row in rows
+        ]
+
+    def operating_lease_summary(
+        self,
+        lease: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        schedule = self.build_operating_lease_schedule(
+            lease
+        )
+
+        return {
+            "classification": "operating",
+            "period_count": len(schedule),
+            "contractual_income": round(
+                sum(
+                    row["contractual_income"]
+                    for row in schedule
+                ),
+                2,
+            ),
+
+            "initial_direct_cost_expense": round(
+                sum(
+                    row["initial_direct_cost_expense"]
+                    for row in schedule
+                ),
+                2,
+            ),
+            "straight_line_income": round(
+                sum(
+                    row["straight_line_income"]
+                    for row in schedule
+                ),
+                2,
+            ),
+            "closing_accrued_rent": (
+                schedule[-1]["accrued_rent_balance"]
+                if schedule
+                else 0
+            ),
+            "closing_deferred_rent": (
+                schedule[-1]["deferred_rent_balance"]
+                if schedule
+                else 0
+            ),
+            "schedule": schedule,
+        }
+
+    # =========================================================
+    # UNIFIED SCHEDULE
+    # =========================================================
+
+    def build_accounting_schedule(
+        self,
+        lease: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        classification = (
+            lease.get("lease_classification")
+            or lease.get("classification")
+            or ""
+        ).strip().lower()
+
+        if classification not in self.VALID_CLASSIFICATIONS:
+            classification = self.classify_lessor_lease(
+                lease
+            )["classification"]
+
+        if classification == "finance":
+            return self.finance_lease_summary(lease)
+
+        return self.operating_lease_summary(lease)
+
+    # =========================================================
+    # MODIFICATION
+    # =========================================================
+
+    def preview_modification(
+        self,
+        lease: Dict[str, Any],
+        modification: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        effective_date = self._date_value(
+            modification.get("effective_date"),
+            "effective_date",
+        )
+
+        old_classification = (
+            lease.get("lease_classification")
+            or "operating"
+        ).strip().lower()
+
+        updated = {
+            **lease,
+            **{
+                key: value
+                for key, value in modification.items()
+                if value is not None
+            },
+            "start_date": effective_date,
+        }
+
+        classification_result = (
+            self.classify_lessor_lease(updated)
+        )
+
+        new_classification = classification_result[
+            "classification"
+        ]
+
+        separate_lease = self._bool(
+            modification.get("separate_lease")
+        )
+
+        if old_classification == "finance":
+            old_schedule = (
+                self.build_finance_lease_schedule(
+                    lease
+                )
+            )
+
+            old_balance = self._finance_balance_at(
+                old_schedule,
+                effective_date,
+            )
+
+            new_schedule = (
+                self.build_finance_lease_schedule(
+                    updated
+                )
+            )
+
+            new_balance = (
+                self._decimal(
+                    new_schedule[0][
+                        "opening_net_investment"
+                    ]
+                )
+                if new_schedule
+                else Decimal("0")
+            )
+
+            gain_loss = self._money_decimal(
+                old_balance - new_balance
+            )
+
+            return {
+                "old_classification": old_classification,
+                "new_classification": new_classification,
+                "separate_lease": separate_lease,
+                "effective_date": effective_date.isoformat(),
+                "old_net_investment": float(
+                    self._money_decimal(old_balance)
+                ),
+                "new_net_investment": float(
+                    self._money_decimal(new_balance)
+                ),
+                "modification_gain_loss": float(
+                    gain_loss
+                ),
+                "classification": classification_result,
+                "schedule": new_schedule,
+            }
+
+        old_schedule = (
+            self.build_operating_lease_schedule(
+                lease
+            )
+        )
+
+        new_schedule = (
+            self.build_operating_lease_schedule(
+                updated
+            )
+        )
+
+        accrued, deferred = (
+            self._operating_balance_at(
+                old_schedule,
+                effective_date,
+            )
+        )
+
+        return {
+            "old_classification": old_classification,
+            "new_classification": new_classification,
+            "separate_lease": separate_lease,
+            "effective_date": effective_date.isoformat(),
+            "accrued_rent_before": float(accrued),
+            "deferred_rent_before": float(deferred),
+            "classification": classification_result,
+            "schedule": new_schedule,
+        }
+
+    # =========================================================
+    # TERMINATION
+    # =========================================================
+
+    def preview_termination(
+        self,
+        lease: Dict[str, Any],
+        termination: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        termination_date = self._date_value(
+            termination.get("termination_date"),
+            "termination_date",
+        )
+
+        classification = (
+            lease.get("lease_classification")
+            or "operating"
+        ).strip().lower()
+
+        settlement_amount = self._decimal(
+            termination.get("settlement_amount")
+        )
+
+        returned_asset_value = self._decimal(
+            termination.get("returned_asset_value")
+        )
+
+        if classification == "finance":
+            schedule = self.build_finance_lease_schedule(
+                lease
+            )
+
+            net_investment = self._finance_balance_at(
+                schedule,
+                termination_date,
+            )
+
+            gain_loss = self._money_decimal(
+                settlement_amount
+                + returned_asset_value
+                - net_investment
+            )
+
+            return {
+                "classification": "finance",
+                "termination_date": (
+                    termination_date.isoformat()
+                ),
+                "net_investment_derecognised": float(
+                    self._money_decimal(
+                        net_investment
+                    )
+                ),
+                "settlement_amount": float(
+                    self._money_decimal(
+                        settlement_amount
+                    )
+                ),
+                "returned_asset_value": float(
+                    self._money_decimal(
+                        returned_asset_value
+                    )
+                ),
+                "termination_gain_loss": float(
+                    gain_loss
+                ),
+            }
+
+        schedule = self.build_operating_lease_schedule(
+            lease
+        )
+
+        accrued, deferred = self._operating_balance_at(
+            schedule,
+            termination_date,
+        )
+
+        gain_loss = self._money_decimal(
+            settlement_amount
+            + deferred
+            - accrued
+        )
+
+        return {
+            "classification": "operating",
+            "termination_date": (
+                termination_date.isoformat()
+            ),
+            "accrued_rent_settled": float(accrued),
+            "deferred_rent_released": float(deferred),
+            "settlement_amount": float(
+                self._money_decimal(
+                    settlement_amount
+                )
+            ),
+            "termination_gain_loss": float(
+                gain_loss
+            ),
+        }
+
+    # =========================================================
+    # ENGINE HELPERS
+    # =========================================================
+
+    @staticmethod
+    def _date_value(
+        value: Any,
+        name: str,
+    ) -> date:
+        if isinstance(value, date):
+            return value
+
+        if value in (None, ""):
+            raise ValueError(f"{name} is required")
+
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except ValueError:
+            raise ValueError(
+                f"{name} must be YYYY-MM-DD"
+            )
+
+    @classmethod
+    def _annual_rate(
+        cls,
+        value: Any,
+    ) -> Decimal:
+        rate = cls._decimal(value)
+
+        if rate > 1:
+            rate /= Decimal("100")
+
+        if rate < 0:
+            raise ValueError(
+                "discount_rate cannot be negative"
+            )
+
+        return rate
+
+    @staticmethod
+    def _periods_per_year(
+        frequency: str,
+    ) -> int:
+        values = {
+            "weekly": 52,
+            "monthly": 12,
+            "quarterly": 4,
+            "annually": 1,
+        }
+
+        if frequency not in values:
+            raise ValueError(
+                f"Unsupported frequency: {frequency}"
+            )
+
+        return values[frequency]
+
+    @staticmethod
+    def _money_decimal(
+        value: Decimal,
+    ) -> Decimal:
+        return value.quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+
+    @classmethod
+    def _finance_present_value(
+        cls,
+        *,
+        payment: Decimal,
+        period_count: int,
+        periodic_rate: Decimal,
+        timing: str,
+        residual_value: Decimal,
+    ) -> Decimal:
+        if periodic_rate == 0:
+            pv_payments = payment * period_count
+            pv_residual = residual_value
+        else:
+            factor = (
+                Decimal("1")
+                - (
+                    Decimal("1")
+                    + periodic_rate
+                ) ** Decimal(-period_count)
+            ) / periodic_rate
+
+            pv_payments = payment * factor
+
+            if timing == "advance":
+                pv_payments *= (
+                    Decimal("1")
+                    + periodic_rate
+                )
+
+            pv_residual = (
+                residual_value
+                / (
+                    Decimal("1")
+                    + periodic_rate
+                ) ** Decimal(period_count)
+            )
+
+        return cls._money_decimal(
+            pv_payments + pv_residual
+        )
+
+    @classmethod
+    def _finance_balance_at(
+        cls,
+        schedule: List[Dict[str, Any]],
+        as_at: date,
+    ) -> Decimal:
+        balance = Decimal("0")
+
+        for row in schedule:
+            period_end = cls._date_value(
+                row["period_end"],
+                "period_end",
+            )
+
+            if period_end <= as_at:
+                balance = cls._decimal(
+                    row["closing_net_investment"]
+                )
+            elif balance == 0:
+                balance = cls._decimal(
+                    row["opening_net_investment"]
+                )
+                break
+
+        return cls._money_decimal(balance)
+
+    @classmethod
+    def _operating_balance_at(
+        cls,
+        schedule: List[Dict[str, Any]],
+        as_at: date,
+    ) -> tuple[Decimal, Decimal]:
+        accrued = Decimal("0")
+        deferred = Decimal("0")
+
+        for row in schedule:
+            period_end = cls._date_value(
+                row["period_end"],
+                "period_end",
+            )
+
+            if period_end <= as_at:
+                accrued = cls._decimal(
+                    row["accrued_rent_balance"]
+                )
+
+                deferred = cls._decimal(
+                    row["deferred_rent_balance"]
+                )
+
+        return (
+            cls._money_decimal(accrued),
+            cls._money_decimal(deferred),
+        )
+
+lessor_lease_engine = LessorLeaseEngine()

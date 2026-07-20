@@ -14814,6 +14814,153 @@ class DatabaseService:
             updated_at TIMESTAMPTZ NULL
         );
 
+        -- Inside ensure_company_schema(), using {schema}
+
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS lease_classification TEXT NOT NULL DEFAULT 'operating',
+        ADD COLUMN IF NOT EXISTS lessor_type TEXT NOT NULL DEFAULT 'ordinary',
+        ADD COLUMN IF NOT EXISTS currency TEXT NULL,
+        ADD COLUMN IF NOT EXISTS payment_terms_days INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS fair_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS guaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS unguaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS purchase_option_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS purchase_option_expected BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS initial_direct_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS security_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
+        ADD COLUMN IF NOT EXISTS economic_life_months INT NULL,
+        ADD COLUMN IF NOT EXISTS transfer_of_ownership BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS specialised_asset BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS major_part_threshold NUMERIC(10,6) DEFAULT 0.75,
+        ADD COLUMN IF NOT EXISTS substantially_all_threshold NUMERIC(10,6) DEFAULT 0.90,
+        ADD COLUMN IF NOT EXISTS classification_reason TEXT NULL,
+        ADD COLUMN IF NOT EXISTS classification_payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS finance_income_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS net_investment_current_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS net_investment_noncurrent_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS accrued_rental_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deferred_rental_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_liability_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS disposal_gain_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS disposal_loss_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.lessor_lease_bills
+        ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.lessor_lease_receipts
+        ADD COLUMN IF NOT EXISTS receipt_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
+        DO $ck_lessor_lease_classification$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_lessor_lease_classification'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_leases
+                    ADD CONSTRAINT ck_lessor_lease_classification
+                    CHECK (
+                        lease_classification IN (
+                            ''operating'',
+                            ''finance''
+                        )
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_lessor_lease_classification$;
+
+        DO $fk_lessor_bills_invoice$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice
+                    FOREIGN KEY (invoice_id)
+                    REFERENCES %I.invoices(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice$;
+
+        DO $fk_lessor_bills_invoice_line$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice_line'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice_line
+                    FOREIGN KEY (invoice_line_id)
+                    REFERENCES %I.invoice_lines(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice_line$;
+
+        DO $fk_lessor_receipts_receipt$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_receipts_receipt'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_receipts
+                    ADD CONSTRAINT fk_lessor_receipts_receipt
+                    FOREIGN KEY (receipt_id)
+                    REFERENCES %I.receipts(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_receipts_receipt$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_bills_invoice_idx
+        ON {schema}.lessor_lease_bills(invoice_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
+        ON {schema}.lessor_lease_receipts(receipt_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_classification_idx
+        ON {schema}.lessor_leases(company_id, lease_classification, status);
+
+
         -- Safe add: updated_at
         DO $add_lessor_leases_updated_at$
         BEGIN
@@ -14910,6 +15057,162 @@ class DatabaseService:
             );
         END IF;
         END $fk_lessor_leases_customer$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_schedule (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+
+            version_no INT NOT NULL DEFAULT 1,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            modification_id INT NULL,
+
+            period_no INT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            payment_date DATE NOT NULL,
+            due_date DATE NULL,
+
+            contractual_net NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            contractual_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            straight_line_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accrued_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            deferred_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            opening_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
+            finance_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            principal_recovery NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            current_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
+            noncurrent_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            invoice_id INT NULL,
+            invoice_line_id INT NULL,
+            recognition_journal_id INT NULL,
+            receipt_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'scheduled',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            adjustment_type TEXT NOT NULL,
+            adjustment_date DATE NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            description TEXT NULL,
+            account_code TEXT NULL,
+            invoice_id INT NULL,
+            posted_journal_id INT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_modifications (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            modification_date DATE NOT NULL,
+            effective_date DATE NOT NULL,
+            modification_type TEXT NOT NULL,
+            reason TEXT NULL,
+
+            old_classification TEXT NULL,
+            new_classification TEXT NULL,
+            separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
+
+            old_payment_amount NUMERIC(18,2) DEFAULT 0,
+            new_payment_amount NUMERIC(18,2) DEFAULT 0,
+            old_end_date DATE NULL,
+            new_end_date DATE NULL,
+            old_discount_rate NUMERIC(12,8) DEFAULT 0,
+            new_discount_rate NUMERIC(12,8) DEFAULT 0,
+
+            net_investment_before NUMERIC(18,2) DEFAULT 0,
+            net_investment_after NUMERIC(18,2) DEFAULT 0,
+            accrued_rental_before NUMERIC(18,2) DEFAULT 0,
+            deferred_rental_before NUMERIC(18,2) DEFAULT 0,
+            gain_loss_amount NUMERIC(18,2) DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            posted_journal_id INT NULL,
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        ALTER TABLE {schema}.lessor_lease_modifications
+        ADD COLUMN IF NOT EXISTS effective_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS modification_type TEXT NULL,
+        ADD COLUMN IF NOT EXISTS old_classification TEXT NULL,
+        ADD COLUMN IF NOT EXISTS new_classification TEXT NULL,
+        ADD COLUMN IF NOT EXISTS separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS old_payment_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS new_payment_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS old_discount_rate NUMERIC(12,8) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS new_discount_rate NUMERIC(12,8) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_investment_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_investment_after NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS accrued_rental_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS deferred_rental_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS gain_loss_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL;
+
+        UPDATE {schema}.lessor_lease_modifications
+        SET
+            effective_date = COALESCE(
+                effective_date,
+                effective_from,
+                modification_date
+            ),
+
+            modification_type = COALESCE(
+                modification_type,
+                change_type
+            ),
+
+            old_payment_amount = COALESCE(
+                old_payment_amount,
+                old_billing_amount,
+                0
+            ),
+
+            new_payment_amount = COALESCE(
+                new_payment_amount,
+                new_billing_amount,
+                0
+            ),
+
+            created_by_user_id = COALESCE(
+                created_by_user_id,
+                created_by
+            )
+        WHERE
+            effective_date IS NULL
+            OR modification_type IS NULL
+            OR created_by_user_id IS NULL;
+
+        ALTER TABLE {schema}.lessor_lease_modifications
+        ALTER COLUMN effective_date SET NOT NULL,
+        ALTER COLUMN modification_type SET NOT NULL;
 
         -- ==================================================
         -- LESSOR BILLING RUNS (invoice schedule / generated items)
@@ -15010,6 +15313,29 @@ class DatabaseService:
             );
         END IF;
         END $fk_lessor_lease_bills_contract$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_payment_terms (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+            payment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            payment_frequency TEXT NOT NULL DEFAULT 'monthly',
+            payment_timing TEXT NOT NULL DEFAULT 'arrears',
+            billing_basis TEXT NOT NULL DEFAULT 'gross',
+            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+            escalation_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
+            escalation_frequency TEXT NULL,
+            rent_free BOOLEAN NOT NULL DEFAULT FALSE,
+            variable_payment BOOLEAN NOT NULL DEFAULT FALSE,
+            variable_formula JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
 
         -- ==================================================
         -- LESSOR RECEIPTS (cash received from lessee)
@@ -15181,45 +15507,6 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_bank_account_id_idx
         ON {schema}.lessor_lease_receipts(bank_account_id);
-
-        -- ==================================================
-        -- LESSOR LEASE MODIFICATIONS (Operating lessor)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_modifications (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-
-            modification_date DATE NOT NULL,
-            change_type TEXT NOT NULL,        -- amount|vat|frequency|term|mixed
-            reason TEXT NULL,
-
-            -- snapshots
-            old_billing_amount NUMERIC(18,2) NULL,
-            new_billing_amount NUMERIC(18,2) NULL,
-
-            old_vat_rate NUMERIC(10,6) NULL,
-            new_vat_rate NUMERIC(10,6) NULL,
-
-            old_billing_frequency TEXT NULL,
-            new_billing_frequency TEXT NULL,
-
-            old_end_date DATE NULL,
-            new_end_date DATE NULL,
-
-            -- policy
-            effective_from DATE NULL,         -- when new terms start billing
-            apply_to_unbilled_only BOOLEAN NOT NULL DEFAULT TRUE,
-
-            -- posting markers (optional: only if you post an adjustment journal)
-            status TEXT NOT NULL DEFAULT 'draft',  -- draft|posted|reversed|void
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-
-            notes TEXT NULL,
-            created_by INT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
 
         -- FKs
         DO $fk_lessor_mods_contract$
@@ -23231,120 +23518,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_invoice_lines_company_invoice_idx
         ON {schema}.invoice_lines(company_id, invoice_id);
 
-        -- ==================================================
-        -- QUOTATIONS
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.quotations (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            customer_id INT NOT NULL REFERENCES {schema}.customers(id),
-
-            number TEXT NULL, -- draft-friendly quote number
-
-            quotation_date DATE NOT NULL DEFAULT CURRENT_DATE,
-            valid_until DATE NULL,                 -- expiry/terms end date
-
-            currency TEXT NULL,
-            subtotal_amount NUMERIC(18,2) DEFAULT 0,
-            discount_amount NUMERIC(18,2) DEFAULT 0,
-            vat_amount NUMERIC(18,2) DEFAULT 0,
-            total_amount NUMERIC(18,2) DEFAULT 0,
-
-            status TEXT NOT NULL DEFAULT 'draft',
-            -- draft | issued | accepted | expired | converted | cancelled
-
-            notes TEXT NULL,
-            terms TEXT NULL,
-
-            invoice_id INT NULL,                  -- once converted
-            converted_at TIMESTAMPTZ NULL,
-
-            issued_at TIMESTAMPTZ NULL,
-            issued_by INT NULL,
-
-            accepted_at TIMESTAMPTZ NULL,
-            accepted_by INT NULL,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        ALTER TABLE {schema}.quotations
-            ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(10,6) DEFAULT 0;
-
-        -- Unique quote number per company only when number IS NOT NULL
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_indexes
-            WHERE schemaname = '{schema}'
-            AND indexname = 'uq_quotations_company_number_notnull'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_quotations_company_number_notnull
-            ON %I.quotations (company_id, number)
-            WHERE number IS NOT NULL',
-            '{schema}'
-            );
-        END IF;
-        END $$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_quotations_customer_idx
-        ON {schema}.quotations(company_id, customer_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_quotations_status_idx
-        ON {schema}.quotations(company_id, status);
-
-
-        -- ==================================================
-        -- QUOTATION LINES
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.quotation_lines (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            quotation_id INT NOT NULL,
-            line_no INT NOT NULL,
-
-            item_name TEXT NULL,
-            description TEXT NOT NULL,
-            account_code TEXT NULL,  -- revenue account (optional)
-
-            quantity NUMERIC(18,4) DEFAULT 1,
-            unit_price NUMERIC(18,4) DEFAULT 0,
-            discount_amount NUMERIC(18,2) DEFAULT 0,
-
-            net_amount NUMERIC(18,2) DEFAULT 0,
-            vat_rate NUMERIC(10,6) DEFAULT 0,
-            vat_amount NUMERIC(18,2) DEFAULT 0,
-            total_amount NUMERIC(18,2) DEFAULT 0
-        );
-
-        -- ✅ Simple FK (recommended in per-tenant schema)
-        DO $fk_quotation_lines$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'fk_quotation_lines_quote'
-            ) THEN
-                EXECUTE format(
-                'ALTER TABLE %I.quotation_lines
-                    ADD CONSTRAINT fk_quotation_lines_quote
-                    FOREIGN KEY (quotation_id)
-                    REFERENCES %I.quotations(id)
-                    ON DELETE CASCADE',
-                '{schema}',
-                '{schema}'
-                );
-            END IF;
-        END $fk_quotation_lines$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_quotation_lines_company_quote_idx
-        ON {schema}.quotation_lines(company_id, quotation_id);
-
-        -- ==================================================
-        -- RECEIPTS + ALLOCATIONS (safe SaaS evolution) ✅ UPDATED
-        -- ==================================================
 
         CREATE TABLE IF NOT EXISTS {schema}.receipts (
             id SERIAL PRIMARY KEY,
@@ -23597,6 +23770,117 @@ class DatabaseService:
         CREATE TRIGGER check_receipt_allocation
         BEFORE INSERT OR UPDATE ON {schema}.receipt_allocations
         FOR EACH ROW EXECUTE PROCEDURE {schema}.trg_check_receipt_allocation();
+
+        -- ==================================================
+        -- QUOTATIONS
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.quotations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            customer_id INT NOT NULL REFERENCES {schema}.customers(id),
+
+            number TEXT NULL, -- draft-friendly quote number
+
+            quotation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            valid_until DATE NULL,                 -- expiry/terms end date
+
+            currency TEXT NULL,
+            subtotal_amount NUMERIC(18,2) DEFAULT 0,
+            discount_amount NUMERIC(18,2) DEFAULT 0,
+            vat_amount NUMERIC(18,2) DEFAULT 0,
+            total_amount NUMERIC(18,2) DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            -- draft | issued | accepted | expired | converted | cancelled
+
+            notes TEXT NULL,
+            terms TEXT NULL,
+
+            invoice_id INT NULL,                  -- once converted
+            converted_at TIMESTAMPTZ NULL,
+
+            issued_at TIMESTAMPTZ NULL,
+            issued_by INT NULL,
+
+            accepted_at TIMESTAMPTZ NULL,
+            accepted_by INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        ALTER TABLE {schema}.quotations
+            ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(10,6) DEFAULT 0;
+
+        -- Unique quote number per company only when number IS NOT NULL
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_indexes
+            WHERE schemaname = '{schema}'
+            AND indexname = 'uq_quotations_company_number_notnull'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_quotations_company_number_notnull
+            ON %I.quotations (company_id, number)
+            WHERE number IS NOT NULL',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_quotations_customer_idx
+        ON {schema}.quotations(company_id, customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_quotations_status_idx
+        ON {schema}.quotations(company_id, status);
+
+
+        -- ==================================================
+        -- QUOTATION LINES
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.quotation_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            quotation_id INT NOT NULL,
+            line_no INT NOT NULL,
+
+            item_name TEXT NULL,
+            description TEXT NOT NULL,
+            account_code TEXT NULL,  -- revenue account (optional)
+
+            quantity NUMERIC(18,4) DEFAULT 1,
+            unit_price NUMERIC(18,4) DEFAULT 0,
+            discount_amount NUMERIC(18,2) DEFAULT 0,
+
+            net_amount NUMERIC(18,2) DEFAULT 0,
+            vat_rate NUMERIC(10,6) DEFAULT 0,
+            vat_amount NUMERIC(18,2) DEFAULT 0,
+            total_amount NUMERIC(18,2) DEFAULT 0
+        );
+
+        -- ✅ Simple FK (recommended in per-tenant schema)
+        DO $fk_quotation_lines$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'fk_quotation_lines_quote'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.quotation_lines
+                    ADD CONSTRAINT fk_quotation_lines_quote
+                    FOREIGN KEY (quotation_id)
+                    REFERENCES %I.quotations(id)
+                    ON DELETE CASCADE',
+                '{schema}',
+                '{schema}'
+                );
+            END IF;
+        END $fk_quotation_lines$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_quotation_lines_company_quote_idx
+        ON {schema}.quotation_lines(company_id, quotation_id);
 
         -- ==================================================
         -- PERIOD LOCKS
@@ -36752,6 +37036,717 @@ class DatabaseService:
             },
         }
 
+    def get_lessor_lease(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_one(
+            f"""
+            SELECT
+                l.*,
+                c.name AS customer_name,
+                c.email AS customer_email,
+                c.vat_number AS customer_vat_number,
+                a.asset_code,
+                a.asset_name,
+                ba.account_name AS bank_account_name,
+                ba.ledger_account_code AS bank_ledger_code
+            FROM {schema}.lessor_leases l
+            JOIN {schema}.customers c
+            ON c.id = l.customer_id
+            LEFT JOIN {schema}.assets a
+            ON a.id = l.asset_id
+            LEFT JOIN {schema}.company_bank_accounts ba
+            ON ba.id = l.bank_account_id
+            WHERE l.company_id=%s
+            AND l.id=%s
+            LIMIT 1
+            """,
+            (int(company_id), int(lessor_lease_id)),
+            cur=cur,
+        )
+
+
+    def list_lessor_leases(
+        self,
+        company_id: int,
+        *,
+        status: str | None = None,
+        q: str = "",
+        limit: int = 200,
+        offset: int = 0,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+        where = ["l.company_id=%(company_id)s"]
+
+        params = {
+            "company_id": int(company_id),
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+
+        if status:
+            where.append("l.status=%(status)s")
+            params["status"] = status
+
+        if q:
+            where.append("""
+                (
+                    l.contract_name ILIKE %(q)s
+                    OR COALESCE(l.contract_no, '') ILIKE %(q)s
+                    OR c.name ILIKE %(q)s
+                )
+            """)
+            params["q"] = f"%{q}%"
+
+        where_sql = " AND ".join(where)
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                l.*,
+                c.name AS customer_name,
+                a.asset_code,
+                a.asset_name,
+                COALESCE((
+                    SELECT SUM(b.amount_gross)
+                    FROM {schema}.lessor_lease_bills b
+                    WHERE b.lessor_lease_id=l.id
+                    AND b.status <> 'void'
+                ), 0) AS total_billed,
+                COALESCE((
+                    SELECT SUM(b.amount_gross)
+                    FROM {schema}.lessor_lease_bills b
+                    WHERE b.lessor_lease_id=l.id
+                    AND b.status IN ('draft', 'posted')
+                ), 0) AS outstanding_billed
+            FROM {schema}.lessor_leases l
+            JOIN {schema}.customers c ON c.id=l.customer_id
+            LEFT JOIN {schema}.assets a ON a.id=l.asset_id
+            WHERE {where_sql}
+            ORDER BY l.id DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            params,
+            cur=cur,
+        ) or []
+
+        count_params = {
+            key: value
+            for key, value in params.items()
+            if key not in {"limit", "offset"}
+        }
+
+        total = self.fetch_one(
+            f"""
+            SELECT COUNT(*) AS n
+            FROM {schema}.lessor_leases l
+            JOIN {schema}.customers c ON c.id=l.customer_id
+            WHERE {where_sql}
+            """,
+            count_params,
+            cur=cur,
+        ) or {}
+
+        return {
+            "items": rows,
+            "total": int(total.get("n") or 0),
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+
+    def create_lessor_lease(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        created_by_user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        schema = f"company_{int(company_id)}"
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.lessor_leases (
+                company_id,
+                contract_no,
+                contract_name,
+                customer_id,
+                asset_id,
+                start_date,
+                end_date,
+                billing_amount,
+                billing_basis,
+                vat_rate,
+                billing_frequency,
+                billing_timing,
+                bill_day_of_month,
+                status,
+                notes,
+                revenue_account_code,
+                vat_output_account_code,
+                ar_account_code,
+                bank_account_code,
+                bank_account_id,
+                lease_classification,
+                currency,
+                payment_terms_days,
+                security_deposit_amount,
+                security_deposit_account_code,
+                created_by_user_id,
+                updated_by_user_id,
+                updated_at
+            )
+            VALUES (
+                %(company_id)s,
+                %(contract_no)s,
+                %(contract_name)s,
+                %(customer_id)s,
+                %(asset_id)s,
+                %(start_date)s,
+                %(end_date)s,
+                %(billing_amount)s,
+                %(billing_basis)s,
+                %(vat_rate)s,
+                %(billing_frequency)s,
+                %(billing_timing)s,
+                %(bill_day_of_month)s,
+                'active',
+                %(notes)s,
+                %(revenue_account_code)s,
+                %(vat_output_account_code)s,
+                %(ar_account_code)s,
+                %(bank_account_code)s,
+                %(bank_account_id)s,
+                %(lease_classification)s,
+                %(currency)s,
+                %(payment_terms_days)s,
+                %(security_deposit_amount)s,
+                %(security_deposit_account_code)s,
+                %(user_id)s,
+                %(user_id)s,
+                NOW()
+            )
+            RETURNING *
+            """,
+            {
+                **payload,
+                "company_id": int(company_id),
+                "user_id": created_by_user_id,
+            },
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError("Failed to create lessor lease")
+
+        return row
+
+    def save_lessor_billing_schedule(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        rows: list[dict],
+        *,
+        cur=None,
+    ) -> list[dict]:
+        schema = f"company_{int(company_id)}"
+        saved = []
+
+        for row in rows:
+            item = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.lessor_lease_bills (
+                    company_id,
+                    lessor_lease_id,
+                    bill_period_start,
+                    bill_period_end,
+                    bill_date,
+                    due_date,
+                    amount_gross,
+                    amount_net,
+                    vat_amount,
+                    vat_rate,
+                    status,
+                    reference
+                )
+                VALUES (
+                    %(company_id)s,
+                    %(lessor_lease_id)s,
+                    %(period_start)s,
+                    %(period_end)s,
+                    %(bill_date)s,
+                    %(due_date)s,
+                    %(amount_gross)s,
+                    %(amount_net)s,
+                    %(vat_amount)s,
+                    %(vat_rate)s,
+                    'draft',
+                    %(reference)s
+                )
+                ON CONFLICT (
+                    lessor_lease_id,
+                    bill_period_start,
+                    bill_period_end
+                )
+                WHERE status <> 'void'
+                DO NOTHING
+                RETURNING *
+                """,
+                {
+                    **row,
+                    "company_id": int(company_id),
+                    "lessor_lease_id": int(lessor_lease_id),
+                    "reference": (
+                        f"LESSOR-{lessor_lease_id}-"
+                        f"{row['period_start']}-{row['period_end']}"
+                    ),
+                },
+                cur=cur,
+            )
+
+            if item:
+                saved.append(item)
+
+        return saved
+
+    def save_lessor_accounting_schedule(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        classification: str,
+        rows: list[dict],
+        *,
+        cur=None,
+    ) -> list[dict]:
+        schema = f"company_{int(company_id)}"
+        saved = []
+
+        for row in rows:
+            item = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.lessor_lease_schedule (
+                    company_id,
+                    lessor_lease_id,
+                    classification,
+                    period_no,
+                    period_start,
+                    period_end,
+                    payment_date,
+                    contractual_income,
+                    straight_line_income,
+                    accrued_rent_movement,
+                    deferred_rent_movement,
+                    accrued_rent_balance,
+                    deferred_rent_balance,
+                    opening_net_investment,
+                    lease_payment,
+                    finance_income,
+                    principal_reduction,
+                    closing_net_investment,
+                    status
+                )
+                VALUES (
+                    %(company_id)s,
+                    %(lessor_lease_id)s,
+                    %(classification)s,
+                    %(period_no)s,
+                    %(period_start)s,
+                    %(period_end)s,
+                    %(payment_date)s,
+                    %(contractual_income)s,
+                    %(straight_line_income)s,
+                    %(accrued_rent_movement)s,
+                    %(deferred_rent_movement)s,
+                    %(accrued_rent_balance)s,
+                    %(deferred_rent_balance)s,
+                    %(opening_net_investment)s,
+                    %(lease_payment)s,
+                    %(finance_income)s,
+                    %(principal_reduction)s,
+                    %(closing_net_investment)s,
+                    'draft'
+                )
+                ON CONFLICT (
+                    lessor_lease_id,
+                    period_no
+                )
+                DO UPDATE SET
+                    classification=EXCLUDED.classification,
+                    period_start=EXCLUDED.period_start,
+                    period_end=EXCLUDED.period_end,
+                    payment_date=EXCLUDED.payment_date,
+                    contractual_income=EXCLUDED.contractual_income,
+                    straight_line_income=EXCLUDED.straight_line_income,
+                    accrued_rent_movement=EXCLUDED.accrued_rent_movement,
+                    deferred_rent_movement=EXCLUDED.deferred_rent_movement,
+                    accrued_rent_balance=EXCLUDED.accrued_rent_balance,
+                    deferred_rent_balance=EXCLUDED.deferred_rent_balance,
+                    opening_net_investment=EXCLUDED.opening_net_investment,
+                    lease_payment=EXCLUDED.lease_payment,
+                    finance_income=EXCLUDED.finance_income,
+                    principal_reduction=EXCLUDED.principal_reduction,
+                    closing_net_investment=EXCLUDED.closing_net_investment,
+                    updated_at=NOW()
+                WHERE
+                    {schema}.lessor_lease_schedule.status
+                    <> 'posted'
+                RETURNING *
+                """,
+                {
+                    "company_id": int(company_id),
+                    "lessor_lease_id": int(
+                        lessor_lease_id
+                    ),
+                    "classification": classification,
+                    "period_no": row["period_no"],
+                    "period_start": row["period_start"],
+                    "period_end": row["period_end"],
+                    "payment_date": row.get(
+                        "payment_date"
+                    ),
+                    "contractual_income": row.get(
+                        "contractual_income"
+                    ),
+                    "straight_line_income": row.get(
+                        "straight_line_income"
+                    ),
+                    "accrued_rent_movement": row.get(
+                        "accrued_rent_movement"
+                    ),
+                    "deferred_rent_movement": row.get(
+                        "deferred_rent_movement"
+                    ),
+                    "accrued_rent_balance": row.get(
+                        "accrued_rent_balance"
+                    ),
+                    "deferred_rent_balance": row.get(
+                        "deferred_rent_balance"
+                    ),
+                    "opening_net_investment": row.get(
+                        "opening_net_investment"
+                    ),
+                    "lease_payment": row.get(
+                        "lease_payment"
+                    ),
+                    "finance_income": row.get(
+                        "finance_income"
+                    ),
+                    "principal_reduction": row.get(
+                        "principal_reduction"
+                    ),
+                    "closing_net_investment": row.get(
+                        "closing_net_investment"
+                    ),
+                },
+                cur=cur,
+            )
+
+            if item:
+                saved.append(item)
+
+        return saved
+
+    def list_lessor_accounting_schedule(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            ORDER BY period_no
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+    def update_lessor_classification(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        result: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.lessor_leases
+            SET
+                lease_classification=%s,
+                classification_payload=%s::jsonb,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *
+            """,
+            (
+                result["classification"],
+                self.json_dumps(result),
+                user_id,
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        )
+
+    def commence_lessor_lease(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        commencement_date: date,
+        journal_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.lessor_leases
+            SET
+                status='commenced',
+                commencement_date=%s,
+                commencement_journal_id=%s,
+                commenced_at=NOW(),
+                commenced_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            AND status IN ('draft', 'active')
+            RETURNING *
+            """,
+            (
+                commencement_date,
+                journal_id,
+                user_id,
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        )
+
+    def create_lessor_modification(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        payload: dict,
+        preview: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.lessor_lease_modifications (
+                company_id,
+                lessor_lease_id,
+                effective_date,
+                reason,
+                separate_lease,
+                old_classification,
+                new_classification,
+                old_payment_amount,
+                new_payment_amount,
+                old_discount_rate,
+                new_discount_rate,
+                old_end_date,
+                new_end_date,
+                net_investment_before,
+                net_investment_after,
+                accrued_rent_before,
+                deferred_rent_before,
+                gain_loss,
+                calculation_payload,
+                status,
+                created_by_user_id
+            )
+            VALUES (
+                %(company_id)s,
+                %(lessor_lease_id)s,
+                %(effective_date)s,
+                %(reason)s,
+                %(separate_lease)s,
+                %(old_classification)s,
+                %(new_classification)s,
+                %(old_payment_amount)s,
+                %(new_payment_amount)s,
+                %(old_discount_rate)s,
+                %(new_discount_rate)s,
+                %(old_end_date)s,
+                %(new_end_date)s,
+                %(net_investment_before)s,
+                %(net_investment_after)s,
+                %(accrued_rent_before)s,
+                %(deferred_rent_before)s,
+                %(gain_loss)s,
+                %(calculation_payload)s,
+                'draft',
+                %(user_id)s
+            )
+            RETURNING *
+            """,
+            {
+                "company_id": int(company_id),
+                "lessor_lease_id": int(
+                    lessor_lease_id
+                ),
+                "effective_date": payload[
+                    "effective_date"
+                ],
+                "reason": payload.get("reason"),
+                "separate_lease": bool(
+                    preview.get("separate_lease")
+                ),
+                "old_classification": preview.get(
+                    "old_classification"
+                ),
+                "new_classification": preview.get(
+                    "new_classification"
+                ),
+                "old_payment_amount": payload.get(
+                    "old_payment_amount"
+                ),
+                "new_payment_amount": payload.get(
+                    "billing_amount"
+                ),
+                "old_discount_rate": payload.get(
+                    "old_discount_rate"
+                ),
+                "new_discount_rate": payload.get(
+                    "discount_rate"
+                ),
+                "old_end_date": payload.get(
+                    "old_end_date"
+                ),
+                "new_end_date": payload.get(
+                    "end_date"
+                ),
+                "net_investment_before": preview.get(
+                    "old_net_investment"
+                ),
+                "net_investment_after": preview.get(
+                    "new_net_investment"
+                ),
+                "accrued_rent_before": preview.get(
+                    "accrued_rent_before"
+                ),
+                "deferred_rent_before": preview.get(
+                    "deferred_rent_before"
+                ),
+                "gain_loss": preview.get(
+                    "modification_gain_loss"
+                ),
+                "calculation_payload": Json(preview),
+                "user_id": user_id,
+            },
+            cur=cur,
+        )
+
+    def create_lessor_termination(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        payload: dict,
+        preview: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ):
+        schema = f"company_{int(company_id)}"
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.lessor_lease_terminations (
+                company_id,
+                lessor_lease_id,
+                termination_date,
+                reason,
+                settlement_amount,
+                returned_asset_value,
+                net_investment_derecognised,
+                accrued_rent_settled,
+                deferred_rent_released,
+                gain_loss,
+                calculation_payload,
+                status,
+                created_by_user_id
+            )
+            VALUES (
+                %(company_id)s,
+                %(lessor_lease_id)s,
+                %(termination_date)s,
+                %(reason)s,
+                %(settlement_amount)s,
+                %(returned_asset_value)s,
+                %(net_investment_derecognised)s,
+                %(accrued_rent_settled)s,
+                %(deferred_rent_released)s,
+                %(gain_loss)s,
+                %(calculation_payload)s,
+                'draft',
+                %(user_id)s
+            )
+            RETURNING *
+            """,
+            {
+                "company_id": int(company_id),
+                "lessor_lease_id": int(
+                    lessor_lease_id
+                ),
+                "termination_date": payload[
+                    "termination_date"
+                ],
+                "reason": payload.get("reason"),
+                "settlement_amount": payload.get(
+                    "settlement_amount"
+                ),
+                "returned_asset_value": payload.get(
+                    "returned_asset_value"
+                ),
+                "net_investment_derecognised": (
+                    preview.get(
+                        "net_investment_derecognised"
+                    )
+                ),
+                "accrued_rent_settled": preview.get(
+                    "accrued_rent_settled"
+                ),
+                "deferred_rent_released": preview.get(
+                    "deferred_rent_released"
+                ),
+                "gain_loss": preview.get(
+                    "termination_gain_loss"
+                ),
+                "calculation_payload": Json(preview),
+                "user_id": user_id,
+            },
+            cur=cur,
+        )
+        
     # ---------------------------
     # POS SUMMARIES (daily POS imports)
     # ---------------------------
@@ -62999,6 +63994,71 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return None
 
+    def _asset_tax_bootstrap_opening_wdv(
+        self,
+        *,
+        qualifying_cost,
+        tax_start_date,
+        run_start_date,
+        method,
+        annual_rate,
+        allowance_pattern=None,
+    ):
+        D = lambda value: Decimal(str(value or 0))
+        q2 = lambda value: D(value).quantize(Decimal("0.01"))
+
+        base = q2(qualifying_cost)
+        years = max(
+            0,
+            run_start_date.year - tax_start_date.year,
+        )
+
+        if not years or base <= 0:
+            return base
+
+        method = str(method or "").upper()
+
+        if method == "IMMEDIATE":
+            return D(0)
+
+        if method == "SL":
+            annual = q2(base * D(annual_rate) / D(100))
+            return q2(max(D(0), base - annual * years))
+
+        if method == "WDV":
+            rate = D(annual_rate) / D(100)
+
+            for _ in range(years):
+                base = q2(base - base * rate)
+
+            return max(D(0), base)
+
+        if method == "MULTI_YEAR":
+            pattern = allowance_pattern or []
+
+            if isinstance(pattern, str):
+                pattern = json.loads(pattern or "[]")
+
+            original_cost = base
+
+            for index in range(years):
+                rate = (
+                    D(pattern[index])
+                    if index < len(pattern)
+                    else D(0)
+                )
+
+                allowance = min(
+                    base,
+                    q2(original_cost * rate / D(100)),
+                )
+
+                base = q2(base - allowance)
+
+            return max(D(0), base)
+
+        return base
+
     def asset_tax_calculate_run(self, company_id: int, run_id: int) -> dict:
         from decimal import Decimal, ROUND_HALF_UP
         import json
@@ -63339,20 +64399,32 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     * business_factor
                 )
 
-                opening_wdv = q2(
+                previous_wdv = (
                     (previous or {}).get("closing_tax_wdv")
                 )
 
+                tax_start = p.get("tax_start_date")
+
                 first_year = bool(
-                    p.get("tax_start_date")
-                    and start_date
-                    <= p["tax_start_date"]
-                    <= end_date
+                    tax_start
+                    and start_date <= tax_start <= end_date
                 )
+
+                opening_wdv = q2(previous_wdv)
+
+                if previous_wdv is None and tax_start and tax_start < start_date:
+                    opening_wdv = self._asset_tax_bootstrap_opening_wdv(
+                        qualifying_cost=qualifying_cost,
+                        tax_start_date=tax_start,
+                        run_start_date=start_date,
+                        method=method,
+                        annual_rate=annual_rate,
+                        allowance_pattern=allowance_pattern,
+                    )
 
                 additions = (
                     qualifying_cost
-                    if first_year and opening_wdv == 0
+                    if first_year and previous_wdv is None
                     else D(0)
                 )
 
