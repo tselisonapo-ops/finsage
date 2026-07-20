@@ -10556,8 +10556,6 @@ const wizardMap = {
 
   // Open/close IFRS 16 wizard drawer
 function openLeaseWizard(ctx = {}) {
-  console.log("[LEASE] openLeaseWizard called", ctx);
-
   const drawer = document.getElementById("leaseWizardDrawer");
   const frame = document.getElementById("leaseWizardFrame");
 
@@ -10566,86 +10564,92 @@ function openLeaseWizard(ctx = {}) {
     return;
   }
 
+  const isLocal = ["localhost", "127.0.0.1"].includes(
+    window.location.hostname
+  );
+
+  const url = isLocal
+    ? "http://localhost:5173/"
+    : `${window.location.origin}/lease-wizard.html`;
+
+  const origin = isLocal
+    ? "http://localhost:5173"
+    : window.location.origin;
+
+  const accountCode = String(
+    ctx.accountCode ||
+    ctx.account_code ||
+    ctx.meta?.account_code ||
+    ""
+  ).trim().toUpperCase();
+
+  const accountName = String(
+    ctx.accountName ||
+    ctx.account_name ||
+    ctx.meta?.account_name ||
+    ""
+  ).trim();
+
+  const isLessor = [
+    "BS_CA_1710",
+    "BS_NCA_1720",
+  ].includes(accountCode);
+
+  const payload = {
+    type: "lease_wizard_context",
+    token:
+      window.getToken?.() ||
+      sessionStorage.getItem("fs_user_token") ||
+      localStorage.getItem("fs_user_token"),
+    companyId:
+      window.getActiveCompanyId?.() ||
+      localStorage.getItem("company_id"),
+    role: localStorage.getItem("userRole"),
+    source: "journal",
+    ctx: {
+      mode: ctx.mode || (isLessor ? "inception" : "existing"),
+      leaseRole: isLessor ? "lessor" : "lessee",
+      accountCode,
+      accountName,
+      defaults: {
+        goLiveDate: ctx.defaults?.goLiveDate || null,
+        openingAsAt: ctx.defaults?.openingAsAt || null,
+        postingDate: ctx.defaults?.postingDate || null,
+        reference: ctx.defaults?.reference || null,
+        source: ctx.defaults?.source || "journal_guard",
+        journalSide: ctx.defaults?.journalSide || null,
+        moduleKey: ctx.defaults?.moduleKey || "lease",
+      },
+      meta: {
+        account_code: accountCode,
+        account_name: accountName,
+        journal_side: ctx.meta?.journal_side || "",
+        journal_ref: ctx.meta?.journal_ref || "",
+        journal_date: ctx.meta?.journal_date || "",
+      },
+    },
+  };
+
+  window.__LEASE_WIZARD_ACTIVE_CONTEXT__ = payload;
+
+  const sendContext = () =>
+    frame.contentWindow?.postMessage(payload, origin);
+
   drawer.classList.remove("hidden");
   drawer.style.display = "";
   drawer.style.pointerEvents = "";
   drawer.classList.add("active");
 
-  const LEASE_WIZARD_URL =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-      ? "http://localhost:5173/"
-      : `${window.location.origin}/lease-wizard.html`;
-
-  const LEASE_WIZARD_ORIGIN =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-      ? "http://localhost:5173"
-      : window.location.origin;
-
-  const token =
-    sessionStorage.getItem("fs_user_token") ||
-    localStorage.getItem("fs_user_token");
-
-  const companyId =
-    window.getActiveCompanyId?.() ||
-    localStorage.getItem("company_id");
-
-  const role = localStorage.getItem("userRole");
-
-  const payload = {
-    type: "lease_wizard_context",
-    token,
-    companyId,
-    role,
-    source: "journal",
-    ctx: {
-      mode: ctx?.mode || "existing",
-
-      leaseRole: [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(
-        String(ctx?.accountCode || "")
-          .trim()
-          .toUpperCase()
-      )
-        ? "lessor"
-        : "lessee",
-
-      accountCode: ctx?.accountCode || "",
-      accountName: ctx?.accountName || "",
-      defaults: {
-        goLiveDate: ctx?.defaults?.goLiveDate || null,
-        openingAsAt: ctx?.defaults?.openingAsAt || null,
-        postingDate: ctx?.defaults?.postingDate || null,
-        reference: ctx?.defaults?.reference || null,
-        source: ctx?.defaults?.source || "journal_guard",
-        journalSide: ctx?.defaults?.journalSide || null,
-        moduleKey: ctx?.defaults?.moduleKey || "lease",
-      },
-      meta: {
-        account_code: ctx?.meta?.account_code || "",
-        account_name: ctx?.meta?.account_name || "",
-        journal_side: ctx?.meta?.journal_side || "",
-        journal_ref: ctx?.meta?.journal_ref || "",
-        journal_date: ctx?.meta?.journal_date || "",
-      },
-    },
-  };
-
-  const sendContext = () => {
-    if (!frame.contentWindow) return;
-    console.log("[LEASE] posting context to iframe", payload);
-    frame.contentWindow.postMessage(payload, LEASE_WIZARD_ORIGIN);
-  };
-
   if (!frame.src || frame.src === "about:blank") {
-    frame.src = LEASE_WIZARD_URL;
-    frame.onload = () => {
-      console.log("[LEASE] iframe loaded:", frame.src);
-      setTimeout(sendContext, 150);
-    };
+    frame.src = url;
+    frame.addEventListener(
+      "load",
+      () => {
+        frame.dataset.loaded = "1";
+        setTimeout(sendContext, 150);
+      },
+      { once: true }
+    );
   } else {
     sendContext();
   }
@@ -33840,28 +33844,60 @@ window.postTerm = async function postTerm() {
       localStorage.getItem("company_id") ||
       window.CURRENT_COMPANY_ID;
 
-    if (!token || !companyId || !leaseFrame.contentWindow) {
-      console.warn("[LEASE HOST] cannot send context", {
-        hasToken: !!token,
-        companyId,
-        hasFrameWindow: !!leaseFrame.contentWindow,
-      });
+    if (
+      !token ||
+      !companyId ||
+      !leaseFrame.contentWindow
+    ) {
+      console.warn(
+        "[LEASE HOST] cannot send context",
+        {
+          hasToken: !!token,
+          companyId,
+          hasFrameWindow:
+            !!leaseFrame.contentWindow,
+        }
+      );
+
       return;
     }
 
-    leaseFrame.contentWindow.postMessage(
-      {
+    const savedContext =
+      window.__LEASE_WIZARD_ACTIVE_CONTEXT__;
+
+    const payload =
+      savedContext || {
         type: "lease_wizard_context",
         token,
         companyId,
         source: "nav",
-      },
+
+        ctx: {
+          mode: "inception",
+          leaseRole: "lessee",
+          accountCode: "",
+          accountName: "",
+        },
+      };
+
+    payload.token = token;
+    payload.companyId = Number(companyId);
+
+    console.log(
+      "[LEASE HOST] sending context",
+      payload
+    );
+
+    leaseFrame.contentWindow.postMessage(
+      payload,
       LEASE_WIZARD_ORIGIN
     );
   }
 
   if (leaseNavBtn) {
     leaseNavBtn.addEventListener("click", () => {
+      window.__LEASE_WIZARD_ACTIVE_CONTEXT__ =
+        null;
       const cid = window.getActiveCompanyId?.();
       if (!cid) {
         alert("Select a company first.");
