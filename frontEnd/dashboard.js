@@ -2135,6 +2135,9 @@ const ENDPOINTS = {
     recalculate: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/recalculate`,
 
+    leaseTaxTreatment: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${cid}/deferred-tax/leases/${leaseId}/tax-treatment`,
+
     review: (cid, runId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/runs/${runId}/review`,
 
@@ -41548,6 +41551,7 @@ async function saveEditModal() {
   let activeDeferredTaxView = "deferred-tax";
   let assetTaxRules = [];
   let assetTaxProfiles = [];
+  let assetProfileOpenedFromReview = false;
 
   const cid = () =>
     getActiveCompanyId?.() ||
@@ -42605,6 +42609,28 @@ async function saveEditModal() {
       }
     );
 
+    if (
+      assetProfileOpenedFromReview &&
+      selectedRun?.id
+    ) {
+      assetProfileOpenedFromReview = false;
+
+      closeModal();
+
+      await apiFetch(
+        ENDPOINTS.deferredTax.scan(
+          cid(),
+          selectedRun.id
+        ),
+        {
+          method: "POST"
+        }
+      );
+
+      await openRun(selectedRun.id);
+      return;
+    }
+
     await showAssetTaxProfilesManager();
   }
 
@@ -43095,6 +43121,279 @@ async function saveEditModal() {
     renderRun();
   }
 
+  function dtReviewAction(line) {
+    if (
+      line.scan_status !== "requires_review" ||
+      !line.source_module
+    ) {
+      return "";
+    }
+
+    if (
+      line.source_module === "leases" &&
+      line.source_id
+    ) {
+      return `
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          data-dt-review-lease="${line.source_id}"
+        >
+          Configure Lease Tax
+        </button>
+      `;
+    }
+
+    if (
+      line.source_module === "assets" &&
+      line.source_id
+    ) {
+      return `
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          data-dt-review-asset="${line.source_id}"
+        >
+          Assign Allowance Rule
+        </button>
+      `;
+    }
+
+    if (line.source_module === "accrual_deferral") {
+      return `
+        <button
+          type="button"
+          class="btn btn-sm btn-primary"
+          data-dt-review-accrual="${line.source_id || ""}"
+        >
+          Open Accrual / Deferral
+        </button>
+      `;
+    }
+
+    return "";
+  }
+
+  function dtReviewReason(line) {
+    const message =
+      line.resolution_message ||
+      "This line requires review before deferred tax can be recognised.";
+
+    if (line.source_module === "leases") {
+      return `
+        <div class="dt-review-message">
+          <strong>Lease tax treatment required</strong>
+          <span>${dtEscape(message)}</span>
+        </div>
+      `;
+    }
+
+    if (line.source_module === "assets") {
+      return `
+        <div class="dt-review-message">
+          <strong>Capital allowance rule required</strong>
+          <span>${dtEscape(message)}</span>
+        </div>
+      `;
+    }
+
+    if (line.source_module === "accrual_deferral") {
+      return `
+        <div class="dt-review-message">
+          <strong>Schedule or tax treatment required</strong>
+          <span>${dtEscape(message)}</span>
+        </div>
+      `;
+    }
+
+    return dtEscape(message);
+  }
+
+  function showLeaseTaxTreatmentModal(line) {
+    const info = line.calculation_json || {};
+
+    openModal("Configure Lease Tax Treatment", `
+      <form id="dtLeaseTaxTreatmentForm">
+        <input
+          type="hidden"
+          name="lease_id"
+          value="${Number(line.source_id)}"
+        >
+
+        <div class="dt-review-context">
+          <strong>${dtEscape(
+            info.lease_name ||
+            line.description ||
+            "Lease"
+          )}</strong>
+
+          <p>
+            Select how deductions relating to this lease
+            are treated for income-tax purposes.
+          </p>
+        </div>
+
+        <div class="dt-form-grid">
+          <div class="dt-field full">
+            <label>Tax deduction basis</label>
+
+            <select name="tax_deduction_basis" required>
+              <option value="">
+                Select tax treatment
+              </option>
+
+              <option value="lease_payments">
+                Lease payments are tax deductible
+              </option>
+
+              <option value="rou_asset">
+                Tax allowances apply to the ROU asset
+              </option>
+
+              <option value="none">
+                No tax deduction is available
+              </option>
+
+              <option value="manual">
+                Manual tax bases
+              </option>
+            </select>
+
+            <small>
+              The current jurisdiction rule requires the
+              lease treatment to be confirmed.
+            </small>
+          </div>
+
+          <div class="dt-field">
+            <label>Deduction percentage</label>
+
+            <input
+              type="number"
+              name="tax_deduction_percent"
+              min="0"
+              max="100"
+              step="0.01"
+              value="${
+                Number(
+                  info.tax_deduction_percent ?? 100
+                )
+              }"
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>ROU asset tax base override</label>
+
+            <input
+              type="number"
+              name="rou_tax_base_override"
+              step="0.01"
+              placeholder="Automatic"
+            >
+          </div>
+
+          <div class="dt-field">
+            <label>Lease liability tax base override</label>
+
+            <input
+              type="number"
+              name="liability_tax_base_override"
+              step="0.01"
+              placeholder="Automatic"
+            >
+          </div>
+
+          <div class="dt-field full">
+            <label>Tax treatment notes</label>
+
+            <textarea
+              name="lease_tax_treatment_notes"
+              rows="3"
+              placeholder="Document the applicable tax treatment..."
+            >${dtEscape(
+              info.tax_treatment_notes || ""
+            )}</textarea>
+          </div>
+        </div>
+
+        <div class="dt-form-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-dt-close
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            class="btn btn-primary"
+          >
+            Save and Rescan
+          </button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function saveLeaseTaxTreatment(form) {
+    const data = Object.fromEntries(
+      new FormData(form).entries()
+    );
+
+    const nullableNumber = value =>
+      value === "" || value == null
+        ? null
+        : Number(value);
+
+    await apiFetch(
+      ENDPOINTS.deferredTax.leaseTaxTreatment(
+        cid(),
+        Number(data.lease_id)
+      ),
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          tax_deduction_basis:
+            data.tax_deduction_basis,
+
+          tax_deduction_percent:
+            Number(
+              data.tax_deduction_percent || 100
+            ),
+
+          rou_tax_base_override:
+            nullableNumber(
+              data.rou_tax_base_override
+            ),
+
+          liability_tax_base_override:
+            nullableNumber(
+              data.liability_tax_base_override
+            ),
+
+          lease_tax_treatment_notes:
+            data.lease_tax_treatment_notes || null
+        })
+      }
+    );
+
+    closeModal();
+
+    await apiFetch(
+      ENDPOINTS.deferredTax.scan(
+        cid(),
+        selectedRun.id
+      ),
+      {
+        method: "POST"
+      }
+    );
+
+    await openRun(selectedRun.id);
+  }
+
   function renderRun() {
     const run = selectedRun;
     const lines = run?.lines || [];
@@ -43114,7 +43413,24 @@ async function saveEditModal() {
     const isApproved = run.status === "approved";
     const isPosted = run.status === "posted";
     const canVoid = ["draft", "reviewed", "approved"].includes(run.status);
+    const reviewLines = visibleLines.filter(
+      line => line.scan_status === "requires_review"
+    );
 
+    const reviewCounts = {
+      leases: reviewLines.filter(
+        line => line.source_module === "leases"
+      ).length,
+
+      assets: reviewLines.filter(
+        line => line.source_module === "assets"
+      ).length,
+
+      accruals: reviewLines.filter(
+        line =>
+          line.source_module === "accrual_deferral"
+      ).length
+    };
     const reviewStepClass = isReviewed ? "active" : (isApproved || isPosted ? "done" : "");
     const approvalStepClass = isApproved ? "active" : (isPosted ? "done" : "");
     const postingStepClass = isPosted ? "done" : "";
@@ -43126,7 +43442,22 @@ async function saveEditModal() {
         <button class="btn btn-secondary" id="dtScanBtn">Scan Balance Sheet</button>
         <button class="btn btn-primary" id="dtAddLineBtn">+ Add Manual Difference</button>
         <button class="btn btn-secondary" id="dtRecalculateBtn">Recalculate</button>
-        <button class="btn btn-primary" id="dtReviewBtn">Submit for Review</button>
+        <button
+          class="btn btn-primary"
+          id="dtReviewBtn"
+          ${reviewLines.length ? "disabled" : ""}
+          title="${
+            reviewLines.length
+              ? "Resolve all review items before submitting."
+              : ""
+          }"
+        >
+          ${
+            reviewLines.length
+              ? `Resolve ${reviewLines.length} Review Item(s)`
+              : "Submit for Review"
+          }
+        </button>
       ` : ""}
 
       ${isReviewed ? `
@@ -43174,35 +43505,78 @@ async function saveEditModal() {
             `
             : "";
 
-    const tableRows = lines.map(line => `
-      <tr>
-        <td><strong>${line.description}</strong></td>
-        <td>${line.source_module || "manual"}</td>
-        <td>${line.balance_type}</td>
-        <td>${money(line.carrying_amount)}</td>
-        <td>${money(line.tax_base)}</td>
-        <td>${money(line.temporary_difference)}</td>
-        <td>
-          <span class="dt-status ${line.difference_type}">
-            ${line.difference_type}
-          </span>
-        </td>
-        <td>${money(line.recognized_amount)}</td>
-        <td>
-          <span class="dt-status ${line.scan_status || "resolved"}">
-            ${line.scan_status || "resolved"}
-          </span>
-        </td>
-        <td>${line.resolution_message || "-"}</td>
-        ${isDraft ? `
-          <td>
-            <button class="btn btn-sm btn-danger" data-dt-delete="${line.id}">
-              Delete
-            </button>
-          </td>
-        ` : ""}
-      </tr>
-    `).join("");
+      const tableRows = visibleLines.map(line => {
+        const needsReview =
+          line.scan_status === "requires_review";
+
+        return `
+          <tr class="${needsReview ? "dt-review-row" : ""}">
+            <td>
+              <strong>${dtEscape(line.description || "—")}</strong>
+            </td>
+
+            <td>
+              ${dtEscape(line.source_module || "manual")}
+            </td>
+
+            <td>
+              ${dtEscape(line.balance_type || "—")}
+            </td>
+
+            <td class="dt-number">
+              ${money(line.carrying_amount)}
+            </td>
+
+            <td class="dt-number">
+              ${money(line.tax_base)}
+            </td>
+
+            <td class="dt-number">
+              ${money(line.temporary_difference)}
+            </td>
+
+            <td>
+              <span class="dt-status ${line.difference_type || "none"}">
+                ${dtEscape(line.difference_type || "none")}
+              </span>
+            </td>
+
+            <td class="dt-number">
+              ${money(line.recognized_amount)}
+            </td>
+
+            <td>
+              <span class="dt-status ${line.scan_status || "resolved"}">
+                ${
+                  line.scan_status === "requires_review"
+                    ? "Review Required"
+                    : "Resolved"
+                }
+              </span>
+            </td>
+
+            <td>
+              ${dtReviewReason(line)}
+            </td>
+
+            ${isDraft ? `
+              <td class="dt-line-actions">
+                ${dtReviewAction(line)}
+
+                ${line.is_manual ? `
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-danger"
+                    data-dt-delete="${line.id}"
+                  >
+                    Delete
+                  </button>
+                ` : ""}
+              </td>
+            ` : ""}
+          </tr>
+        `;
+      }).join("");
 
     const ppeTotalRow = ppeLines.length ? `
       <tr class="dt-total-row">
@@ -43220,7 +43594,7 @@ async function saveEditModal() {
       </tr>
     ` : "";
 
-    const differencesSection = lines.length
+    const differencesSection = visibleLines.length
       ? `
         <div class="dt-table-wrap">
           <table class="dt-table">
@@ -43236,7 +43610,7 @@ async function saveEditModal() {
                 <th>Deferred Tax</th>
                 <th>Scan Status</th>
                 <th>Message</th>
-                ${isDraft ? "<th></th>" : ""}
+                ${isDraft ? "<th>Action</th>" : ""}
               </tr>
             </thead>
             <tbody>${tableRows}${ppeTotalRow}</tbody>
@@ -43324,12 +43698,53 @@ async function saveEditModal() {
         </div>
       </div>
 
+      ${reviewLines.length ? `
+        <div class="dt-review-centre">
+          <div>
+            <strong>
+              ${reviewLines.length}
+              item${reviewLines.length === 1 ? "" : "s"}
+              require action
+            </strong>
+
+            <p>
+              Resolve these items before submitting the
+              deferred-tax run for review.
+            </p>
+          </div>
+
+          <div class="dt-review-counts">
+            ${reviewCounts.leases ? `
+              <span>
+                ${reviewCounts.leases} lease line(s)
+              </span>
+            ` : ""}
+
+            ${reviewCounts.assets ? `
+              <span>
+                ${reviewCounts.assets} asset line(s)
+              </span>
+            ` : ""}
+
+            ${reviewCounts.accruals ? `
+              <span>
+                ${reviewCounts.accruals}
+                accrual/deferral line(s)
+              </span>
+            ` : ""}
+          </div>
+        </div>
+` : ""}
+
       <div class="dt-section-heading">
         <div>
           <h3>Temporary Differences</h3>
           <p>Compare accounting carrying amounts with their tax bases.</p>
         </div>
-        <span>${lines.length} line${lines.length === 1 ? "" : "s"}</span>
+        <span>
+          ${visibleLines.length}
+          line${visibleLines.length === 1 ? "" : "s"}
+        </span>
       </div>
 
       ${differencesSection}
@@ -43762,6 +44177,13 @@ async function saveEditModal() {
         );
         return;
       }
+
+      if (e.target.id === "dtLeaseTaxTreatmentForm") {
+        e.preventDefault();
+
+        await saveLeaseTaxTreatment(e.target);
+        return;
+      }
     });
 
     document.addEventListener("click", async e => {
@@ -43990,6 +44412,73 @@ async function saveEditModal() {
 
       if (e.target.id === "dtEmptyNewRunBtn") {
         await showCreateRunModal();
+        return;
+      }
+
+      const leaseReviewBtn = e.target.closest(
+        "[data-dt-review-lease]"
+      );
+
+      if (leaseReviewBtn) {
+        const leaseId = Number(
+          leaseReviewBtn.dataset.dtReviewLease
+        );
+
+        const line = selectedRun?.lines?.find(
+          item =>
+            item.source_module === "leases" &&
+            Number(item.source_id) === leaseId
+        );
+
+        if (!line) {
+          throw new Error(
+            "The lease deferred-tax line was not found."
+          );
+        }
+
+        showLeaseTaxTreatmentModal(line);
+        return;
+      }
+
+      const assetReviewBtn = e.target.closest(
+        "[data-dt-review-asset]"
+      );
+
+      if (assetReviewBtn) {
+        const assetId = Number(
+          assetReviewBtn.dataset.dtReviewAsset
+        );
+
+        assetProfileOpenedFromReview = true;
+
+        await showAssetTaxProfilesManager();
+
+        const profile = assetTaxProfiles.find(
+          item =>
+            Number(item.asset_id) === assetId
+        );
+
+        if (!profile) {
+          throw new Error(
+            "No asset tax profile was found for this asset."
+          );
+        }
+
+        showAssetTaxProfileForm(profile);
+        return;
+      }
+
+      const accrualReviewBtn = e.target.closest(
+        "[data-dt-review-accrual]"
+      );
+
+      if (accrualReviewBtn) {
+        closeModal();
+
+        document
+          .querySelector('[data-module="accrual-deferrals"]')
+          ?.click();
+
         return;
       }
 

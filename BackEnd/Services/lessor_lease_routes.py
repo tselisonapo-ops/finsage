@@ -1006,4 +1006,111 @@ def lessor_lease_reconciliation(
         )
         return jsonify({"error": str(e)}), 500
 
-   
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lease_id>/commence",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def commence_lessor_lease_route(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user_id, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        commencement_date = _date(
+            data.get("commencement_date"),
+            "commencement_date",
+            required=False,
+        )
+
+        result = db_service.post_lessor_day_one_journal(
+            company_id,
+            lease_id,
+            commencement_date=commencement_date,
+            user_id=user_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "commence_lessor_lease_route failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 500
+    
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lease_id>/accounting-schedule/post-through",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def post_lessor_schedule_through(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    user_id, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        through_date = _date(
+            data.get("through_date"),
+            "through_date",
+        )
+
+        result = db_service.post_lessor_periods_through(
+            company_id,
+            lease_id,
+            through_date,
+            user_id=user_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "post_lessor_schedule_through failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 500

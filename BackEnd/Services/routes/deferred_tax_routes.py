@@ -1580,3 +1580,81 @@ def deferred_tax_asset_tax_profile_update(cid, profile_id):
         )
         return _error_response(str(e), 500)
 
+@deferred_tax_bp.route(
+    "/api/companies/<int:cid>/deferred-tax/"
+    "leases/<int:lease_id>/tax-treatment",
+    methods=["GET", "PUT", "PATCH", "OPTIONS"],
+)
+@require_auth
+def deferred_tax_lease_tax_treatment(
+    cid: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    try:
+        company_id, user_id, deny = _auth_context(cid)
+        if deny:
+            return deny
+
+        db_service.ensure_company_schema(company_id)
+
+        if request.method == "GET":
+            row = db_service.deferred_tax_get_lease_tax_treatment(
+                company_id=company_id,
+                lease_id=lease_id,
+            )
+
+            return jsonify({
+                "ok": True,
+                "data": row,
+            }), 200
+
+        body = request.get_json(silent=True) or {}
+
+        before = db_service.deferred_tax_get_lease_tax_treatment(
+            company_id=company_id,
+            lease_id=lease_id,
+        )
+
+        row = db_service.deferred_tax_update_lease_tax_treatment(
+            company_id=company_id,
+            lease_id=lease_id,
+            payload=body,
+            user_id=user_id,
+        )
+
+        _audit(
+            company_id,
+            user_id=user_id,
+            action="update_lease_tax_treatment",
+            entity_type="lease_tax_treatment",
+            entity_id=row.get("id") or lease_id,
+            entity_ref=f"lease:{lease_id}",
+            before_json={
+                "tax_treatment": before or {},
+            },
+            after_json={
+                "tax_treatment": row,
+            },
+            message=(
+                "Updated deferred-tax treatment "
+                f"for lease {lease_id}"
+            ),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": row,
+        }), 200
+
+    except ValueError as e:
+        return _error_response(str(e), 400)
+
+    except Exception as e:
+        current_app.logger.exception(
+            "deferred_tax_lease_tax_treatment failed"
+        )
+        return _error_response(str(e), 500)
+

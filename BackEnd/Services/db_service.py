@@ -8800,6 +8800,7 @@ class DatabaseService:
                     source IS NULL
                     OR source = ANY (ARRAY[
                         ''manual'',
+
                         ''invoice'',
                         ''invoice_reversal'',
                         ''bill'',
@@ -8809,80 +8810,119 @@ class DatabaseService:
                         ''receipt'',
                         ''credit_note'',
                         ''debit_note'',
+
                         ''inventory'',
+                        ''inventory_reversal'',
+
                         ''asset'',
+                        ''asset_reversal'',
                         ''asset_acquisition'',
+                        ''asset_acquisition_reversal'',
                         ''asset_depreciation'',
+                        ''asset_depreciation_reversal'',
                         ''asset_revaluation'',
+                        ''asset_revaluation_reversal'',
                         ''asset_impairment'',
+                        ''asset_impairment_reversal'',
                         ''asset_disposal'',
+                        ''asset_disposal_reversal'',
                         ''asset_hfs'',
+                        ''asset_hfs_reversal'',
+                        ''asset_add_cost'',
+                        ''asset_add_cost_reversal'',
+                        ''asset_transfer'',
+                        ''asset_transfer_reversal'',
+
                         ''lease_inception'',
                         ''lease_monthly'',
                         ''lease_payment'',
                         ''lease_direct_cost_paid'',
                         ''lease_modification'',
                         ''lease_termination'',
+
+                        ''lease_inception_reversal'',
+                        ''lease_monthly_reversal'',
+                        ''lease_payment_reversal'',
+                        ''lease_direct_cost_paid_reversal'',
+                        ''lease_modification_reversal'',
+                        ''lease_termination_reversal'',
+
+                        ''lessor_lease_commencement'',
+                        ''lessor_lease_operating_income'',
+                        ''lessor_lease_finance_income'',
+                        ''lessor_lease_receipt'',
+                        ''lessor_lease_deposit'',
+                        ''lessor_lease_modification'',
+                        ''lessor_lease_termination'',
+
+                        ''lessor_lease_commencement_reversal'',
+                        ''lessor_lease_operating_income_reversal'',
+                        ''lessor_lease_finance_income_reversal'',
+                        ''lessor_lease_receipt_reversal'',
+                        ''lessor_lease_deposit_reversal'',
+                        ''lessor_lease_modification_reversal'',
+                        ''lessor_lease_termination_reversal'',
+
                         ''loan_origination'',
                         ''loan_payment'',
                         ''loan_reclassification'',
                         ''loan_accrual'',
                         ''loan_restructure'',
                         ''loan_settlement'',
+
                         ''bank'',
                         ''adjustment'',
-                        ''revenue_run_reversal'',
                         ''opening_balance'',
+
+                        ''revenue_run_reversal'',
+
                         ''vat_filing'',
                         ''vat_filing_payment'',
+
                         ''pos_sale'',
                         ''pos_payment'',
                         ''pos_return'',
+
                         ''year_end'',
                         ''year_end_reversal'',
                         ''year_end_close'',
+
                         ''ifrs9_ecl'',
                         ''ifrs9_ecl_reversal'',
                         ''ifrs9_amortised_cost'',
+                        ''ifrs9_amortised_cost_reversal'',
                         ''ifrs9_fair_value'',
+                        ''ifrs9_fair_value_reversal'',
                         ''ifrs9_modification'',
+                        ''ifrs9_modification_reversal'',
                         ''ifrs9_derecognition'',
+                        ''ifrs9_derecognition_reversal'',
                         ''ifrs9_writeoff'',
+                        ''ifrs9_writeoff_reversal'',
+
                         ''manual_reversal'',
                         ''payment_reversal'',
                         ''vendor_payment_reversal'',
                         ''receipt_reversal'',
                         ''credit_note_reversal'',
                         ''debit_note_reversal'',
-                        ''inventory_reversal'',
-                        ''asset_reversal'',
-                        ''asset_acquisition_reversal'',
-                        ''asset_depreciation_reversal'',
-                        ''asset_revaluation_reversal'',
-                        ''asset_impairment_reversal'',
-                        ''asset_disposal_reversal'',
-                        ''asset_hfs_reversal'',
-                        ''asset_add_cost'',
-                        ''asset_add_cost_reversal'',
-                        ''asset_transfer'',
-                        ''asset_transfer_reversal'',
-                        ''ifrs9_amortised_cost_reversal'',
-                        ''ifrs9_fair_value_reversal'',
-                        ''ifrs9_modification_reversal'',
-                        ''ifrs9_derecognition_reversal'',
-                        ''ifrs9_writeoff_reversal'',
+
                         ''accrual_deferral_initial'',
                         ''accrual_deferral_run'',
                         ''accrual_deferral_initial_reversal'',
                         ''accrual_deferral_run_reversal'',
+
                         ''deferred_tax'',
                         ''deferred_tax_reversal'',
+
                         ''payroll_run'',
-                        ''payroll_run_reversal''
+                        ''payroll_run_reversal'',
+
+                        ''system''
                     ]::text[])
                 )',
-                '{schema}',
-                '{schema}_journal_source_check'
+                schema_name,
+                schema_name || '_journal_source_check'
             );
 
             IF NOT EXISTS (
@@ -14776,1001 +14816,6 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_lease_schedule_modification_id_idx
         ON {schema}.lease_schedule(modification_id);
-
-        -- ==================================================
-        -- LESSOR CONTRACTS (Operating leases / rentals)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_leases (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-
-            contract_no TEXT NULL,              -- optional human ref
-            contract_name TEXT NOT NULL,        -- e.g. "Office Space - Unit 12"
-            customer_id INT NOT NULL,           -- reuse your existing customers table
-            asset_id INT NULL,                  -- optional: link to PPE / property unit table
-
-            start_date DATE NOT NULL,
-            end_date   DATE NULL,               -- allow month-to-month
-
-            billing_amount NUMERIC(18,2) NOT NULL DEFAULT 0,  -- gross or net? choose below
-            billing_basis TEXT NOT NULL DEFAULT 'gross',      -- gross|net
-            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
-
-            billing_frequency TEXT NOT NULL,    -- monthly|weekly|annually|custom
-            billing_timing TEXT NOT NULL DEFAULT 'arrears',   -- arrears|advance
-            bill_day_of_month INT NULL,         -- for monthly billing, e.g. 1..28
-
-            status TEXT NOT NULL DEFAULT 'active', -- active|terminated|suspended
-            termination_date DATE NULL,
-            notes TEXT NULL,
-
-            -- Posting configuration
-            revenue_account_code TEXT NULL,     -- rental income GL code (e.g. 4000)
-            vat_output_account_code TEXT NULL,  -- VAT output (e.g. 2310)
-            ar_account_code TEXT NULL,          -- Accounts receivable (e.g. 1100)
-            bank_account_code TEXT NULL,        -- default receipt bank code
-
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NULL
-        );
-
-        -- Inside ensure_company_schema(), using {schema}
-
-        ALTER TABLE {schema}.lessor_leases
-        ADD COLUMN IF NOT EXISTS lease_classification TEXT NOT NULL DEFAULT 'operating',
-        ADD COLUMN IF NOT EXISTS lessor_type TEXT NOT NULL DEFAULT 'ordinary',
-        ADD COLUMN IF NOT EXISTS currency TEXT NULL,
-        ADD COLUMN IF NOT EXISTS payment_terms_days INT NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS fair_value NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS guaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS unguaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS purchase_option_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS purchase_option_expected BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS initial_direct_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS security_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
-        ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
-        ADD COLUMN IF NOT EXISTS economic_life_months INT NULL,
-        ADD COLUMN IF NOT EXISTS transfer_of_ownership BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS specialised_asset BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS major_part_threshold NUMERIC(10,6) DEFAULT 0.75,
-        ADD COLUMN IF NOT EXISTS substantially_all_threshold NUMERIC(10,6) DEFAULT 0.90,
-        ADD COLUMN IF NOT EXISTS classification_reason TEXT NULL,
-        ADD COLUMN IF NOT EXISTS classification_payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-        ADD COLUMN IF NOT EXISTS finance_income_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS net_investment_current_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS net_investment_noncurrent_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS accrued_rental_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS deferred_rental_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS deposit_liability_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS disposal_gain_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS disposal_loss_account_code TEXT NULL,
-        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
-
-        ALTER TABLE {schema}.lessor_lease_bills
-        ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
-        ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
-
-        ALTER TABLE {schema}.lessor_lease_receipts
-        ADD COLUMN IF NOT EXISTS receipt_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
-
-        DO $ck_lessor_lease_classification$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'ck_lessor_lease_classification'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_leases
-                    ADD CONSTRAINT ck_lessor_lease_classification
-                    CHECK (
-                        lease_classification IN (
-                            ''operating'',
-                            ''finance''
-                        )
-                    )',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $ck_lessor_lease_classification$;
-
-        DO $fk_lessor_bills_invoice$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_bills_invoice'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_bills
-                    ADD CONSTRAINT fk_lessor_bills_invoice
-                    FOREIGN KEY (invoice_id)
-                    REFERENCES %I.invoices(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_bills_invoice$;
-
-        DO $fk_lessor_bills_invoice_line$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_bills_invoice_line'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_bills
-                    ADD CONSTRAINT fk_lessor_bills_invoice_line
-                    FOREIGN KEY (invoice_line_id)
-                    REFERENCES %I.invoice_lines(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_bills_invoice_line$;
-
-        DO $fk_lessor_receipts_receipt$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_receipts_receipt'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_receipts
-                    ADD CONSTRAINT fk_lessor_receipts_receipt
-                    FOREIGN KEY (receipt_id)
-                    REFERENCES %I.receipts(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_receipts_receipt$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_bills_invoice_idx
-        ON {schema}.lessor_lease_bills(invoice_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
-        ON {schema}.lessor_lease_receipts(receipt_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_classification_idx
-        ON {schema}.lessor_leases(company_id, lease_classification, status);
-
-
-        -- Safe add: updated_at
-        DO $add_lessor_leases_updated_at$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='updated_at'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN updated_at TIMESTAMPTZ NULL', '{schema}');
-            EXECUTE format('UPDATE %I.lessor_leases SET updated_at = created_at WHERE updated_at IS NULL', '{schema}');
-        END IF;
-        END $add_lessor_leases_updated_at$;
-
-        -- Checks
-        DO $ck_lessor_leases_dates$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_leases_dates' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_leases
-            ADD CONSTRAINT ck_lessor_leases_dates
-            CHECK (end_date IS NULL OR end_date >= start_date)',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_leases_dates$;
-
-        DO $ck_lessor_leases_amounts$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_leases_amounts' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_leases
-            ADD CONSTRAINT ck_lessor_leases_amounts
-            CHECK (
-                billing_amount >= 0
-                AND vat_rate >= 0
-                AND billing_basis IN (''gross'',''net'')
-                AND billing_timing IN (''arrears'',''advance'')
-                AND status IN (''active'',''terminated'',''suspended'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_leases_amounts$;
-
-        -- Uniqueness (avoid duplicates per company)
-        DO $uq_lessor_leases_contract_no$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_leases_company_contract_no'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_leases_company_contract_no
-            ON %I.lessor_leases(company_id, COALESCE(contract_no, ''''))
-            WHERE contract_no IS NOT NULL',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_leases_contract_no$;
-
-        -- Helpful indexes
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_company_status_idx
-        ON {schema}.lessor_leases(company_id, status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_company_dates_idx
-        ON {schema}.lessor_leases(company_id, start_date, end_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_customer_idx
-        ON {schema}.lessor_leases(customer_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_asset_idx
-        ON {schema}.lessor_leases(asset_id);
-
-        -- FK: customer (reuse your customers table name!)
-        DO $fk_lessor_leases_customer$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_leases_customer' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_leases
-            ADD CONSTRAINT fk_lessor_leases_customer
-            FOREIGN KEY (customer_id) REFERENCES %I.customers(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_leases_customer$;
-
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_schedule (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-
-            version_no INT NOT NULL DEFAULT 1,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            modification_id INT NULL,
-
-            period_no INT NOT NULL,
-            period_start DATE NOT NULL,
-            period_end DATE NOT NULL,
-            payment_date DATE NOT NULL,
-            due_date DATE NULL,
-
-            contractual_net NUMERIC(18,2) NOT NULL DEFAULT 0,
-            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            contractual_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            straight_line_income NUMERIC(18,2) NOT NULL DEFAULT 0,
-            accrued_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
-            deferred_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            opening_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
-            finance_income NUMERIC(18,2) NOT NULL DEFAULT 0,
-            principal_recovery NUMERIC(18,2) NOT NULL DEFAULT 0,
-            closing_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            current_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
-            noncurrent_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            invoice_id INT NULL,
-            invoice_line_id INT NULL,
-            recognition_journal_id INT NULL,
-            receipt_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            status TEXT NOT NULL DEFAULT 'scheduled',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            FOREIGN KEY (lessor_lease_id)
-            REFERENCES {schema}.lessor_leases(id)
-            ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-            adjustment_type TEXT NOT NULL,
-            adjustment_date DATE NOT NULL,
-            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            description TEXT NULL,
-            account_code TEXT NULL,
-            invoice_id INT NULL,
-            posted_journal_id INT NULL,
-            status TEXT NOT NULL DEFAULT 'draft',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            FOREIGN KEY (lessor_lease_id)
-            REFERENCES {schema}.lessor_leases(id)
-            ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_modifications (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-            modification_date DATE NOT NULL,
-            effective_date DATE NOT NULL,
-            modification_type TEXT NOT NULL,
-            reason TEXT NULL,
-
-            old_classification TEXT NULL,
-            new_classification TEXT NULL,
-            separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
-
-            old_payment_amount NUMERIC(18,2) DEFAULT 0,
-            new_payment_amount NUMERIC(18,2) DEFAULT 0,
-            old_end_date DATE NULL,
-            new_end_date DATE NULL,
-            old_discount_rate NUMERIC(12,8) DEFAULT 0,
-            new_discount_rate NUMERIC(12,8) DEFAULT 0,
-
-            net_investment_before NUMERIC(18,2) DEFAULT 0,
-            net_investment_after NUMERIC(18,2) DEFAULT 0,
-            accrued_rental_before NUMERIC(18,2) DEFAULT 0,
-            deferred_rental_before NUMERIC(18,2) DEFAULT 0,
-            gain_loss_amount NUMERIC(18,2) DEFAULT 0,
-
-            status TEXT NOT NULL DEFAULT 'draft',
-            preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-            posted_journal_id INT NULL,
-            created_by_user_id INT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            FOREIGN KEY (lessor_lease_id)
-            REFERENCES {schema}.lessor_leases(id)
-            ON DELETE CASCADE
-        );
-
-        ALTER TABLE {schema}.lessor_lease_modifications
-        ADD COLUMN IF NOT EXISTS effective_date DATE NULL,
-        ADD COLUMN IF NOT EXISTS modification_type TEXT NULL,
-        ADD COLUMN IF NOT EXISTS old_classification TEXT NULL,
-        ADD COLUMN IF NOT EXISTS new_classification TEXT NULL,
-        ADD COLUMN IF NOT EXISTS separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS old_payment_amount NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS new_payment_amount NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS old_discount_rate NUMERIC(12,8) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS new_discount_rate NUMERIC(12,8) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS net_investment_before NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS net_investment_after NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS accrued_rental_before NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS deferred_rental_before NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS gain_loss_amount NUMERIC(18,2) DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL;
-
-        UPDATE {schema}.lessor_lease_modifications
-        SET
-            effective_date = COALESCE(
-                effective_date,
-                effective_from,
-                modification_date
-            ),
-
-            modification_type = COALESCE(
-                modification_type,
-                change_type
-            ),
-
-            old_payment_amount = COALESCE(
-                old_payment_amount,
-                old_billing_amount,
-                0
-            ),
-
-            new_payment_amount = COALESCE(
-                new_payment_amount,
-                new_billing_amount,
-                0
-            ),
-
-            created_by_user_id = COALESCE(
-                created_by_user_id,
-                created_by
-            )
-        WHERE
-            effective_date IS NULL
-            OR modification_type IS NULL
-            OR created_by_user_id IS NULL;
-
-        ALTER TABLE {schema}.lessor_lease_modifications
-        ALTER COLUMN effective_date SET NOT NULL,
-        ALTER COLUMN modification_type SET NOT NULL;
-
-        -- ==================================================
-        -- LESSOR BILLING RUNS (invoice schedule / generated items)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_bills (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-
-            bill_period_start DATE NOT NULL,
-            bill_period_end   DATE NOT NULL,
-            bill_date DATE NOT NULL,            -- invoice date
-            due_date  DATE NULL,
-
-            amount_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
-            amount_net   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            vat_amount   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
-
-            status TEXT NOT NULL DEFAULT 'draft',  -- draft|posted|void|paid
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-
-            ar_account_code TEXT NULL,
-            revenue_account_code TEXT NULL,
-            vat_output_account_code TEXT NULL,
-
-            reference TEXT NULL,
-            notes TEXT NULL,
-
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        -- Checks
-        DO $ck_lessor_lease_bills_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_lease_bills_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_bills
-            ADD CONSTRAINT ck_lessor_lease_bills_valid
-            CHECK (
-                bill_period_end >= bill_period_start
-                AND amount_gross >= 0 AND amount_net >= 0 AND vat_amount >= 0
-                AND (amount_net + vat_amount) <= (amount_gross + 0.02)
-                AND status IN (''draft'',''posted'',''void'',''paid'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_lease_bills_valid$;
-
-        -- Anti-duplicate: one bill per contract per bill_date (or per period)
-        DO $uq_lessor_lease_bills_unique$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_lease_bills_contract_period'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_lease_bills_contract_period
-            ON %I.lessor_lease_bills(lessor_lease_id, bill_period_start, bill_period_end)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_lease_bills_unique$;
-
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_company_idx
-        ON {schema}.lessor_lease_bills(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_contract_idx
-        ON {schema}.lessor_lease_bills(lessor_lease_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_bill_date_idx
-        ON {schema}.lessor_lease_bills(bill_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_status_idx
-        ON {schema}.lessor_lease_bills(status);
-
-        -- FK
-        DO $fk_lessor_lease_bills_contract$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_lease_bills_contract' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_bills
-            ADD CONSTRAINT fk_lessor_lease_bills_contract
-            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_lease_bills_contract$;
-
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_payment_terms (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-            effective_from DATE NOT NULL,
-            effective_to DATE NULL,
-            payment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-            payment_frequency TEXT NOT NULL DEFAULT 'monthly',
-            payment_timing TEXT NOT NULL DEFAULT 'arrears',
-            billing_basis TEXT NOT NULL DEFAULT 'gross',
-            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
-            escalation_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
-            escalation_frequency TEXT NULL,
-            rent_free BOOLEAN NOT NULL DEFAULT FALSE,
-            variable_payment BOOLEAN NOT NULL DEFAULT FALSE,
-            variable_formula JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            FOREIGN KEY (lessor_lease_id)
-            REFERENCES {schema}.lessor_leases(id)
-            ON DELETE CASCADE
-        );
-
-        -- ==================================================
-        -- LESSOR RECEIPTS (cash received from lessee)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_receipts (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-            bill_id INT NULL,                 -- optional: allocate to a bill
-
-            receipt_date DATE NOT NULL,
-            amount_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
-            reference TEXT NULL,
-            notes TEXT NULL,
-
-            bank_account_code TEXT NULL,
-
-            status TEXT NOT NULL DEFAULT 'draft', -- draft|posted|reversed|void
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-
-            reverses_receipt_id INT NULL,
-            reversed_by_receipt_id INT NULL,
-
-            created_by INT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        -- Checks
-        DO $ck_lessor_lease_receipts_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_lease_receipts_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_receipts
-            ADD CONSTRAINT ck_lessor_lease_receipts_valid
-            CHECK (
-                receipt_date IS NOT NULL
-                AND amount_gross >= 0
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-                AND (reverses_receipt_id IS NULL OR reverses_receipt_id <> id)
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_lease_receipts_valid$;
-
-        -- Anti-duplicate
-        DO $uq_lessor_lease_receipts_unique$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_lease_receipts_contract_date_amount_ref'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_lease_receipts_contract_date_amount_ref
-            ON %I.lessor_lease_receipts(lessor_lease_id, receipt_date, amount_gross, COALESCE(reference, ''''))
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_lease_receipts_unique$;
-
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_contract_idx
-        ON {schema}.lessor_lease_receipts(lessor_lease_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_bill_idx
-        ON {schema}.lessor_lease_receipts(bill_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_posted_journal_id_idx
-        ON {schema}.lessor_lease_receipts(posted_journal_id);
-
-        -- FKs
-        DO $fk_lessor_lease_receipts_contract$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_lease_receipts_contract' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_receipts
-            ADD CONSTRAINT fk_lessor_lease_receipts_contract
-            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_lease_receipts_contract$;
-
-        DO $fk_lessor_lease_receipts_bill$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_lease_receipts_bill' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_receipts
-            ADD CONSTRAINT fk_lessor_lease_receipts_bill
-            FOREIGN KEY (bill_id) REFERENCES %I.lessor_lease_bills(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_lease_receipts_bill$;
-
-        DO $add_lessor_bank_account_id_cols$
-        BEGIN
-        -- lessor_leases
-        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_leases') THEN
-            IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='bank_account_id'
-            ) THEN
-            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN bank_account_id INT NULL', '{schema}');
-            END IF;
-        END IF;
-
-        -- lessor_lease_receipts
-        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts') THEN
-            IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts' AND column_name='bank_account_id'
-            ) THEN
-            EXECUTE format('ALTER TABLE %I.lessor_lease_receipts ADD COLUMN bank_account_id INT NULL', '{schema}');
-            END IF;
-        END IF;
-        END
-        $add_lessor_bank_account_id_cols$;
-
-        -- FK to company_bank_accounts
-        DO $fk_lessor_bank_account$
-        BEGIN
-        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_leases') THEN
-            IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_leases_bank' AND n.nspname='{schema}'
-            ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.lessor_leases
-                ADD CONSTRAINT fk_lessor_leases_bank
-                FOREIGN KEY (bank_account_id) REFERENCES %I.company_bank_accounts(id)',
-                '{schema}', '{schema}'
-            );
-            END IF;
-        END IF;
-
-        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts') THEN
-            IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_receipts_bank' AND n.nspname='{schema}'
-            ) THEN
-            EXECUTE format(
-                'ALTER TABLE %I.lessor_lease_receipts
-                ADD CONSTRAINT fk_lessor_receipts_bank
-                FOREIGN KEY (bank_account_id) REFERENCES %I.company_bank_accounts(id)',
-                '{schema}', '{schema}'
-            );
-            END IF;
-        END IF;
-        END
-        $fk_lessor_bank_account$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_bank_account_id_idx
-        ON {schema}.lessor_leases(bank_account_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_bank_account_id_idx
-        ON {schema}.lessor_lease_receipts(bank_account_id);
-
-        -- FKs
-        DO $fk_lessor_mods_contract$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_mods_contract' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_modifications
-            ADD CONSTRAINT fk_lessor_mods_contract
-            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_mods_contract$;
-
-        DO $fk_lessor_mods_posted_journal$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_mods_journal' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_modifications
-            ADD CONSTRAINT fk_lessor_mods_journal
-            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_mods_posted_journal$;
-
-        -- Checks
-        DO $ck_lessor_mods_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_mods_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_modifications
-            ADD CONSTRAINT ck_lessor_mods_valid
-            CHECK (
-                modification_date IS NOT NULL
-                AND change_type IN (''amount'',''vat'',''frequency'',''term'',''mixed'')
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-                AND apply_to_unbilled_only IN (TRUE,FALSE)
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_mods_valid$;
-
-        -- Anti-duplicate: same contract + same date + type (non-void)
-        DO $uq_lessor_mods_contract_date_type$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_mods_contract_date_type'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_mods_contract_date_type
-            ON %I.lessor_lease_modifications(lessor_lease_id, modification_date, change_type)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_mods_contract_date_type$;
-
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_company_idx
-        ON {schema}.lessor_lease_modifications(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_contract_idx
-        ON {schema}.lessor_lease_modifications(lessor_lease_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_status_idx
-        ON {schema}.lessor_lease_modifications(status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_posted_journal_id_idx
-        ON {schema}.lessor_lease_modifications(posted_journal_id);
-
-        -- ==================================================
-        -- LESSOR LEASE TERMINATIONS (Operating lessor)
-        -- ==================================================
-        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_terminations (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            lessor_lease_id INT NOT NULL,
-
-            termination_date DATE NOT NULL,
-            reason TEXT NULL,
-
-            -- optional charges / settlement (e.g. penalty, damages)
-            settlement_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
-            settlement_net   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            settlement_vat   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
-
-            -- if you raise a final invoice for settlement:
-            bill_id INT NULL,
-
-            -- posting markers
-            status TEXT NOT NULL DEFAULT 'draft', -- draft|posted|reversed|void
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-
-            notes TEXT NULL,
-            created_by INT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        -- FKs
-        DO $fk_lessor_terms_contract$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_terms_contract' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT fk_lessor_terms_contract
-            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_terms_contract$;
-
-        DO $fk_lessor_terms_bill$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_terms_bill' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT fk_lessor_terms_bill
-            FOREIGN KEY (bill_id) REFERENCES %I.lessor_lease_bills(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_terms_bill$;
-
-        DO $fk_lessor_terms_journal$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_terms_journal' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT fk_lessor_terms_journal
-            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_terms_journal$;
-
-        -- Checks
-        DO $ck_lessor_terms_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_terms_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT ck_lessor_terms_valid
-            CHECK (
-                termination_date IS NOT NULL
-                AND settlement_gross >= 0 AND settlement_net >= 0 AND settlement_vat >= 0
-                AND (settlement_net + settlement_vat) <= (settlement_gross + 0.02)
-                AND vat_rate >= 0
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_terms_valid$;
-
-        -- One termination per contract (non-void)
-        DO $uq_lessor_terms_one_per_contract$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_terms_one_per_contract'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_terms_one_per_contract
-            ON %I.lessor_lease_terminations(lessor_lease_id)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_terms_one_per_contract$;
-
-        -- Indexes
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_company_idx
-        ON {schema}.lessor_lease_terminations(company_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_contract_idx
-        ON {schema}.lessor_lease_terminations(lessor_lease_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_status_idx
-        ON {schema}.lessor_lease_terminations(status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_posted_journal_id_idx
-        ON {schema}.lessor_lease_terminations(posted_journal_id);
-
-        DO $add_lessor_leases_termination_cols$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='termination_id'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN termination_id INT NULL', '{schema}');
-        END IF;
-
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='termination_date'
-        ) THEN
-            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN termination_date DATE NULL', '{schema}');
-        END IF;
-        END
-        $add_lessor_leases_termination_cols$;
-
-        DO $fk_lessor_leases_termination$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_leases_termination' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_leases
-            ADD CONSTRAINT fk_lessor_leases_termination
-            FOREIGN KEY (termination_id) REFERENCES %I.lessor_lease_terminations(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END
-        $fk_lessor_leases_termination$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_termination_id_idx
-        ON {schema}.lessor_leases(termination_id);
-
-        DO $add_customers_customer_type$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema='{schema}' AND table_name='customers' AND column_name='customer_type'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.customers ADD COLUMN customer_type TEXT NULL',
-            '{schema}'
-            );
-            -- optional: default existing to 'sales'
-            EXECUTE format(
-            'UPDATE %I.customers SET customer_type = COALESCE(customer_type, ''sales'')',
-            '{schema}'
-            );
-        END IF;
-        END
-        $add_customers_customer_type$;
 
         -- ==================================================
         -- ASSET REGISTER (PPE master)
@@ -23882,6 +22927,1069 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_quotation_lines_company_quote_idx
         ON {schema}.quotation_lines(company_id, quotation_id);
 
+        -- ==================================================
+        -- LESSOR CONTRACTS (Operating leases / rentals)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_leases (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+
+            contract_no TEXT NULL,              -- optional human ref
+            contract_name TEXT NOT NULL,        -- e.g. "Office Space - Unit 12"
+            customer_id INT NOT NULL,           -- reuse your existing customers table
+            asset_id INT NULL,                  -- optional: link to PPE / property unit table
+
+            start_date DATE NOT NULL,
+            end_date   DATE NULL,               -- allow month-to-month
+
+            billing_amount NUMERIC(18,2) NOT NULL DEFAULT 0,  -- gross or net? choose below
+            billing_basis TEXT NOT NULL DEFAULT 'gross',      -- gross|net
+            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+
+            billing_frequency TEXT NOT NULL,    -- monthly|weekly|annually|custom
+            billing_timing TEXT NOT NULL DEFAULT 'arrears',   -- arrears|advance
+            bill_day_of_month INT NULL,         -- for monthly billing, e.g. 1..28
+
+            status TEXT NOT NULL DEFAULT 'active', -- active|terminated|suspended
+            termination_date DATE NULL,
+            notes TEXT NULL,
+
+            -- Posting configuration
+            revenue_account_code TEXT NULL,     -- rental income GL code (e.g. 4000)
+            vat_output_account_code TEXT NULL,  -- VAT output (e.g. 2310)
+            ar_account_code TEXT NULL,          -- Accounts receivable (e.g. 1100)
+            bank_account_code TEXT NULL,        -- default receipt bank code
+
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL
+        );
+
+        -- Inside ensure_company_schema(), using {schema}
+
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS lease_classification TEXT NOT NULL DEFAULT 'operating',
+        ADD COLUMN IF NOT EXISTS lessor_type TEXT NOT NULL DEFAULT 'ordinary',
+        ADD COLUMN IF NOT EXISTS currency TEXT NULL,
+        ADD COLUMN IF NOT EXISTS payment_terms_days INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS discount_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS fair_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS carrying_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS guaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS unguaranteed_residual_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS purchase_option_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS purchase_option_expected BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS initial_direct_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS security_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
+        ADD COLUMN IF NOT EXISTS economic_life_months INT NULL,
+        ADD COLUMN IF NOT EXISTS transfer_of_ownership BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS specialised_asset BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS major_part_threshold NUMERIC(10,6) DEFAULT 0.75,
+        ADD COLUMN IF NOT EXISTS substantially_all_threshold NUMERIC(10,6) DEFAULT 0.90,
+        ADD COLUMN IF NOT EXISTS classification_reason TEXT NULL,
+        ADD COLUMN IF NOT EXISTS classification_payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS finance_income_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS net_investment_current_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS net_investment_noncurrent_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS accrued_rental_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deferred_rental_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS deposit_liability_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS disposal_gain_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS disposal_loss_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS commencement_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS commenced_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS commenced_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS initial_direct_cost_expense_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS initial_direct_cost_asset_account_code TEXT NULL;
+
+        ALTER TABLE {schema}.lessor_lease_bills
+        ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE {schema}.lessor_lease_receipts
+        ADD COLUMN IF NOT EXISTS receipt_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
+        DO $fk_lessor_commencement_journal$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_commencement_journal'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_leases
+                    ADD CONSTRAINT fk_lessor_commencement_journal
+                    FOREIGN KEY (commencement_journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_commencement_journal$;
+
+        DO $ck_lessor_lease_classification$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_lessor_lease_classification'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_leases
+                    ADD CONSTRAINT ck_lessor_lease_classification
+                    CHECK (
+                        lease_classification IN (
+                            ''operating'',
+                            ''finance''
+                        )
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $ck_lessor_lease_classification$;
+
+        DO $fk_lessor_bills_invoice$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice
+                    FOREIGN KEY (invoice_id)
+                    REFERENCES %I.invoices(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice$;
+
+        DO $fk_lessor_bills_invoice_line$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice_line'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice_line
+                    FOREIGN KEY (invoice_line_id)
+                    REFERENCES %I.invoice_lines(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice_line$;
+
+        DO $fk_lessor_receipts_receipt$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_receipts_receipt'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_receipts
+                    ADD CONSTRAINT fk_lessor_receipts_receipt
+                    FOREIGN KEY (receipt_id)
+                    REFERENCES %I.receipts(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_receipts_receipt$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_bills_invoice_idx
+        ON {schema}.lessor_lease_bills(invoice_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
+        ON {schema}.lessor_lease_receipts(receipt_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_classification_idx
+        ON {schema}.lessor_leases(company_id, lease_classification, status);
+
+
+        -- Safe add: updated_at
+        DO $add_lessor_leases_updated_at$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='updated_at'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN updated_at TIMESTAMPTZ NULL', '{schema}');
+            EXECUTE format('UPDATE %I.lessor_leases SET updated_at = created_at WHERE updated_at IS NULL', '{schema}');
+        END IF;
+        END $add_lessor_leases_updated_at$;
+
+        -- Checks
+        DO $ck_lessor_leases_dates$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_leases_dates' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_leases
+            ADD CONSTRAINT ck_lessor_leases_dates
+            CHECK (end_date IS NULL OR end_date >= start_date)',
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_leases_dates$;
+
+        DO $ck_lessor_leases_amounts$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_leases_amounts' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            ALTER TABLE {schema}.lessor_leases
+            DROP CONSTRAINT IF EXISTS ck_lessor_leases_amounts;
+
+            ALTER TABLE {schema}.lessor_leases
+            ADD CONSTRAINT ck_lessor_leases_amounts
+            CHECK (
+                billing_amount >= 0
+                AND vat_rate >= 0
+                AND billing_basis IN ('gross', 'net')
+                AND billing_timing IN ('arrears', 'advance')
+                AND status IN (
+                    'draft',
+                    'active',
+                    'commenced',
+                    'suspended',
+                    'terminated'
+                )
+            );
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_leases_amounts$;
+
+        -- Uniqueness (avoid duplicates per company)
+        DO $uq_lessor_leases_contract_no$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_lessor_leases_company_contract_no'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_lessor_leases_company_contract_no
+            ON %I.lessor_leases(company_id, COALESCE(contract_no, ''''))
+            WHERE contract_no IS NOT NULL',
+            '{schema}'
+            );
+        END IF;
+        END $uq_lessor_leases_contract_no$;
+
+        -- Helpful indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_company_status_idx
+        ON {schema}.lessor_leases(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_company_dates_idx
+        ON {schema}.lessor_leases(company_id, start_date, end_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_customer_idx
+        ON {schema}.lessor_leases(customer_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_asset_idx
+        ON {schema}.lessor_leases(asset_id);
+
+        -- FK: customer (reuse your customers table name!)
+        DO $fk_lessor_leases_customer$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_leases_customer' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_leases
+            ADD CONSTRAINT fk_lessor_leases_customer
+            FOREIGN KEY (customer_id) REFERENCES %I.customers(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_leases_customer$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_schedule (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+
+            version_no INT NOT NULL DEFAULT 1,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            modification_id INT NULL,
+
+            period_no INT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            payment_date DATE NOT NULL,
+            due_date DATE NULL,
+
+            contractual_net NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            contractual_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            straight_line_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accrued_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            deferred_rental_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            opening_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
+            finance_income NUMERIC(18,2) NOT NULL DEFAULT 0,
+            principal_recovery NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_net_investment NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            current_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
+            noncurrent_portion NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            invoice_id INT NULL,
+            invoice_line_id INT NULL,
+            recognition_journal_id INT NULL,
+            receipt_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'scheduled',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        ALTER TABLE {schema}.lessor_lease_schedule
+        ADD COLUMN IF NOT EXISTS recognition_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS posted_by_user_id INT NULL;
+
+        DO $fk_lessor_schedule_journal$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_schedule_journal'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_schedule
+                    ADD CONSTRAINT fk_lessor_schedule_journal
+                    FOREIGN KEY (recognition_journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_schedule_journal$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_journal_idx
+        ON {schema}.lessor_lease_schedule(recognition_journal_id);
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            adjustment_type TEXT NOT NULL,
+            adjustment_date DATE NOT NULL,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            description TEXT NULL,
+            account_code TEXT NULL,
+            invoice_id INT NULL,
+            posted_journal_id INT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_modifications (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            modification_date DATE NOT NULL,
+            effective_date DATE NOT NULL,
+            modification_type TEXT NOT NULL,
+            reason TEXT NULL,
+
+            old_classification TEXT NULL,
+            new_classification TEXT NULL,
+            separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
+
+            old_payment_amount NUMERIC(18,2) DEFAULT 0,
+            new_payment_amount NUMERIC(18,2) DEFAULT 0,
+            old_end_date DATE NULL,
+            new_end_date DATE NULL,
+            old_discount_rate NUMERIC(12,8) DEFAULT 0,
+            new_discount_rate NUMERIC(12,8) DEFAULT 0,
+
+            net_investment_before NUMERIC(18,2) DEFAULT 0,
+            net_investment_after NUMERIC(18,2) DEFAULT 0,
+            accrued_rental_before NUMERIC(18,2) DEFAULT 0,
+            deferred_rental_before NUMERIC(18,2) DEFAULT 0,
+            gain_loss_amount NUMERIC(18,2) DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            posted_journal_id INT NULL,
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        ALTER TABLE {schema}.lessor_lease_modifications
+        ADD COLUMN IF NOT EXISTS effective_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS modification_type TEXT NULL,
+        ADD COLUMN IF NOT EXISTS old_classification TEXT NULL,
+        ADD COLUMN IF NOT EXISTS new_classification TEXT NULL,
+        ADD COLUMN IF NOT EXISTS separate_lease BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS old_payment_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS new_payment_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS old_discount_rate NUMERIC(12,8) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS new_discount_rate NUMERIC(12,8) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_investment_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_investment_after NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS accrued_rental_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS deferred_rental_before NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS gain_loss_amount NUMERIC(18,2) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL;
+
+        UPDATE {schema}.lessor_lease_modifications
+        SET
+            effective_date = COALESCE(
+                effective_date,
+                effective_from,
+                modification_date
+            ),
+
+            modification_type = COALESCE(
+                modification_type,
+                change_type
+            ),
+
+            old_payment_amount = COALESCE(
+                old_payment_amount,
+                old_billing_amount,
+                0
+            ),
+
+            new_payment_amount = COALESCE(
+                new_payment_amount,
+                new_billing_amount,
+                0
+            ),
+
+            created_by_user_id = COALESCE(
+                created_by_user_id,
+                created_by
+            )
+        WHERE
+            effective_date IS NULL
+            OR modification_type IS NULL
+            OR created_by_user_id IS NULL;
+
+        ALTER TABLE {schema}.lessor_lease_modifications
+        ALTER COLUMN effective_date SET NOT NULL,
+        ALTER COLUMN modification_type SET NOT NULL;
+
+        -- ==================================================
+        -- LESSOR BILLING RUNS (invoice schedule / generated items)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_bills (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+
+            bill_period_start DATE NOT NULL,
+            bill_period_end   DATE NOT NULL,
+            bill_date DATE NOT NULL,            -- invoice date
+            due_date  DATE NULL,
+
+            amount_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+            amount_net   NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_amount   NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',  -- draft|posted|void|paid
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            ar_account_code TEXT NULL,
+            revenue_account_code TEXT NULL,
+            vat_output_account_code TEXT NULL,
+
+            reference TEXT NULL,
+            notes TEXT NULL,
+
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Checks
+        DO $ck_lessor_lease_bills_valid$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_lease_bills_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_bills
+            ADD CONSTRAINT ck_lessor_lease_bills_valid
+            CHECK (
+                bill_period_end >= bill_period_start
+                AND amount_gross >= 0 AND amount_net >= 0 AND vat_amount >= 0
+                AND (amount_net + vat_amount) <= (amount_gross + 0.02)
+                AND status IN (''draft'',''posted'',''void'',''paid'')
+            )',
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_lease_bills_valid$;
+
+        -- Anti-duplicate: one bill per contract per bill_date (or per period)
+        DO $uq_lessor_lease_bills_unique$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_lessor_lease_bills_contract_period'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_lessor_lease_bills_contract_period
+            ON %I.lessor_lease_bills(lessor_lease_id, bill_period_start, bill_period_end)
+            WHERE status <> ''void''',
+            '{schema}'
+            );
+        END IF;
+        END $uq_lessor_lease_bills_unique$;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_company_idx
+        ON {schema}.lessor_lease_bills(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_contract_idx
+        ON {schema}.lessor_lease_bills(lessor_lease_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_bill_date_idx
+        ON {schema}.lessor_lease_bills(bill_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_status_idx
+        ON {schema}.lessor_lease_bills(status);
+
+        -- FK
+        DO $fk_lessor_lease_bills_contract$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_lease_bills_contract' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_bills
+            ADD CONSTRAINT fk_lessor_lease_bills_contract
+            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_lease_bills_contract$;
+
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_payment_terms (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+            payment_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            payment_frequency TEXT NOT NULL DEFAULT 'monthly',
+            payment_timing TEXT NOT NULL DEFAULT 'arrears',
+            billing_basis TEXT NOT NULL DEFAULT 'gross',
+            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+            escalation_rate NUMERIC(12,8) NOT NULL DEFAULT 0,
+            escalation_frequency TEXT NULL,
+            rent_free BOOLEAN NOT NULL DEFAULT FALSE,
+            variable_payment BOOLEAN NOT NULL DEFAULT FALSE,
+            variable_formula JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        -- ==================================================
+        -- LESSOR RECEIPTS (cash received from lessee)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_receipts (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+            bill_id INT NULL,                 -- optional: allocate to a bill
+
+            receipt_date DATE NOT NULL,
+            amount_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+            reference TEXT NULL,
+            notes TEXT NULL,
+
+            bank_account_code TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|posted|reversed|void
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            reverses_receipt_id INT NULL,
+            reversed_by_receipt_id INT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- Checks
+        DO $ck_lessor_lease_receipts_valid$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_lease_receipts_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_receipts
+            ADD CONSTRAINT ck_lessor_lease_receipts_valid
+            CHECK (
+                receipt_date IS NOT NULL
+                AND amount_gross >= 0
+                AND status IN (''draft'',''posted'',''reversed'',''void'')
+                AND (reverses_receipt_id IS NULL OR reverses_receipt_id <> id)
+            )',
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_lease_receipts_valid$;
+
+        -- Anti-duplicate
+        DO $uq_lessor_lease_receipts_unique$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_lessor_lease_receipts_contract_date_amount_ref'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_lessor_lease_receipts_contract_date_amount_ref
+            ON %I.lessor_lease_receipts(lessor_lease_id, receipt_date, amount_gross, COALESCE(reference, ''''))
+            WHERE status <> ''void''',
+            '{schema}'
+            );
+        END IF;
+        END $uq_lessor_lease_receipts_unique$;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_contract_idx
+        ON {schema}.lessor_lease_receipts(lessor_lease_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_bill_idx
+        ON {schema}.lessor_lease_receipts(bill_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_posted_journal_id_idx
+        ON {schema}.lessor_lease_receipts(posted_journal_id);
+
+        -- FKs
+        DO $fk_lessor_lease_receipts_contract$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_lease_receipts_contract' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_receipts
+            ADD CONSTRAINT fk_lessor_lease_receipts_contract
+            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_lease_receipts_contract$;
+
+        DO $fk_lessor_lease_receipts_bill$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_lease_receipts_bill' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_receipts
+            ADD CONSTRAINT fk_lessor_lease_receipts_bill
+            FOREIGN KEY (bill_id) REFERENCES %I.lessor_lease_bills(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_lease_receipts_bill$;
+
+        DO $add_lessor_bank_account_id_cols$
+        BEGIN
+        -- lessor_leases
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_leases') THEN
+            IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='bank_account_id'
+            ) THEN
+            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN bank_account_id INT NULL', '{schema}');
+            END IF;
+        END IF;
+
+        -- lessor_lease_receipts
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts') THEN
+            IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts' AND column_name='bank_account_id'
+            ) THEN
+            EXECUTE format('ALTER TABLE %I.lessor_lease_receipts ADD COLUMN bank_account_id INT NULL', '{schema}');
+            END IF;
+        END IF;
+        END
+        $add_lessor_bank_account_id_cols$;
+
+        -- FK to company_bank_accounts
+        DO $fk_lessor_bank_account$
+        BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_leases') THEN
+            IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_leases_bank' AND n.nspname='{schema}'
+            ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.lessor_leases
+                ADD CONSTRAINT fk_lessor_leases_bank
+                FOREIGN KEY (bank_account_id) REFERENCES %I.company_bank_accounts(id)',
+                '{schema}', '{schema}'
+            );
+            END IF;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='{schema}' AND table_name='lessor_lease_receipts') THEN
+            IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_receipts_bank' AND n.nspname='{schema}'
+            ) THEN
+            EXECUTE format(
+                'ALTER TABLE %I.lessor_lease_receipts
+                ADD CONSTRAINT fk_lessor_receipts_bank
+                FOREIGN KEY (bank_account_id) REFERENCES %I.company_bank_accounts(id)',
+                '{schema}', '{schema}'
+            );
+            END IF;
+        END IF;
+        END
+        $fk_lessor_bank_account$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_bank_account_id_idx
+        ON {schema}.lessor_leases(bank_account_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_bank_account_id_idx
+        ON {schema}.lessor_lease_receipts(bank_account_id);
+
+        -- FKs
+        DO $fk_lessor_mods_contract$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_mods_contract' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_modifications
+            ADD CONSTRAINT fk_lessor_mods_contract
+            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_mods_contract$;
+
+        DO $fk_lessor_mods_posted_journal$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_mods_journal' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_modifications
+            ADD CONSTRAINT fk_lessor_mods_journal
+            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_mods_posted_journal$;
+
+        -- Checks
+        DO $ck_lessor_mods_valid$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_mods_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_modifications
+            ADD CONSTRAINT ck_lessor_mods_valid
+            CHECK (
+                modification_date IS NOT NULL
+                AND change_type IN (''amount'',''vat'',''frequency'',''term'',''mixed'')
+                AND status IN (''draft'',''posted'',''reversed'',''void'')
+                AND apply_to_unbilled_only IN (TRUE,FALSE)
+            )',
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_mods_valid$;
+
+        -- Anti-duplicate: same contract + same date + type (non-void)
+        DO $uq_lessor_mods_contract_date_type$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_lessor_mods_contract_date_type'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_lessor_mods_contract_date_type
+            ON %I.lessor_lease_modifications(lessor_lease_id, modification_date, change_type)
+            WHERE status <> ''void''',
+            '{schema}'
+            );
+        END IF;
+        END $uq_lessor_mods_contract_date_type$;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_company_idx
+        ON {schema}.lessor_lease_modifications(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_contract_idx
+        ON {schema}.lessor_lease_modifications(lessor_lease_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_status_idx
+        ON {schema}.lessor_lease_modifications(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_posted_journal_id_idx
+        ON {schema}.lessor_lease_modifications(posted_journal_id);
+
+        -- ==================================================
+        -- LESSOR LEASE TERMINATIONS (Operating lessor)
+        -- ==================================================
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_terminations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+
+            termination_date DATE NOT NULL,
+            reason TEXT NULL,
+
+            -- optional charges / settlement (e.g. penalty, damages)
+            settlement_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+            settlement_net   NUMERIC(18,2) NOT NULL DEFAULT 0,
+            settlement_vat   NUMERIC(18,2) NOT NULL DEFAULT 0,
+            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+
+            -- if you raise a final invoice for settlement:
+            bill_id INT NULL,
+
+            -- posting markers
+            status TEXT NOT NULL DEFAULT 'draft', -- draft|posted|reversed|void
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            notes TEXT NULL,
+            created_by INT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        -- FKs
+        DO $fk_lessor_terms_contract$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_terms_contract' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_terminations
+            ADD CONSTRAINT fk_lessor_terms_contract
+            FOREIGN KEY (lessor_lease_id) REFERENCES %I.lessor_leases(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_terms_contract$;
+
+        DO $fk_lessor_terms_bill$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_terms_bill' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_terminations
+            ADD CONSTRAINT fk_lessor_terms_bill
+            FOREIGN KEY (bill_id) REFERENCES %I.lessor_lease_bills(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_terms_bill$;
+
+        DO $fk_lessor_terms_journal$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_terms_journal' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_terminations
+            ADD CONSTRAINT fk_lessor_terms_journal
+            FOREIGN KEY (posted_journal_id) REFERENCES %I.journal(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END $fk_lessor_terms_journal$;
+
+        -- Checks
+        DO $ck_lessor_terms_valid$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='ck_lessor_terms_valid' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_lease_terminations
+            ADD CONSTRAINT ck_lessor_terms_valid
+            CHECK (
+                termination_date IS NOT NULL
+                AND settlement_gross >= 0 AND settlement_net >= 0 AND settlement_vat >= 0
+                AND (settlement_net + settlement_vat) <= (settlement_gross + 0.02)
+                AND vat_rate >= 0
+                AND status IN (''draft'',''posted'',''reversed'',''void'')
+            )',
+            '{schema}'
+            );
+        END IF;
+        END $ck_lessor_terms_valid$;
+
+        -- One termination per contract (non-void)
+        DO $uq_lessor_terms_one_per_contract$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname='{schema}' AND indexname='uq_lessor_terms_one_per_contract'
+        ) THEN
+            EXECUTE format(
+            'CREATE UNIQUE INDEX uq_lessor_terms_one_per_contract
+            ON %I.lessor_lease_terminations(lessor_lease_id)
+            WHERE status <> ''void''',
+            '{schema}'
+            );
+        END IF;
+        END $uq_lessor_terms_one_per_contract$;
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_company_idx
+        ON {schema}.lessor_lease_terminations(company_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_contract_idx
+        ON {schema}.lessor_lease_terminations(lessor_lease_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_status_idx
+        ON {schema}.lessor_lease_terminations(status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_posted_journal_id_idx
+        ON {schema}.lessor_lease_terminations(posted_journal_id);
+
+        DO $add_lessor_leases_termination_cols$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='termination_id'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN termination_id INT NULL', '{schema}');
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='lessor_leases' AND column_name='termination_date'
+        ) THEN
+            EXECUTE format('ALTER TABLE %I.lessor_leases ADD COLUMN termination_date DATE NULL', '{schema}');
+        END IF;
+        END
+        $add_lessor_leases_termination_cols$;
+
+        DO $fk_lessor_leases_termination$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE c.conname='fk_lessor_leases_termination' AND n.nspname='{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.lessor_leases
+            ADD CONSTRAINT fk_lessor_leases_termination
+            FOREIGN KEY (termination_id) REFERENCES %I.lessor_lease_terminations(id)',
+            '{schema}', '{schema}'
+            );
+        END IF;
+        END
+        $fk_lessor_leases_termination$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_termination_id_idx
+        ON {schema}.lessor_leases(termination_id);
+
+        DO $add_customers_customer_type$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema='{schema}' AND table_name='customers' AND column_name='customer_type'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.customers ADD COLUMN customer_type TEXT NULL',
+            '{schema}'
+            );
+            -- optional: default existing to 'sales'
+            EXECUTE format(
+            'UPDATE %I.customers SET customer_type = COALESCE(customer_type, ''sales'')',
+            '{schema}'
+            );
+        END IF;
+        END
+        $add_customers_customer_type$;
+        
         -- ==================================================
         -- PERIOD LOCKS
         -- ==================================================
@@ -37036,6 +37144,807 @@ class DatabaseService:
             },
         }
 
+    def build_lessor_period_journal(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        lease = self.get_lessor_lease(
+            company_id,
+            lessor_lease_id,
+            cur=cur,
+        )
+
+        if not lease:
+            raise ValueError("Lessor lease not found")
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND id=%s
+            AND is_active=TRUE
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+                int(schedule_id),
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError("Active lessor schedule period not found")
+
+        if row.get("recognition_journal_id"):
+            raise ValueError(
+                "Schedule period has already been posted"
+            )
+
+        classification = (
+            lease.get("lease_classification")
+            or "operating"
+        ).strip().lower()
+
+        lines = []
+
+        def money(value):
+            return round(float(value or 0), 2)
+
+        def add_line(code, debit=0, credit=0, memo=""):
+            debit = money(debit)
+            credit = money(credit)
+
+            if debit == 0 and credit == 0:
+                return
+
+            if not code:
+                raise ValueError(
+                    f"Missing GL account for: {memo}"
+                )
+
+            lines.append({
+                "account_code": str(code).strip(),
+                "debit": debit,
+                "credit": credit,
+                "memo": memo,
+            })
+
+        revenue_code = (
+            lease.get("revenue_account_code")
+            or ""
+        ).strip()
+
+        accrued_code = (
+            lease.get("accrued_rental_account_code")
+            or ""
+        ).strip()
+
+        deferred_code = (
+            lease.get("deferred_rental_account_code")
+            or ""
+        ).strip()
+
+        finance_income_code = (
+            lease.get("finance_income_account_code")
+            or ""
+        ).strip()
+
+        initial_direct_cost_code = (
+            lease.get("initial_direct_cost_expense_account_code")
+            or lease.get("direct_cost_expense_account_code")
+            or ""
+        ).strip()
+
+        if classification == "operating":
+            straight_line_income = money(
+                row.get("straight_line_income")
+            )
+
+            contractual_net = money(
+                row.get("contractual_net")
+            )
+
+            accrued_movement = money(
+                row.get("accrued_rental_movement")
+            )
+
+            deferred_movement = money(
+                row.get("deferred_rental_movement")
+            )
+
+            direct_cost_expense = money(
+                row.get("initial_direct_cost_expense")
+            )
+
+            # The invoice normally recognises contractual rental income.
+            # This journal posts only the straight-line difference.
+            adjustment = money(
+                straight_line_income - contractual_net
+            )
+
+            if adjustment > 0:
+                add_line(
+                    accrued_code,
+                    debit=adjustment,
+                    memo="Accrued rental asset movement",
+                )
+
+                add_line(
+                    revenue_code,
+                    credit=adjustment,
+                    memo="Straight-line operating lease income",
+                )
+
+            elif adjustment < 0:
+                amount = abs(adjustment)
+
+                add_line(
+                    revenue_code,
+                    debit=amount,
+                    memo="Straight-line rental income adjustment",
+                )
+
+                add_line(
+                    deferred_code,
+                    credit=amount,
+                    memo="Deferred rental liability movement",
+                )
+
+            # Prefer explicit schedule movements when supplied.
+            if adjustment == 0 and accrued_movement != 0:
+                if accrued_movement > 0:
+                    add_line(
+                        accrued_code,
+                        debit=accrued_movement,
+                        memo="Accrued rental asset movement",
+                    )
+                    add_line(
+                        revenue_code,
+                        credit=accrued_movement,
+                        memo="Operating lease income adjustment",
+                    )
+                else:
+                    amount = abs(accrued_movement)
+                    add_line(
+                        revenue_code,
+                        debit=amount,
+                        memo="Accrued rental reversal",
+                    )
+                    add_line(
+                        accrued_code,
+                        credit=amount,
+                        memo="Accrued rental asset reversal",
+                    )
+
+            if adjustment == 0 and deferred_movement != 0:
+                if deferred_movement > 0:
+                    add_line(
+                        revenue_code,
+                        debit=deferred_movement,
+                        memo="Operating lease income deferral",
+                    )
+                    add_line(
+                        deferred_code,
+                        credit=deferred_movement,
+                        memo="Deferred rental liability movement",
+                    )
+                else:
+                    amount = abs(deferred_movement)
+                    add_line(
+                        deferred_code,
+                        debit=amount,
+                        memo="Deferred rental liability release",
+                    )
+                    add_line(
+                        revenue_code,
+                        credit=amount,
+                        memo="Operating lease income release",
+                    )
+
+            if direct_cost_expense > 0:
+                deferred_cost_code = (
+                    lease.get(
+                        "deferred_initial_direct_cost_account_code"
+                    )
+                    or lease.get(
+                        "initial_direct_cost_asset_account_code"
+                    )
+                    or ""
+                ).strip()
+
+                add_line(
+                    initial_direct_cost_code,
+                    debit=direct_cost_expense,
+                    memo="Operating lease initial direct cost expense",
+                )
+
+                add_line(
+                    deferred_cost_code,
+                    credit=direct_cost_expense,
+                    memo="Amortisation of deferred initial direct costs",
+                )
+
+            source = "lessor_lease_operating_income"
+
+        elif classification == "finance":
+            finance_income = money(
+                row.get("finance_income")
+            )
+
+            if finance_income <= 0:
+                return None
+
+            current_code = (
+                lease.get(
+                    "net_investment_current_account_code"
+                )
+                or ""
+            ).strip()
+
+            noncurrent_code = (
+                lease.get(
+                    "net_investment_noncurrent_account_code"
+                )
+                or ""
+            ).strip()
+
+            opening_current = money(
+                row.get("current_portion")
+            )
+
+            net_investment_code = (
+                current_code
+                if opening_current > 0
+                else noncurrent_code
+            )
+
+            if not net_investment_code:
+                net_investment_code = (
+                    current_code or noncurrent_code
+                )
+
+            add_line(
+                net_investment_code,
+                debit=finance_income,
+                memo="Finance income added to net investment",
+            )
+
+            add_line(
+                finance_income_code,
+                credit=finance_income,
+                memo="Finance lease interest income",
+            )
+
+            source = "lessor_lease_finance_income"
+
+        else:
+            raise ValueError(
+                f"Unsupported lessor classification: {classification}"
+            )
+
+        if not lines:
+            return None
+
+        total_debit = money(
+            sum(float(x.get("debit") or 0) for x in lines)
+        )
+
+        total_credit = money(
+            sum(float(x.get("credit") or 0) for x in lines)
+        )
+
+        if total_debit != total_credit:
+            raise ValueError(
+                f"Unbalanced lessor period journal: "
+                f"debits={total_debit:.2f} "
+                f"credits={total_credit:.2f}"
+            )
+
+        period_end = row.get("period_end")
+
+        return {
+            "date": str(period_end)[:10],
+            "ref": (
+                f"LESSOR-{lessor_lease_id}-"
+                f"V{row.get('version_no') or 1}-"
+                f"P{row.get('period_no')}"
+            ),
+            "description": (
+                f"Lessor lease period recognition: "
+                f"{lease.get('contract_name') or lessor_lease_id}"
+            ),
+            "source": source,
+            "source_id": int(schedule_id),
+            "module_name": "ifrs16_lessor",
+            "currency": (
+                lease.get("currency")
+                or self.company_currency(company_id)
+            ),
+            "lines": lines,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "lessor_lease_id": int(lessor_lease_id),
+            "lessor_schedule_id": int(schedule_id),
+        }
+
+
+    def post_lessor_period(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        schedule_id: int,
+        *,
+        user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                lease = self.get_lessor_lease(
+                    company_id,
+                    lessor_lease_id,
+                    cur=cur,
+                )
+
+                if not lease:
+                    raise ValueError("Lessor lease not found")
+
+                if lease.get("status") not in {
+                    "commenced",
+                    "active",
+                }:
+                    raise ValueError(
+                        "Only commenced lessor leases can be posted"
+                    )
+
+                journal = self.build_lessor_period_journal(
+                    company_id,
+                    lessor_lease_id,
+                    schedule_id,
+                    cur=cur,
+                )
+
+                journal_id = None
+
+                if journal:
+                    journal.update({
+                        "prepared_by_user_id": user_id,
+                        "created_by_user_id": user_id,
+                        "updated_by_user_id": user_id,
+                    })
+
+                    journal_id = self.post_journal(
+                        company_id,
+                        journal,
+                        cur=cur,
+                        conn=conn,
+                    )
+
+                updated = self.fetch_one(
+                    f"""
+                    UPDATE {schema}.lessor_lease_schedule
+                    SET
+                        recognition_journal_id=%s,
+                        status='posted',
+                        posted_at=NOW(),
+                        posted_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND lessor_lease_id=%s
+                    AND id=%s
+                    AND recognition_journal_id IS NULL
+                    AND status<>'posted'
+                    RETURNING *
+                    """,
+                    (
+                        journal_id,
+                        user_id,
+                        int(company_id),
+                        int(lessor_lease_id),
+                        int(schedule_id),
+                    ),
+                    cur=cur,
+                )
+
+                if not updated:
+                    raise ValueError(
+                        "Schedule period was already posted "
+                        "or is no longer active"
+                    )
+
+                conn.commit()
+
+                return {
+                    "lease_id": int(lessor_lease_id),
+                    "schedule_id": int(schedule_id),
+                    "journal_id": journal_id,
+                    "journal": journal,
+                    "schedule": updated,
+                    "message": (
+                        "Lessor period journal posted"
+                        if journal_id
+                        else "Schedule period marked posted; "
+                        "no accounting adjustment was required"
+                    ),
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
+
+    def post_lessor_periods_through(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        through_date,
+        *,
+        user_id: int | None = None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        rows = self.fetch_all(
+            f"""
+            SELECT id
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND is_active=TRUE
+            AND period_end<=%s
+            AND recognition_journal_id IS NULL
+            AND status<>'posted'
+            ORDER BY period_no
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+                through_date,
+            ),
+        ) or []
+
+        posted = []
+
+        for row in rows:
+            posted.append(
+                self.post_lessor_period(
+                    company_id,
+                    lessor_lease_id,
+                    int(row["id"]),
+                    user_id=user_id,
+                )
+            )
+
+        return {
+            "lease_id": int(lessor_lease_id),
+            "through_date": str(through_date)[:10],
+            "periods_posted": len(posted),
+            "items": posted,
+        }
+
+    def build_lessor_day_one_journal(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        lease = self.get_lessor_lease(
+            company_id,
+            lessor_lease_id,
+            cur=cur,
+        )
+
+        if not lease:
+            raise ValueError("Lessor lease not found")
+
+        classification = (
+            lease.get("lease_classification") or ""
+        ).strip().lower()
+
+        if classification not in {"operating", "finance"}:
+            raise ValueError(
+                "Lease must be classified before commencement"
+            )
+
+        # Operating lessor leases retain the underlying asset.
+        # Rental income is recognised through the periodic schedule.
+        if classification == "operating":
+            return None
+
+        schedule = self.list_lessor_accounting_schedule(
+            company_id,
+            lessor_lease_id,
+            cur=cur,
+        )
+
+        if not schedule:
+            raise ValueError(
+                "Generate the lessor accounting schedule before commencement"
+            )
+
+        first = schedule[0]
+
+        net_investment = round(float(
+            first.get("opening_net_investment")
+            or lease.get("net_investment")
+            or 0
+        ), 2)
+
+        if net_investment <= 0:
+            raise ValueError(
+                "Opening net investment must be greater than zero"
+            )
+
+        current_portion = round(float(
+            first.get("current_portion") or 0
+        ), 2)
+
+        noncurrent_portion = round(float(
+            first.get("noncurrent_portion") or 0
+        ), 2)
+
+        if current_portion + noncurrent_portion == 0:
+            noncurrent_portion = net_investment
+
+        difference = round(
+            net_investment -
+            current_portion -
+            noncurrent_portion,
+            2,
+        )
+
+        noncurrent_portion = round(
+            noncurrent_portion + difference,
+            2,
+        )
+
+        carrying_amount = round(float(
+            lease.get("carrying_amount") or 0
+        ), 2)
+
+        if carrying_amount <= 0:
+            raise ValueError(
+                "Underlying asset carrying_amount is required"
+            )
+
+        current_code = (
+            lease.get("net_investment_current_account_code")
+            or ""
+        ).strip()
+
+        noncurrent_code = (
+            lease.get("net_investment_noncurrent_account_code")
+            or ""
+        ).strip()
+
+        asset_code = (
+            lease.get("underlying_asset_account_code")
+            or lease.get("asset_account_code")
+            or ""
+        ).strip()
+
+        gain_code = (
+            lease.get("disposal_gain_account_code")
+            or ""
+        ).strip()
+
+        loss_code = (
+            lease.get("disposal_loss_account_code")
+            or ""
+        ).strip()
+
+        if current_portion > 0 and not current_code:
+            raise ValueError(
+                "net_investment_current_account_code is required"
+            )
+
+        if noncurrent_portion > 0 and not noncurrent_code:
+            raise ValueError(
+                "net_investment_noncurrent_account_code is required"
+            )
+
+        if not asset_code:
+            raise ValueError(
+                "underlying_asset_account_code is required"
+            )
+
+        gain_loss = round(
+            net_investment - carrying_amount,
+            2,
+        )
+
+        if gain_loss > 0 and not gain_code:
+            raise ValueError(
+                "disposal_gain_account_code is required"
+            )
+
+        if gain_loss < 0 and not loss_code:
+            raise ValueError(
+                "disposal_loss_account_code is required"
+            )
+
+        lines = []
+
+        if current_portion > 0:
+            lines.append({
+                "account_code": current_code,
+                "debit": current_portion,
+                "credit": 0.0,
+                "memo": (
+                    "Current portion of net investment "
+                    "in finance lease"
+                ),
+            })
+
+        if noncurrent_portion > 0:
+            lines.append({
+                "account_code": noncurrent_code,
+                "debit": noncurrent_portion,
+                "credit": 0.0,
+                "memo": (
+                    "Non-current portion of net investment "
+                    "in finance lease"
+                ),
+            })
+
+        if gain_loss < 0:
+            lines.append({
+                "account_code": loss_code,
+                "debit": abs(gain_loss),
+                "credit": 0.0,
+                "memo": (
+                    "Loss on finance lease commencement"
+                ),
+            })
+
+        lines.append({
+            "account_code": asset_code,
+            "debit": 0.0,
+            "credit": carrying_amount,
+            "memo": (
+                "Derecognition of underlying asset "
+                "under finance lease"
+            ),
+        })
+
+        if gain_loss > 0:
+            lines.append({
+                "account_code": gain_code,
+                "debit": 0.0,
+                "credit": gain_loss,
+                "memo": (
+                    "Gain on finance lease commencement"
+                ),
+            })
+
+        commencement_date = (
+            lease.get("commencement_date")
+            or lease.get("start_date")
+        )
+
+        return {
+            "date": str(commencement_date)[:10],
+            "ref": f"LESSOR-COMMENCE-{lessor_lease_id}",
+            "description": (
+                f"Finance lease commencement: "
+                f"{lease.get('contract_name') or lessor_lease_id}"
+            ),
+            "source": "lessor_lease_commencement",
+            "source_id": int(lessor_lease_id),
+            "module_name": "ifrs16_lessor",
+            "currency": (
+                lease.get("currency")
+                or self.company_currency(company_id)
+            ),
+            "lines": lines,
+            "total_debit": round(
+                sum(float(x.get("debit") or 0) for x in lines),
+                2,
+            ),
+            "total_credit": round(
+                sum(float(x.get("credit") or 0) for x in lines),
+                2,
+            ),
+        }
+
+
+    def post_lessor_day_one_journal(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        commencement_date=None,
+        user_id: int | None = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            try:
+                lease = self.get_lessor_lease(
+                    company_id,
+                    lessor_lease_id,
+                    cur=cur,
+                )
+
+                if not lease:
+                    raise ValueError("Lessor lease not found")
+
+                if lease.get("commencement_journal_id"):
+                    raise ValueError(
+                        "Lessor lease has already been commenced"
+                    )
+
+                actual_date = (
+                    commencement_date
+                    or lease.get("commencement_date")
+                    or lease.get("start_date")
+                )
+
+                if not actual_date:
+                    raise ValueError(
+                        "commencement_date is required"
+                    )
+
+                journal = self.build_lessor_day_one_journal(
+                    company_id,
+                    lessor_lease_id,
+                    cur=cur,
+                )
+
+                journal_id = None
+
+                if journal:
+                    journal["date"] = str(actual_date)[:10]
+
+                    journal_id = self.post_journal(
+                        company_id,
+                        journal,
+                        cur=cur,
+                        conn=conn,
+                    )
+
+                updated = self.commence_lessor_lease(
+                    company_id,
+                    lessor_lease_id,
+                    commencement_date=actual_date,
+                    journal_id=journal_id,
+                    user_id=user_id,
+                    cur=cur,
+                )
+
+                if not updated:
+                    raise ValueError(
+                        "Lease could not be commenced from its current status"
+                    )
+
+                conn.commit()
+
+                return {
+                    "lease": updated,
+                    "journal_id": journal_id,
+                    "journal": journal,
+                    "classification": (
+                        updated.get("lease_classification")
+                    ),
+                    "message": (
+                        "Operating lease commenced without "
+                        "a day-one journal"
+                        if journal is None
+                        else "Finance lease commencement journal posted"
+                    ),
+                }
+
+            except Exception:
+                conn.rollback()
+                raise
+
     def get_lessor_lease(
         self,
         company_id: int,
@@ -37302,6 +38211,8 @@ class DatabaseService:
                 purchase_option_amount,
                 purchase_option_expected,
                 initial_direct_costs,
+                initial_direct_cost_expense_account_code,
+                initial_direct_cost_asset_account_code,
                 security_deposit_amount,
                 commencement_date,
                 useful_life_months,
@@ -37362,6 +38273,8 @@ class DatabaseService:
                 %(purchase_option_amount)s,
                 %(purchase_option_expected)s,
                 %(initial_direct_costs)s,
+                %(initial_direct_cost_expense_account_code)s,
+                %(initial_direct_cost_asset_account_code)s,
                 %(security_deposit_amount)s,
                 %(commencement_date)s,
                 %(useful_life_months)s,
@@ -100581,6 +101494,168 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "cash_received_to_date": cash_received,
             "taxable_revenue_to_date": taxable_to_date,
         }
+
+    def deferred_tax_get_lease_tax_treatment(
+        self,
+        company_id: int,
+        lease_id: int,
+    ) -> dict | None:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (_, cur):
+            row = self.fetch_one(f"""
+                SELECT
+                    r.*,
+                    l.lease_name,
+                    l.start_date AS lease_start_date,
+                    l.end_date AS lease_end_date
+                FROM {schema}.lease_tax_treatment_rules r
+                JOIN {schema}.leases l
+                ON l.id = r.lease_id
+                AND l.company_id = r.company_id
+                WHERE r.company_id = %s
+                AND r.lease_id = %s
+                LIMIT 1
+            """, (
+                company_id,
+                lease_id,
+            ), cur=cur)
+
+        return dict(row) if row else None
+        
+    def deferred_tax_update_lease_tax_treatment(
+        self,
+        company_id: int,
+        lease_id: int,
+        payload: dict,
+        user_id=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        basis = str(
+            payload.get("tax_deduction_basis") or ""
+        ).strip().lower()
+
+        allowed = {
+            "lease_payments",
+            "rou_asset",
+            "none",
+            "manual",
+        }
+
+        if basis not in allowed:
+            raise ValueError(
+                "Select a valid lease tax-deduction basis."
+            )
+
+        deduction_percent = self._money2(
+            payload.get("tax_deduction_percent", 100)
+        )
+
+        if deduction_percent < 0 or deduction_percent > 100:
+            raise ValueError(
+                "Tax deduction percentage must be between 0 and 100."
+            )
+
+        rou_override = payload.get(
+            "rou_tax_base_override"
+        )
+        liability_override = payload.get(
+            "liability_tax_base_override"
+        )
+
+        if basis == "manual":
+            if rou_override in (None, ""):
+                raise ValueError(
+                    "ROU asset tax base is required "
+                    "for manual treatment."
+                )
+
+            if liability_override in (None, ""):
+                raise ValueError(
+                    "Lease liability tax base is required "
+                    "for manual treatment."
+                )
+
+        with self._conn_cursor() as (conn, cur):
+            lease = self.fetch_one(f"""
+                SELECT id
+                FROM {schema}.leases
+                WHERE company_id = %s
+                AND id = %s
+                LIMIT 1
+            """, (
+                company_id,
+                lease_id,
+            ), cur=cur)
+
+            if not lease:
+                raise ValueError("Lease not found.")
+
+            cur.execute(f"""
+                INSERT INTO {schema}.lease_tax_treatment_rules (
+                    company_id,
+                    lease_id,
+                    tax_deduction_basis,
+                    tax_deduction_percent,
+                    rou_tax_base_override,
+                    liability_tax_base_override,
+                    tax_treatment_notes,
+                    review_status,
+                    reviewed_by_user_id,
+                    reviewed_at,
+                    created_by_user_id,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,
+                    'reviewed',%s,NOW(),%s,NOW()
+                )
+                ON CONFLICT (company_id, lease_id)
+                DO UPDATE SET
+                    tax_deduction_basis =
+                        EXCLUDED.tax_deduction_basis,
+                    tax_deduction_percent =
+                        EXCLUDED.tax_deduction_percent,
+                    rou_tax_base_override =
+                        EXCLUDED.rou_tax_base_override,
+                    liability_tax_base_override =
+                        EXCLUDED.liability_tax_base_override,
+                    tax_treatment_notes =
+                        EXCLUDED.tax_treatment_notes,
+                    review_status = 'reviewed',
+                    reviewed_by_user_id =
+                        EXCLUDED.reviewed_by_user_id,
+                    reviewed_at = NOW(),
+                    updated_at = NOW()
+                RETURNING *
+            """, (
+                company_id,
+                lease_id,
+                basis,
+                deduction_percent,
+                (
+                    self._money2(rou_override)
+                    if rou_override not in (None, "")
+                    else None
+                ),
+                (
+                    self._money2(liability_override)
+                    if liability_override not in (None, "")
+                    else None
+                ),
+                (
+                    payload.get("lease_tax_treatment_notes")
+                    or None
+                ),
+                user_id,
+                user_id,
+            ))
+
+            row = dict(cur.fetchone())
+            conn.commit()
+
+        return row
 
     def get_deferred_tax_posting_accounts(self, company_id: int) -> dict:
         settings = self.get_company_account_settings(company_id) or {}
