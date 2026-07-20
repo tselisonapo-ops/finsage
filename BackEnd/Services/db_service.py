@@ -15148,7 +15148,7 @@ class DatabaseService:
             gain_loss_amount NUMERIC(18,2) DEFAULT 0,
 
             status TEXT NOT NULL DEFAULT 'draft',
-            preview_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             posted_journal_id INT NULL,
             created_by_user_id INT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
