@@ -16,11 +16,19 @@ if (import.meta.env.DEV) {
   window.apiFetch = apiFetch;
 }
 
+export type LeaseWizardContext = {
+  mode?: "inception" | "existing";
+  leaseRole?: "lessee" | "lessor";
+  accountCode?: string;
+  accountName?: string;
+};
+
 type WizardHydrationMessage = {
   token?: string;
   companyId?: number | string;
   role?: string;
   type?: string;
+  ctx?: LeaseWizardContext;
 };
 
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
@@ -58,6 +66,25 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
 
   if (role) {
     localStorage.setItem("userRole", role);
+  }
+
+  if (data.ctx) {
+    sessionStorage.setItem(
+      "lease_wizard_context",
+      JSON.stringify(data.ctx)
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("lease-wizard-context", {
+        detail: {
+          ...data.ctx,
+          companyId:
+            companyId != null
+              ? Number(companyId)
+              : undefined,
+        },
+      })
+    );
   }
 });
 

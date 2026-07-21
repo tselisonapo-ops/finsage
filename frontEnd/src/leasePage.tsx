@@ -62,67 +62,76 @@ const LeasePage: React.FC = () => {
   );
 
   useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      const data = event.data || {};
-      const ctx = data.ctx || {};
-      const defaults = ctx.defaults || {};
-
-      if (data.companyId) {
-        setCompanyId(Number(data.companyId));
+    function applyContext(
+      context: {
+        companyId?: number;
+        leaseRole?: "lessee" | "lessor";
+        accountCode?: string;
       }
-
+    ) {
       const accountCode = String(
-        ctx.accountCode ||
-        ctx.account_code ||
-        ctx.selectedAccountCode ||
-        ctx.selected_account_code ||
-        defaults.accountCode ||
-        defaults.account_code ||
-        data.accountCode ||
-        data.account_code ||
-        ""
-      ).trim();
+        context.accountCode || ""
+      )
+        .trim()
+        .toUpperCase();
 
-      const accountRole = String(
-        ctx.accountRole ||
-        ctx.account_role ||
-        defaults.accountRole ||
-        defaults.account_role ||
-        data.accountRole ||
-        data.account_role ||
-        ""
-      ).trim();
+      const isLessorAccount = [
+        "BS_CA_1710",
+        "BS_NCA_1720",
+      ].includes(accountCode);
 
-      const explicitRole = String(
-        ctx.leaseRole ||
-        ctx.lease_role ||
-        data.leaseRole ||
-        data.lease_role ||
-        ""
-      ).toLowerCase();
+      setSelectedAccountCode(accountCode);
 
-      if (accountCode) {
-        setSelectedAccountCode(accountCode);
+      setLeaseRole(
+        context.leaseRole === "lessor" ||
+        isLessorAccount
+          ? "lessor"
+          : "lessee"
+      );
+
+      if (context.companyId) {
+        setCompanyId(context.companyId);
       }
 
-      if (
-        explicitRole === "lessor" ||
-        explicitRole === "lessee"
-      ) {
-        setLeaseRole(explicitRole);
-      } else {
-        setLeaseRole(
-          roleFromAccount(accountCode, accountRole)
+      console.log("[LEASE PAGE] applied context", {
+        accountCode,
+        leaseRole: context.leaseRole,
+        resolvedRole:
+          context.leaseRole === "lessor" ||
+          isLessorAccount
+            ? "lessor"
+            : "lessee",
+      });
+    }
+
+    function onContext(event: Event) {
+      const customEvent = event as CustomEvent;
+      applyContext(customEvent.detail || {});
+    }
+
+    window.addEventListener(
+      "lease-wizard-context",
+      onContext
+    );
+
+    const saved = sessionStorage.getItem(
+      "lease_wizard_context"
+    );
+
+    if (saved) {
+      try {
+        applyContext(JSON.parse(saved));
+      } catch {
+        sessionStorage.removeItem(
+          "lease_wizard_context"
         );
       }
     }
 
-    window.addEventListener("message", onMessage);
-
     return () => {
       window.removeEventListener(
-        "message",
-        onMessage
+        "lease-wizard-context",
+        onContext
       );
     };
   }, []);
