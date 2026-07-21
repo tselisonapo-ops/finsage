@@ -191,7 +191,7 @@ from BackEnd.Services.routes.payroll_routes import payroll_bp
 from BackEnd.Services.routes.forecast_routes import forecast_bp
 from BackEnd.Services.routes.deferred_tax_routes import deferred_tax_bp
 from BackEnd.Services.routes.payroll_employee_benefits_routes import payroll_employee_benefits_bp
-
+from BackEnd.Services.lessor_lease_routes import lessor_bp
 
 
 # ────────────────────────────────────────────────────────────────
@@ -337,6 +337,7 @@ app.register_blueprint(payroll_bp)
 app.register_blueprint(forecast_bp)
 app.register_blueprint(deferred_tax_bp)
 app.register_blueprint(payroll_employee_benefits_bp)
+app.register_blueprint(lessor_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
