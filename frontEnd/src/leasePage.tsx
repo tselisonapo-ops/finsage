@@ -1,141 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import LeaseWizard from "./components/leaseWizard";
 import LessorLeaseWizard from "./components/LessorLeaseWizard";
 import "./styles/lease.css";
 
 type LeaseRole = "lessee" | "lessor";
 
-const LESSOR_RECEIVABLE_ACCOUNTS = new Set([
-  "BS_CA_1710",
-  "BS_NCA_1720",
-]);
+type LeasePageProps = {
+  companyId: number;
+  mode: "inception" | "existing";
+  leaseRole: LeaseRole;
+  selectedAccountCode?: string;
+};
 
-function roleFromAccount(
-  accountCode?: string | null,
-  accountRole?: string | null
-): LeaseRole {
-  const code = String(accountCode || "")
-    .trim()
-    .toUpperCase();
-
-  const role = String(accountRole || "")
-    .trim()
-    .toLowerCase();
-
-  if (
-    LESSOR_RECEIVABLE_ACCOUNTS.has(code) ||
-    role === "lessor_net_investment_current" ||
-    role === "lessor_net_investment_noncurrent" ||
-    role === "lessor_lease_income"
-  ) {
-    return "lessor";
-  }
-
-  return "lessee";
-}
-
-const LeasePage: React.FC = () => {
-  const query = new URLSearchParams(window.location.search);
-
-  const initialAccountCode =
-    query.get("account_code") ||
-    query.get("accountCode") ||
-    "";
-
-  const initialAccountRole =
-    query.get("account_role") ||
-    query.get("accountRole") ||
-    "";
-
-  const [companyId, setCompanyId] = useState(
-    Number(query.get("company_id") || 1)
-  );
-
-  const [selectedAccountCode, setSelectedAccountCode] =
-    useState(initialAccountCode);
-
-  const [leaseRole, setLeaseRole] = useState<LeaseRole>(
-    roleFromAccount(
-      initialAccountCode,
-      initialAccountRole
-    )
-  );
-
-  useEffect(() => {
-    function applyContext(
-      context: {
-        companyId?: number;
-        leaseRole?: "lessee" | "lessor";
-        accountCode?: string;
-      }
-    ) {
-      const accountCode = String(
-        context.accountCode || ""
-      )
-        .trim()
-        .toUpperCase();
-
-      const isLessorAccount = [
-        "BS_CA_1710",
-        "BS_NCA_1720",
-      ].includes(accountCode);
-
-      setSelectedAccountCode(accountCode);
-
-      setLeaseRole(
-        context.leaseRole === "lessor" ||
-        isLessorAccount
-          ? "lessor"
-          : "lessee"
-      );
-
-      if (context.companyId) {
-        setCompanyId(context.companyId);
-      }
-
-      console.log("[LEASE PAGE] applied context", {
-        accountCode,
-        leaseRole: context.leaseRole,
-        resolvedRole:
-          context.leaseRole === "lessor" ||
-          isLessorAccount
-            ? "lessor"
-            : "lessee",
-      });
-    }
-
-    function onContext(event: Event) {
-      const customEvent = event as CustomEvent;
-      applyContext(customEvent.detail || {});
-    }
-
-    window.addEventListener(
-      "lease-wizard-context",
-      onContext
-    );
-
-    const saved = sessionStorage.getItem(
-      "lease_wizard_context"
-    );
-
-    if (saved) {
-      try {
-        applyContext(JSON.parse(saved));
-      } catch {
-        sessionStorage.removeItem(
-          "lease_wizard_context"
-        );
-      }
-    }
-
-    return () => {
-      window.removeEventListener(
-        "lease-wizard-context",
-        onContext
-      );
-    };
-  }, []);
-
+const LeasePage: React.FC<LeasePageProps> = ({
+  companyId,
+  mode,
+  leaseRole,
+  selectedAccountCode = "",
+}) => {
   const isLessor = leaseRole === "lessor";
 
   return (
@@ -149,25 +31,17 @@ const LeasePage: React.FC = () => {
           <h1 className="lease-page-title">
             {isLessor
               ? "Lessor lease setup"
-              : "Lease setup"}
+              : mode === "existing"
+                ? "Existing lease setup"
+                : "Lease setup"}
           </h1>
 
           <div className="lease-page-subtitle">
             {isLessor
-              ? (
-                <>
-                  Capture a lease granted to a customer,
-                  classify it and prepare the lessor
-                  accounting schedule.
-                </>
-              )
-              : (
-                <>
-                  Capture your lease, preview the
-                  amortisation schedule and opening IFRS
-                  16 journal, then post it to the ledger.
-                </>
-              )}
+              ? "Capture a lease granted to a customer, classify it and prepare the lessor accounting schedule."
+              : mode === "existing"
+                ? "Bring an existing lease onto FinSage and calculate the IFRS 16 opening balances at go-live."
+                : "Capture your lease, preview the amortisation schedule and opening IFRS 16 journal, then post it to the ledger."}
           </div>
         </div>
       </div>
@@ -177,9 +51,7 @@ const LeasePage: React.FC = () => {
           {isLessor ? (
             <LessorLeaseWizard
               companyId={companyId}
-              selectedAccountCode={
-                selectedAccountCode
-              }
+              selectedAccountCode={selectedAccountCode}
               defaultCurrentReceivableAccount="BS_CA_1710"
               defaultNonCurrentReceivableAccount="BS_NCA_1720"
               defaultLeaseIncomeAccount="PL_OI_4800"
@@ -190,6 +62,7 @@ const LeasePage: React.FC = () => {
           ) : (
             <LeaseWizard
               companyId={companyId}
+              mode={mode}
               defaultLeaseLiabilityAccount="BS_CL_2610"
               defaultRouAssetAccount="BS_NCA_1610"
               defaultInterestExpenseAccount="PL_OPEX_6029"
@@ -214,8 +87,7 @@ const LeasePage: React.FC = () => {
                     1. Create lease
                   </span>
                   <span>
-                    Save the agreement between your
-                    company and the customer.
+                    Save the agreement between your company and the customer.
                   </span>
                 </li>
 
@@ -224,8 +96,7 @@ const LeasePage: React.FC = () => {
                     2. Classify lease
                   </span>
                   <span>
-                    Determine whether the lease is an
-                    operating lease or finance lease.
+                    Determine whether the lease is an operating lease or finance lease.
                   </span>
                 </li>
 
@@ -234,8 +105,7 @@ const LeasePage: React.FC = () => {
                     3. Build schedule
                   </span>
                   <span>
-                    Generate rental income or net
-                    investment accounting periods.
+                    Generate rental income or net investment accounting periods.
                   </span>
                 </li>
 
@@ -244,8 +114,7 @@ const LeasePage: React.FC = () => {
                     4. Commence lease
                   </span>
                   <span>
-                    Post the applicable commencement
-                    journal after review.
+                    Post the applicable commencement journal after review.
                   </span>
                 </li>
               </ul>
@@ -264,8 +133,7 @@ const LeasePage: React.FC = () => {
                     1. Compute PV
                   </span>
                   <span>
-                    Calculate the present value of lease
-                    payments excluding VAT.
+                    Calculate the present value of lease payments excluding VAT.
                   </span>
                 </li>
 
@@ -274,8 +142,7 @@ const LeasePage: React.FC = () => {
                     2. Build schedule
                   </span>
                   <span>
-                    Generate opening balance, interest,
-                    principal and closing liability.
+                    Generate opening balance, interest, principal and closing liability.
                   </span>
                 </li>
 
@@ -284,8 +151,7 @@ const LeasePage: React.FC = () => {
                     3. ROU depreciation
                   </span>
                   <span>
-                    Apply depreciation to the
-                    right-of-use asset.
+                    Apply depreciation to the right-of-use asset.
                   </span>
                 </li>
 
