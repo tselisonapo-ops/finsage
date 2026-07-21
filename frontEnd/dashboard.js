@@ -10556,6 +10556,20 @@ const wizardMap = {
 
   // Open/close IFRS 16 wizard drawer
 function openLeaseWizard(ctx = {}) {
+  ctx = {
+    ...(window.__LEASE_WIZARD_PENDING_CONTEXT__ || {}),
+    ...ctx,
+    defaults: {
+      ...(window.__LEASE_WIZARD_PENDING_CONTEXT__?.defaults || {}),
+      ...(ctx.defaults || {}),
+    },
+    meta: {
+      ...(window.__LEASE_WIZARD_PENDING_CONTEXT__?.meta || {}),
+      ...(ctx.meta || {}),
+    },
+  };
+
+  window.__LEASE_WIZARD_PENDING_CONTEXT__ = null;
   const drawer = document.getElementById("leaseWizardDrawer");
   const frame = document.getElementById("leaseWizardFrame");
 
@@ -19252,6 +19266,10 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
     btnModule.textContent = msg.moduleLabel || "Open Workflow";
 
     const cleanup = () => {
+      if (modal.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+
       modal.classList.add("hidden");
       modal.setAttribute("aria-hidden", "true");
 
@@ -19293,11 +19311,45 @@ async function openModuleNudgeModal({ moduleKey, account, side, meta = {} }) {
         if (!postingDate) return;
       }
 
+      const accountCode = String(
+        account?.code || account?.account_code || ""
+      ).trim().toUpperCase();
+
+      const accountName = String(
+        account?.name || account?.account_name || ""
+      ).trim();
+
+      const isLessor = [
+        "BS_CA_1710",
+        "BS_NCA_1720",
+      ].includes(accountCode);
+
+      window.__LEASE_WIZARD_PENDING_CONTEXT__ = {
+        mode: isLessor ? "inception" : "existing",
+        leaseRole: isLessor ? "lessor" : "lessee",
+        accountCode,
+        accountName,
+        defaults: {
+          goLiveDate: postingDate,
+          postingDate,
+          source: "journal_guard",
+          journalSide: side || null,
+          moduleKey,
+        },
+        meta: {
+          account_code: accountCode,
+          account_name: accountName,
+          journal_side: side || "",
+          journal_ref: meta?.journal_ref || "",
+          journal_date: postingDate,
+        },
+      };
+
       setPostingContextDate(postingDate, {
         source: "journal-module-nudge",
         module_key: moduleKey,
-        account_code: account?.code || account?.account_code || "",
-        account_name: account?.name || "",
+        account_code: accountCode,
+        account_name: accountName,
         side: side || "",
         meta: meta || {},
       });
