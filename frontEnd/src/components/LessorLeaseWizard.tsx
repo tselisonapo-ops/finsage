@@ -1,8 +1,13 @@
-import React, {
+import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import {
+  fetchCompanyCoa,
+  type CoaAccount,
+} from "../api/coa";
 
 import { apiFetch } from "../api/apiFetch";
 
@@ -88,6 +93,15 @@ const LessorLeaseWizard: React.FC<Props> = ({
         ? "finance"
         : "operating";
 
+  const [coaAccounts, setCoaAccounts] =
+  useState<CoaAccount[]>([]);
+
+  const [coaLoading, setCoaLoading] =
+  useState(false);
+
+  const [coaError, setCoaError] =
+  useState("");
+
   const [customers, setCustomers] = useState<
     CustomerRow[]
   >([]);
@@ -105,13 +119,13 @@ const LessorLeaseWizard: React.FC<Props> = ({
   const [createdLeaseId, setCreatedLeaseId] =
     useState<number | null>(null);
 
-    type ScheduleResult = {
-    created_or_updated?: number;
-    items?: unknown[];
-    };
+  type ScheduleResult = {
+  created_or_updated?: number;
+  items?: unknown[];
+  };
 
-    const [scheduleResult, setScheduleResult] =
-    useState<ScheduleResult | null>(null);
+  const [scheduleResult, setScheduleResult] =
+  useState<ScheduleResult | null>(null);
 
   const [form, setForm] =
     useState<LessorLeasePayload>({
@@ -159,6 +173,45 @@ const LessorLeaseWizard: React.FC<Props> = ({
 
       notes: "",
     });
+
+useEffect(() => {
+  let cancelled = false;
+
+  async function loadCoa() {
+      setCoaLoading(true);
+      setCoaError("");
+
+      try {
+      const rows =
+          await fetchCompanyCoa(companyId);
+
+      if (!cancelled) {
+          setCoaAccounts(rows);
+      }
+      } catch (error) {
+      console.error(
+          "[LESSOR] Failed to load COA",
+          error
+      );
+
+      if (!cancelled) {
+          setCoaError(
+          "Could not load GL account names."
+          );
+      }
+      } finally {
+      if (!cancelled) {
+          setCoaLoading(false);
+      }
+      }
+  }
+
+  loadCoa();
+
+  return () => {
+      cancelled = true;
+  };
+  }, [companyId]);
 
   useEffect(() => {
     setForm((current) => ({
@@ -223,6 +276,207 @@ const LessorLeaseWizard: React.FC<Props> = ({
       active = false;
     };
   }, [companyId]);
+
+  const coaByCode = useMemo(() => {
+    return new Map(
+      coaAccounts.map((account) => [
+        String(account.code || "")
+          .trim()
+          .toUpperCase(),
+        account,
+      ])
+    );
+  }, [coaAccounts]);
+
+  function getAccount(
+    code?: string | null
+  ): CoaAccount | undefined {
+    return coaByCode.get(
+      String(code || "")
+        .trim()
+        .toUpperCase()
+    );
+  }
+
+  function getAccountName(
+    code?: string | null
+  ): string {
+    return (
+      getAccount(code)?.name ||
+      "Account not found"
+    );
+  }
+
+  function accountText(account: CoaAccount) {
+    return [
+      account.name,
+      account.role,
+      account.account_role,
+      account.section,
+      account.category,
+      account.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function sectionText(account: CoaAccount) {
+    return [
+      account.section,
+      account.category,
+      account.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  const relevantAccounts = useCallback(
+    (
+      keywords: string[],
+      fallbackSections: string[]
+    ) => {
+      const exactMatches = coaAccounts.filter(
+        (account) => {
+          const text = accountText(account);
+
+          return keywords.some((keyword) =>
+            text.includes(keyword)
+          );
+        }
+      );
+
+      if (exactMatches.length) {
+        return exactMatches;
+      }
+
+      return coaAccounts.filter((account) => {
+        const text = sectionText(account);
+
+        return fallbackSections.some(
+          (section) => text.includes(section)
+        );
+      });
+    },
+    [coaAccounts]
+  );
+
+  const currentLeaseReceivableAccounts =
+    useMemo(
+      () =>
+        relevantAccounts(
+          [
+            "lessor_net_investment_current",
+            "lease receivable current",
+            "current lease receivable",
+            "net investment current",
+          ],
+          ["current asset"]
+        ),
+      [relevantAccounts]
+    );
+
+  const nonCurrentLeaseReceivableAccounts =
+    useMemo(
+      () =>
+        relevantAccounts(
+          [
+            "lessor_net_investment_noncurrent",
+            "lease receivable non-current",
+            "lease receivable noncurrent",
+            "non-current lease receivable",
+            "net investment non-current",
+            "net investment noncurrent",
+          ],
+          ["non-current asset", "noncurrent asset"]
+        ),
+      [relevantAccounts]
+    );
+
+  const leaseIncomeAccounts = useMemo(
+    () =>
+      relevantAccounts(
+        [
+          "lessor_lease_income",
+          "lease income",
+          "rental income",
+          "lease revenue",
+        ],
+        ["income", "revenue"]
+      ),
+    [relevantAccounts]
+  );
+
+  const financeIncomeAccounts = useMemo(
+    () =>
+      relevantAccounts(
+        [
+          "lessor_finance_income",
+          "finance income",
+          "interest income",
+        ],
+        ["income", "revenue"]
+      ),
+    [relevantAccounts]
+  );
+
+  const accountsReceivableAccounts =
+    useMemo(
+      () =>
+        relevantAccounts(
+          [
+            "trade receivable",
+            "accounts receivable",
+            "customer receivable",
+            "debtors",
+          ],
+          ["current asset"]
+        ),
+      [relevantAccounts]
+    );
+
+  const vatOutputAccounts = useMemo(
+    () =>
+      relevantAccounts(
+        [
+          "vat output",
+          "output vat",
+          "vat payable",
+          "sales tax payable",
+        ],
+        ["current liability", "liability"]
+      ),
+    [relevantAccounts]
+  );
+
+  const securityDepositAccounts =
+    useMemo(
+      () =>
+        relevantAccounts(
+          [
+            "security deposit",
+            "deposit liability",
+            "customer deposit",
+            "refundable deposit",
+          ],
+          ["current liability", "liability"]
+        ),
+      [relevantAccounts]
+    );
+
+  function renderAccountOptions(
+    accounts: CoaAccount[]
+  ) {
+    return accounts.map((account) => (
+      <option
+        key={account.code}
+        value={account.code}
+      >
+        {account.name}
+      </option>
+    ));
+  }
 
   const termMonths = useMemo(() => {
     if (!form.start_date || !form.end_date) {
@@ -489,15 +743,17 @@ const LessorLeaseWizard: React.FC<Props> = ({
         </p>
 
         {selectedAccountCode && (
-        <div className="lease-trigger-account">
-            <div className="lease-trigger-account-label">
-            Triggering GL account
-            </div>
+          <div className="lessor-trigger-account">
+            <span>Triggering GL account</span>
 
-            <div className="lease-trigger-account-value">
-            {selectedAccountCode}
-            </div>
-        </div>
+            <strong>
+              {coaLoading
+                ? "Loading account…"
+                : getAccountName(
+                    selectedAccountCode
+                  )}
+            </strong>
+          </div>
         )}
 
         <div className="lease-grid-3">
@@ -760,11 +1016,16 @@ const LessorLeaseWizard: React.FC<Props> = ({
           <summary>Advanced GL mapping</summary>
 
           <div className="advanced-gl-note">
-            These accounts are used by the lessor
-            accounting engine. Lease receivables are
-            used for finance leases, while lease income
-            is used for operating leases.
+            FinSage has selected the relevant company
+            accounts for lessor accounting. You can
+            override them below.
           </div>
+
+          {coaError && (
+            <div className="error">
+              {coaError}
+            </div>
+          )}
 
           <div className="lease-grid-3 advanced-gl-grid">
             <div className="field-row">
@@ -772,7 +1033,7 @@ const LessorLeaseWizard: React.FC<Props> = ({
                 Lease receivable – current
               </label>
 
-              <input
+              <select
                 name="net_investment_current_account_code"
                 value={
                   form
@@ -780,7 +1041,18 @@ const LessorLeaseWizard: React.FC<Props> = ({
                   ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select current lease receivable..."}
+                </option>
+
+                {renderAccountOptions(
+                  currentLeaseReceivableAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
@@ -788,7 +1060,7 @@ const LessorLeaseWizard: React.FC<Props> = ({
                 Lease receivable – non-current
               </label>
 
-              <input
+              <select
                 name="net_investment_noncurrent_account_code"
                 value={
                   form
@@ -796,25 +1068,47 @@ const LessorLeaseWizard: React.FC<Props> = ({
                   ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select non-current lease receivable..."}
+                </option>
+
+                {renderAccountOptions(
+                  nonCurrentLeaseReceivableAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
               <label>Lease income</label>
 
-              <input
+              <select
                 name="revenue_account_code"
                 value={
                   form.revenue_account_code || ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select lease income account..."}
+                </option>
+
+                {renderAccountOptions(
+                  leaseIncomeAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
               <label>Finance income</label>
 
-              <input
+              <select
                 name="finance_income_account_code"
                 value={
                   form
@@ -822,32 +1116,66 @@ const LessorLeaseWizard: React.FC<Props> = ({
                   ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select finance income account..."}
+                </option>
+
+                {renderAccountOptions(
+                  financeIncomeAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
               <label>Accounts receivable</label>
 
-              <input
+              <select
                 name="ar_account_code"
                 value={
                   form.ar_account_code || ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select accounts receivable..."}
+                </option>
+
+                {renderAccountOptions(
+                  accountsReceivableAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
               <label>VAT output</label>
 
-              <input
+              <select
                 name="vat_output_account_code"
                 value={
                   form
-                    .vat_output_account_code || ""
+                    .vat_output_account_code ||
+                  ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select VAT output account..."}
+                </option>
+
+                {renderAccountOptions(
+                  vatOutputAccounts
+                )}
+              </select>
             </div>
 
             <div className="field-row">
@@ -855,7 +1183,7 @@ const LessorLeaseWizard: React.FC<Props> = ({
                 Security deposit account
               </label>
 
-              <input
+              <select
                 name="security_deposit_account_code"
                 value={
                   form
@@ -863,7 +1191,18 @@ const LessorLeaseWizard: React.FC<Props> = ({
                   ""
                 }
                 onChange={updateText}
-              />
+                disabled={coaLoading}
+              >
+                <option value="">
+                  {coaLoading
+                    ? "Loading accounts..."
+                    : "Select deposit liability account..."}
+                </option>
+
+                {renderAccountOptions(
+                  securityDepositAccounts
+                )}
+              </select>
             </div>
           </div>
         </details>

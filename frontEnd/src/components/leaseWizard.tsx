@@ -1,7 +1,15 @@
 // frontEnd/src/components/LeaseWizard.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { previewLease, createLease } from "../api/leases";
 import { apiFetch } from "../api/apiFetch";
+import {
+  fetchCompanyCoa,
+  type CoaAccount,
+} from "../api/coa";
 
 import type {
   LeaseWizardPayload,
@@ -53,30 +61,6 @@ async function fetchLessors(companyId: number): Promise<LessorRow[]> {
     .filter((r) => Number.isFinite(r.id) && r.id > 0);
 }
 
-// Simple label mapping (UI-only). Backend still receives codes.
-const ACCOUNT_LABELS: Record<string, string> = {
-  BS_NCA_1610: "Right-of-Use Asset",
-  BS_CL_2610: "Lease Liability - Current",
-  BS_NCL_2620: "Lease Liability - Non-Current",
-  PL_OPEX_7110: "Interest Expense",
-  PL_OPEX_6119: "Lease Amortization",
-  BS_CL_2200: "Direct costs offset",
-  PL_OPEX_6019: "Interest Expense (alt)", // keep if you use 6019 in UI
-};
-
-function labelForAccount(code?: string | null) {
-  const c = (code || "").trim();
-  if (!c) return "";
-  return ACCOUNT_LABELS[c] || "";
-}
-
-function formatAccount(code?: string | null) {
-  const c = (code || "").trim();
-  if (!c) return "";
-  const lbl = labelForAccount(c);
-  return lbl ? `${lbl} (${c})` : c;
-}
-
 const LeaseWizard: React.FC<LeaseWizardProps> = ({
   companyId,
   mode = "inception",
@@ -94,6 +78,15 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [coaAccounts, setCoaAccounts] =
+    useState<CoaAccount[]>([]);
+
+  const [coaLoading, setCoaLoading] =
+    useState(false);
+
+  const [coaError, setCoaError] =
+    useState("");
 
   const [lessors, setLessors] = useState<LessorRow[]>([]);
   const [auth, setAuth] = useState<{ token: string; companyId: number } | null>(
@@ -151,6 +144,211 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     setResult(null);
     setStep(1);
   }, [mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCoa() {
+      try {
+        setCoaLoading(true);
+        setCoaError("");
+
+        const rows =
+          await fetchCompanyCoa(companyId);
+
+        if (!cancelled) {
+          setCoaAccounts(rows);
+        }
+      } catch (err) {
+        console.error(
+          "[LESSEE] Failed to load COA",
+          err
+        );
+
+        if (!cancelled) {
+          setCoaError(
+            "Could not load company GL accounts."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setCoaLoading(false);
+        }
+      }
+    }
+
+    loadCoa();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  const coaByCode = useMemo(
+    () =>
+      new Map(
+        coaAccounts.map((account) => [
+          String(account.code || "")
+            .trim()
+            .toUpperCase(),
+          account,
+        ])
+      ),
+    [coaAccounts]
+  );
+
+  function accountName(
+    code?: string | null
+  ) {
+    return (
+      coaByCode.get(
+        String(code || "")
+          .trim()
+          .toUpperCase()
+      )?.name ||
+      "Account not found"
+    );
+  }
+
+  function accountText(account: CoaAccount) {
+    return [
+      account.name,
+      account.role,
+      account.account_role,
+      account.section,
+      account.category,
+      account.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function sectionText(account: CoaAccount) {
+    return [
+      account.section,
+      account.category,
+      account.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function relevantAccounts(
+    keywords: string[],
+    fallbackSections: string[]
+  ): CoaAccount[] {
+    const matches = coaAccounts.filter(
+      (account) => {
+        const text = accountText(account);
+
+        return keywords.some((keyword) =>
+          text.includes(keyword)
+        );
+      }
+    );
+
+    if (matches.length) {
+      return matches;
+    }
+
+    return coaAccounts.filter((account) => {
+      const text = sectionText(account);
+
+      return fallbackSections.some(
+        (section) => text.includes(section)
+      );
+    });
+  }
+
+  const leaseLiabilityAccounts =
+    relevantAccounts(
+      [
+        "lease liability",
+        "ifrs16 lease liability",
+        "lease_liability",
+      ],
+      [
+        "current liability",
+        "non-current liability",
+        "noncurrent liability",
+        "liability",
+      ]
+    );
+
+  const rouAssetAccounts =
+    relevantAccounts(
+      [
+        "right-of-use",
+        "right of use",
+        "rou asset",
+        "rou_asset",
+      ],
+      [
+        "non-current asset",
+        "noncurrent asset",
+      ]
+    );
+
+  const interestExpenseAccounts =
+    relevantAccounts(
+      [
+        "lease interest expense",
+        "interest expense",
+        "finance cost",
+      ],
+      [
+        "expense",
+      ]
+    );
+
+  const depreciationExpenseAccounts =
+    relevantAccounts(
+      [
+        "lease depreciation",
+        "rou depreciation",
+        "right-of-use depreciation",
+        "right of use depreciation",
+        "depreciation expense",
+        "amortisation expense",
+        "amortization expense",
+      ],
+      [
+        "expense",
+      ]
+    );
+
+  const directCostOffsetAccounts =
+    relevantAccounts(
+      [
+        "direct cost offset",
+        "accounts payable",
+        "trade payable",
+        "supplier payable",
+        "bank",
+        "cash",
+      ],
+      [
+        "current liability",
+        "liability",
+        "current asset",
+        "asset",
+      ]
+    );
+
+  function renderAccountOptions(
+    accounts: CoaAccount[]
+  ) {
+    return accounts.map((account) => (
+      <option
+        key={account.code}
+        value={account.code}
+      >
+        {account.name}
+      </option>
+    ));
+  }
 
   // 1) Receive token + companyId from parent (postMessage)
   useEffect(() => {
@@ -632,75 +830,136 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
         <summary>Advanced GL mapping</summary>
 
         <div className="advanced-gl-note">
-          FinSage will use the default IFRS 16 account mappings configured for your
-          company. Expand this section only if you want to override the defaults for
-          this lease.
+          FinSage has selected the relevant IFRS 16
+          accounts from your company chart of accounts.
         </div>
+
+        {coaError && (
+          <div className="error">
+            {coaError}
+          </div>
+        )}
 
         <div className="lease-grid-3 advanced-gl-grid">
           <div className="field-row">
             <label>Lease liability account</label>
-            <input
-              type="text"
+
+            <select
               name="lease_liability_account"
-              value={form.lease_liability_account}
+              value={
+                form.lease_liability_account
+              }
               onChange={handleChange}
-            />
-            <div className="text-xs account-helper">
-              {formatAccount(form.lease_liability_account)}
-            </div>
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select lease liability account..."}
+              </option>
+
+              {renderAccountOptions(
+                leaseLiabilityAccounts
+              )}
+            </select>
           </div>
 
           <div className="field-row">
             <label>ROU asset account</label>
-            <input
-              type="text"
+
+            <select
               name="rou_asset_account"
               value={form.rou_asset_account}
               onChange={handleChange}
-            />
-            <div className="text-xs account-helper">
-              {formatAccount(form.rou_asset_account)}
-            </div>
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select right-of-use asset account..."}
+              </option>
+
+              {renderAccountOptions(
+                rouAssetAccounts
+              )}
+            </select>
           </div>
 
           <div className="field-row">
             <label>Interest expense account</label>
-            <input
-              type="text"
+
+            <select
               name="interest_expense_account"
-              value={form.interest_expense_account || ""}
+              value={
+                form.interest_expense_account || ""
+              }
               onChange={handleChange}
-            />
-            <div className="text-xs account-helper">
-              {formatAccount(form.interest_expense_account)}
-            </div>
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select interest expense account..."}
+              </option>
+
+              {renderAccountOptions(
+                interestExpenseAccounts
+              )}
+            </select>
           </div>
 
           <div className="field-row">
-            <label>Depreciation expense account</label>
-            <input
-              type="text"
+            <label>
+              Depreciation expense account
+            </label>
+
+            <select
               name="depreciation_expense_account"
-              value={form.depreciation_expense_account || ""}
+              value={
+                form
+                  .depreciation_expense_account ||
+                ""
+              }
               onChange={handleChange}
-            />
-            <div className="text-xs account-helper">
-              {formatAccount(form.depreciation_expense_account)}
-            </div>
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select depreciation expense account..."}
+              </option>
+
+              {renderAccountOptions(
+                depreciationExpenseAccounts
+              )}
+            </select>
           </div>
 
           <div className="field-row">
-            <label>Direct costs offset account</label>
-            <input
-              type="text"
+            <label>
+              Direct costs offset account
+            </label>
+
+            <select
               name="direct_costs_offset_account"
-              value={form.direct_costs_offset_account || ""}
+              value={
+                form
+                  .direct_costs_offset_account ||
+                ""
+              }
               onChange={handleChange}
-            />
-            <div className="text-xs account-helper">
-              {formatAccount(form.direct_costs_offset_account)}
-            </div>
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select direct cost offset account..."}
+              </option>
+
+              {renderAccountOptions(
+                directCostOffsetAccounts
+              )}
+            </select>
           </div>
 
           <div className="field-row field-empty" />
@@ -825,8 +1084,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
             {preview.opening_journal.map((line: OpeningJournalLine, idx: number) => (
               <tr key={idx}>
                 <td>
-                  <div>{formatAccount(line.account_code)}</div>
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>{line.account_code}</div>
+                  {accountName(line.account_code)}
                 </td>
                 <td>{line.description}</td>
                 <td>{line.debit.toFixed(2)}</td>
