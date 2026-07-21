@@ -12,7 +12,8 @@ export type LessorLeasePayload = {
 
   start_date: string;
   end_date?: string | null;
-
+  lease_term_months?: number;
+  
   billing_amount: number;
   billing_basis: "gross" | "net";
   vat_rate: number;

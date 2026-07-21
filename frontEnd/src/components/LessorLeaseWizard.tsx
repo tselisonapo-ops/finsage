@@ -547,15 +547,20 @@ useEffect(() => {
       return "Start date is required.";
     }
 
-    if (!form.billing_amount) {
-      return "Billing amount must be greater than zero.";
+    if (!form.end_date) {
+      return "End date is required.";
     }
 
-    if (
-      form.end_date &&
-      form.end_date < form.start_date
-    ) {
+    if (form.end_date < form.start_date) {
       return "End date cannot be before start date.";
+    }
+
+    if (termMonths <= 0) {
+      return "Lease term must be greater than zero.";
+    }
+
+    if (!form.billing_amount) {
+      return "Billing amount must be greater than zero.";
     }
 
     return null;
@@ -574,10 +579,20 @@ useEffect(() => {
       setError(null);
       setPreview(null);
 
+      const payload: LessorLeasePayload = {
+        ...form,
+        lease_term_months: termMonths,
+      };
+
+      console.log(
+        "[LESSOR] classification payload",
+        payload
+      );
+
       const response =
         await previewLessorClassification(
           companyId,
-          form
+          payload
         );
 
       setPreview(response.data || {});
@@ -604,9 +619,19 @@ useEffect(() => {
       setLoading(true);
       setError(null);
 
+      const payload: LessorLeasePayload = {
+        ...form,
+        lease_term_months: termMonths,
+      };
+
+      console.log(
+        "[LESSOR] create payload",
+        payload
+      );
+
       const response = await createLessorLease(
         companyId,
-        form
+        payload
       );
 
       const leaseId = Number(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from flask import Blueprint, current_app, g, jsonify, make_response, request
 
@@ -62,12 +62,73 @@ def _date(value, name: str, required: bool = True):
     except Exception:
         raise ValueError(f"{name} must be YYYY-MM-DD")
 
+def _lease_term_months(
+    start_date,
+    end_date,
+) -> int:
+    if not start_date or not end_date:
+        return 0
+
+    if isinstance(start_date, str):
+        start_date = _date(
+            start_date,
+            "start_date",
+        )
+
+    if isinstance(end_date, str):
+        end_date = _date(
+            end_date,
+            "end_date",
+        )
+
+    if end_date < start_date:
+        return 0
+
+    months = (
+        (end_date.year - start_date.year) * 12
+        + end_date.month
+        - start_date.month
+    )
+
+    if end_date.day > start_date.day:
+        months += 1
+
+    return max(months, 0)
 
 def _lessor_payload(data: dict) -> dict:
     if not isinstance(data, dict):
-        raise ValueError("JSON body must be an object")
+        raise ValueError(
+            "JSON body must be an object"
+        )
 
-    contract_name = (data.get("contract_name") or "").strip()
+    start_date = _date(
+        data.get("start_date"),
+        "start_date",
+    )
+
+    end_date = _date(
+        data.get("end_date"),
+        "end_date",
+        False,
+    )
+
+    lease_term_months = int(
+        data.get("lease_term_months")
+        or _lease_term_months(
+            start_date,
+            end_date,
+        )
+        or 0
+    )
+
+    if end_date and lease_term_months <= 0:
+        raise ValueError(
+            "lease_term_months must be greater than zero"
+        )
+
+    contract_name = (
+        data.get("contract_name") or ""
+    ).strip()
 
     if not contract_name:
         raise ValueError("contract_name is required")
@@ -114,8 +175,9 @@ def _lessor_payload(data: dict) -> dict:
         "contract_name": contract_name,
         "customer_id": customer_id,
         "asset_id": int(data["asset_id"]) if data.get("asset_id") else None,
-        "start_date": _date(data.get("start_date"), "start_date"),
-        "end_date": _date(data.get("end_date"), "end_date", False),
+        "start_date": start_date,
+        "end_date": end_date,
+        "lease_term_months": lease_term_months,
         "billing_amount": amount,
         "billing_basis": basis,
         "vat_rate": float(data.get("vat_rate") or 0.0),
@@ -288,10 +350,38 @@ def classify_lessor_lease(company_id: int):
         return deny
 
     try:
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(
+            silent=True
+        ) or {}
 
-        result = lessor_lease_engine.classify_and_validate(
-            data
+        start_date = _date(
+            data.get("start_date"),
+            "start_date",
+        )
+
+        end_date = _date(
+            data.get("end_date"),
+            "end_date",
+            False,
+        )
+
+        data["lease_term_months"] = int(
+            data.get("lease_term_months")
+            or _lease_term_months(
+                start_date,
+                end_date,
+            )
+            or 0
+        )
+
+        if data["lease_term_months"] <= 0:
+            raise ValueError(
+                "lease_term_months must be greater than zero"
+            )
+
+        result = (
+            lessor_lease_engine
+            .classify_and_validate(data)
         )
 
         return jsonify({
