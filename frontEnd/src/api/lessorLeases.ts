@@ -78,6 +78,28 @@ export type LessorLeasePayload = {
   notes?: string | null;
 };
 
+export type LessorClassificationPayload = Pick<
+  LessorLeasePayload,
+  | "asset_id"
+  | "lease_term_months"
+  | "underlying_asset_description"
+  | "underlying_asset_account_code"
+  | "underlying_asset_carrying_amount"
+  | "underlying_asset_fair_value"
+  | "economic_life_months"
+  | "guaranteed_residual_value"
+  | "unguaranteed_residual_value"
+  | "initial_direct_costs"
+  | "interest_rate_implicit"
+  | "ownership_transfers"
+  | "purchase_option_reasonably_certain"
+  | "specialised_asset"
+  | "classification_override"
+  | "classification_override_reason"
+  | "manufacturer_dealer_lessor"
+  | "lease_classification"
+>;
+
 export type FinanceLeasePreviewRow = {
   period_no: number;
 
@@ -220,7 +242,7 @@ export async function createLessorLease(
 
 export async function previewLessorClassification(
   companyId: number,
-  payload: LessorLeasePayload
+  payload: LessorClassificationPayload
 ): Promise<LessorClassificationResponse> {
   return apiFetch(
     `/api/companies/${companyId}` +

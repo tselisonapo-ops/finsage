@@ -14,9 +14,9 @@ import "../styles/lease.css";
 import {
   createLessorLease,
   generateLessorAccountingSchedule,
+  previewLessorClassification,
   previewLessorTerms,
 } from "../api/lessorLeases";
-
 import type {
   FinanceLeaseTermsPreview,
   OperatingLeaseTermsPreview,
@@ -995,16 +995,33 @@ useEffect(() => {
       return "Lease term must be greater than zero.";
     }
 
-    if (!form.billing_amount) {
-      return "Billing amount must be greater than zero.";
+    if (
+      Number(form.lease_term_months || 0) &&
+      termMonths !==
+        Number(form.lease_term_months)
+    ) {
+      return (
+        "The agreement dates produce a " +
+        `${termMonths}-month term, but Step 1 ` +
+        `was classified using ` +
+        `${form.lease_term_months} months. ` +
+        "Return to Step 1 and update the expected lease term."
+      );
+    }
+
+    if (
+      form.lease_classification ===
+        "operating" &&
+      Number(form.billing_amount || 0) <= 0
+    ) {
+      return "Contractual rental must be greater than zero for an operating lease.";
     }
 
     return null;
   }
 
-  async function handlePreview() {
-    const validationError =
-      validateStep1();
+  async function handleClassification() {
+    const validationError = validateStep1();
 
     if (validationError) {
       setError(validationError);
@@ -1014,16 +1031,141 @@ useEffect(() => {
     try {
       setLoading(true);
       setError(null);
-
       setClassificationPreview(null);
+      setTermsPreview(null);
+
+      const response =
+        await previewLessorClassification(
+          companyId,
+          {
+            asset_id: form.asset_id,
+
+            underlying_asset_description:
+              form.underlying_asset_description,
+
+            underlying_asset_account_code:
+              form.underlying_asset_account_code,
+
+            underlying_asset_carrying_amount:
+              Number(
+                form
+                  .underlying_asset_carrying_amount ||
+                0
+              ),
+
+            underlying_asset_fair_value:
+              Number(
+                form
+                  .underlying_asset_fair_value ||
+                0
+              ),
+
+            economic_life_months:
+              Number(
+                form.economic_life_months || 0
+              ),
+
+            lease_term_months:
+              Number(
+                form.lease_term_months || 0
+              ),
+
+            guaranteed_residual_value:
+              Number(
+                form.guaranteed_residual_value ||
+                0
+              ),
+
+            unguaranteed_residual_value:
+              Number(
+                form.unguaranteed_residual_value ||
+                0
+              ),
+
+            initial_direct_costs:
+              Number(
+                form.initial_direct_costs || 0
+              ),
+
+            interest_rate_implicit:
+              Number(
+                form.interest_rate_implicit || 0
+              ),
+
+            ownership_transfers:
+              Boolean(
+                form.ownership_transfers
+              ),
+
+            purchase_option_reasonably_certain:
+              Boolean(
+                form
+                  .purchase_option_reasonably_certain
+              ),
+
+            specialised_asset:
+              Boolean(form.specialised_asset),
+
+            classification_override:
+              Boolean(
+                form.classification_override
+              ),
+
+            classification_override_reason:
+              form.classification_override_reason,
+
+            manufacturer_dealer_lessor:
+              manufacturerDealerConfirmed,
+
+            lease_classification:
+              form.lease_classification,
+          }
+        );
+
+      setClassificationPreview(
+        response.data
+      );
+
+      setForm((current) => ({
+        ...current,
+
+        lease_classification:
+          response.data.classification,
+
+        manufacturer_dealer_lessor:
+          manufacturerDealerConfirmed,
+      }));
+
+      setStep(2);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Lease classification failed"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAccountingPreview() {
+    const validationError =
+      validateStep2();
+
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
       setTermsPreview(null);
 
       const payload: LessorLeasePayload = {
         ...form,
 
-        lease_term_months: Number(
-          form.lease_term_months || 0
-        ),
+        lease_term_months: termMonths,
 
         manufacturer_dealer_lessor:
           manufacturerDealerConfirmed,
@@ -1043,15 +1185,12 @@ useEffect(() => {
         response.terms
       );
 
-      const resolvedClassification =
-        response.classification
-          .classification;
-
       setForm((current) => ({
         ...current,
 
         lease_classification:
-          resolvedClassification,
+          response.classification
+            .classification,
 
         billing_amount:
           response.terms.classification ===
@@ -1060,12 +1199,12 @@ useEffect(() => {
             : current.billing_amount,
       }));
 
-      setStep(2);
+      setStep(3);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Lease calculation preview failed"
+          : "Accounting preview failed"
       );
     } finally {
       setLoading(false);
@@ -1078,6 +1217,13 @@ useEffect(() => {
 
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!termsPreview) {
+      setError(
+        "Calculate and review the accounting preview before creating the lease."
+      );
       return;
     }
 
@@ -1514,28 +1660,6 @@ useEffect(() => {
         </div>
 
         <div className="field-row">
-          <label>
-            Contractual rental per period
-          </label>
-
-          <input
-            type="number"
-            name="billing_amount"
-            value={form.billing_amount}
-            onChange={updateNumber}
-            min="0"
-            step="0.01"
-            placeholder="Required for operating leases"
-          />
-
-          <small className="field-help">
-            Used to build the operating lease income
-            schedule. For finance leases, FinSage will
-            replace this with the calculated payment.
-          </small>
-        </div>
-
-        <div className="field-row">
           <label>Payment frequency *</label>
 
           <select
@@ -1763,12 +1887,12 @@ useEffect(() => {
       <div className="wizard-buttons">
         <button
           type="button"
-          onClick={handlePreview}
+          onClick={handleClassification}
           disabled={loading}
         >
-        {loading
-          ? "Calculating..."
-          : "Calculate lease terms"}
+          {loading
+            ? "Classifying..."
+            : "Calculate classification"}
         </button>
       </div>
     </div>
@@ -1838,7 +1962,7 @@ useEffect(() => {
     );
   }
 
-  const renderStep2 = () => {
+  const renderStep3 = () => {
     const operatingPreview =
       termsPreview?.classification === "operating"
         ? termsPreview as OperatingLeaseTermsPreview
@@ -1869,11 +1993,11 @@ useEffect(() => {
       <div className="lease-step lease-step-2">
         <div className="lessor-step-heading">
           <span className="lessor-step-number">
-            Step 2 of 3
+            Step 3 of 3
           </span>
 
           <h2>
-            Net investment and payment preview
+            Agreement and billing terms
           </h2>
 
           <p>
@@ -2519,33 +2643,32 @@ useEffect(() => {
             type="button"
             onClick={() => {
               setError(null);
-              setStep(1);
+              setStep(2);
             }}
             disabled={loading}
           >
-            Back
+            Back to agreement
           </button>
 
           <button
             type="button"
-            onClick={() => {
-              setError(null);
-              setStep(3);
-            }}
+            onClick={handleCreate}
             disabled={loading}
           >
-            Accept calculation and continue
+            {loading
+              ? "Creating lease..."
+              : "Create lessor lease"}
           </button>
         </div>
       </div>
     );
   };
 
-  const renderStep3 = () => (
+  const renderStep2 = () => (
     <div className="lease-step lease-step-2">
       <div className="lessor-step-heading">
         <span className="lessor-step-number">
-          Step 3 of 3
+           Step 2 of 3
         </span>
 
         <h2>
@@ -2712,7 +2835,10 @@ useEffect(() => {
 
         <div className="field-row">
           <label>
-            Billing amount per period
+            {form.lease_classification ===
+            "operating"
+              ? "Contractual rental per period *"
+              : "Calculated payment per period"}
           </label>
 
           <input
@@ -2721,19 +2847,25 @@ useEffect(() => {
             value={form.billing_amount}
             onChange={updateNumber}
             readOnly={
-              form.lease_classification === "finance"
+              form.lease_classification ===
+              "finance"
             }
+            min="0"
             step="0.01"
+            placeholder={
+              form.lease_classification ===
+              "operating"
+                ? "Enter contractual rental"
+                : "Calculated in the next step"
+            }
           />
 
-          {form.lease_classification ===
-            "finance" && (
-            <small className="field-help">
-              Calculated from the net investment,
-              implicit interest rate, lease term and
-              residual values.
-            </small>
-          )}
+          <small className="field-help">
+            {form.lease_classification ===
+            "operating"
+              ? "Used to calculate contractual and straight-line operating lease income."
+              : "FinSage will calculate the finance lease payment from the net investment, rate and residual values."}
+          </small>
         </div>
 
         <div className="field-row">
@@ -3111,7 +3243,7 @@ useEffect(() => {
           type="button"
           onClick={() => {
             setError(null);
-            setStep(2);
+            setStep(1);
           }}
           disabled={loading}
         >
@@ -3120,82 +3252,16 @@ useEffect(() => {
 
         <button
           type="button"
-          onClick={handleCreate}
+          onClick={handleAccountingPreview}
           disabled={loading}
         >
           {loading
-            ? "Creating..."
-            : "Create lessor lease"}
+            ? "Calculating..."
+            : "Calculate accounting preview"}
         </button>
       </div>
     </div>
   );
-
-  if (createdLeaseId) {
-    return (
-      <div className="lease-wizard">
-        <div className="lease-step lease-step-3">
-          <h2>Lessor lease created</h2>
-
-          <p>
-            The lessor lease was created successfully.
-          </p>
-
-          <div className="summary-cards">
-            <div className="card">
-              <div className="label">
-                Lease ID
-              </div>
-
-              <div className="value">
-                {createdLeaseId}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="label">
-                Classification
-              </div>
-
-              <div className="value">
-                {form.lease_classification}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="label">
-                Schedule periods
-              </div>
-
-              <div className="value">
-                {Number(
-                  scheduleResult
-                    ?.created_or_updated ||
-                    scheduleResult?.items?.length ||
-                    0
-                )}
-              </div>
-            </div>
-          </div>
-
-          <p>
-            The lease remains ready for review and
-            commencement. No customer invoice has been
-            created.
-          </p>
-
-          <div className="wizard-buttons">
-            <button
-              type="button"
-              onClick={resetForm}
-            >
-              Create another lessor lease
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
