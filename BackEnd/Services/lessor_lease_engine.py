@@ -42,12 +42,15 @@ class FinanceLeasePeriod:
     period_start: date
     period_end: date
     payment_date: date
+
     opening_net_investment: float
     lease_payment: float
     finance_income: float
     principal_reduction: float
     closing_net_investment: float
 
+    current_portion: float = 0.0
+    noncurrent_portion: float = 0.0
 
 @dataclass
 class OperatingLeasePeriod:
@@ -565,6 +568,119 @@ class LessorLeaseEngine:
     # FINANCE LEASE
     # =========================================================
 
+    @staticmethod
+    def _current_period_count(
+        frequency: str,
+    ) -> int:
+        values = {
+            "weekly": 52,
+            "monthly": 12,
+            "quarterly": 4,
+            "annually": 1,
+        }
+
+        frequency = (
+            frequency or "monthly"
+        ).strip().lower()
+
+        if frequency not in values:
+            raise ValueError(
+                f"Unsupported frequency: {frequency}"
+            )
+
+        return values[frequency]
+
+
+    @classmethod
+    def _receivable_split(
+        cls,
+        schedule: List[Dict[str, Any]],
+        *,
+        opening_net_investment: Any,
+        frequency: str,
+        start_index: int = 0,
+    ) -> tuple[Decimal, Decimal]:
+        opening = cls._decimal(
+            opening_net_investment
+        )
+
+        if opening <= 0:
+            return (
+                Decimal("0.00"),
+                Decimal("0.00"),
+            )
+
+        current_periods = (
+            cls._current_period_count(
+                frequency
+            )
+        )
+
+        end_index = min(
+            start_index + current_periods,
+            len(schedule),
+        )
+
+        current = sum(
+            (
+                cls._decimal(
+                    schedule[index].get(
+                        "principal_reduction"
+                    )
+                )
+                for index in range(
+                    start_index,
+                    end_index,
+                )
+            ),
+            Decimal("0"),
+        )
+
+        current = max(
+            Decimal("0"),
+            min(current, opening),
+        )
+
+        noncurrent = max(
+            Decimal("0"),
+            opening - current,
+        )
+
+        return (
+            cls._money_decimal(current),
+            cls._money_decimal(noncurrent),
+        )
+
+
+    @classmethod
+    def _apply_receivable_splits(
+        cls,
+        schedule: List[Dict[str, Any]],
+        *,
+        frequency: str,
+    ) -> List[Dict[str, Any]]:
+        for index, row in enumerate(schedule):
+            current, noncurrent = (
+                cls._receivable_split(
+                    schedule,
+                    opening_net_investment=row.get(
+                        "opening_net_investment"
+                    ),
+                    frequency=frequency,
+                    start_index=index,
+                )
+            )
+
+            row["current_portion"] = float(
+                current
+            )
+
+            row["noncurrent_portion"] = float(
+                noncurrent
+            )
+
+        return schedule
+
     def preview_lessor_terms(
         self,
         data: Dict[str, Any],
@@ -852,6 +968,53 @@ class LessorLeaseEngine:
 
             opening = closing
 
+            rows = self._apply_receivable_splits(
+                rows,
+                frequency=frequency,
+            )
+
+            opening_current = self._decimal(
+                rows[0].get("current_portion")
+                if rows
+                else 0
+            )
+
+            opening_noncurrent = self._decimal(
+                rows[0].get("noncurrent_portion")
+                if rows
+                else 0
+            )
+
+            finance_income_next_12_months = sum(
+                (
+                    self._decimal(
+                        row.get("finance_income")
+                    )
+                    for row in rows[
+                        :self._current_period_count(
+                            frequency
+                        )
+                    ]
+                ),
+                Decimal("0"),
+            )
+
+            principal_next_12_months = sum(
+                (
+                    self._decimal(
+                        row.get(
+                            "principal_reduction"
+                        )
+                    )
+                    for row in rows[
+                        :self._current_period_count(
+                            frequency
+                        )
+                    ]
+                ),
+                Decimal("0"),
+            )
+
         gross_investment = (
             sum(
                 self._decimal(
@@ -930,6 +1093,42 @@ class LessorLeaseEngine:
                         unguaranteed_residual
                     )
                 ),
+
+            "current_net_investment": float(
+                self._money_decimal(
+                    opening_current
+                )
+            ),
+
+            "noncurrent_net_investment": float(
+                self._money_decimal(
+                    opening_noncurrent
+                )
+            ),
+
+            "current_portion": float(
+                self._money_decimal(
+                    opening_current
+                )
+            ),
+
+            "noncurrent_portion": float(
+                self._money_decimal(
+                    opening_noncurrent
+                )
+            ),
+
+            "finance_income_next_12_months": float(
+                self._money_decimal(
+                    finance_income_next_12_months
+                )
+            ),
+
+            "principal_next_12_months": float(
+                self._money_decimal(
+                    principal_next_12_months
+                )
+            ),
 
             "schedule": rows,
         }
@@ -1280,15 +1479,23 @@ class LessorLeaseEngine:
 
             opening = closing
 
-        return [
-            {
-                **asdict(row),
-                "period_start": row.period_start.isoformat(),
-                "period_end": row.period_end.isoformat(),
-                "payment_date": row.payment_date.isoformat(),
-            }
-            for row in rows
-        ]
+            result = [
+                {
+                    **asdict(row),
+                    "period_start":
+                        row.period_start.isoformat(),
+                    "period_end":
+                        row.period_end.isoformat(),
+                    "payment_date":
+                        row.payment_date.isoformat(),
+                }
+                for row in rows
+            ]
+
+            return self._apply_receivable_splits(
+                result,
+                frequency=frequency,
+            )
 
     def finance_lease_summary(
         self,
@@ -1319,6 +1526,26 @@ class LessorLeaseEngine:
             else Decimal("0")
         )
 
+        current_portion = (
+            self._decimal(
+                schedule[0].get(
+                    "current_portion"
+                )
+            )
+            if schedule
+            else Decimal("0")
+        )
+
+        noncurrent_portion = (
+            self._decimal(
+                schedule[0].get(
+                    "noncurrent_portion"
+                )
+            )
+            if schedule
+            else Decimal("0")
+        )
+
         unearned_finance_income = (
             gross_investment - initial_net_investment
         )
@@ -1332,6 +1559,29 @@ class LessorLeaseEngine:
             "initial_net_investment": float(
                 self._money_decimal(
                     initial_net_investment
+                )
+            ),
+            "current_net_investment": float(
+                self._money_decimal(
+                    current_portion
+                )
+            ),
+
+            "noncurrent_net_investment": float(
+                self._money_decimal(
+                    noncurrent_portion
+                )
+            ),
+
+            "current_portion": float(
+                self._money_decimal(
+                    current_portion
+                )
+            ),
+
+            "noncurrent_portion": float(
+                self._money_decimal(
+                    noncurrent_portion
                 )
             ),
             "unearned_finance_income": float(

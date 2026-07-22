@@ -476,3 +476,204 @@ button:hover:not(:disabled) {
 .lessor-schedule-table tbody tr:hover {
   background: rgba(13, 148, 136, 0.035);
 }
+
+.lessor-accounting-summary {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.lessor-metric-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(13, 148, 136, 0.07),
+      rgba(255, 255, 255, 0.96)
+    );
+}
+
+.lessor-metric-card span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.62;
+}
+
+.lessor-metric-card strong {
+  overflow: hidden;
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lessor-metric-card small {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  opacity: 0.65;
+}
+
+.lessor-preview-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.lessor-preview-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.lessor-preview-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.lessor-preview-card-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.lessor-preview-card-head p {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  opacity: 0.65;
+}
+
+.lessor-preview-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.lessor-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.lessor-mini-table th,
+.lessor-mini-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  font-size: 0.77rem;
+}
+
+.lessor-mini-table th {
+  background: rgba(248, 250, 252, 0.7);
+  text-align: left;
+}
+
+.lessor-mini-table th:last-child,
+.lessor-mini-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lessor-mini-table .total-row td {
+  border-top: 1px solid rgba(15, 23, 42, 0.15);
+  border-bottom: 0;
+  font-weight: 700;
+}
+
+.lessor-schedule-card {
+  margin-top: 16px;
+}
+
+.lessor-schedule-table-wrap {
+  max-height: 355px;
+  overflow: auto;
+}
+
+.lessor-schedule-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.lessor-schedule-table col.period-column {
+  width: 70px;
+}
+
+.lessor-schedule-table th,
+.lessor-schedule-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+  font-size: 0.75rem;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.lessor-schedule-table th:first-child,
+.lessor-schedule-table td:first-child {
+  text-align: center;
+}
+
+.lessor-schedule-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.lessor-schedule-table tbody tr:nth-child(even) {
+  background: rgba(248, 250, 252, 0.65);
+}
+
+.lessor-schedule-table tbody tr:hover {
+  background: rgba(13, 148, 136, 0.055);
+}
+
+.lessor-schedule-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  border-top: 1px solid rgba(15, 23, 42, 0.16);
+  border-bottom: 0;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+@media (max-width: 1050px) {
+  .lessor-accounting-summary {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .lessor-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .lessor-accounting-summary {
+    grid-template-columns: 1fr;
+  }
+}

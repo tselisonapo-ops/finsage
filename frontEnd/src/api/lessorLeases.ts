@@ -80,11 +80,15 @@ export type LessorLeasePayload = {
 
 export type FinanceLeasePreviewRow = {
   period_no: number;
+
   opening_net_investment: number;
   lease_payment: number;
   finance_income: number;
   principal_reduction: number;
   closing_net_investment: number;
+
+  current_portion: number;
+  noncurrent_portion: number;
 };
 
 export type LessorClassificationResult = {
@@ -119,8 +123,18 @@ export type FinanceLeaseTermsPreview = {
   target_net_investment: number;
   gross_investment: number;
   initial_net_investment: number;
+
+  current_net_investment: number;
+  noncurrent_net_investment: number;
+
+  current_portion: number;
+  noncurrent_portion: number;
+
   unearned_finance_income: number;
   total_finance_income: number;
+
+  finance_income_next_12_months: number;
+  principal_next_12_months: number;
 
   annual_interest_rate: number;
   periodic_interest_rate: number;
