@@ -1054,3 +1054,37 @@ button {
     width: 100%;
   }
 }
+
+.lessor-manufacturer-card {
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.05);
+}
+
+.lessor-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lessor-checkbox-row input {
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.lessor-checkbox-row span {
+  line-height: 1.4;
+}
+
+.field-help {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.75;
+}

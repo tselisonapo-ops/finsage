@@ -13,7 +13,28 @@ export type LessorLeasePayload = {
   start_date: string;
   end_date?: string | null;
   lease_term_months?: number;
+
+  underlying_asset_description?: string | null;
+  underlying_asset_account_code?: string | null;
+
+  underlying_asset_carrying_amount?: number;
+  underlying_asset_fair_value?: number;
+  economic_life_months?: number;
   
+  guaranteed_residual_value?: number;
+  unguaranteed_residual_value?: number;
+  initial_direct_costs?: number;
+
+  interest_rate_implicit?: number;
+
+  ownership_transfers?: boolean;
+  purchase_option_reasonably_certain?: boolean;
+  specialised_asset?: boolean;
+
+  classification_override?: boolean;
+  classification_override_reason?: string | null;
+
+  manufacturer_dealer_lessor?: boolean;
   billing_amount: number;
   billing_basis: "gross" | "net";
   vat_rate: number;

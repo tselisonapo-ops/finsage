@@ -23012,17 +23012,10 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS initial_direct_cost_expense_account_code TEXT NULL,
         ADD COLUMN IF NOT EXISTS initial_direct_cost_asset_account_code TEXT NULL;
 
-        ALTER TABLE {schema}.lessor_lease_bills
-        ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
-        ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
-
-        ALTER TABLE {schema}.lessor_lease_receipts
-        ADD COLUMN IF NOT EXISTS receipt_id INT NULL,
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
-
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS
+        manufacturer_dealer_lessor BOOLEAN NOT NULL DEFAULT FALSE; 
+        
         DO $fk_lessor_commencement_journal$
         BEGIN
             IF NOT EXISTS (
@@ -23494,6 +23487,12 @@ class DatabaseService:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        ALTER TABLE {schema}.lessor_lease_bills
+        ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
+        ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
         -- Checks
         DO $ck_lessor_lease_bills_valid$
         BEGIN
@@ -23611,6 +23610,11 @@ class DatabaseService:
             created_by INT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        ALTER TABLE {schema}.lessor_lease_receipts
+        ADD COLUMN IF NOT EXISTS receipt_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
 
         -- Checks
         DO $ck_lessor_lease_receipts_valid$
@@ -38207,6 +38211,7 @@ class DatabaseService:
             "classification_payload": Json(
                 payload.get("classification_payload") or {}
             ),
+            "manufacturer_dealer_lessor": (payload.get("manufacturer_dealer_lessor", False))
         }
 
         row = self.fetch_one(
@@ -38252,6 +38257,7 @@ class DatabaseService:
                 substantially_all_threshold,
                 classification_reason,
                 classification_payload,
+                manufacturer_dealer_lessor
 
                 revenue_account_code,
                 vat_output_account_code,
@@ -38314,6 +38320,7 @@ class DatabaseService:
                 %(substantially_all_threshold)s,
                 %(classification_reason)s,
                 %(classification_payload)s,
+                %(manufacturer_dealer_lessor)s,
                 
                 %(revenue_account_code)s,
                 %(vat_output_account_code)s,

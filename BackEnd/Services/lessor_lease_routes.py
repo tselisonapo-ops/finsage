@@ -95,6 +95,145 @@ def _lease_term_months(
 
     return max(months, 0)
 
+def _bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+
+    return str(value or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _number(
+    value,
+    name: str,
+    *,
+    minimum=None,
+) -> float:
+    try:
+        result = float(value or 0)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name} must be a valid number"
+        )
+
+    if minimum is not None and result < minimum:
+        raise ValueError(
+            f"{name} cannot be less than {minimum}"
+        )
+
+    return result
+
+
+def _classification_payload(
+    data: dict,
+) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError(
+            "JSON body must be an object"
+        )
+
+    lease_term_months = int(
+        data.get("lease_term_months") or 0
+    )
+
+    if lease_term_months <= 0:
+        raise ValueError(
+            "lease_term_months must be greater than zero"
+        )
+
+    override_enabled = _bool(
+        data.get("classification_override")
+    )
+
+    requested_classification = (
+        data.get("lease_classification")
+        or ""
+    ).strip().lower()
+
+    if (
+        requested_classification
+        and requested_classification
+        not in {"finance", "operating"}
+    ):
+        raise ValueError(
+            "Invalid lease_classification"
+        )
+
+    return {
+        **data,
+
+        "lease_term_months":
+            lease_term_months,
+
+        "economic_life_months": int(
+            data.get("economic_life_months")
+            or 0
+        ),
+
+        "fair_value": _number(
+            data.get(
+                "underlying_asset_fair_value",
+                data.get("fair_value"),
+            ),
+            "underlying_asset_fair_value",
+            minimum=0,
+        ),
+
+        "pv_lease_payments": _number(
+            data.get(
+                "present_value_lease_payments",
+                data.get("pv_lease_payments"),
+            ),
+            "present_value_lease_payments",
+            minimum=0,
+        ),
+
+        "transfer_of_ownership": _bool(
+            data.get(
+                "ownership_transfers",
+                data.get(
+                    "transfer_of_ownership"
+                ),
+            )
+        ),
+
+        "purchase_option_reasonably_certain":
+            _bool(
+                data.get(
+                    "purchase_option_reasonably_certain"
+                )
+            ),
+
+        "specialised_asset": _bool(
+            data.get("specialised_asset")
+        ),
+
+        "manufacturer_dealer_lessor":
+            _bool(
+                data.get(
+                    "manufacturer_dealer_lessor"
+                )
+            ),
+
+        "classification_override": (
+            requested_classification
+            if override_enabled
+            else ""
+        ),
+
+        "classification_override_reason": (
+            data.get(
+                "classification_override_reason"
+            )
+            or ""
+        ).strip() or None,
+    }
+
 def _lessor_payload(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError(
@@ -170,11 +309,161 @@ def _lessor_payload(data: dict) -> dict:
     if classification not in {"operating", "finance"}:
         raise ValueError("Invalid lease_classification")
 
+    asset_description = (
+        data.get(
+            "underlying_asset_description"
+        ) or ""
+    ).strip()
+
+    if not asset_description:
+        raise ValueError(
+            "underlying_asset_description is required"
+        )
+
+    fair_value = _number(
+        data.get(
+            "underlying_asset_fair_value"
+        ),
+        "underlying_asset_fair_value",
+        minimum=0,
+    )
+
+    if fair_value <= 0:
+        raise ValueError(
+            "underlying_asset_fair_value "
+            "must be greater than zero"
+        )
+
+    economic_life_months = int(
+        data.get("economic_life_months")
+        or 0
+    )
+
+    if economic_life_months <= 0:
+        raise ValueError(
+            "economic_life_months "
+            "must be greater than zero"
+        )
     return {
         "contract_no": (data.get("contract_no") or "").strip() or None,
         "contract_name": contract_name,
         "customer_id": customer_id,
         "asset_id": int(data["asset_id"]) if data.get("asset_id") else None,
+        "underlying_asset_description": (
+            data.get(
+                "underlying_asset_description"
+            ) or ""
+        ).strip() or None,
+
+        "underlying_asset_account_code": (
+            data.get(
+                "underlying_asset_account_code"
+            ) or ""
+        ).strip() or None,
+
+        "underlying_asset_carrying_amount":
+            _number(
+                data.get(
+                    "underlying_asset_carrying_amount"
+                ),
+                "underlying_asset_carrying_amount",
+                minimum=0,
+            ),
+
+        "underlying_asset_fair_value":
+            _number(
+                data.get(
+                    "underlying_asset_fair_value"
+                ),
+                "underlying_asset_fair_value",
+                minimum=0,
+            ),
+
+        "fair_value": _number(
+            data.get(
+                "underlying_asset_fair_value",
+                data.get("fair_value"),
+            ),
+            "fair_value",
+            minimum=0,
+        ),
+
+        "economic_life_months": int(
+            data.get("economic_life_months")
+            or 0
+        ),
+
+        "guaranteed_residual_value":
+            _number(
+                data.get(
+                    "guaranteed_residual_value"
+                ),
+                "guaranteed_residual_value",
+                minimum=0,
+            ),
+
+        "unguaranteed_residual_value":
+            _number(
+                data.get(
+                    "unguaranteed_residual_value"
+                ),
+                "unguaranteed_residual_value",
+                minimum=0,
+            ),
+
+        "initial_direct_costs":
+            _number(
+                data.get(
+                    "initial_direct_costs"
+                ),
+                "initial_direct_costs",
+                minimum=0,
+            ),
+
+        "interest_rate_implicit":
+            _number(
+                data.get(
+                    "interest_rate_implicit"
+                ),
+                "interest_rate_implicit",
+                minimum=0,
+            ),
+
+        "implicit_interest_rate":
+            _number(
+                data.get(
+                    "interest_rate_implicit",
+                    data.get(
+                        "implicit_interest_rate"
+                    ),
+                ),
+                "implicit_interest_rate",
+                minimum=0,
+            ),
+
+        "ownership_transfers": _bool(
+            data.get("ownership_transfers")
+        ),
+
+        "transfer_of_ownership": _bool(
+            data.get(
+                "ownership_transfers",
+                data.get(
+                    "transfer_of_ownership"
+                ),
+            )
+        ),
+
+        "purchase_option_reasonably_certain":
+            _bool(
+                data.get(
+                    "purchase_option_reasonably_certain"
+                )
+            ),
+
+        "specialised_asset": _bool(
+            data.get("specialised_asset")
+        ),
         "start_date": start_date,
         "end_date": end_date,
         "lease_term_months": lease_term_months,
@@ -222,6 +511,25 @@ def _lessor_payload(data: dict) -> dict:
             else None
         ),
         "lease_classification": classification,
+        "manufacturer_dealer_lessor":
+            _bool(
+                data.get(
+                    "manufacturer_dealer_lessor"
+                )
+            ),
+
+        "classification_override":
+            _bool(
+                data.get(
+                    "classification_override"
+                )
+            ),
+
+        "classification_override_reason": (
+            data.get(
+                "classification_override_reason"
+            ) or ""
+        ).strip() or None,
         "currency": (data.get("currency") or "").strip() or None,
         "payment_terms_days": int(data.get("payment_terms_days") or 0),
         "security_deposit_amount": float(
@@ -342,7 +650,9 @@ def lessor_lease_detail(company_id: int, lease_id: int):
 @require_auth
 def classify_lessor_lease(company_id: int):
     if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
+        return _corsify(
+            make_response("", 204)
+        )
 
     _, deny = _auth(company_id)
 
@@ -350,38 +660,17 @@ def classify_lessor_lease(company_id: int):
         return deny
 
     try:
-        data = request.get_json(
+        raw = request.get_json(
             silent=True
         ) or {}
 
-        start_date = _date(
-            data.get("start_date"),
-            "start_date",
+        payload = _classification_payload(
+            raw
         )
-
-        end_date = _date(
-            data.get("end_date"),
-            "end_date",
-            False,
-        )
-
-        data["lease_term_months"] = int(
-            data.get("lease_term_months")
-            or _lease_term_months(
-                start_date,
-                end_date,
-            )
-            or 0
-        )
-
-        if data["lease_term_months"] <= 0:
-            raise ValueError(
-                "lease_term_months must be greater than zero"
-            )
 
         result = (
             lessor_lease_engine
-            .classify_and_validate(data)
+            .classify_and_validate(payload)
         )
 
         return jsonify({
@@ -389,20 +678,20 @@ def classify_lessor_lease(company_id: int):
             "data": result,
         }), 200
 
-    except ValueError as e:
+    except ValueError as exc:
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": str(exc),
         }), 400
 
-    except Exception as e:
+    except Exception as exc:
         current_app.logger.exception(
             "classify_lessor_lease failed"
         )
 
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": str(exc),
         }), 500
     
 @lessor_bp.route(

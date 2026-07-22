@@ -239,6 +239,9 @@ class LessorLeaseEngine:
 
         fair_value = self._decimal(
             data.get("fair_value")
+            or data.get(
+                "underlying_asset_fair_value"
+            )
         )
 
         pv = self._decimal(
@@ -271,6 +274,7 @@ class LessorLeaseEngine:
         indicators = {
             "ownership_transfers": self._bool(
                 data.get("transfer_of_ownership")
+                or data.get("ownership_transfers")
             ),
             "purchase_option_reasonably_certain": self._bool(
                 data.get("purchase_option_expected")
@@ -297,9 +301,24 @@ class LessorLeaseEngine:
             else "operating"
         )
 
-        override = str(
-            data.get("classification_override") or ""
-        ).strip().lower()
+        raw_override = data.get(
+            "classification_override"
+        )
+
+        if isinstance(raw_override, bool):
+            override = (
+                str(
+                    data.get(
+                        "lease_classification"
+                    ) or ""
+                ).strip().lower()
+                if raw_override
+                else ""
+            )
+        else:
+            override = str(
+                raw_override or ""
+            ).strip().lower()
 
         override_reason = str(
             data.get("classification_override_reason") or ""
@@ -588,7 +607,12 @@ class LessorLeaseEngine:
 
         annual_rate = self._annual_rate(
             lease.get("discount_rate")
-            or lease.get("implicit_interest_rate")
+            or lease.get(
+                "implicit_interest_rate"
+            )
+            or lease.get(
+                "interest_rate_implicit"
+            )
         )
 
         periods_per_year = self._periods_per_year(

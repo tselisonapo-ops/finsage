@@ -287,6 +287,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "manufacturer_dealer_lessor_capable": True,
     },
     "Restaurant": {
         "pnl_layout": "trading_hunter",
@@ -341,6 +342,7 @@ INDUSTRY_PROFILES: Dict[str, Dict[str, object]] = {
         "default_inventory_mode": "internal",
         "default_valuation": "fifo",
         "pos_mode": "retail",
+        "manufacturer_dealer_lessor_capable": True,
     },
     "Agriculture": {
         "pnl_layout": "trading_hunter",
@@ -470,6 +472,12 @@ def get_industry_profile(industry: Optional[str], sub_industry: Optional[str]) -
     return {
         "key": key,
         "is_service_only": bool(profile.get("is_service_only", False)),
+        "manufacturer_dealer_lessor_capable": bool(
+            profile.get(
+                "manufacturer_dealer_lessor_capable",
+                False,
+            )
+        ),
         "uses_inventory": bool(profile.get("uses_inventory", False)),
         "uses_cogs": bool(profile.get("uses_cogs", False)),
         "default_inventory_mode": profile.get("default_inventory_mode", "none"),

@@ -29,6 +29,49 @@ type CustomerRow = {
   trading_name?: string;
 };
 
+type WizardStep = 1 | 2;
+
+type CompanyIndustryProfile = {
+  manufacturer_dealer_lessor_capable?: boolean;
+};
+
+type CompanyProfile = {
+  id: number;
+  name?: string;
+  industry?: string;
+  industry_slug?: string;
+  sub_industry?: string;
+  sub_industry_slug?: string;
+  industry_profile?: CompanyIndustryProfile;
+};
+
+type ClassificationPreview = {
+  classification?: LessorClassification;
+  proposed_classification?: LessorClassification;
+
+  lease_term_months?: number;
+  economic_life_months?: number;
+
+  lease_term_ratio?: number;
+  fair_value?: number;
+  present_value_lease_payments?: number;
+  pv_fair_value_ratio?: number;
+
+  overridden?: boolean;
+  override_reason?: string | null;
+
+  reasons?: string[];
+  warnings?: string[];
+
+  indicators?: {
+    major_part_of_economic_life?: boolean;
+    ownership_transfers?: boolean;
+    purchase_option_reasonably_certain?: boolean;
+    specialised_asset?: boolean;
+    substantially_all_fair_value?: boolean;
+  };
+};
+
 type Props = {
   companyId: number;
   selectedAccountCode?: string;
@@ -93,6 +136,9 @@ const LessorLeaseWizard: React.FC<Props> = ({
         ? "finance"
         : "operating";
 
+  const [step, setStep] =
+    useState<WizardStep>(1);
+    
   const [coaAccounts, setCoaAccounts] =
   useState<CoaAccount[]>([]);
 
@@ -101,6 +147,22 @@ const LessorLeaseWizard: React.FC<Props> = ({
 
   const [coaError, setCoaError] =
   useState("");
+
+  const [companyProfile, setCompanyProfile] =
+    useState<CompanyProfile | null>(null);
+
+  const [loadingCompanyProfile, setLoadingCompanyProfile] =
+    useState(false);
+
+  const [
+    manufacturerDealerSuggested,
+    setManufacturerDealerSuggested,
+  ] = useState(false);
+
+  const [
+    manufacturerDealerConfirmed,
+    setManufacturerDealerConfirmed,
+  ] = useState(false);
 
   const [customers, setCustomers] = useState<
     CustomerRow[]
@@ -114,7 +176,7 @@ const LessorLeaseWizard: React.FC<Props> = ({
     useState<string | null>(null);
 
   const [preview, setPreview] =
-    useState<Record<string, unknown> | null>(null);
+    useState<ClassificationPreview | null>(null);
 
   const [createdLeaseId, setCreatedLeaseId] =
     useState<number | null>(null);
@@ -133,10 +195,29 @@ const LessorLeaseWizard: React.FC<Props> = ({
       contract_name: "",
       customer_id: null,
       asset_id: null,
+      underlying_asset_description: "",
+      underlying_asset_account_code: null,
+
+      underlying_asset_carrying_amount: 0,
+      underlying_asset_fair_value: 0,
+      economic_life_months: 0,
+      lease_term_months: 0,
+      guaranteed_residual_value: 0,
+      unguaranteed_residual_value: 0,
+      initial_direct_costs: 0,
+
+      interest_rate_implicit: 0,
+
+      ownership_transfers: false,
+      purchase_option_reasonably_certain: false,
+      specialised_asset: false,
+
+      classification_override: false,
+      classification_override_reason: "",
 
       start_date: "",
       end_date: "",
-
+      
       billing_amount: 0,
       billing_basis: "gross",
       vat_rate: 0,
@@ -147,6 +228,8 @@ const LessorLeaseWizard: React.FC<Props> = ({
 
       lease_classification:
         initialClassification,
+
+      manufacturer_dealer_lessor: false,
 
       payment_terms_days: 0,
       currency: "",
@@ -211,6 +294,115 @@ useEffect(() => {
   return () => {
       cancelled = true;
   };
+  }, [companyId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCompanyProfile() {
+      if (!companyId) return;
+
+      try {
+        setLoadingCompanyProfile(true);
+
+        const response = await apiFetch(
+          `/api/companies/${companyId}`,
+          {
+            method: "GET",
+          }
+        ) as CompanyProfile | {
+          item?: CompanyProfile;
+          data?: CompanyProfile;
+        };
+
+        if (!active) return;
+
+        const company =
+          "item" in response && response.item
+            ? response.item
+            : "data" in response && response.data
+              ? response.data
+              : response as CompanyProfile;
+
+        setCompanyProfile(company);
+
+        const industry = String(
+          company.industry || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const industrySlug = String(
+          company.industry_slug || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const profileFlag = Boolean(
+          company.industry_profile
+            ?.manufacturer_dealer_lessor_capable
+        );
+
+        const fallbackDetected =
+          industry === "car dealership" ||
+          industry === "manufacturing" ||
+          industrySlug === "car_dealership" ||
+          industrySlug === "manufacturing";
+
+        const suggested =
+          profileFlag || fallbackDetected;
+
+        setManufacturerDealerSuggested(
+          suggested
+        );
+
+        setManufacturerDealerConfirmed(
+          suggested
+        );
+
+        setForm((current) => ({
+          ...current,
+          manufacturer_dealer_lessor:
+            suggested,
+        }));
+
+        console.log(
+          "[LESSOR] company industry detection",
+          {
+            industry: company.industry,
+            industrySlug:
+              company.industry_slug,
+            profileFlag,
+            suggested,
+          }
+        );
+      } catch (err) {
+        console.error(
+          "[LESSOR] Failed to load company profile",
+          err
+        );
+
+        if (!active) return;
+
+        setManufacturerDealerSuggested(
+          false
+        );
+
+        setManufacturerDealerConfirmed(
+          false
+        );
+      } finally {
+        if (active) {
+          setLoadingCompanyProfile(false);
+        }
+      }
+    }
+
+    loadCompanyProfile();
+
+    return () => {
+      active = false;
+    };
   }, [companyId]);
 
   useEffect(() => {
@@ -534,7 +726,73 @@ useEffect(() => {
     }));
   }
 
-  function validate() {
+  function updateCheckbox(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const { name, checked } = event.target;
+
+    setForm((current) => ({
+      ...current,
+      [name]: checked,
+    }));
+  }
+
+function validateStep1() {
+  if (
+    !String(
+      form.underlying_asset_description || ""
+    ).trim()
+  ) {
+    return "Underlying asset description is required.";
+  }
+
+  if (
+    Number(
+      form.underlying_asset_carrying_amount || 0
+    ) < 0
+  ) {
+    return "Asset carrying amount cannot be negative.";
+  }
+
+  if (
+    Number(
+      form.underlying_asset_fair_value || 0
+    ) <= 0
+  ) {
+    return "Underlying asset fair value must be greater than zero.";
+  }
+
+  if (
+    Number(form.lease_term_months || 0) <= 0
+  ) {
+    return "Lease term must be greater than zero.";
+  }
+
+  if (
+    Number(form.economic_life_months || 0) <= 0
+  ) {
+    return "Economic life must be greater than zero.";
+  }
+
+  if (
+    Number(form.interest_rate_implicit || 0) < 0
+  ) {
+    return "Implicit interest rate cannot be negative.";
+  }
+
+  if (
+    form.classification_override &&
+    !String(
+      form.classification_override_reason || ""
+    ).trim()
+  ) {
+    return "Enter a reason for the classification override.";
+  }
+
+  return null;
+}
+
+  function validateStep2() {
     if (!form.contract_name.trim()) {
       return "Contract name is required.";
     }
@@ -567,7 +825,8 @@ useEffect(() => {
   }
 
   async function handlePreview() {
-    const validationError = validate();
+    const validationError =
+      validateStep1();
 
     if (validationError) {
       setError(validationError);
@@ -581,7 +840,12 @@ useEffect(() => {
 
       const payload: LessorLeasePayload = {
         ...form,
-        lease_term_months: termMonths,
+
+        lease_term_months:
+          Number(form.lease_term_months || 0),
+
+        manufacturer_dealer_lessor:
+          manufacturerDealerConfirmed,
       };
 
       console.log(
@@ -595,7 +859,29 @@ useEffect(() => {
           payload
         );
 
-      setPreview(response.data || {});
+      const result = response.data || {};
+
+      setPreview(
+        result as ClassificationPreview
+      );
+
+      const resolvedClassification =
+        (
+          result.classification ||
+          result.proposed_classification
+        ) as LessorClassification | undefined;
+
+      if (resolvedClassification) {
+        setForm((current) => ({
+          ...current,
+          lease_classification:
+            current.classification_override
+              ? current.lease_classification
+              : resolvedClassification,
+        }));
+      }
+
+      setStep(2);
     } catch (err) {
       setError(
         err instanceof Error
@@ -608,7 +894,8 @@ useEffect(() => {
   }
 
   async function handleCreate() {
-    const validationError = validate();
+    const validationError =
+      validateStep2();
 
     if (validationError) {
       setError(validationError);
@@ -622,6 +909,8 @@ useEffect(() => {
       const payload: LessorLeasePayload = {
         ...form,
         lease_term_months: termMonths,
+        manufacturer_dealer_lessor:
+          manufacturerDealerConfirmed,
       };
 
       console.log(
@@ -674,6 +963,8 @@ useEffect(() => {
       ...current,
       contract_no: "",
       contract_name: "",
+      manufacturer_dealer_lessor:
+        manufacturerDealerSuggested,
       customer_id: null,
       asset_id: null,
       start_date: "",
@@ -684,7 +975,405 @@ useEffect(() => {
     }));
   }
 
+  const renderStep1 = () => (
+    <div className="lease-step lease-step-1">
+      <div className="lessor-step-heading">
+        <span className="lessor-step-number">
+          Step 1 of 2
+        </span>
+
+        <h2>
+          Underlying asset and classification
+        </h2>
+
+        <p>
+          Capture the underlying asset and the IFRS 16
+          classification indicators before entering the
+          customer agreement.
+        </p>
+      </div>
+
+      {selectedAccountCode && (
+        <div className="lessor-trigger-account">
+          <span>Triggering GL account</span>
+
+          <strong>
+            {coaLoading
+              ? "Loading account…"
+              : getAccountName(
+                  selectedAccountCode
+                )}
+          </strong>
+        </div>
+      )}
+
+      <div className="lease-grid-3">
+        <div className="field-row field-span-3">
+          <div className="lessor-manufacturer-card">
+            <label className="lessor-checkbox-row">
+              <input
+                type="checkbox"
+                checked={
+                  manufacturerDealerConfirmed
+                }
+                disabled={loadingCompanyProfile}
+                onChange={(event) => {
+                  const confirmed =
+                    event.target.checked;
+
+                  setManufacturerDealerConfirmed(
+                    confirmed
+                  );
+
+                  setForm((current) => ({
+                    ...current,
+                    manufacturer_dealer_lessor:
+                      confirmed,
+                  }));
+                }}
+              />
+
+              <span>
+                This company is acting as a
+                manufacturer or dealer lessor for
+                this lease
+              </span>
+            </label>
+
+            {loadingCompanyProfile ? (
+              <small className="field-help">
+                Checking the company industry…
+              </small>
+            ) : manufacturerDealerSuggested ? (
+              <small className="field-help">
+                Preselected because the company
+                industry is{" "}
+                <strong>
+                  {companyProfile?.industry ||
+                    "Car Dealership or Manufacturing"}
+                </strong>
+                . Confirm that this asset is normally
+                manufactured or sold by the company.
+              </small>
+            ) : (
+              <small className="field-help">
+                Select this only when the leased asset
+                is inventory normally manufactured or
+                sold by this company.
+              </small>
+            )}
+          </div>
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>
+            Underlying asset description *
+          </label>
+
+          <input
+            name="underlying_asset_description"
+            value={
+              form.underlying_asset_description ||
+              ""
+            }
+            onChange={updateText}
+            placeholder="e.g. Toyota Hilux 2.8 GD-6"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Existing asset ID
+          </label>
+
+          <input
+            type="number"
+            value={form.asset_id || ""}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                asset_id:
+                  event.target.value
+                    ? Number(event.target.value)
+                    : null,
+              }))
+            }
+            placeholder="Optional"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Asset carrying amount *
+          </label>
+
+          <input
+            type="number"
+            name="underlying_asset_carrying_amount"
+            value={
+              form
+                .underlying_asset_carrying_amount ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Asset fair value *
+          </label>
+
+          <input
+            type="number"
+            name="underlying_asset_fair_value"
+            value={
+              form
+                .underlying_asset_fair_value ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Expected lease term (months) *
+          </label>
+
+          <input
+            type="number"
+            name="lease_term_months"
+            value={
+              form.lease_term_months || 0
+            }
+            onChange={updateNumber}
+            min="1"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Economic life (months) *
+          </label>
+
+          <input
+            type="number"
+            name="economic_life_months"
+            value={
+              form.economic_life_months ||
+              0
+            }
+            onChange={updateNumber}
+            min="1"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Guaranteed residual value
+          </label>
+
+          <input
+            type="number"
+            name="guaranteed_residual_value"
+            value={
+              form.guaranteed_residual_value ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Unguaranteed residual value
+          </label>
+
+          <input
+            type="number"
+            name="unguaranteed_residual_value"
+            value={
+              form.unguaranteed_residual_value ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Initial direct costs
+          </label>
+
+          <input
+            type="number"
+            name="initial_direct_costs"
+            value={
+              form.initial_direct_costs ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Interest rate implicit
+          </label>
+
+          <input
+            type="number"
+            name="interest_rate_implicit"
+            value={
+              form.interest_rate_implicit ||
+              0
+            }
+            onChange={updateNumber}
+            step="0.0001"
+            placeholder="e.g. 0.10"
+          />
+        </div>
+
+        <div className="field-row field-span-2">
+          <div className="lessor-indicator-card">
+            <label className="lessor-checkbox-row">
+              <input
+                type="checkbox"
+                name="ownership_transfers"
+                checked={Boolean(
+                  form.ownership_transfers
+                )}
+                onChange={updateCheckbox}
+              />
+
+              <span>
+                Ownership transfers to the lessee
+                by the end of the lease
+              </span>
+            </label>
+
+            <label className="lessor-checkbox-row">
+              <input
+                type="checkbox"
+                name="purchase_option_reasonably_certain"
+                checked={Boolean(
+                  form
+                    .purchase_option_reasonably_certain
+                )}
+                onChange={updateCheckbox}
+              />
+
+              <span>
+                Purchase option is reasonably
+                certain to be exercised
+              </span>
+            </label>
+
+            <label className="lessor-checkbox-row">
+              <input
+                type="checkbox"
+                name="specialised_asset"
+                checked={Boolean(
+                  form.specialised_asset
+                )}
+                onChange={updateCheckbox}
+              />
+
+              <span>
+                The asset is specialised and has
+                no readily available alternative use
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div className="field-row">
+          <label className="lessor-checkbox-row">
+            <input
+              type="checkbox"
+              name="classification_override"
+              checked={Boolean(
+                form.classification_override
+              )}
+              onChange={updateCheckbox}
+            />
+
+            <span>
+              Override the calculated classification
+            </span>
+          </label>
+        </div>
+
+        {form.classification_override && (
+          <>
+            <div className="field-row">
+              <label>
+                Override classification
+              </label>
+
+              <select
+                name="lease_classification"
+                value={form.lease_classification}
+                onChange={updateText}
+              >
+                <option value="finance">
+                  Finance lease
+                </option>
+
+                <option value="operating">
+                  Operating lease
+                </option>
+              </select>
+            </div>
+
+            <div className="field-row field-span-2">
+              <label>
+                Override reason *
+              </label>
+
+              <textarea
+                name="classification_override_reason"
+                value={
+                  form
+                    .classification_override_reason ||
+                  ""
+                }
+                onChange={updateText}
+                rows={2}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div className="error">
+          {error}
+        </div>
+      )}
+
+      <div className="wizard-buttons">
+        <button
+          type="button"
+          onClick={handlePreview}
+          disabled={loading}
+        >
+          {loading
+            ? "Assessing..."
+            : "Continue to agreement"}
+        </button>
+      </div>
+    </div>
+  );
+
   if (createdLeaseId) {
+    
     return (
       <div className="lease-wizard">
         <div className="lease-step lease-step-3">
@@ -747,529 +1436,672 @@ useEffect(() => {
     );
   }
 
-  return (
-    <div
-      className="lease-wizard"
-      data-role="lessor"
-    >
-      <div className="lease-step lease-step-1">
-        <h2>New lessor lease</h2>
+  const renderStep2 = () => (
+    <div className="lease-step lease-step-2">
+      <div className="lessor-step-heading">
+        <span className="lessor-step-number">
+          Step 2 of 2
+        </span>
 
-        <p
-          style={{
-            fontSize: "0.8rem",
-            textAlign: "center",
-            marginTop: 4,
-          }}
-        >
+        <h2>
+          Agreement and billing terms
+        </h2>
+
+        <p>
           Enter the agreement between your company and
           the customer. Creating the lease does not
           create an invoice.
         </p>
+      </div>
 
-        {selectedAccountCode && (
-          <div className="lessor-trigger-account">
-            <span>Triggering GL account</span>
+      {preview && (
+        <div className="lessor-classification-summary">
+          <div>
+            <span>Calculated classification</span>
 
             <strong>
-              {coaLoading
-                ? "Loading account…"
-                : getAccountName(
-                    selectedAccountCode
-                  )}
+              {String(
+                preview.classification ||
+                  preview.proposed_classification ||
+                  form.lease_classification
+              )
+                .replaceAll("_", " ")
+                .toUpperCase()}
             </strong>
+          </div>
+
+          <div>
+            <span>Lease term ratio</span>
+
+            <strong>
+              {Number(
+                preview.lease_term_ratio || 0
+              ).toLocaleString(undefined, {
+                style: "percent",
+                maximumFractionDigits: 2,
+              })}
+            </strong>
+          </div>
+
+          <div>
+            <span>PV / fair value ratio</span>
+
+            <strong>
+              {Number(
+                preview.pv_fair_value_ratio || 0
+              ).toLocaleString(undefined, {
+                style: "percent",
+                maximumFractionDigits: 2,
+              })}
+            </strong>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setStep(1);
+            }}
+          >
+            Edit asset assessment
+          </button>
+        </div>
+      )}
+
+      <div className="lease-grid-3">
+        <div className="field-row">
+          <label>Contract number</label>
+
+          <input
+            name="contract_no"
+            value={form.contract_no || ""}
+            onChange={updateText}
+          />
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>Contract name *</label>
+
+          <input
+            name="contract_name"
+            value={form.contract_name}
+            onChange={updateText}
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Customer / lessee *</label>
+
+          <select
+            value={String(
+              form.customer_id || ""
+            )}
+            onChange={(event) => {
+              setForm((current) => ({
+                ...current,
+                customer_id:
+                  event.target.value
+                    ? Number(event.target.value)
+                    : null,
+              }));
+            }}
+            disabled={loadingCustomers}
+          >
+            <option value="">
+              {loadingCustomers
+                ? "Loading customers..."
+                : "Select customer..."}
+            </option>
+
+            {customers.map((customer) => (
+              <option
+                key={customer.id}
+                value={customer.id}
+              >
+                {customerName(customer)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Classification</label>
+
+          <input
+            value={String(
+              form.lease_classification || ""
+            )
+              .replaceAll("_", " ")
+              .replace(/\b\w/g, (letter) =>
+                letter.toUpperCase()
+              )}
+            readOnly
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Currency</label>
+
+          <input
+            name="currency"
+            value={form.currency || ""}
+            onChange={updateText}
+            placeholder="e.g. ZAR, LSL"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Start date *</label>
+
+          <input
+            type="date"
+            name="start_date"
+            value={form.start_date}
+            onChange={updateText}
+          />
+        </div>
+
+        <div className="field-row">
+          <label>End date *</label>
+
+          <input
+            type="date"
+            name="end_date"
+            value={form.end_date || ""}
+            onChange={updateText}
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Lease term (months)</label>
+
+          <input
+            value={termMonths || ""}
+            readOnly
+          />
+        </div>
+
+        <div className="field-row">
+          <label>
+            Billing amount per period
+          </label>
+
+          <input
+            type="number"
+            name="billing_amount"
+            value={form.billing_amount}
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Billing amount basis</label>
+
+          <select
+            name="billing_basis"
+            value={form.billing_basis}
+            onChange={updateText}
+          >
+            <option value="gross">
+              Amount includes VAT
+            </option>
+
+            <option value="net">
+              Amount excludes VAT
+            </option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>VAT rate</label>
+
+          <input
+            type="number"
+            name="vat_rate"
+            value={form.vat_rate}
+            onChange={updateNumber}
+            step="0.0001"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Billing frequency</label>
+
+          <select
+            name="billing_frequency"
+            value={form.billing_frequency}
+            onChange={updateText}
+          >
+            <option value="weekly">
+              Weekly
+            </option>
+
+            <option value="monthly">
+              Monthly
+            </option>
+
+            <option value="quarterly">
+              Quarterly
+            </option>
+
+            <option value="annually">
+              Annually
+            </option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Billing timing</label>
+
+          <select
+            name="billing_timing"
+            value={form.billing_timing}
+            onChange={updateText}
+          >
+            <option value="arrears">
+              In arrears
+            </option>
+
+            <option value="advance">
+              In advance
+            </option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Bill day of month</label>
+
+          <input
+            type="number"
+            name="bill_day_of_month"
+            value={
+              form.bill_day_of_month || ""
+            }
+            onChange={updateNumber}
+            min="1"
+            max="31"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Payment terms (days)</label>
+
+          <input
+            type="number"
+            name="payment_terms_days"
+            value={form.payment_terms_days}
+            onChange={updateNumber}
+            min="0"
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Security deposit</label>
+
+          <input
+            type="number"
+            name="security_deposit_amount"
+            value={
+              form.security_deposit_amount
+            }
+            onChange={updateNumber}
+            step="0.01"
+          />
+        </div>
+
+        <div className="field-row field-span-2">
+          <label>Notes</label>
+
+          <textarea
+            name="notes"
+            value={form.notes || ""}
+            onChange={updateText}
+            rows={3}
+          />
+        </div>
+      </div>
+
+      <details className="advanced-gl">
+        <summary>Advanced GL mapping</summary>
+
+        <div className="advanced-gl-note">
+          FinSage has selected relevant company
+          accounts for lessor accounting. You can
+          override them below.
+        </div>
+
+        {coaError && (
+          <div className="error">
+            {coaError}
           </div>
         )}
 
-        <div className="lease-grid-3">
+        <div className="lease-grid-3 advanced-gl-grid">
           <div className="field-row">
-            <label>Contract number</label>
-
-            <input
-              name="contract_no"
-              value={form.contract_no || ""}
-              onChange={updateText}
-            />
-          </div>
-
-          <div className="field-row field-span-2">
-            <label>Contract name *</label>
-
-            <input
-              name="contract_name"
-              value={form.contract_name}
-              onChange={updateText}
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Customer / lessee *</label>
+            <label>
+              Lease receivable – current
+            </label>
 
             <select
-              value={String(
-                form.customer_id || ""
-              )}
-              onChange={(event) => {
-                setForm((current) => ({
-                  ...current,
-                  customer_id:
-                    event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                }));
-              }}
-              disabled={loadingCustomers}
+              name="net_investment_current_account_code"
+              value={
+                form
+                  .net_investment_current_account_code ||
+                ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
             >
               <option value="">
-                {loadingCustomers
-                  ? "Loading customers..."
-                  : "Select customer..."}
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select current lease receivable..."}
               </option>
 
-              {customers.map((customer) => (
-                <option
-                  key={customer.id}
-                  value={customer.id}
-                >
-                  {customerName(customer)}
-                </option>
-              ))}
+              {renderAccountOptions(
+                currentLeaseReceivableAccounts
+              )}
             </select>
-          </div>
-
-          <div className="field-row">
-            <label>Classification</label>
-
-            <select
-              name="lease_classification"
-              value={form.lease_classification}
-              onChange={updateText}
-            >
-              <option value="finance">
-                Finance lease
-              </option>
-
-              <option value="operating">
-                Operating lease
-              </option>
-            </select>
-          </div>
-
-          <div className="field-row">
-            <label>Currency</label>
-
-            <input
-              name="currency"
-              value={form.currency || ""}
-              onChange={updateText}
-              placeholder="e.g. ZAR, LSL"
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Start date *</label>
-
-            <input
-              type="date"
-              name="start_date"
-              value={form.start_date}
-              onChange={updateText}
-            />
-          </div>
-
-          <div className="field-row">
-            <label>End date</label>
-
-            <input
-              type="date"
-              name="end_date"
-              value={form.end_date || ""}
-              onChange={updateText}
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Lease term (months)</label>
-
-            <input
-              value={termMonths || ""}
-              readOnly
-            />
           </div>
 
           <div className="field-row">
             <label>
-              Billing amount per period
+              Lease receivable – non-current
             </label>
 
-            <input
-              type="number"
-              name="billing_amount"
-              value={form.billing_amount}
-              onChange={updateNumber}
-              step="0.01"
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Billing amount basis</label>
-
             <select
-              name="billing_basis"
-              value={form.billing_basis}
-              onChange={updateText}
-            >
-              <option value="gross">
-                Amount includes VAT
-              </option>
-
-              <option value="net">
-                Amount excludes VAT
-              </option>
-            </select>
-          </div>
-
-          <div className="field-row">
-            <label>VAT rate</label>
-
-            <input
-              type="number"
-              name="vat_rate"
-              value={form.vat_rate}
-              onChange={updateNumber}
-              step="0.0001"
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Billing frequency</label>
-
-            <select
-              name="billing_frequency"
-              value={form.billing_frequency}
-              onChange={updateText}
-            >
-              <option value="weekly">
-                Weekly
-              </option>
-
-              <option value="monthly">
-                Monthly
-              </option>
-
-              <option value="quarterly">
-                Quarterly
-              </option>
-
-              <option value="annually">
-                Annually
-              </option>
-            </select>
-          </div>
-
-          <div className="field-row">
-            <label>Billing timing</label>
-
-            <select
-              name="billing_timing"
-              value={form.billing_timing}
-              onChange={updateText}
-            >
-              <option value="arrears">
-                In arrears
-              </option>
-
-              <option value="advance">
-                In advance
-              </option>
-            </select>
-          </div>
-
-          <div className="field-row">
-            <label>Bill day of month</label>
-
-            <input
-              type="number"
-              name="bill_day_of_month"
+              name="net_investment_noncurrent_account_code"
               value={
-                form.bill_day_of_month || ""
+                form
+                  .net_investment_noncurrent_account_code ||
+                ""
               }
-              onChange={updateNumber}
-              min="1"
-              max="31"
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Payment terms (days)</label>
-
-            <input
-              type="number"
-              name="payment_terms_days"
-              value={form.payment_terms_days}
-              onChange={updateNumber}
-            />
-          </div>
-
-          <div className="field-row">
-            <label>Security deposit</label>
-
-            <input
-              type="number"
-              name="security_deposit_amount"
-              value={
-                form.security_deposit_amount
-              }
-              onChange={updateNumber}
-              step="0.01"
-            />
-          </div>
-
-          <div className="field-row field-span-2">
-            <label>Notes</label>
-
-            <textarea
-              name="notes"
-              value={form.notes || ""}
               onChange={updateText}
-              rows={3}
-            />
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select non-current lease receivable..."}
+              </option>
+
+              {renderAccountOptions(
+                nonCurrentLeaseReceivableAccounts
+              )}
+            </select>
+          </div>
+
+          <div className="field-row">
+            <label>Lease income</label>
+
+            <select
+              name="revenue_account_code"
+              value={
+                form.revenue_account_code || ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select lease income account..."}
+              </option>
+
+              {renderAccountOptions(
+                leaseIncomeAccounts
+              )}
+            </select>
+          </div>
+
+          <div className="field-row">
+            <label>Finance income</label>
+
+            <select
+              name="finance_income_account_code"
+              value={
+                form
+                  .finance_income_account_code ||
+                ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select finance income account..."}
+              </option>
+
+              {renderAccountOptions(
+                financeIncomeAccounts
+              )}
+            </select>
+          </div>
+
+          <div className="field-row">
+            <label>Accounts receivable</label>
+
+            <select
+              name="ar_account_code"
+              value={
+                form.ar_account_code || ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select accounts receivable..."}
+              </option>
+
+              {renderAccountOptions(
+                accountsReceivableAccounts
+              )}
+            </select>
+          </div>
+
+          <div className="field-row">
+            <label>VAT output</label>
+
+            <select
+              name="vat_output_account_code"
+              value={
+                form
+                  .vat_output_account_code ||
+                ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select VAT output account..."}
+              </option>
+
+              {renderAccountOptions(
+                vatOutputAccounts
+              )}
+            </select>
+          </div>
+
+          <div className="field-row">
+            <label>
+              Security deposit account
+            </label>
+
+            <select
+              name="security_deposit_account_code"
+              value={
+                form
+                  .security_deposit_account_code ||
+                ""
+              }
+              onChange={updateText}
+              disabled={coaLoading}
+            >
+              <option value="">
+                {coaLoading
+                  ? "Loading accounts..."
+                  : "Select deposit liability account..."}
+              </option>
+
+              {renderAccountOptions(
+                securityDepositAccounts
+              )}
+            </select>
           </div>
         </div>
+      </details>
 
-        <details className="advanced-gl">
-          <summary>Advanced GL mapping</summary>
-
-          <div className="advanced-gl-note">
-            FinSage has selected the relevant company
-            accounts for lessor accounting. You can
-            override them below.
-          </div>
-
-          {coaError && (
-            <div className="error">
-              {coaError}
-            </div>
-          )}
-
-          <div className="lease-grid-3 advanced-gl-grid">
-            <div className="field-row">
-              <label>
-                Lease receivable – current
-              </label>
-
-              <select
-                name="net_investment_current_account_code"
-                value={
-                  form
-                    .net_investment_current_account_code ||
-                  ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select current lease receivable..."}
-                </option>
-
-                {renderAccountOptions(
-                  currentLeaseReceivableAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>
-                Lease receivable – non-current
-              </label>
-
-              <select
-                name="net_investment_noncurrent_account_code"
-                value={
-                  form
-                    .net_investment_noncurrent_account_code ||
-                  ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select non-current lease receivable..."}
-                </option>
-
-                {renderAccountOptions(
-                  nonCurrentLeaseReceivableAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>Lease income</label>
-
-              <select
-                name="revenue_account_code"
-                value={
-                  form.revenue_account_code || ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select lease income account..."}
-                </option>
-
-                {renderAccountOptions(
-                  leaseIncomeAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>Finance income</label>
-
-              <select
-                name="finance_income_account_code"
-                value={
-                  form
-                    .finance_income_account_code ||
-                  ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select finance income account..."}
-                </option>
-
-                {renderAccountOptions(
-                  financeIncomeAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>Accounts receivable</label>
-
-              <select
-                name="ar_account_code"
-                value={
-                  form.ar_account_code || ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select accounts receivable..."}
-                </option>
-
-                {renderAccountOptions(
-                  accountsReceivableAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>VAT output</label>
-
-              <select
-                name="vat_output_account_code"
-                value={
-                  form
-                    .vat_output_account_code ||
-                  ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select VAT output account..."}
-                </option>
-
-                {renderAccountOptions(
-                  vatOutputAccounts
-                )}
-              </select>
-            </div>
-
-            <div className="field-row">
-              <label>
-                Security deposit account
-              </label>
-
-              <select
-                name="security_deposit_account_code"
-                value={
-                  form
-                    .security_deposit_account_code ||
-                  ""
-                }
-                onChange={updateText}
-                disabled={coaLoading}
-              >
-                <option value="">
-                  {coaLoading
-                    ? "Loading accounts..."
-                    : "Select deposit liability account..."}
-                </option>
-
-                {renderAccountOptions(
-                  securityDepositAccounts
-                )}
-              </select>
-            </div>
-          </div>
-        </details>
-
-        {preview && (
+      {preview && (
         <div className="lessor-preview-panel">
-            <div className="lessor-preview-header">
-            Classification preview
+          <div className="lessor-preview-header">
+            Classification assessment
+          </div>
+
+          {preview.reasons?.length ? (
+            <div className="lessor-preview-section">
+              <strong>Reasons</strong>
+
+              <ul>
+                {preview.reasons.map(
+                  (reason, index) => (
+                    <li key={index}>
+                      {reason}
+                    </li>
+                  )
+                )}
+              </ul>
+            </div>
+          ) : null}
+
+          {preview.warnings?.length ? (
+            <div className="lessor-preview-section warning">
+              <strong>Items to review</strong>
+
+              <ul>
+                {preview.warnings.map(
+                  (warning, index) => (
+                    <li key={index}>
+                      {warning}
+                    </li>
+                  )
+                )}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {error && (
+        <div className="error">
+          {error}
+        </div>
+      )}
+
+      <div className="wizard-buttons">
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setStep(1);
+          }}
+          disabled={loading}
+        >
+          Back
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={loading}
+        >
+          {loading
+            ? "Creating..."
+            : "Create lessor lease"}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (createdLeaseId) {
+    return (
+      <div className="lease-wizard">
+        <div className="lease-step lease-step-3">
+          <h2>Lessor lease created</h2>
+
+          <p>
+            The lessor lease was created successfully.
+          </p>
+
+          <div className="summary-cards">
+            <div className="card">
+              <div className="label">
+                Lease ID
+              </div>
+
+              <div className="value">
+                {createdLeaseId}
+              </div>
             </div>
 
-            <pre>
-            {JSON.stringify(preview, null, 2)}
-            </pre>
-        </div>
-        )}
+            <div className="card">
+              <div className="label">
+                Classification
+              </div>
 
-        {error && (
-          <div className="error">
-            {error}
+              <div className="value">
+                {form.lease_classification}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="label">
+                Schedule periods
+              </div>
+
+              <div className="value">
+                {Number(
+                  scheduleResult
+                    ?.created_or_updated ||
+                    scheduleResult?.items?.length ||
+                    0
+                )}
+              </div>
+            </div>
           </div>
-        )}
 
-        <div className="wizard-buttons">
-          <button
-            onClick={handlePreview}
-            disabled={loading}
-          >
-            {loading
-              ? "Checking..."
-              : "Preview classification"}
-          </button>
+          <p>
+            The lease remains ready for review and
+            commencement. No customer invoice has been
+            created.
+          </p>
 
-          <button
-            onClick={handleCreate}
-            disabled={loading}
-          >
-            {loading
-              ? "Creating..."
-              : "Create lessor lease"}
-          </button>
+          <div className="wizard-buttons">
+            <button
+              type="button"
+              onClick={resetForm}
+            >
+              Create another lessor lease
+            </button>
+          </div>
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div
+      className="lease-wizard"
+      data-role="lessor"
+      data-step={step}
+    >
+      {step === 1 && renderStep1()}
+      {step === 2 && renderStep2()}
     </div>
   );
 };
