@@ -1905,314 +1905,187 @@ useEffect(() => {
             <div className="lessor-accounting-summary">
               <div className="lessor-metric-card">
                 <span>Periodic payment</span>
-
-                <strong>
-                  {money(
-                    financePreview.periodic_payment
-                  )}
-                </strong>
-
+                <strong>{money(financePreview.periodic_payment)}</strong>
                 <small>
-                  {form.billing_frequency}
-                  {" · "}
-                  {form.billing_timing}
+                  {form.billing_frequency} · {form.billing_timing}
                 </small>
               </div>
 
-            <div className="lessor-metric-card">
-              <span>Initial net investment</span>
+              <div className="lessor-metric-card">
+                <span>Initial net investment</span>
+                <strong>{money(financePreview.initial_net_investment)}</strong>
+                <small>Opening lease receivable</small>
+              </div>
 
-              <strong>
-                {money(
-                  financePreview
-                    .initial_net_investment
-                )}
-              </strong>
+              <div className="lessor-metric-card">
+                <span>Gross investment</span>
+                <strong>{money(financePreview.gross_investment)}</strong>
+                <small>Payments plus residual values</small>
+              </div>
 
-              <small>
-                Opening lease receivable
-              </small>
+              <div className="lessor-metric-card">
+                <span>Unearned finance income</span>
+                <strong>{money(financePreview.unearned_finance_income)}</strong>
+                <small>Recognised over the lease term</small>
+              </div>
             </div>
 
-            <div className="lessor-metric-card">
-              <span>Gross investment</span>
+            <div className="lessor-preview-grid">
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Net lease receivable</h3>
+                    <p>Opening current and non-current classification.</p>
+                  </div>
+                </div>
 
-              <strong>
-                {money(
-                  financePreview.gross_investment
-                )}
-              </strong>
+                <table className="lessor-mini-table">
+                  <thead>
+                    <tr>
+                      <th>Classification</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
 
-              <small>
-                Payments plus residual values
-              </small>
+                  <tbody>
+                    <tr>
+                      <td>Current lease receivable</td>
+                      <td>{money(currentPortion)}</td>
+                    </tr>
+
+                    <tr>
+                      <td>Non-current lease receivable</td>
+                      <td>{money(nonCurrentPortion)}</td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Total net investment</td>
+                      <td>{money(initialNetInvestment)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Investment reconciliation</h3>
+                    <p>Reconciliation between gross and net investment.</p>
+                  </div>
+                </div>
+
+                <table className="lessor-mini-table">
+                  <tbody>
+                    <tr>
+                      <td>Gross investment</td>
+                      <td>{money(financePreview.gross_investment)}</td>
+                    </tr>
+
+                    <tr>
+                      <td>Less: unearned finance income</td>
+                      <td>({money(financePreview.unearned_finance_income)})</td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Initial net investment</td>
+                      <td>{money(financePreview.initial_net_investment)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
             </div>
 
-            <div className="lessor-metric-card">
-              <span>Unearned finance income</span>
-
-              <strong>
-                {money(
-                  financePreview
-                    .unearned_finance_income
-                )}
-              </strong>
-
-              <small>
-                Recognised over the lease term
-              </small>
-            </div>
-          </div>
-
-          <div className="lessor-preview-grid">
-            <section className="lessor-preview-card">
+            <section className="lessor-preview-card lessor-schedule-card">
               <div className="lessor-preview-card-head">
                 <div>
-                  <h3>
-                    Net lease receivable
-                  </h3>
+                  <h3>Net investment amortisation schedule</h3>
 
                   <p>
-                    Opening current and non-current
-                    classification.
+                    Scroll to review all{" "}
+                    {financePreview.period_count} lease periods.
                   </p>
+                </div>
+
+                <div className="lessor-preview-badge">
+                  {financePreview.period_count} periods
                 </div>
               </div>
 
-              <table className="lessor-mini-table">
-                <thead>
-                  <tr>
-                    <th>Classification</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
+              <div className="table-scroll lessor-schedule-table-wrap">
+                <table className="lessor-schedule-table">
+                  <colgroup>
+                    <col className="lessor-period-col" />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </colgroup>
 
-                <tbody>
-                  <tr>
-                    <td>
-                      Current lease receivable
-                    </td>
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Opening balance</th>
+                      <th>Payment</th>
+                      <th>Finance income</th>
+                      <th>Principal</th>
+                      <th>Closing balance</th>
+                    </tr>
+                  </thead>
 
-                    <td>
-                      {money(currentPortion)}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td>
-                      Non-current lease receivable
-                    </td>
-
-                    <td>
-                      {money(nonCurrentPortion)}
-                    </td>
-                  </tr>
-
-                  <tr className="lessor-total-row">
-                    <td>
-                      Total net investment
-                    </td>
-
-                    <td>
-                      {money(initialNetInvestment)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </section>
-
-            <section className="lessor-preview-card">
-              <div className="lessor-preview-card-head">
-                <div>
-                  <h3>
-                    Investment reconciliation
-                  </h3>
-
-                  <p>
-                    Reconciliation between gross and
-                    net investment.
-                  </p>
-                </div>
-              </div>
-
-              <table className="lessor-mini-table">
-                <tbody>
-                  <tr>
-                    <td>Gross investment</td>
-
-                    <td>
-                      {money(
-                        financePreview.gross_investment
-                      )}
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td>
-                      Less: unearned finance income
-                    </td>
-
-                    <td>
-                      (
-                      {money(
-                        financePreview
-                          .unearned_finance_income
-                      )}
-                      )
-                    </td>
-                  </tr>
-
-                  <tr className="lessor-total-row">
-                    <td>
-                      Initial net investment
-                    </td>
-
-                    <td>
-                      {money(
-                        financePreview
-                          .initial_net_investment
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </section>
-          </div>
-
-          <section className="lessor-preview-card lessor-schedule-card">
-            <div className="lessor-preview-card-head">
-              <div>
-                <h3>
-                  Net investment amortisation schedule
-                </h3>
-
-                <p>
-                  Scroll to review all{" "}
-                  {financePreview.period_count} lease
-                  periods.
-                </p>
-              </div>
-
-              <div className="lessor-preview-badge">
-                {financePreview.period_count} periods
-              </div>
-            </div>
-
-            <div className="lessor-schedule-table-wrap">
-              <table className="lessor-schedule-table">
-                <colgroup>
-                  <col className="lessor-period-col" />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                  <col />
-                </colgroup>
-
-                <thead>
-                  <tr>
-                    <th>Period</th>
-                    <th>Opening balance</th>
-                    <th>Payment</th>
-                    <th>Finance income</th>
-                    <th>Principal</th>
-                    <th>Closing balance</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {financePreview.schedule.map(
-                    (row) => (
+                  <tbody>
+                    {financePreview.schedule.map((row) => (
                       <tr key={row.period_no}>
-                        <td>
-                          {row.period_no}
-                        </td>
-
-                        <td>
-                          {money(
-                            row.opening_net_investment
-                          )}
-                        </td>
-
-                        <td>
-                          {money(
-                            row.lease_payment
-                          )}
-                        </td>
-
-                        <td>
-                          {money(
-                            row.finance_income
-                          )}
-                        </td>
-
-                        <td>
-                          {money(
-                            row.principal_reduction
-                          )}
-                        </td>
-
-                        <td>
-                          {money(
-                            row.closing_net_investment
-                          )}
-                        </td>
+                        <td>{row.period_no}</td>
+                        <td>{money(row.opening_net_investment)}</td>
+                        <td>{money(row.lease_payment)}</td>
+                        <td>{money(row.finance_income)}</td>
+                        <td>{money(row.principal_reduction)}</td>
+                        <td>{money(row.closing_net_investment)}</td>
                       </tr>
-                    )
-                  )}
-                </tbody>
+                    ))}
+                  </tbody>
 
-                <tfoot>
-                  <tr>
-                    <td colSpan={2}>
-                      Totals
-                    </td>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2}>Totals</td>
 
-                    <td>
-                      {money(
-                        financePreview.schedule.reduce(
-                          (total, row) =>
-                            total +
-                            Number(
-                              row.lease_payment || 0
-                            ),
-                          0
-                        )
-                      )}
-                    </td>
+                      <td>
+                        {money(
+                          financePreview.schedule.reduce(
+                            (total, row) =>
+                              total + Number(row.lease_payment || 0),
+                            0
+                          )
+                        )}
+                      </td>
 
-                    <td>
-                      {money(
-                        financePreview
-                          .total_finance_income
-                      )}
-                    </td>
+                      <td>
+                        {money(financePreview.total_finance_income)}
+                      </td>
 
-                    <td>
-                      {money(
-                        financePreview.schedule.reduce(
-                          (total, row) =>
-                            total +
-                            Number(
-                              row.principal_reduction ||
-                              0
-                            ),
-                          0
-                        )
-                      )}
-                    </td>
+                      <td>
+                        {money(
+                          financePreview.schedule.reduce(
+                            (total, row) =>
+                              total +
+                              Number(row.principal_reduction || 0),
+                            0
+                          )
+                        )}
+                      </td>
 
-                    <td>
-                      {money(
-                        financePreview.schedule.at(-1)
-                          ?.closing_net_investment
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </section>
+                      <td>
+                        {money(
+                          financePreview.schedule.at(-1)
+                            ?.closing_net_investment
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
           </div>
         ) : (
           <div className="lessor-preview-panel">

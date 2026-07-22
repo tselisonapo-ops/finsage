@@ -602,14 +602,15 @@ button:hover:not(:disabled) {
   width: 100%;
 }
 
+.lease-wizard[data-role="lessor"]
 .lessor-schedule-table-wrap {
   width: 100%;
-  max-height: 340px;
+  max-height: 300px;
   margin: 0;
   overflow: auto;
   border: 0;
   border-radius: 0;
-  background: #ffffff;
+  background: #fff;
   scrollbar-width: thin;
 }
 
@@ -618,6 +619,21 @@ button:hover:not(:disabled) {
   min-width: 850px;
   border-collapse: collapse;
   table-layout: fixed;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-schedule-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-schedule-table {
+  width: 100%;
+  min-width: 850px;
+  table-layout: fixed;
+  border-collapse: collapse;
 }
 
 .lessor-schedule-table
