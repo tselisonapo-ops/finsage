@@ -14,12 +14,15 @@ import "../styles/lease.css";
 import {
   createLessorLease,
   generateLessorAccountingSchedule,
-  previewLessorClassification,
+  previewLessorTerms,
 } from "../api/lessorLeases";
 
 import type {
+  FinanceLeaseTermsPreview,
   LessorClassification,
+  LessorClassificationResult,
   LessorLeasePayload,
+  LessorTermsPreview,
 } from "../api/lessorLeases";
 
 type CustomerRow = {
@@ -54,7 +57,7 @@ type AssetOptionsResponse = {
   as_at?: string;
 };
 
-type WizardStep = 1 | 2;
+type WizardStep = 1 | 2 | 3;
 
 type CompanyIndustryProfile = {
   manufacturer_dealer_lessor_capable?: boolean;
@@ -68,33 +71,6 @@ type CompanyProfile = {
   sub_industry?: string;
   sub_industry_slug?: string;
   industry_profile?: CompanyIndustryProfile;
-};
-
-type ClassificationPreview = {
-  classification?: LessorClassification;
-  proposed_classification?: LessorClassification;
-
-  lease_term_months?: number;
-  economic_life_months?: number;
-
-  lease_term_ratio?: number;
-  fair_value?: number;
-  present_value_lease_payments?: number;
-  pv_fair_value_ratio?: number;
-
-  overridden?: boolean;
-  override_reason?: string | null;
-
-  reasons?: string[];
-  warnings?: string[];
-
-  indicators?: {
-    major_part_of_economic_life?: boolean;
-    ownership_transfers?: boolean;
-    purchase_option_reasonably_certain?: boolean;
-    specialised_asset?: boolean;
-    substantially_all_fair_value?: boolean;
-  };
 };
 
 type Props = {
@@ -226,8 +202,19 @@ const LessorLeaseWizard: React.FC<Props> = ({
   const [error, setError] =
     useState<string | null>(null);
 
-  const [preview, setPreview] =
-    useState<ClassificationPreview | null>(null);
+  const [
+    classificationPreview,
+    setClassificationPreview,
+  ] = useState<
+    LessorClassificationResult | null
+  >(null);
+
+  const [
+    termsPreview,
+    setTermsPreview,
+  ] = useState<
+    LessorTermsPreview | null
+  >(null);
 
   const [createdLeaseId, setCreatedLeaseId] =
     useState<number | null>(null);
@@ -1016,57 +1003,58 @@ useEffect(() => {
     try {
       setLoading(true);
       setError(null);
-      setPreview(null);
+
+      setClassificationPreview(null);
+      setTermsPreview(null);
 
       const payload: LessorLeasePayload = {
         ...form,
 
-        lease_term_months:
-          Number(form.lease_term_months || 0),
+        lease_term_months: Number(
+          form.lease_term_months || 0
+        ),
 
         manufacturer_dealer_lessor:
           manufacturerDealerConfirmed,
       };
 
-      console.log(
-        "[LESSOR] classification payload",
-        payload
-      );
-
       const response =
-        await previewLessorClassification(
+        await previewLessorTerms(
           companyId,
           payload
         );
 
-      const result = response.data || {};
+      setClassificationPreview(
+        response.classification
+      );
 
-      setPreview(
-        result as ClassificationPreview
+      setTermsPreview(
+        response.terms
       );
 
       const resolvedClassification =
-        (
-          result.classification ||
-          result.proposed_classification
-        ) as LessorClassification | undefined;
+        response.classification
+          .classification;
 
-      if (resolvedClassification) {
-        setForm((current) => ({
-          ...current,
-          lease_classification:
-            current.classification_override
-              ? current.lease_classification
-              : resolvedClassification,
-        }));
-      }
+      setForm((current) => ({
+        ...current,
+
+        lease_classification:
+          resolvedClassification,
+
+        billing_amount:
+          response.terms.classification ===
+          "finance"
+            ? response.terms.periodic_payment
+            : current.billing_amount,
+      }));
 
       setStep(2);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Classification preview failed"
+          : "Lease calculation preview failed"
       );
     } finally {
       setLoading(false);
@@ -1134,7 +1122,8 @@ useEffect(() => {
   }
 
   function resetForm() {
-    setPreview(null);
+    setClassificationPreview(null);
+    setTermsPreview(null);
     setCreatedLeaseId(null);
     setScheduleResult(null);
     setError(null);
@@ -1513,6 +1502,50 @@ useEffect(() => {
           />
         </div>
 
+        <div className="field-row">
+          <label>Payment frequency *</label>
+
+          <select
+            name="billing_frequency"
+            value={form.billing_frequency}
+            onChange={updateText}
+          >
+            <option value="weekly">
+              Weekly
+            </option>
+
+            <option value="monthly">
+              Monthly
+            </option>
+
+            <option value="quarterly">
+              Quarterly
+            </option>
+
+            <option value="annually">
+              Annually
+            </option>
+          </select>
+        </div>
+
+        <div className="field-row">
+          <label>Payment timing *</label>
+
+          <select
+            name="billing_timing"
+            value={form.billing_timing}
+            onChange={updateText}
+          >
+            <option value="arrears">
+              In arrears
+            </option>
+
+            <option value="advance">
+              In advance
+            </option>
+          </select>
+        </div>
+
         <div className="field-row field-span-3">
           <div className="lessor-indicator-grid">
             <label
@@ -1772,11 +1805,277 @@ useEffect(() => {
     );
   }
 
-  const renderStep2 = () => (
+  const renderStep2 = () => {
+    const financePreview =
+      termsPreview?.classification === "finance"
+        ? termsPreview as FinanceLeaseTermsPreview
+        : null;
+
+    return (
+      <div className="lease-step lease-step-2">
+        <div className="lessor-step-heading">
+          <span className="lessor-step-number">
+            Step 2 of 3
+          </span>
+
+          <h2>
+            Net investment and payment preview
+          </h2>
+
+          <p>
+            Review the calculated periodic payment
+            and lessor accounting schedule before
+            entering the customer agreement.
+          </p>
+        </div>
+
+        {classificationPreview && (
+          <div className="lessor-classification-summary">
+            <div>
+              <span>Classification</span>
+
+              <strong>
+                {classificationPreview
+                  .classification
+                  .toUpperCase()}
+              </strong>
+            </div>
+
+            <div>
+              <span>Lease term ratio</span>
+
+              <strong>
+                {Number(
+                  classificationPreview
+                    .lease_term_ratio || 0
+                ).toLocaleString(undefined, {
+                  style: "percent",
+                  maximumFractionDigits: 2,
+                })}
+              </strong>
+            </div>
+
+            <div>
+              <span>Calculated payment</span>
+
+              <strong>
+                {financePreview
+                  ? Number(
+                      financePreview
+                        .periodic_payment
+                    ).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })
+                  : "Enter contractual rent"}
+              </strong>
+            </div>
+          </div>
+        )}
+
+        {financePreview ? (
+          <>
+            <div className="summary-cards">
+              <div className="card">
+                <div className="label">
+                  Periodic payment
+                </div>
+
+                <div className="value">
+                  {Number(
+                    financePreview.periodic_payment
+                  ).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="label">
+                  Initial net investment
+                </div>
+
+                <div className="value">
+                  {Number(
+                    financePreview
+                      .initial_net_investment
+                  ).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="label">
+                  Gross investment
+                </div>
+
+                <div className="value">
+                  {Number(
+                    financePreview
+                      .gross_investment
+                  ).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="label">
+                  Unearned finance income
+                </div>
+
+                <div className="value">
+                  {Number(
+                    financePreview
+                      .unearned_finance_income
+                  ).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="lessor-schedule-table-wrap">
+              <table className="lessor-schedule-table">
+                <thead>
+                  <tr>
+                    <th>Period</th>
+                    <th>Opening net investment</th>
+                    <th>Payment</th>
+                    <th>Finance income</th>
+                    <th>Principal</th>
+                    <th>Closing net investment</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {financePreview.schedule.map(
+                    (row) => (
+                      <tr key={row.period_no}>
+                        <td>{row.period_no}</td>
+
+                        <td>
+                          {row.opening_net_investment
+                            .toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </td>
+
+                        <td>
+                          {row.lease_payment
+                            .toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </td>
+
+                        <td>
+                          {row.finance_income
+                            .toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </td>
+
+                        <td>
+                          {row.principal_reduction
+                            .toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </td>
+
+                        <td>
+                          {row.closing_net_investment
+                            .toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                        </td>
+                      </tr>
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="lessor-preview-panel">
+            <div className="lessor-preview-header">
+              Operating lease
+            </div>
+
+            <p>
+              {termsPreview?.classification ===
+              "operating"
+                ? termsPreview.message
+                : "No calculation available."}
+            </p>
+          </div>
+        )}
+
+        {classificationPreview?.reasons?.length ? (
+          <div className="lessor-preview-panel">
+            <div className="lessor-preview-header">
+              Classification reasons
+            </div>
+
+            <ul>
+              {classificationPreview.reasons.map(
+                (reason, index) => (
+                  <li key={index}>
+                    {reason}
+                  </li>
+                )
+              )}
+            </ul>
+          </div>
+        ) : null}
+
+        {error && (
+          <div className="error">
+            {error}
+          </div>
+        )}
+
+        <div className="wizard-buttons">
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setStep(1);
+            }}
+            disabled={loading}
+          >
+            Back
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setStep(3);
+            }}
+            disabled={loading}
+          >
+            Accept calculation and continue
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStep3 = () => (
     <div className="lease-step lease-step-2">
       <div className="lessor-step-heading">
         <span className="lessor-step-number">
-          Step 2 of 2
+          Step 3 of 3
         </span>
 
         <h2>
@@ -1790,17 +2089,14 @@ useEffect(() => {
         </p>
       </div>
 
-      {preview && (
+      {classificationPreview && (
         <div className="lessor-classification-summary">
           <div>
             <span>Calculated classification</span>
 
             <strong>
-              {String(
-                preview.classification ||
-                  preview.proposed_classification ||
-                  form.lease_classification
-              )
+              {classificationPreview
+                .classification
                 .replaceAll("_", " ")
                 .toUpperCase()}
             </strong>
@@ -1811,7 +2107,8 @@ useEffect(() => {
 
             <strong>
               {Number(
-                preview.lease_term_ratio || 0
+                classificationPreview
+                  .lease_term_ratio || 0
               ).toLocaleString(undefined, {
                 style: "percent",
                 maximumFractionDigits: 2,
@@ -1824,7 +2121,8 @@ useEffect(() => {
 
             <strong>
               {Number(
-                preview.pv_fair_value_ratio || 0
+                classificationPreview
+                  .pv_fair_value_ratio || 0
               ).toLocaleString(undefined, {
                 style: "percent",
                 maximumFractionDigits: 2,
@@ -1836,10 +2134,10 @@ useEffect(() => {
             type="button"
             onClick={() => {
               setError(null);
-              setStep(1);
+              setStep(2);
             }}
           >
-            Edit asset assessment
+            Review calculation
           </button>
         </div>
       )}
@@ -1957,19 +2255,24 @@ useEffect(() => {
           />
         </div>
 
-        <div className="field-row">
-          <label>
-            Billing amount per period
-          </label>
+        <input
+          type="number"
+          name="billing_amount"
+          value={form.billing_amount}
+          onChange={updateNumber}
+          readOnly={
+            form.lease_classification === "finance"
+          }
+          step="0.01"
+        />
 
-          <input
-            type="number"
-            name="billing_amount"
-            value={form.billing_amount}
-            onChange={updateNumber}
-            step="0.01"
-          />
-        </div>
+        {form.lease_classification === "finance" && (
+          <small className="field-help">
+            Calculated from the net investment,
+            implicit interest rate, lease term and
+            residual values.
+          </small>
+        )}
 
         <div className="field-row">
           <label>Billing amount basis</label>
@@ -2293,19 +2596,19 @@ useEffect(() => {
         </div>
       </details>
 
-      {preview && (
+      {classificationPreview && (
         <div className="lessor-preview-panel">
           <div className="lessor-preview-header">
             Classification assessment
           </div>
 
-          {preview.reasons?.length ? (
+          {classificationPreview.reasons?.length ? (
             <div className="lessor-preview-section">
               <strong>Reasons</strong>
 
               <ul>
-                {preview.reasons.map(
-                  (reason, index) => (
+                {classificationPreview.reasons.map(
+                  (reason: string, index: number) => (
                     <li key={index}>
                       {reason}
                     </li>
@@ -2315,13 +2618,13 @@ useEffect(() => {
             </div>
           ) : null}
 
-          {preview.warnings?.length ? (
+          {classificationPreview.warnings?.length ? (
             <div className="lessor-preview-section warning">
               <strong>Items to review</strong>
 
               <ul>
-                {preview.warnings.map(
-                  (warning, index) => (
+                {classificationPreview.warnings.map(
+                  (warning: string, index: number) => (
                     <li key={index}>
                       {warning}
                     </li>
@@ -2344,7 +2647,7 @@ useEffect(() => {
           type="button"
           onClick={() => {
             setError(null);
-            setStep(1);
+            setStep(2);
           }}
           disabled={loading}
         >
@@ -2438,6 +2741,7 @@ useEffect(() => {
     >
       {step === 1 && renderStep1()}
       {step === 2 && renderStep2()}
+      {step === 3 && renderStep3()}
     </div>
   );
 };

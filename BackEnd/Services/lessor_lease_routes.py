@@ -695,6 +695,126 @@ def classify_lessor_lease(company_id: int):
         }), 500
     
 @lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/terms/preview",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def preview_lessor_terms(
+    company_id: int,
+):
+    if request.method == "OPTIONS":
+        return _corsify(
+            make_response("", 204)
+        )
+
+    _, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        raw = request.get_json(
+            silent=True
+        ) or {}
+
+        payload = _classification_payload(
+            raw
+        )
+
+        payload.update({
+            "underlying_asset_carrying_amount":
+                _number(
+                    raw.get(
+                        "underlying_asset_carrying_amount"
+                    ),
+                    "underlying_asset_carrying_amount",
+                    minimum=0,
+                ),
+
+            "interest_rate_implicit":
+                _number(
+                    raw.get(
+                        "interest_rate_implicit"
+                    ),
+                    "interest_rate_implicit",
+                    minimum=0,
+                ),
+
+            "guaranteed_residual_value":
+                _number(
+                    raw.get(
+                        "guaranteed_residual_value"
+                    ),
+                    "guaranteed_residual_value",
+                    minimum=0,
+                ),
+
+            "unguaranteed_residual_value":
+                _number(
+                    raw.get(
+                        "unguaranteed_residual_value"
+                    ),
+                    "unguaranteed_residual_value",
+                    minimum=0,
+                ),
+
+            "initial_direct_costs":
+                _number(
+                    raw.get(
+                        "initial_direct_costs"
+                    ),
+                    "initial_direct_costs",
+                    minimum=0,
+                ),
+
+            "billing_frequency": (
+                raw.get("billing_frequency")
+                or "monthly"
+            ).strip().lower(),
+
+            "billing_timing": (
+                raw.get("billing_timing")
+                or "arrears"
+            ).strip().lower(),
+
+            "manufacturer_dealer_lessor":
+                _bool(
+                    raw.get(
+                        "manufacturer_dealer_lessor"
+                    )
+                ),
+        })
+
+        result = (
+            lessor_lease_engine
+            .preview_lessor_terms(
+                payload
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 400
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "preview_lessor_terms failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(exc),
+        }), 500
+    
+@lessor_bp.route(
     "/api/companies/<int:company_id>/lessor-leases/<int:lease_id>/schedule/preview",
     methods=["POST", "OPTIONS"],
 )

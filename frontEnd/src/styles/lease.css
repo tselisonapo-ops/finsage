@@ -435,3 +435,44 @@ button:hover:not(:disabled) {
     grid-template-columns: 1fr;
   }
 }
+
+.lessor-schedule-table-wrap {
+  max-height: 430px;
+  margin-top: 18px;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.lessor-schedule-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.lessor-schedule-table th,
+.lessor-schedule-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  font-size: 0.78rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lessor-schedule-table th:first-child,
+.lessor-schedule-table td:first-child {
+  text-align: center;
+}
+
+.lessor-schedule-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.lessor-schedule-table tbody tr:hover {
+  background: rgba(13, 148, 136, 0.035);
+}

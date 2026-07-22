@@ -4,6 +4,16 @@ export type LessorClassification =
   | "operating"
   | "finance";
 
+export type LessorBillingFrequency =
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "annually";
+
+export type LessorBillingTiming =
+  | "arrears"
+  | "advance";
+
 export type LessorLeasePayload = {
   contract_no?: string | null;
   contract_name: string;
@@ -20,7 +30,7 @@ export type LessorLeasePayload = {
   underlying_asset_carrying_amount?: number;
   underlying_asset_fair_value?: number;
   economic_life_months?: number;
-  
+
   guaranteed_residual_value?: number;
   unguaranteed_residual_value?: number;
   initial_direct_costs?: number;
@@ -35,17 +45,13 @@ export type LessorLeasePayload = {
   classification_override_reason?: string | null;
 
   manufacturer_dealer_lessor?: boolean;
+
   billing_amount: number;
   billing_basis: "gross" | "net";
   vat_rate: number;
 
-  billing_frequency:
-    | "weekly"
-    | "monthly"
-    | "quarterly"
-    | "annually";
-
-  billing_timing: "arrears" | "advance";
+  billing_frequency: LessorBillingFrequency;
+  billing_timing: LessorBillingTiming;
   bill_day_of_month?: number | null;
 
   lease_classification: LessorClassification;
@@ -62,14 +68,89 @@ export type LessorLeasePayload = {
   bank_account_id?: number | null;
 
   finance_income_account_code?: string | null;
-  net_investment_current_account_code?: string | null;
-  net_investment_noncurrent_account_code?: string | null;
+
+  net_investment_current_account_code?:
+    string | null;
+
+  net_investment_noncurrent_account_code?:
+    string | null;
 
   notes?: string | null;
 };
 
+export type FinanceLeasePreviewRow = {
+  period_no: number;
+  opening_net_investment: number;
+  lease_payment: number;
+  finance_income: number;
+  principal_reduction: number;
+  closing_net_investment: number;
+};
+
+export type LessorClassificationResult = {
+  classification: LessorClassification;
+
+  proposed_classification:
+    LessorClassification;
+
+  overridden: boolean;
+  override_reason?: string | null;
+
+  lease_term_months: number;
+  economic_life_months: number;
+
+  lease_term_ratio: number;
+  pv_fair_value_ratio: number;
+
+  present_value_lease_payments: number;
+  fair_value: number;
+
+  indicators?: Record<string, boolean>;
+  reasons?: string[];
+  warnings?: string[];
+};
+
+export type FinanceLeaseTermsPreview = {
+  classification: "finance";
+
+  period_count: number;
+  periodic_payment: number;
+
+  target_net_investment: number;
+  gross_investment: number;
+  initial_net_investment: number;
+  unearned_finance_income: number;
+  total_finance_income: number;
+
+  annual_interest_rate: number;
+  periodic_interest_rate: number;
+
+  guaranteed_residual_value: number;
+  unguaranteed_residual_value: number;
+
+  schedule: FinanceLeasePreviewRow[];
+};
+
+export type OperatingLeaseTermsPreview = {
+  classification: "operating";
+  period_count: number;
+  message: string;
+  schedule: [];
+};
+
+export type LessorTermsPreview =
+  | FinanceLeaseTermsPreview
+  | OperatingLeaseTermsPreview;
+
+export type LessorTermsPreviewResponse = {
+  ok: boolean;
+  classification: LessorClassificationResult;
+  terms: LessorTermsPreview;
+};
+
 export type LessorLeaseCreateResponse = {
   ok: boolean;
+
   item: {
     id: number;
     contract_no?: string | null;
@@ -81,7 +162,7 @@ export type LessorLeaseCreateResponse = {
 
 export type LessorClassificationResponse = {
   ok: boolean;
-  data: Record<string, unknown>;
+  data: LessorClassificationResult;
 };
 
 export async function createLessorLease(
@@ -102,7 +183,8 @@ export async function previewLessorClassification(
   payload: LessorLeasePayload
 ): Promise<LessorClassificationResponse> {
   return apiFetch(
-    `/api/companies/${companyId}/lessor-leases/classify`,
+    `/api/companies/${companyId}` +
+      `/lessor-leases/classify`,
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -110,13 +192,28 @@ export async function previewLessorClassification(
   ) as Promise<LessorClassificationResponse>;
 }
 
+export async function previewLessorTerms(
+  companyId: number,
+  payload: LessorLeasePayload
+): Promise<LessorTermsPreviewResponse> {
+  return apiFetch(
+    `/api/companies/${companyId}` +
+      `/lessor-leases/terms/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  ) as Promise<LessorTermsPreviewResponse>;
+}
+
 export async function generateLessorAccountingSchedule(
   companyId: number,
   leaseId: number
 ) {
   return apiFetch(
-    `/api/companies/${companyId}/lessor-leases/` +
-      `${leaseId}/accounting-schedule/generate`,
+    `/api/companies/${companyId}` +
+      `/lessor-leases/${leaseId}` +
+      `/accounting-schedule/generate`,
     {
       method: "POST",
       body: JSON.stringify({}),

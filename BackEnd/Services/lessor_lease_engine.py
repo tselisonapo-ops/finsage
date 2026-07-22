@@ -565,6 +565,515 @@ class LessorLeaseEngine:
     # FINANCE LEASE
     # =========================================================
 
+    def preview_lessor_terms(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        classification = (
+            self.classify_and_validate(data)
+        )
+
+        resolved = classification[
+            "classification"
+        ]
+
+        if resolved == "operating":
+            return {
+                "classification": classification,
+                "terms": {
+                    "classification": "operating",
+                    "period_count":
+                        self._preview_period_count(data),
+                    "message": (
+                        "The lease is classified as an "
+                        "operating lease. Enter the "
+                        "contractual rental amount in the "
+                        "agreement step."
+                    ),
+                    "schedule": [],
+                },
+            }
+
+        terms = self.preview_finance_lease_terms(
+            data
+        )
+
+        fair_value = self._decimal(
+            data.get("fair_value")
+            or data.get(
+                "underlying_asset_fair_value"
+            )
+        )
+
+        pv_payments = self._decimal(
+            terms.get(
+                "initial_net_investment"
+            )
+        )
+
+        classification["present_value_lease_payments"] = (
+            float(
+                self._money_decimal(
+                    pv_payments
+                )
+            )
+        )
+
+        classification["pv_fair_value_ratio"] = (
+            self._decimal_float(
+                pv_payments / fair_value
+            )
+            if fair_value > 0
+            else 0
+        )
+
+        return {
+            "classification": classification,
+            "terms": terms,
+        }
+
+
+    def preview_finance_lease_terms(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        period_count = (
+            self._preview_period_count(data)
+        )
+
+        frequency = (
+            data.get("billing_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        timing = (
+            data.get("billing_timing")
+            or "arrears"
+        ).strip().lower()
+
+        if timing not in {
+            "arrears",
+            "advance",
+        }:
+            raise ValueError(
+                "billing_timing must be "
+                "arrears or advance"
+            )
+
+        periods_per_year = (
+            self._periods_per_year(
+                frequency
+            )
+        )
+
+        annual_rate = self._annual_rate(
+            data.get("interest_rate_implicit")
+            or data.get(
+                "implicit_interest_rate"
+            )
+            or data.get("discount_rate")
+        )
+
+        periodic_rate = (
+            annual_rate
+            / Decimal(periods_per_year)
+        )
+
+        fair_value = self._decimal(
+            data.get(
+                "underlying_asset_fair_value"
+            )
+            or data.get("fair_value")
+        )
+
+        if fair_value <= 0:
+            raise ValueError(
+                "underlying_asset_fair_value "
+                "must be greater than zero"
+            )
+
+        initial_direct_costs = self._decimal(
+            data.get("initial_direct_costs")
+        )
+
+        manufacturer_dealer = self._bool(
+            data.get(
+                "manufacturer_dealer_lessor"
+            )
+        )
+
+        target_net_investment = fair_value
+
+        if not manufacturer_dealer:
+            target_net_investment += (
+                initial_direct_costs
+            )
+
+        guaranteed_residual = self._decimal(
+            data.get(
+                "guaranteed_residual_value"
+            )
+        )
+
+        unguaranteed_residual = self._decimal(
+            data.get(
+                "unguaranteed_residual_value"
+            )
+        )
+
+        total_residual = (
+            guaranteed_residual
+            + unguaranteed_residual
+        )
+
+        payment = self._solve_periodic_payment(
+            target_net_investment=
+                target_net_investment,
+            residual_value=total_residual,
+            period_count=period_count,
+            periodic_rate=periodic_rate,
+            timing=timing,
+        )
+
+        opening = self._money_decimal(
+            target_net_investment
+        )
+
+        rows = []
+
+        for period_no in range(
+            1,
+            period_count + 1,
+        ):
+            if timing == "advance":
+                cash_payment = min(
+                    payment,
+                    opening,
+                )
+
+                if period_no == 1:
+                    finance_income = Decimal("0")
+                else:
+                    finance_income = (
+                        self._money_decimal(
+                            opening * periodic_rate
+                        )
+                    )
+
+                principal = self._money_decimal(
+                    cash_payment - finance_income
+                )
+
+                closing = self._money_decimal(
+                    opening
+                    + finance_income
+                    - cash_payment
+                )
+
+            else:
+                finance_income = (
+                    self._money_decimal(
+                        opening * periodic_rate
+                    )
+                )
+
+                principal = self._money_decimal(
+                    payment - finance_income
+                )
+
+                closing = self._money_decimal(
+                    opening
+                    + finance_income
+                    - payment
+                )
+
+            if period_no == period_count:
+                expected_closing = (
+                    self._money_decimal(
+                        total_residual
+                    )
+                )
+
+                principal = self._money_decimal(
+                    opening
+                    + finance_income
+                    - expected_closing
+                )
+
+                payment_for_row = (
+                    self._money_decimal(
+                        principal
+                        + finance_income
+                    )
+                )
+
+                closing = expected_closing
+            else:
+                payment_for_row = payment
+
+            rows.append({
+                "period_no": period_no,
+
+                "opening_net_investment":
+                    float(
+                        self._money_decimal(
+                            opening
+                        )
+                    ),
+
+                "lease_payment":
+                    float(
+                        self._money_decimal(
+                            payment_for_row
+                        )
+                    ),
+
+                "finance_income":
+                    float(
+                        self._money_decimal(
+                            finance_income
+                        )
+                    ),
+
+                "principal_reduction":
+                    float(
+                        self._money_decimal(
+                            principal
+                        )
+                    ),
+
+                "closing_net_investment":
+                    float(
+                        self._money_decimal(
+                            closing
+                        )
+                    ),
+            })
+
+            opening = closing
+
+        gross_investment = (
+            sum(
+                self._decimal(
+                    row["lease_payment"]
+                )
+                for row in rows
+            )
+            + total_residual
+        )
+
+        unearned_finance_income = (
+            gross_investment
+            - target_net_investment
+        )
+
+        return {
+            "classification": "finance",
+            "period_count": period_count,
+
+            "periodic_payment": float(
+                self._money_decimal(payment)
+            ),
+
+            "target_net_investment": float(
+                self._money_decimal(
+                    target_net_investment
+                )
+            ),
+
+            "gross_investment": float(
+                self._money_decimal(
+                    gross_investment
+                )
+            ),
+
+            "initial_net_investment": float(
+                self._money_decimal(
+                    target_net_investment
+                )
+            ),
+
+            "unearned_finance_income": float(
+                self._money_decimal(
+                    unearned_finance_income
+                )
+            ),
+
+            "total_finance_income": round(
+                sum(
+                    float(
+                        row["finance_income"]
+                    )
+                    for row in rows
+                ),
+                2,
+            ),
+
+            "annual_interest_rate": float(
+                annual_rate
+            ),
+
+            "periodic_interest_rate": float(
+                periodic_rate
+            ),
+
+            "guaranteed_residual_value":
+                float(
+                    self._money_decimal(
+                        guaranteed_residual
+                    )
+                ),
+
+            "unguaranteed_residual_value":
+                float(
+                    self._money_decimal(
+                        unguaranteed_residual
+                    )
+                ),
+
+            "schedule": rows,
+        }
+
+
+    def _preview_period_count(
+        self,
+        data: Dict[str, Any],
+    ) -> int:
+        months = self._positive_int(
+            data.get("lease_term_months")
+        )
+
+        if months <= 0:
+            raise ValueError(
+                "lease_term_months must be "
+                "greater than zero"
+            )
+
+        frequency = (
+            data.get("billing_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        if frequency == "weekly":
+            return max(
+                round(
+                    Decimal(months)
+                    * Decimal("52")
+                    / Decimal("12")
+                ),
+                1,
+            )
+
+        if frequency == "monthly":
+            return months
+
+        if frequency == "quarterly":
+            return max(
+                (
+                    months
+                    + 2
+                ) // 3,
+                1,
+            )
+
+        if frequency == "annually":
+            return max(
+                (
+                    months
+                    + 11
+                ) // 12,
+                1,
+            )
+
+        raise ValueError(
+            f"Unsupported billing frequency: "
+            f"{frequency}"
+        )
+
+
+    @classmethod
+    def _solve_periodic_payment(
+        cls,
+        *,
+        target_net_investment: Decimal,
+        residual_value: Decimal,
+        period_count: int,
+        periodic_rate: Decimal,
+        timing: str,
+    ) -> Decimal:
+        if period_count <= 0:
+            raise ValueError(
+                "period_count must be "
+                "greater than zero"
+            )
+
+        if target_net_investment <= 0:
+            raise ValueError(
+                "target_net_investment must be "
+                "greater than zero"
+            )
+
+        if periodic_rate == 0:
+            amount_to_recover = (
+                target_net_investment
+                - residual_value
+            )
+
+            if amount_to_recover <= 0:
+                raise ValueError(
+                    "Residual value cannot equal or "
+                    "exceed the target net investment"
+                )
+
+            return cls._money_decimal(
+                amount_to_recover
+                / Decimal(period_count)
+            )
+
+        discount_factor = (
+            Decimal("1")
+            + periodic_rate
+        ) ** Decimal(-period_count)
+
+        pv_residual = (
+            residual_value
+            * discount_factor
+        )
+
+        amount_to_recover = (
+            target_net_investment
+            - pv_residual
+        )
+
+        if amount_to_recover <= 0:
+            raise ValueError(
+                "The present value of residual values "
+                "cannot equal or exceed the target "
+                "net investment"
+            )
+
+        annuity_factor = (
+            Decimal("1")
+            - discount_factor
+        ) / periodic_rate
+
+        if timing == "advance":
+            annuity_factor *= (
+                Decimal("1")
+                + periodic_rate
+            )
+
+        if annuity_factor <= 0:
+            raise ValueError(
+                "Unable to calculate the "
+                "periodic payment"
+            )
+
+        return cls._money_decimal(
+            amount_to_recover
+            / annuity_factor
+        )
+
     def build_finance_lease_schedule(
         self,
         lease: Dict[str, Any],
