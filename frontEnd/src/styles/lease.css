@@ -296,3 +296,142 @@ button:hover:not(:disabled) {
   line-height: 1.45;
   opacity: 0.75;
 }
+
+.lessor-asset-summary {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.4fr)
+    repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.04);
+}
+
+.lessor-asset-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lessor-asset-summary span {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.62;
+}
+
+.lessor-asset-summary strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lessor-asset-summary small {
+  font-size: 0.72rem;
+  opacity: 0.65;
+}
+
+.lessor-indicator-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lessor-choice-card {
+  position: relative;
+  display: flex;
+  min-height: 92px;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.13);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.lessor-choice-card:hover {
+  border-color: rgba(13, 148, 136, 0.5);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.lessor-choice-card.is-selected {
+  border-color: #0d9488;
+  background: rgba(13, 148, 136, 0.055);
+  box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.12);
+}
+
+.lessor-choice-card > input {
+  width: 17px;
+  min-width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  accent-color: #0d9488;
+  cursor: pointer;
+}
+
+.lessor-choice-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lessor-choice-content strong {
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+
+.lessor-choice-content small {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  opacity: 0.72;
+}
+
+.lessor-choice-content em {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 600;
+  color: #0f766e;
+}
+
+.field-error {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.74rem;
+  color: #b91c1c;
+}
+
+.lease-wizard input[readonly] {
+  background: rgba(148, 163, 184, 0.09);
+  cursor: default;
+}
+
+@media (max-width: 1050px) {
+  .lessor-asset-summary {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .lessor-indicator-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .lessor-asset-summary {
+    grid-template-columns: 1fr;
+  }
+}

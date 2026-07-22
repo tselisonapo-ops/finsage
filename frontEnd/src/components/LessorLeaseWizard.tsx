@@ -10,7 +10,7 @@ import {
 } from "../api/coa";
 
 import { apiFetch } from "../api/apiFetch";
-
+import "../styles/lease.css";
 import {
   createLessorLease,
   generateLessorAccountingSchedule,
@@ -27,6 +27,31 @@ type CustomerRow = {
   name?: string;
   customer_name?: string;
   trading_name?: string;
+};
+
+type AssetOption = {
+  id: number;
+
+  asset_no?: string;
+  asset_name?: string;
+  asset_class?: string;
+
+  asset_account_code?: string | null;
+
+  cost_total?: number;
+  carrying_amount?: number;
+  economic_life_months?: number;
+
+  acquisition_date?: string | null;
+  available_for_use_date?: string | null;
+};
+
+type AssetOptionsResponse = {
+  ok?: boolean;
+  data?: AssetOption[];
+  items?: AssetOption[];
+  rows?: AssetOption[];
+  as_at?: string;
 };
 
 type WizardStep = 1 | 2;
@@ -115,6 +140,23 @@ function customerName(row: CustomerRow) {
   );
 }
 
+function assetName(asset: AssetOption) {
+  return (
+    asset.asset_name ||
+    `Asset ${asset.id}`
+  );
+}
+
+function assetOptionLabel(
+  asset: AssetOption
+) {
+  const number = asset.asset_no
+    ? ` (${asset.asset_no})`
+    : "";
+
+  return `${assetName(asset)}${number}`;
+}
+
 const LessorLeaseWizard: React.FC<Props> = ({
   companyId,
   selectedAccountCode = "",
@@ -170,6 +212,15 @@ const LessorLeaseWizard: React.FC<Props> = ({
 
   const [loadingCustomers, setLoadingCustomers] =
     useState(false);
+
+  const [assets, setAssets] =
+    useState<AssetOption[]>([]);
+
+  const [loadingAssets, setLoadingAssets] =
+    useState(false);
+
+  const [assetsError, setAssetsError] =
+    useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] =
@@ -469,6 +520,82 @@ useEffect(() => {
     };
   }, [companyId]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadAssets() {
+      if (!companyId) return;
+
+      try {
+        setLoadingAssets(true);
+        setAssetsError("");
+
+        const response =
+          await apiFetch(
+            `/api/companies/${companyId}` +
+              `/assets/lease-options` +
+              `?status=active&limit=500`,
+            {
+              method: "GET",
+            }
+          ) as AssetOptionsResponse;
+
+        if (!active) return;
+
+        const rows =
+          response.data ||
+          response.items ||
+          response.rows ||
+          [];
+
+        setAssets(
+          rows
+            .map((asset) => ({
+              ...asset,
+              id: Number(asset.id),
+              carrying_amount: Number(
+                asset.carrying_amount || 0
+              ),
+              cost_total: Number(
+                asset.cost_total || 0
+              ),
+              economic_life_months: Number(
+                asset.economic_life_months || 0
+              ),
+            }))
+            .filter(
+              (asset) =>
+                Number.isFinite(asset.id) &&
+                asset.id > 0
+            )
+        );
+      } catch (err) {
+        console.error(
+          "[LESSOR] Failed to load assets",
+          err
+        );
+
+        if (!active) return;
+
+        setAssetsError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load company assets"
+        );
+      } finally {
+        if (active) {
+          setLoadingAssets(false);
+        }
+      }
+    }
+
+    loadAssets();
+
+    return () => {
+      active = false;
+    };
+  }, [companyId]);
+
   const coaByCode = useMemo(() => {
     return new Map(
       coaAccounts.map((account) => [
@@ -670,6 +797,15 @@ useEffect(() => {
     ));
   }
 
+  const selectedAsset = useMemo(
+    () =>
+      assets.find(
+        (asset) =>
+          asset.id === Number(form.asset_id)
+      ) || null,
+    [assets, form.asset_id]
+  );
+
   const termMonths = useMemo(() => {
     if (!form.start_date || !form.end_date) {
       return 0;
@@ -737,60 +873,104 @@ useEffect(() => {
     }));
   }
 
-function validateStep1() {
-  if (
-    !String(
-      form.underlying_asset_description || ""
-    ).trim()
+  function selectAsset(
+    event: React.ChangeEvent<HTMLSelectElement>
   ) {
-    return "Underlying asset description is required.";
+    const assetId = Number(
+      event.target.value || 0
+    );
+
+    const asset =
+      assets.find(
+        (row) => row.id === assetId
+      ) || null;
+
+    if (!asset) {
+      setForm((current) => ({
+        ...current,
+        asset_id: null,
+        underlying_asset_description: "",
+        underlying_asset_account_code: null,
+        underlying_asset_carrying_amount: 0,
+        economic_life_months: 0,
+      }));
+
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+
+      asset_id: asset.id,
+
+      underlying_asset_description:
+        assetName(asset),
+
+      underlying_asset_account_code:
+        asset.asset_account_code || null,
+
+      underlying_asset_carrying_amount:
+        Number(
+          asset.carrying_amount || 0
+        ),
+
+      economic_life_months:
+        Number(
+          asset.economic_life_months || 0
+        ),
+    }));
   }
 
-  if (
-    Number(
-      form.underlying_asset_carrying_amount || 0
-    ) < 0
-  ) {
-    return "Asset carrying amount cannot be negative.";
-  }
+  function validateStep1() {
+    if (!form.asset_id) {
+      return "Select the underlying asset.";
+    }
 
-  if (
-    Number(
-      form.underlying_asset_fair_value || 0
-    ) <= 0
-  ) {
-    return "Underlying asset fair value must be greater than zero.";
-  }
+    if (
+      Number(
+        form.underlying_asset_carrying_amount || 0
+      ) < 0
+    ) {
+      return "Asset carrying amount cannot be negative.";
+    }
 
-  if (
-    Number(form.lease_term_months || 0) <= 0
-  ) {
-    return "Lease term must be greater than zero.";
-  }
+    if (
+      Number(
+        form.underlying_asset_fair_value || 0
+      ) <= 0
+    ) {
+      return "Underlying asset fair value must be greater than zero.";
+    }
 
-  if (
-    Number(form.economic_life_months || 0) <= 0
-  ) {
-    return "Economic life must be greater than zero.";
-  }
+    if (
+      Number(form.lease_term_months || 0) <= 0
+    ) {
+      return "Lease term must be greater than zero.";
+    }
 
-  if (
-    Number(form.interest_rate_implicit || 0) < 0
-  ) {
-    return "Implicit interest rate cannot be negative.";
-  }
+    if (
+      Number(form.economic_life_months || 0) <= 0
+    ) {
+      return "Economic life must be greater than zero.";
+    }
 
-  if (
-    form.classification_override &&
-    !String(
-      form.classification_override_reason || ""
-    ).trim()
-  ) {
-    return "Enter a reason for the classification override.";
-  }
+    if (
+      Number(form.interest_rate_implicit || 0) < 0
+    ) {
+      return "Implicit interest rate cannot be negative.";
+    }
 
-  return null;
-}
+    if (
+      form.classification_override &&
+      !String(
+        form.classification_override_reason || ""
+      ).trim()
+    ) {
+      return "Enter a reason for the classification override.";
+    }
+
+    return null;
+  }
 
   function validateStep2() {
     if (!form.contract_name.trim()) {
@@ -958,15 +1138,44 @@ function validateStep1() {
     setCreatedLeaseId(null);
     setScheduleResult(null);
     setError(null);
+    setStep(1);
+
+    setManufacturerDealerConfirmed(
+      manufacturerDealerSuggested
+    );
 
     setForm((current) => ({
       ...current,
+
       contract_no: "",
       contract_name: "",
+      customer_id: null,
+
+      asset_id: null,
+      underlying_asset_description: "",
+      underlying_asset_account_code: null,
+      underlying_asset_carrying_amount: 0,
+      underlying_asset_fair_value: 0,
+
+      economic_life_months: 0,
+      lease_term_months: 0,
+
+      guaranteed_residual_value: 0,
+      unguaranteed_residual_value: 0,
+      initial_direct_costs: 0,
+      interest_rate_implicit: 0,
+
+      ownership_transfers: false,
+      purchase_option_reasonably_certain:
+        false,
+      specialised_asset: false,
+
+      classification_override: false,
+      classification_override_reason: "",
+
       manufacturer_dealer_lessor:
         manufacturerDealerSuggested,
-      customer_id: null,
-      asset_id: null,
+
       start_date: "",
       end_date: "",
       billing_amount: 0,
@@ -1009,98 +1218,162 @@ function validateStep1() {
 
       <div className="lease-grid-3">
         <div className="field-row field-span-3">
-          <div className="lessor-manufacturer-card">
-            <label className="lessor-checkbox-row">
-              <input
-                type="checkbox"
-                checked={
-                  manufacturerDealerConfirmed
-                }
-                disabled={loadingCompanyProfile}
-                onChange={(event) => {
-                  const confirmed =
-                    event.target.checked;
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                manufacturerDealerConfirmed
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              checked={
+                manufacturerDealerConfirmed
+              }
+              disabled={loadingCompanyProfile}
+              onChange={(event) => {
+                const confirmed =
+                  event.target.checked;
 
-                  setManufacturerDealerConfirmed(
-                    confirmed
-                  );
+                setManufacturerDealerConfirmed(
+                  confirmed
+                );
 
-                  setForm((current) => ({
-                    ...current,
-                    manufacturer_dealer_lessor:
-                      confirmed,
-                  }));
-                }}
-              />
+                setForm((current) => ({
+                  ...current,
+                  manufacturer_dealer_lessor:
+                    confirmed,
+                }));
+              }}
+            />
 
-              <span>
-                This company is acting as a
-                manufacturer or dealer lessor for
-                this lease
-              </span>
-            </label>
+            <span className="lessor-choice-content">
+              <strong>
+                Manufacturer or dealer lessor
+              </strong>
 
-            {loadingCompanyProfile ? (
-              <small className="field-help">
-                Checking the company industry…
+              <small>
+                This particular leased asset is inventory
+                normally manufactured or sold by the
+                company.
               </small>
-            ) : manufacturerDealerSuggested ? (
-              <small className="field-help">
-                Preselected because the company
-                industry is{" "}
-                <strong>
+
+              {loadingCompanyProfile ? (
+                <em>
+                  Checking company industry…
+                </em>
+              ) : manufacturerDealerSuggested ? (
+                <em>
+                  Suggested because the company industry
+                  is{" "}
                   {companyProfile?.industry ||
-                    "Car Dealership or Manufacturing"}
-                </strong>
-                . Confirm that this asset is normally
-                manufactured or sold by the company.
+                    "Car Dealership or Manufacturing"}.
+                </em>
+              ) : null}
+            </span>
+          </label>
+        </div>
+
+        <div className="field-row field-span-3">
+          <label>Underlying asset *</label>
+
+          <select
+            value={String(form.asset_id || "")}
+            onChange={selectAsset}
+            disabled={loadingAssets}
+          >
+            <option value="">
+              {loadingAssets
+                ? "Loading company assets..."
+                : "Select an asset..."}
+            </option>
+
+            {assets.map((asset) => (
+              <option
+                key={asset.id}
+                value={asset.id}
+              >
+                {assetOptionLabel(asset)}
+              </option>
+            ))}
+          </select>
+
+          {assetsError && (
+            <small className="field-error">
+              {assetsError}
+            </small>
+          )}
+        </div>
+
+        {selectedAsset && (
+          <div className="lessor-asset-summary field-span-3">
+            <div>
+              <span>Asset</span>
+
+              <strong>
+                {assetName(selectedAsset)}
+              </strong>
+
+              <small>
+                {selectedAsset.asset_no ||
+                  `Asset ${selectedAsset.id}`}
               </small>
-            ) : (
-              <small className="field-help">
-                Select this only when the leased asset
-                is inventory normally manufactured or
-                sold by this company.
-              </small>
-            )}
+            </div>
+
+            <div>
+              <span>Carrying amount</span>
+
+              <strong>
+                {Number(
+                  selectedAsset.carrying_amount || 0
+                ).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </strong>
+            </div>
+
+            <div>
+              <span>Recorded cost</span>
+
+              <strong>
+                {Number(
+                  selectedAsset.cost_total || 0
+                ).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </strong>
+            </div>
+
+            <div>
+              <span>Economic life</span>
+
+              <strong>
+                {Number(
+                  selectedAsset.economic_life_months || 0
+                ) || "Not set"}
+                {Number(
+                  selectedAsset.economic_life_months || 0
+                )
+                  ? " months"
+                  : ""}
+              </strong>
+            </div>
+
+            <div>
+              <span>Asset class</span>
+
+              <strong>
+                {selectedAsset.asset_class ||
+                  "Not specified"}
+              </strong>
+            </div>
           </div>
-        </div>
-
-        <div className="field-row field-span-2">
-          <label>
-            Underlying asset description *
-          </label>
-
-          <input
-            name="underlying_asset_description"
-            value={
-              form.underlying_asset_description ||
-              ""
-            }
-            onChange={updateText}
-            placeholder="e.g. Toyota Hilux 2.8 GD-6"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Existing asset ID
-          </label>
-
-          <input
-            type="number"
-            value={form.asset_id || ""}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                asset_id:
-                  event.target.value
-                    ? Number(event.target.value)
-                    : null,
-              }))
-            }
-            placeholder="Optional"
-          />
-        </div>
+        )}
 
         <div className="field-row">
           <label>
@@ -1115,7 +1388,7 @@ function validateStep1() {
                 .underlying_asset_carrying_amount ||
               0
             }
-            onChange={updateNumber}
+            readOnly
             step="0.01"
           />
         </div>
@@ -1240,9 +1513,18 @@ function validateStep1() {
           />
         </div>
 
-        <div className="field-row field-span-2">
-          <div className="lessor-indicator-card">
-            <label className="lessor-checkbox-row">
+        <div className="field-row field-span-3">
+          <div className="lessor-indicator-grid">
+            <label
+              className={
+                "lessor-choice-card " +
+                (
+                  form.ownership_transfers
+                    ? "is-selected"
+                    : ""
+                )
+              }
+            >
               <input
                 type="checkbox"
                 name="ownership_transfers"
@@ -1252,13 +1534,29 @@ function validateStep1() {
                 onChange={updateCheckbox}
               />
 
-              <span>
-                Ownership transfers to the lessee
-                by the end of the lease
+              <span className="lessor-choice-content">
+                <strong>
+                  Ownership transfer
+                </strong>
+
+                <small>
+                  Ownership of the asset transfers to the
+                  lessee by the end of the lease.
+                </small>
               </span>
             </label>
 
-            <label className="lessor-checkbox-row">
+            <label
+              className={
+                "lessor-choice-card " +
+                (
+                  form
+                    .purchase_option_reasonably_certain
+                    ? "is-selected"
+                    : ""
+                )
+              }
+            >
               <input
                 type="checkbox"
                 name="purchase_option_reasonably_certain"
@@ -1269,13 +1567,28 @@ function validateStep1() {
                 onChange={updateCheckbox}
               />
 
-              <span>
-                Purchase option is reasonably
-                certain to be exercised
+              <span className="lessor-choice-content">
+                <strong>
+                  Purchase option
+                </strong>
+
+                <small>
+                  The lessee is reasonably certain to
+                  exercise the purchase option.
+                </small>
               </span>
             </label>
 
-            <label className="lessor-checkbox-row">
+            <label
+              className={
+                "lessor-choice-card " +
+                (
+                  form.specialised_asset
+                    ? "is-selected"
+                    : ""
+                )
+              }
+            >
               <input
                 type="checkbox"
                 name="specialised_asset"
@@ -1285,16 +1598,31 @@ function validateStep1() {
                 onChange={updateCheckbox}
               />
 
-              <span>
-                The asset is specialised and has
-                no readily available alternative use
+              <span className="lessor-choice-content">
+                <strong>
+                  Specialised asset
+                </strong>
+
+                <small>
+                  The asset has no readily available
+                  alternative use without major changes.
+                </small>
               </span>
             </label>
           </div>
         </div>
 
-        <div className="field-row">
-          <label className="lessor-checkbox-row">
+        <div className="field-row field-span-3">
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.classification_override
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
             <input
               type="checkbox"
               name="classification_override"
@@ -1304,8 +1632,16 @@ function validateStep1() {
               onChange={updateCheckbox}
             />
 
-            <span>
-              Override the calculated classification
+            <span className="lessor-choice-content">
+              <strong>
+                Override calculated classification
+              </strong>
+
+              <small>
+                Use this only when documented facts support
+                a classification different from the
+                calculated result.
+              </small>
             </span>
           </label>
         </div>
