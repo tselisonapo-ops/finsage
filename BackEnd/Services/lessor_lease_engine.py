@@ -694,20 +694,15 @@ class LessorLeaseEngine:
         ]
 
         if resolved == "operating":
+            terms = (
+                self.preview_operating_lease_terms(
+                    data
+                )
+            )
+
             return {
                 "classification": classification,
-                "terms": {
-                    "classification": "operating",
-                    "period_count":
-                        self._preview_period_count(data),
-                    "message": (
-                        "The lease is classified as an "
-                        "operating lease. Enter the "
-                        "contractual rental amount in the "
-                        "agreement step."
-                    ),
-                    "schedule": [],
-                },
+                "terms": terms,
             }
 
         terms = self.preview_finance_lease_terms(
@@ -748,6 +743,335 @@ class LessorLeaseEngine:
             "terms": terms,
         }
 
+    def preview_operating_lease_terms(
+        self,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        period_count = self._preview_period_count(
+            data
+        )
+
+        frequency = (
+            data.get("billing_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        timing = (
+            data.get("billing_timing")
+            or "arrears"
+        ).strip().lower()
+
+        if timing not in {
+            "arrears",
+            "advance",
+        }:
+            raise ValueError(
+                "billing_timing must be "
+                "arrears or advance"
+            )
+
+        billing_amount = self._decimal(
+            data.get("billing_amount")
+        )
+
+        if billing_amount <= 0:
+            raise ValueError(
+                "billing_amount must be greater "
+                "than zero for an operating lease"
+            )
+
+        billing_basis = (
+            data.get("billing_basis")
+            or "gross"
+        ).strip().lower()
+
+        if billing_basis not in {
+            "gross",
+            "net",
+        }:
+            raise ValueError(
+                "billing_basis must be gross or net"
+            )
+
+        vat_rate = self._decimal(
+            data.get("vat_rate")
+        )
+
+        if billing_basis == "gross":
+            if vat_rate > 0:
+                contractual_per_period = (
+                    billing_amount
+                    / (
+                        Decimal("1")
+                        + vat_rate
+                    )
+                )
+            else:
+                contractual_per_period = (
+                    billing_amount
+                )
+        else:
+            contractual_per_period = (
+                billing_amount
+            )
+
+        contractual_per_period = (
+            self._money_decimal(
+                contractual_per_period
+            )
+        )
+
+        lease_incentives = self._decimal(
+            data.get("lease_incentives")
+            or data.get("incentive_amount")
+        )
+
+        initial_direct_costs = self._decimal(
+            data.get("initial_direct_costs")
+        )
+
+        total_contractual = (
+            contractual_per_period
+            * Decimal(period_count)
+        )
+
+        total_income = (
+            total_contractual
+            - lease_incentives
+        )
+
+        straight_line_per_period = (
+            self._money_decimal(
+                total_income
+                / Decimal(period_count)
+            )
+        )
+
+        direct_cost_per_period = (
+            self._money_decimal(
+                initial_direct_costs
+                / Decimal(period_count)
+            )
+        )
+
+        accrued_balance = Decimal("0")
+        deferred_balance = Decimal("0")
+        rows: List[Dict[str, Any]] = []
+
+        for period_no in range(
+            1,
+            period_count + 1,
+        ):
+            contractual = (
+                contractual_per_period
+            )
+
+            straight_line = (
+                straight_line_per_period
+            )
+
+            difference = self._money_decimal(
+                straight_line - contractual
+            )
+
+            accrued_movement = Decimal("0")
+            deferred_movement = Decimal("0")
+
+            if difference > 0:
+                accrued_movement = difference
+
+            elif difference < 0:
+                deferred_movement = abs(
+                    difference
+                )
+
+            net_balance = (
+                accrued_balance
+                - deferred_balance
+                + accrued_movement
+                - deferred_movement
+            )
+
+            if net_balance > 0:
+                accrued_balance = net_balance
+                deferred_balance = Decimal("0")
+
+            elif net_balance < 0:
+                accrued_balance = Decimal("0")
+                deferred_balance = abs(
+                    net_balance
+                )
+
+            else:
+                accrued_balance = Decimal("0")
+                deferred_balance = Decimal("0")
+
+            rows.append({
+                "period_no": period_no,
+
+                "contractual_income": float(
+                    self._money_decimal(
+                        contractual
+                    )
+                ),
+
+                "straight_line_income": float(
+                    self._money_decimal(
+                        straight_line
+                    )
+                ),
+
+                "initial_direct_cost_expense":
+                    float(
+                        self._money_decimal(
+                            direct_cost_per_period
+                        )
+                    ),
+
+                "accrued_rent_movement": float(
+                    self._money_decimal(
+                        accrued_movement
+                    )
+                ),
+
+                "deferred_rent_movement": float(
+                    self._money_decimal(
+                        deferred_movement
+                    )
+                ),
+
+                "accrued_rent_balance": float(
+                    self._money_decimal(
+                        accrued_balance
+                    )
+                ),
+
+                "deferred_rent_balance": float(
+                    self._money_decimal(
+                        deferred_balance
+                    )
+                ),
+            })
+
+        total_recognised = sum(
+            (
+                self._decimal(
+                    row["straight_line_income"]
+                )
+                for row in rows
+            ),
+            Decimal("0"),
+        )
+
+        rounding_difference = (
+            self._money_decimal(
+                total_income
+                - total_recognised
+            )
+        )
+
+        if rows and rounding_difference:
+            last = rows[-1]
+
+            last["straight_line_income"] = (
+                float(
+                    self._money_decimal(
+                        self._decimal(
+                            last[
+                                "straight_line_income"
+                            ]
+                        )
+                        + rounding_difference
+                    )
+                )
+            )
+
+        straight_line_total = sum(
+            (
+                self._decimal(
+                    row["straight_line_income"]
+                )
+                for row in rows
+            ),
+            Decimal("0"),
+        )
+
+        direct_cost_total = sum(
+            (
+                self._decimal(
+                    row[
+                        "initial_direct_cost_expense"
+                    ]
+                )
+                for row in rows
+            ),
+            Decimal("0"),
+        )
+
+        return {
+            "classification": "operating",
+            "period_count": period_count,
+
+            "message": (
+                "Operating lease income is "
+                "recognised on a straight-line "
+                "basis unless another systematic "
+                "basis is more representative."
+            ),
+
+            "periodic_rental": float(
+                self._money_decimal(
+                    billing_amount
+                )
+            ),
+
+            "contractual_income": float(
+                self._money_decimal(
+                    total_contractual
+                )
+            ),
+
+            "straight_line_income": float(
+                self._money_decimal(
+                    straight_line_total
+                )
+            ),
+
+            "initial_direct_cost_expense":
+                float(
+                    self._money_decimal(
+                        direct_cost_total
+                    )
+                ),
+
+            "closing_accrued_rent": (
+                float(
+                    self._money_decimal(
+                        rows[-1][
+                            "accrued_rent_balance"
+                        ]
+                    )
+                )
+                if rows
+                else 0.0
+            ),
+
+            "closing_deferred_rent": (
+                float(
+                    self._money_decimal(
+                        rows[-1][
+                            "deferred_rent_balance"
+                        ]
+                    )
+                )
+                if rows
+                else 0.0
+            ),
+
+            "billing_frequency": frequency,
+            "billing_timing": timing,
+            "schedule": rows,
+        }
 
     def preview_finance_lease_terms(
         self,

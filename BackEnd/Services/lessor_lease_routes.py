@@ -731,7 +731,33 @@ def preview_lessor_terms(
                     "underlying_asset_carrying_amount",
                     minimum=0,
                 ),
+            "billing_amount":
+                _number(
+                    raw.get("billing_amount"),
+                    "billing_amount",
+                    minimum=0,
+                ),
 
+            "billing_basis": (
+                raw.get("billing_basis")
+                or "gross"
+            ).strip().lower(),
+
+            "vat_rate":
+                _number(
+                    raw.get("vat_rate"),
+                    "vat_rate",
+                    minimum=0,
+                ),
+
+            "lease_incentives":
+                _number(
+                    raw.get(
+                        "lease_incentives"
+                    ),
+                    "lease_incentives",
+                    minimum=0,
+                ),
             "interest_rate_implicit":
                 _number(
                     raw.get(

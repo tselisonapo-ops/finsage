@@ -19,6 +19,7 @@ import {
 
 import type {
   FinanceLeaseTermsPreview,
+  OperatingLeaseTermsPreview,
   LessorClassification,
   LessorClassificationResult,
   LessorLeasePayload,
@@ -1513,6 +1514,28 @@ useEffect(() => {
         </div>
 
         <div className="field-row">
+          <label>
+            Contractual rental per period
+          </label>
+
+          <input
+            type="number"
+            name="billing_amount"
+            value={form.billing_amount}
+            onChange={updateNumber}
+            min="0"
+            step="0.01"
+            placeholder="Required for operating leases"
+          />
+
+          <small className="field-help">
+            Used to build the operating lease income
+            schedule. For finance leases, FinSage will
+            replace this with the calculated payment.
+          </small>
+        </div>
+
+        <div className="field-row">
           <label>Payment frequency *</label>
 
           <select
@@ -1816,6 +1839,10 @@ useEffect(() => {
   }
 
   const renderStep2 = () => {
+    const operatingPreview =
+      termsPreview?.classification === "operating"
+        ? termsPreview as OperatingLeaseTermsPreview
+        : null;
     const financePreview =
       termsPreview?.classification === "finance"
         ? termsPreview as FinanceLeaseTermsPreview
@@ -1856,78 +1883,111 @@ useEffect(() => {
           </p>
         </div>
 
-        {classificationPreview && (
-          <div className="lessor-classification-summary">
-            <div>
-              <span>Classification</span>
-
-              <strong>
-                {classificationPreview
-                  .classification
-                  .toUpperCase()}
-              </strong>
-            </div>
-
-            <div>
-              <span>Lease term ratio</span>
-
-              <strong>
-                {Number(
-                  classificationPreview
-                    .lease_term_ratio || 0
-                ).toLocaleString(undefined, {
-                  style: "percent",
-                  maximumFractionDigits: 2,
-                })}
-              </strong>
-            </div>
-
-            <div>
-              <span>Calculated payment</span>
-
-              <strong>
-                {financePreview
-                  ? Number(
-                      financePreview
-                        .periodic_payment
-                    ).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })
-                  : "Enter contractual rent"}
-              </strong>
-            </div>
-          </div>
-        )}
-
         {financePreview ? (
           <div className="lessor-finance-preview">
-            <div className="lessor-accounting-summary">
-              <div className="lessor-metric-card">
-                <span>Periodic payment</span>
-                <strong>{money(financePreview.periodic_payment)}</strong>
-                <small>
-                  {form.billing_frequency} · {form.billing_timing}
-                </small>
-              </div>
+            <div className="lessor-top-grid">
+              {classificationPreview && (
+                <section className="lessor-top-panel">
+                  <div className="lessor-top-panel-head">
+                    <div>
+                      <h3>IFRS 16 classification</h3>
+                      <p>
+                        Evidence supporting the lessor
+                        classification.
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="lessor-metric-card">
-                <span>Initial net investment</span>
-                <strong>{money(financePreview.initial_net_investment)}</strong>
-                <small>Opening lease receivable</small>
-              </div>
+                  <div className="lessor-classification-grid">
+                    <div className="lessor-classification-card">
+                      <span>Classification</span>
 
-              <div className="lessor-metric-card">
-                <span>Gross investment</span>
-                <strong>{money(financePreview.gross_investment)}</strong>
-                <small>Payments plus residual values</small>
-              </div>
+                      <strong>
+                        {classificationPreview
+                          .classification
+                          .toUpperCase()}
+                      </strong>
 
-              <div className="lessor-metric-card">
-                <span>Unearned finance income</span>
-                <strong>{money(financePreview.unearned_finance_income)}</strong>
-                <small>Recognised over the lease term</small>
-              </div>
+                      <small>
+                        IFRS 16 lessor classification
+                      </small>
+                    </div>
+
+                    <div className="lessor-classification-card">
+                      <span>Lease term ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .lease_term_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+
+                      <small>
+                        Lease term compared with economic life
+                      </small>
+                    </div>
+
+                    <div className="lessor-classification-card">
+                      <span>PV / fair value ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .pv_fair_value_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+
+                      <small>
+                        Present value compared with asset fair value
+                      </small>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <section className="lessor-top-panel">
+                <div className="lessor-top-panel-head">
+                  <div>
+                    <h3>Lease measurement</h3>
+                    <p>Calculated finance lease amounts.</p>
+                  </div>
+                </div>
+
+                <div className="lessor-accounting-summary">
+                  <div className="lessor-metric-card">
+                    <span>Periodic payment</span>
+                    <strong>{money(financePreview.periodic_payment)}</strong>
+                    <small>
+                      {form.billing_frequency} · {form.billing_timing}
+                    </small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Initial net investment</span>
+                    <strong>{money(financePreview.initial_net_investment)}</strong>
+                    <small>Opening lease receivable</small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Gross investment</span>
+                    <strong>{money(financePreview.gross_investment)}</strong>
+                    <small>Payments plus residual values</small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Unearned finance income</span>
+                    <strong>{money(financePreview.unearned_finance_income)}</strong>
+                    <small>Recognised over the lease term</small>
+                  </div>
+                </div>
+              </section>
             </div>
 
             <div className="lessor-preview-grid">
@@ -2001,8 +2061,7 @@ useEffect(() => {
                   <h3>Net investment amortisation schedule</h3>
 
                   <p>
-                    Scroll to review all{" "}
-                    {financePreview.period_count} lease periods.
+                    Scroll to review all {financePreview.period_count} lease periods.
                   </p>
                 </div>
 
@@ -2060,16 +2119,13 @@ useEffect(() => {
                         )}
                       </td>
 
-                      <td>
-                        {money(financePreview.total_finance_income)}
-                      </td>
+                      <td>{money(financePreview.total_finance_income)}</td>
 
                       <td>
                         {money(
                           financePreview.schedule.reduce(
                             (total, row) =>
-                              total +
-                              Number(row.principal_reduction || 0),
+                              total + Number(row.principal_reduction || 0),
                             0
                           )
                         )}
@@ -2087,18 +2143,350 @@ useEffect(() => {
               </div>
             </section>
           </div>
+        ) : operatingPreview ? (
+          <div className="lessor-operating-preview">
+            <div className="lessor-top-grid">
+              {classificationPreview && (
+                <section className="lessor-top-panel">
+                  <div className="lessor-top-panel-head">
+                    <div>
+                      <h3>IFRS 16 classification</h3>
+                      <p>
+                        Evidence supporting the lessor
+                        classification.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="lessor-classification-grid">
+                    <div className="lessor-classification-card">
+                      <span>Classification</span>
+                      <strong>OPERATING</strong>
+                      <small>
+                        Underlying asset remains recognised
+                      </small>
+                    </div>
+
+                    <div className="lessor-classification-card">
+                      <span>Lease term ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .lease_term_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+
+                      <small>
+                        Lease term compared with economic life
+                      </small>
+                    </div>
+
+                    <div className="lessor-classification-card">
+                      <span>PV / fair value ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .pv_fair_value_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+
+                      <small>
+                        Present value compared with fair value
+                      </small>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <section className="lessor-top-panel">
+                <div className="lessor-top-panel-head">
+                  <div>
+                    <h3>Operating lease measurement</h3>
+                    <p>
+                      Contractual rent and income recognition.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="lessor-accounting-summary">
+                  <div className="lessor-metric-card">
+                    <span>Periodic rental</span>
+                    <strong>
+                      {money(
+                        operatingPreview.periodic_rental
+                      )}
+                    </strong>
+                    <small>
+                      {operatingPreview.billing_frequency} ·{" "}
+                      {operatingPreview.billing_timing}
+                    </small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Total contractual income</span>
+                    <strong>
+                      {money(
+                        operatingPreview
+                          .contractual_income
+                      )}
+                    </strong>
+                    <small>
+                      Undiscounted contractual rent
+                    </small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Straight-line income</span>
+                    <strong>
+                      {money(
+                        operatingPreview
+                          .straight_line_income
+                      )}
+                    </strong>
+                    <small>
+                      Recognised over the lease term
+                    </small>
+                  </div>
+
+                  <div className="lessor-metric-card">
+                    <span>Direct cost expense</span>
+                    <strong>
+                      {money(
+                        operatingPreview
+                          .initial_direct_cost_expense
+                      )}
+                    </strong>
+                    <small>
+                      Expensed over the lease term
+                    </small>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="lessor-preview-grid">
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Rental balances</h3>
+                    <p>
+                      Closing accrued and deferred rental
+                      balances.
+                    </p>
+                  </div>
+                </div>
+
+                <table className="lessor-mini-table">
+                  <tbody>
+                    <tr>
+                      <td>Closing accrued rental asset</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .closing_accrued_rent
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Closing deferred rental liability</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .closing_deferred_rent
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Net rental balance</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .closing_accrued_rent -
+                          operatingPreview
+                            .closing_deferred_rent
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Income reconciliation</h3>
+                    <p>
+                      Contractual rent compared with
+                      recognised income.
+                    </p>
+                  </div>
+                </div>
+
+                <table className="lessor-mini-table">
+                  <tbody>
+                    <tr>
+                      <td>Total contractual income</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .contractual_income
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>Straight-line lease income</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .straight_line_income
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Income difference</td>
+                      <td>
+                        {money(
+                          operatingPreview
+                            .straight_line_income -
+                          operatingPreview
+                            .contractual_income
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+
+            <section className="lessor-preview-card lessor-schedule-card">
+              <div className="lessor-preview-card-head">
+                <div>
+                  <h3>Operating lease income schedule</h3>
+
+                  <p>
+                    Review contractual rental and
+                    straight-line income recognition.
+                  </p>
+                </div>
+
+                <div className="lessor-preview-badge">
+                  {operatingPreview.period_count} periods
+                </div>
+              </div>
+
+              <div className="table-scroll lessor-schedule-table-wrap">
+                <table className="lessor-schedule-table operating">
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Contractual rent</th>
+                      <th>Straight-line income</th>
+                      <th>Direct cost expense</th>
+                      <th>Accrued movement</th>
+                      <th>Deferred movement</th>
+                      <th>Accrued balance</th>
+                      <th>Deferred balance</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {operatingPreview.schedule.map((row) => (
+                      <tr key={row.period_no}>
+                        <td>{row.period_no}</td>
+                        <td>{money(row.contractual_income)}</td>
+                        <td>{money(row.straight_line_income)}</td>
+                        <td>
+                          {money(
+                            row.initial_direct_cost_expense
+                          )}
+                        </td>
+                        <td>{money(row.accrued_rent_movement)}</td>
+                        <td>{money(row.deferred_rent_movement)}</td>
+                        <td>{money(row.accrued_rent_balance)}</td>
+                        <td>{money(row.deferred_rent_balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  <tfoot>
+                    <tr>
+                      <td>Totals</td>
+
+                      <td>
+                        {money(
+                          operatingPreview.schedule.reduce(
+                            (total, row) =>
+                              total +
+                              Number(
+                                row.contractual_income || 0
+                              ),
+                            0
+                          )
+                        )}
+                      </td>
+
+                      <td>
+                        {money(
+                          operatingPreview
+                            .straight_line_income
+                        )}
+                      </td>
+
+                      <td>
+                        {money(
+                          operatingPreview
+                            .initial_direct_cost_expense
+                        )}
+                      </td>
+
+                      <td colSpan={2} />
+
+                      <td>
+                        {money(
+                          operatingPreview
+                            .closing_accrued_rent
+                        )}
+                      </td>
+
+                      <td>
+                        {money(
+                          operatingPreview
+                            .closing_deferred_rent
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
+
+            <div className="lessor-preview-panel">
+              <div className="lessor-preview-header">
+                Operating lease
+              </div>
+
+              <p>{operatingPreview.message}</p>
+            </div>
+          </div>
         ) : (
           <div className="lessor-preview-panel">
             <div className="lessor-preview-header">
-              Operating lease
+              Preview unavailable
             </div>
 
-            <p>
-              {termsPreview?.classification ===
-              "operating"
-                ? termsPreview.message
-                : "No calculation available."}
-            </p>
+            <p>No operating or finance calculation is available.</p>
           </div>
         )}
 
@@ -2172,55 +2560,40 @@ useEffect(() => {
       </div>
 
       {classificationPreview && (
-        <div className="lessor-classification-summary">
-          <div>
-            <span>Calculated classification</span>
-
+        <div className="lessor-classification-grid">
+          <div className="lessor-classification-card">
+            <span>Classification</span>
             <strong>
-              {classificationPreview
-                .classification
-                .replaceAll("_", " ")
-                .toUpperCase()}
+              {classificationPreview.classification.toUpperCase()}
             </strong>
+            <small>IFRS 16 lessor classification</small>
           </div>
 
-          <div>
+          <div className="lessor-classification-card">
             <span>Lease term ratio</span>
-
             <strong>
               {Number(
-                classificationPreview
-                  .lease_term_ratio || 0
+                classificationPreview.lease_term_ratio || 0
               ).toLocaleString(undefined, {
                 style: "percent",
                 maximumFractionDigits: 2,
               })}
             </strong>
+            <small>Lease term compared with economic life</small>
           </div>
 
-          <div>
+          <div className="lessor-classification-card">
             <span>PV / fair value ratio</span>
-
             <strong>
               {Number(
-                classificationPreview
-                  .pv_fair_value_ratio || 0
+                classificationPreview.pv_fair_value_ratio || 0
               ).toLocaleString(undefined, {
                 style: "percent",
                 maximumFractionDigits: 2,
               })}
             </strong>
+            <small>Present value compared with fair value</small>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              setStep(2);
-            }}
-          >
-            Review calculation
-          </button>
         </div>
       )}
 

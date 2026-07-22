@@ -703,3 +703,72 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+.lessor-classification-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 14px 0 4px;
+}
+
+.lessor-classification-card {
+  display: flex;
+  min-width: 0;
+  min-height: 76px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid #d8e1eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.lessor-classification-card span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lessor-classification-card strong {
+  overflow: hidden;
+  font-size: 1rem;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.lessor-classification-card small {
+  font-size: 0.69rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+@media (max-width: 900px) {
+  .lessor-classification-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lessor-operating-preview {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.lessor-schedule-table.operating {
+  min-width: 1120px;
+}
+
+.lessor-schedule-table.operating th:first-child,
+.lessor-schedule-table.operating td:first-child {
+  width: 64px;
+  text-align: center;
+}

@@ -145,11 +145,37 @@ export type FinanceLeaseTermsPreview = {
   schedule: FinanceLeasePreviewRow[];
 };
 
+export type OperatingLeasePreviewRow = {
+  period_no: number;
+
+  contractual_income: number;
+  straight_line_income: number;
+  initial_direct_cost_expense: number;
+
+  accrued_rent_movement: number;
+  deferred_rent_movement: number;
+
+  accrued_rent_balance: number;
+  deferred_rent_balance: number;
+};
+
 export type OperatingLeaseTermsPreview = {
   classification: "operating";
   period_count: number;
   message: string;
-  schedule: [];
+
+  periodic_rental: number;
+  contractual_income: number;
+  straight_line_income: number;
+  initial_direct_cost_expense: number;
+
+  closing_accrued_rent: number;
+  closing_deferred_rent: number;
+
+  billing_frequency: LessorBillingFrequency;
+  billing_timing: LessorBillingTiming;
+
+  schedule: OperatingLeasePreviewRow[];
 };
 
 export type LessorTermsPreview =
