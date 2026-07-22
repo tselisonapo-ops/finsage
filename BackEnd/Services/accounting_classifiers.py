@@ -1068,7 +1068,159 @@ def _coa_role_from_text(
 
         if has_any("provision for bonuses", "bonus provision", "accrued bonus", "bonuses payable"):
             return "payroll_bonus_payable"
-        
+
+        # ----------------------------
+        # IFRS 16 lessor accounting
+        # Must run before generic accrual/deferral rules
+        # ----------------------------
+
+        if is_asset:
+            if has_any(
+                "lease receivable - current",
+                "lease receivable current",
+                "current lease receivable",
+                "current portion of the net investment in finance leases",
+                "net investment current",
+                "current net investment in lease",
+            ):
+                return "lessor_net_investment_current"
+
+            if has_any(
+                "lease receivable - non-current",
+                "lease receivable - non current",
+                "lease receivable non-current",
+                "lease receivable noncurrent",
+                "non-current lease receivable",
+                "noncurrent lease receivable",
+                "non-current portion of the net investment in finance leases",
+                "net investment non-current",
+                "net investment noncurrent",
+            ):
+                return "lessor_net_investment_noncurrent"
+
+            if has_any(
+                "accrued lease income",
+                "accrued rental asset",
+                "operating lease accrued rent",
+                "accrued rent receivable",
+            ):
+                return "lessor_accrued_rental"
+
+            if has_any(
+                "lease initial direct costs",
+                "deferred initial direct cost",
+                "deferred lease direct cost",
+                "lessor initial direct cost asset",
+                "initial direct costs incurred by a lessor",
+            ):
+                return "lessor_initial_direct_cost_asset"
+
+        if is_liability:
+            if has_any(
+                "lease income received in advance",
+                "deferred rental liability",
+                "deferred lease income",
+                "operating lease deferred rent",
+                "rent received in advance",
+            ):
+                return "lessor_deferred_rental"
+
+            if (
+                has_any(
+                    "refundable lease deposits - non-current",
+                    "refundable lease deposits - non current",
+                    "non-current refundable lease deposits",
+                    "non current refundable lease deposits",
+                )
+                or (
+                    has_any(
+                        "lease security deposit",
+                        "refundable lease deposit",
+                        "refundable security deposits received from lessees",
+                        "rental security deposit",
+                        "tenant deposit liability",
+                    )
+                    and (
+                        "non-current" in cat
+                        or "non current" in cat
+                    )
+                )
+            ):
+                return "lessor_security_deposit_noncurrent"
+
+            if has_any(
+                "refundable lease deposits - current",
+                "current refundable lease deposits",
+                "lease security deposit",
+                "refundable lease deposit",
+                "refundable security deposits received from lessees",
+                "rental security deposit",
+                "tenant deposit liability",
+            ):
+                return "lessor_security_deposit_current"
+
+            # Fallback when the account name does not explicitly state classification.
+            if has_any(
+                "lease security deposit",
+                "refundable lease deposit",
+                "rental security deposit",
+                "tenant deposit liability",
+            ):
+                if "non-current" in cat or "non current" in cat:
+                    return "lessor_security_deposit_noncurrent"
+
+                return "lessor_security_deposit_current"
+
+        if (
+            "income" in sec
+            or "revenue" in sec
+            or "income" in cat
+            or "revenue" in cat
+        ):
+            if has_any(
+                "finance lease interest income",
+                "finance lease income",
+                "lessor finance income",
+                "finance income on lease",
+                "lease interest income",
+                "finance income recognised on the net investment",
+            ):
+                return "lessor_finance_income"
+
+            if has_any(
+                "operating lease income",
+                "lessor lease income",
+                "rental income - leases",
+                "lease rental income",
+            ):
+                return "lessor_lease_income"
+
+            if has_any(
+                "gain on finance lease commencement",
+                "gain on lessor lease",
+                "gain on lease disposal",
+                "gain arising on disposal or finance lease commencement",
+            ):
+                return "lessor_disposal_gain"
+
+        if is_expense:
+            if has_any(
+                "initial direct cost amortisation",
+                "initial direct cost amortization",
+                "lessor initial direct cost expense",
+                "operating lease direct cost expense",
+                "lease origination cost expense",
+                "periodic recognition of lessor initial direct costs",
+            ):
+                return "lessor_initial_direct_cost_expense"
+
+            if has_any(
+                "loss on finance lease commencement",
+                "loss on lessor lease",
+                "loss on lease disposal",
+            ):
+                return "lessor_disposal_loss"
+            
     # ----------------------------
     # Accruals & Deferrals
     # ----------------------------

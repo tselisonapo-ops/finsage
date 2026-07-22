@@ -772,3 +772,39 @@ tbody tr:hover {
   width: 64px;
   text-align: center;
 }
+
+.lessor-definition-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:12px;
+}
+
+.lessor-definition-grid>div{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:10px 0;
+    border-bottom:1px solid var(--border-color);
+}
+
+.lessor-definition-grid span{
+    color:#6b7280;
+    font-size:.85rem;
+}
+
+.lessor-definition-grid strong{
+    font-size:1rem;
+    font-weight:600;
+}
+
+.lessor-preview-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+    align-items:stretch;
+}
+
+.lessor-preview-card{
+    display:flex;
+    flex-direction:column;
+}

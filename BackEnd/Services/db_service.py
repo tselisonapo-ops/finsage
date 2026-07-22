@@ -37197,6 +37197,18 @@ class DatabaseService:
         if not lease:
             raise ValueError("Lessor lease not found")
 
+        resolved_accounts = (
+            self.resolve_lessor_posting_accounts(
+                company_id,
+                lease,
+                cur=cur,
+            )
+        )
+
+        for key, value in resolved_accounts.items():
+            if not lease.get(key) and value:
+                lease[key] = value
+
         row = self.fetch_one(
             f"""
             SELECT *
@@ -37679,6 +37691,18 @@ class DatabaseService:
         if not lease:
             raise ValueError("Lessor lease not found")
 
+        resolved_accounts = (
+            self.resolve_lessor_posting_accounts(
+                company_id,
+                lease,
+                cur=cur,
+            )
+        )
+
+        for key, value in resolved_accounts.items():
+            if not lease.get(key) and value:
+                lease[key] = value
+
         classification = (
             lease.get("lease_classification") or ""
         ).strip().lower()
@@ -38143,7 +38167,227 @@ class DatabaseService:
             "offset": int(offset),
         }
 
+    def resolve_lessor_posting_accounts(
+        self,
+        company_id: int,
+        values: dict | None = None,
+        *,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+        values = values or {}
 
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                code,
+                name,
+                role,
+                section,
+                category,
+                subcategory,
+                standard
+            FROM {schema}.coa
+            ORDER BY code
+            """,
+            (),
+            cur=cur,
+        ) or []
+
+        by_role = {}
+
+        for row in rows:
+            role = str(row.get("role") or "").strip().lower()
+            code = str(row.get("code") or "").strip()
+
+            if role and code and role not in by_role:
+                by_role[role] = code
+
+        def pick(field: str, *roles: str) -> str | None:
+            explicit = str(values.get(field) or "").strip()
+
+            if explicit:
+                return explicit
+
+            for role in roles:
+                code = by_role.get(role.strip().lower())
+
+                if code:
+                    return code
+
+            return None
+
+        deposit_current = pick(
+            "security_deposit_current_account_code",
+            "lessor_security_deposit_current",
+        )
+
+        deposit_noncurrent = pick(
+            "security_deposit_noncurrent_account_code",
+            "lessor_security_deposit_noncurrent",
+        )
+
+        deposit_account = str(
+            values.get("security_deposit_account_code")
+            or values.get("deposit_liability_account_code")
+            or ""
+        ).strip()
+
+        if not deposit_account:
+            is_current = values.get("security_deposit_is_current")
+
+            if is_current is False:
+                deposit_account = deposit_noncurrent
+            elif is_current is True:
+                deposit_account = deposit_current
+            else:
+                deposit_account = (
+                    deposit_noncurrent
+                    if values.get("security_deposit_refund_date")
+                    and values.get("end_date")
+                    and str(values["security_deposit_refund_date"])
+                    > str(values["end_date"])
+                    else deposit_current or deposit_noncurrent
+                )
+
+        return {
+            "revenue_account_code": pick(
+                "revenue_account_code",
+                "lessor_lease_income",
+                "rent_income",
+            ),
+
+            "finance_income_account_code": pick(
+                "finance_income_account_code",
+                "lessor_finance_income",
+                "ifrs9_interest_income_amortised_cost",
+            ),
+
+            "net_investment_current_account_code": pick(
+                "net_investment_current_account_code",
+                "lessor_net_investment_current",
+            ),
+
+            "net_investment_noncurrent_account_code": pick(
+                "net_investment_noncurrent_account_code",
+                "lessor_net_investment_noncurrent",
+            ),
+
+            "accrued_rental_account_code": pick(
+                "accrued_rental_account_code",
+                "lessor_accrued_rental",
+                "accrued_income",
+            ),
+
+            "deferred_rental_account_code": pick(
+                "deferred_rental_account_code",
+                "lessor_deferred_rental",
+                "deferred_income",
+            ),
+
+            "initial_direct_cost_expense_account_code": pick(
+                "initial_direct_cost_expense_account_code",
+                "lessor_initial_direct_cost_expense",
+            ),
+
+            "initial_direct_cost_asset_account_code": pick(
+                "initial_direct_cost_asset_account_code",
+                "lessor_initial_direct_cost_asset",
+                "deferred_expense",
+            ),
+
+            "security_deposit_current_account_code": deposit_current,
+            "security_deposit_noncurrent_account_code": deposit_noncurrent,
+            "security_deposit_account_code": deposit_account,
+            "deposit_liability_account_code": deposit_account,
+
+            "disposal_gain_account_code": pick(
+                "disposal_gain_account_code",
+                "lessor_disposal_gain",
+            ),
+
+            "disposal_loss_account_code": pick(
+                "disposal_loss_account_code",
+                "lessor_disposal_loss",
+            ),
+
+            "ar_account_code": pick(
+                "ar_account_code",
+                "ar",
+            ),
+
+            "vat_output_account_code": pick(
+                "vat_output_account_code",
+                "vat_output",
+            ),
+
+            "bank_account_code": pick(
+                "bank_account_code",
+                "cash_bank",
+                "cash",
+            ),
+        }
+
+    def validate_lessor_posting_accounts(
+        self,
+        classification: str,
+        accounts: dict,
+        *,
+        initial_direct_costs: float = 0,
+        security_deposit_amount: float = 0,
+    ) -> None:
+        classification = (
+            classification or ""
+        ).strip().lower()
+
+        required = []
+
+        if classification == "finance":
+            required.extend([
+                "finance_income_account_code",
+                "net_investment_current_account_code",
+                "net_investment_noncurrent_account_code",
+                "disposal_gain_account_code",
+                "disposal_loss_account_code",
+            ])
+
+        elif classification == "operating":
+            required.append(
+                "revenue_account_code"
+            )
+
+        if classification == "operating":
+            required.extend([
+                "accrued_rental_account_code",
+                "deferred_rental_account_code",
+            ])
+
+        if (
+            classification == "operating"
+            and float(initial_direct_costs or 0) > 0
+        ):
+            required.extend([
+                "initial_direct_cost_expense_account_code",
+                "initial_direct_cost_asset_account_code",
+            ])
+
+        if float(security_deposit_amount or 0) > 0:
+            required.append(
+                "security_deposit_account_code"
+            )
+
+        missing = [
+            field
+            for field in required
+            if not accounts.get(field)
+        ]
+
+        if missing:
+            raise ValueError(
+                "Missing lessor posting accounts: "
+                + ", ".join(missing)
+            )
+        
     def create_lessor_lease(
         self,
         company_id: int,
@@ -38154,7 +38398,16 @@ class DatabaseService:
     ) -> dict:
         schema = f"company_{int(company_id)}"
 
+        resolved_accounts = (
+            self.resolve_lessor_posting_accounts(
+                company_id,
+                payload,
+                cur=cur,
+            )
+        )
+
         params = {
+            **resolved_accounts,
             **payload,
             "company_id": int(company_id),
             "user_id": created_by_user_id,
@@ -38211,8 +38464,113 @@ class DatabaseService:
             "classification_payload": Json(
                 payload.get("classification_payload") or {}
             ),
-            "manufacturer_dealer_lessor": (payload.get("manufacturer_dealer_lessor", False))
+            "manufacturer_dealer_lessor": (payload.get("manufacturer_dealer_lessor", False)),
+
+            "underlying_asset_account_code": (
+                payload.get(
+                    "underlying_asset_account_code"
+                )
+                or None
+            ),
+
+            "fair_value": (
+                payload.get("fair_value")
+                or payload.get(
+                    "underlying_asset_fair_value"
+                )
+                or 0
+            ),
+
+            "carrying_amount": (
+                payload.get("carrying_amount")
+                or payload.get(
+                    "underlying_asset_carrying_amount"
+                )
+                or 0
+            ),
+
+            "initial_direct_cost_expense_account_code":
+                resolved_accounts.get(
+                    "initial_direct_cost_expense_account_code"
+                ),
+
+            "initial_direct_cost_asset_account_code":
+                resolved_accounts.get(
+                    "initial_direct_cost_asset_account_code"
+                ),
+
+            "revenue_account_code":
+                resolved_accounts.get(
+                    "revenue_account_code"
+                ),
+
+            "vat_output_account_code":
+                resolved_accounts.get(
+                    "vat_output_account_code"
+                ),
+
+            "ar_account_code":
+                resolved_accounts.get(
+                    "ar_account_code"
+                ),
+
+            "bank_account_code":
+                resolved_accounts.get(
+                    "bank_account_code"
+                ),
+
+            "bank_account_id":
+                payload.get("bank_account_id"),
+
+            "security_deposit_account_code":
+                resolved_accounts.get(
+                    "security_deposit_account_code"
+                ),
+
+            "finance_income_account_code":
+                resolved_accounts.get(
+                    "finance_income_account_code"
+                ),
+
+            "net_investment_current_account_code":
+                resolved_accounts.get(
+                    "net_investment_current_account_code"
+                ),
+
+            "net_investment_noncurrent_account_code":
+                resolved_accounts.get(
+                    "net_investment_noncurrent_account_code"
+                ),
+
+            "accrued_rental_account_code":
+                resolved_accounts.get(
+                    "accrued_rental_account_code"
+                ),
+
+            "deferred_rental_account_code":
+                resolved_accounts.get(
+                    "deferred_rental_account_code"
+                ),
+
+            "deposit_liability_account_code":
+                resolved_accounts.get(
+                    "deposit_liability_account_code"
+                ),
+
+            "disposal_gain_account_code":
+                resolved_accounts.get(
+                    "disposal_gain_account_code"
+                ),
+
+            "disposal_loss_account_code":
+                resolved_accounts.get(
+                    "disposal_loss_account_code"
+                ),
         }
+
+        for key, value in resolved_accounts.items():
+            if not params.get(key):
+                params[key] = value
 
         row = self.fetch_one(
             f"""
@@ -38222,6 +38580,7 @@ class DatabaseService:
                 contract_name,
                 customer_id,
                 asset_id,
+                underlying_asset_account_code,
                 start_date,
                 end_date,
                 billing_amount,
@@ -38257,7 +38616,7 @@ class DatabaseService:
                 substantially_all_threshold,
                 classification_reason,
                 classification_payload,
-                manufacturer_dealer_lessor
+                manufacturer_dealer_lessor,
 
                 revenue_account_code,
                 vat_output_account_code,
@@ -38285,6 +38644,7 @@ class DatabaseService:
                 %(contract_name)s,
                 %(customer_id)s,
                 %(asset_id)s,
+                %(underlying_asset_account_code)s,
                 %(start_date)s,
                 %(end_date)s,
                 %(billing_amount)s,

@@ -2022,56 +2022,37 @@ useEffect(() => {
                     </div>
                   </div>
 
-                  <div className="lessor-classification-grid">
-                    <div className="lessor-classification-card">
-                      <span>Classification</span>
+                  <div className="lessor-definition-grid">
+                      <div>
+                          <span>Classification</span>
+                          <strong>
+                              {classificationPreview.classification.toUpperCase()}
+                          </strong>
+                      </div>
 
-                      <strong>
-                        {classificationPreview
-                          .classification
-                          .toUpperCase()}
-                      </strong>
+                      <div>
+                          <span>Lease term ratio</span>
+                          <strong>
+                              {Number(
+                                  classificationPreview.lease_term_ratio || 0
+                              ).toLocaleString(undefined,{
+                                  style:"percent",
+                                  maximumFractionDigits:2
+                              })}
+                          </strong>
+                      </div>
 
-                      <small>
-                        IFRS 16 lessor classification
-                      </small>
-                    </div>
-
-                    <div className="lessor-classification-card">
-                      <span>Lease term ratio</span>
-
-                      <strong>
-                        {Number(
-                          classificationPreview
-                            .lease_term_ratio || 0
-                        ).toLocaleString(undefined, {
-                          style: "percent",
-                          maximumFractionDigits: 2,
-                        })}
-                      </strong>
-
-                      <small>
-                        Lease term compared with economic life
-                      </small>
-                    </div>
-
-                    <div className="lessor-classification-card">
-                      <span>PV / fair value ratio</span>
-
-                      <strong>
-                        {Number(
-                          classificationPreview
-                            .pv_fair_value_ratio || 0
-                        ).toLocaleString(undefined, {
-                          style: "percent",
-                          maximumFractionDigits: 2,
-                        })}
-                      </strong>
-
-                      <small>
-                        Present value compared with asset fair value
-                      </small>
-                    </div>
+                      <div>
+                          <span>PV / fair value ratio</span>
+                          <strong>
+                              {Number(
+                                  classificationPreview.pv_fair_value_ratio || 0
+                              ).toLocaleString(undefined,{
+                                  style:"percent",
+                                  maximumFractionDigits:2
+                              })}
+                          </strong>
+                      </div>
                   </div>
                 </section>
               )}
@@ -2084,32 +2065,28 @@ useEffect(() => {
                   </div>
                 </div>
 
-                <div className="lessor-accounting-summary">
-                  <div className="lessor-metric-card">
-                    <span>Periodic payment</span>
-                    <strong>{money(financePreview.periodic_payment)}</strong>
-                    <small>
-                      {form.billing_frequency} · {form.billing_timing}
-                    </small>
-                  </div>
+                <div className="lessor-definition-grid">
 
-                  <div className="lessor-metric-card">
-                    <span>Initial net investment</span>
-                    <strong>{money(financePreview.initial_net_investment)}</strong>
-                    <small>Opening lease receivable</small>
-                  </div>
+                    <div>
+                        <span>Periodic payment</span>
+                        <strong>{money(financePreview.periodic_payment)}</strong>
+                    </div>
 
-                  <div className="lessor-metric-card">
-                    <span>Gross investment</span>
-                    <strong>{money(financePreview.gross_investment)}</strong>
-                    <small>Payments plus residual values</small>
-                  </div>
+                    <div>
+                        <span>Initial net investment</span>
+                        <strong>{money(financePreview.initial_net_investment)}</strong>
+                    </div>
 
-                  <div className="lessor-metric-card">
-                    <span>Unearned finance income</span>
-                    <strong>{money(financePreview.unearned_finance_income)}</strong>
-                    <small>Recognised over the lease term</small>
-                  </div>
+                    <div>
+                        <span>Gross investment</span>
+                        <strong>{money(financePreview.gross_investment)}</strong>
+                    </div>
+
+                    <div>
+                        <span>Unearned finance income</span>
+                        <strong>{money(financePreview.unearned_finance_income)}</strong>
+                    </div>
+
                 </div>
               </section>
             </div>
