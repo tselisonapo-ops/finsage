@@ -2861,10 +2861,15 @@ useEffect(() => {
           />
 
           <small className="field-help">
-            {form.lease_classification ===
-            "operating"
-              ? "Used to calculate contractual and straight-line operating lease income."
-              : "FinSage will calculate the finance lease payment from the net investment, rate and residual values."}
+            {form.lease_classification === "operating"
+              ? "Enter the rental agreed with the customer. FinSage will use it to confirm the final classification and prepare the operating lease income schedule."
+              : "FinSage will calculate the finance lease payment from the net investment, interest rate, term and residual values."}
+          </small>
+
+          <small className="field-help">
+            This classification is provisional. FinSage will
+            confirm it after considering the contractual
+            payments in the accounting preview.
           </small>
         </div>
 
