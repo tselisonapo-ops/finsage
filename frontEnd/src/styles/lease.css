@@ -436,45 +436,28 @@ button:hover:not(:disabled) {
   }
 }
 
-.lessor-schedule-table-wrap {
-  max-height: 430px;
-  margin-top: 18px;
-  overflow: auto;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 12px;
-  background: #fff;
-}
+/* ==========================================
+   LESSOR FINANCE LEASE PREVIEW
+   ========================================== */
 
-.lessor-schedule-table {
+.lease-wizard[data-role="lessor"] {
   width: 100%;
-  min-width: 900px;
-  border-collapse: collapse;
+  min-width: 0;
 }
 
-.lessor-schedule-table th,
-.lessor-schedule-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  font-size: 0.78rem;
-  text-align: right;
-  white-space: nowrap;
+.lease-wizard[data-role="lessor"]
+.lease-step-2 {
+  width: min(1120px, 100%);
+  max-width: 1120px;
+  margin-inline: auto;
 }
 
-.lessor-schedule-table th:first-child,
-.lessor-schedule-table td:first-child {
-  text-align: center;
-}
-
-.lessor-schedule-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #f8fafc;
-  font-weight: 700;
-}
-
-.lessor-schedule-table tbody tr:hover {
-  background: rgba(13, 148, 136, 0.035);
+.lessor-finance-preview {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 16px;
+  margin-top: 16px;
 }
 
 .lessor-accounting-summary {
@@ -482,44 +465,47 @@ button:hover:not(:disabled) {
   grid-template-columns:
     repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 16px 0;
+  width: 100%;
 }
 
 .lessor-metric-card {
   display: flex;
   min-width: 0;
+  min-height: 78px;
   flex-direction: column;
-  gap: 5px;
-  padding: 14px 16px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  justify-content: center;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid #d8e1eb;
   border-radius: 12px;
   background:
     linear-gradient(
       135deg,
-      rgba(13, 148, 136, 0.07),
-      rgba(255, 255, 255, 0.96)
+      #edf9f7 0%,
+      #ffffff 100%
     );
 }
 
 .lessor-metric-card span {
   font-size: 0.68rem;
   font-weight: 700;
+  color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.62;
+  letter-spacing: 0.04em;
 }
 
 .lessor-metric-card strong {
   overflow: hidden;
-  font-size: 1.05rem;
+  font-size: 1rem;
+  color: #1e293b;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .lessor-metric-card small {
-  font-size: 0.7rem;
-  line-height: 1.35;
-  opacity: 0.65;
+  font-size: 0.69rem;
+  color: #64748b;
 }
 
 .lessor-preview-grid {
@@ -527,45 +513,49 @@ button:hover:not(:disabled) {
   grid-template-columns:
     repeat(2, minmax(0, 1fr));
   gap: 14px;
-  margin: 16px 0;
+  width: 100%;
 }
 
 .lessor-preview-card {
+  width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  border: 1px solid #d8e1eb;
   border-radius: 12px;
-  background: #fff;
+  background: #ffffff;
 }
 
 .lessor-preview-card-head {
   display: flex;
+  min-height: 54px;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 13px 15px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.9);
+  padding: 11px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .lessor-preview-card-head h3 {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1e293b;
 }
 
 .lessor-preview-card-head p {
-  margin: 4px 0 0;
-  font-size: 0.72rem;
+  margin: 3px 0 0;
+  font-size: 0.69rem;
   line-height: 1.4;
-  opacity: 0.65;
+  color: #64748b;
 }
 
 .lessor-preview-badge {
   flex: 0 0 auto;
   padding: 5px 9px;
   border-radius: 999px;
-  background: rgba(13, 148, 136, 0.1);
-  font-size: 0.68rem;
+  background: #dff5f1;
+  font-size: 0.66rem;
   font-weight: 700;
   color: #0f766e;
 }
@@ -578,13 +568,15 @@ button:hover:not(:disabled) {
 
 .lessor-mini-table th,
 .lessor-mini-table td {
-  padding: 11px 14px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-  font-size: 0.77rem;
+  padding: 10px 14px;
+  border-bottom: 1px solid #edf1f5;
+  font-size: 0.74rem;
+  color: #334155;
 }
 
 .lessor-mini-table th {
-  background: rgba(248, 250, 252, 0.7);
+  background: #ffffff;
+  font-weight: 700;
   text-align: left;
 }
 
@@ -594,37 +586,51 @@ button:hover:not(:disabled) {
   font-variant-numeric: tabular-nums;
 }
 
-.lessor-mini-table .total-row td {
-  border-top: 1px solid rgba(15, 23, 42, 0.15);
+.lessor-mini-table tr:last-child td {
   border-bottom: 0;
+}
+
+.lessor-total-row td {
+  border-top: 1px solid #cbd5e1;
+  border-bottom: 0;
+  background: #f8fafc;
   font-weight: 700;
+  color: #0f172a;
 }
 
 .lessor-schedule-card {
-  margin-top: 16px;
+  width: 100%;
 }
 
 .lessor-schedule-table-wrap {
-  max-height: 355px;
+  width: 100%;
+  max-height: 340px;
+  margin: 0;
   overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  scrollbar-width: thin;
 }
 
 .lessor-schedule-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 850px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
-.lessor-schedule-table col.period-column {
-  width: 70px;
+.lessor-schedule-table
+col.lessor-period-col {
+  width: 64px;
 }
 
 .lessor-schedule-table th,
 .lessor-schedule-table td {
   padding: 9px 12px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-  font-size: 0.75rem;
+  border-bottom: 1px solid #e8edf3;
+  font-size: 0.72rem;
+  color: #334155;
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -638,30 +644,34 @@ button:hover:not(:disabled) {
 .lessor-schedule-table thead th {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   background: #f8fafc;
   font-weight: 700;
+  color: #334155;
 }
 
-.lessor-schedule-table tbody tr:nth-child(even) {
-  background: rgba(248, 250, 252, 0.65);
+.lessor-schedule-table
+tbody tr:nth-child(even) {
+  background: #fbfcfd;
 }
 
-.lessor-schedule-table tbody tr:hover {
-  background: rgba(13, 148, 136, 0.055);
+.lessor-schedule-table
+tbody tr:hover {
+  background: #eefaf8;
 }
 
 .lessor-schedule-table tfoot td {
   position: sticky;
   bottom: 0;
-  z-index: 2;
-  border-top: 1px solid rgba(15, 23, 42, 0.16);
+  z-index: 3;
+  border-top: 1px solid #cbd5e1;
   border-bottom: 0;
-  background: #f8fafc;
+  background: #f1f5f9;
   font-weight: 700;
+  color: #0f172a;
 }
 
-@media (max-width: 1050px) {
+@media (max-width: 1100px) {
   .lessor-accounting-summary {
     grid-template-columns:
       repeat(2, minmax(0, 1fr));

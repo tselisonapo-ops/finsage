@@ -1187,7 +1187,7 @@ useEffect(() => {
     <div className="lease-step lease-step-1">
       <div className="lessor-step-heading">
         <span className="lessor-step-number">
-          Step 1 of 2
+          Step 1 of 3
         </span>
 
         <h2>
@@ -1743,9 +1743,9 @@ useEffect(() => {
           onClick={handlePreview}
           disabled={loading}
         >
-          {loading
-            ? "Assessing..."
-            : "Continue to agreement"}
+        {loading
+          ? "Calculating..."
+          : "Calculate lease terms"}
         </button>
       </div>
     </div>
@@ -1901,23 +1901,23 @@ useEffect(() => {
         )}
 
         {financePreview ? (
-          <>
-          <div className="lessor-accounting-summary">
-            <div className="lessor-metric-card">
-              <span>Periodic payment</span>
+          <div className="lessor-finance-preview">
+            <div className="lessor-accounting-summary">
+              <div className="lessor-metric-card">
+                <span>Periodic payment</span>
 
-              <strong>
-                {money(
-                  financePreview.periodic_payment
-                )}
-              </strong>
+                <strong>
+                  {money(
+                    financePreview.periodic_payment
+                  )}
+                </strong>
 
-              <small>
-                {form.billing_frequency}
-                {" · "}
-                {form.billing_timing}
-              </small>
-            </div>
+                <small>
+                  {form.billing_frequency}
+                  {" · "}
+                  {form.billing_timing}
+                </small>
+              </div>
 
             <div className="lessor-metric-card">
               <span>Initial net investment</span>
@@ -2008,7 +2008,7 @@ useEffect(() => {
                     </td>
                   </tr>
 
-                  <tr className="total-row">
+                  <tr className="lessor-total-row">
                     <td>
                       Total net investment
                     </td>
@@ -2062,7 +2062,7 @@ useEffect(() => {
                     </td>
                   </tr>
 
-                  <tr className="total-row">
+                  <tr className="lessor-total-row">
                     <td>
                       Initial net investment
                     </td>
@@ -2101,7 +2101,7 @@ useEffect(() => {
             <div className="lessor-schedule-table-wrap">
               <table className="lessor-schedule-table">
                 <colgroup>
-                  <col className="period-column" />
+                  <col className="lessor-period-col" />
                   <col />
                   <col />
                   <col />
@@ -2213,7 +2213,7 @@ useEffect(() => {
               </table>
             </div>
           </section>
-          </>
+          </div>
         ) : (
           <div className="lessor-preview-panel">
             <div className="lessor-preview-header">
@@ -2464,24 +2464,31 @@ useEffect(() => {
           />
         </div>
 
-        <input
-          type="number"
-          name="billing_amount"
-          value={form.billing_amount}
-          onChange={updateNumber}
-          readOnly={
-            form.lease_classification === "finance"
-          }
-          step="0.01"
-        />
+        <div className="field-row">
+          <label>
+            Billing amount per period
+          </label>
 
-        {form.lease_classification === "finance" && (
-          <small className="field-help">
-            Calculated from the net investment,
-            implicit interest rate, lease term and
-            residual values.
-          </small>
-        )}
+          <input
+            type="number"
+            name="billing_amount"
+            value={form.billing_amount}
+            onChange={updateNumber}
+            readOnly={
+              form.lease_classification === "finance"
+            }
+            step="0.01"
+          />
+
+          {form.lease_classification ===
+            "finance" && (
+            <small className="field-help">
+              Calculated from the net investment,
+              implicit interest rate, lease term and
+              residual values.
+            </small>
+          )}
+        </div>
 
         <div className="field-row">
           <label>Billing amount basis</label>
@@ -2516,11 +2523,12 @@ useEffect(() => {
         <div className="field-row">
           <label>Billing frequency</label>
 
-          <select
-            name="billing_frequency"
-            value={form.billing_frequency}
-            onChange={updateText}
-          >
+            <select
+              name="billing_frequency"
+              value={form.billing_frequency}
+              onChange={updateText}
+              disabled
+            >
             <option value="weekly">
               Weekly
             </option>
@@ -2542,11 +2550,12 @@ useEffect(() => {
         <div className="field-row">
           <label>Billing timing</label>
 
-          <select
-            name="billing_timing"
-            value={form.billing_timing}
-            onChange={updateText}
-          >
+            <select
+              name="billing_timing"
+              value={form.billing_timing}
+              onChange={updateText}
+              disabled
+            >
             <option value="arrears">
               In arrears
             </option>
