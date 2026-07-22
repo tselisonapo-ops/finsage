@@ -733,6 +733,171 @@ def assets_get_or_update(company_id, asset_id):
         current_app.logger.exception("update_asset failed")
         return _json_error(str(e), 400)
 
+@ppe_bp.route(
+    "/api/companies/<int:company_id>/assets/lease-options",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def asset_lease_options(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    payload = request.jwt_payload or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        as_at = (
+            _parse_date_arg("as_at")
+            or _end_of_month(date.today())
+        )
+
+        status = (
+            request.args.get("status")
+            or "active"
+        ).strip() or None
+
+        q = (
+            request.args.get("q")
+            or ""
+        ).strip() or None
+
+        limit = min(
+            max(_int_arg("limit", 250), 1),
+            500,
+        )
+
+        with get_conn(company_id) as conn:
+            with conn.cursor(
+                cursor_factory=
+                    psycopg2.extras.RealDictCursor
+            ) as cur:
+                assets = service.list_assets(
+                    cur,
+                    company_id,
+                    status=status,
+                    asset_class=None,
+                    accounting_standard=None,
+                    q=q,
+                    limit=limit,
+                    offset=0,
+                    as_at=as_at,
+                ) or []
+
+                items = []
+
+                for asset in assets:
+                    asset_id = int(
+                        asset.get("id") or 0
+                    )
+
+                    if not asset_id:
+                        continue
+
+                    balances = (
+                        service.get_asset_with_balances(
+                            cur,
+                            company_id,
+                            asset_id,
+                            as_at=as_at,
+                        )
+                        or {}
+                    )
+
+                    item = {
+                        **asset,
+                        **balances,
+                    }
+
+                    items.append({
+                        "id": asset_id,
+
+                        "asset_no": (
+                            item.get("asset_no")
+                            or item.get("asset_code")
+                            or item.get("code")
+                            or f"ASSET-{asset_id}"
+                        ),
+
+                        "asset_name": (
+                            item.get("asset_name")
+                            or item.get("name")
+                            or item.get("description")
+                            or f"Asset {asset_id}"
+                        ),
+
+                        "asset_class": (
+                            item.get("asset_class")
+                            or item.get("class_name")
+                            or item.get("category")
+                        ),
+
+                        "asset_account_code": (
+                            item.get(
+                                "asset_account_code"
+                            )
+                        ),
+
+                        "cost_total": float(
+                            item.get("cost_total")
+                            or item.get("cost")
+                            or 0
+                        ),
+
+                        "carrying_amount": float(
+                            item.get(
+                                "carrying_amount"
+                            )
+                            or item.get("nbv")
+                            or 0
+                        ),
+
+                        "economic_life_months": int(
+                            item.get(
+                                "economic_life_months"
+                            )
+                            or item.get(
+                                "useful_life_months"
+                            )
+                            or 0
+                        ),
+
+                        "acquisition_date": (
+                            item.get(
+                                "acquisition_date"
+                            )
+                        ),
+
+                        "available_for_use_date": (
+                            item.get(
+                                "available_for_use_date"
+                            )
+                        ),
+                    })
+
+        return jsonify({
+            "ok": True,
+            "data": items,
+            "as_at": as_at.isoformat(),
+        }), 200
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "asset_lease_options failed"
+        )
+
+        return _json_error(
+            str(exc),
+            500,
+        )
+    
 @ppe_bp.route("/api/companies/<int:company_id>/assets/compound-acquisition", methods=["POST", "OPTIONS"])
 @require_auth
 def asset_compound_acquisition_create(company_id: int):
