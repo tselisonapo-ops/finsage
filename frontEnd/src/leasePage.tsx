@@ -22,8 +22,13 @@ const LeasePage: React.FC<LeasePageProps> = ({
 
   return (
     <div className="lease-page">
-      <div className="lease-page-header">
-        <div>
+      <div
+        className={
+          "lease-page-header " +
+          (isLessor ? "lessor-page-header" : "")
+        }
+      >
+        <div className="lease-page-heading">
           <div className="lease-page-badge">
             IFRS 16 · {isLessor ? "Lessor" : "Lessee"}
           </div>
@@ -44,9 +49,73 @@ const LeasePage: React.FC<LeasePageProps> = ({
                 : "Capture your lease, preview the amortisation schedule and opening IFRS 16 journal, then post it to the ledger."}
           </div>
         </div>
+
+        {isLessor && (
+          <section className="lessor-how-card">
+            <h3>How lessor accounting works</h3>
+
+            <div className="lessor-how-grid">
+              <div className="lessor-how-item">
+                <span className="lessor-how-number">
+                  1
+                </span>
+
+                <div>
+                  <strong>Create lease</strong>
+
+                  <small>
+                    Save the customer agreement.
+                  </small>
+                </div>
+              </div>
+
+              <div className="lessor-how-item">
+                <span className="lessor-how-number">
+                  2
+                </span>
+
+                <div>
+                  <strong>Classify lease</strong>
+
+                  <small>
+                    Determine operating or finance.
+                  </small>
+                </div>
+              </div>
+
+              <div className="lessor-how-item">
+                <span className="lessor-how-number">
+                  3
+                </span>
+
+                <div>
+                  <strong>Build schedule</strong>
+
+                  <small>
+                    Generate accounting periods.
+                  </small>
+                </div>
+              </div>
+
+              <div className="lessor-how-item">
+                <span className="lessor-how-number">
+                  4
+                </span>
+
+                <div>
+                  <strong>Commence lease</strong>
+
+                  <small>
+                    Post after review.
+                  </small>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
 
-      <div className="lease-layout">
+      <div className={"lease-layout " +(isLessor ? "lessor-lease-layout" : "")}>
         <div className="lease-panel">
           {isLessor ? (
             <LessorLeaseWizard
@@ -72,101 +141,60 @@ const LeasePage: React.FC<LeasePageProps> = ({
           )}
         </div>
 
-        <div className="lease-panel lease-info-panel">
-          {isLessor ? (
-            <>
-              <h3>How lessor accounting works</h3>
+        {!isLessor && (
+          <div className="lease-panel lease-info-panel">
+            <h3>How this works</h3>
 
-              <p>
-                When you save this lease, FinSage will:
-              </p>
+            <p>
+              When you save the lease, FinSage will:
+            </p>
 
-              <ul className="lease-info-list">
-                <li>
-                  <span className="lease-info-label">
-                    1. Create lease
-                  </span>
-                  <span>
-                    Save the agreement between your company and the customer.
-                  </span>
-                </li>
+            <ul className="lease-info-list">
+              <li>
+                <span className="lease-info-label">
+                  1. Compute PV
+                </span>
 
-                <li>
-                  <span className="lease-info-label">
-                    2. Classify lease
-                  </span>
-                  <span>
-                    Determine whether the lease is an operating lease or finance lease.
-                  </span>
-                </li>
+                <span>
+                  Calculate the present value of lease
+                  payments excluding VAT.
+                </span>
+              </li>
 
-                <li>
-                  <span className="lease-info-label">
-                    3. Build schedule
-                  </span>
-                  <span>
-                    Generate rental income or net investment accounting periods.
-                  </span>
-                </li>
+              <li>
+                <span className="lease-info-label">
+                  2. Build schedule
+                </span>
 
-                <li>
-                  <span className="lease-info-label">
-                    4. Commence lease
-                  </span>
-                  <span>
-                    Post the applicable commencement journal after review.
-                  </span>
-                </li>
-              </ul>
-            </>
-          ) : (
-            <>
-              <h3>How this works</h3>
+                <span>
+                  Generate opening balance, interest,
+                  principal and closing liability.
+                </span>
+              </li>
 
-              <p>
-                When you save the lease, FinSage will:
-              </p>
+              <li>
+                <span className="lease-info-label">
+                  3. ROU depreciation
+                </span>
 
-              <ul className="lease-info-list">
-                <li>
-                  <span className="lease-info-label">
-                    1. Compute PV
-                  </span>
-                  <span>
-                    Calculate the present value of lease payments excluding VAT.
-                  </span>
-                </li>
+                <span>
+                  Apply depreciation to the
+                  right-of-use asset.
+                </span>
+              </li>
 
-                <li>
-                  <span className="lease-info-label">
-                    2. Build schedule
-                  </span>
-                  <span>
-                    Generate opening balance, interest, principal and closing liability.
-                  </span>
-                </li>
+              <li>
+                <span className="lease-info-label">
+                  4. Post journal
+                </span>
 
-                <li>
-                  <span className="lease-info-label">
-                    3. ROU depreciation
-                  </span>
-                  <span>
-                    Apply depreciation to the right-of-use asset.
-                  </span>
-                </li>
-
-                <li>
-                  <span className="lease-info-label">
-                    4. Post journal
-                  </span>
-                  <span>
-                    Post the opening IFRS 16 journal.
-                  </span>
-                </li>
-              </ul>
-            </>
-          )}
-        </div>
+                <span>
+                  Post the opening IFRS 16 journal.
+                </span>
+              </li>
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
