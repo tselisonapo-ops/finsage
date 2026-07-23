@@ -1900,8 +1900,11 @@ useEffect(() => {
 
   if (createdLeaseId) {
     
-    return (
-      <div className="lease-wizard">
+  return (
+      <div
+          className="lease-wizard"
+          data-role="lessor"
+      >
         <div className="lease-step lease-step-3">
           <h2>Lessor lease created</h2>
 
