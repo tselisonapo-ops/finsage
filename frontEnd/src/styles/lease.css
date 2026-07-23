@@ -808,3 +808,57 @@ tbody tr:hover {
     display:flex;
     flex-direction:column;
 }
+
+.lessor-top-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  align-items: stretch;
+}
+
+.lessor-top-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #d8e1eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.lessor-top-panel-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #1e293b;
+}
+
+.lessor-top-panel-head p {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.lessor-operating-kpi-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .lessor-top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lessor-operating-kpi-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .lessor-operating-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

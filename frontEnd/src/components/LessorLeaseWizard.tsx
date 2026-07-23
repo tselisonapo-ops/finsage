@@ -2250,13 +2250,10 @@ useEffect(() => {
               {classificationPreview && (
                 <section className="lessor-top-panel">
                   <div className="lessor-top-panel-head">
-                    <div>
-                      <h3>IFRS 16 classification</h3>
-                      <p>
-                        Evidence supporting the lessor
-                        classification.
-                      </p>
-                    </div>
+                    <h3>IFRS 16 classification</h3>
+                    <p>
+                      Evidence supporting the lessor classification.
+                    </p>
                   </div>
 
                   <div className="lessor-classification-grid">
@@ -2270,17 +2267,14 @@ useEffect(() => {
 
                     <div className="lessor-classification-card">
                       <span>Lease term ratio</span>
-
                       <strong>
                         {Number(
-                          classificationPreview
-                            .lease_term_ratio || 0
+                          classificationPreview.lease_term_ratio || 0
                         ).toLocaleString(undefined, {
                           style: "percent",
                           maximumFractionDigits: 2,
                         })}
                       </strong>
-
                       <small>
                         Lease term compared with economic life
                       </small>
@@ -2288,17 +2282,14 @@ useEffect(() => {
 
                     <div className="lessor-classification-card">
                       <span>PV / fair value ratio</span>
-
                       <strong>
                         {Number(
-                          classificationPreview
-                            .pv_fair_value_ratio || 0
+                          classificationPreview.pv_fair_value_ratio || 0
                         ).toLocaleString(undefined, {
                           style: "percent",
                           maximumFractionDigits: 2,
                         })}
                       </strong>
-
                       <small>
                         Present value compared with fair value
                       </small>
@@ -2309,35 +2300,29 @@ useEffect(() => {
 
               <section className="lessor-top-panel">
                 <div className="lessor-top-panel-head">
-                  <div>
-                    <h3>Operating lease measurement</h3>
-                    <p>
-                      Contractual rent and income recognition.
-                    </p>
-                  </div>
+                  <h3>Operating lease measurement</h3>
+                  <p>
+                    Contractual rent and income recognition.
+                  </p>
                 </div>
 
                 <div className="lessor-accounting-summary">
                   <div className="lessor-metric-card">
                     <span>Periodic rental</span>
                     <strong>
-                      {money(
-                        operatingPreview.periodic_rental
-                      )}
+                      {money(operatingPreview.periodic_rental)}
                     </strong>
                     <small>
-                      {operatingPreview.billing_frequency} ·{" "}
+                      {operatingPreview.billing_frequency}
+                      {" · "}
                       {operatingPreview.billing_timing}
                     </small>
                   </div>
 
                   <div className="lessor-metric-card">
-                    <span>Total contractual income</span>
+                    <span>Contractual income</span>
                     <strong>
-                      {money(
-                        operatingPreview
-                          .contractual_income
-                      )}
+                      {money(operatingPreview.contractual_income)}
                     </strong>
                     <small>
                       Undiscounted contractual rent
@@ -2347,10 +2332,7 @@ useEffect(() => {
                   <div className="lessor-metric-card">
                     <span>Straight-line income</span>
                     <strong>
-                      {money(
-                        operatingPreview
-                          .straight_line_income
-                      )}
+                      {money(operatingPreview.straight_line_income)}
                     </strong>
                     <small>
                       Recognised over the lease term
@@ -2361,8 +2343,7 @@ useEffect(() => {
                     <span>Direct cost expense</span>
                     <strong>
                       {money(
-                        operatingPreview
-                          .initial_direct_cost_expense
+                        operatingPreview.initial_direct_cost_expense
                       )}
                     </strong>
                     <small>
@@ -2373,14 +2354,69 @@ useEffect(() => {
               </section>
             </div>
 
+            <div className="lessor-operating-kpi-grid">
+              <div className="lessor-metric-card">
+                <span>Accrued rental asset</span>
+                <strong>
+                  {money(operatingPreview.closing_accrued_rent)}
+                </strong>
+                <small>
+                  Closing accrued rental balance
+                </small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Deferred rental liability</span>
+                <strong>
+                  {money(operatingPreview.closing_deferred_rent)}
+                </strong>
+                <small>
+                  Closing deferred rental balance
+                </small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Net rental balance</span>
+                <strong>
+                  {money(
+                    Number(
+                      operatingPreview.closing_accrued_rent || 0
+                    ) -
+                    Number(
+                      operatingPreview.closing_deferred_rent || 0
+                    )
+                  )}
+                </strong>
+                <small>
+                  Accrued asset less deferred liability
+                </small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Income difference</span>
+                <strong>
+                  {money(
+                    Number(
+                      operatingPreview.straight_line_income || 0
+                    ) -
+                    Number(
+                      operatingPreview.contractual_income || 0
+                    )
+                  )}
+                </strong>
+                <small>
+                  Recognised less contractual income
+                </small>
+              </div>
+            </div>
+
             <div className="lessor-preview-grid">
               <section className="lessor-preview-card">
                 <div className="lessor-preview-card-head">
                   <div>
                     <h3>Rental balances</h3>
                     <p>
-                      Closing accrued and deferred rental
-                      balances.
+                      Closing accrued and deferred balances.
                     </p>
                   </div>
                 </div>
@@ -2391,8 +2427,7 @@ useEffect(() => {
                       <td>Closing accrued rental asset</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .closing_accrued_rent
+                          operatingPreview.closing_accrued_rent
                         )}
                       </td>
                     </tr>
@@ -2401,8 +2436,7 @@ useEffect(() => {
                       <td>Closing deferred rental liability</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .closing_deferred_rent
+                          operatingPreview.closing_deferred_rent
                         )}
                       </td>
                     </tr>
@@ -2411,10 +2445,14 @@ useEffect(() => {
                       <td>Net rental balance</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .closing_accrued_rent -
-                          operatingPreview
-                            .closing_deferred_rent
+                          Number(
+                            operatingPreview.closing_accrued_rent ||
+                            0
+                          ) -
+                          Number(
+                            operatingPreview.closing_deferred_rent ||
+                            0
+                          )
                         )}
                       </td>
                     </tr>
@@ -2427,8 +2465,8 @@ useEffect(() => {
                   <div>
                     <h3>Income reconciliation</h3>
                     <p>
-                      Contractual rent compared with
-                      recognised income.
+                      Contractual rent compared with recognised
+                      income.
                     </p>
                   </div>
                 </div>
@@ -2439,8 +2477,7 @@ useEffect(() => {
                       <td>Total contractual income</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .contractual_income
+                          operatingPreview.contractual_income
                         )}
                       </td>
                     </tr>
@@ -2449,8 +2486,7 @@ useEffect(() => {
                       <td>Straight-line lease income</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .straight_line_income
+                          operatingPreview.straight_line_income
                         )}
                       </td>
                     </tr>
@@ -2459,10 +2495,14 @@ useEffect(() => {
                       <td>Income difference</td>
                       <td>
                         {money(
-                          operatingPreview
-                            .straight_line_income -
-                          operatingPreview
-                            .contractual_income
+                          Number(
+                            operatingPreview.straight_line_income ||
+                            0
+                          ) -
+                          Number(
+                            operatingPreview.contractual_income ||
+                            0
+                          )
                         )}
                       </td>
                     </tr>
@@ -2475,10 +2515,9 @@ useEffect(() => {
               <div className="lessor-preview-card-head">
                 <div>
                   <h3>Operating lease income schedule</h3>
-
                   <p>
-                    Review contractual rental and
-                    straight-line income recognition.
+                    Review contractual rental and straight-line
+                    income recognition.
                   </p>
                 </div>
 
@@ -2506,17 +2545,36 @@ useEffect(() => {
                     {operatingPreview.schedule.map((row) => (
                       <tr key={row.period_no}>
                         <td>{row.period_no}</td>
-                        <td>{money(row.contractual_income)}</td>
-                        <td>{money(row.straight_line_income)}</td>
+
+                        <td>
+                          {money(row.contractual_income)}
+                        </td>
+
+                        <td>
+                          {money(row.straight_line_income)}
+                        </td>
+
                         <td>
                           {money(
                             row.initial_direct_cost_expense
                           )}
                         </td>
-                        <td>{money(row.accrued_rent_movement)}</td>
-                        <td>{money(row.deferred_rent_movement)}</td>
-                        <td>{money(row.accrued_rent_balance)}</td>
-                        <td>{money(row.deferred_rent_balance)}</td>
+
+                        <td>
+                          {money(row.accrued_rent_movement)}
+                        </td>
+
+                        <td>
+                          {money(row.deferred_rent_movement)}
+                        </td>
+
+                        <td>
+                          {money(row.accrued_rent_balance)}
+                        </td>
+
+                        <td>
+                          {money(row.deferred_rent_balance)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2540,8 +2598,7 @@ useEffect(() => {
 
                       <td>
                         {money(
-                          operatingPreview
-                            .straight_line_income
+                          operatingPreview.straight_line_income
                         )}
                       </td>
 
@@ -2556,15 +2613,13 @@ useEffect(() => {
 
                       <td>
                         {money(
-                          operatingPreview
-                            .closing_accrued_rent
+                          operatingPreview.closing_accrued_rent
                         )}
                       </td>
 
                       <td>
                         {money(
-                          operatingPreview
-                            .closing_deferred_rent
+                          operatingPreview.closing_deferred_rent
                         )}
                       </td>
                     </tr>
@@ -2581,17 +2636,19 @@ useEffect(() => {
               <p>{operatingPreview.message}</p>
             </div>
           </div>
-        ) : (
-          <div className="lessor-preview-panel">
-            <div className="lessor-preview-header">
-              Preview unavailable
+          ) : (
+            <div className="lessor-preview-panel">
+              <div className="lessor-preview-header">
+                Preview unavailable
+              </div>
+
+              <p>
+                No operating or finance calculation is available.
+              </p>
             </div>
+          )}
 
-            <p>No operating or finance calculation is available.</p>
-          </div>
-        )}
-
-        {classificationPreview?.reasons?.length ? (
+          {classificationPreview?.reasons?.length ? (
           <div className="lessor-preview-panel">
             <div className="lessor-preview-header">
               Classification reasons

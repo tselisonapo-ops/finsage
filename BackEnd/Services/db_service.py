@@ -22985,6 +22985,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS purchase_option_expected BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS initial_direct_costs NUMERIC(18,2) NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS security_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS security_deposit_account_code TEXT NULL,
         ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
         ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
         ADD COLUMN IF NOT EXISTS economic_life_months INT NULL,
