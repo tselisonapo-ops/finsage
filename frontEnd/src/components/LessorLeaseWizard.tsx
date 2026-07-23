@@ -10,7 +10,7 @@ import {
 } from "../api/coa";
 
 import { apiFetch } from "../api/apiFetch";
-import "../styles/lease.css";
+
 import {
   createLessorLease,
   generateLessorAccountingSchedule,
