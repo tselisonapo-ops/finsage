@@ -1362,8 +1362,12 @@ useEffect(() => {
         </div>
       )}
 
-      <div className="lease-grid-3">
-        <div className="field-row field-span-3">
+      <div className="lessor-step1-layout">
+        <aside className="lessor-checklist">
+          <div className="lessor-checklist-title">
+            Classification indicators
+          </div>
+
           <label
             className={
               "lessor-choice-card " +
@@ -1376,9 +1380,7 @@ useEffect(() => {
           >
             <input
               type="checkbox"
-              checked={
-                manufacturerDealerConfirmed
-              }
+              checked={manufacturerDealerConfirmed}
               disabled={loadingCompanyProfile}
               onChange={(event) => {
                 const confirmed =
@@ -1402,9 +1404,8 @@ useEffect(() => {
               </strong>
 
               <small>
-                This particular leased asset is inventory
-                normally manufactured or sold by the
-                company.
+                The leased asset is inventory normally
+                manufactured or sold by the company.
               </small>
 
               {loadingCompanyProfile ? (
@@ -1413,396 +1414,109 @@ useEffect(() => {
                 </em>
               ) : manufacturerDealerSuggested ? (
                 <em>
-                  Suggested because the company industry
-                  is{" "}
+                  Suggested because the company industry is{" "}
                   {companyProfile?.industry ||
                     "Car Dealership or Manufacturing"}.
                 </em>
               ) : null}
             </span>
           </label>
-        </div>
 
-        <div className="field-row field-span-3">
-          <label>Underlying asset *</label>
-
-          <select
-            value={String(form.asset_id || "")}
-            onChange={selectAsset}
-            disabled={loadingAssets}
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.ownership_transfers
+                  ? "is-selected"
+                  : ""
+              )
+            }
           >
-            <option value="">
-              {loadingAssets
-                ? "Loading company assets..."
-                : "Select an asset..."}
-            </option>
+            <input
+              type="checkbox"
+              name="ownership_transfers"
+              checked={Boolean(
+                form.ownership_transfers
+              )}
+              onChange={updateCheckbox}
+            />
 
-            {assets.map((asset) => (
-              <option
-                key={asset.id}
-                value={asset.id}
-              >
-                {assetOptionLabel(asset)}
-              </option>
-            ))}
-          </select>
-
-          {assetsError && (
-            <small className="field-error">
-              {assetsError}
-            </small>
-          )}
-        </div>
-
-        {selectedAsset && (
-          <div className="lessor-asset-summary field-span-3">
-            <div>
-              <span>Asset</span>
-
+            <span className="lessor-choice-content">
               <strong>
-                {assetName(selectedAsset)}
+                Ownership transfer
               </strong>
 
               <small>
-                {selectedAsset.asset_no ||
-                  `Asset ${selectedAsset.id}`}
+                Ownership transfers to the lessee
+                by the end of the lease.
               </small>
-            </div>
-
-            <div>
-              <span>Carrying amount</span>
-
-              <strong>
-                {Number(
-                  selectedAsset.carrying_amount || 0
-                ).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </strong>
-            </div>
-
-            <div>
-              <span>Recorded cost</span>
-
-              <strong>
-                {Number(
-                  selectedAsset.cost_total || 0
-                ).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </strong>
-            </div>
-
-            <div>
-              <span>Economic life</span>
-
-              <strong>
-                {Number(
-                  selectedAsset.economic_life_months || 0
-                ) || "Not set"}
-                {Number(
-                  selectedAsset.economic_life_months || 0
-                )
-                  ? " months"
-                  : ""}
-              </strong>
-            </div>
-
-            <div>
-              <span>Asset class</span>
-
-              <strong>
-                {selectedAsset.asset_class ||
-                  "Not specified"}
-              </strong>
-            </div>
-          </div>
-        )}
-
-        <div className="field-row">
-          <label>
-            Asset carrying amount *
+            </span>
           </label>
 
-          <input
-            type="number"
-            name="underlying_asset_carrying_amount"
-            value={
-              form
-                .underlying_asset_carrying_amount ||
-              0
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form
+                  .purchase_option_reasonably_certain
+                  ? "is-selected"
+                  : ""
+              )
             }
-            readOnly
-            step="0.01"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Asset fair value *
-          </label>
-
-          <input
-            type="number"
-            name="underlying_asset_fair_value"
-            value={
-              form
-                .underlying_asset_fair_value ||
-              0
-            }
-            onChange={updateNumber}
-            step="0.01"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Expected lease term (months) *
-          </label>
-
-          <input
-            type="number"
-            name="lease_term_months"
-            value={
-              form.lease_term_months || 0
-            }
-            onChange={updateNumber}
-            min="1"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Economic life (months) *
-          </label>
-
-          <input
-            type="number"
-            name="economic_life_months"
-            value={
-              form.economic_life_months ||
-              0
-            }
-            onChange={updateNumber}
-            min="1"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Guaranteed residual value
-          </label>
-
-          <input
-            type="number"
-            name="guaranteed_residual_value"
-            value={
-              form.guaranteed_residual_value ||
-              0
-            }
-            onChange={updateNumber}
-            step="0.01"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Unguaranteed residual value
-          </label>
-
-          <input
-            type="number"
-            name="unguaranteed_residual_value"
-            value={
-              form.unguaranteed_residual_value ||
-              0
-            }
-            onChange={updateNumber}
-            step="0.01"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Initial direct costs
-          </label>
-
-          <input
-            type="number"
-            name="initial_direct_costs"
-            value={
-              form.initial_direct_costs ||
-              0
-            }
-            onChange={updateNumber}
-            step="0.01"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>
-            Interest rate implicit
-          </label>
-
-          <input
-            type="number"
-            name="interest_rate_implicit"
-            value={
-              form.interest_rate_implicit ||
-              0
-            }
-            onChange={updateNumber}
-            step="0.0001"
-            placeholder="e.g. 0.10"
-          />
-        </div>
-
-        <div className="field-row">
-          <label>Payment frequency *</label>
-
-          <select
-            name="billing_frequency"
-            value={form.billing_frequency}
-            onChange={updateText}
           >
-            <option value="weekly">
-              Weekly
-            </option>
+            <input
+              type="checkbox"
+              name="purchase_option_reasonably_certain"
+              checked={Boolean(
+                form
+                  .purchase_option_reasonably_certain
+              )}
+              onChange={updateCheckbox}
+            />
 
-            <option value="monthly">
-              Monthly
-            </option>
+            <span className="lessor-choice-content">
+              <strong>
+                Purchase option
+              </strong>
 
-            <option value="quarterly">
-              Quarterly
-            </option>
+              <small>
+                The lessee is reasonably certain
+                to exercise the purchase option.
+              </small>
+            </span>
+          </label>
 
-            <option value="annually">
-              Annually
-            </option>
-          </select>
-        </div>
-
-        <div className="field-row">
-          <label>Payment timing *</label>
-
-          <select
-            name="billing_timing"
-            value={form.billing_timing}
-            onChange={updateText}
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.specialised_asset
+                  ? "is-selected"
+                  : ""
+              )
+            }
           >
-            <option value="arrears">
-              In arrears
-            </option>
+            <input
+              type="checkbox"
+              name="specialised_asset"
+              checked={Boolean(
+                form.specialised_asset
+              )}
+              onChange={updateCheckbox}
+            />
 
-            <option value="advance">
-              In advance
-            </option>
-          </select>
-        </div>
+            <span className="lessor-choice-content">
+              <strong>
+                Specialised asset
+              </strong>
 
-        <div className="field-row field-span-3">
-          <div className="lessor-indicator-grid">
-            <label
-              className={
-                "lessor-choice-card " +
-                (
-                  form.ownership_transfers
-                    ? "is-selected"
-                    : ""
-                )
-              }
-            >
-              <input
-                type="checkbox"
-                name="ownership_transfers"
-                checked={Boolean(
-                  form.ownership_transfers
-                )}
-                onChange={updateCheckbox}
-              />
+              <small>
+                The asset has no readily available
+                alternative use without major changes.
+              </small>
+            </span>
+          </label>
 
-              <span className="lessor-choice-content">
-                <strong>
-                  Ownership transfer
-                </strong>
-
-                <small>
-                  Ownership of the asset transfers to the
-                  lessee by the end of the lease.
-                </small>
-              </span>
-            </label>
-
-            <label
-              className={
-                "lessor-choice-card " +
-                (
-                  form
-                    .purchase_option_reasonably_certain
-                    ? "is-selected"
-                    : ""
-                )
-              }
-            >
-              <input
-                type="checkbox"
-                name="purchase_option_reasonably_certain"
-                checked={Boolean(
-                  form
-                    .purchase_option_reasonably_certain
-                )}
-                onChange={updateCheckbox}
-              />
-
-              <span className="lessor-choice-content">
-                <strong>
-                  Purchase option
-                </strong>
-
-                <small>
-                  The lessee is reasonably certain to
-                  exercise the purchase option.
-                </small>
-              </span>
-            </label>
-
-            <label
-              className={
-                "lessor-choice-card " +
-                (
-                  form.specialised_asset
-                    ? "is-selected"
-                    : ""
-                )
-              }
-            >
-              <input
-                type="checkbox"
-                name="specialised_asset"
-                checked={Boolean(
-                  form.specialised_asset
-                )}
-                onChange={updateCheckbox}
-              />
-
-              <span className="lessor-choice-content">
-                <strong>
-                  Specialised asset
-                </strong>
-
-                <small>
-                  The asset has no readily available
-                  alternative use without major changes.
-                </small>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div className="field-row field-span-3">
           <label
             className={
               "lessor-choice-card " +
@@ -1828,54 +1542,342 @@ useEffect(() => {
               </strong>
 
               <small>
-                Use this only when documented facts support
-                a classification different from the
-                calculated result.
+                Use only when documented facts support
+                a different classification.
               </small>
             </span>
           </label>
-        </div>
+        </aside>
 
-        {form.classification_override && (
-          <>
+        <div className="lessor-step1-fields">
+          <div className="lease-grid-3">
+            <div className="field-row field-span-3">
+              <label>Underlying asset *</label>
+
+              <select
+                value={String(form.asset_id || "")}
+                onChange={selectAsset}
+                disabled={loadingAssets}
+              >
+                <option value="">
+                  {loadingAssets
+                    ? "Loading company assets..."
+                    : "Select an asset..."}
+                </option>
+
+                {assets.map((asset) => (
+                  <option
+                    key={asset.id}
+                    value={asset.id}
+                  >
+                    {assetOptionLabel(asset)}
+                  </option>
+                ))}
+              </select>
+
+              {assetsError && (
+                <small className="field-error">
+                  {assetsError}
+                </small>
+              )}
+            </div>
+
+            {selectedAsset && (
+              <div className="lessor-asset-summary field-span-3">
+                <div>
+                  <span>Asset</span>
+
+                  <strong>
+                    {assetName(selectedAsset)}
+                  </strong>
+
+                  <small>
+                    {selectedAsset.asset_no ||
+                      `Asset ${selectedAsset.id}`}
+                  </small>
+                </div>
+
+                <div>
+                  <span>Carrying amount</span>
+
+                  <strong>
+                    {Number(
+                      selectedAsset.carrying_amount || 0
+                    ).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Recorded cost</span>
+
+                  <strong>
+                    {Number(
+                      selectedAsset.cost_total || 0
+                    ).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Economic life</span>
+
+                  <strong>
+                    {Number(
+                      selectedAsset
+                        .economic_life_months || 0
+                    ) || "Not set"}
+                    {Number(
+                      selectedAsset
+                        .economic_life_months || 0
+                    )
+                      ? " months"
+                      : ""}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Asset class</span>
+
+                  <strong>
+                    {selectedAsset.asset_class ||
+                      "Not specified"}
+                  </strong>
+                </div>
+              </div>
+            )}
+
             <div className="field-row">
               <label>
-                Override classification
+                Asset carrying amount *
+              </label>
+
+              <input
+                type="number"
+                name="underlying_asset_carrying_amount"
+                value={
+                  form
+                    .underlying_asset_carrying_amount ||
+                  0
+                }
+                readOnly
+                step="0.01"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Asset fair value *
+              </label>
+
+              <input
+                type="number"
+                name="underlying_asset_fair_value"
+                value={
+                  form
+                    .underlying_asset_fair_value ||
+                  0
+                }
+                onChange={updateNumber}
+                step="0.01"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Expected lease term (months) *
+              </label>
+
+              <input
+                type="number"
+                name="lease_term_months"
+                value={
+                  form.lease_term_months || 0
+                }
+                onChange={updateNumber}
+                min="1"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Economic life (months) *
+              </label>
+
+              <input
+                type="number"
+                name="economic_life_months"
+                value={
+                  form.economic_life_months || 0
+                }
+                onChange={updateNumber}
+                min="1"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Guaranteed residual value
+              </label>
+
+              <input
+                type="number"
+                name="guaranteed_residual_value"
+                value={
+                  form.guaranteed_residual_value ||
+                  0
+                }
+                onChange={updateNumber}
+                step="0.01"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Unguaranteed residual value
+              </label>
+
+              <input
+                type="number"
+                name="unguaranteed_residual_value"
+                value={
+                  form.unguaranteed_residual_value ||
+                  0
+                }
+                onChange={updateNumber}
+                step="0.01"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Initial direct costs
+              </label>
+
+              <input
+                type="number"
+                name="initial_direct_costs"
+                value={
+                  form.initial_direct_costs || 0
+                }
+                onChange={updateNumber}
+                step="0.01"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Interest rate implicit
+              </label>
+
+              <input
+                type="number"
+                name="interest_rate_implicit"
+                value={
+                  form.interest_rate_implicit || 0
+                }
+                onChange={updateNumber}
+                step="0.0001"
+                placeholder="e.g. 0.10"
+              />
+            </div>
+
+            <div className="field-row">
+              <label>
+                Payment frequency *
               </label>
 
               <select
-                name="lease_classification"
-                value={form.lease_classification}
+                name="billing_frequency"
+                value={form.billing_frequency}
                 onChange={updateText}
               >
-                <option value="finance">
-                  Finance lease
+                <option value="weekly">
+                  Weekly
                 </option>
 
-                <option value="operating">
-                  Operating lease
+                <option value="monthly">
+                  Monthly
+                </option>
+
+                <option value="quarterly">
+                  Quarterly
+                </option>
+
+                <option value="annually">
+                  Annually
                 </option>
               </select>
             </div>
 
-            <div className="field-row field-span-2">
+            <div className="field-row">
               <label>
-                Override reason *
+                Payment timing *
               </label>
 
-              <textarea
-                name="classification_override_reason"
-                value={
-                  form
-                    .classification_override_reason ||
-                  ""
-                }
+              <select
+                name="billing_timing"
+                value={form.billing_timing}
                 onChange={updateText}
-                rows={2}
-              />
+              >
+                <option value="arrears">
+                  In arrears
+                </option>
+
+                <option value="advance">
+                  In advance
+                </option>
+              </select>
             </div>
-          </>
-        )}
+
+            {form.classification_override && (
+              <>
+                <div className="field-row">
+                  <label>
+                    Override classification
+                  </label>
+
+                  <select
+                    name="lease_classification"
+                    value={
+                      form.lease_classification
+                    }
+                    onChange={updateText}
+                  >
+                    <option value="finance">
+                      Finance lease
+                    </option>
+
+                    <option value="operating">
+                      Operating lease
+                    </option>
+                  </select>
+                </div>
+
+                <div className="field-row field-span-2">
+                  <label>
+                    Override reason *
+                  </label>
+
+                  <textarea
+                    name="classification_override_reason"
+                    value={
+                      form
+                        .classification_override_reason ||
+                      ""
+                    }
+                    onChange={updateText}
+                    rows={2}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {error && (
