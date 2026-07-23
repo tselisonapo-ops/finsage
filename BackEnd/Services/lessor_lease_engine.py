@@ -1166,6 +1166,40 @@ class LessorLeaseEngine:
             + unguaranteed_residual
         )
 
+        capitalised_initial_direct_costs = (
+            Decimal("0")
+            if manufacturer_dealer
+            else initial_direct_costs
+        )
+
+        if periodic_rate == 0:
+            discount_factor = Decimal("1")
+        else:
+            discount_factor = (
+                Decimal("1") + periodic_rate
+            ) ** Decimal(-period_count)
+
+        pv_guaranteed_residual = (
+            guaranteed_residual
+            * discount_factor
+        )
+
+        pv_unguaranteed_residual = (
+            unguaranteed_residual
+            * discount_factor
+        )
+
+        pv_residual_values = (
+            pv_guaranteed_residual
+            + pv_unguaranteed_residual
+        )
+
+        pv_lease_payments = (
+            target_net_investment
+            - pv_residual_values
+            - capitalised_initial_direct_costs
+        )
+
         payment = self._solve_periodic_payment(
             target_net_investment=
                 target_net_investment,
@@ -1378,6 +1412,40 @@ class LessorLeaseEngine:
                 self._money_decimal(
                     target_net_investment
                 )
+            ),
+
+            "pv_lease_payments": float(
+                self._money_decimal(
+                    pv_lease_payments
+                )
+            ),
+
+            "pv_guaranteed_residual": float(
+                self._money_decimal(
+                    pv_guaranteed_residual
+                )
+            ),
+
+            "pv_unguaranteed_residual": float(
+                self._money_decimal(
+                    pv_unguaranteed_residual
+                )
+            ),
+
+            "pv_residual_values": float(
+                self._money_decimal(
+                    pv_residual_values
+                )
+            ),
+
+            "capitalised_initial_direct_costs": float(
+                self._money_decimal(
+                    capitalised_initial_direct_costs
+                )
+            ),
+
+            "manufacturer_dealer_lessor": bool(
+                manufacturer_dealer
             ),
 
             "unearned_finance_income": float(

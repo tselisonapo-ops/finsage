@@ -862,3 +862,310 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================
+   LESSOR WIZARD FINAL LAYOUT OVERRIDES
+   Keep this block at the bottom of lease.css
+   ========================================== */
+
+/* Make textareas match the visible input styling */
+.lease-wizard[data-role="lessor"] .field-row input,
+.lease-wizard[data-role="lessor"] .field-row select,
+.lease-wizard[data-role="lessor"] .field-row textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  outline: none;
+}
+
+.lease-wizard[data-role="lessor"] .field-row textarea {
+  display: block;
+  min-height: 90px;
+  resize: vertical;
+  line-height: 1.45;
+  caret-color: #0f172a;
+}
+
+.lease-wizard[data-role="lessor"] .field-row input::placeholder,
+.lease-wizard[data-role="lessor"] .field-row textarea::placeholder {
+  color: #94a3b8;
+}
+
+.lease-wizard[data-role="lessor"] .field-row input:focus,
+.lease-wizard[data-role="lessor"] .field-row select:focus,
+.lease-wizard[data-role="lessor"] .field-row textarea:focus {
+  border-color: #0d9488;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+
+/* Give labels a visible colour on the white wizard */
+.lease-wizard[data-role="lessor"] .field-row > label {
+  color: #475569;
+}
+
+/* Make the wizard use the available drawer width */
+.lease-wizard[data-role="lessor"] .lease-step-2 {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+/* Main Step 3 preview containers */
+.lease-wizard[data-role="lessor"] .lessor-finance-preview,
+.lease-wizard[data-role="lessor"] .lessor-operating-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Keep classification and measurement side by side */
+.lease-wizard[data-role="lessor"] .lessor-top-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  align-items: stretch;
+}
+
+/* Make the top sections clearly visible as cards */
+.lease-wizard[data-role="lessor"] .lessor-top-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 16px;
+  border: 1px solid #d8e1eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+.lease-wizard[data-role="lessor"] .lessor-top-panel-head {
+  margin-bottom: 12px;
+}
+
+.lease-wizard[data-role="lessor"] .lessor-top-panel-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.lease-wizard[data-role="lessor"] .lessor-top-panel-head p {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+/* Finance classification and measurement values in grids */
+.lease-wizard[data-role="lessor"] .lessor-definition-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-definition-grid > div {
+  display: flex;
+  min-width: 0;
+  min-height: 72px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-definition-grid span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-definition-grid strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Operating classification values */
+.lease-wizard[data-role="lessor"]
+.lessor-classification-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+}
+
+/* Operating measurement values */
+.lease-wizard[data-role="lessor"]
+.lessor-top-panel .lessor-accounting-summary {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+/* KPI row above operating schedule */
+.lease-wizard[data-role="lessor"]
+.lessor-operating-kpi-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+/* Keep reconciliation cards side by side */
+.lease-wizard[data-role="lessor"]
+.lessor-preview-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  align-items: stretch;
+}
+
+/* Ensure cards do not collapse or overflow */
+.lease-wizard[data-role="lessor"]
+.lessor-preview-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8e1eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+/* Tablet: preserve grids longer than before */
+@media (max-width: 760px) {
+  .lease-wizard[data-role="lessor"] .lessor-top-grid,
+  .lease-wizard[data-role="lessor"] .lessor-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lease-wizard[data-role="lessor"]
+  .lessor-operating-kpi-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .lease-wizard[data-role="lessor"]
+  .lessor-classification-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phone */
+@media (max-width: 520px) {
+  .lease-wizard[data-role="lessor"]
+  .lessor-definition-grid,
+  .lease-wizard[data-role="lessor"]
+  .lessor-top-panel .lessor-accounting-summary,
+  .lease-wizard[data-role="lessor"]
+  .lessor-operating-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================
+   FINANCE LEASE WORKING PAPER
+   ========================================== */
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-kpi-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-preview
+.lessor-preview-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  align-items: stretch;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-preview
+.lessor-preview-card {
+  height: 100%;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-preview
+.lessor-mini-table {
+  margin-top: auto;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-preview
+.lessor-mini-table td:first-child {
+  width: 68%;
+}
+
+.lease-wizard[data-role="lessor"]
+.lessor-finance-preview
+.lessor-mini-table td:last-child {
+  width: 32%;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .lease-wizard[data-role="lessor"]
+  .lessor-finance-kpi-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .lease-wizard[data-role="lessor"]
+  .lessor-finance-preview
+  .lessor-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .lease-wizard[data-role="lessor"]
+  .lessor-finance-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -138,33 +138,40 @@ export type LessorClassificationResult = {
 
 export type FinanceLeaseTermsPreview = {
   classification: "finance";
-
   period_count: number;
+
   periodic_payment: number;
-
-  target_net_investment: number;
-  gross_investment: number;
+  target_net_investment?: number;
   initial_net_investment: number;
-
-  current_net_investment: number;
-  noncurrent_net_investment: number;
-
-  current_portion: number;
-  noncurrent_portion: number;
-
+  gross_investment: number;
   unearned_finance_income: number;
   total_finance_income: number;
 
-  finance_income_next_12_months: number;
-  principal_next_12_months: number;
+  pv_lease_payments?: number;
+  pv_guaranteed_residual?: number;
+  pv_unguaranteed_residual?: number;
+  pv_residual_values?: number;
+  capitalised_initial_direct_costs?: number;
 
-  annual_interest_rate: number;
-  periodic_interest_rate: number;
+  manufacturer_dealer_lessor?: boolean;
 
-  guaranteed_residual_value: number;
-  unguaranteed_residual_value: number;
+  annual_interest_rate?: number;
+  periodic_interest_rate?: number;
 
-  schedule: FinanceLeasePreviewRow[];
+  guaranteed_residual_value?: number;
+  unguaranteed_residual_value?: number;
+
+  current_net_investment?: number;
+  noncurrent_net_investment?: number;
+
+  schedule: Array<{
+    period_no: number;
+    opening_net_investment: number;
+    lease_payment: number;
+    finance_income: number;
+    principal_reduction: number;
+    closing_net_investment: number;
+  }>;
 };
 
 export type OperatingLeasePreviewRow = {

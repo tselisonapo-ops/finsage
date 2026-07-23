@@ -1989,6 +1989,27 @@ useEffect(() => {
         financePreview
           ?.noncurrent_net_investment || 0
       );
+
+    const pvLeasePayments = Number(
+      financePreview?.pv_lease_payments || 0
+    );
+
+    const pvGuaranteedResidual = Number(
+      financePreview?.pv_guaranteed_residual || 0
+    );
+
+    const pvUnguaranteedResidual = Number(
+      financePreview?.pv_unguaranteed_residual || 0
+    );
+
+    const capitalisedDirectCosts = Number(
+      financePreview
+        ?.capitalised_initial_direct_costs || 0
+    );
+
+    const annualInterestRate = Number(
+      financePreview?.annual_interest_rate || 0
+    );
     return (
       <div className="lease-step lease-step-2">
         <div className="lessor-step-heading">
@@ -2013,115 +2034,251 @@ useEffect(() => {
               {classificationPreview && (
                 <section className="lessor-top-panel">
                   <div className="lessor-top-panel-head">
-                    <div>
-                      <h3>IFRS 16 classification</h3>
-                      <p>
-                        Evidence supporting the lessor
-                        classification.
-                      </p>
-                    </div>
+                    <h3>IFRS 16 classification</h3>
+
+                    <p>
+                      Evidence supporting the lessor
+                      classification.
+                    </p>
                   </div>
 
                   <div className="lessor-definition-grid">
-                      <div>
-                          <span>Classification</span>
-                          <strong>
-                              {classificationPreview.classification.toUpperCase()}
-                          </strong>
-                      </div>
+                    <div>
+                      <span>Classification</span>
 
-                      <div>
-                          <span>Lease term ratio</span>
-                          <strong>
-                              {Number(
-                                  classificationPreview.lease_term_ratio || 0
-                              ).toLocaleString(undefined,{
-                                  style:"percent",
-                                  maximumFractionDigits:2
-                              })}
-                          </strong>
-                      </div>
+                      <strong>
+                        {classificationPreview
+                          .classification
+                          .toUpperCase()}
+                      </strong>
+                    </div>
 
-                      <div>
-                          <span>PV / fair value ratio</span>
-                          <strong>
-                              {Number(
-                                  classificationPreview.pv_fair_value_ratio || 0
-                              ).toLocaleString(undefined,{
-                                  style:"percent",
-                                  maximumFractionDigits:2
-                              })}
-                          </strong>
-                      </div>
+                    <div>
+                      <span>Lease term ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .lease_term_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>PV / fair value ratio</span>
+
+                      <strong>
+                        {Number(
+                          classificationPreview
+                            .pv_fair_value_ratio || 0
+                        ).toLocaleString(undefined, {
+                          style: "percent",
+                          maximumFractionDigits: 2,
+                        })}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Lessor type</span>
+
+                      <strong>
+                        {financePreview
+                          .manufacturer_dealer_lessor
+                          ? "Manufacturer / dealer"
+                          : "Ordinary lessor"}
+                      </strong>
+                    </div>
                   </div>
                 </section>
               )}
 
               <section className="lessor-top-panel">
                 <div className="lessor-top-panel-head">
-                  <div>
-                    <h3>Lease measurement</h3>
-                    <p>Calculated finance lease amounts.</p>
-                  </div>
+                  <h3>Lease measurement</h3>
+
+                  <p>
+                    Finance lease measurement assumptions.
+                  </p>
                 </div>
 
                 <div className="lessor-definition-grid">
+                  <div>
+                    <span>Interest rate</span>
 
-                    <div>
-                        <span>Periodic payment</span>
-                        <strong>{money(financePreview.periodic_payment)}</strong>
-                    </div>
+                    <strong>
+                      {annualInterestRate.toLocaleString(
+                        undefined,
+                        {
+                          style: "percent",
+                          maximumFractionDigits: 4,
+                        }
+                      )}
+                    </strong>
+                  </div>
 
-                    <div>
-                        <span>Initial net investment</span>
-                        <strong>{money(financePreview.initial_net_investment)}</strong>
-                    </div>
+                  <div>
+                    <span>Lease term</span>
 
-                    <div>
-                        <span>Gross investment</span>
-                        <strong>{money(financePreview.gross_investment)}</strong>
-                    </div>
+                    <strong>
+                      {form.lease_term_months} months
+                    </strong>
+                  </div>
 
-                    <div>
-                        <span>Unearned finance income</span>
-                        <strong>{money(financePreview.unearned_finance_income)}</strong>
-                    </div>
+                  <div>
+                    <span>Payment frequency</span>
 
+                    <strong>
+                      {String(
+                        form.billing_frequency || ""
+                      ).replace(/\b\w/g, (letter) =>
+                        letter.toUpperCase()
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Payment timing</span>
+
+                    <strong>
+                      {form.billing_timing === "advance"
+                        ? "In advance"
+                        : "In arrears"}
+                    </strong>
+                  </div>
                 </div>
               </section>
+            </div>
+
+            <div className="lessor-finance-kpi-grid">
+              <div className="lessor-metric-card">
+                <span>Periodic payment</span>
+
+                <strong>
+                  {money(
+                    financePreview.periodic_payment
+                  )}
+                </strong>
+
+                <small>
+                  {form.billing_frequency} ·{" "}
+                  {form.billing_timing}
+                </small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Initial net investment</span>
+
+                <strong>
+                  {money(
+                    financePreview
+                      .initial_net_investment
+                  )}
+                </strong>
+
+                <small>Opening lease receivable</small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Gross investment</span>
+
+                <strong>
+                  {money(
+                    financePreview.gross_investment
+                  )}
+                </strong>
+
+                <small>
+                  Undiscounted payments and residuals
+                </small>
+              </div>
+
+              <div className="lessor-metric-card">
+                <span>Unearned finance income</span>
+
+                <strong>
+                  {money(
+                    financePreview
+                      .unearned_finance_income
+                  )}
+                </strong>
+
+                <small>
+                  Recognised over the lease term
+                </small>
+              </div>
             </div>
 
             <div className="lessor-preview-grid">
               <section className="lessor-preview-card">
                 <div className="lessor-preview-card-head">
                   <div>
-                    <h3>Net lease receivable</h3>
-                    <p>Opening current and non-current classification.</p>
+                    <h3>
+                      Initial net investment calculation
+                    </h3>
+
+                    <p>
+                      Day-one measurement of the finance
+                      lease receivable.
+                    </p>
                   </div>
                 </div>
 
                 <table className="lessor-mini-table">
-                  <thead>
-                    <tr>
-                      <th>Classification</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-
                   <tbody>
                     <tr>
-                      <td>Current lease receivable</td>
-                      <td>{money(currentPortion)}</td>
+                      <td>
+                        Present value of lease payments
+                      </td>
+
+                      <td>
+                        {money(pvLeasePayments)}
+                      </td>
                     </tr>
 
                     <tr>
-                      <td>Non-current lease receivable</td>
-                      <td>{money(nonCurrentPortion)}</td>
+                      <td>
+                        Present value of guaranteed
+                        residual
+                      </td>
+
+                      <td>
+                        {money(pvGuaranteedResidual)}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>
+                        Present value of unguaranteed
+                        residual
+                      </td>
+
+                      <td>
+                        {money(pvUnguaranteedResidual)}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>
+                        Capitalised initial direct costs
+                      </td>
+
+                      <td>
+                        {money(capitalisedDirectCosts)}
+                      </td>
                     </tr>
 
                     <tr className="lessor-total-row">
-                      <td>Total net investment</td>
-                      <td>{money(initialNetInvestment)}</td>
+                      <td>Initial net investment</td>
+
+                      <td>
+                        {money(
+                          financePreview
+                            .initial_net_investment
+                        )}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -2130,8 +2287,14 @@ useEffect(() => {
               <section className="lessor-preview-card">
                 <div className="lessor-preview-card-head">
                   <div>
-                    <h3>Investment reconciliation</h3>
-                    <p>Reconciliation between gross and net investment.</p>
+                    <h3>
+                      Gross investment reconciliation
+                    </h3>
+
+                    <p>
+                      Reconciliation of gross investment
+                      to the opening net investment.
+                    </p>
                   </div>
                 </div>
 
@@ -2139,17 +2302,139 @@ useEffect(() => {
                   <tbody>
                     <tr>
                       <td>Gross investment</td>
-                      <td>{money(financePreview.gross_investment)}</td>
+
+                      <td>
+                        {money(
+                          financePreview.gross_investment
+                        )}
+                      </td>
                     </tr>
 
                     <tr>
-                      <td>Less: unearned finance income</td>
-                      <td>({money(financePreview.unearned_finance_income)})</td>
+                      <td>
+                        Less: unearned finance income
+                      </td>
+
+                      <td>
+                        (
+                        {money(
+                          financePreview
+                            .unearned_finance_income
+                        )}
+                        )
+                      </td>
                     </tr>
 
                     <tr className="lessor-total-row">
                       <td>Initial net investment</td>
-                      <td>{money(financePreview.initial_net_investment)}</td>
+
+                      <td>
+                        {money(
+                          financePreview
+                            .initial_net_investment
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+
+            <div className="lessor-preview-grid">
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Opening lease receivable</h3>
+
+                    <p>
+                      Current and non-current presentation
+                      at commencement.
+                    </p>
+                  </div>
+                </div>
+
+                <table className="lessor-mini-table">
+                  <tbody>
+                    <tr>
+                      <td>Current lease receivable</td>
+
+                      <td>{money(currentPortion)}</td>
+                    </tr>
+
+                    <tr>
+                      <td>
+                        Non-current lease receivable
+                      </td>
+
+                      <td>{money(nonCurrentPortion)}</td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Total net investment</td>
+
+                      <td>
+                        {money(initialNetInvestment)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="lessor-preview-card">
+                <div className="lessor-preview-card-head">
+                  <div>
+                    <h3>Residual value summary</h3>
+
+                    <p>
+                      Contractual residual values included
+                      in the finance lease.
+                    </p>
+                  </div>
+                </div>
+
+                <table className="lessor-mini-table">
+                  <tbody>
+                    <tr>
+                      <td>Guaranteed residual value</td>
+
+                      <td>
+                        {money(
+                          financePreview
+                            .guaranteed_residual_value
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td>
+                        Unguaranteed residual value
+                      </td>
+
+                      <td>
+                        {money(
+                          financePreview
+                            .unguaranteed_residual_value
+                        )}
+                      </td>
+                    </tr>
+
+                    <tr className="lessor-total-row">
+                      <td>Total residual value</td>
+
+                      <td>
+                        {money(
+                          Number(
+                            financePreview
+                              .guaranteed_residual_value ||
+                            0
+                          ) +
+                          Number(
+                            financePreview
+                              .unguaranteed_residual_value ||
+                            0
+                          )
+                        )}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -2159,10 +2444,15 @@ useEffect(() => {
             <section className="lessor-preview-card lessor-schedule-card">
               <div className="lessor-preview-card-head">
                 <div>
-                  <h3>Net investment amortisation schedule</h3>
+                  <h3>
+                    Finance lease net investment
+                    amortisation schedule
+                  </h3>
 
                   <p>
-                    Scroll to review all {financePreview.period_count} lease periods.
+                    Effective-interest allocation of each
+                    payment between finance income and
+                    principal recovery.
                   </p>
                 </div>
 
@@ -2194,16 +2484,39 @@ useEffect(() => {
                   </thead>
 
                   <tbody>
-                    {financePreview.schedule.map((row) => (
-                      <tr key={row.period_no}>
-                        <td>{row.period_no}</td>
-                        <td>{money(row.opening_net_investment)}</td>
-                        <td>{money(row.lease_payment)}</td>
-                        <td>{money(row.finance_income)}</td>
-                        <td>{money(row.principal_reduction)}</td>
-                        <td>{money(row.closing_net_investment)}</td>
-                      </tr>
-                    ))}
+                    {financePreview.schedule.map(
+                      (row) => (
+                        <tr key={row.period_no}>
+                          <td>{row.period_no}</td>
+
+                          <td>
+                            {money(
+                              row.opening_net_investment
+                            )}
+                          </td>
+
+                          <td>
+                            {money(row.lease_payment)}
+                          </td>
+
+                          <td>
+                            {money(row.finance_income)}
+                          </td>
+
+                          <td>
+                            {money(
+                              row.principal_reduction
+                            )}
+                          </td>
+
+                          <td>
+                            {money(
+                              row.closing_net_investment
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    )}
                   </tbody>
 
                   <tfoot>
@@ -2214,19 +2527,32 @@ useEffect(() => {
                         {money(
                           financePreview.schedule.reduce(
                             (total, row) =>
-                              total + Number(row.lease_payment || 0),
+                              total +
+                              Number(
+                                row.lease_payment || 0
+                              ),
                             0
                           )
                         )}
                       </td>
 
-                      <td>{money(financePreview.total_finance_income)}</td>
+                      <td>
+                        {money(
+                          financePreview
+                            .total_finance_income
+                        )}
+                      </td>
 
                       <td>
                         {money(
                           financePreview.schedule.reduce(
                             (total, row) =>
-                              total + Number(row.principal_reduction || 0),
+                              total +
+                              Number(
+                                row
+                                  .principal_reduction ||
+                                0
+                              ),
                             0
                           )
                         )}
