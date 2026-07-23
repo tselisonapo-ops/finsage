@@ -2410,9 +2410,12 @@ class LessorLeaseEngine:
         return values[frequency]
 
     @staticmethod
-    def _money_decimal(
-        value: Decimal,
-    ) -> Decimal:
+    def _money_decimal(value) -> Decimal:
+        if value is None:
+            value = Decimal("0.00")
+        elif not isinstance(value, Decimal):
+            value = Decimal(str(value))
+
         return value.quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
