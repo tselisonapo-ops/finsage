@@ -1628,12 +1628,11 @@ useEffect(() => {
 
                   <strong>
                     {Number(
-                      selectedAsset
-                        .economic_life_months || 0
+                      selectedAsset.economic_life_months || 0
                     ) || "Not set"}
+
                     {Number(
-                      selectedAsset
-                        .economic_life_months || 0
+                      selectedAsset.economic_life_months || 0
                     )
                       ? " months"
                       : ""}
@@ -1660,8 +1659,7 @@ useEffect(() => {
                 type="number"
                 name="underlying_asset_carrying_amount"
                 value={
-                  form
-                    .underlying_asset_carrying_amount ||
+                  form.underlying_asset_carrying_amount ||
                   0
                 }
                 readOnly
@@ -1678,8 +1676,7 @@ useEffect(() => {
                 type="number"
                 name="underlying_asset_fair_value"
                 value={
-                  form
-                    .underlying_asset_fair_value ||
+                  form.underlying_asset_fair_value ||
                   0
                 }
                 onChange={updateNumber}
@@ -1866,8 +1863,7 @@ useEffect(() => {
                   <textarea
                     name="classification_override_reason"
                     value={
-                      form
-                        .classification_override_reason ||
+                      form.classification_override_reason ||
                       ""
                     }
                     onChange={updateText}
@@ -1878,7 +1874,193 @@ useEffect(() => {
             )}
           </div>
         </div>
-      </div>
+
+        <aside className="lessor-checklist">
+          <div className="lessor-checklist-title">
+            Classification indicators
+          </div>
+
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                manufacturerDealerConfirmed
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              checked={
+                manufacturerDealerConfirmed
+              }
+              disabled={loadingCompanyProfile}
+              onChange={(event) => {
+                const confirmed =
+                  event.target.checked;
+
+                setManufacturerDealerConfirmed(
+                  confirmed
+                );
+
+                setForm((current) => ({
+                  ...current,
+                  manufacturer_dealer_lessor:
+                    confirmed,
+                }));
+              }}
+            />
+
+            <span className="lessor-choice-content">
+              <strong>
+                Manufacturer or dealer lessor
+              </strong>
+
+              <small>
+                The leased asset is inventory normally
+                manufactured or sold by the company.
+              </small>
+
+              {loadingCompanyProfile ? (
+                <em>
+                  Checking company industry…
+                </em>
+              ) : manufacturerDealerSuggested ? (
+                <em>
+                  Suggested because the company industry is{" "}
+                  {companyProfile?.industry ||
+                    "Car Dealership or Manufacturing"}.
+                </em>
+              ) : null}
+            </span>
+          </label>
+
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.ownership_transfers
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              name="ownership_transfers"
+              checked={Boolean(
+                form.ownership_transfers
+              )}
+              onChange={updateCheckbox}
+            />
+
+            <span className="lessor-choice-content">
+              <strong>
+                Ownership transfer
+              </strong>
+
+              <small>
+                Ownership transfers to the lessee
+                by the end of the lease.
+              </small>
+            </span>
+          </label>
+
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.purchase_option_reasonably_certain
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              name="purchase_option_reasonably_certain"
+              checked={Boolean(
+                form.purchase_option_reasonably_certain
+              )}
+              onChange={updateCheckbox}
+            />
+
+            <span className="lessor-choice-content">
+              <strong>
+                Purchase option
+              </strong>
+
+              <small>
+                The lessee is reasonably certain
+                to exercise the purchase option.
+              </small>
+            </span>
+          </label>
+
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.specialised_asset
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              name="specialised_asset"
+              checked={Boolean(
+                form.specialised_asset
+              )}
+              onChange={updateCheckbox}
+            />
+
+            <span className="lessor-choice-content">
+              <strong>
+                Specialised asset
+              </strong>
+
+              <small>
+                The asset has no readily available
+                alternative use without major changes.
+              </small>
+            </span>
+          </label>
+
+          <label
+            className={
+              "lessor-choice-card " +
+              (
+                form.classification_override
+                  ? "is-selected"
+                  : ""
+              )
+            }
+          >
+            <input
+              type="checkbox"
+              name="classification_override"
+              checked={Boolean(
+                form.classification_override
+              )}
+              onChange={updateCheckbox}
+            />
+
+            <span className="lessor-choice-content">
+              <strong>
+                Override calculated classification
+              </strong>
+
+              <small>
+                Use only when documented facts support
+                a different classification.
+              </small>
+            </span>
+          </label>
+        </aside>
+        </div>
 
       {error && (
         <div className="error">
