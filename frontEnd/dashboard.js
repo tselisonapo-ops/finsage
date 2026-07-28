@@ -680,8 +680,71 @@ function launchPos() {
   localStorage.setItem("pos_company", JSON.stringify(company));
   localStorage.setItem("pos_company_id", String(companyId));
 
-  window.open("/pos/#/manager", "_blank");
-}
+  const isLocal =
+    location.hostname === "127.0.0.1" ||
+    location.hostname === "localhost";
+
+  const posUrl = isLocal
+    ? "http://127.0.0.1:5174/#/manager"
+    : "/pos/#/manager";
+
+    console.log("[LAUNCH POS]", {
+      url: posUrl,
+      token: window.getToken?.(),
+      sessionToken: sessionStorage.getItem("fs_user_token"),
+      localToken: localStorage.getItem("fs_user_token"),
+      authToken: localStorage.getItem("authToken"),
+    });
+
+  const token =
+    window.getToken?.() ||
+    sessionStorage.getItem("fs_user_token") ||
+    localStorage.getItem("fs_user_token") ||
+    localStorage.getItem("authToken") ||
+    "";
+
+  if (!token) {
+    alert("Your FinSage session could not be found. Please sign in again.");
+    return;
+  }
+
+  const posWindow = window.open(posUrl, "_blank");
+
+  if (!posWindow) {
+    alert("The POS window was blocked by your browser.");
+    return;
+  }
+
+  const posOrigin = isLocal
+    ? "http://127.0.0.1:5174"
+    : window.location.origin;
+
+  const payload = {
+    type: "fs_pos_context",
+    token,
+    company,
+    companyId: Number(companyId),
+    user: JSON.parse(localStorage.getItem("fs_user") || "{}"),
+  };
+
+  function sendPosContext() {
+    posWindow.postMessage(payload, posOrigin);
+  }
+
+  function handlePosReady(event) {
+    if (event.origin !== posOrigin) return;
+    if (event.source !== posWindow) return;
+    if (event.data?.type !== "fs_pos_ready") return;
+
+    sendPosContext();
+    window.removeEventListener("message", handlePosReady);
+  }
+
+  window.addEventListener("message", handlePosReady);
+
+  // Backup delivery in case the ready message arrives unusually late.
+  setTimeout(sendPosContext, 700);
+  }
 
   async function apiFetchText(url, options = {}) {
     try {
@@ -1255,6 +1318,42 @@ const ENDPOINTS = {
       post: (companyId, leaseId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/leases/${encodeURIComponent(leaseId)}/payments`,
     },
+  },
+
+  lessorLeases: {
+    list: (cid, { status = "", q = "", limit = 200, offset = 0 } = {}) => {
+      const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (status) p.set("status", status);
+      if (q) p.set("q", q);
+      return `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases?${p}`;
+    },
+
+    get: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}`,
+
+    subsequent: (cid, leaseId, asAt = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/subsequent-measurement${asAt ? `?as_at=${encodeURIComponent(String(asAt).slice(0, 10))}` : ""}`,
+
+    journalPreview: (cid, leaseId, scheduleId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/accounting-schedule/${encodeURIComponent(scheduleId)}/journal-preview`,
+
+    postPeriod: (cid, leaseId, scheduleId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/accounting-schedule/${encodeURIComponent(scheduleId)}/post`,
+
+    postThrough: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/accounting-schedule/post-through`,
+
+    invoicePreview: (cid, leaseId, scheduleId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule/${encodeURIComponent(scheduleId)}/invoice-preview`,
+
+    createInvoice: (cid, leaseId, scheduleId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule/${encodeURIComponent(scheduleId)}/invoice`,
+
+    createInvoicesThrough: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/invoices/create-through`,
+
+    reconciliation: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/reconciliation`,
   },
 
   ifrs16: {
@@ -6329,58 +6428,62 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       isParent: true,
       minRole: "clerk",
       children: [
-        { name: "Journal Desk", screen: "journal", icon: "📝", minRole: "clerk" },
+        { name: "Journal Desk", screen: "journal", icon: "📔", minRole: "clerk" },
 
         {
           name: "IFRS 16",
-          icon: "📄",
+          icon: "⚖️",
           isParent: true,
           minRole: "clerk",
           children: [
-            { name: "Lease Register", screen: "lease-register", icon:"📄", minRole: "assistant" },
-            { name: "Lease Payments", screen: "lease-payments", icon: "💸", minRole: "clerk" },
-            { name: "Lease Monthly Due", screen: "lease-monthly", icon: "🗓️", minRole: "assistant" },
+            {
+              name: "Lessee Leases",
+              icon: "📥",
+              isParent: true,
+              minRole: "clerk",
+              children: [
+                { name: "Lease Register", screen: "lease-register", icon: "📚", minRole: "assistant" },
+                { name: "Lease Payments", screen: "lease-payments", icon: "💳", minRole: "clerk" },
+                { name: "Monthly Posting", screen: "lease-monthly", icon: "📅", minRole: "assistant" },
+              ],
+            },
+            {
+              name: "Lessor Leases",
+              icon: "📤",
+              isParent: true,
+              minRole: "assistant",
+              children: [
+                { name: "Subsequent Measurement", screen: "lessor-subsequent", icon: "📈", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
+              ],
+            },
           ],
         },
-        // Revenue Desk = AR hub
         {
           name: "Revenue Desk",
-          icon: "📥",
+          icon: "💰",
           isParent: true,
           minRole: "clerk",
           children: [
             { name: "Invoices", screen: "ar-invoices", icon: "🧾" },
-            { name: "Quotations", screen: "ar-quotes", icon: "🗒️" },
-            { name: "Revenue", screen: "revenue", icon: "📘", minRole: "clerk" },
-            // ✅ Receipts removed from main nav because it's inline on invoice modal
-            // { name: "Receipts", screen: "ar-receipts", icon: "💰" },
+            { name: "Quotations", screen: "ar-quotes", icon: "📑" },
+            { name: "Revenue", screen: "revenue", icon: "📈", minRole: "clerk" },
           ],
         },
-        // Spend Desk = AP hub
         {
           name: "Spend Desk",
-          icon: "📤",
+          icon: "🛍️",
           isParent: true,
           minRole: "clerk",
           children: [
             { name: "Bills", screen: "ap", icon: "🧾" },
-            //{ name: "Payments", screen: "ap", icon: "💸" }, // later: ap-payments if you split
+            // { name: "Payments", screen: "ap", icon: "💸" },
           ],
         },
-        {
-          name: "Accruals & Deferrals",
-          screen: "accrual-deferrals",
-          icon: "🔁",
-          minRole: "assistant",
-          permissionAny: ["can_post_journals", "can_prepare_financials"],
-        },
-        {
-          name: "Payroll",
-          screen: "payroll",
-          icon: "👥",
-          minRole: "clerk",
-          permissionAny: ["can_manage_payroll", "can_post_journals", "can_prepare_financials"],
-        },
+
+        { name: "Accruals & Deferrals", screen: "accrual-deferrals", icon: "🔄", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials"] },
+
+        { name: "Payroll", screen: "payroll", icon: "💼", minRole: "clerk", permissionAny: ["can_manage_payroll", "can_post_journals", "can_prepare_financials"] },
+
         {
           name: "Project Desk",
           icon: "🏗️",
@@ -6388,45 +6491,15 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
           minRole: "clerk",
           permission: "can_manage_ap",
           children: [
-            {
-              name: "Projects",
-              screen: "projects",
-              icon: "📁",
-              minRole: "clerk",
-              permission: "can_manage_ap",
-            },
-
-            //{
-              //name: "Budgets / BOQ",
-             // screen: "project-budgets",
-             // icon: "📐",
-             // minRole: "clerk",
-             // permission: "can_manage_ap",
-              //projectCapability: "boq_budgeting",
-            //},
-            //{
-            //  name: "Material Issues",
-            //  screen: "project-material-issues",
-             // icon: "📦",
-             // minRole: "clerk",
-             // permission: "can_manage_ap",
-             // projectCapability: "material_costing",
-            //},
-
-            {
-              name: "Profitability",
-              screen: "project-profitability",
-              icon: "📊",
-              minRole: "clerk",
-              permission: "can_manage_ap",
-            },
+            { name: "Projects", screen: "projects", icon: "📁", minRole: "clerk", permission: "can_manage_ap" },
+            { name: "Profitability", screen: "project-profitability", icon: "💹", minRole: "clerk", permission: "can_manage_ap" },
           ],
         },
       ],
     },
 
     // ==========================
-    // INVENTORY / POS (feature-gated)
+    // INVENTORY / POS
     // ==========================
     {
       name: "Catalog Studio",
@@ -6435,35 +6508,15 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       minRole: "clerk",
       children: [
         { name: "Inventory Items", screen: "inventory-items", icon: "📦", feature: "inventory-module" },
-
         { name: "Service Items", screen: "service-items", icon: "🧰", feature: "service-billing" },
-
-        { name: "Stock Movements", screen: "inventory-movements", icon: "🔁", feature: "inventory-module", minRole: "assistant" },
-
-        { name: "Stocktake", screen: "stocktake", icon: "🧾", feature: "inventory-module", minRole: "assistant" },
-
+        { name: "Stock Movements", screen: "inventory-movements", icon: "🚚", feature: "inventory-module", minRole: "assistant" },
+        { name: "Stocktake", screen: "stocktake", icon: "📋", feature: "inventory-module", minRole: "assistant" },
         { name: "Reorder Alerts", screen: "reorder", icon: "🚨", feature: "inventory-module" },
-
-        // ✅ NEW
         { name: "Inventory Valuation", screen: "inventory-valuation", icon: "💰", feature: "inventory-module", minRole: "assistant" },
 
-        {
-          name: "Launch POS",
-          screen: "pos-launch",
-          icon: "🛒",
-          companyCapability: "uses_cogs",
-          minRole: "clerk",
-          permissionAny: ["can_access_pos", "can_manage_pos"],
-        },
+        { name: "Launch POS", screen: "pos-launch", icon: "🛒", companyCapability: "uses_cogs", minRole: "clerk", permissionAny: ["can_access_pos", "can_manage_pos"] },
 
-        {
-          name: "POS Summaries",
-          screen: "pos",
-          icon: "🧾",
-          companyCapability: "uses_cogs",
-          minRole: "assistant",
-          permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"],
-        },
+        { name: "POS Summaries", screen: "pos", icon: "🧮", companyCapability: "uses_cogs", minRole: "assistant", permissionAny: ["can_view_pos_summaries", "can_access_pos", "can_manage_pos"] },
       ],
     },
 
@@ -6478,25 +6531,19 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       permissionAny: ["can_manage_banking", "can_post_journals"],
       children: [
         { name: "Bank Setup", screen: "bank-setup", icon: "⚙️", minRole: "clerk", permission: "can_manage_banking" },
-        { name: "Cashbook", screen: "banking", icon: "💳", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
-        { name: "Bank Reconciliation", screen: "bank-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
+        { name: "Cashbook", screen: "banking", icon: "💵", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
+        { name: "Bank Reconciliation", screen: "bank-recon", icon: "🔍", minRole: "assistant", permissionAny: ["can_manage_banking", "can_post_journals"] },
       ],
     },
 
     {
       name: "Loans & Financing",
-      icon: "🏦",
+      icon: "💲",
       isParent: true,
       minRole: "clerk",
       permission: "can_post_journals",
       children: [
-        { 
-          name: "Loan Register", 
-          screen: "loans", 
-          icon: "📘", 
-          minRole: "clerk", 
-          permission: "can_manage_loans"
-        }
+        { name: "Loan Register", screen: "loans", icon: "📘", minRole: "clerk", permission: "can_manage_loans" },
       ],
     },
 
@@ -6507,30 +6554,22 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       minRole: "assistant",
       permissionAny: ["can_prepare_financials", "can_view_reports"],
       children: [
-        {
-          name: "Budgeting & Forecasting",
-          screen: "budgeting",
-          icon: "🎯",
-          minRole: "assistant",
-          permissionAny: ["can_prepare_financials", "can_view_reports"],
-        },
+        { name: "Budgeting & Forecasting", screen: "budgeting", icon: "🎯", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports"] },
       ],
     },
+
     // ==========================
     // MASTER DATA
     // ==========================
     {
       name: "Master Records",
-      icon: "🗂️",
+      icon: "🗃️",
       isParent: true,
       minRole: "clerk",
       children: [
         { name: "Customers", screen: "customers", icon: "👥", minRole: "clerk" },
-        { name: "Vendors",   screen: "vendors",   icon: "🏷️", minRole: "clerk" },
-        { name: "Lessors",   screen: "lessors",   icon: "🏢", minRole: "clerk" },
-
-        //{ name: "Accounts Receivable", screen: "ar", icon: "📥", minRole: "clerk" },
-        //{ name: "Accounts Payable",    screen: "ap", icon: "📤", minRole: "clerk" },
+        { name: "Vendors", screen: "vendors", icon: "🏪", minRole: "clerk" },
+        { name: "Lessors", screen: "lessors", icon: "🏢", minRole: "clerk" },
       ],
     },
 
@@ -6539,18 +6578,16 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     // ==========================
     {
       name: "Reports",
-      icon: "📊",
+      icon: "📑",
       isParent: true,
       minRole: "assistant",
       permission: "can_view_reports",
       children: [
-        { name: "Trial Balance", screen: "trial", icon: "🧾", minRole: "assistant", permission: "can_view_reports" },
-        { name: "General Ledger", screen: "ledger", icon: "📚", minRole: "assistant", permission: "can_view_reports" },
-        { name: "VAT & Tax", screen: "vat", icon: "🧮", minRole: "assistant", permission: "can_view_reports" },
-        { name: "Tax Recon", screen: "tax-recon", icon: "🧾", minRole: "assistant", permission: "can_edit_tax_settings" },
-        { name: "Financial Statements", screen: "reports", icon: "📈", minRole: "junior", permission: "can_prepare_financials" },
-        //{ name: "Income Statement (P&L)", screen: "reports-pnl", icon: "🧮", minRole: "junior", permission: "can_prepare_financials" },
-        //{ name: "Balance Sheet", screen: "reports-bs", icon: "🏛️", minRole: "junior", permission: "can_prepare_financials" },
+        { name: "Trial Balance", screen: "trial", icon: "⚗️", minRole: "assistant", permission: "can_view_reports" },
+        { name: "General Ledger", screen: "ledger", icon: "📖", minRole: "assistant", permission: "can_view_reports" },
+        { name: "VAT & Tax", screen: "vat", icon: "🧾", minRole: "assistant", permission: "can_view_reports" },
+        { name: "Tax Recon", screen: "tax-recon", icon: "🪙", minRole: "assistant", permission: "can_edit_tax_settings" },
+        { name: "Financial Statements", screen: "reports", icon: "📉", minRole: "junior", permission: "can_prepare_financials" },
       ],
     },
 
@@ -6559,17 +6596,17 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     // ==========================
     {
       name: "Standards",
-      icon: "📘",
+      icon: "🎓",
       isParent: true,
       minRole: "assistant",
       permission: "can_view_reports",
       children: [
-        { name: "Chart of Accounts", screen: "coa", icon: "📗", minRole: "assistant", permission: "can_view_reports" },
-        { name: "IFRS 16 Lease Wizard", icon: "📄", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
-        { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏗️", minRole: "assistant", permission: "can_manage_fixed_assets" },
-        { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials"},
-        { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "📘", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"],},
-        { name: "IAS 12 Deferred Tax", screen: "deferred-tax", icon: "⚖️", minRole: "assistant", permissionAny: [ "can_prepare_financials", "can_view_reports", "can_edit_tax_settings" ]},
+        { name: "Chart of Accounts", screen: "coa", icon: "📒", minRole: "assistant", permission: "can_view_reports" },
+        { name: "IFRS 16 Lease Wizard", icon: "🧙", wizard: "ifrs16", minRole: "assistant", permission: "can_prepare_financials" },
+        { name: "Fixed Assets Register", screen: "fixedassets", icon: "🏭", minRole: "assistant", permission: "can_manage_fixed_assets" },
+        { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials" },
+        { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "💎", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
+        { name: "IAS 12 Deferred Tax", screen: "deferred-tax", icon: "🏛️", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports", "can_edit_tax_settings"] },
       ],
     },
 
@@ -6578,69 +6615,72 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     // ==========================
     {
       name: "Control Room",
-      icon: "🛡️",
+      icon: "🎛️",
       isParent: true,
       minRole: "assistant",
       permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
       children: [
-      {
-        name: "AR Controls",
-        icon: "🧾",
-        isParent: true,
-        minRole: "assistant",
-        permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
-        children: [
-          { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-          { name: "Customer Statements", screen: "ar-statements", icon: "📄", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-          { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-        ],
-      },
-      {
-        name: "AP Controls",
-        icon: "🏦",
-        isParent: true,
-        minRole: "assistant",
-        permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
-        children: [
-          { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧮", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-          { name: "Vendor Statements", screen: "ap-statements", icon: "📄", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-          { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⏳", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
-        ],
-      },
-        { name: "Credit Control", screen: "cust-approvals", icon: "🧑‍⚖️", minRole: "credit controller" },
+        {
+          name: "AR Controls",
+          icon: "📨",
+          isParent: true,
+          minRole: "assistant",
+          permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
+          children: [
+            { name: "AR Control Reconciliation", screen: "ar-recon", icon: "🧩", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+            { name: "Customer Statements", screen: "ar-statements", icon: "📜", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+            { name: "AR Aging (30/60/90)", screen: "ar-aging", icon: "⏳", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          ],
+        },
+
+        {
+          name: "AP Controls",
+          icon: "📬",
+          isParent: true,
+          minRole: "assistant",
+          permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"],
+          children: [
+            { name: "AP Control Reconciliation", screen: "ap-recon", icon: "🧷", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+            { name: "Vendor Statements", screen: "ap-statements", icon: "🗒️", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+            { name: "AP Aging (30/60/90)", screen: "ap-aging", icon: "⌛", minRole: "assistant", permissionAny: ["can_view_control_room", "can_view_ar_ap_controls"] },
+          ],
+        },
+
+        { name: "Credit Control", screen: "cust-approvals", icon: "🛡️", minRole: "credit controller" },
         { name: "Period Locking", screen: "period-locks", icon: "🔒", minRole: "cfo", permission: "can_lock_periods" },
-        { name: "Audit Trail", screen: "audit-trail", icon: "🧾", minRole: "senior", permission: "can_view_control_room" },
-        { name: "Approvals", screen: "approvals", icon: "✔️", minRole: "manager", permission: "can_approve" },
+        { name: "Audit Trail", screen: "audit-trail", icon: "👣", minRole: "senior", permission: "can_view_control_room" },
+        { name: "Approvals", screen: "approvals", icon: "✅", minRole: "manager", permission: "can_approve" },
       ],
     },
+
     // ==========================
     // SETTINGS
     // ==========================
     {
       name: "Settings",
-      icon: "⚙️",
+      icon: "🔧",
       isParent: true,
       minRole: "viewer",
       children: [
-        { name: "Account settings", screen: "account-settings", icon: "👤", minRole: "viewer" },
+        { name: "Account Settings", screen: "account-settings", icon: "👤", minRole: "viewer" },
 
         {
           name: "Company & Setup",
-          icon: "🏢",
+          icon: "🏠",
           minRole: "assistant",
           permission: "can_manage_company_setup",
           children: [
-            { name: "My company", screen: "company-my", icon: "🏢", permission: "can_manage_company_setup" },
-            { name: "Update company", screen: "company-update", icon: "🛠️", permission: "can_manage_company_setup" },
-            { name: "VAT settings", screen: "company-vat", icon: "🧾", permission: "can_edit_tax_settings" },
-            { name: "Income tax settings", screen: "company-income-tax", icon: "💼", permission: "can_edit_tax_settings" },
-            { name: "Corporate structure", screen: "company-structure", icon: "🧬", permission: "can_manage_company_setup" },
-            { name: "Reporting periods", screen: "company-reporting", icon: "🗓️", permission: "can_manage_company_setup" },
-            { name: "Management Packs", screen: "company-mgmt-packs", icon: "📦", minRole: "manager", permission: "can_manage_company_setup" },
+            { name: "My Company", screen: "company-my", icon: "🏡", permission: "can_manage_company_setup" },
+            { name: "Update Company", screen: "company-update", icon: "✏️", permission: "can_manage_company_setup" },
+            { name: "VAT Settings", screen: "company-vat", icon: "🧿", permission: "can_edit_tax_settings" },
+            { name: "Income Tax Settings", screen: "company-income-tax", icon: "💼", permission: "can_edit_tax_settings" },
+            { name: "Corporate Structure", screen: "company-structure", icon: "🧬", permission: "can_manage_company_setup" },
+            { name: "Reporting Periods", screen: "company-reporting", icon: "🗓️", permission: "can_manage_company_setup" },
+            { name: "Management Packs", screen: "company-mgmt-packs", icon: "🎁", minRole: "manager", permission: "can_manage_company_setup" },
           ],
         },
 
-        { name: "Users & Roles", screen: "users", icon: "👥", minRole: "assistant", permission: "can_manage_users" },
+        { name: "Users & Roles", screen: "users", icon: "🪪", minRole: "assistant", permission: "can_manage_users" },
         { name: "Help", screen: "help", icon: "❓", minRole: "clerk" },
       ],
     },
@@ -8354,6 +8394,16 @@ const SCREEN_POLICY = {
       "can_edit_tax_settings"
     ]
   },
+
+  "lessor-subsequent": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_post_journals",
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+  },
 };
 
 
@@ -9780,6 +9830,7 @@ async function switchScreen(name) {
   else if (name === "bank-recon") base = "bank-recon";
   else if (name === "loans") base = "loans";
   else if (name.startsWith("lease-")) base = "leases";
+  else if (name === "lessor-subsequent") base = "lessor-subsequent";
   else if (name === "lease-register" || name.startsWith("lease-")) base = "leases";
   else if (name === "account-settings") base = "account-settings";
   else if (name === "users") base = "users";
@@ -9859,18 +9910,12 @@ async function switchScreen(name) {
   // ✅ Fixed Assets screen (Option A): show stub screen but auto-open React drawer
   if (name === "fixedassets") {
     try {
-      if (typeof ensureCompanyDataLoaded === "function") {
-        await ensureCompanyDataLoaded();
-      }
-    } catch (e) {}
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[PPE] company load failed", e);
+    }
 
     await window.bindFixedAssetsScreen?.();
-
-    await window.openFixedAssetsDrawer?.({
-      mode: "acquire",
-      source: "nav",
-    });
-
     return;
   }
 
@@ -9901,6 +9946,13 @@ async function switchScreen(name) {
     return;
   }
 
+  if (base === "lessor-subsequent") {
+    try { await ensureCompanyDataLoaded?.(); }
+    catch (e) { console.warn("[Lessor Subsequent] company load failed", e); }
+
+    await window.bindLessorSubsequentScreen?.();
+    return;
+  }
 
   if (base === "ifrs9") {
     try {
@@ -10045,11 +10097,28 @@ async function switchScreen(name) {
 
     // ✅ consume pending revenue prefill ONLY after invoice pane is shown
     if (!isQuotesRoute && window._PENDING_REVENUE_INVOICE_PREFILL) {
-      const payload = window._PENDING_REVENUE_INVOICE_PREFILL;
-      window._PENDING_REVENUE_INVOICE_PREFILL = null;
+    const payload =
+      window._PENDING_REVENUE_INVOICE_PREFILL;
 
-      console.log("🧾 [switchScreen AR] consuming pending revenue invoice prefill", payload);
+    window._PENDING_REVENUE_INVOICE_PREFILL =
+      null;
 
+    if (
+      payload?.handoff_type ===
+        "lessor_lease_invoice" ||
+      payload?.source ===
+        "lessor_lease_billing" ||
+      payload?.module_name ===
+        "ifrs16_lessor"
+    ) {
+      window._CURRENT_INVOICE_SOURCE =
+        payload;
+    }
+
+    console.log(
+      "🧾 [switchScreen AR] consuming pending invoice prefill",
+      payload
+    );
       // wait for full invoice UI, not just one element at a time
       const ready = await window.waitForInvoiceReady?.(4000);
 
@@ -10343,6 +10412,7 @@ async function switchScreen(name) {
     "lease-mods":    "IFRS 16 - Modifications",
     "lease-terms":   "IFRS 16 - Terminations",
     "lease-register": "IFRS 16 - Lease Register",
+    "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
     projects: "Project Desk",
     "project-detail": "Project Desk",
 
@@ -10583,7 +10653,7 @@ function openLeaseWizard(ctx = {}) {
   );
 
   const url = isLocal
-    ? "http://localhost:5173/"
+    ? "http://localhost:5173/lease-wizard.html"
     : `${window.location.origin}/lease-wizard.html`;
 
   const origin = isLocal
@@ -10654,8 +10724,9 @@ function openLeaseWizard(ctx = {}) {
   drawer.style.pointerEvents = "";
   drawer.classList.add("active");
 
-  if (!frame.src || frame.src === "about:blank") {
-    frame.src = url;
+  if (frame.src !== url) {
+    frame.dataset.loaded = "0";
+
     frame.addEventListener(
       "load",
       () => {
@@ -10664,8 +10735,19 @@ function openLeaseWizard(ctx = {}) {
       },
       { once: true }
     );
-  } else {
+
+    frame.src = url;
+  } else if (frame.dataset.loaded === "1") {
     sendContext();
+  } else {
+    frame.addEventListener(
+      "load",
+      () => {
+        frame.dataset.loaded = "1";
+        setTimeout(sendContext, 150);
+      },
+      { once: true }
+    );
   }
 }
 
@@ -10916,67 +10998,72 @@ function updateHeaderCompanyBadge() {
   badge.classList.remove("hidden");
 }
 
-function openFixedAssetsDrawer(ctx = {}) {
+async function openFixedAssetsDrawer(ctx = {}) {
   console.log("[PPE] openFixedAssetsDrawer called", ctx);
 
-  try {
-    window.FS_MOUNT_FIXED_ASSETS_DRAWER?.();
-  } catch (e) {
-    console.warn("[PPE] mount failed", e);
-  }
-
   const companyId =
-    window.getActiveCompanyId?.() ||
-    localStorage.getItem("company_id");
+    Number(window.getActiveCompanyId?.()) ||
+    Number(localStorage.getItem("company_id")) ||
+    0;
 
   if (!companyId) {
     alert("Select a company first.");
-    return Promise.resolve({ action: "close" });
+    return { action: "close" };
   }
-
-  const rawCompanyName = ctx.companyName || getActiveCompanyName?.();
-
-  const companyName =
-    rawCompanyName && String(rawCompanyName).trim()
-      ? String(rawCompanyName).trim()
-      : "";
-  const mode = ctx.mode === "dispose" ? "dispose" : "acquire";
-
-  console.log("[PPE] drawer company", {
-    companyId,
-    companyName,
-    activeCompany: window.activeCompany,
-    ACTIVE_COMPANY: window.ACTIVE_COMPANY,
-    badgeText: document.getElementById("companyBadge")?.textContent?.trim(),
-    ctx
-  });
 
   const args = {
     companyId,
-    companyName,
-    mode,
-    accountCode: ctx.accountCode,
-    accountName: ctx.accountName,
-    assetId: ctx.assetId,
-    defaults: ctx.defaults,
+    companyName: String(
+      ctx.companyName ||
+      window.getActiveCompanyName?.() ||
+      ""
+    ).trim(),
+    mode: ctx.mode === "dispose" ? "dispose" : "acquire",
+    accountCode: ctx.accountCode || "",
+    accountName: ctx.accountName || "",
+    assetId: Number(ctx.assetId || 0) || null,
+    defaults: ctx.defaults || {},
+    source: ctx.source || "",
   };
 
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const fn = window.FS_OPEN_FIXED_ASSETS_DRAWER;
+  const mount = window.FS_MOUNT_FIXED_ASSETS_DRAWER;
+  const open = window.FS_OPEN_FIXED_ASSETS_DRAWER;
 
-      if (typeof fn !== "function") {
-        console.warn("[PPE] FS_OPEN_FIXED_ASSETS_DRAWER not available");
-        resolve({ action: "close" });
-        return;
-      }
-
-      resolve(fn(args));
-    }, 0);
+  console.log("[PPE] drawer host status", {
+    mount: typeof mount,
+    open: typeof open,
   });
+
+  if (typeof mount === "function") {
+    await mount();
+  }
+
+  if (typeof window.FS_OPEN_FIXED_ASSETS_DRAWER !== "function") {
+    console.error(
+      "[PPE] Fixed Assets drawer frontend is not loaded.",
+      {
+        mountType:
+          typeof window.FS_MOUNT_FIXED_ASSETS_DRAWER,
+        openType:
+          typeof window.FS_OPEN_FIXED_ASSETS_DRAWER,
+      }
+    );
+
+    alert(
+      "The Fixed Assets drawer script is not loaded."
+    );
+
+    return {
+      action: "close",
+      error: "drawer_script_not_loaded",
+    };
+  }
+
+  return await window.FS_OPEN_FIXED_ASSETS_DRAWER(args);
 }
 
 window.openFixedAssetsDrawer = openFixedAssetsDrawer;
+
 
     // ==============================
   // Tax / VAT – company level
@@ -33857,7 +33944,7 @@ window.postTerm = async function postTerm() {
   const PROD_ORIGIN = "https://finspheresolutions.com";
 
   const LEASE_WIZARD_URL = IS_LOCAL
-    ? "http://localhost:5173/"
+    ? "http://localhost:5173/lease-wizard.html"
     : `${PROD_ORIGIN}/lease-wizard.html`;
 
   const LEASE_WIZARD_ORIGIN = IS_LOCAL
@@ -34043,6 +34130,1174 @@ window.postTerm = async function postTerm() {
     }
   });
 })();
+
+(() => {
+  const state = {
+    leases: [],
+    lease: null,
+    schedule: [],
+    billing: {},
+    metrics: {},
+    reporting: {},
+    workspace: null,
+    loading: false,
+  };
+
+  const $ = id => document.getElementById(id);
+  const cid = () => Number(window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
+  const n = v => Number(String(v ?? 0).replace(/,/g, "")) || 0;
+  const iso = v => v ? String(v).slice(0, 10) : "";
+  const esc = v => window.escapeHtml ? escapeHtml(String(v ?? "")) :
+    String(v ?? "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;",
+      '"': "&quot;", "'": "&#039;"
+    }[c]));
+
+  const currency = () =>
+    state.lease?.currency ||
+    window.CURRENT_COMPANY?.currency ||
+    window.CURRENT_COMPANY?.base_currency ||
+    "USD";
+
+  const money = v => {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currency(),
+        minimumFractionDigits: 2,
+      }).format(n(v));
+    } catch (_) {
+      return `${currency()} ${n(v).toFixed(2)}`;
+    }
+  };
+
+  const date = v => {
+    const s = iso(v);
+    if (!s) return "—";
+    const d = new Date(`${s}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString();
+  };
+
+  const text = (...values) => {
+    for (const v of values) {
+      if (v !== null && v !== undefined && String(v).trim()) return String(v);
+    }
+    return "";
+  };
+
+  const classification = () =>
+    String(state.lease?.lease_classification || "operating").toLowerCase();
+
+  const showMessage = (message = "", type = "info") => {
+    const el = $("lsmMessage");
+    if (!el) return;
+    el.textContent = message;
+    el.className = `lsm-message lsm-message-${type}${message ? "" : " hidden"}`;
+  };
+
+  const busy = (value, message = "") => {
+    state.loading = !!value;
+
+    [
+      "lsmRefreshBtn",
+      "lsmLoadBtn",
+      "lsmInvoiceThroughBtn",
+      "lsmPostThroughBtn",
+    ].forEach(id => {
+      const el = $(id);
+      if (el) el.disabled = !!value || (
+        ["lsmInvoiceThroughBtn", "lsmPostThroughBtn"].includes(id) &&
+        !state.lease
+      );
+    });
+
+    if (message) showMessage(message, "info");
+  };
+
+  const api = async (url, options = {}) => {
+    const res = await window.apiFetch(url, options);
+    if (res?.ok === false) throw new Error(res.error || "Request failed.");
+    return res;
+  };
+
+  const leaseLabel = lease => {
+    const no = text(lease.contract_no, lease.lease_no);
+    const name = text(
+      lease.contract_name,
+      lease.underlying_asset_description,
+      `Lessor lease ${lease.id}`
+    );
+
+    return no ? `${no} — ${name}` : name;
+  };
+
+  const scheduleStatus = row =>
+    row.recognition_journal_id || row.status === "posted"
+      ? "posted"
+      : row.invoice_id
+        ? "invoiced"
+        : row.billing_error
+          ? "error"
+          : "due";
+
+  const canInvoice = row =>
+    !row.invoice_id &&
+    !row.billing_error &&
+    ["commenced", "active"].includes(
+      String(state.lease?.status || "").toLowerCase()
+    );
+
+  const canPost = row =>
+    !row.recognition_journal_id &&
+    row.status !== "posted" &&
+    ["commenced", "active"].includes(
+      String(state.lease?.status || "").toLowerCase()
+    );
+
+  async function loadLeases(keepId = "") {
+    const companyId = cid();
+    if (!companyId) return;
+
+    const res = await api(
+      ENDPOINTS.lessorLeases.list(companyId, { limit: 500 })
+    );
+
+    state.leases = res?.items || res?.data || res || [];
+
+    const sel = $("lsmLeaseId");
+    if (!sel) return;
+
+    const selected = keepId || sel.value;
+
+    sel.innerHTML =
+      `<option value="">Select a lessor lease...</option>` +
+      state.leases.map(lease => `
+        <option value="${Number(lease.id)}">
+          ${esc(leaseLabel(lease))}
+        </option>
+      `).join("");
+
+    if (selected) sel.value = String(selected);
+  }
+
+  function renderSummary() {
+    const lease = state.lease;
+    const panel = $("lsmLeaseSummary");
+
+    if (!lease || !panel) {
+      panel?.classList.add("hidden");
+      return;
+    }
+
+    panel.classList.remove("hidden");
+
+    const cls = classification();
+    const status = String(lease.status || "draft").toLowerCase();
+
+    $("lsmContractName").textContent =
+      text(lease.contract_name, lease.underlying_asset_description, "Lease");
+
+    $("lsmLeaseMeta").textContent = [
+      lease.contract_no,
+      lease.customer_name,
+      `${date(lease.start_date)} – ${date(lease.end_date)}`,
+    ].filter(Boolean).join(" · ") || "—";
+
+    const clsBadge = $("lsmClassificationBadge");
+    clsBadge.textContent =
+      cls === "finance" ? "Finance lease" : "Operating lease";
+    clsBadge.className = `lsm-badge lsm-badge-${cls}`;
+
+    const statusBadge = $("lsmStatusBadge");
+    statusBadge.textContent =
+      status.charAt(0).toUpperCase() + status.slice(1);
+    statusBadge.className = `lsm-badge lsm-badge-${status}`;
+
+    const facts = [
+      ["Customer", text(lease.customer_name, `Customer ${lease.customer_id}`)],
+      ["Underlying asset", text(lease.underlying_asset_description, lease.contract_name)],
+      ["Billing", `${text(lease.billing_frequency, "Monthly")} · ${text(lease.billing_timing, "Arrears")}`],
+      ["Contractual rental", money(lease.billing_amount)],
+      ["VAT rate", `${n(lease.vat_rate).toFixed(2)}%`],
+      ["Lease term", `${n(lease.lease_term_months)} months`],
+      ["Implicit rate", `${n(lease.interest_rate_implicit || lease.implicit_interest_rate).toFixed(4)}%`],
+      ["Commencement", date(lease.commencement_date || lease.start_date)],
+    ];
+
+    $("lsmLeaseFacts").innerHTML = facts.map(([label, value]) => `
+      <div class="lsm-fact">
+        <span>${esc(label)}</span>
+        <strong>${esc(value || "—")}</strong>
+      </div>
+    `).join("");
+  }
+
+  function renderInitialRecognition() {
+    const panel = $("lsmInitialRecognitionPanel");
+    const data = state.initialRecognition || {};
+
+    if (!state.lease || !Object.keys(data).length) {
+      panel?.classList.add("hidden");
+      return;
+    }
+
+    panel?.classList.remove("hidden");
+
+    const finance = classification() === "finance";
+
+    $("lsmInitialRecognitionTitle").textContent = finance
+      ? "Finance lease commencement"
+      : "Operating lease commencement";
+
+    $("lsmInitialRecognitionDescription").textContent =
+      data.accounting_result || (
+        finance
+          ? "Underlying asset derecognised and net investment recognised."
+          : "Underlying asset retained and rental income recognised over the lease term."
+      );
+
+    const journalId = Number(data.commencement_journal_id || 0);
+    const journalBadge = $("lsmCommencementJournalBadge");
+
+    journalBadge.textContent = journalId
+      ? `Journal #${journalId}`
+      : finance
+        ? "Commencement journal pending"
+        : "No derecognition journal required";
+
+    journalBadge.className =
+      `lsm-badge ${journalId ? "lsm-badge-posted" : "lsm-badge-draft"}`;
+
+    const items = finance
+      ? [
+          ["Underlying asset", text(data.underlying_asset, "—")],
+          ["Commencement date", date(data.commencement_date)],
+          ["Asset carrying amount", money(data.asset_carrying_amount)],
+          ["Asset fair value", money(data.asset_fair_value)],
+          ["Asset derecognised", money(data.asset_carrying_amount)],
+          ["Opening net investment", money(data.opening_net_investment)],
+          ["Current net investment", money(data.current_net_investment)],
+          ["Non-current net investment", money(data.noncurrent_net_investment)],
+          ["Guaranteed residual value", money(data.guaranteed_residual_value)],
+          ["Unguaranteed residual value", money(data.unguaranteed_residual_value)],
+          ["Initial direct costs", money(data.initial_direct_costs)],
+          [
+            Number(data.commencement_gain_loss || 0) >= 0
+              ? "Commencement gain"
+              : "Commencement loss",
+            money(Math.abs(n(data.commencement_gain_loss))),
+          ],
+        ]
+      : [
+          ["Underlying asset", text(data.underlying_asset, "—")],
+          ["Commencement date", date(data.commencement_date)],
+          ["Asset carrying amount retained", money(data.asset_carrying_amount)],
+          ["Asset fair value", money(data.asset_fair_value)],
+          ["Initial direct costs", money(data.initial_direct_costs)],
+          [
+            "Deferred direct-cost account",
+            text(data.deferred_direct_cost_account_code, "Not configured"),
+          ],
+          [
+            "Direct-cost expense account",
+            text(data.direct_cost_expense_account_code, "Not configured"),
+          ],
+          [
+            "Asset treatment",
+            "Underlying asset remains recognised",
+          ],
+        ];
+
+    $("lsmInitialRecognitionGrid").innerHTML = items
+      .map(([label, value]) => `
+        <div class="lsm-report-item">
+          <span>${esc(label)}</span>
+          <strong>${esc(value || "—")}</strong>
+        </div>
+      `)
+      .join("");
+  }
+
+  function metric(label, value, note = "", kind = "") {
+    return `
+      <article class="lsm-metric ${kind ? `lsm-metric-${kind}` : ""}">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+        ${note ? `<small>${esc(note)}</small>` : ""}
+      </article>
+    `;
+  }
+
+  function scheduleTotals() {
+    const rows = state.schedule;
+
+    return rows.reduce((a, r) => {
+      a.contractualNet += n(
+        r.contractual_net ??
+        r.contractual_income ??
+        r.amount_net
+      );
+
+      a.contractualGross += n(
+        r.contractual_gross ??
+        r.amount_gross
+      );
+
+      a.straightLine += n(r.straight_line_income);
+      a.financeIncome += n(r.finance_income);
+      a.principal += n(r.principal_recovery);
+      a.received += n(r.received_amount);
+      a.posted += scheduleStatus(r) === "posted" ? 1 : 0;
+      a.invoiced += r.invoice_id ? 1 : 0;
+      return a;
+    }, {
+      contractualNet: 0,
+      contractualGross: 0,
+      straightLine: 0,
+      financeIncome: 0,
+      principal: 0,
+      received: 0,
+      posted: 0,
+      invoiced: 0,
+    });
+  }
+
+  function renderMetrics() {
+    const totals = scheduleTotals();
+    const billing = state.billing || {};
+    const cls = classification();
+
+    const openingNet = n(
+      state.schedule[0]?.opening_net_investment ??
+      state.lease?.net_investment
+    );
+
+    const closingNet = n(
+      state.schedule[state.schedule.length - 1]?.closing_net_investment
+    );
+
+    $("lsmMetrics").innerHTML = cls === "finance"
+      ? [
+          metric("Opening net investment", money(openingNet), "Finance lease receivable"),
+          metric("Finance income", money(totals.financeIncome), "Effective interest method"),
+          metric("Principal recovery", money(totals.principal), "Reduction of net investment"),
+          metric("Closing net investment", money(closingNet), "Current and non-current portions"),
+          metric("Total invoiced", money(
+            billing.total_billed_gross ?? totals.contractualGross
+          )),
+          metric("Outstanding", money(billing.outstanding), "Customer receivable", n(billing.outstanding) ? "warning" : ""),
+        ].join("")
+      : [
+          metric("Contractual rental", money(totals.contractualNet), "Excluding VAT"),
+          metric("Straight-line income", money(totals.straightLine), "Systematic lease income"),
+          metric("Accrued rental", money(
+            state.schedule[state.schedule.length - 1]?.closing_accrued_rental ??
+            state.schedule[state.schedule.length - 1]?.accrued_rental_balance
+          )),
+          metric("Deferred rental", money(
+            state.schedule[state.schedule.length - 1]?.closing_deferred_rental ??
+            state.schedule[state.schedule.length - 1]?.deferred_rental_balance
+          )),
+          metric("Total invoiced", money(
+            billing.total_billed_gross ?? totals.contractualGross
+          )),
+          metric("Outstanding", money(billing.outstanding), "Customer receivable", n(billing.outstanding) ? "warning" : ""),
+        ].join("");
+  }
+
+  function renderReporting() {
+    const panel = $("lsmReportingPanel");
+    if (!state.lease || !panel) return panel?.classList.add("hidden");
+
+    panel.classList.remove("hidden");
+
+    const totals = scheduleTotals();
+    const last = state.schedule[state.schedule.length - 1] || {};
+    const cls = classification();
+
+    const items = cls === "finance"
+      ? [
+          ["Gross investment", money(
+            n(last.closing_net_investment) +
+            n(state.schedule.reduce((s, r) => s + n(r.unearned_finance_income), 0))
+          )],
+          ["Net investment", money(last.closing_net_investment)],
+          ["Finance income recognised", money(totals.financeIncome)],
+          ["Principal recovered", money(totals.principal)],
+          ["Current portion", money(last.current_portion)],
+          ["Non-current portion", money(last.noncurrent_portion)],
+          ["Unguaranteed residual value", money(state.lease.unguaranteed_residual_value)],
+          ["Impairment allowance", money(
+            state.lease.loss_allowance ??
+            state.lease.ecl_allowance
+          )],
+        ]
+      : [
+          ["Lease income recognised", money(totals.straightLine)],
+          ["Contractual rental billed", money(totals.contractualNet)],
+          ["Accrued rental asset", money(
+            last.closing_accrued_rental ??
+            last.accrued_rental_balance
+          )],
+          ["Deferred rental liability", money(
+            last.closing_deferred_rental ??
+            last.deferred_rental_balance
+          )],
+          ["Initial direct costs remaining", money(
+            last.closing_deferred_initial_direct_cost ??
+            last.deferred_initial_direct_cost_balance
+          )],
+          ["Underlying asset carrying amount", money(
+            state.lease.underlying_asset_carrying_amount ??
+            state.lease.carrying_amount
+          )],
+          ["Future gross rentals", money(
+            state.schedule
+              .filter(r => scheduleStatus(r) !== "posted")
+              .reduce((s, r) => s + n(r.contractual_gross), 0)
+          )],
+          ["Variable lease income", money(
+            state.lease.variable_lease_income
+          )],
+        ];
+
+    $("lsmReportingGrid").innerHTML = items.map(([label, value]) => `
+      <div class="lsm-report-item">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+      </div>
+    `).join("");
+  }
+
+  function operatingHead() {
+    return `
+      <tr>
+        <th>Period</th>
+        <th>Period end</th>
+        <th class="num">Contractual net</th>
+        <th class="num">VAT</th>
+        <th class="num">Gross</th>
+        <th class="num">Straight-line income</th>
+        <th class="num">Accrued movement</th>
+        <th class="num">Deferred movement</th>
+        <th>Invoice</th>
+        <th>Accounting</th>
+        <th class="lsm-actions-col">Actions</th>
+      </tr>
+    `;
+  }
+
+  function financeHead() {
+    return `
+      <tr>
+        <th>Period</th>
+        <th>Period end</th>
+        <th class="num">Opening investment</th>
+        <th class="num">Finance income</th>
+        <th class="num">Contractual net</th>
+        <th class="num">Principal recovery</th>
+        <th class="num">Closing investment</th>
+        <th class="num">Current</th>
+        <th class="num">Non-current</th>
+        <th>Invoice</th>
+        <th>Accounting</th>
+        <th class="lsm-actions-col">Actions</th>
+      </tr>
+    `;
+  }
+
+  function statusPill(status, label = "") {
+    return `<span class="lsm-status lsm-status-${esc(status)}">
+      ${esc(label || status)}
+    </span>`;
+  }
+
+  function actionButtons(row) {
+    const invoiceLabel = row.invoice_id
+      ? `Invoice ${row.invoice_number || `#${row.invoice_id}`}`
+      : "Create invoice";
+
+    return `
+      <div class="lsm-row-actions">
+        <button type="button" class="lsm-icon-btn"
+          data-lsm-action="preview-journal"
+          data-schedule-id="${Number(row.id)}"
+          ${canPost(row) ? "" : "disabled"}
+          title="Preview period journal">
+          Preview
+        </button>
+
+        <button type="button" class="lsm-icon-btn"
+          data-lsm-action="${row.invoice_id ? "open-invoice" : "invoice"}"
+          data-schedule-id="${Number(row.id)}"
+          data-invoice-id="${Number(row.invoice_id || 0)}"
+          ${row.invoice_id || canInvoice(row) ? "" : "disabled"}
+          title="${esc(invoiceLabel)}">
+          ${row.invoice_id ? "Open invoice" : "Invoice"}
+        </button>
+
+        <button type="button" class="lsm-icon-btn lsm-icon-btn-primary"
+          data-lsm-action="post"
+          data-schedule-id="${Number(row.id)}"
+          ${canPost(row) ? "" : "disabled"}
+          title="Post period accounting">
+          Post
+        </button>
+      </div>
+    `;
+  }
+
+  function isFocusPeriod(row) {
+    return Number(row?.id || 0) ===
+      Number(state.focusPeriod?.id || 0);
+  }
+
+  function operatingRow(row) {
+    const invoice = row.invoice_id
+      ? statusPill("invoiced", row.invoice_number || `#${row.invoice_id}`)
+      : statusPill(row.billing_error ? "error" : "due",
+          row.billing_error ? "Billing error" : "Not invoiced");
+
+    const accounting = scheduleStatus(row) === "posted"
+      ? statusPill("posted", row.recognition_journal_id
+          ? `Journal #${row.recognition_journal_id}`
+          : "Posted")
+      : statusPill("due", "Unposted");
+
+    return `
+      <tr class="lsm-row lsm-row-${scheduleStatus(row)}${isFocusPeriod(row) ? " lsm-row-focus" : ""}">
+        <td>${Number(row.period_no || 0)}</td>
+        <td>${esc(date(row.period_end))}</td>
+        <td class="num">${esc(money(
+          row.contractual_net ??
+          row.contractual_income ??
+          row.amount_net
+        ))}</td>
+        <td class="num">${esc(money(row.vat_amount))}</td>
+        <td class="num">${esc(money(
+          row.contractual_gross ??
+          row.amount_gross
+        ))}</td>
+        <td class="num">${esc(money(row.straight_line_income))}</td>
+        <td class="num">${esc(money(
+          row.accrued_rental_movement ??
+          row.accrued_rent_movement
+        ))}</td>
+        <td class="num">${esc(money(
+          row.deferred_rental_movement ??
+          row.deferred_rent_movement
+        ))}</td>
+        <td>${invoice}</td>
+        <td>${accounting}</td>
+        <td>${actionButtons(row)}</td>
+      </tr>
+      ${row.billing_error ? `
+        <tr class="lsm-error-row">
+          <td colspan="11">${esc(row.billing_error)}</td>
+        </tr>
+      ` : ""}
+    `;
+  }
+
+  function financeRow(row) {
+    const invoice = row.invoice_id
+      ? statusPill("invoiced", row.invoice_number || `#${row.invoice_id}`)
+      : statusPill(row.billing_error ? "error" : "due",
+          row.billing_error ? "Billing error" : "Not invoiced");
+
+    const accounting = scheduleStatus(row) === "posted"
+      ? statusPill("posted", row.recognition_journal_id
+          ? `Journal #${row.recognition_journal_id}`
+          : "Posted")
+      : statusPill("due", "Unposted");
+
+    return `
+      <tr class="lsm-row lsm-row-${scheduleStatus(row)}${isFocusPeriod(row) ? " lsm-row-focus" : ""}">
+        <td>${Number(row.period_no || 0)}</td>
+        <td>${esc(date(row.period_end))}</td>
+        <td class="num">${esc(money(row.opening_net_investment))}</td>
+        <td class="num">${esc(money(row.finance_income))}</td>
+        <td class="num">${esc(money(
+          row.contractual_net ??
+          row.contractual_income
+        ))}</td>
+        <td class="num">${esc(money(row.principal_recovery))}</td>
+        <td class="num">${esc(money(row.closing_net_investment))}</td>
+        <td class="num">${esc(money(row.current_portion))}</td>
+        <td class="num">${esc(money(row.noncurrent_portion))}</td>
+        <td>${invoice}</td>
+        <td>${accounting}</td>
+        <td>${actionButtons(row)}</td>
+      </tr>
+      ${row.billing_error ? `
+        <tr class="lsm-error-row">
+          <td colspan="12">${esc(row.billing_error)}</td>
+        </tr>
+      ` : ""}
+    `;
+  }
+
+  function renderSchedule() {
+    const showPosted = $("lsmShowPosted")?.checked !== false;
+    const rows = state.schedule.filter(
+      row => showPosted || scheduleStatus(row) !== "posted"
+    );
+
+    const cls = classification();
+
+    $("lsmScheduleHead").innerHTML =
+      cls === "finance" ? financeHead() : operatingHead();
+
+    $("lsmScheduleDescription").textContent =
+      cls === "finance"
+        ? "Effective-interest income, principal recovery and closing net investment."
+        : "Contractual rentals, straight-line income and accrued or deferred rental movements.";
+
+    $("lsmPeriodBadge").textContent =
+      `${rows.length} period${rows.length === 1 ? "" : "s"}`;
+
+    $("lsmScheduleBody").innerHTML = rows.length
+      ? rows.map(cls === "finance" ? financeRow : operatingRow).join("")
+      : `<tr><td colspan="14" class="lsm-empty">
+          No schedule periods were found for the selected date.
+        </td></tr>`;
+  }
+
+  function renderAll() {
+    renderSummary();
+    renderInitialRecognition();
+    renderMetrics();
+    renderSchedule();
+    renderReporting();
+
+    const active = !!state.lease;
+    $("lsmPostThroughBtn").disabled = !active;
+    $("lsmInvoiceThroughBtn").disabled = !active;
+  }
+
+  async function loadWorkspace() {
+    const companyId = cid();
+    const leaseId = Number($("lsmLeaseId")?.value || 0);
+    const asAt = $("lsmAsAt")?.value || "";
+
+    if (!companyId) throw new Error("Select a company first.");
+    if (!leaseId) throw new Error("Select a lessor lease.");
+
+    busy(true, "Loading lessor measurement workspace...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.subsequent(companyId, leaseId, asAt)
+      );
+
+      state.workspace = res;
+      state.lease = res.lease || res.item || {};
+      state.schedule =
+        res.schedule ||
+        res.accounting_schedule ||
+        res.items ||
+        [];
+
+      state.billing = res.billing || {};
+      state.metrics = res.measurement || res.metrics || {};
+      state.reporting = res.reporting || {};
+      state.initialRecognition = res.initial_recognition || {};
+      state.focusPeriod =
+        res.focus_period ||
+        res.next_unpaid_period ||
+        res.current_period ||
+        null;
+
+      renderAll();
+
+      requestAnimationFrame(() => {
+        const focusRow = document.querySelector(".lsm-row-focus");
+        focusRow?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+      showMessage(
+        `${state.schedule.length} accounting period${state.schedule.length === 1 ? "" : "s"} loaded.`,
+        "success"
+      );
+    } finally {
+      busy(false);
+    }
+  }
+
+  async function previewJournal(scheduleId) {
+    const companyId = cid();
+    const leaseId = Number(state.lease?.id || $("lsmLeaseId")?.value || 0);
+
+    busy(true, "Preparing period journal preview...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.journalPreview(
+          companyId,
+          leaseId,
+          scheduleId
+        )
+      );
+
+      const journal = res.journal;
+      const panel = $("lsmJournalPanel");
+
+      panel.classList.remove("hidden");
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      $("lsmJournalDescription").textContent =
+        journal?.description || res.message || "No journal adjustment is required.";
+
+      $("lsmJournalBody").innerHTML = journal?.lines?.length
+        ? journal.lines.map(line => `
+            <tr>
+              <td>
+                <strong>${esc(
+                  line.account_name ||
+                  line.account_code ||
+                  "Account"
+                )}</strong>
+                ${line.account_name && line.account_code
+                  ? `<small>${esc(line.account_code)}</small>`
+                  : ""}
+              </td>
+              <td class="lsm-wrap">${esc(line.memo || "")}</td>
+              <td class="num">${esc(money(line.debit))}</td>
+              <td class="num">${esc(money(line.credit))}</td>
+            </tr>
+          `).join("")
+        : `<tr><td colspan="4" class="lsm-empty">
+            No separate period adjustment is required.
+          </td></tr>`;
+
+      $("lsmJournalDebit").textContent = money(journal?.total_debit);
+      $("lsmJournalCredit").textContent = money(journal?.total_credit);
+    } finally {
+      busy(false);
+    }
+  }
+
+  async function postPeriod(scheduleId) {
+    const leaseId = Number(state.lease?.id || 0);
+    const row = state.schedule.find(x => Number(x.id) === Number(scheduleId));
+
+    const ok = confirm(
+      `Post lessor accounting for period ${row?.period_no || scheduleId}?`
+    );
+
+    if (!ok) return;
+
+    busy(true, "Posting lessor period accounting...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.postPeriod(cid(), leaseId, scheduleId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      showMessage(
+        res.message || "Lessor period accounting posted.",
+        "success"
+      );
+
+      await loadWorkspace();
+    } finally {
+      busy(false);
+    }
+  }
+
+  async function postThrough() {
+    const leaseId = Number(state.lease?.id || 0);
+    const throughDate = $("lsmAsAt")?.value;
+
+    if (!throughDate) throw new Error("Select an as-at date first.");
+
+    const ok = confirm(
+      `Post all eligible lessor accounting periods through ${throughDate}?`
+    );
+
+    if (!ok) return;
+
+    busy(true, "Posting eligible lessor periods...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.postThrough(cid(), leaseId),
+        {
+          method: "POST",
+          body: JSON.stringify({ through_date: throughDate }),
+        }
+      );
+
+      showMessage(
+        `${Number(res.periods_posted || 0)} period(s) posted.`,
+        "success"
+      );
+
+      await loadWorkspace();
+    } finally {
+      busy(false);
+    }
+  }
+
+  function buildLessorInvoiceHandoff(preview, row) {
+    const invoice = preview?.invoice || preview?.data?.invoice || preview || {};
+    const lease = state.lease || {};
+    const scheduleId = Number(row.id);
+    const leaseId = Number(lease.id);
+
+    const itemName = text(
+      lease.contract_name,
+      lease.underlying_asset_description,
+      `Lessor lease ${leaseId}`
+    );
+
+    const description = text(
+      lease.notes,
+      invoice.description,
+      `Lease rental for period ${row.period_no}`
+    );
+
+    return {
+      handoff_type: "lessor_lease_invoice",
+      source: "lessor_lease_billing",
+      module_name: "ifrs16_lessor",
+      posting_mode: "custom_accounts",
+
+      source_id: scheduleId,
+      lessor_lease_id: leaseId,
+      lessor_schedule_id: scheduleId,
+      lease_id: leaseId,
+      schedule_id: scheduleId,
+      period_no: Number(row.period_no || 0),
+
+      customerId: Number(
+        invoice.customer_id ??
+        lease.customer_id ??
+        0
+      ) || null,
+
+      customer_id: Number(
+        invoice.customer_id ??
+        lease.customer_id ??
+        0
+      ) || null,
+
+      customerName: text(
+        invoice.customer_name,
+        lease.customer_name
+      ),
+
+      customer_name: text(
+        invoice.customer_name,
+        lease.customer_name
+      ),
+
+      invoiceDate: iso(
+        invoice.invoice_date ??
+        row.payment_date ??
+        row.period_end
+      ),
+
+      invoice_date: iso(
+        invoice.invoice_date ??
+        row.payment_date ??
+        row.period_end
+      ),
+
+      due_date: iso(
+        invoice.due_date ??
+        row.due_date ??
+        row.period_end
+      ),
+
+      currency: text(invoice.currency, lease.currency, currency()),
+      reference: text(invoice.reference, `LESSOR-${leaseId}-P${row.period_no}`),
+      number: text(invoice.reference, `LESSOR-${leaseId}-P${row.period_no}`),
+      memo: description,
+
+      leaseClassification: classification(),
+      lease_classification: classification(),
+      accounting_treatment: invoice.accounting_treatment,
+
+      ar_account_code: text(
+        invoice.ar_account_code,
+        lease.ar_account_code
+      ),
+
+      credit_account_code: text(
+        invoice.credit_account_code,
+        classification() === "finance"
+          ? lease.net_investment_current_account_code ||
+            lease.net_investment_noncurrent_account_code
+          : lease.revenue_account_code
+      ),
+
+      vat_output_account_code: text(
+        invoice.vat_output_account_code,
+        lease.vat_output_account_code
+      ),
+
+      vat_enabled: n(invoice.vat_amount) > 0 || n(lease.vat_rate) > 0,
+      vat_rate: n(lease.vat_rate),
+
+      line: {
+        item_name: itemName,
+        item: itemName,
+        description,
+        quantity: 1,
+        unit_price: n(
+          invoice.net_amount ??
+          row.contractual_net ??
+          row.contractual_income ??
+          row.amount_net
+        ),
+
+        net_amount: n(
+          invoice.net_amount ??
+          row.contractual_net ??
+          row.contractual_income ??
+          row.amount_net
+        ),
+
+        vat_amount: n(
+          invoice.vat_amount ??
+          row.vat_amount
+        ),
+
+        total_amount: n(
+          invoice.gross_amount ??
+          row.contractual_gross ??
+          row.amount_gross
+        ),
+
+        account_code: text(
+          invoice.credit_account_code,
+          lease.revenue_account_code
+        ),
+
+        item_type: "lease",
+        item_id: leaseId,
+        item_code: null,
+
+        source: "lessor_lease_billing",
+        source_id: scheduleId,
+        lessor_lease_id: leaseId,
+        lessor_schedule_id: scheduleId,
+      },
+    };
+  }
+
+  async function handoffInvoice(scheduleId) {
+    const leaseId = Number(state.lease?.id || 0);
+    const row = state.schedule.find(x => Number(x.id) === Number(scheduleId));
+
+    if (!row) throw new Error("Schedule period was not found.");
+    if (row.invoice_id) return openInvoice(row.invoice_id);
+
+    busy(true, "Preparing lessor invoice...");
+
+    try {
+      const preview = await api(
+        ENDPOINTS.lessorLeases.invoicePreview(
+          cid(),
+          leaseId,
+          scheduleId
+        )
+      );
+
+      const payload = buildLessorInvoiceHandoff(preview, row);
+
+      window._PENDING_REVENUE_INVOICE_PREFILL = payload;
+      window._CURRENT_INVOICE_SOURCE = payload;
+
+      try {
+        localStorage.setItem(
+          "lessorInvoiceHandoff",
+          JSON.stringify(payload)
+        );
+      } catch (_) {}
+
+      await window.switchScreen?.("ar-invoices");
+    } finally {
+      busy(false);
+    }
+  }
+
+  async function createInvoicesThrough() {
+    const leaseId = Number(state.lease?.id || 0);
+    const throughDate = $("lsmAsAt")?.value;
+
+    if (!throughDate) throw new Error("Select an as-at date first.");
+
+    const ok = confirm(
+      `Automatically create all eligible customer invoices through ${throughDate}?\n\nUse the individual Invoice button instead when you want to review an invoice in AR before saving it.`
+    );
+
+    if (!ok) return;
+
+    busy(true, "Creating lessor invoices...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.createInvoicesThrough(cid(), leaseId),
+        {
+          method: "POST",
+          body: JSON.stringify({ through_date: throughDate }),
+        }
+      );
+
+      const created = Number(res.created_count || 0);
+      const failed = Number(res.failed_count || 0);
+
+      showMessage(
+        `${created} invoice(s) created${failed ? `; ${failed} failed.` : "."}`,
+        failed ? "warning" : "success"
+      );
+
+      await loadWorkspace();
+    } finally {
+      busy(false);
+    }
+  }
+
+  function openInvoice(invoiceId) {
+    if (!invoiceId) return;
+    window._OPEN_AR_INVOICE_ID = Number(invoiceId);
+    window.switchScreen?.("ar-invoices");
+  }
+
+  async function handleTableClick(event) {
+    const btn = event.target.closest("[data-lsm-action]");
+    if (!btn || btn.disabled) return;
+
+    const action = btn.dataset.lsmAction;
+    const scheduleId = Number(btn.dataset.scheduleId || 0);
+    const invoiceId = Number(btn.dataset.invoiceId || 0);
+
+    try {
+      if (action === "preview-journal") await previewJournal(scheduleId);
+      if (action === "post") await postPeriod(scheduleId);
+      if (action === "invoice") await handoffInvoice(scheduleId);
+      if (action === "open-invoice") openInvoice(invoiceId);
+    } catch (e) {
+      console.error("[Lessor Subsequent]", e);
+      showMessage(e.message || "Action failed.", "error");
+    }
+  }
+
+  async function refresh() {
+    try {
+      const keep = $("lsmLeaseId")?.value || state.lease?.id || "";
+      busy(true, "Refreshing lessor leases...");
+      await loadLeases(keep);
+      if (keep) await loadWorkspace();
+      else showMessage("", "info");
+    } catch (e) {
+      console.error("[Lessor Subsequent refresh]", e);
+      showMessage(e.message || "Could not refresh lessor leases.", "error");
+    } finally {
+      busy(false);
+    }
+  }
+
+  function bindOnce() {
+    const screen = $("screen-lessor-subsequent");
+    if (!screen || screen.dataset.bound === "1") return;
+    screen.dataset.bound = "1";
+
+    $("lsmRefreshBtn")?.addEventListener("click", refresh);
+
+    $("lsmLoadBtn")?.addEventListener("click", async () => {
+      try { await loadWorkspace(); }
+      catch (e) { showMessage(e.message, "error"); }
+    });
+
+    $("lsmLeaseId")?.addEventListener("change", async e => {
+      if (!e.target.value) return;
+      try { await loadWorkspace(); }
+      catch (err) { showMessage(err.message, "error"); }
+    });
+
+    $("lsmAsAt")?.addEventListener("change", () => {
+      if (state.lease) loadWorkspace().catch(
+        e => showMessage(e.message, "error")
+      );
+    });
+
+    $("lsmShowPosted")?.addEventListener("change", renderSchedule);
+    $("lsmScheduleBody")?.addEventListener("click", handleTableClick);
+
+    $("lsmCloseJournalBtn")?.addEventListener("click", () =>
+      $("lsmJournalPanel")?.classList.add("hidden")
+    );
+
+    $("lsmPostThroughBtn")?.addEventListener("click", async () => {
+      try { await postThrough(); }
+      catch (e) { showMessage(e.message, "error"); }
+    });
+
+    $("lsmInvoiceThroughBtn")?.addEventListener("click", async () => {
+      try { await createInvoicesThrough(); }
+      catch (e) { showMessage(e.message, "error"); }
+    });
+
+    $("lsmBackBtn")?.addEventListener("click", () =>
+      window.switchScreen?.("lease-register")
+    );
+  }
+
+  window.bindLessorSubsequentScreen = async function () {
+    bindOnce();
+
+    const asAt = $("lsmAsAt");
+    if (asAt && !asAt.value) {
+      asAt.value = new Date().toISOString().slice(0, 10);
+    }
+
+    try {
+      await loadLeases(state.lease?.id || "");
+
+      const preferred =
+        state.leases.find(lease =>
+          ["commenced", "active"].includes(
+            String(lease.status || "").toLowerCase()
+          )
+        ) ||
+        state.leases[0];
+
+      const leaseId = Number(
+        state.lease?.id ||
+        preferred?.id ||
+        0
+      );
+
+      if (leaseId) {
+        $("lsmLeaseId").value = String(leaseId);
+        await loadWorkspace();
+      } else {
+        showMessage(
+          "No lessor leases exist for this company.",
+          "warning"
+        );
+      }
+    } catch (e) {
+      console.error("[bindLessorSubsequentScreen]", e);
+      showMessage(e.message || "Could not load lessor leases.", "error");
+    }
+  };
+
+  window.openLessorSubsequentMeasurement = async function (leaseId) {
+    await window.switchScreen?.("lessor-subsequent");
+    await loadLeases(leaseId);
+
+    if ($("lsmLeaseId")) $("lsmLeaseId").value = String(leaseId);
+    await loadWorkspace();
+  };
+})();
+
 
 // IFRS 16 Lease wizard → initial recognition
 async function postLeaseJournal(lease) {
@@ -76017,6 +77272,9 @@ async function saveInvoiceToBackend() {
 
     alert("Invoice saved to backend.");
 
+    window._CURRENT_INVOICE_SOURCE = null;
+    try { localStorage.removeItem("lessorInvoiceHandoff"); } catch (_) {}
+
     // ✅ clear invoice template after save
     await window.resetInvoiceForm?.();
     await renderDraftInvoiceList?.();
@@ -76057,153 +77315,419 @@ function bindInvoiceTermsDueDate() {
 }
 
 function collectInvoiceFromForm() {
-  const idInput   = document.getElementById("invId");
-  const custInput = document.getElementById("invCustomerName");
-  const dateInput = document.getElementById("invDate");
-  const numInput  = document.getElementById("invNumber");
-  const termsSel  = document.getElementById("invTerms");
-  const currInput = document.getElementById("invCurrency");
+  const idInput =
+    document.getElementById("invId");
 
-  const vatChk  = document.getElementById("invVatEnabled");
-  const vatSel  = document.getElementById("invDefaultVat");
-  const discEl  = document.getElementById("invDisc");
-  const otherEl = document.getElementById("invOther");
-  const memoEl  = document.getElementById("invMemo");
+  const custInput =
+    document.getElementById("invCustomerName");
 
-  const bankSel = document.getElementById("invoiceBankAccount");
-  const revSel  = document.getElementById("invRevenueAccount");
-  const contractSel = document.getElementById("invRevenueContractId");
+  const dateInput =
+    document.getElementById("invDate");
 
-  const invoiceId    = idInput?.value ? parseInt(idInput.value, 10) : null;
-  const customerName = custInput?.value?.trim() || "";
-  const number       = numInput?.value?.trim() || "";
+  const numInput =
+    document.getElementById("invNumber");
 
-  const terms    = termsSel?.value || "on_receipt";   // on_receipt / 15 / 30
-  const currency = currInput?.value || "USD";
+  const termsSel =
+    document.getElementById("invTerms");
 
-  if (!customerName) throw new Error("Customer is required.");
-  if (!number) throw new Error("Invoice number is required.");
+  const currInput =
+    document.getElementById("invCurrency");
 
-    const dateRaw = dateInput?.value || "";
-  const invoice_date = toIsoDateOnly(dateRaw);
+  const vatChk =
+    document.getElementById("invVatEnabled");
+
+  const vatSel =
+    document.getElementById("invDefaultVat");
+
+  const discEl =
+    document.getElementById("invDisc");
+
+  const otherEl =
+    document.getElementById("invOther");
+
+  const memoEl =
+    document.getElementById("invMemo");
+
+  const bankSel =
+    document.getElementById("invoiceBankAccount");
+
+  const revSel =
+    document.getElementById("invRevenueAccount");
+
+  const contractSel =
+    document.getElementById("invRevenueContractId");
+
+  const invoiceId = idInput?.value
+    ? parseInt(idInput.value, 10)
+    : null;
+
+  const customerName =
+    custInput?.value?.trim() || "";
+
+  const number =
+    numInput?.value?.trim() || "";
+
+  const terms =
+    termsSel?.value || "on_receipt";
+
+  const currency =
+    currInput?.value || "USD";
+
+  if (!customerName) {
+    throw new Error("Customer is required.");
+  }
+
+  if (!number) {
+    throw new Error(
+      "Invoice number is required."
+    );
+  }
+
+  const dateRaw =
+    dateInput?.value || "";
+
+  const invoice_date =
+    toIsoDateOnly(dateRaw);
 
   if (!invoice_date) {
-    console.log("[collectInvoiceFromForm] invDate raw =", dateRaw, "normalized =", invoice_date);
-    throw new Error("Invoice date is required.");
+    throw new Error(
+      "Invoice date is required."
+    );
   }
 
-  // ✅ always computed (no due-date input field)
-  const due_date = computeDueDate(invoice_date, terms);
+  const due_date =
+    computeDueDate(
+      invoice_date,
+      terms
+    );
 
-  // ✅ BLOCK future dates + due before invoice
-  const todayIso = new Date().toISOString().slice(0, 10);
-  if (String(invoice_date).slice(0, 10) > todayIso) {
-    throw new Error(`Invoice date cannot be in the future (${invoice_date}).`);
+  const todayIso =
+    new Date().toISOString().slice(0, 10);
+
+  if (
+    String(invoice_date).slice(0, 10) >
+    todayIso
+  ) {
+    throw new Error(
+      `Invoice date cannot be in the future (${invoice_date}).`
+    );
   }
-  if (due_date && String(due_date).slice(0, 10) < String(invoice_date).slice(0, 10)) {
-    throw new Error("Due date cannot be earlier than invoice date.");
+
+  if (
+    due_date &&
+    String(due_date).slice(0, 10) <
+    String(invoice_date).slice(0, 10)
+  ) {
+    throw new Error(
+      "Due date cannot be earlier than invoice date."
+    );
   }
 
-  const customerId = resolveInvoiceCustomerId();
-  if (!customerId) throw new Error("Please select a valid customer from the list.");
+  const customerId =
+    resolveInvoiceCustomerId();
 
-  const revenueCodeDefault = (revSel?.value || "").trim();
-  if (!revenueCodeDefault) throw new Error("Please select a Revenue account.");
+  if (!customerId) {
+    throw new Error(
+      "Please select a valid customer from the list."
+    );
+  }
 
-  const vatEnabled     = !!vatChk?.checked;
-  const defaultVatCode = (vatSel?.value || "STANDARD").trim().toUpperCase();
+  const revenueCodeDefault =
+    (revSel?.value || "").trim();
 
-  // ✅ Discount as percent: "5" / "5%" / "0.05" -> 0..1
-  const totals = window.recalcInvoice?.() || {};
+  if (!revenueCodeDefault) {
+    throw new Error(
+      "Please select a Revenue account."
+    );
+  }
+
+  const vatEnabled =
+    !!vatChk?.checked;
+
+  const defaultVatCode =
+    (vatSel?.value || "STANDARD")
+      .trim()
+      .toUpperCase();
+
+  const totals =
+    window.recalcInvoice?.() || {};
 
   const discount_rate =
-    totals.discount_rate ?? parsePercent(discEl?.value || "0"); // 0..1
+    totals.discount_rate ??
+    parsePercent(
+      discEl?.value || "0"
+    );
 
   const discount_amount =
-    Number(totals.discount_amount) || 0;
+    Number(
+      totals.discount_amount
+    ) || 0;
 
-  // legacy compatibility
-  const discount = discount_rate;
+  const discount =
+    discount_rate;
 
-  const other = parseFloat(otherEl?.value || "0") || 0;
-  const memo  = memoEl?.value?.trim() || "";
+  const other =
+    parseFloat(
+      otherEl?.value || "0"
+    ) || 0;
 
-  const bankAccountId = bankSel?.value ? parseInt(bankSel.value, 10) : null;
-  const revenueContractId = contractSel?.value ? parseInt(contractSel.value, 10) : null;
+  const memo =
+    memoEl?.value?.trim() || "";
 
-  const rows = Array.from(document.querySelectorAll("#invLines tr"));
+  const bankAccountId =
+    bankSel?.value
+      ? parseInt(bankSel.value, 10)
+      : null;
+
+  const revenueContractId =
+    contractSel?.value
+      ? parseInt(contractSel.value, 10)
+      : null;
+
+  // Lessor lease source information.
+  const sourceMeta =
+    window._CURRENT_INVOICE_SOURCE || {};
+
+  const isLessorInvoice =
+    sourceMeta.handoff_type ===
+      "lessor_lease_invoice" ||
+    sourceMeta.source ===
+      "lessor_lease_billing" ||
+    sourceMeta.module_name ===
+      "ifrs16_lessor";
+
+  const lessorLeaseId =
+    isLessorInvoice
+      ? Number(
+          sourceMeta.lessor_lease_id ??
+          sourceMeta.lease_id ??
+          sourceMeta.line
+            ?.lessor_lease_id ??
+          0
+        ) || null
+      : null;
+
+  const lessorScheduleId =
+    isLessorInvoice
+      ? Number(
+          sourceMeta
+            .lessor_schedule_id ??
+          sourceMeta.schedule_id ??
+          sourceMeta.source_id ??
+          sourceMeta.line
+            ?.lessor_schedule_id ??
+          0
+        ) || null
+      : null;
+
+  const rows = Array.from(
+    document.querySelectorAll(
+      "#invLines tr"
+    )
+  );
 
   const lines = rows
-    .map((tr) => {
-      // ✅ NEW item picker + meta
-      const pickEl = tr.querySelector(".inv-item-pick");
-      const typeEl = tr.querySelector(".inv-item-type");
-      const idEl   = tr.querySelector(".inv-item-id");
-      const codeEl = tr.querySelector(".inv-item-code");
+    .map(tr => {
+      const pickEl =
+        tr.querySelector(
+          ".inv-item-pick, .inv-desc"
+        );
 
-      const descEl  = tr.querySelector(".inv-service");
-      const acctEl  = tr.querySelector(".inv-acct");
-      const oblEl   = tr.querySelector(".inv-obligation");
-      const qtyEl   = tr.querySelector(".inv-qty");
-      const priceEl = tr.querySelector(".inv-price");
-      const vatEl   = tr.querySelector(".inv-vat-code");
+      const typeEl =
+        tr.querySelector(
+          ".inv-item-type"
+        );
 
-      const itemPick = (pickEl?.value || "").trim();
-      const desc     = (descEl?.value || "").trim();
+      const idEl =
+        tr.querySelector(
+          ".inv-item-id"
+        );
 
-      const qty  = parseFloat(qtyEl?.value || "0") || 0;
-      const unit = parseFloat(priceEl?.value || "0") || 0;
+      const codeEl =
+        tr.querySelector(
+          ".inv-item-code"
+        );
 
-      const vatCode = ((vatEl?.value || defaultVatCode) || "STANDARD")
-        .trim()
-        .toUpperCase();
+      const descEl =
+        tr.querySelector(
+          ".inv-service"
+        );
+
+      const acctEl =
+        tr.querySelector(
+          ".inv-acct"
+        );
+
+      const oblEl =
+        tr.querySelector(
+          ".inv-obligation"
+        );
+
+      const qtyEl =
+        tr.querySelector(
+          ".inv-qty"
+        );
+
+      const priceEl =
+        tr.querySelector(
+          ".inv-price"
+        );
+
+      const vatEl =
+        tr.querySelector(
+          ".inv-vat-code"
+        );
+
+      const itemPick =
+        (pickEl?.value || "").trim();
+
+      const desc =
+        (descEl?.value || "").trim();
+
+      const qty =
+        parseFloat(
+          qtyEl?.value || "0"
+        ) || 0;
+
+      const unit =
+        parseFloat(
+          priceEl?.value || "0"
+        ) || 0;
+
+      const vatCode =
+        (
+          vatEl?.value ||
+          defaultVatCode ||
+          "STANDARD"
+        )
+          .trim()
+          .toUpperCase();
 
       let vat_rate = null;
+
       if (vatCode === "CUSTOM") {
-        const customEl = tr.querySelector(".inv-vat-custom");
-        vat_rate = parseFloat(customEl?.value || "0") || 0; // percent
+        const customEl =
+          tr.querySelector(
+            ".inv-vat-custom"
+          );
+
+        vat_rate =
+          parseFloat(
+            customEl?.value || "0"
+          ) || 0;
       }
-      const account_code = ((acctEl?.value || "").trim() || revenueCodeDefault);
-      const obligationIdRaw = (oblEl?.value || "").trim();
-      const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
 
-      // ✅ catalog meta (service | inventory | gl)
-      const itemType = (typeEl?.value || "gl").trim().toLowerCase();
-      const itemIdRaw = (idEl?.value || "").trim();
-      const itemCode  = (codeEl?.value || "").trim();
+      const account_code =
+        (
+          acctEl?.value || ""
+        ).trim() ||
+        revenueCodeDefault;
 
-      const itemId = itemIdRaw ? Number(itemIdRaw) : null;
+      const obligationIdRaw =
+        (oblEl?.value || "").trim();
 
-      // ✅ same validation rule as before
-      if (!(itemPick || desc) || !(qty || unit)) return null;
+      const revenue_obligation_id =
+        obligationIdRaw
+          ? Number(obligationIdRaw)
+          : null;
+
+      const itemType =
+        isLessorInvoice
+          ? "lease"
+          : (
+              typeEl?.value ||
+              "gl"
+            )
+              .trim()
+              .toLowerCase();
+
+      const itemIdRaw =
+        (idEl?.value || "").trim();
+
+      const itemCode =
+        (codeEl?.value || "").trim();
+
+      const itemId =
+        isLessorInvoice
+          ? lessorLeaseId
+          : (
+              itemIdRaw
+                ? Number(itemIdRaw)
+                : null
+            );
+
+      if (
+        !(itemPick || desc) ||
+        !(qty || unit)
+      ) {
+        return null;
+      }
 
       return {
-        // keep legacy fields if backend expects them
-        item_name: itemPick,        // display text (what user sees)
+        item_name: itemPick,
+        item: itemPick,
         description: desc,
         quantity: qty,
         unit_price: unit,
+
         vatCode,
         vat_rate,
         account_code,
-        revenue_obligation_id,
 
-        // ✅ NEW meta fields (what backend can use to link to master records)
-        item: itemPick,             // optional duplicate, but handy
-        item_type: itemType,        // service | inventory | gl
-        item_id: Number.isFinite(itemId) ? itemId : null,
-        item_code: itemCode || null,
+        revenue_obligation_id:
+          isLessorInvoice
+            ? null
+            : revenue_obligation_id,
+
+        item_type: itemType,
+        item_id:
+          Number.isFinite(itemId)
+            ? itemId
+            : null,
+
+        item_code:
+          itemCode || null,
+
+        source:
+          isLessorInvoice
+            ? "lessor_lease_billing"
+            : null,
+
+        source_id:
+          isLessorInvoice
+            ? lessorScheduleId
+            : null,
+
+        module_name:
+          isLessorInvoice
+            ? "ifrs16_lessor"
+            : null,
+
+        lessor_lease_id:
+          lessorLeaseId,
+
+        lessor_schedule_id:
+          lessorScheduleId,
       };
     })
     .filter(Boolean);
 
-  if (!lines.length) throw new Error("Invoice must have at least one valid line.");
+  if (!lines.length) {
+    throw new Error(
+      "Invoice must have at least one valid line."
+    );
+  }
 
   return {
     id: invoiceId,
     customer_id: customerId,
     customer_name: customerName,
-    revenue_contract_id: revenueContractId,
+
+    revenue_contract_id:
+      isLessorInvoice
+        ? null
+        : revenueContractId,
+
     invoice_date,
     due_date,
     number,
@@ -76211,16 +77735,80 @@ function collectInvoiceFromForm() {
     currency,
 
     vat_enabled: vatEnabled,
-    default_vat_code: defaultVatCode,
+    default_vat_code:
+      defaultVatCode,
 
-    // ✅ BOTH rate + amount
     discount_rate,
     discount_amount,
-    discount,          // legacy (safe to keep)
+    discount,
 
     other,
     notes: memo,
-    bank_account_id: bankAccountId,
+
+    bank_account_id:
+      bankAccountId,
+
+    source:
+      isLessorInvoice
+        ? "lessor_lease_billing"
+        : null,
+
+    source_id:
+      isLessorInvoice
+        ? lessorScheduleId
+        : null,
+
+    module_name:
+      isLessorInvoice
+        ? "ifrs16_lessor"
+        : null,
+
+    posting_mode:
+      isLessorInvoice
+        ? "custom_accounts"
+        : null,
+
+    lessor_lease_id:
+      lessorLeaseId,
+
+    lessor_schedule_id:
+      lessorScheduleId,
+
+    lease_classification:
+      isLessorInvoice
+        ? sourceMeta
+            .lease_classification ||
+          null
+        : null,
+
+    accounting_treatment:
+      isLessorInvoice
+        ? sourceMeta
+            .accounting_treatment ||
+          null
+        : null,
+
+    ar_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .ar_account_code ||
+          null
+        : null,
+
+    credit_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .credit_account_code ||
+          null
+        : null,
+
+    vat_output_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .vat_output_account_code ||
+          null
+        : null,
+
     lines,
   };
 }
@@ -76265,9 +77853,16 @@ function resetInvoiceForm() {
 
   // ✅ clear saved drafts (important)
   try {
-    localStorage.removeItem("invoiceDraft");
-    localStorage.removeItem("arInvoiceDraft");
-    window._CURRENT_INVOICE_DRAFT = null;
+    localStorage.removeItem(
+      "invoiceDraft"
+    );
+
+    localStorage.removeItem(
+      "arInvoiceDraft"
+    );
+
+    window._CURRENT_INVOICE_DRAFT =
+      null;
   } catch (_) {}
 }
 
@@ -80294,99 +81889,426 @@ async function loadDraftInvoices() {
   }
 
 function readInvoiceForm() {
-  const customerName = document.getElementById("invCustomerName")?.value || "";
-  const customerId   = document.getElementById("invCustomerId")?.value || null;
+  const customerName =
+    document.getElementById(
+      "invCustomerName"
+    )?.value || "";
 
-  const invoiceDate  = document.getElementById("invDate")?.value || "";
-  const terms        = document.getElementById("invTerms")?.value || "Due on receipt";
-  const dueDate      = document.getElementById("invDueDate")?.value || "";
-  const number       = document.getElementById("invNumber")?.value || "";
-  const currency     = document.getElementById("invCurrency")?.value || "USD";
-  const notes        = document.getElementById("invMemo")?.value || "";
+  const customerId =
+    document.getElementById(
+      "invCustomerId"
+    )?.value || null;
 
-  const invId        = document.getElementById("invId")?.value || "";
+  const invoiceDate =
+    document.getElementById(
+      "invDate"
+    )?.value || "";
+
+  const terms =
+    document.getElementById(
+      "invTerms"
+    )?.value || "on_receipt";
+
+  const number =
+    document.getElementById(
+      "invNumber"
+    )?.value || "";
+
+  const currency =
+    document.getElementById(
+      "invCurrency"
+    )?.value || "USD";
+
+  const notes =
+    document.getElementById(
+      "invMemo"
+    )?.value || "";
+
+  const invId =
+    document.getElementById(
+      "invId"
+    )?.value || "";
 
   const revenueContractIdRaw =
-    document.getElementById("invRevenueContractId")?.value || "";
+    document.getElementById(
+      "invRevenueContractId"
+    )?.value || "";
+
+  const sourceMeta =
+    window._CURRENT_INVOICE_SOURCE || {};
+
+  const isLessorInvoice =
+    sourceMeta.handoff_type ===
+      "lessor_lease_invoice" ||
+    sourceMeta.source ===
+      "lessor_lease_billing" ||
+    sourceMeta.module_name ===
+      "ifrs16_lessor";
+
+  const lessorLeaseId =
+    isLessorInvoice
+      ? Number(
+          sourceMeta.lessor_lease_id ||
+          sourceMeta.lease_id ||
+          0
+        ) || null
+      : null;
+
+  const lessorScheduleId =
+    isLessorInvoice
+      ? Number(
+          sourceMeta
+            .lessor_schedule_id ||
+          sourceMeta.schedule_id ||
+          sourceMeta.source_id ||
+          0
+        ) || null
+      : null;
+
   const revenue_contract_id =
-    revenueContractIdRaw ? Number(revenueContractIdRaw) : null;
+    isLessorInvoice
+      ? null
+      : (
+          revenueContractIdRaw
+            ? Number(
+                revenueContractIdRaw
+              )
+            : null
+        );
 
-  const linesBody = document.getElementById("invLines");
-  const rows = Array.from(linesBody?.querySelectorAll("tr.inv-line-row, tr") || []);
+  const linesBody =
+    document.getElementById(
+      "invLines"
+    );
 
-  const vatEnabled = !!document.getElementById("invVatEnabled")?.checked;
+  const rows = Array.from(
+    linesBody?.querySelectorAll(
+      "tr.inv-line-row, tr"
+    ) || []
+  );
+
+  const vatEnabled =
+    !!document.getElementById(
+      "invVatEnabled"
+    )?.checked;
+
   const defaultVatCode =
-    (document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
-
-  const lines = rows.map((row) => {
-    const item = row.querySelector(".inv-desc")?.value || "";
-    const desc = row.querySelector(".inv-service")?.value || "";
-    const acct = row.querySelector(".inv-acct")?.value || "";
-
-    const obligationIdRaw = row.querySelector(".inv-obligation")?.value || "";
-    const revenue_obligation_id = obligationIdRaw ? Number(obligationIdRaw) : null;
-
-    const qty  = parseFloat(row.querySelector(".inv-qty")?.value || "0") || 0;
-    const unit = parseFloat(row.querySelector(".inv-price")?.value || "0") || 0;
-
-    const code = ((row.querySelector(".inv-vat-code")?.value || defaultVatCode) + "")
+    (
+      document.getElementById(
+        "invDefaultVat"
+      )?.value ||
+      "STANDARD"
+    )
       .trim()
       .toUpperCase();
 
-    const net = Math.max(0, qty * unit);
+  const lines = rows
+    .map(row => {
+      const item =
+        row.querySelector(
+          ".inv-item-pick, .inv-desc"
+        )?.value || "";
 
-    let vatRate = 0;
-    let vatAmt  = 0;
+      const desc =
+        row.querySelector(
+          ".inv-service"
+        )?.value || "";
 
-    if (vatEnabled && code === "STANDARD") {
-      vatRate = 15;
-      vatAmt = +(net * 0.15).toFixed(2);
-    } else {
-      vatRate = 0;
-      vatAmt = 0;
-    }
+      const acct =
+        row.querySelector(
+          ".inv-acct"
+        )?.value || "";
 
-    const total = +(net + vatAmt).toFixed(2);
+      const obligationIdRaw =
+        row.querySelector(
+          ".inv-obligation"
+        )?.value || "";
 
-    const itemClean = item.trim();
-    const descClean = desc.trim();
+      const revenue_obligation_id =
+        isLessorInvoice
+          ? null
+          : (
+              obligationIdRaw
+                ? Number(
+                    obligationIdRaw
+                  )
+                : null
+            );
 
-    return {
-      line_no: 0,
-      item_name: itemClean,
-      description: (descClean || itemClean || "—"),
-      account_code: acct || null,
-      revenue_obligation_id,
-      quantity: qty,
-      unit_price: unit,
-      net_amount: +net.toFixed(2),
-      vat_rate: vatRate,
-      vat_amount: vatAmt,
-      total_amount: total
-    };
-  }).filter(l => (l.item_name || l.description) && l.net_amount >= 0);
+      const qty =
+        parseFloat(
+          row.querySelector(
+            ".inv-qty"
+          )?.value || "0"
+        ) || 0;
 
-  const totals = window.recalcInvoice?.() || {};
-  const disc = parseFloat(document.getElementById("invDisc")?.value || "0") || 0;
-  const other = parseFloat(document.getElementById("invOther")?.value || "0") || 0;
+      const unit =
+        parseFloat(
+          row.querySelector(
+            ".inv-price"
+          )?.value || "0"
+        ) || 0;
+
+      const code =
+        (
+          row.querySelector(
+            ".inv-vat-code"
+          )?.value ||
+          defaultVatCode
+        )
+          .trim()
+          .toUpperCase();
+
+      const net =
+        Math.max(
+          0,
+          qty * unit
+        );
+
+      let vatRate = 0;
+      let vatAmt = 0;
+
+      if (
+        vatEnabled &&
+        code === "STANDARD"
+      ) {
+        vatRate = 15;
+        vatAmt =
+          +(net * 0.15).toFixed(2);
+      }
+
+      const total =
+        +(net + vatAmt).toFixed(2);
+
+      const itemClean =
+        item.trim();
+
+      const descClean =
+        desc.trim();
+
+      return {
+        line_no: 0,
+
+        item_name:
+          itemClean,
+
+        description:
+          descClean ||
+          itemClean ||
+          "—",
+
+        account_code:
+          acct || null,
+
+        revenue_obligation_id,
+
+        quantity: qty,
+        unit_price: unit,
+
+        net_amount:
+          +net.toFixed(2),
+
+        vat_rate:
+          vatRate,
+
+        vat_amount:
+          vatAmt,
+
+        total_amount:
+          total,
+
+        item_type:
+          isLessorInvoice
+            ? "lease"
+            : (
+                row.querySelector(
+                  ".inv-item-type"
+                )?.value ||
+                "gl"
+              ),
+
+        item_id:
+          isLessorInvoice
+            ? lessorLeaseId
+            : (
+                Number(
+                  row.querySelector(
+                    ".inv-item-id"
+                  )?.value || 0
+                ) || null
+              ),
+
+        item_code:
+          row.querySelector(
+            ".inv-item-code"
+          )?.value || null,
+
+        source:
+          isLessorInvoice
+            ? "lessor_lease_billing"
+            : null,
+
+        source_id:
+          isLessorInvoice
+            ? lessorScheduleId
+            : null,
+
+        module_name:
+          isLessorInvoice
+            ? "ifrs16_lessor"
+            : null,
+
+        lessor_lease_id:
+          lessorLeaseId,
+
+        lessor_schedule_id:
+          lessorScheduleId,
+      };
+    })
+    .filter(line =>
+      (
+        line.item_name ||
+        line.description
+      ) &&
+      line.net_amount >= 0
+    );
+
+  const totals =
+    window.recalcInvoice?.() || {};
+
+  const disc =
+    parseFloat(
+      document.getElementById(
+        "invDisc"
+      )?.value || "0"
+    ) || 0;
+
+  const other =
+    parseFloat(
+      document.getElementById(
+        "invOther"
+      )?.value || "0"
+    ) || 0;
+
+  const dueDate =
+    computeDueDate(
+      invoiceDate,
+      terms
+    );
 
   return {
-    id: invId || null,
-    customer_id: customerId ? Number(customerId) : null,
-    customer_name: customerName,
+    id:
+      invId || null,
+
+    customer_id:
+      customerId
+        ? Number(customerId)
+        : null,
+
+    customer_name:
+      customerName,
+
     revenue_contract_id,
+
     number,
-    invoice_date: invoiceDate,
-    due_date: dueDate || null,
+    invoice_date:
+      invoiceDate,
+
+    due_date:
+      dueDate || null,
+
     currency,
     terms,
     notes,
-    discount_amount: +disc.toFixed(2),
-    subtotal_amount: +((totals.subtotalAfterDisc ?? 0)).toFixed(2),
-    vat_amount: +((totals.vatTotal ?? 0)).toFixed(2),
-    total_amount: +((totals.grandTotal ?? 0)).toFixed(2),
+
+    discount_amount:
+      +disc.toFixed(2),
+
+    other_amount:
+      +other.toFixed(2),
+
+    subtotal_amount:
+      +(
+        totals.subtotalAfterDisc ??
+        0
+      ).toFixed(2),
+
+    vat_amount:
+      +(
+        totals.vatTotal ??
+        0
+      ).toFixed(2),
+
+    total_amount:
+      +(
+        totals.grandTotal ??
+        0
+      ).toFixed(2),
+
     status: "draft",
-    lines
+
+    source:
+      isLessorInvoice
+        ? "lessor_lease_billing"
+        : null,
+
+    source_id:
+      isLessorInvoice
+        ? lessorScheduleId
+        : null,
+
+    module_name:
+      isLessorInvoice
+        ? "ifrs16_lessor"
+        : null,
+
+    posting_mode:
+      isLessorInvoice
+        ? "custom_accounts"
+        : null,
+
+    lessor_lease_id:
+      lessorLeaseId,
+
+    lessor_schedule_id:
+      lessorScheduleId,
+
+    lease_classification:
+      isLessorInvoice
+        ? sourceMeta
+            .lease_classification ||
+          null
+        : null,
+
+    accounting_treatment:
+      isLessorInvoice
+        ? sourceMeta
+            .accounting_treatment ||
+          null
+        : null,
+
+    ar_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .ar_account_code ||
+          null
+        : null,
+
+    credit_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .credit_account_code ||
+          null
+        : null,
+
+    vat_output_account_code:
+      isLessorInvoice
+        ? sourceMeta
+            .vat_output_account_code ||
+          null
+        : null,
+
+    lines,
   };
 }
 
@@ -81977,8 +83899,17 @@ function bindAR() {
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
-      console.log("🧾 [Prefill] CALLED");
-      console.log("📦 [Prefill] payload =", payload);
+      console.log("🧾 [Invoice Prefill] payload =", payload);
+
+      const isLessorInvoice =
+        payload.handoff_type === "lessor_lease_invoice" ||
+        payload.source === "lessor_lease_billing" ||
+        payload.module_name === "ifrs16_lessor";
+
+      // Keep the lessor lease IDs until the invoice is saved.
+      if (isLessorInvoice) {
+        window._CURRENT_INVOICE_SOURCE = payload;
+      }
 
       const customerId =
         payload.customerId ??
@@ -81990,10 +83921,13 @@ function bindAR() {
         payload.customer_name ??
         "";
 
-      const contractId =
-        payload.contractId ??
-        payload.revenue_contract_id ??
-        null;
+      const contractId = isLessorInvoice
+        ? null
+        : (
+            payload.contractId ??
+            payload.revenue_contract_id ??
+            null
+          );
 
       const contractNumber =
         payload.contractNumber ??
@@ -82005,31 +83939,39 @@ function bindAR() {
         payload.revenue_contract_title ??
         "";
 
-      const obligationId =
-        payload.obligationId ??
-        payload.revenue_obligation_id ??
-        payload.line?.revenue_obligation_id ??
-        null;
+      const obligationId = isLessorInvoice
+        ? null
+        : (
+            payload.obligationId ??
+            payload.revenue_obligation_id ??
+            payload.line?.revenue_obligation_id ??
+            null
+          );
 
-      const obligationName =
+      const itemName =
         payload.obligationName ??
         payload.revenue_obligation_name ??
         payload.line?.item_name ??
+        payload.line?.item ??
         contractTitle ??
-        "Service";
+        "Lease rental";
 
-      const obligationNotes =
+      const description =
         payload.obligationNotes ??
         payload.revenue_obligation_notes ??
         payload.line?.description ??
+        payload.memo ??
         "";
 
-      const allocatedPrice =
+      const unitPrice =
         payload.allocatedPrice ??
         payload.line?.unit_price ??
+        payload.line?.net_amount ??
         0;
 
-      const currency = resolveCurrency(payload.currency || "USD");
+      const currency = resolveCurrency(
+        payload.currency || "USD"
+      );
 
       const rawInvoiceDate =
         payload.invoiceDate ??
@@ -82037,93 +83979,298 @@ function bindAR() {
         new Date().toISOString().slice(0, 10);
 
       const invoiceDate = rawInvoiceDate
-        ? new Date(rawInvoiceDate).toISOString().slice(0, 10)
+        ? String(rawInvoiceDate).slice(0, 10)
         : new Date().toISOString().slice(0, 10);
 
-      const invCustomerIdEl = document.getElementById("invCustomerId");
-      const invCustomerNameEl = document.getElementById("invCustomerName");
-      const invDateEl = document.getElementById("invDate");
-      const invCurrencyEl = document.getElementById("invCurrency");
-      const invMemoEl = document.getElementById("invMemo");
-      const invRevenueContractEl = document.getElementById("invRevenueContractId");
-      const body = document.getElementById("invLines");
+      const invCustomerIdEl =
+        document.getElementById("invCustomerId");
 
-      console.log("🔎 [Prefill] invCustomerId exists?", !!invCustomerIdEl);
-      console.log("🔎 [Prefill] invRevenueContractId exists?", !!invRevenueContractEl);
-      console.log("🔎 [Prefill] invLines exists?", !!body);
+      const invCustomerNameEl =
+        document.getElementById("invCustomerName");
 
-      console.log("➡️ [Prefill] customerId =", customerId);
-      console.log("➡️ [Prefill] contractId =", contractId);
-      console.log("➡️ [Prefill] obligationId =", obligationId);
-      console.log("➡️ [Prefill] invoiceDate =", invoiceDate);
+      const invDateEl =
+        document.getElementById("invDate");
 
-      if (invCustomerIdEl) invCustomerIdEl.value = customerId ? String(customerId) : "";
-      if (invCustomerNameEl) invCustomerNameEl.value = customerName || "";
-      if (invDateEl) invDateEl.value = invoiceDate || "";
-      if (invCurrencyEl) invCurrencyEl.value = currency || "USD";
+      const invNumberEl =
+        document.getElementById("invNumber");
+
+      const invTermsEl =
+        document.getElementById("invTerms");
+
+      const invCurrencyEl =
+        document.getElementById("invCurrency");
+
+      const invMemoEl =
+        document.getElementById("invMemo");
+
+      const invRevenueContractEl =
+        document.getElementById("invRevenueContractId");
+
+      const body =
+        document.getElementById("invLines");
+
+      if (invCustomerIdEl) {
+        invCustomerIdEl.value =
+          customerId ? String(customerId) : "";
+      }
+
+      if (invCustomerNameEl) {
+        invCustomerNameEl.value = customerName || "";
+      }
+
+      if (invDateEl) {
+        invDateEl.value = invoiceDate;
+      }
+
+      if (invNumberEl && payload.number) {
+        invNumberEl.value = String(payload.number);
+      }
+
+      if (invCurrencyEl) {
+        invCurrencyEl.value = currency || "USD";
+      }
 
       if (invMemoEl) {
         invMemoEl.value =
           payload.memo ||
-          `Invoice for ${obligationName}${contractNumber ? ` (${contractNumber})` : ""}`;
+          `Invoice for ${itemName}${
+            contractNumber
+              ? ` (${contractNumber})`
+              : ""
+          }`;
       }
 
-      const contracts = await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
+      // Convert lessor payment terms into the existing AR terms.
+      if (
+        invTermsEl &&
+        payload.due_date &&
+        invoiceDate
+      ) {
+        const invoiceDay =
+          new Date(`${invoiceDate}T00:00:00`);
 
-      window.toggleInvoiceContractUI?.({
-        hasCustomerContracts: contracts.length > 0,
-      });
+        const dueDay =
+          new Date(
+            `${String(payload.due_date).slice(0, 10)}T00:00:00`
+          );
 
-      if (invRevenueContractEl) {
-        invRevenueContractEl.value = contractId ? String(contractId) : "";
+        const days = Math.max(
+          0,
+          Math.round(
+            (dueDay - invoiceDay) / 86400000
+          )
+        );
+
+        invTermsEl.value =
+          days === 0 ? "on_receipt" :
+          days === 15 ? "15" :
+          days === 30 ? "30" :
+          invTermsEl.value;
       }
 
-      const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
+      // Revenue contracts only apply to IFRS 15 invoices.
+      // They must not be loaded for lessor lease invoices.
+      if (!isLessorInvoice) {
+        const contracts =
+          await window.loadRevenueContractsForSelectedCustomer?.(
+            contractId
+          ) || [];
 
-      window.toggleInvoiceObligationUI?.({
-        hasRevenueContract: !!contractId,
-        hasObligation: obligations.length > 0,
-      });
+        window.toggleInvoiceContractUI?.({
+          hasCustomerContracts: contracts.length > 0,
+        });
+
+        if (invRevenueContractEl) {
+          invRevenueContractEl.value =
+            contractId ? String(contractId) : "";
+        }
+
+        const obligations =
+          await window.loadInvoiceLineObligationsFromContract?.() || [];
+
+        window.toggleInvoiceObligationUI?.({
+          hasRevenueContract: !!contractId,
+          hasObligation: obligations.length > 0,
+        });
+      } else {
+        if (invRevenueContractEl) {
+          invRevenueContractEl.value = "";
+        }
+
+        window.toggleInvoiceContractUI?.({
+          hasCustomerContracts: false,
+        });
+
+        window.toggleInvoiceObligationUI?.({
+          hasRevenueContract: false,
+          hasObligation: false,
+        });
+      }
 
       if (!body) {
-        console.warn("❌ [Prefill] invLines tbody not found");
+        console.warn("[Invoice Prefill] invLines not found");
         return;
       }
 
-      let row = body.querySelector("tr");
+      // Clear existing blank/default rows before inserting lease data.
+      body.innerHTML = "";
+
+      let row = window.addLine?.() || null;
+
       if (!row) {
-        row = window.addLine?.() || null;
+        row = body.querySelector("tr");
       }
+
       if (!row) {
-        console.warn("❌ [Prefill] Could not get or create invoice row");
+        console.warn(
+          "[Invoice Prefill] Could not create invoice line"
+        );
         return;
       }
 
-      const itemEl = row.querySelector(".inv-desc");      // item_name in readInvoiceForm
-      const descEl = row.querySelector(".inv-service");   // description in readInvoiceForm
-      const oblEl = row.querySelector(".inv-obligation");
-      const qtyEl = row.querySelector(".inv-qty");
-      const priceEl = row.querySelector(".inv-price");
+      const itemEl = row.querySelector(
+        ".inv-item-pick, .inv-desc"
+      );
 
-      if (itemEl) itemEl.value = obligationName || "Service";
-      if (descEl) descEl.value = obligationNotes || contractTitle || "";
-      if (qtyEl) qtyEl.value = "1";
-      if (priceEl) priceEl.value = String(allocatedPrice || 0);
+      const descEl =
+        row.querySelector(".inv-service");
 
-      if (oblEl) {
-        oblEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
-        oblEl.value = obligationId ? String(obligationId) : "";
+      const acctEl =
+        row.querySelector(".inv-acct");
+
+      const typeEl =
+        row.querySelector(".inv-item-type");
+
+      const idEl =
+        row.querySelector(".inv-item-id");
+
+      const codeEl =
+        row.querySelector(".inv-item-code");
+
+      const oblEl =
+        row.querySelector(".inv-obligation");
+
+      const qtyEl =
+        row.querySelector(".inv-qty");
+
+      const priceEl =
+        row.querySelector(".inv-price");
+
+      const vatEl =
+        row.querySelector(".inv-vat-code");
+
+      if (itemEl) {
+        itemEl.value = itemName || "Lease rental";
       }
 
-      await window.applyObligationBillingToLine?.(row);
+      if (descEl) {
+        descEl.value = description || "";
+      }
 
-      window.recalcInvoice?.({ force: true });
-      console.log("✅ [Prefill] DONE");
+      if (qtyEl) {
+        qtyEl.value = "1";
+      }
+
+      if (priceEl) {
+        priceEl.value = String(unitPrice || 0);
+      }
+
+      if (
+        acctEl &&
+        payload.line?.account_code
+      ) {
+        acctEl.value =
+          String(payload.line.account_code);
+      }
+
+      if (typeEl) {
+        typeEl.value = isLessorInvoice
+          ? "lease"
+          : (
+              payload.line?.item_type ||
+              "gl"
+            );
+      }
+
+      if (idEl) {
+        idEl.value = isLessorInvoice
+          ? String(
+              payload.lessor_lease_id ||
+              payload.lease_id ||
+              ""
+            )
+          : String(
+              payload.line?.item_id ||
+              ""
+            );
+      }
+
+      if (codeEl) {
+        codeEl.value =
+          payload.line?.item_code || "";
+      }
+
+      if (
+        vatEl &&
+        isLessorInvoice
+      ) {
+        vatEl.value =
+          Number(
+            payload.line?.vat_amount || 0
+          ) > 0
+            ? "STANDARD"
+            : "NO_VAT";
+      }
+
+      if (
+        oblEl &&
+        !isLessorInvoice
+      ) {
+        oblEl.dataset.selectedValue =
+          obligationId
+            ? String(obligationId)
+            : "";
+
+        oblEl.value =
+          obligationId
+            ? String(obligationId)
+            : "";
+      }
+
+      // This function belongs to IFRS 15 revenue obligations.
+      // Do not run it for IFRS 16 lessor invoices.
+      if (!isLessorInvoice) {
+        await window.applyObligationBillingToLine?.(
+          row
+        );
+      }
+
+      window.recalcInvoice?.({
+        force: true
+      });
+
+      window.saveInvoiceDraftToLocal?.();
+
+      console.log(
+        "✅ [Invoice Prefill] completed",
+        {
+          isLessorInvoice,
+          lessor_lease_id:
+            payload.lessor_lease_id,
+          lessor_schedule_id:
+            payload.lessor_schedule_id,
+        }
+      );
     } catch (err) {
-      console.warn("[prefillInvoiceFromRevenuePayload] failed", err);
+      console.warn(
+        "[prefillInvoiceFromRevenuePayload] failed",
+        err
+      );
     }
   }
-  window.prefillInvoiceFromRevenuePayload = prefillInvoiceFromRevenuePayload;
+
+  window.prefillInvoiceFromRevenuePayload =
+    prefillInvoiceFromRevenuePayload;
 
   async function consumePendingRevenueInvoicePrefill() {
     try {

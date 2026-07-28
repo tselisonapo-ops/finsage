@@ -1,10 +1,11 @@
 // src/drawer/hostMount.ts
 import { mountDrawerController } from "./mountDrawerController";
+
 import type {
   FixedAssetsDrawerOpenArgs,
   FixedAssetsDrawerResult,
 } from "./FixedAssetsDrawer";
-
+console.log("[PPE] hostMount module loaded");
 declare global {
   interface Window {
     FS_MOUNT_FIXED_ASSETS_DRAWER?: () => void;

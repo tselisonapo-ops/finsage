@@ -1498,3 +1498,22 @@ textarea {
     width: 100%;
   }
 }
+
+.cart-line {
+  cursor: pointer;
+}
+
+.cart-line.selected {
+  background: rgba(0, 123, 116, 0.08);
+  box-shadow: inset 3px 0 0 #007b74;
+}
+
+.cart-remove-btn {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fff0f0;
+  color: #b42318;
+  font-weight: 700;
+  cursor: pointer;
+}

@@ -1,10 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: "/pos/",
+  base: mode === "production" ? "/pos/" : "/",
   server: {
+    host: "127.0.0.1",
+    port: 5174,
     proxy: {
       "/api": "http://127.0.0.1:5000",
     },
@@ -14,4 +16,4 @@ export default defineConfig({
     assetsDir: "assets",
     sourcemap: true,
   },
-});
+}));

@@ -36,6 +36,7 @@ export function CashierPage() {
   const [shifts, setShifts] = useState([]);
   const [activeShift, setActiveShift] = useState(null);
   const [cart, setCart] = useState([]);
+  const [selectedCartItemId, setSelectedCartItemId] = useState(null);
   const [message, setMessage] = useState("");
 
   const [showSignin, setShowSignin] = useState(false);
@@ -645,7 +646,11 @@ export function CashierPage() {
   }
 
   function removeCartItem(itemId) {
-    setCart((prev) => prev.filter((line) => Number(line.item_id) !== Number(itemId)));
+    setCart((prev) =>
+      prev.filter((line) => Number(line.item_id) !== Number(itemId))
+    );
+
+    setSelectedCartItemId(null);
   }
 
   async function finalisePayment() {
@@ -1469,14 +1474,46 @@ export function CashierPage() {
             </div>
 
             {cart.length ? (
-              cart.map((line, idx) => (
-                <div className="cart-line" key={idx}>
-                  <span><strong>{line.description}</strong><small>{line.sku || ""}</small></span>
-                  <span>{line.qty}</span>
-                  <span>{money(line.unit_price)}</span>
-                  <span>{money(line.gross_amount)}</span>
-                </div>
-              ))
+              cart.map((line, idx) => {
+                const isSelected =
+                  Number(selectedCartItemId) === Number(line.item_id);
+
+                return (
+                  <div
+                    className={`cart-line ${isSelected ? "selected" : ""}`}
+                    key={`${line.item_id}-${idx}`}
+                    onClick={() =>
+                      setSelectedCartItemId(
+                        isSelected ? null : Number(line.item_id)
+                      )
+                    }
+                  >
+                    <span>
+                      <strong>{line.description}</strong>
+                      <small>{line.sku || ""}</small>
+                    </span>
+
+                    <span>{line.qty}</span>
+                    <span>{money(line.unit_price)}</span>
+                    <span>{money(line.gross_amount)}</span>
+
+                    <span>
+                      {isSelected && (
+                        <button
+                          type="button"
+                          className="cart-remove-btn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeCartItem(line.item_id);
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })
             ) : (
               <div className="cart-empty">No items added yet.</div>
             )}
