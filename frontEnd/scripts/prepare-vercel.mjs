@@ -21,6 +21,7 @@ const excludedNames = new Set([
   "src",
   "scripts",
   "pos-app",
+  "lease-wizard.html",
   "package.json",
   "package-lock.json",
   "vite.config.ts",
@@ -47,7 +48,10 @@ async function copyStaticFrontend() {
   });
 
   for (const entry of entries) {
-    if (excludedNames.has(entry.name)) {
+    if (
+      excludedNames.has(entry.name) ||
+      entry.name.startsWith(".env")
+    ) {
       continue;
     }
 
