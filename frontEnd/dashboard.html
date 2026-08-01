@@ -8769,6 +8769,136 @@ tbody tr:hover {
     flex-direction: column;
   }
 }
+
+.lsm-edit-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:14px;padding:18px 20px}
+.lsm-edit-actions{display:flex;justify-content:flex-end;padding:0 20px 20px}
+@media(max-width:900px){.lsm-edit-grid{grid-template-columns:1fr}}
+
+.lsm-workspace-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+.lsm-workspace-actions{display:flex;flex-wrap:wrap;gap:8px}
+@media(max-width:760px){.lsm-workspace-toolbar{align-items:stretch;flex-direction:column}.lsm-workspace-actions{flex-direction:column}.lsm-workspace-actions .lsm-btn{width:100%}}
+
+#lsmDashboardMetrics{grid-template-columns:repeat(4,minmax(160px,1fr))}
+.lsm-landing-warning{padding:13px 18px;border-top:1px solid #fedf89;background:#fffaeb;color:#b54708;font-size:.82rem;font-weight:700}
+@media(max-width:1200px){#lsmDashboardMetrics{grid-template-columns:repeat(2,minmax(160px,1fr))}}
+@media(max-width:700px){#lsmDashboardMetrics{grid-template-columns:1fr}}
+
+.lsm-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lsm-btn-danger {
+  color: #fff !important;
+  background: #b42318 !important;
+  border-color: #b42318 !important;
+}
+
+.lsm-btn-danger:hover {
+  background: #912018 !important;
+  border-color: #912018 !important;
+}
+
+.lsm-mini-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lsm-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dfe7ef;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.lsm-mini-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.lsm-mini-row strong {
+  color: #0f2743;
+}
+
+.lsm-mini-row span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.lsm-timeline {
+  display: grid;
+}
+
+.lsm-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  padding-bottom: 18px;
+}
+
+.lsm-timeline-item::before {
+  position: absolute;
+  top: 14px;
+  bottom: 0;
+  left: 7px;
+  width: 2px;
+  background: #dce7ea;
+  content: "";
+}
+
+.lsm-timeline-item:last-child::before {
+  display: none;
+}
+
+.lsm-timeline-item i {
+  width: 16px;
+  height: 16px;
+  border: 4px solid #dff5f1;
+  border-radius: 50%;
+  background: #087f73;
+}
+
+.lsm-timeline-item div {
+  display: grid;
+  gap: 3px;
+}
+
+.lsm-timeline-item span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.lsm-timeline-item p {
+  margin: 0;
+  color: #475569;
+}
+
+.lsm-field textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+@media (max-width: 800px) {
+  .lsm-action-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .lsm-mini-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lsm-mini-row .lsm-btn {
+    width: 100%;
+  }
+}
   </style>
 
 </head>
@@ -9890,191 +10020,729 @@ tbody tr:hover {
               <div>
                 <span class="lsm-eyebrow">IFRS 16 · Lessor accounting</span>
                 <h2>Subsequent Measurement</h2>
-                <p>
-                  Review rental billing, finance income, net investment,
-                  straight-line income and period journals.
-                </p>
+                <p>Review rental billing, finance income, net investment, straight-line income and period journals.</p>
               </div>
 
               <div class="lsm-header-actions">
-                <button id="lsmBackBtn" type="button"
-                  class="lsm-btn lsm-btn-secondary">
-                  Back to leases
-                </button>
-
-                <button id="lsmRefreshBtn" type="button"
-                  class="lsm-btn lsm-btn-secondary">
-                  Refresh
-                </button>
+                <button id="lsmBackBtn" type="button" class="lsm-btn lsm-btn-secondary">Back to leases</button>
+                <button id="lsmRefreshBtn" type="button" class="lsm-btn lsm-btn-secondary">Refresh</button>
               </div>
             </header>
 
-            <section class="lsm-toolbar">
-              <label class="lsm-field lsm-field-wide">
-                <span>Lease</span>
-                <select id="lsmLeaseId">
-                  <option value="">Select a lessor lease...</option>
-                </select>
-              </label>
-
-              <label class="lsm-field">
-                <span>As at</span>
-                <input id="lsmAsAt" type="date">
-              </label>
-
-              <button id="lsmLoadBtn" type="button" class="lsm-btn">
-                Load workspace
-              </button>
-
-              <button id="lsmInvoiceThroughBtn" type="button"
-                class="lsm-btn lsm-btn-secondary" disabled>
-                Create invoices through date
-              </button>
-
-              <button id="lsmPostThroughBtn" type="button"
-                class="lsm-btn lsm-btn-success" disabled>
-                Post accounting through date
-              </button>
-            </section>
-
             <div id="lsmMessage" class="lsm-message hidden"></div>
 
-            <section id="lsmLeaseSummary" class="lsm-card hidden">
-              <div class="lsm-card-head">
-                <div>
-                  <span class="lsm-section-label">Selected contract</span>
-                  <h3 id="lsmContractName">Lease</h3>
-                  <p id="lsmLeaseMeta">—</p>
+            <!-- LANDING DASHBOARD -->
+            <div id="lsmLandingView">
+              <section id="lsmDashboardMetrics" class="lsm-metrics"></section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Lessor lease dashboard</span>
+                    <h3>Select a leased asset</h3>
+                    <p>Review the lease summary before opening its IFRS 16 accounting workspace.</p>
+                  </div>
+
+                  <span id="lsmPortfolioBadge" class="lsm-badge">0 leases</span>
                 </div>
 
-                <div class="lsm-summary-badges">
-                  <span id="lsmClassificationBadge" class="lsm-badge">—</span>
-                  <span id="lsmStatusBadge" class="lsm-badge">—</span>
-                </div>
-              </div>
-
-              <div id="lsmLeaseFacts" class="lsm-facts"></div>
-            </section>
-
-            <section id="lsmMetrics" class="lsm-metrics"></section>
-
-            <section id="lsmInitialRecognitionPanel" class="lsm-card hidden">
-              <div class="lsm-card-head">
-                <div>
-                  <span class="lsm-section-label">Initial recognition</span>
-                  <h3 id="lsmInitialRecognitionTitle">
-                    Commencement accounting
-                  </h3>
-                  <p id="lsmInitialRecognitionDescription">—</p>
-                </div>
-
-                <div class="lsm-summary-badges">
-                  <span id="lsmCommencementJournalBadge" class="lsm-badge">
-                    No journal
-                  </span>
-                </div>
-              </div>
-
-              <div id="lsmInitialRecognitionGrid"
-                class="lsm-reporting-grid">
-              </div>
-            </section>
-
-            <section class="lsm-card">
-              <div class="lsm-card-head">
-                <div>
-                  <span class="lsm-section-label">IFRS 16 measurement</span>
-                  <h3>Accounting schedule</h3>
-                  <p id="lsmScheduleDescription">
-                    Select a lessor lease to view its accounting schedule.
-                  </p>
-                </div>
-
-                <div class="lsm-card-actions">
-                  <label class="lsm-check">
-                    <input id="lsmShowPosted" type="checkbox" checked>
-                    <span>Show posted</span>
+                <div class="lsm-toolbar">
+                  <label class="lsm-field lsm-field-wide">
+                    <span>Leased asset</span>
+                    <select id="lsmLeaseId">
+                      <option value="">Select a lessor lease...</option>
+                    </select>
                   </label>
 
-                  <span id="lsmPeriodBadge" class="lsm-badge">
-                    0 periods
-                  </span>
+                  <label class="lsm-field">
+                    <span>Reporting date</span>
+                    <input id="lsmAsAt" type="date">
+                  </label>
+
+                  <button id="lsmLoadBtn" type="button" class="lsm-btn">Open workspace</button>
                 </div>
-              </div>
+              </section>
 
-              <div class="lsm-legend">
-                <span><i class="lsm-dot lsm-dot-due"></i> Due</span>
-                <span><i class="lsm-dot lsm-dot-invoiced"></i> Invoiced</span>
-                <span><i class="lsm-dot lsm-dot-posted"></i> Posted</span>
-                <span><i class="lsm-dot lsm-dot-error"></i> Requires attention</span>
-              </div>
+              <section id="lsmLandingLeasePreview" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Selected leased asset</span>
+                    <h3 id="lsmLandingAssetName">Asset</h3>
+                    <p id="lsmLandingLeaseMeta">—</p>
+                  </div>
 
-              <div class="lsm-table-wrap">
-                <table class="lsm-table">
-                  <thead id="lsmScheduleHead"></thead>
-                  <tbody id="lsmScheduleBody">
-                    <tr>
-                      <td colspan="14" class="lsm-empty">
-                        Select a lessor lease to continue.
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <section id="lsmReportingPanel" class="lsm-card hidden">
-              <div class="lsm-card-head">
-                <div>
-                  <span class="lsm-section-label">Reporting support</span>
-                  <h3>IFRS 16 reporting summary</h3>
-                  <p>
-                    Balances and movements supporting financial-statement
-                    presentation and disclosure.
-                  </p>
-                </div>
-              </div>
-
-              <div id="lsmReportingGrid" class="lsm-reporting-grid"></div>
-            </section>
-
-            <section id="lsmJournalPanel" class="lsm-card hidden">
-              <div class="lsm-card-head">
-                <div>
-                  <span class="lsm-section-label">Journal control</span>
-                  <h3>Period journal preview</h3>
-                  <p id="lsmJournalDescription">—</p>
+                  <div class="lsm-summary-badges">
+                    <span id="lsmLandingClassificationBadge" class="lsm-badge">—</span>
+                    <span id="lsmLandingStatusBadge" class="lsm-badge">—</span>
+                  </div>
                 </div>
 
-                <button id="lsmCloseJournalBtn" type="button"
-                  class="lsm-btn lsm-btn-secondary">
-                  Close
+                <div id="lsmLandingLeaseFacts" class="lsm-facts"></div>
+
+                <div id="lsmLandingWarning" class="lsm-landing-warning hidden"></div>
+              </section>
+            </div>
+
+            <!-- LOADED WORKSPACE -->
+            <div id="lsmWorkspaceView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button id="lsmDashboardBtn" type="button" class="lsm-btn lsm-btn-secondary">
+                  Back to lessor dashboard
                 </button>
-              </div>
 
-              <div class="lsm-table-wrap">
-                <table class="lsm-table">
-                  <thead>
-                    <tr>
-                      <th>Account</th>
-                      <th>Memo</th>
-                      <th class="num">Debit</th>
-                      <th class="num">Credit</th>
-                    </tr>
-                  </thead>
+                <div class="lsm-workspace-actions">
+                  <button id="lsmEditLeaseBtn" type="button" class="lsm-btn lsm-btn-secondary" disabled>
+                    Edit lease
+                  </button>
 
-                  <tbody id="lsmJournalBody"></tbody>
+                  <button id="lsmInvoiceThroughBtn" type="button" class="lsm-btn lsm-btn-secondary" disabled>
+                    Create invoices through date
+                  </button>
 
-                  <tfoot>
-                    <tr>
-                      <th colspan="2">Totals</th>
-                      <th id="lsmJournalDebit" class="num">0.00</th>
-                      <th id="lsmJournalCredit" class="num">0.00</th>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </section>
+                  <button id="lsmPostThroughBtn" type="button" class="lsm-btn lsm-btn-success" disabled>
+                    Post accounting through date
+                  </button>
+                </div>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Lease lifecycle
+                    </span>
+
+                    <h3>Actions and views</h3>
+
+                    <p>
+                      Correct setup errors, inspect schedules,
+                      modify terms or terminate the lease.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="lsm-action-strip">
+                  <button
+                    id="lsmCorrectionBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Correct setup
+                  </button>
+
+                  <button
+                    id="lsmSchedulesBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Schedule versions
+                  </button>
+
+                  <button
+                    id="lsmBillingBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Billing & receipts
+                  </button>
+
+                  <button
+                    id="lsmHistoryBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    History
+                  </button>
+
+                  <button
+                    id="lsmModifyBtn"
+                    type="button"
+                    class="lsm-btn"
+                  >
+                    Modify lease
+                  </button>
+
+                  <button
+                    id="lsmTerminateBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-danger"
+                  >
+                    Terminate lease
+                  </button>
+                </div>
+              </section>
+
+              <section
+                id="lsmCorrectionPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Correction
+                    </span>
+
+                    <h3>Correct setup and recalculate</h3>
+
+                    <p>
+                      Use this only for errors in the original
+                      setup. After invoicing, use a modification.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmCorrectionPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field">
+                    <span>Implicit rate (%)</span>
+
+                    <input
+                      id="lsmCorrectionRate"
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Billing amount</span>
+
+                    <input
+                      id="lsmCorrectionAmount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Start date</span>
+
+                    <input
+                      id="lsmCorrectionStart"
+                      type="date"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>End date</span>
+
+                    <input
+                      id="lsmCorrectionEnd"
+                      type="date"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Payment terms days</span>
+
+                    <input
+                      id="lsmCorrectionTerms"
+                      type="number"
+                      min="0"
+                      step="1"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>VAT rate (%)</span>
+
+                    <input
+                      id="lsmCorrectionVat"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label class="lsm-field lsm-field-wide">
+                    <span>Correction reason</span>
+
+                    <textarea
+                      id="lsmCorrectionReason"
+                      rows="3"
+                    ></textarea>
+                  </label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button
+                    id="lsmApplyCorrectionBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-success"
+                  >
+                    Reverse, correct and recalculate
+                  </button>
+                </div>
+              </section>
+
+              <section
+                id="lsmModificationPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Modification
+                    </span>
+
+                    <h3>Modify lease terms</h3>
+
+                    <p>
+                      Use this for agreed changes after commencement.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmModificationPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field">
+                    <span>Effective date</span>
+
+                    <input
+                      id="lsmModDate"
+                      type="date"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Modification type</span>
+
+                    <select id="lsmModType">
+                      <option value="amount">
+                        Rental amount
+                      </option>
+
+                      <option value="term">
+                        Lease term
+                      </option>
+
+                      <option value="rate">
+                        Discount rate
+                      </option>
+
+                      <option value="mixed">
+                        Mixed change
+                      </option>
+                    </select>
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>New rental amount</span>
+
+                    <input
+                      id="lsmModAmount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>New end date</span>
+
+                    <input
+                      id="lsmModEnd"
+                      type="date"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>New rate (%)</span>
+
+                    <input
+                      id="lsmModRate"
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                    >
+                  </label>
+
+                  <label class="lsm-field lsm-field-wide">
+                    <span>Reason</span>
+
+                    <textarea
+                      id="lsmModReason"
+                      rows="3"
+                    ></textarea>
+                  </label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button
+                    id="lsmCreateModificationBtn"
+                    type="button"
+                    class="lsm-btn"
+                  >
+                    Create draft modification
+                  </button>
+                </div>
+
+                <div
+                  id="lsmModificationList"
+                  class="lsm-mini-list"
+                ></div>
+              </section>
+
+              <section
+                id="lsmTerminationPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Termination
+                    </span>
+
+                    <h3>Terminate lease</h3>
+
+                    <p>
+                      Preview a full or partial lease termination.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmTerminationPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field">
+                    <span>Termination date</span>
+
+                    <input
+                      id="lsmTermDate"
+                      type="date"
+                    >
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Termination type</span>
+
+                    <select id="lsmTermType">
+                      <option value="full">
+                        Full termination
+                      </option>
+
+                      <option value="partial">
+                        Partial termination
+                      </option>
+                    </select>
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Settlement amount</span>
+
+                    <input
+                      id="lsmTermSettlement"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label class="lsm-field lsm-field-wide">
+                    <span>Reason</span>
+
+                    <textarea
+                      id="lsmTermReason"
+                      rows="3"
+                    ></textarea>
+                  </label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button
+                    id="lsmCreateTerminationBtn"
+                    type="button"
+                    class="lsm-btn lsm-btn-danger"
+                  >
+                    Create draft termination
+                  </button>
+                </div>
+
+                <div
+                  id="lsmTerminationList"
+                  class="lsm-mini-list"
+                ></div>
+              </section>
+
+              <section
+                id="lsmVersionsPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Schedule history
+                    </span>
+
+                    <h3>Schedule versions</h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmVersionsPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div
+                  id="lsmVersionsList"
+                  class="lsm-mini-list"
+                ></div>
+              </section>
+
+              <section
+                id="lsmBillingPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Receivables
+                    </span>
+
+                    <h3>Billing and receipts</h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmBillingPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div
+                  id="lsmBillingSummary"
+                  class="lsm-metrics"
+                ></div>
+
+                <div
+                  id="lsmBillingList"
+                  class="lsm-mini-list"
+                ></div>
+              </section>
+
+              <section
+                id="lsmHistoryPanel"
+                class="lsm-card hidden"
+              >
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">
+                      Audit trail
+                    </span>
+
+                    <h3>Lease history</h3>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-lsm-close="lsmHistoryPanel"
+                    class="lsm-btn lsm-btn-secondary"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div
+                  id="lsmHistoryList"
+                  class="lsm-timeline"
+                ></div>
+              </section>
+
+              <section id="lsmEditPanel" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Correct lease setup</span>
+                    <h3>Edit lease and recalculate</h3>
+                    <p>Use this for correcting setup errors before commencement or posting.</p>
+                  </div>
+
+                  <button id="lsmCloseEditBtn" type="button" class="lsm-btn lsm-btn-secondary">Close</button>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field">
+                    <span>Implicit interest rate (%)</span>
+                    <input id="lsmEditImplicitRate" type="number" min="0" step="0.0001">
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Billing amount</span>
+                    <input id="lsmEditBillingAmount" type="number" min="0" step="0.01">
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Start date</span>
+                    <input id="lsmEditStartDate" type="date">
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>End date</span>
+                    <input id="lsmEditEndDate" type="date">
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>Payment terms days</span>
+                    <input id="lsmEditTermsDays" type="number" min="0" step="1">
+                  </label>
+
+                  <label class="lsm-field">
+                    <span>VAT rate (%)</span>
+                    <input id="lsmEditVatRate" type="number" min="0" step="0.01">
+                  </label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button id="lsmSaveRecalculateBtn" type="button" class="lsm-btn lsm-btn-success">
+                    Save and recalculate
+                  </button>
+                </div>
+              </section>
+
+              <section id="lsmLeaseSummary" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Selected contract</span>
+                    <h3 id="lsmContractName">Lease</h3>
+                    <p id="lsmLeaseMeta">—</p>
+                  </div>
+
+                  <div class="lsm-summary-badges">
+                    <span id="lsmClassificationBadge" class="lsm-badge">—</span>
+                    <span id="lsmStatusBadge" class="lsm-badge">—</span>
+                  </div>
+                </div>
+
+                <div id="lsmLeaseFacts" class="lsm-facts"></div>
+              </section>
+
+              <section id="lsmMetrics" class="lsm-metrics"></section>
+
+              <section id="lsmInitialRecognitionPanel" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Initial recognition</span>
+                    <h3 id="lsmInitialRecognitionTitle">Commencement accounting</h3>
+                    <p id="lsmInitialRecognitionDescription">—</p>
+                  </div>
+
+                  <div class="lsm-summary-badges">
+                    <span id="lsmCommencementJournalBadge" class="lsm-badge">No journal</span>
+                  </div>
+                </div>
+
+                <div id="lsmInitialRecognitionGrid" class="lsm-reporting-grid"></div>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">IFRS 16 measurement</span>
+                    <h3>Accounting schedule</h3>
+                    <p id="lsmScheduleDescription">Select a lessor lease to view its accounting schedule.</p>
+                  </div>
+
+                  <div class="lsm-card-actions">
+                    <label class="lsm-check">
+                      <input id="lsmShowPosted" type="checkbox" checked>
+                      <span>Show posted</span>
+                    </label>
+
+                    <span id="lsmPeriodBadge" class="lsm-badge">0 periods</span>
+                  </div>
+                </div>
+
+                <div class="lsm-legend">
+                  <span><i class="lsm-dot lsm-dot-due"></i> Due</span>
+                  <span><i class="lsm-dot lsm-dot-invoiced"></i> Invoiced</span>
+                  <span><i class="lsm-dot lsm-dot-posted"></i> Posted</span>
+                  <span><i class="lsm-dot lsm-dot-error"></i> Requires attention</span>
+                </div>
+
+                <div class="lsm-table-wrap">
+                  <table class="lsm-table">
+                    <thead id="lsmScheduleHead"></thead>
+                    <tbody id="lsmScheduleBody">
+                      <tr>
+                        <td colspan="14" class="lsm-empty">Select a lessor lease to continue.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section id="lsmReportingPanel" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Reporting support</span>
+                    <h3>IFRS 16 reporting summary</h3>
+                    <p>Balances and movements supporting financial-statement presentation and disclosure.</p>
+                  </div>
+                </div>
+
+                <div id="lsmReportingGrid" class="lsm-reporting-grid"></div>
+              </section>
+
+              <section id="lsmJournalPanel" class="lsm-card hidden">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Journal control</span>
+                    <h3>Period journal preview</h3>
+                    <p id="lsmJournalDescription">—</p>
+                  </div>
+
+                  <button id="lsmCloseJournalBtn" type="button" class="lsm-btn lsm-btn-secondary">Close</button>
+                </div>
+
+                <div class="lsm-table-wrap">
+                  <table class="lsm-table">
+                    <thead>
+                      <tr>
+                        <th>Account</th>
+                        <th>Memo</th>
+                        <th class="num">Debit</th>
+                        <th class="num">Credit</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="lsmJournalBody"></tbody>
+
+                    <tfoot>
+                      <tr>
+                        <th colspan="2">Totals</th>
+                        <th id="lsmJournalDebit" class="num">0.00</th>
+                        <th id="lsmJournalCredit" class="num">0.00</th>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </section>
+            </div>
           </div>
         </section>
 

@@ -1809,3 +1809,22 @@ body,
       repeat(2, minmax(0, 1fr)) !important;
   }
 }
+
+/* Lessor creation success summary cards */
+.lease-wizard[data-role="lessor"] .summary-cards .card {
+  background: #f8fafc;
+  border: 1px solid #dbe3ee;
+  color: #0f172a;
+  box-shadow: none;
+}
+
+.lease-wizard[data-role="lessor"] .summary-cards .label {
+  color: #64748b;
+  opacity: 1;
+  font-weight: 700;
+}
+
+.lease-wizard[data-role="lessor"] .summary-cards .value {
+  color: #0f172a;
+  font-weight: 700;
+}

@@ -78,6 +78,10 @@ from BackEnd.Services.reporting.balance_sheet_builder_v3 import (
     build_balance_sheet_v3,
     extract_deferred_tax_candidates,
 )
+from BackEnd.Services.lessor_lease_engine import (
+    build_lessor_billing_schedule,
+    lessor_lease_engine,
+)
 # ────────────────────────────────────────────────────────────────
 # ENV-DEPENDENT CONFIG (NOW SAFE)
 # ────────────────────────────────────────────────────────────────
@@ -1888,7 +1892,7 @@ class DatabaseService:
                     (
                         SELECT MAX(split_part(system_company_code, '-', 2)::bigint)
                         FROM public.companies
-                        WHERE system_company_code ~ '^FS-\d{6}$'
+                        WHERE system_company_code ~ '^FS-\\d{6}$'
                     ),
                     1
                 ),
@@ -8777,27 +8781,11 @@ class DatabaseService:
         -- ==================================================
         DO $$
         BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n
-                ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_journal_source_check'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.journal DROP CONSTRAINT %I',
-                    '{schema}',
-                    '{schema}_journal_source_check'
-                );
-            END IF;
-
             EXECUTE format(
                 'ALTER TABLE %I.journal DROP CONSTRAINT IF EXISTS %I',
                 '{schema}',
                 '{schema}_journal_source_check'
             );
-
             EXECUTE format(
                 'ALTER TABLE %I.journal
                 ADD CONSTRAINT %I
@@ -8926,8 +8914,8 @@ class DatabaseService:
                         ''system''
                     ]::text[])
                 )',
-                schema_name,
-                schema_name || '_journal_source_check'
+                '{schema}',
+                '{schema}_journal_source_check'
             );
 
             IF NOT EXISTS (
@@ -14874,8 +14862,18 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS vat_recovery_percent NUMERIC(5,2) NOT NULL DEFAULT 100;
 
         ALTER TABLE {schema}.assets
-            ADD COLUMN IF NOT EXISTS uop_usage_mode text NULL,
-            ADD COLUMN IF NOT EXISTS uop_opening_reading numeric(18,4);
+            ADD COLUMN IF NOT EXISTS uop_usage_mode TEXT DEFAULT 'DELTA',
+            ADD COLUMN IF NOT EXISTS uop_opening_reading NUMERIC(18,4);
+
+        UPDATE {schema}.assets
+        SET uop_usage_mode = 'DELTA'
+        WHERE uop_usage_mode IS NULL;
+
+        ALTER TABLE {schema}.assets
+        ALTER COLUMN uop_usage_mode SET DEFAULT 'DELTA';
+
+        ALTER TABLE {schema}.assets
+        ALTER COLUMN uop_usage_mode SET NOT NULL;
             
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS accumulated_impairment NUMERIC(18,2) NOT NULL DEFAULT 0;
@@ -14968,21 +14966,10 @@ class DatabaseService:
 
         ALTER TABLE {schema}.assets
         ADD CONSTRAINT assets_uop_usage_mode_chk
-        CHECK (
-            uop_usage_mode IS NULL
-            OR uop_usage_mode IN ('DELTA','READING')
-        );
+        CHECK (uop_usage_mode IN ('DELTA','READING'));
 
-        -- 2. Only require it when depreciation_method = UOP
         ALTER TABLE {schema}.assets
         DROP CONSTRAINT IF EXISTS assets_uop_usage_required_chk;
-
-        ALTER TABLE {schema}.assets
-        ADD CONSTRAINT assets_uop_usage_required_chk
-        CHECK (
-            depreciation_method <> 'UOP'
-            OR uop_usage_mode IS NOT NULL
-        );
 
         ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS entry_mode TEXT NOT NULL DEFAULT 'acquisition';
@@ -20806,6 +20793,9 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.inventory_fifo_allocations
+        ADD COLUMN IF NOT EXISTS source_line_id BIGINT;
+
+        ALTER TABLE {schema}.inventory_fifo_allocations
         ADD COLUMN IF NOT EXISTS cost_amount NUMERIC(18,2);
 
         CREATE INDEX IF NOT EXISTS {schema}_fifo_alloc_source_idx
@@ -22989,6 +22979,7 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS commencement_date DATE NULL,
         ADD COLUMN IF NOT EXISTS useful_life_months INT NULL,
         ADD COLUMN IF NOT EXISTS economic_life_months INT NULL,
+        ADD COLUMN IF NOT EXISTS lease_term_months INT NULL,
         ADD COLUMN IF NOT EXISTS transfer_of_ownership BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS specialised_asset BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS major_part_threshold NUMERIC(10,6) DEFAULT 0.75,
@@ -23016,7 +23007,13 @@ class DatabaseService:
         ALTER TABLE {schema}.lessor_leases
         ADD COLUMN IF NOT EXISTS
         manufacturer_dealer_lessor BOOLEAN NOT NULL DEFAULT FALSE; 
-        
+    
+        ALTER TABLE {schema}.lessor_leases
+        ADD COLUMN IF NOT EXISTS correction_count INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS last_corrected_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS last_corrected_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS last_correction_reason TEXT NULL;
+
         DO $fk_lessor_commencement_journal$
         BEGIN
             IF NOT EXISTS (
@@ -23418,6 +23415,20 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL;
 
+        ALTER TABLE {schema}.lessor_lease_modifications
+        ADD COLUMN IF NOT EXISTS effective_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS modification_type TEXT NULL,
+        ADD COLUMN IF NOT EXISTS reason TEXT NULL,
+        ADD COLUMN IF NOT EXISTS preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS posted_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS posted_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS reversed_journal_id INT NULL,
+        ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft',
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
         UPDATE {schema}.lessor_lease_modifications
         SET
             effective_date = COALESCE(
@@ -23489,6 +23500,7 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.lessor_lease_bills
+        ADD COLUMN IF NOT EXISTS schedule_id INT NULL,
         ADD COLUMN IF NOT EXISTS invoice_id INT NULL,
         ADD COLUMN IF NOT EXISTS invoice_line_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
@@ -23539,6 +23551,9 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_contract_idx
         ON {schema}.lessor_lease_bills(lessor_lease_id);
 
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_schedule_idx
+        ON {schema}.lessor_lease_bills(schedule_id);
+
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_bill_date_idx
         ON {schema}.lessor_lease_bills(bill_date);
 
@@ -23561,6 +23576,23 @@ class DatabaseService:
             );
         END IF;
         END $fk_lessor_lease_bills_contract$;
+
+        DO $fk_lessor_lease_bills_schedule$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lessor_lease_bills_schedule' AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                'ALTER TABLE %I.lessor_lease_bills
+                ADD CONSTRAINT fk_lessor_lease_bills_schedule
+                FOREIGN KEY (schedule_id) REFERENCES %I.lessor_lease_schedule(id)
+                ON DELETE SET NULL',
+                '{schema}', '{schema}'
+                );
+            END IF;
+        END $fk_lessor_lease_bills_schedule$;
 
         CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_payment_terms (
             id SERIAL PRIMARY KEY,
@@ -23851,25 +23883,33 @@ class DatabaseService:
             lessor_lease_id INT NOT NULL,
 
             termination_date DATE NOT NULL,
+            termination_type TEXT NOT NULL DEFAULT 'full',
             reason TEXT NULL,
 
-            -- optional charges / settlement (e.g. penalty, damages)
-            settlement_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
-            settlement_net   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            settlement_vat   NUMERIC(18,2) NOT NULL DEFAULT 0,
-            vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+            settlement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            carrying_amount_before NUMERIC(18,2) NOT NULL DEFAULT 0,
+            receivable_before NUMERIC(18,2) NOT NULL DEFAULT 0,
+            accrued_rental_before NUMERIC(18,2) NOT NULL DEFAULT 0,
+            deferred_rental_before NUMERIC(18,2) NOT NULL DEFAULT 0,
+            gain_loss_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
 
-            -- if you raise a final invoice for settlement:
-            bill_id INT NULL,
+            preview_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
-            -- posting markers
-            status TEXT NOT NULL DEFAULT 'draft', -- draft|posted|reversed|void
             posted_journal_id INT NULL,
             posted_at TIMESTAMPTZ NULL,
+            posted_by_user_id INT NULL,
 
-            notes TEXT NULL,
-            created_by INT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW()
+            reversed_journal_id INT NULL,
+            reversed_at TIMESTAMPTZ NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
         );
 
         -- FKs
@@ -24025,6 +24065,58 @@ class DatabaseService:
         END
         $add_customers_customer_type$;
         
+        CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_events (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            lessor_lease_id INT NOT NULL,
+
+            event_type TEXT NOT NULL,
+            event_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            effective_date DATE NULL,
+
+            source_table TEXT NULL,
+            source_id INT NULL,
+
+            title TEXT NOT NULL,
+            description TEXT NULL,
+            payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id INT NULL,
+
+            FOREIGN KEY (lessor_lease_id)
+            REFERENCES {schema}.lessor_leases(id)
+            ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_events_lease_idx
+        ON {schema}.lessor_lease_events(
+            company_id,
+            lessor_lease_id,
+            event_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_lease_idx
+        ON {schema}.lessor_lease_modifications(
+            company_id,
+            lessor_lease_id,
+            effective_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_terms_lease_idx
+        ON {schema}.lessor_lease_terminations(
+            company_id,
+            lessor_lease_id,
+            termination_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_versions_idx
+        ON {schema}.lessor_lease_schedule(
+            company_id,
+            lessor_lease_id,
+            version_no,
+            period_no
+        );
+
         -- ==================================================
         -- PERIOD LOCKS
         -- ==================================================
@@ -37766,7 +37858,9 @@ class DatabaseService:
         )
 
         carrying_amount = round(float(
-            lease.get("carrying_amount") or 0
+            lease.get("carrying_amount")
+            or lease.get("underlying_asset_carrying_amount")
+            or 0
         ), 2)
 
         if carrying_amount <= 0:
@@ -37889,7 +37983,15 @@ class DatabaseService:
             or lease.get("start_date")
         )
 
+        total_debit = round(sum(float(x.get("debit") or 0) for x in lines), 2)
+        total_credit = round(sum(float(x.get("credit") or 0) for x in lines), 2)
+
+        if total_debit != total_credit:
+            raise ValueError(
+                f"Unbalanced lessor Day 1 journal: debits={total_debit:.2f}, credits={total_credit:.2f}"
+            )
         return {
+
             "date": str(commencement_date)[:10],
             "ref": f"LESSOR-COMMENCE-{lessor_lease_id}",
             "description": (
@@ -37904,14 +38006,8 @@ class DatabaseService:
                 or self.company_currency(company_id)
             ),
             "lines": lines,
-            "total_debit": round(
-                sum(float(x.get("debit") or 0) for x in lines),
-                2,
-            ),
-            "total_credit": round(
-                sum(float(x.get("credit") or 0) for x in lines),
-                2,
-            ),
+            "total_debit": total_debit,
+            "total_credit": total_credit,
         }
 
 
@@ -38112,9 +38208,10 @@ class DatabaseService:
                         GREATEST(
                             b.amount_gross -
                             COALESCE((
-                                SELECT SUM(r.amount)
+                                SELECT SUM(r.amount_gross)
                                 FROM {schema}.lessor_lease_receipts r
-                                WHERE r.lessor_lease_bill_id=b.id
+                                WHERE r.bill_id=b.id
+                                AND COALESCE(r.status, '') <> 'void'
                             ), 0),
                             0
                         )
@@ -38421,7 +38518,18 @@ class DatabaseService:
             "payment_terms_days": int(
                 payload.get("payment_terms_days") or 0
             ),
-            "discount_rate": payload.get("discount_rate") or 0,
+            "interest_rate_implicit": (
+                payload.get("interest_rate_implicit")
+                or payload.get("implicit_interest_rate")
+                or payload.get("discount_rate")
+                or 0
+            ),
+            "discount_rate": (
+                payload.get("interest_rate_implicit")
+                or payload.get("implicit_interest_rate")
+                or payload.get("discount_rate")
+                or 0
+            ),
             "fair_value": payload.get("fair_value") or 0,
             "carrying_amount": payload.get("carrying_amount") or 0,
             "guaranteed_residual_value": (
@@ -38598,6 +38706,7 @@ class DatabaseService:
                 currency,
                 payment_terms_days,
                 discount_rate,
+                interest_rate_implicit,
                 fair_value,
                 carrying_amount,
                 guaranteed_residual_value,
@@ -38662,6 +38771,7 @@ class DatabaseService:
                 %(currency)s,
                 %(payment_terms_days)s,
                 %(discount_rate)s,
+                %(interest_rate_implicit)s,
                 %(fair_value)s,
                 %(carrying_amount)s,
                 %(guaranteed_residual_value)s,
@@ -40102,6 +40212,1070 @@ class DatabaseService:
             },
             cur=cur,
         )
+
+    def get_lessor_subsequent_measurement_workspace(
+        self,
+        company_id: int,
+        lessor_lease_id: int,
+        *,
+        as_at=None,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+
+        lease = self.get_lessor_lease(
+            company_id,
+            lessor_lease_id,
+            cur=cur,
+        )
+
+        if not lease:
+            raise ValueError("Lessor lease not found")
+
+        schedule = self.fetch_all(
+            f"""
+            SELECT
+                s.*,
+
+                b.id AS bill_id,
+                b.invoice_id,
+                b.amount_net AS billed_net,
+                b.vat_amount AS billed_vat,
+                b.amount_gross AS billed_gross,
+                b.status AS bill_status,
+
+                COALESCE((
+                    SELECT SUM(r.amount_gross)
+                    FROM {schema}.lessor_lease_receipts r
+                    WHERE r.company_id=s.company_id
+                    AND r.lessor_lease_id=s.lessor_lease_id
+                    AND r.bill_id=b.id
+                    AND COALESCE(r.status, '') <> 'void'
+                ), 0) AS received_amount,
+
+                GREATEST(
+                    COALESCE(b.amount_gross, s.contractual_gross, 0)
+                    -
+                    COALESCE((
+                        SELECT SUM(r.amount_gross)
+                        FROM {schema}.lessor_lease_receipts r
+                        WHERE r.company_id=s.company_id
+                        AND r.lessor_lease_id=s.lessor_lease_id
+                        AND r.bill_id=b.id
+                        AND COALESCE(r.status, '') <> 'void'
+                    ), 0),
+                    0
+                ) AS outstanding_amount
+
+            FROM {schema}.lessor_lease_schedule s
+
+            LEFT JOIN {schema}.lessor_lease_bills b
+            ON b.company_id=s.company_id
+            AND b.lessor_lease_id=s.lessor_lease_id
+            AND (
+                b.schedule_id=s.id
+                OR b.invoice_id=s.invoice_id
+            )
+            AND COALESCE(b.status, '') <> 'void'
+
+            WHERE s.company_id=%s
+            AND s.lessor_lease_id=%s
+            AND s.is_active=TRUE
+
+            ORDER BY s.period_no
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        billing = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(b.amount_net)
+                    FILTER (
+                        WHERE COALESCE(b.status, '') <> 'void'
+                    ), 0) AS total_billed_net,
+
+                COALESCE(SUM(b.vat_amount)
+                    FILTER (
+                        WHERE COALESCE(b.status, '') <> 'void'
+                    ), 0) AS total_vat,
+
+                COALESCE(SUM(b.amount_gross)
+                    FILTER (
+                        WHERE COALESCE(b.status, '') <> 'void'
+                    ), 0) AS total_billed_gross,
+
+                COALESCE((
+                    SELECT SUM(r.amount_gross)
+                    FROM {schema}.lessor_lease_receipts r
+                    WHERE r.company_id=%s
+                    AND r.lessor_lease_id=%s
+                    AND COALESCE(r.status, '') <> 'void'
+                ), 0) AS total_received
+
+            FROM {schema}.lessor_lease_bills b
+            WHERE b.company_id=%s
+            AND b.lessor_lease_id=%s
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        ) or {}
+
+        total_billed = round(
+            float(billing.get("total_billed_gross") or 0),
+            2,
+        )
+
+        total_received = round(
+            float(billing.get("total_received") or 0),
+            2,
+        )
+
+        billing["outstanding"] = round(
+            max(total_billed - total_received, 0),
+            2,
+        )
+
+        classification = str(
+            lease.get("lease_classification")
+            or "operating"
+        ).strip().lower()
+
+        def money(value):
+            return round(float(value or 0), 2)
+
+        def is_posted(row):
+            return bool(
+                row.get("recognition_journal_id")
+                or str(row.get("status") or "").lower() == "posted"
+            )
+
+        def is_fully_paid(row):
+            gross = money(
+                row.get("billed_gross")
+                or row.get("contractual_gross")
+            )
+
+            received = money(row.get("received_amount"))
+
+            return (
+                row.get("bill_id") is not None
+                and gross > 0
+                and received >= gross
+            )
+
+        posted = [
+            row for row in schedule
+            if is_posted(row)
+        ]
+
+        paid = [
+            row for row in schedule
+            if is_fully_paid(row)
+        ]
+
+        unpaid = [
+            row for row in schedule
+            if not is_fully_paid(row)
+        ]
+
+        last_paid_period = paid[-1] if paid else None
+
+        next_unpaid_period = next(
+            (
+                row for row in schedule
+                if not is_fully_paid(row)
+                and (
+                    last_paid_period is None
+                    or int(row.get("period_no") or 0)
+                    > int(last_paid_period.get("period_no") or 0)
+                )
+            ),
+            unpaid[0] if unpaid else None,
+        )
+
+        as_at_text = str(as_at)[:10] if as_at else None
+
+        current_period = next(
+            (
+                row for row in schedule
+                if as_at_text
+                and str(row.get("period_start"))[:10] <= as_at_text
+                and str(row.get("period_end"))[:10] >= as_at_text
+            ),
+            None,
+        )
+
+        focus_period = (
+            next_unpaid_period
+            or current_period
+            or last_paid_period
+            or (schedule[-1] if schedule else None)
+        )
+
+        last_schedule = schedule[-1] if schedule else {}
+        first_schedule = schedule[0] if schedule else {}
+
+        if classification == "finance":
+            measurement = {
+                "opening_net_investment": money(
+                    first_schedule.get("opening_net_investment")
+                    or lease.get("net_investment")
+                ),
+                "finance_income_recognised": money(
+                    sum(
+                        money(row.get("finance_income"))
+                        for row in posted
+                    )
+                ),
+                "principal_recovered": money(
+                    sum(
+                        money(row.get("principal_recovery"))
+                        for row in posted
+                    )
+                ),
+                "closing_net_investment": money(
+                    last_schedule.get("closing_net_investment")
+                ),
+                "current_portion": money(
+                    focus_period.get("current_portion")
+                    if focus_period else 0
+                ),
+                "noncurrent_portion": money(
+                    focus_period.get("noncurrent_portion")
+                    if focus_period else 0
+                ),
+            }
+
+            initial_recognition = {
+                "classification": "finance",
+                "accounting_result":
+                    "Underlying asset derecognised and net investment recognised",
+
+                "underlying_asset": (
+                    lease.get("asset_name")
+                    or lease.get("underlying_asset_description")
+                    or lease.get("contract_name")
+                ),
+
+                "asset_id": lease.get("asset_id"),
+
+                "underlying_asset_account_code": (
+                    lease.get("underlying_asset_account_code")
+                    or lease.get("asset_account_code")
+                ),
+
+                "asset_carrying_amount": money(
+                    lease.get("underlying_asset_carrying_amount")
+                    or lease.get("carrying_amount")
+                ),
+
+                "asset_fair_value": money(
+                    lease.get("underlying_asset_fair_value")
+                    or lease.get("fair_value")
+                ),
+
+                "opening_net_investment": money(
+                    first_schedule.get("opening_net_investment")
+                    or lease.get("net_investment")
+                ),
+
+                "current_net_investment": money(
+                    first_schedule.get("current_portion")
+                ),
+
+                "noncurrent_net_investment": money(
+                    first_schedule.get("noncurrent_portion")
+                ),
+
+                "guaranteed_residual_value": money(
+                    lease.get("guaranteed_residual_value")
+                ),
+
+                "unguaranteed_residual_value": money(
+                    lease.get("unguaranteed_residual_value")
+                ),
+
+                "initial_direct_costs": money(
+                    lease.get("initial_direct_costs")
+                ),
+
+                "commencement_gain_loss": money(
+                    money(
+                        first_schedule.get("opening_net_investment")
+                        or lease.get("net_investment")
+                    )
+                    -
+                    money(
+                        lease.get("underlying_asset_carrying_amount")
+                        or lease.get("carrying_amount")
+                    )
+                ),
+
+                "commencement_journal_id":
+                    lease.get("commencement_journal_id"),
+
+                "commencement_date": (
+                    lease.get("commencement_date")
+                    or lease.get("start_date")
+                ),
+            }
+
+        else:
+            measurement = {
+                "contractual_income": money(
+                    sum(
+                        money(row.get("contractual_net"))
+                        for row in posted
+                    )
+                ),
+                "straight_line_income": money(
+                    sum(
+                        money(row.get("straight_line_income"))
+                        for row in posted
+                    )
+                ),
+                "direct_cost_expense": money(
+                    sum(
+                        money(row.get("initial_direct_cost_expense"))
+                        for row in posted
+                    )
+                ),
+                "accrued_rental_balance": money(
+                    last_schedule.get("closing_accrued_rental")
+                    or last_schedule.get("accrued_rental_balance")
+                ),
+                "deferred_rental_balance": money(
+                    last_schedule.get("closing_deferred_rental")
+                    or last_schedule.get("deferred_rental_balance")
+                ),
+            }
+
+            initial_recognition = {
+                "classification": "operating",
+                "accounting_result":
+                    "Underlying asset retained and continues under the applicable asset standard",
+
+                "underlying_asset": (
+                    lease.get("asset_name")
+                    or lease.get("underlying_asset_description")
+                    or lease.get("contract_name")
+                ),
+
+                "asset_id": lease.get("asset_id"),
+
+                "underlying_asset_account_code": (
+                    lease.get("underlying_asset_account_code")
+                    or lease.get("asset_account_code")
+                ),
+
+                "asset_carrying_amount": money(
+                    lease.get("underlying_asset_carrying_amount")
+                    or lease.get("carrying_amount")
+                ),
+
+                "asset_fair_value": money(
+                    lease.get("underlying_asset_fair_value")
+                    or lease.get("fair_value")
+                ),
+
+                "initial_direct_costs": money(
+                    lease.get("initial_direct_costs")
+                ),
+
+                "deferred_direct_cost_account_code": (
+                    lease.get(
+                        "initial_direct_cost_asset_account_code"
+                    )
+                    or lease.get(
+                        "deferred_initial_direct_cost_account_code"
+                    )
+                ),
+
+                "direct_cost_expense_account_code": (
+                    lease.get(
+                        "initial_direct_cost_expense_account_code"
+                    )
+                ),
+
+                "commencement_journal_id":
+                    lease.get("commencement_journal_id"),
+
+                "commencement_date": (
+                    lease.get("commencement_date")
+                    or lease.get("start_date")
+                ),
+            }
+
+        return {
+            "lease": lease,
+            "classification": classification,
+
+            # Full schedule is returned so that the user can see the
+            # complete amortisation or straight-line table.
+            "schedule": schedule,
+
+            "billing": billing,
+            "measurement": measurement,
+            "initial_recognition": initial_recognition,
+
+            "period_count": len(schedule),
+            "posted_period_count": len(posted),
+            "paid_period_count": len(paid),
+            "unpaid_period_count": len(unpaid),
+
+            "last_paid_period": last_paid_period,
+            "next_unpaid_period": next_unpaid_period,
+            "current_period": current_period,
+            "focus_period": focus_period,
+        }
+
+    def add_lessor_event(
+        self,
+        company_id: int,
+        lease_id: int,
+        event_type: str,
+        title: str,
+        *,
+        effective_date=None,
+        source_table=None,
+        source_id=None,
+        description=None,
+        payload=None,
+        user_id=None,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.lessor_lease_events (
+                company_id,
+                lessor_lease_id,
+                event_type,
+                effective_date,
+                source_table,
+                source_id,
+                title,
+                description,
+                payload,
+                created_by_user_id
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s
+            )
+            RETURNING *
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+                event_type,
+                effective_date,
+                source_table,
+                source_id,
+                title,
+                description,
+                json.dumps(payload or {}, default=str),
+                user_id,
+            ),
+            cur=cur,
+        )
+
+    def list_lessor_schedule_versions(
+        self,
+        company_id: int,
+        lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                version_no,
+                BOOL_OR(is_active) AS is_active,
+                COUNT(*) AS period_count,
+                MIN(period_start) AS starts_on,
+                MAX(period_end) AS ends_on,
+
+                COUNT(*) FILTER (
+                    WHERE recognition_journal_id IS NOT NULL
+                    OR status='posted'
+                ) AS posted_count,
+
+                COUNT(*) FILTER (
+                    WHERE invoice_id IS NOT NULL
+                ) AS invoiced_count,
+
+                MAX(created_at) AS created_at
+
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+
+            GROUP BY version_no
+            ORDER BY version_no DESC
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+
+    def get_lessor_schedule_version(
+        self,
+        company_id: int,
+        lease_id: int,
+        version_no=None,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        where = [
+            "company_id=%s",
+            "lessor_lease_id=%s",
+        ]
+
+        params = [
+            int(company_id),
+            int(lease_id),
+        ]
+
+        if version_no is None:
+            where.append("is_active=TRUE")
+        else:
+            where.append("version_no=%s")
+            params.append(int(version_no))
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_schedule
+            WHERE {" AND ".join(where)}
+            ORDER BY period_no
+            """,
+            tuple(params),
+            cur=cur,
+        ) or []
+
+    def get_lessor_history(
+        self,
+        company_id: int,
+        lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        events = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_events
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            ORDER BY event_date DESC, id DESC
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        journals = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                date,
+                ref,
+                description,
+                source,
+                source_id,
+                created_at
+            FROM {schema}.journal
+            WHERE company_id=%s
+            AND module_name='ifrs16_lessor'
+            AND (
+                    source_id=%s
+                    OR id IN (
+                        SELECT recognition_journal_id
+                        FROM {schema}.lessor_lease_schedule
+                        WHERE company_id=%s
+                        AND lessor_lease_id=%s
+                        AND recognition_journal_id IS NOT NULL
+                    )
+            )
+            ORDER BY date DESC, id DESC
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        return {
+            "events": events,
+            "journals": journals,
+            "versions": self.list_lessor_schedule_versions(
+                company_id,
+                lease_id,
+                cur=cur,
+            ),
+        }
+
+    def get_lessor_billing_workspace(
+        self,
+        company_id: int,
+        lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        bills = self.fetch_all(
+            f"""
+            SELECT
+                b.*,
+                i.number AS invoice_number,
+                i.status AS invoice_status,
+
+                COALESCE((
+                    SELECT SUM(r.amount_gross)
+                    FROM {schema}.lessor_lease_receipts r
+                    WHERE r.bill_id=b.id
+                    AND COALESCE(r.status, '')<>'void'
+                ), 0) AS received_amount
+
+            FROM {schema}.lessor_lease_bills b
+
+            LEFT JOIN {schema}.invoices i
+            ON i.id=b.invoice_id
+
+            WHERE b.company_id=%s
+            AND b.lessor_lease_id=%s
+            AND COALESCE(b.status, '')<>'void'
+
+            ORDER BY b.bill_date, b.id
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        receipts = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_receipts
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND COALESCE(status, '')<>'void'
+            ORDER BY receipt_date, id
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        gross = sum(
+            float(row.get("amount_gross") or 0)
+            for row in bills
+        )
+
+        received = sum(
+            float(row.get("amount_gross") or 0)
+            for row in receipts
+        )
+
+        return {
+            "bills": bills,
+            "receipts": receipts,
+            "totals": {
+                "gross": round(gross, 2),
+                "received": round(received, 2),
+                "outstanding": round(
+                    max(gross - received, 0),
+                    2,
+                ),
+            },
+        }
+
+    def correct_lessor_lease(
+        self,
+        company_id: int,
+        lease_id: int,
+        values: dict,
+        *,
+        reason: str,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            lease = self.get_lessor_lease(
+                company_id,
+                lease_id,
+                cur=cur,
+            )
+
+            if not lease:
+                raise ValueError(
+                    "Lessor lease not found"
+                )
+
+            consequences = self.fetch_one(
+                f"""
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE invoice_id IS NOT NULL
+                    ) AS invoices,
+
+                    COUNT(*) FILTER (
+                        WHERE recognition_journal_id IS NOT NULL
+                        OR status='posted'
+                    ) AS posted_periods,
+
+                    COALESCE(
+                        SUM(receipt_amount),
+                        0
+                    ) AS receipts
+
+                FROM {schema}.lessor_lease_schedule
+                WHERE company_id=%s
+                AND lessor_lease_id=%s
+                AND is_active=TRUE
+                """,
+                (
+                    int(company_id),
+                    int(lease_id),
+                ),
+                cur=cur,
+            ) or {}
+
+            if int(
+                consequences.get("invoices") or 0
+            ) > 0:
+                raise ValueError(
+                    "Correction is blocked after invoicing. "
+                    "Use a lease modification."
+                )
+
+            if float(
+                consequences.get("receipts") or 0
+            ) > 0:
+                raise ValueError(
+                    "Correction is blocked after receipt allocation. "
+                    "Use a lease modification."
+                )
+
+            old_journal_id = (
+                lease.get("commencement_journal_id")
+            )
+
+            posted_periods = int(
+                consequences.get("posted_periods") or 0
+            )
+
+            if old_journal_id and posted_periods > 0:
+                raise ValueError(
+                    "Correction is blocked after periodic accounting. "
+                    "Use a lease modification."
+                )
+
+            if old_journal_id:
+                self.reverse_journal(
+                    company_id,
+                    int(old_journal_id),
+                    reason=(
+                        f"Lessor lease correction: {reason}"
+                    ),
+                    user_id=user_id,
+                    cur=cur,
+                    conn=conn,
+                )
+
+            allowed = (
+                "start_date",
+                "end_date",
+                "billing_amount",
+                "payment_terms_days",
+                "vat_rate",
+                "interest_rate_implicit",
+                "discount_rate",
+                "notes",
+            )
+
+            updates = {
+                key: values[key]
+                for key in allowed
+                if key in values
+            }
+
+            if "interest_rate_implicit" in updates:
+                updates["discount_rate"] = (
+                    updates["interest_rate_implicit"]
+                )
+
+            if updates:
+                set_sql = ", ".join(
+                    f"{key}=%s"
+                    for key in updates
+                )
+
+                params = list(updates.values())
+
+                updated = self.fetch_one(
+                    f"""
+                    UPDATE {schema}.lessor_leases
+                    SET
+                        {set_sql},
+
+                        status='draft',
+                        commencement_journal_id=NULL,
+                        commenced_at=NULL,
+                        commenced_by_user_id=NULL,
+
+                        correction_count=
+                            COALESCE(correction_count, 0) + 1,
+
+                        last_corrected_at=NOW(),
+                        last_corrected_by_user_id=%s,
+                        last_correction_reason=%s,
+
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+
+                    WHERE company_id=%s
+                    AND id=%s
+
+                    RETURNING *
+                    """,
+                    tuple(
+                        params + [
+                            user_id,
+                            reason,
+                            user_id,
+                            int(company_id),
+                            int(lease_id),
+                        ]
+                    ),
+                    cur=cur,
+                )
+            else:
+                updated = lease
+
+            if not updated:
+                raise ValueError(
+                    "The lease could not be corrected"
+                )
+
+            result = (
+                lessor_lease_engine
+                .build_accounting_schedule(updated)
+            )
+
+            accounting_rows = (
+                result.get("schedule") or []
+            )
+
+            if not accounting_rows:
+                raise ValueError(
+                    "The corrected accounting schedule "
+                    "could not be generated"
+                )
+
+            billing_rows = (
+                build_lessor_billing_schedule(
+                    updated
+                )
+            )
+
+            for row in billing_rows:
+                row["vat_rate"] = float(
+                    updated.get("vat_rate") or 0
+                )
+
+            self.fetch_all(
+                f"""
+                DELETE FROM {schema}.lessor_lease_bills
+                WHERE company_id=%s
+                AND lessor_lease_id=%s
+                AND invoice_id IS NULL
+                AND status='draft'
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    int(lease_id),
+                ),
+                cur=cur,
+            )
+
+            self.save_lessor_billing_schedule(
+                company_id,
+                lease_id,
+                billing_rows,
+                cur=cur,
+            )
+
+            self.save_lessor_accounting_schedule(
+                company_id,
+                lease_id,
+                (
+                    result.get("classification")
+                    or updated.get(
+                        "lease_classification"
+                    )
+                ),
+                accounting_rows,
+                cur=cur,
+            )
+
+            journal = (
+                self.build_lessor_day_one_journal(
+                    company_id,
+                    lease_id,
+                    cur=cur,
+                )
+            )
+
+            new_journal_id = None
+
+            if journal:
+                journal.update({
+                    "prepared_by_user_id": user_id,
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                })
+
+                new_journal_id = self.post_journal(
+                    company_id,
+                    journal,
+                    cur=cur,
+                    conn=conn,
+                )
+
+            commenced = self.commence_lessor_lease(
+                company_id,
+                lease_id,
+                commencement_date=(
+                    updated.get("commencement_date")
+                    or updated.get("start_date")
+                ),
+                journal_id=new_journal_id,
+                user_id=user_id,
+                cur=cur,
+            )
+
+            if not commenced:
+                raise ValueError(
+                    "The corrected lease could not be recommenced"
+                )
+
+            self.add_lessor_event(
+                company_id,
+                lease_id,
+                "correction",
+                "Lease corrected and recalculated",
+                effective_date=updated.get(
+                    "start_date"
+                ),
+                description=reason,
+                payload={
+                    "old_commencement_journal_id":
+                        old_journal_id,
+
+                    "new_commencement_journal_id":
+                        new_journal_id,
+
+                    "corrected_fields":
+                        list(updates.keys()),
+                },
+                user_id=user_id,
+                cur=cur,
+            )
+
+            conn.commit()
+
+        return {
+            "lease": commenced,
+            "journal_id": new_journal_id,
+            "schedule": (
+                self.get_lessor_schedule_version(
+                    company_id,
+                    lease_id,
+                )
+            ),
+        }
+
+    def list_lessor_modifications(
+        self,
+        company_id: int,
+        lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_modifications
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            ORDER BY effective_date DESC, id DESC
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+
+    def list_lessor_terminations(
+        self,
+        company_id: int,
+        lease_id: int,
+        *,
+        cur=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.lessor_lease_terminations
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            ORDER BY termination_date DESC, id DESC
+            """,
+            (
+                int(company_id),
+                int(lease_id),
+            ),
+            cur=cur,
+        ) or []
+
 
     # ---------------------------
     # POS SUMMARIES (daily POS imports)
@@ -45369,7 +46543,15 @@ class DatabaseService:
             cogs_roles = ["cogs", "direct_materials_cost"]
 
         accounts = {
-            "sales": self._resolve_account_by_roles(company_id, ["contract_revenue", "CONTRACT_REVENUE"], cur=cur),
+            "sales": self._resolve_account_by_roles(
+                company_id,
+                [
+                    "sales",
+                    "contract_revenue",
+                    "CONTRACT_REVENUE",
+                ],
+                cur=cur,
+            ),
             "sales_returns": self._resolve_account_by_roles(company_id, ["sales_returns"], cur=cur),
             "sales_discounts": self._resolve_account_by_roles(company_id, ["sales_discounts"], cur=cur),
             "vat_output": self._resolve_account_by_roles(company_id, ["vat_output"], cur=cur),
@@ -45549,9 +46731,9 @@ class DatabaseService:
                         schema,
                         int(company_id),
                         sale_id=int(sale_id),
-                        line_id=int(line["id"]),
-                        item_id=int(item_id),
-                        qty=qty,
+                        sale_line_id=int(line["id"]),
+                        menu_item_id=int(item_id),
+                        qty_sold=qty,
                     )
 
                     total_cost += float(line_cost or 0)
@@ -56688,13 +57870,15 @@ class DatabaseService:
         schema = f"company_{company_id}"
 
         def _run(_cur):
+            posting_jlines = list(jlines or [])
+
             print("[post_invoice_to_gl] START", {
                 "company_id": company_id,
                 "invoice_id": invoice_id,
                 "passed_ar_account": ar_account,
                 "enforce_credit": enforce_credit,
                 "require_approved": require_approved,
-                "line_count": len(jlines or []),
+                "line_count": len(posting_jlines),
             }, flush=True)
 
             # 1) lock invoice row (idempotency gate)
@@ -56894,9 +58078,8 @@ class DatabaseService:
             if enforce_credit:
                 self.assert_credit_ok_for_invoice_post(company_id, inv, require_approved=require_approved)
 
-            if not jlines:
+            if not posting_jlines and not revenue_contract_id:
                 raise ValueError("No journal lines provided for posting")
-
             # 4) resolve controls (ok if these read outside, but best if your helpers accept cur too)
             # 4) resolve controls (prefer passed ar_account from journal builder)
             AR_ACCOUNT  = (ar_account or self.get_control_account_code(company_id, "AR_CONTROL") or "").strip()
@@ -56981,7 +58164,7 @@ class DatabaseService:
                             "IFRS 15 contract liability account is not configured"
                         )
 
-                jlines = [
+                posting_jlines = [
                     {
                         "account_code": AR_ACCOUNT,
                         "dc": "D",
@@ -56991,7 +58174,7 @@ class DatabaseService:
                 ]
 
                 if contract_asset_release > 0:
-                    jlines.append({
+                    posting_jlines.append({
                         "account_code": contract_asset_account,
                         "dc": "C",
                         "amount": contract_asset_release,
@@ -57002,7 +58185,7 @@ class DatabaseService:
                     })
 
                 if contract_liability_increase > 0:
-                    jlines.append({
+                    posting_jlines.append({
                         "account_code": contract_liability_account,
                         "dc": "C",
                         "amount": contract_liability_increase,
@@ -57012,7 +58195,7 @@ class DatabaseService:
                     })
 
                 if vat_amount > 0:
-                    jlines.append({
+                    posting_jlines.append({
                         "account_code": VAT_ACCOUNT,
                         "dc": "C",
                         "amount": vat_amount,
@@ -57022,7 +58205,7 @@ class DatabaseService:
                 debit_total = money(
                     sum(
                         float(line.get("amount") or 0)
-                        for line in jlines
+                        for line in posting_jlines
                         if line.get("dc") == "D"
                     )
                 )
@@ -57030,7 +58213,7 @@ class DatabaseService:
                 credit_total = money(
                     sum(
                         float(line.get("amount") or 0)
-                        for line in jlines
+                        for line in posting_jlines
                         if line.get("dc") == "C"
                     )
                 )
@@ -59409,9 +60592,10 @@ class DatabaseService:
             raise ValueError("CREDIT_BLOCKED|CUSTOMER_NOT_APPROVED")
 
         limit = Decimal(str(cust.get("credit_limit") or "0"))
-        if limit <= Decimal("0"):
-            raise ValueError("CREDIT_LIMIT_EXCEEDED|limit=0")
 
+        # Zero or negative means no credit limit has been configured.
+        if limit <= Decimal("0"):
+            return
         # ✅ invoice date for as-at
         inv_date = invoice.get("invoice_date") or invoice.get("date")
         if isinstance(inv_date, str):
@@ -62107,8 +63291,9 @@ class DatabaseService:
                 COALESCE(a.cost, 0)::numeric(18,2)                 AS current_cost,
                 COALESCE(a.residual_value, 0)::numeric(18,2)       AS residual_value
             FROM {schema}.assets a
+            WHERE LOWER(REPLACE(COALESCE(a.accounting_standard, ''), ' ', '')) IN ('ias16', 'ias16ppe')
+              AND COALESCE(a.is_component_group, FALSE) = FALSE
         ),
-
         opening_rows AS (
             SELECT
                 ab.company_id,
@@ -62213,23 +63398,14 @@ class DatabaseService:
                 a.measurement_basis,
                 'Fallback asset-register acquisition'::text AS narrative,
 
-                COALESCE(a.cost, 0)::numeric(18,2) AS cost_delta,
+                COALESCE(NULLIF(a.opening_cost, 0), a.cost, 0)::numeric(18,2) AS cost_delta,
                 0::numeric(18,2) AS accum_dep_delta,
                 0::numeric(18,2) AS impairment_delta,
                 0::numeric(18,2) AS revaluation_reserve_delta,
                 COALESCE(a.cost, 0)::numeric(18,2) AS carrying_delta
 
             FROM {schema}.assets a
-            WHERE COALESCE(a.cost, 0) <> 0
-            AND COALESCE(a.opening_cost, 0) = 0
-            AND COALESCE(a.is_component_group, FALSE) = FALSE
-
-            AND NOT EXISTS (
-                SELECT 1
-                FROM {schema}.asset_acquisitions ac
-                WHERE ac.asset_id = a.id
-                    AND COALESCE(ac.status, 'draft') = 'posted'
-            )
+            WHERE FALSE
         ),
 
         subseq_rows AS (
@@ -62591,6 +63767,48 @@ class DatabaseService:
             WHERE COALESCE(st.status,'draft') = 'posted'
         ),
 
+        lessor_derecognition_rows AS (
+            SELECT
+                a.company_id,
+                a.id AS asset_id,
+                a.asset_code,
+                a.asset_name,
+                a.asset_class,
+                a.category,
+                NULL::date AS period_start,
+                NULL::date AS period_end,
+                j.date AS event_date,
+
+                'disposal'::text AS movement_type,
+                'lessor_leases'::text AS source_table,
+                ll.id::bigint AS source_id,
+
+                a.measurement_basis,
+                CONCAT('Finance lease commencement: ', ll.contract_name)::text AS narrative,
+
+                (-COALESCE(a.cost, 0))::numeric(18,2) AS cost_delta,
+                (-COALESCE(a.opening_accum_dep, 0))::numeric(18,2) AS accum_dep_delta,
+                (-COALESCE(a.accumulated_impairment, 0))::numeric(18,2) AS impairment_delta,
+                0::numeric(18,2) AS revaluation_reserve_delta,
+
+                (-ABS(COALESCE(jl.credit, 0) - COALESCE(jl.debit, 0)))::numeric(18,2)
+                    AS carrying_delta
+
+            FROM {schema}.lessor_leases ll
+            JOIN {schema}.assets a
+              ON a.id = ll.asset_id
+             AND a.company_id = ll.company_id
+            JOIN {schema}.journal j
+              ON j.id = ll.commencement_journal_id
+             AND j.company_id = ll.company_id
+             AND j.source = 'lessor_lease_commencement'
+            LEFT JOIN {schema}.journal_lines jl
+              ON jl.journal_id = j.id
+             AND jl.account_code = ll.underlying_asset_account_code
+            WHERE ll.lease_classification = 'finance'
+              AND ll.commencement_journal_id IS NOT NULL
+        ),
+
         reserve_rows AS (
             SELECT
                 a.company_id,
@@ -62621,29 +63839,40 @@ class DatabaseService:
             WHERE COALESCE(rr.status,'draft') = 'posted'
         )
 
-        SELECT * FROM opening_rows
-        UNION ALL
-        SELECT * FROM acquisition_rows
-        UNION ALL
-        SELECT * FROM fallback_acquisition_rows
-        UNION ALL
-        SELECT * FROM subseq_rows
-        UNION ALL
-        SELECT * FROM depreciation_rows
-        UNION ALL
-        SELECT * FROM revaluation_rows
-        UNION ALL
-        SELECT * FROM impairment_rows
-        UNION ALL
-        SELECT * FROM disposal_rows
-        UNION ALL
-        SELECT * FROM hfs_rows
-        UNION ALL
-        SELECT * FROM transfer_rows
-        UNION ALL
-        SELECT * FROM standard_transfer_rows
-        UNION ALL
-        SELECT * FROM reserve_rows;
+        SELECT m.*
+        FROM (
+            SELECT * FROM opening_rows
+            UNION ALL SELECT * FROM acquisition_rows
+            UNION ALL SELECT * FROM fallback_acquisition_rows
+            UNION ALL SELECT * FROM subseq_rows
+            UNION ALL SELECT * FROM depreciation_rows
+            UNION ALL SELECT * FROM revaluation_rows
+            UNION ALL SELECT * FROM impairment_rows
+            UNION ALL SELECT * FROM disposal_rows
+            UNION ALL SELECT * FROM hfs_rows
+            UNION ALL SELECT * FROM transfer_rows
+            UNION ALL SELECT * FROM standard_transfer_rows
+            UNION ALL SELECT * FROM lessor_derecognition_rows
+            UNION ALL SELECT * FROM reserve_rows
+        ) m
+        WHERE EXISTS (
+            SELECT 1
+            FROM {schema}.assets a
+            WHERE a.id = m.asset_id
+              AND a.company_id = m.company_id
+              AND LOWER(
+                    REPLACE(
+                        REPLACE(
+                            COALESCE(a.accounting_standard, ''),
+                            ' ',
+                            ''
+                        ),
+                        '.',
+                        ''
+                    )
+                  ) IN ('ias16', 'ias16ppe')
+              AND COALESCE(a.is_component_group, FALSE) = FALSE
+        );
 
         -- =========================================================
         -- PPE DISCLOSURE BY CLASS
@@ -62706,7 +63935,7 @@ class DatabaseService:
             "accumulated_depreciation_ppe",
         )
 
-        params = [start_date, end_date, list(ppe_roles)]
+        params = [start_date, end_date]
         class_filter_sql = ""
         if asset_classes:
             class_filter_sql = "WHERE c.asset_class = ANY(%s)"
@@ -62782,38 +64011,13 @@ class DatabaseService:
             GROUP BY m.asset_class
         ),
         classes AS (
-            SELECT asset_class FROM opening
-            UNION
-            SELECT asset_class FROM period_mov
-            UNION
-            SELECT DISTINCT
-                CASE
-                    WHEN c.role IN ('land', 'ppe_land') THEN 'Land'
-                    WHEN c.role IN ('buildings', 'ppe_buildings') THEN 'Buildings'
-                    WHEN c.role IN ('motor_vehicles', 'ppe_motor_vehicles') THEN 'Vehicles'
-                    WHEN c.role IN ('computer_equipment', 'ppe_computer_equipment') THEN 'Computer Equipment'
-                    WHEN c.role IN ('office_equipment', 'ppe_office_equipment') THEN 'Office Equipment'
-                    WHEN c.role IN ('office_furniture', 'ppe_furniture_fittings') THEN 'Furniture & Fittings'
-                    WHEN c.role IN ('ppe_plant_machinery', 'manufacturing_equipment') THEN 'Plant and Machinery'
-                    ELSE COALESCE(NULLIF(TRIM(c.reporting_description), ''), c.name)
-                END AS asset_class
-            FROM {schema}.coa c
-            WHERE (
-                    c.role = ANY(%s)
-                OR UPPER(REPLACE(TRIM(COALESCE(c.standard, '')), ' ', '')) = 'IAS16'
-            )
-            AND COALESCE(c.is_contra, FALSE) = FALSE
-            AND NOT (
-                c.name ILIKE '%%right-of-use%%'
-                OR c.name ILIKE '%%right of use%%'
-                OR c.name ILIKE '%%ROU%%'
-                OR c.standard ILIKE '%%IFRS 16%%'
-            )
-            AND (
-                c.code ILIKE 'BS_NCA_%%'
-                OR COALESCE(c.category, '') ILIKE '%%Non-Current%%'
-                OR COALESCE(c.section, '') ILIKE '%%Property, Plant%%'
-            )
+            SELECT DISTINCT asset_class
+            FROM (
+                SELECT asset_class FROM opening
+                UNION
+                SELECT asset_class FROM period_mov
+            ) x
+            WHERE NULLIF(TRIM(asset_class), '') IS NOT NULL
         )
         SELECT
             c.asset_class,

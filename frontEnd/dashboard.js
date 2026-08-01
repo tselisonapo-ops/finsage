@@ -1354,6 +1354,30 @@ const ENDPOINTS = {
 
     reconciliation: (cid, leaseId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/reconciliation`,
+
+    update: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}`,
+
+    recalculate: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/recalculate`,
+  
+    correction: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/corrections`,
+
+    scheduleVersions: (cid, leaseId, versionNo = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule-versions${versionNo !== "" ? `?version_no=${encodeURIComponent(versionNo)}` : ""}`,
+
+    history: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/history`,
+
+    billingWorkspace: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/billing-workspace`,
+
+    modifications: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/modifications`,
+
+    terminations: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/terminations`,
   },
 
   ifrs16: {
@@ -34140,13 +34164,21 @@ window.postTerm = async function postTerm() {
     metrics: {},
     reporting: {},
     workspace: null,
+    initialRecognition: {},
+    focusPeriod: null,
     loading: false,
   };
 
   const $ = id => document.getElementById(id);
   const cid = () => Number(window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
   const n = v => Number(String(v ?? 0).replace(/,/g, "")) || 0;
-  const iso = v => v ? String(v).slice(0, 10) : "";
+  const iso = v => {
+    if (!v) return "";
+    const raw = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
   const esc = v => window.escapeHtml ? escapeHtml(String(v ?? "")) :
     String(v ?? "").replace(/[&<>"']/g, c => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;",
@@ -34175,7 +34207,7 @@ window.postTerm = async function postTerm() {
     const s = iso(v);
     if (!s) return "—";
     const d = new Date(`${s}T00:00:00`);
-    return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString();
+    return d.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
   };
 
   const text = (...values) => {
@@ -34187,6 +34219,20 @@ window.postTerm = async function postTerm() {
 
   const classification = () =>
     String(state.lease?.lease_classification || "operating").toLowerCase();
+
+  function showLandingView() {
+    $("lsmLandingView")?.classList.remove("hidden");
+    $("lsmWorkspaceView")?.classList.add("hidden");
+    $("lsmEditPanel")?.classList.add("hidden");
+    $("lsmJournalPanel")?.classList.add("hidden");
+    renderLandingDashboard();
+    renderLandingLeasePreview();
+  }
+
+  function showWorkspaceView() {
+    $("lsmLandingView")?.classList.add("hidden");
+    $("lsmWorkspaceView")?.classList.remove("hidden");
+  }
 
   const showMessage = (message = "", type = "info") => {
     const el = $("lsmMessage");
@@ -34203,6 +34249,8 @@ window.postTerm = async function postTerm() {
       "lsmLoadBtn",
       "lsmInvoiceThroughBtn",
       "lsmPostThroughBtn",
+      "lsmEditLeaseBtn",
+      "lsmSaveRecalculateBtn",
     ].forEach(id => {
       const el = $(id);
       if (el) el.disabled = !!value || (
@@ -34220,16 +34268,128 @@ window.postTerm = async function postTerm() {
     return res;
   };
 
-  const leaseLabel = lease => {
-    const no = text(lease.contract_no, lease.lease_no);
-    const name = text(
-      lease.contract_name,
+  const leaseLabel = lease =>
+    text(
+      lease.asset_name,
       lease.underlying_asset_description,
+      lease.contract_name,
       `Lessor lease ${lease.id}`
     );
 
-    return no ? `${no} — ${name}` : name;
-  };
+  function selectedLandingLease() {
+    const leaseId = Number($("lsmLeaseId")?.value || 0);
+    return state.leases.find(lease => Number(lease.id) === leaseId) || null;
+  }
+
+  function ratePercent(value) {
+    const rate = n(value);
+    return rate > 0 && rate <= 1 ? rate * 100 : rate;
+  }
+
+  function renderLandingDashboard() {
+    const leases = state.leases || [];
+    const active = leases.filter(lease => ["active", "commenced"].includes(String(lease.status || "").toLowerCase())).length;
+    const finance = leases.filter(lease => String(lease.lease_classification || "").toLowerCase() === "finance").length;
+    const operating = leases.filter(lease => String(lease.lease_classification || "").toLowerCase() === "operating").length;
+    const drafts = leases.filter(lease => String(lease.status || "").toLowerCase() === "draft").length;
+    const contractual = leases.reduce((sum, lease) => sum + n(lease.billing_amount), 0);
+    const billed = leases.reduce((sum, lease) => sum + n(lease.total_billed), 0);
+    const attention = leases.filter(lease => {
+      const financeLease = String(lease.lease_classification || "").toLowerCase() === "finance";
+      const rate = n(lease.interest_rate_implicit || lease.implicit_interest_rate || lease.discount_rate);
+      return !lease.customer_id || !lease.asset_id || !lease.start_date || !lease.end_date || (financeLease && rate <= 0);
+    }).length;
+
+    $("lsmPortfolioBadge").textContent = `${leases.length} lease${leases.length === 1 ? "" : "s"}`;
+
+    $("lsmDashboardMetrics").innerHTML = [
+      metric("Total leases", leases.length, "Lessor lease portfolio"),
+      metric("Active leases", active, "Active or commenced"),
+      metric("Finance leases", finance, "Net investment model"),
+      metric("Operating leases", operating, "Rental income model"),
+      metric("Contractual rentals", money(contractual), "Current periodic rentals"),
+      metric("Total billed", money(billed), "Invoices raised"),
+      metric("Draft leases", drafts, "Not yet commenced", drafts ? "warning" : ""),
+      metric("Requires attention", attention, "Missing setup information", attention ? "warning" : ""),
+    ].join("");
+  }
+
+  function renderLandingLeasePreview() {
+    const lease = selectedLandingLease();
+    const panel = $("lsmLandingLeasePreview");
+
+    if (!lease) {
+      panel?.classList.add("hidden");
+      return;
+    }
+
+    panel.classList.remove("hidden");
+
+    const cls = String(lease.lease_classification || "operating").toLowerCase();
+    const status = String(lease.status || "draft").toLowerCase();
+    const implicitRate = ratePercent(
+      lease.interest_rate_implicit ||
+      lease.implicit_interest_rate ||
+      lease.discount_rate
+    );
+
+    $("lsmLandingAssetName").textContent = text(
+      lease.asset_name,
+      lease.underlying_asset_description,
+      lease.contract_name,
+      `Lessor lease ${lease.id}`
+    );
+
+    $("lsmLandingLeaseMeta").textContent = [
+      lease.contract_no,
+      lease.customer_name,
+      `${date(lease.start_date)} – ${date(lease.end_date)}`,
+    ].filter(Boolean).join(" · ") || "—";
+
+    const clsBadge = $("lsmLandingClassificationBadge");
+    clsBadge.textContent = cls === "finance" ? "Finance lease" : "Operating lease";
+    clsBadge.className = `lsm-badge lsm-badge-${cls}`;
+
+    const statusBadge = $("lsmLandingStatusBadge");
+    statusBadge.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    statusBadge.className = `lsm-badge lsm-badge-${status}`;
+
+    const facts = [
+      ["Customer", text(lease.customer_name, `Customer ${lease.customer_id}`)],
+      ["Contract number", text(lease.contract_no, "Not assigned")],
+      ["Rental amount", money(lease.billing_amount)],
+      ["Billing", `${text(lease.billing_frequency, "Monthly")} · ${text(lease.billing_timing, "Arrears")}`],
+      ["Lease term", `${n(lease.lease_term_months)} months`],
+      ["Implicit rate", `${implicitRate.toFixed(4)}%`],
+      ["VAT rate", `${ratePercent(lease.vat_rate).toFixed(2)}%`],
+      ["Total billed", money(lease.total_billed)],
+    ];
+
+    $("lsmLandingLeaseFacts").innerHTML = facts.map(([label, value]) => `
+      <div class="lsm-fact">
+        <span>${esc(label)}</span>
+        <strong>${esc(value || "—")}</strong>
+      </div>
+    `).join("");
+
+    const warnings = [];
+
+    if (!lease.customer_id) warnings.push("Customer is missing.");
+    if (!lease.asset_id) warnings.push("Underlying asset is not linked.");
+    if (!lease.start_date || !lease.end_date) warnings.push("Lease dates are incomplete.");
+    if (cls === "finance" && implicitRate <= 0) warnings.push("Implicit interest rate is missing.");
+    if (n(lease.billing_amount) <= 0) warnings.push("Billing amount is missing.");
+
+    const warning = $("lsmLandingWarning");
+
+    if (warnings.length) {
+      warning.textContent = warnings.join(" ");
+      warning.classList.remove("hidden");
+    } else {
+      warning.textContent = "";
+      warning.classList.add("hidden");
+    }
+  }
 
   const scheduleStatus = row =>
     row.recognition_journal_id || row.status === "posted"
@@ -34278,6 +34438,8 @@ window.postTerm = async function postTerm() {
       `).join("");
 
     if (selected) sel.value = String(selected);
+    renderLandingDashboard();
+    renderLandingLeasePreview();
   }
 
   function renderSummary() {
@@ -34315,12 +34477,22 @@ window.postTerm = async function postTerm() {
 
     const facts = [
       ["Customer", text(lease.customer_name, `Customer ${lease.customer_id}`)],
-      ["Underlying asset", text(lease.underlying_asset_description, lease.contract_name)],
+      ["Underlying asset", text(lease.asset_name, lease.underlying_asset_description, lease.contract_name)],
       ["Billing", `${text(lease.billing_frequency, "Monthly")} · ${text(lease.billing_timing, "Arrears")}`],
       ["Contractual rental", money(lease.billing_amount)],
       ["VAT rate", `${n(lease.vat_rate).toFixed(2)}%`],
       ["Lease term", `${n(lease.lease_term_months)} months`],
-      ["Implicit rate", `${n(lease.interest_rate_implicit || lease.implicit_interest_rate).toFixed(4)}%`],
+      [
+        "Implicit rate",
+        `${(() => {
+          const rate = n(
+            lease.interest_rate_implicit ||
+            lease.implicit_interest_rate ||
+            lease.discount_rate
+          );
+          return (rate > 0 && rate <= 1 ? rate * 100 : rate).toFixed(4);
+        })()}%`,
+      ],
       ["Commencement", date(lease.commencement_date || lease.start_date)],
     ];
 
@@ -34773,6 +34945,7 @@ window.postTerm = async function postTerm() {
     const active = !!state.lease;
     $("lsmPostThroughBtn").disabled = !active;
     $("lsmInvoiceThroughBtn").disabled = !active;
+    $("lsmEditLeaseBtn").disabled = !active || !canCorrectLease();
   }
 
   async function loadWorkspace() {
@@ -34809,7 +34982,7 @@ window.postTerm = async function postTerm() {
         null;
 
       renderAll();
-
+      showWorkspaceView();
       requestAnimationFrame(() => {
         const focusRow = document.querySelector(".lsm-row-focus");
         focusRow?.scrollIntoView({
@@ -34819,6 +34992,113 @@ window.postTerm = async function postTerm() {
       });
       showMessage(
         `${state.schedule.length} accounting period${state.schedule.length === 1 ? "" : "s"} loaded.`,
+        "success"
+      );
+    } finally {
+      busy(false);
+    }
+  }
+
+  function canCorrectLease() {
+    const lease = state.lease || {};
+    return String(lease.status || "").toLowerCase() === "draft" &&
+      !lease.commencement_journal_id &&
+      !state.schedule.some(row =>
+        row.invoice_id ||
+        row.recognition_journal_id ||
+        n(row.receipt_amount) > 0
+      );
+  }
+
+  function openEditPanel() {
+    if (!state.lease) return;
+
+    if (!canCorrectLease()) {
+      showMessage(
+        "This lease can no longer be directly corrected because accounting or billing has started.",
+        "warning"
+      );
+      return;
+    }
+
+    const lease = state.lease;
+    const rate = n(
+      lease.interest_rate_implicit ||
+      lease.implicit_interest_rate ||
+      lease.discount_rate
+    );
+
+    const vat = n(lease.vat_rate);
+
+    $("lsmEditImplicitRate").value = rate;
+    $("lsmEditBillingAmount").value = n(lease.billing_amount).toFixed(2);
+    $("lsmEditStartDate").value = iso(lease.start_date);
+    $("lsmEditEndDate").value = iso(lease.end_date);
+    $("lsmEditTermsDays").value = Number(lease.payment_terms_days || 0);
+    $("lsmEditVatRate").value = vat <= 1 ? +(vat * 100).toFixed(4) : vat;
+    $("lsmEditPanel").classList.remove("hidden");
+    $("lsmEditPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function saveAndRecalculate() {
+    const leaseId = Number(state.lease?.id || 0);
+    if (!leaseId) throw new Error("Select a lessor lease first.");
+
+    const payload = {
+      interest_rate_implicit: n($("lsmEditImplicitRate")?.value),
+      billing_amount: n($("lsmEditBillingAmount")?.value),
+      start_date: $("lsmEditStartDate")?.value || "",
+      end_date: $("lsmEditEndDate")?.value || "",
+      payment_terms_days: Number($("lsmEditTermsDays")?.value || 0),
+      vat_rate: n($("lsmEditVatRate")?.value),
+    };
+
+    if (!payload.start_date || !payload.end_date) {
+      throw new Error("Start date and end date are required.");
+    }
+
+    if (payload.billing_amount <= 0) {
+      throw new Error("Billing amount must be greater than zero.");
+    }
+
+    const ok = confirm(
+      "Save the corrected lease information and replace the active draft schedule?"
+    );
+
+    if (!ok) return;
+
+    busy(true, "Saving lease and recalculating schedule...");
+
+    try {
+      const res = await api(
+        ENDPOINTS.lessorLeases.recalculate(cid(), leaseId),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      state.workspace = res;
+      state.lease = res.lease || res.item || {};
+      state.schedule = res.schedule || [];
+      state.billing = res.billing || {};
+      state.metrics = res.measurement || {};
+      state.reporting = res.reporting || {};
+      state.initialRecognition = res.initial_recognition || {};
+      state.focusPeriod =
+        res.focus_period ||
+        res.next_unpaid_period ||
+        res.current_period ||
+        null;
+
+      $("lsmEditPanel")?.classList.add("hidden");
+      await loadLeases(leaseId);
+      renderAll();
+      showWorkspaceView();
+
+      showMessage(
+        `${res.message || "Lease updated and schedule recalculated"}. ${state.schedule.length} period(s) generated.`,
         "success"
       );
     } finally {
@@ -35208,6 +35488,26 @@ window.postTerm = async function postTerm() {
     if (!screen || screen.dataset.bound === "1") return;
     screen.dataset.bound = "1";
 
+    $("lsmEditLeaseBtn")?.addEventListener("click", openEditPanel);
+
+    $("lsmCloseEditBtn")?.addEventListener("click", () =>
+      $("lsmEditPanel")?.classList.add("hidden")
+    );
+
+    $("lsmSaveRecalculateBtn")?.addEventListener("click", async () => {
+      try {
+        await saveAndRecalculate();
+      } catch (e) {
+        console.error("[Lessor correction]", e);
+        showMessage(e.message || "Could not update the lease.", "error");
+      }
+    });
+
+    $("lsmDashboardBtn")?.addEventListener("click", () => {
+      showLandingView();
+      showMessage("", "info");
+    });
+
     $("lsmRefreshBtn")?.addEventListener("click", refresh);
 
     $("lsmLoadBtn")?.addEventListener("click", async () => {
@@ -35215,16 +35515,13 @@ window.postTerm = async function postTerm() {
       catch (e) { showMessage(e.message, "error"); }
     });
 
-    $("lsmLeaseId")?.addEventListener("change", async e => {
-      if (!e.target.value) return;
-      try { await loadWorkspace(); }
-      catch (err) { showMessage(err.message, "error"); }
+    $("lsmLeaseId")?.addEventListener("change", () => {
+      renderLandingLeasePreview();
+      showMessage("", "info");
     });
 
     $("lsmAsAt")?.addEventListener("change", () => {
-      if (state.lease) loadWorkspace().catch(
-        e => showMessage(e.message, "error")
-      );
+      showMessage("", "info");
     });
 
     $("lsmShowPosted")?.addEventListener("change", renderSchedule);
@@ -35252,6 +35549,7 @@ window.postTerm = async function postTerm() {
   window.bindLessorSubsequentScreen = async function () {
     bindOnce();
 
+    showLandingView();
     const asAt = $("lsmAsAt");
     if (asAt && !asAt.value) {
       asAt.value = new Date().toISOString().slice(0, 10);
@@ -35262,26 +35560,14 @@ window.postTerm = async function postTerm() {
 
       const preferred =
         state.leases.find(lease =>
-          ["commenced", "active"].includes(
-            String(lease.status || "").toLowerCase()
-          )
-        ) ||
-        state.leases[0];
+          ["commenced", "active"].includes(String(lease.status || "").toLowerCase())
+        ) || state.leases[0];
 
-      const leaseId = Number(
-        state.lease?.id ||
-        preferred?.id ||
-        0
-      );
-
-      if (leaseId) {
-        $("lsmLeaseId").value = String(leaseId);
-        await loadWorkspace();
+      if (preferred?.id) {
+        $("lsmLeaseId").value = String(preferred.id);
+        renderLandingLeasePreview();
       } else {
-        showMessage(
-          "No lessor leases exist for this company.",
-          "warning"
-        );
+        showMessage("No lessor leases exist for this company.", "warning");
       }
     } catch (e) {
       console.error("[bindLessorSubsequentScreen]", e);
@@ -35298,6 +35584,488 @@ window.postTerm = async function postTerm() {
   };
 })();
 
+(() => {
+  const $ = id => document.getElementById(id);
+  const cid = () => Number(getActiveCompanyId?.() || 0);
+  const amount = value => Number(String(value ?? 0).replace(/,/g, "")) || 0;
+  const leaseId = () => Number(window.__LESSOR_WORKSPACE_LEASE?.id || $("lsmLeaseId")?.value || 0);
+  const api = (url, options = {}) => apiFetch(url, options);
+
+  const showMessage = (message, type = "info") => {
+    const el = $("lsmMessage");
+    if (!el) return;
+    el.textContent = message;
+    el.className = `lsm-message lsm-message-${type}${message ? "" : " hidden"}`;
+  };
+
+  const openPanel = panelId => {
+    [
+      "lsmCorrectionPanel",
+      "lsmModificationPanel",
+      "lsmTerminationPanel",
+      "lsmVersionsPanel",
+      "lsmBillingPanel",
+      "lsmHistoryPanel",
+    ].forEach(id => $(id)?.classList.toggle("hidden", id !== panelId));
+
+    $(panelId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
+  const rowHtml = (title, meta = "") => `
+    <div class="lsm-mini-row">
+      <div>
+        <strong>${title}</strong>
+        <span>${meta}</span>
+      </div>
+    </div>
+  `;
+
+  async function loadSelectedLease() {
+    const id = leaseId();
+    if (!id) throw new Error("Select a lessor lease first.");
+
+    const result = await api(
+      ENDPOINTS.lessorLeases.get(cid(), id)
+    );
+
+    window.__LESSOR_WORKSPACE_LEASE =
+      result.item || result.lease || result;
+
+    return window.__LESSOR_WORKSPACE_LEASE;
+  }
+
+  async function openCorrection() {
+    const lease = await loadSelectedLease();
+
+    let rate = amount(
+      lease.interest_rate_implicit ||
+      lease.discount_rate
+    );
+
+    let vat = amount(lease.vat_rate);
+
+    if (rate <= 1) rate *= 100;
+    if (vat <= 1) vat *= 100;
+
+    $("lsmCorrectionRate").value = rate;
+    $("lsmCorrectionAmount").value =
+      amount(lease.billing_amount).toFixed(2);
+
+    $("lsmCorrectionStart").value =
+      String(lease.start_date || "").slice(0, 10);
+
+    $("lsmCorrectionEnd").value =
+      String(lease.end_date || "").slice(0, 10);
+
+    $("lsmCorrectionTerms").value =
+      Number(lease.payment_terms_days || 0);
+
+    $("lsmCorrectionVat").value = vat;
+
+    openPanel("lsmCorrectionPanel");
+  }
+
+  async function applyCorrection() {
+    const reason =
+      $("lsmCorrectionReason").value.trim();
+
+    if (!reason) {
+      throw new Error(
+        "Correction reason is required."
+      );
+    }
+
+    const confirmed = confirm(
+      "Reverse the existing Day 1 journal, " +
+      "correct the lease, rebuild the schedules " +
+      "and post the corrected Day 1 journal?"
+    );
+
+    if (!confirmed) return;
+
+    const payload = {
+      reason,
+
+      interest_rate_implicit:
+        amount($("lsmCorrectionRate").value) / 100,
+
+      billing_amount:
+        amount($("lsmCorrectionAmount").value),
+
+      start_date:
+        $("lsmCorrectionStart").value,
+
+      end_date:
+        $("lsmCorrectionEnd").value,
+
+      payment_terms_days:
+        Number($("lsmCorrectionTerms").value || 0),
+
+      vat_rate:
+        amount($("lsmCorrectionVat").value) / 100,
+    };
+
+    const result = await api(
+      ENDPOINTS.lessorLeases.correction(
+        cid(),
+        leaseId()
+      ),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    showMessage(
+      result.message || "Lease corrected.",
+      "success"
+    );
+
+    $("lsmCorrectionPanel")
+      ?.classList.add("hidden");
+
+    await window.openLessorSubsequentMeasurement?.(
+      leaseId()
+    );
+  }
+
+  async function openVersions() {
+    const result = await api(
+      ENDPOINTS.lessorLeases.scheduleVersions(
+        cid(),
+        leaseId()
+      )
+    );
+
+    $("lsmVersionsList").innerHTML =
+      (result.versions || []).map(version =>
+        rowHtml(
+          `Version ${version.version_no}${
+            version.is_active ? " · Active" : ""
+          }`,
+          `${version.period_count} periods · ` +
+          `${version.posted_count} posted · ` +
+          `${version.invoiced_count} invoiced`
+        )
+      ).join("") || "<p>No schedule versions found.</p>";
+
+    openPanel("lsmVersionsPanel");
+  }
+
+  async function openBilling() {
+    const result = await api(
+      ENDPOINTS.lessorLeases.billingWorkspace(
+        cid(),
+        leaseId()
+      )
+    );
+
+    const totals = result.totals || {};
+
+    $("lsmBillingSummary").innerHTML = [
+      ["Billed", totals.gross],
+      ["Received", totals.received],
+      ["Outstanding", totals.outstanding],
+    ].map(([label, value]) => `
+      <article class="lsm-metric">
+        <span>${label}</span>
+        <strong>${amount(value).toFixed(2)}</strong>
+      </article>
+    `).join("");
+
+    $("lsmBillingList").innerHTML =
+      (result.bills || []).map(bill =>
+        rowHtml(
+          bill.invoice_number ||
+          bill.reference ||
+          `Bill #${bill.id}`,
+
+          `${String(bill.bill_date || "").slice(0, 10)} · ` +
+          `${amount(bill.amount_gross).toFixed(2)} · ` +
+          `received ${amount(bill.received_amount).toFixed(2)}`
+        )
+      ).join("") || "<p>No billing records found.</p>";
+
+    openPanel("lsmBillingPanel");
+  }
+
+  async function openHistory() {
+    const result = await api(
+      ENDPOINTS.lessorLeases.history(
+        cid(),
+        leaseId()
+      )
+    );
+
+    $("lsmHistoryList").innerHTML =
+      (result.events || []).map(event => `
+        <div class="lsm-timeline-item">
+          <i></i>
+
+          <div>
+            <strong>${event.title || "Lease event"}</strong>
+
+            <span>
+              ${String(
+                event.effective_date ||
+                event.event_date ||
+                ""
+              ).slice(0, 10)}
+            </span>
+
+            <p>${event.description || ""}</p>
+          </div>
+        </div>
+      `).join("") || "<p>No lifecycle events recorded.</p>";
+
+    openPanel("lsmHistoryPanel");
+  }
+
+  async function openModifications() {
+    const result = await api(
+      ENDPOINTS.lessorLeases.modifications(
+        cid(),
+        leaseId()
+      )
+    );
+
+    $("lsmModificationList").innerHTML =
+      (result.items || []).map(item =>
+        rowHtml(
+          `${item.modification_type || "Modification"} · ${item.status}`,
+          `${String(item.effective_date || "").slice(0, 10)} · ${item.reason || ""}`
+        )
+      ).join("") || "<p>No modifications found.</p>";
+
+    openPanel("lsmModificationPanel");
+  }
+
+  async function createModification() {
+    const payload = {
+      effective_date:
+        $("lsmModDate").value,
+
+      modification_type:
+        $("lsmModType").value,
+
+      new_payment_amount:
+        amount($("lsmModAmount").value),
+
+      new_end_date:
+        $("lsmModEnd").value || null,
+
+      new_discount_rate:
+        amount($("lsmModRate").value) / 100,
+
+      reason:
+        $("lsmModReason").value.trim(),
+    };
+
+    if (
+      !payload.effective_date ||
+      !payload.reason
+    ) {
+      throw new Error(
+        "Effective date and reason are required."
+      );
+    }
+
+    await api(
+      ENDPOINTS.lessorLeases.modifications(
+        cid(),
+        leaseId()
+      ),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    showMessage(
+      "Draft modification created.",
+      "success"
+    );
+
+    await openModifications();
+  }
+
+  async function openTerminations() {
+    const result = await api(
+      ENDPOINTS.lessorLeases.terminations(
+        cid(),
+        leaseId()
+      )
+    );
+
+    $("lsmTerminationList").innerHTML =
+      (result.items || []).map(item =>
+        rowHtml(
+          `${item.termination_type || "Termination"} · ${item.status}`,
+          `${String(item.termination_date || "").slice(0, 10)} · ${item.reason || ""}`
+        )
+      ).join("") || "<p>No terminations found.</p>";
+
+    openPanel("lsmTerminationPanel");
+  }
+
+  async function createTermination() {
+    const payload = {
+      termination_date:
+        $("lsmTermDate").value,
+
+      termination_type:
+        $("lsmTermType").value,
+
+      settlement_amount:
+        amount($("lsmTermSettlement").value),
+
+      reason:
+        $("lsmTermReason").value.trim(),
+    };
+
+    if (
+      !payload.termination_date ||
+      !payload.reason
+    ) {
+      throw new Error(
+        "Termination date and reason are required."
+      );
+    }
+
+    await api(
+      ENDPOINTS.lessorLeases.terminations(
+        cid(),
+        leaseId()
+      ),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    showMessage(
+      "Draft termination created.",
+      "success"
+    );
+
+    await openTerminations();
+  }
+
+  function bindLifecycleActions() {
+    const screen =
+      $("screen-lessor-subsequent");
+
+    if (
+      !screen ||
+      screen.dataset.lifecycleBound === "1"
+    ) {
+      return;
+    }
+
+    screen.dataset.lifecycleBound = "1";
+
+    const bind = (id, handler) => {
+      $(id)?.addEventListener(
+        "click",
+        () => handler().catch(error =>
+          showMessage(
+            error.message,
+            "error"
+          )
+        )
+      );
+    };
+
+    bind(
+      "lsmCorrectionBtn",
+      openCorrection
+    );
+
+    bind(
+      "lsmApplyCorrectionBtn",
+      applyCorrection
+    );
+
+    bind(
+      "lsmSchedulesBtn",
+      openVersions
+    );
+
+    bind(
+      "lsmBillingBtn",
+      openBilling
+    );
+
+    bind(
+      "lsmHistoryBtn",
+      openHistory
+    );
+
+    bind(
+      "lsmModifyBtn",
+      openModifications
+    );
+
+    bind(
+      "lsmCreateModificationBtn",
+      createModification
+    );
+
+    bind(
+      "lsmTerminateBtn",
+      openTerminations
+    );
+
+    bind(
+      "lsmCreateTerminationBtn",
+      createTermination
+    );
+
+    screen.addEventListener(
+      "click",
+      event => {
+        const button =
+          event.target.closest(
+            "[data-lsm-close]"
+          );
+
+        if (!button) return;
+
+        document
+          .getElementById(
+            button.dataset.lsmClose
+          )
+          ?.classList.add("hidden");
+      }
+    );
+  }
+
+  const previousBind =
+    window.bindLessorSubsequentScreen;
+
+  window.bindLessorSubsequentScreen =
+    async function () {
+      await previousBind?.();
+
+      bindLifecycleActions();
+
+      try {
+        await loadSelectedLease();
+      } catch (_) {}
+    };
+})();
 
 // IFRS 16 Lease wizard → initial recognition
 async function postLeaseJournal(lease) {
@@ -77270,8 +78038,6 @@ async function saveInvoiceToBackend() {
       $("#invNumber").value = res.number;
     }
 
-    alert("Invoice saved to backend.");
-
     window._CURRENT_INVOICE_SOURCE = null;
     try { localStorage.removeItem("lessorInvoiceHandoff"); } catch (_) {}
 
@@ -77315,500 +78081,127 @@ function bindInvoiceTermsDueDate() {
 }
 
 function collectInvoiceFromForm() {
-  const idInput =
-    document.getElementById("invId");
-
-  const custInput =
-    document.getElementById("invCustomerName");
-
-  const dateInput =
-    document.getElementById("invDate");
-
-  const numInput =
-    document.getElementById("invNumber");
-
-  const termsSel =
-    document.getElementById("invTerms");
-
-  const currInput =
-    document.getElementById("invCurrency");
-
-  const vatChk =
-    document.getElementById("invVatEnabled");
-
-  const vatSel =
-    document.getElementById("invDefaultVat");
-
-  const discEl =
-    document.getElementById("invDisc");
-
-  const otherEl =
-    document.getElementById("invOther");
-
-  const memoEl =
-    document.getElementById("invMemo");
-
-  const bankSel =
-    document.getElementById("invoiceBankAccount");
-
-  const revSel =
-    document.getElementById("invRevenueAccount");
-
-  const contractSel =
-    document.getElementById("invRevenueContractId");
-
-  const invoiceId = idInput?.value
-    ? parseInt(idInput.value, 10)
+  const invoiceId = document.getElementById("invId")?.value
+    ? parseInt(document.getElementById("invId").value, 10)
     : null;
 
-  const customerName =
-    custInput?.value?.trim() || "";
+  const customerName = document.getElementById("invCustomerName")?.value?.trim() || "";
+  const number = document.getElementById("invNumber")?.value?.trim() || "";
+  const terms = document.getElementById("invTerms")?.value || "on_receipt";
+  const currency = document.getElementById("invCurrency")?.value || "USD";
+  const invoice_date = toIsoDateOnly(document.getElementById("invDate")?.value || "");
 
-  const number =
-    numInput?.value?.trim() || "";
+  if (!customerName) throw new Error("Customer is required.");
+  if (!number) throw new Error("Invoice number is required.");
+  if (!invoice_date) throw new Error("Invoice date is required.");
 
-  const terms =
-    termsSel?.value || "on_receipt";
+  const due_date = computeDueDate(invoice_date, terms);
+  const todayIso = new Date().toISOString().slice(0, 10);
 
-  const currency =
-    currInput?.value || "USD";
+  if (invoice_date > todayIso) throw new Error(`Invoice date cannot be in the future (${invoice_date}).`);
+  if (due_date && due_date < invoice_date) throw new Error("Due date cannot be earlier than invoice date.");
 
-  if (!customerName) {
-    throw new Error("Customer is required.");
-  }
+  const customerId = resolveInvoiceCustomerId();
+  if (!customerId) throw new Error("Please select a valid customer from the list.");
 
-  if (!number) {
-    throw new Error(
-      "Invoice number is required."
-    );
-  }
+  const revenueCodeDefault = document.getElementById("invRevenueAccount")?.value?.trim() || "";
+  if (!revenueCodeDefault) throw new Error("Please select a Revenue account.");
 
-  const dateRaw =
-    dateInput?.value || "";
+  const vatEnabled = !!document.getElementById("invVatEnabled")?.checked;
+  const defaultVatCode = (document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
+  const totals = window.recalcInvoice?.() || {};
+  const discount_rate = totals.discount_rate ?? parsePercent(document.getElementById("invDisc")?.value || "0");
+  const discount_amount = Number(totals.discount_amount) || 0;
+  const other = parseFloat(document.getElementById("invOther")?.value || "0") || 0;
+  const notes = document.getElementById("invMemo")?.value?.trim() || "";
+  const bankAccountId = document.getElementById("invoiceBankAccount")?.value
+    ? parseInt(document.getElementById("invoiceBankAccount").value, 10)
+    : null;
 
-  const invoice_date =
-    toIsoDateOnly(dateRaw);
+  const revenueContractId = document.getElementById("invRevenueContractId")?.value
+    ? parseInt(document.getElementById("invRevenueContractId").value, 10)
+    : null;
 
-  if (!invoice_date) {
-    throw new Error(
-      "Invoice date is required."
-    );
-  }
-
-  const due_date =
-    computeDueDate(
-      invoice_date,
-      terms
-    );
-
-  const todayIso =
-    new Date().toISOString().slice(0, 10);
-
-  if (
-    String(invoice_date).slice(0, 10) >
-    todayIso
-  ) {
-    throw new Error(
-      `Invoice date cannot be in the future (${invoice_date}).`
-    );
-  }
-
-  if (
-    due_date &&
-    String(due_date).slice(0, 10) <
-    String(invoice_date).slice(0, 10)
-  ) {
-    throw new Error(
-      "Due date cannot be earlier than invoice date."
-    );
-  }
-
-  const customerId =
-    resolveInvoiceCustomerId();
-
-  if (!customerId) {
-    throw new Error(
-      "Please select a valid customer from the list."
-    );
-  }
-
-  const revenueCodeDefault =
-    (revSel?.value || "").trim();
-
-  if (!revenueCodeDefault) {
-    throw new Error(
-      "Please select a Revenue account."
-    );
-  }
-
-  const vatEnabled =
-    !!vatChk?.checked;
-
-  const defaultVatCode =
-    (vatSel?.value || "STANDARD")
-      .trim()
-      .toUpperCase();
-
-  const totals =
-    window.recalcInvoice?.() || {};
-
-  const discount_rate =
-    totals.discount_rate ??
-    parsePercent(
-      discEl?.value || "0"
-    );
-
-  const discount_amount =
-    Number(
-      totals.discount_amount
-    ) || 0;
-
-  const discount =
-    discount_rate;
-
-  const other =
-    parseFloat(
-      otherEl?.value || "0"
-    ) || 0;
-
-  const memo =
-    memoEl?.value?.trim() || "";
-
-  const bankAccountId =
-    bankSel?.value
-      ? parseInt(bankSel.value, 10)
-      : null;
-
-  const revenueContractId =
-    contractSel?.value
-      ? parseInt(contractSel.value, 10)
-      : null;
-
-  // Lessor lease source information.
-  const sourceMeta =
-    window._CURRENT_INVOICE_SOURCE || {};
-
+  const sourceMeta = window._CURRENT_INVOICE_SOURCE || {};
   const isLessorInvoice =
-    sourceMeta.handoff_type ===
-      "lessor_lease_invoice" ||
-    sourceMeta.source ===
-      "lessor_lease_billing" ||
-    sourceMeta.module_name ===
-      "ifrs16_lessor";
+    sourceMeta.handoff_type === "lessor_lease_invoice" ||
+    sourceMeta.source === "lessor_lease_billing" ||
+    sourceMeta.module_name === "ifrs16_lessor";
 
-  const lessorLeaseId =
-    isLessorInvoice
-      ? Number(
-          sourceMeta.lessor_lease_id ??
-          sourceMeta.lease_id ??
-          sourceMeta.line
-            ?.lessor_lease_id ??
-          0
-        ) || null
-      : null;
+  const lessorLeaseId = isLessorInvoice
+    ? Number(sourceMeta.lessor_lease_id ?? sourceMeta.lease_id ?? sourceMeta.line?.lessor_lease_id ?? 0) || null
+    : null;
 
-  const lessorScheduleId =
-    isLessorInvoice
-      ? Number(
-          sourceMeta
-            .lessor_schedule_id ??
-          sourceMeta.schedule_id ??
-          sourceMeta.source_id ??
-          sourceMeta.line
-            ?.lessor_schedule_id ??
-          0
-        ) || null
-      : null;
+  const lessorScheduleId = isLessorInvoice
+    ? Number(sourceMeta.lessor_schedule_id ?? sourceMeta.schedule_id ?? sourceMeta.source_id ?? sourceMeta.line?.lessor_schedule_id ?? 0) || null
+    : null;
 
-  const rows = Array.from(
-    document.querySelectorAll(
-      "#invLines tr"
-    )
-  );
+  const lines = Array.from(document.querySelectorAll("#invLines tr")).map(tr => {
+    const item = tr.querySelector(".inv-item-pick, .inv-desc")?.value?.trim() || "";
+    const description = tr.querySelector(".inv-service")?.value?.trim() || "";
+    const quantity = parseFloat(tr.querySelector(".inv-qty")?.value || "0") || 0;
+    const unitPrice = parseFloat(tr.querySelector(".inv-price")?.value || "0") || 0;
+    const vatCode = (tr.querySelector(".inv-vat-code")?.value || defaultVatCode).trim().toUpperCase();
+    const obligationRaw = tr.querySelector(".inv-obligation")?.value?.trim() || "";
+    const itemIdRaw = tr.querySelector(".inv-item-id")?.value?.trim() || "";
 
-  const lines = rows
-    .map(tr => {
-      const pickEl =
-        tr.querySelector(
-          ".inv-item-pick, .inv-desc"
-        );
+    if (!(item || description) || !(quantity || unitPrice)) return null;
 
-      const typeEl =
-        tr.querySelector(
-          ".inv-item-type"
-        );
+    let vat_rate = null;
+    if (vatCode === "CUSTOM") vat_rate = parseFloat(tr.querySelector(".inv-vat-custom")?.value || "0") || 0;
 
-      const idEl =
-        tr.querySelector(
-          ".inv-item-id"
-        );
+    return {
+      item_name: item,
+      item,
+      description,
+      quantity,
+      unit_price: unitPrice,
+      vatCode,
+      vat_rate,
+      account_code: tr.querySelector(".inv-acct")?.value?.trim() || revenueCodeDefault,
+      revenue_obligation_id: isLessorInvoice ? null : obligationRaw ? Number(obligationRaw) : null,
+      item_type: isLessorInvoice ? "lease" : (tr.querySelector(".inv-item-type")?.value || "gl").trim().toLowerCase(),
+      item_id: isLessorInvoice ? lessorLeaseId : itemIdRaw ? Number(itemIdRaw) : null,
+      item_code: tr.querySelector(".inv-item-code")?.value?.trim() || null,
+      source: isLessorInvoice ? "lessor_lease_billing" : null,
+      source_id: isLessorInvoice ? lessorScheduleId : null,
+      module_name: isLessorInvoice ? "ifrs16_lessor" : null,
+      lessor_lease_id: lessorLeaseId,
+      lessor_schedule_id: lessorScheduleId,
+    };
+  }).filter(Boolean);
 
-      const codeEl =
-        tr.querySelector(
-          ".inv-item-code"
-        );
-
-      const descEl =
-        tr.querySelector(
-          ".inv-service"
-        );
-
-      const acctEl =
-        tr.querySelector(
-          ".inv-acct"
-        );
-
-      const oblEl =
-        tr.querySelector(
-          ".inv-obligation"
-        );
-
-      const qtyEl =
-        tr.querySelector(
-          ".inv-qty"
-        );
-
-      const priceEl =
-        tr.querySelector(
-          ".inv-price"
-        );
-
-      const vatEl =
-        tr.querySelector(
-          ".inv-vat-code"
-        );
-
-      const itemPick =
-        (pickEl?.value || "").trim();
-
-      const desc =
-        (descEl?.value || "").trim();
-
-      const qty =
-        parseFloat(
-          qtyEl?.value || "0"
-        ) || 0;
-
-      const unit =
-        parseFloat(
-          priceEl?.value || "0"
-        ) || 0;
-
-      const vatCode =
-        (
-          vatEl?.value ||
-          defaultVatCode ||
-          "STANDARD"
-        )
-          .trim()
-          .toUpperCase();
-
-      let vat_rate = null;
-
-      if (vatCode === "CUSTOM") {
-        const customEl =
-          tr.querySelector(
-            ".inv-vat-custom"
-          );
-
-        vat_rate =
-          parseFloat(
-            customEl?.value || "0"
-          ) || 0;
-      }
-
-      const account_code =
-        (
-          acctEl?.value || ""
-        ).trim() ||
-        revenueCodeDefault;
-
-      const obligationIdRaw =
-        (oblEl?.value || "").trim();
-
-      const revenue_obligation_id =
-        obligationIdRaw
-          ? Number(obligationIdRaw)
-          : null;
-
-      const itemType =
-        isLessorInvoice
-          ? "lease"
-          : (
-              typeEl?.value ||
-              "gl"
-            )
-              .trim()
-              .toLowerCase();
-
-      const itemIdRaw =
-        (idEl?.value || "").trim();
-
-      const itemCode =
-        (codeEl?.value || "").trim();
-
-      const itemId =
-        isLessorInvoice
-          ? lessorLeaseId
-          : (
-              itemIdRaw
-                ? Number(itemIdRaw)
-                : null
-            );
-
-      if (
-        !(itemPick || desc) ||
-        !(qty || unit)
-      ) {
-        return null;
-      }
-
-      return {
-        item_name: itemPick,
-        item: itemPick,
-        description: desc,
-        quantity: qty,
-        unit_price: unit,
-
-        vatCode,
-        vat_rate,
-        account_code,
-
-        revenue_obligation_id:
-          isLessorInvoice
-            ? null
-            : revenue_obligation_id,
-
-        item_type: itemType,
-        item_id:
-          Number.isFinite(itemId)
-            ? itemId
-            : null,
-
-        item_code:
-          itemCode || null,
-
-        source:
-          isLessorInvoice
-            ? "lessor_lease_billing"
-            : null,
-
-        source_id:
-          isLessorInvoice
-            ? lessorScheduleId
-            : null,
-
-        module_name:
-          isLessorInvoice
-            ? "ifrs16_lessor"
-            : null,
-
-        lessor_lease_id:
-          lessorLeaseId,
-
-        lessor_schedule_id:
-          lessorScheduleId,
-      };
-    })
-    .filter(Boolean);
-
-  if (!lines.length) {
-    throw new Error(
-      "Invoice must have at least one valid line."
-    );
-  }
+  if (!lines.length) throw new Error("Invoice must have at least one valid line.");
 
   return {
     id: invoiceId,
     customer_id: customerId,
     customer_name: customerName,
-
-    revenue_contract_id:
-      isLessorInvoice
-        ? null
-        : revenueContractId,
-
+    revenue_contract_id: isLessorInvoice ? null : revenueContractId,
     invoice_date,
     due_date,
     number,
     terms,
     currency,
-
     vat_enabled: vatEnabled,
-    default_vat_code:
-      defaultVatCode,
-
+    default_vat_code: defaultVatCode,
     discount_rate,
     discount_amount,
-    discount,
-
+    discount: discount_rate,
     other,
-    notes: memo,
-
-    bank_account_id:
-      bankAccountId,
-
-    source:
-      isLessorInvoice
-        ? "lessor_lease_billing"
-        : null,
-
-    source_id:
-      isLessorInvoice
-        ? lessorScheduleId
-        : null,
-
-    module_name:
-      isLessorInvoice
-        ? "ifrs16_lessor"
-        : null,
-
-    posting_mode:
-      isLessorInvoice
-        ? "custom_accounts"
-        : null,
-
-    lessor_lease_id:
-      lessorLeaseId,
-
-    lessor_schedule_id:
-      lessorScheduleId,
-
-    lease_classification:
-      isLessorInvoice
-        ? sourceMeta
-            .lease_classification ||
-          null
-        : null,
-
-    accounting_treatment:
-      isLessorInvoice
-        ? sourceMeta
-            .accounting_treatment ||
-          null
-        : null,
-
-    ar_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .ar_account_code ||
-          null
-        : null,
-
-    credit_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .credit_account_code ||
-          null
-        : null,
-
-    vat_output_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .vat_output_account_code ||
-          null
-        : null,
-
+    notes,
+    bank_account_id: bankAccountId,
+    source: isLessorInvoice ? "lessor_lease_billing" : null,
+    source_id: isLessorInvoice ? lessorScheduleId : null,
+    module_name: isLessorInvoice ? "ifrs16_lessor" : null,
+    posting_mode: isLessorInvoice ? "custom_accounts" : null,
+    lessor_lease_id: lessorLeaseId,
+    lessor_schedule_id: lessorScheduleId,
+    lease_classification: isLessorInvoice ? sourceMeta.lease_classification || null : null,
+    accounting_treatment: isLessorInvoice ? sourceMeta.accounting_treatment || null : null,
+    ar_account_code: isLessorInvoice ? sourceMeta.ar_account_code || null : null,
+    credit_account_code: isLessorInvoice ? sourceMeta.credit_account_code || null : null,
+    vat_output_account_code: isLessorInvoice ? sourceMeta.vat_output_account_code || null : null,
     lines,
   };
 }
@@ -81889,425 +82282,107 @@ async function loadDraftInvoices() {
   }
 
 function readInvoiceForm() {
-  const customerName =
-    document.getElementById(
-      "invCustomerName"
-    )?.value || "";
-
-  const customerId =
-    document.getElementById(
-      "invCustomerId"
-    )?.value || null;
-
-  const invoiceDate =
-    document.getElementById(
-      "invDate"
-    )?.value || "";
-
-  const terms =
-    document.getElementById(
-      "invTerms"
-    )?.value || "on_receipt";
-
-  const number =
-    document.getElementById(
-      "invNumber"
-    )?.value || "";
-
-  const currency =
-    document.getElementById(
-      "invCurrency"
-    )?.value || "USD";
-
-  const notes =
-    document.getElementById(
-      "invMemo"
-    )?.value || "";
-
-  const invId =
-    document.getElementById(
-      "invId"
-    )?.value || "";
-
-  const revenueContractIdRaw =
-    document.getElementById(
-      "invRevenueContractId"
-    )?.value || "";
-
-  const sourceMeta =
-    window._CURRENT_INVOICE_SOURCE || {};
+  const customerName = document.getElementById("invCustomerName")?.value || "";
+  const customerId = document.getElementById("invCustomerId")?.value || null;
+  const invoiceDate = document.getElementById("invDate")?.value || "";
+  const terms = document.getElementById("invTerms")?.value || "on_receipt";
+  const number = document.getElementById("invNumber")?.value || "";
+  const currency = document.getElementById("invCurrency")?.value || "USD";
+  const notes = document.getElementById("invMemo")?.value || "";
+  const invId = document.getElementById("invId")?.value || "";
+  const revenueContractIdRaw = document.getElementById("invRevenueContractId")?.value || "";
+  const sourceMeta = window._CURRENT_INVOICE_SOURCE || {};
 
   const isLessorInvoice =
-    sourceMeta.handoff_type ===
-      "lessor_lease_invoice" ||
-    sourceMeta.source ===
-      "lessor_lease_billing" ||
-    sourceMeta.module_name ===
-      "ifrs16_lessor";
+    sourceMeta.handoff_type === "lessor_lease_invoice" ||
+    sourceMeta.source === "lessor_lease_billing" ||
+    sourceMeta.module_name === "ifrs16_lessor";
 
-  const lessorLeaseId =
-    isLessorInvoice
-      ? Number(
-          sourceMeta.lessor_lease_id ||
-          sourceMeta.lease_id ||
-          0
-        ) || null
+  const lessorLeaseId = isLessorInvoice
+    ? Number(sourceMeta.lessor_lease_id || sourceMeta.lease_id || 0) || null
+    : null;
+
+  const lessorScheduleId = isLessorInvoice
+    ? Number(sourceMeta.lessor_schedule_id || sourceMeta.schedule_id || sourceMeta.source_id || 0) || null
+    : null;
+
+  const revenue_contract_id = isLessorInvoice
+    ? null
+    : revenueContractIdRaw
+      ? Number(revenueContractIdRaw)
       : null;
 
-  const lessorScheduleId =
-    isLessorInvoice
-      ? Number(
-          sourceMeta
-            .lessor_schedule_id ||
-          sourceMeta.schedule_id ||
-          sourceMeta.source_id ||
-          0
-        ) || null
-      : null;
+  const rows = Array.from(document.querySelectorAll("#invLines tr.inv-line-row, #invLines tr"));
+  const vatEnabled = !!document.getElementById("invVatEnabled")?.checked;
+  const defaultVatCode = (document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
 
-  const revenue_contract_id =
-    isLessorInvoice
-      ? null
-      : (
-          revenueContractIdRaw
-            ? Number(
-                revenueContractIdRaw
-              )
-            : null
-        );
+  const lines = rows.map(row => {
+    const item = row.querySelector(".inv-item-pick, .inv-desc")?.value?.trim() || "";
+    const description = row.querySelector(".inv-service")?.value?.trim() || "";
+    const accountCode = row.querySelector(".inv-acct")?.value || null;
+    const obligationRaw = row.querySelector(".inv-obligation")?.value || "";
+    const quantity = parseFloat(row.querySelector(".inv-qty")?.value || "0") || 0;
+    const unitPrice = parseFloat(row.querySelector(".inv-price")?.value || "0") || 0;
+    const vatCode = (row.querySelector(".inv-vat-code")?.value || defaultVatCode).trim().toUpperCase();
+    const netAmount = Math.max(0, quantity * unitPrice);
+    const vatRate = vatEnabled && vatCode === "STANDARD" ? 15 : 0;
+    const vatAmount = +(netAmount * vatRate / 100).toFixed(2);
 
-  const linesBody =
-    document.getElementById(
-      "invLines"
-    );
+    return {
+      line_no: 0,
+      item_name: item,
+      description: description || item || "—",
+      account_code: accountCode,
+      revenue_obligation_id: isLessorInvoice ? null : obligationRaw ? Number(obligationRaw) : null,
+      quantity,
+      unit_price: unitPrice,
+      net_amount: +netAmount.toFixed(2),
+      vat_rate: vatRate,
+      vat_amount: vatAmount,
+      total_amount: +(netAmount + vatAmount).toFixed(2),
+      item_type: isLessorInvoice ? "lease" : row.querySelector(".inv-item-type")?.value || "gl",
+      item_id: isLessorInvoice ? lessorLeaseId : Number(row.querySelector(".inv-item-id")?.value || 0) || null,
+      item_code: row.querySelector(".inv-item-code")?.value || null,
+      source: isLessorInvoice ? "lessor_lease_billing" : null,
+      source_id: isLessorInvoice ? lessorScheduleId : null,
+      module_name: isLessorInvoice ? "ifrs16_lessor" : null,
+      lessor_lease_id: lessorLeaseId,
+      lessor_schedule_id: lessorScheduleId,
+    };
+  }).filter(line => (line.item_name || line.description) && line.net_amount >= 0);
 
-  const rows = Array.from(
-    linesBody?.querySelectorAll(
-      "tr.inv-line-row, tr"
-    ) || []
-  );
-
-  const vatEnabled =
-    !!document.getElementById(
-      "invVatEnabled"
-    )?.checked;
-
-  const defaultVatCode =
-    (
-      document.getElementById(
-        "invDefaultVat"
-      )?.value ||
-      "STANDARD"
-    )
-      .trim()
-      .toUpperCase();
-
-  const lines = rows
-    .map(row => {
-      const item =
-        row.querySelector(
-          ".inv-item-pick, .inv-desc"
-        )?.value || "";
-
-      const desc =
-        row.querySelector(
-          ".inv-service"
-        )?.value || "";
-
-      const acct =
-        row.querySelector(
-          ".inv-acct"
-        )?.value || "";
-
-      const obligationIdRaw =
-        row.querySelector(
-          ".inv-obligation"
-        )?.value || "";
-
-      const revenue_obligation_id =
-        isLessorInvoice
-          ? null
-          : (
-              obligationIdRaw
-                ? Number(
-                    obligationIdRaw
-                  )
-                : null
-            );
-
-      const qty =
-        parseFloat(
-          row.querySelector(
-            ".inv-qty"
-          )?.value || "0"
-        ) || 0;
-
-      const unit =
-        parseFloat(
-          row.querySelector(
-            ".inv-price"
-          )?.value || "0"
-        ) || 0;
-
-      const code =
-        (
-          row.querySelector(
-            ".inv-vat-code"
-          )?.value ||
-          defaultVatCode
-        )
-          .trim()
-          .toUpperCase();
-
-      const net =
-        Math.max(
-          0,
-          qty * unit
-        );
-
-      let vatRate = 0;
-      let vatAmt = 0;
-
-      if (
-        vatEnabled &&
-        code === "STANDARD"
-      ) {
-        vatRate = 15;
-        vatAmt =
-          +(net * 0.15).toFixed(2);
-      }
-
-      const total =
-        +(net + vatAmt).toFixed(2);
-
-      const itemClean =
-        item.trim();
-
-      const descClean =
-        desc.trim();
-
-      return {
-        line_no: 0,
-
-        item_name:
-          itemClean,
-
-        description:
-          descClean ||
-          itemClean ||
-          "—",
-
-        account_code:
-          acct || null,
-
-        revenue_obligation_id,
-
-        quantity: qty,
-        unit_price: unit,
-
-        net_amount:
-          +net.toFixed(2),
-
-        vat_rate:
-          vatRate,
-
-        vat_amount:
-          vatAmt,
-
-        total_amount:
-          total,
-
-        item_type:
-          isLessorInvoice
-            ? "lease"
-            : (
-                row.querySelector(
-                  ".inv-item-type"
-                )?.value ||
-                "gl"
-              ),
-
-        item_id:
-          isLessorInvoice
-            ? lessorLeaseId
-            : (
-                Number(
-                  row.querySelector(
-                    ".inv-item-id"
-                  )?.value || 0
-                ) || null
-              ),
-
-        item_code:
-          row.querySelector(
-            ".inv-item-code"
-          )?.value || null,
-
-        source:
-          isLessorInvoice
-            ? "lessor_lease_billing"
-            : null,
-
-        source_id:
-          isLessorInvoice
-            ? lessorScheduleId
-            : null,
-
-        module_name:
-          isLessorInvoice
-            ? "ifrs16_lessor"
-            : null,
-
-        lessor_lease_id:
-          lessorLeaseId,
-
-        lessor_schedule_id:
-          lessorScheduleId,
-      };
-    })
-    .filter(line =>
-      (
-        line.item_name ||
-        line.description
-      ) &&
-      line.net_amount >= 0
-    );
-
-  const totals =
-    window.recalcInvoice?.() || {};
-
-  const disc =
-    parseFloat(
-      document.getElementById(
-        "invDisc"
-      )?.value || "0"
-    ) || 0;
-
-  const other =
-    parseFloat(
-      document.getElementById(
-        "invOther"
-      )?.value || "0"
-    ) || 0;
-
-  const dueDate =
-    computeDueDate(
-      invoiceDate,
-      terms
-    );
+  const totals = window.recalcInvoice?.() || {};
+  const discount = parseFloat(document.getElementById("invDisc")?.value || "0") || 0;
+  const other = parseFloat(document.getElementById("invOther")?.value || "0") || 0;
 
   return {
-    id:
-      invId || null,
-
-    customer_id:
-      customerId
-        ? Number(customerId)
-        : null,
-
-    customer_name:
-      customerName,
-
+    id: invId || null,
+    customer_id: customerId ? Number(customerId) : null,
+    customer_name: customerName,
     revenue_contract_id,
-
     number,
-    invoice_date:
-      invoiceDate,
-
-    due_date:
-      dueDate || null,
-
+    invoice_date: invoiceDate,
+    due_date: computeDueDate(invoiceDate, terms) || null,
     currency,
     terms,
     notes,
-
-    discount_amount:
-      +disc.toFixed(2),
-
-    other_amount:
-      +other.toFixed(2),
-
-    subtotal_amount:
-      +(
-        totals.subtotalAfterDisc ??
-        0
-      ).toFixed(2),
-
-    vat_amount:
-      +(
-        totals.vatTotal ??
-        0
-      ).toFixed(2),
-
-    total_amount:
-      +(
-        totals.grandTotal ??
-        0
-      ).toFixed(2),
-
+    discount_amount: +discount.toFixed(2),
+    other_amount: +other.toFixed(2),
+    subtotal_amount: +(totals.subtotalAfterDisc ?? 0).toFixed(2),
+    vat_amount: +(totals.vatTotal ?? 0).toFixed(2),
+    total_amount: +(totals.grandTotal ?? 0).toFixed(2),
     status: "draft",
-
-    source:
-      isLessorInvoice
-        ? "lessor_lease_billing"
-        : null,
-
-    source_id:
-      isLessorInvoice
-        ? lessorScheduleId
-        : null,
-
-    module_name:
-      isLessorInvoice
-        ? "ifrs16_lessor"
-        : null,
-
-    posting_mode:
-      isLessorInvoice
-        ? "custom_accounts"
-        : null,
-
-    lessor_lease_id:
-      lessorLeaseId,
-
-    lessor_schedule_id:
-      lessorScheduleId,
-
-    lease_classification:
-      isLessorInvoice
-        ? sourceMeta
-            .lease_classification ||
-          null
-        : null,
-
-    accounting_treatment:
-      isLessorInvoice
-        ? sourceMeta
-            .accounting_treatment ||
-          null
-        : null,
-
-    ar_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .ar_account_code ||
-          null
-        : null,
-
-    credit_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .credit_account_code ||
-          null
-        : null,
-
-    vat_output_account_code:
-      isLessorInvoice
-        ? sourceMeta
-            .vat_output_account_code ||
-          null
-        : null,
-
+    source: isLessorInvoice ? "lessor_lease_billing" : null,
+    source_id: isLessorInvoice ? lessorScheduleId : null,
+    module_name: isLessorInvoice ? "ifrs16_lessor" : null,
+    posting_mode: isLessorInvoice ? "custom_accounts" : null,
+    lessor_lease_id: lessorLeaseId,
+    lessor_schedule_id: lessorScheduleId,
+    lease_classification: isLessorInvoice ? sourceMeta.lease_classification || null : null,
+    accounting_treatment: isLessorInvoice ? sourceMeta.accounting_treatment || null : null,
+    ar_account_code: isLessorInvoice ? sourceMeta.ar_account_code || null : null,
+    credit_account_code: isLessorInvoice ? sourceMeta.credit_account_code || null : null,
+    vat_output_account_code: isLessorInvoice ? sourceMeta.vat_output_account_code || null : null,
     lines,
   };
 }
@@ -83899,378 +83974,108 @@ function bindAR() {
 
   async function prefillInvoiceFromRevenuePayload(payload = {}) {
     try {
-      console.log("🧾 [Invoice Prefill] payload =", payload);
+      console.log("🧾 [Invoice Prefill]", payload);
 
       const isLessorInvoice =
         payload.handoff_type === "lessor_lease_invoice" ||
         payload.source === "lessor_lease_billing" ||
         payload.module_name === "ifrs16_lessor";
 
-      // Keep the lessor lease IDs until the invoice is saved.
+      if (isLessorInvoice) window._CURRENT_INVOICE_SOURCE = payload;
+
+      const customerId = payload.customerId ?? payload.customer_id ?? null;
+      const customerName = payload.customerName ?? payload.customer_name ?? "";
+      const contractId = isLessorInvoice ? null : payload.contractId ?? payload.revenue_contract_id ?? null;
+      const obligationId = isLessorInvoice ? null : payload.obligationId ?? payload.revenue_obligation_id ?? payload.line?.revenue_obligation_id ?? null;
+      const itemName = payload.obligationName ?? payload.revenue_obligation_name ?? payload.line?.item_name ?? payload.line?.item ?? payload.contractTitle ?? "Lease rental";
+      const description = payload.obligationNotes ?? payload.revenue_obligation_notes ?? payload.line?.description ?? payload.memo ?? "";
+      const unitPrice = payload.allocatedPrice ?? payload.line?.unit_price ?? payload.line?.net_amount ?? 0;
+      const currency = resolveCurrency(payload.currency || "USD");
+      const invoiceDate = toIsoDateOnly(payload.invoiceDate ?? payload.invoice_date ?? new Date().toISOString().slice(0, 10));
+
+      const customerIdEl = document.getElementById("invCustomerId");
+      const customerNameEl = document.getElementById("invCustomerName");
+      const dateEl = document.getElementById("invDate");
+      const numberEl = document.getElementById("invNumber");
+      const termsEl = document.getElementById("invTerms");
+      const currencyEl = document.getElementById("invCurrency");
+      const memoEl = document.getElementById("invMemo");
+      const contractEl = document.getElementById("invRevenueContractId");
+      const body = document.getElementById("invLines");
+
+      if (customerIdEl) customerIdEl.value = customerId ? String(customerId) : "";
+      if (customerNameEl) customerNameEl.value = customerName;
+      if (dateEl) dateEl.value = invoiceDate;
+      if (numberEl && payload.number) numberEl.value = String(payload.number);
+      if (currencyEl) currencyEl.value = currency;
+      if (memoEl) memoEl.value = payload.memo || description || `Invoice for ${itemName}`;
+
+      if (termsEl && payload.due_date && invoiceDate) {
+        const invoiceDay = new Date(`${invoiceDate}T00:00:00`);
+        const dueDate = toIsoDateOnly(payload.due_date);
+        const dueDay = new Date(`${dueDate}T00:00:00`);
+        const days = Math.max(0, Math.round((dueDay - invoiceDay) / 86400000));
+        if (days === 0) termsEl.value = "on_receipt";
+        else if (days === 15) termsEl.value = "15";
+        else if (days === 30) termsEl.value = "30";
+      }
+
       if (isLessorInvoice) {
-        window._CURRENT_INVOICE_SOURCE = payload;
-      }
-
-      const customerId =
-        payload.customerId ??
-        payload.customer_id ??
-        null;
-
-      const customerName =
-        payload.customerName ??
-        payload.customer_name ??
-        "";
-
-      const contractId = isLessorInvoice
-        ? null
-        : (
-            payload.contractId ??
-            payload.revenue_contract_id ??
-            null
-          );
-
-      const contractNumber =
-        payload.contractNumber ??
-        payload.revenue_contract_number ??
-        "";
-
-      const contractTitle =
-        payload.contractTitle ??
-        payload.revenue_contract_title ??
-        "";
-
-      const obligationId = isLessorInvoice
-        ? null
-        : (
-            payload.obligationId ??
-            payload.revenue_obligation_id ??
-            payload.line?.revenue_obligation_id ??
-            null
-          );
-
-      const itemName =
-        payload.obligationName ??
-        payload.revenue_obligation_name ??
-        payload.line?.item_name ??
-        payload.line?.item ??
-        contractTitle ??
-        "Lease rental";
-
-      const description =
-        payload.obligationNotes ??
-        payload.revenue_obligation_notes ??
-        payload.line?.description ??
-        payload.memo ??
-        "";
-
-      const unitPrice =
-        payload.allocatedPrice ??
-        payload.line?.unit_price ??
-        payload.line?.net_amount ??
-        0;
-
-      const currency = resolveCurrency(
-        payload.currency || "USD"
-      );
-
-      const rawInvoiceDate =
-        payload.invoiceDate ??
-        payload.invoice_date ??
-        new Date().toISOString().slice(0, 10);
-
-      const invoiceDate = rawInvoiceDate
-        ? String(rawInvoiceDate).slice(0, 10)
-        : new Date().toISOString().slice(0, 10);
-
-      const invCustomerIdEl =
-        document.getElementById("invCustomerId");
-
-      const invCustomerNameEl =
-        document.getElementById("invCustomerName");
-
-      const invDateEl =
-        document.getElementById("invDate");
-
-      const invNumberEl =
-        document.getElementById("invNumber");
-
-      const invTermsEl =
-        document.getElementById("invTerms");
-
-      const invCurrencyEl =
-        document.getElementById("invCurrency");
-
-      const invMemoEl =
-        document.getElementById("invMemo");
-
-      const invRevenueContractEl =
-        document.getElementById("invRevenueContractId");
-
-      const body =
-        document.getElementById("invLines");
-
-      if (invCustomerIdEl) {
-        invCustomerIdEl.value =
-          customerId ? String(customerId) : "";
-      }
-
-      if (invCustomerNameEl) {
-        invCustomerNameEl.value = customerName || "";
-      }
-
-      if (invDateEl) {
-        invDateEl.value = invoiceDate;
-      }
-
-      if (invNumberEl && payload.number) {
-        invNumberEl.value = String(payload.number);
-      }
-
-      if (invCurrencyEl) {
-        invCurrencyEl.value = currency || "USD";
-      }
-
-      if (invMemoEl) {
-        invMemoEl.value =
-          payload.memo ||
-          `Invoice for ${itemName}${
-            contractNumber
-              ? ` (${contractNumber})`
-              : ""
-          }`;
-      }
-
-      // Convert lessor payment terms into the existing AR terms.
-      if (
-        invTermsEl &&
-        payload.due_date &&
-        invoiceDate
-      ) {
-        const invoiceDay =
-          new Date(`${invoiceDate}T00:00:00`);
-
-        const dueDay =
-          new Date(
-            `${String(payload.due_date).slice(0, 10)}T00:00:00`
-          );
-
-        const days = Math.max(
-          0,
-          Math.round(
-            (dueDay - invoiceDay) / 86400000
-          )
-        );
-
-        invTermsEl.value =
-          days === 0 ? "on_receipt" :
-          days === 15 ? "15" :
-          days === 30 ? "30" :
-          invTermsEl.value;
-      }
-
-      // Revenue contracts only apply to IFRS 15 invoices.
-      // They must not be loaded for lessor lease invoices.
-      if (!isLessorInvoice) {
-        const contracts =
-          await window.loadRevenueContractsForSelectedCustomer?.(
-            contractId
-          ) || [];
-
-        window.toggleInvoiceContractUI?.({
-          hasCustomerContracts: contracts.length > 0,
-        });
-
-        if (invRevenueContractEl) {
-          invRevenueContractEl.value =
-            contractId ? String(contractId) : "";
-        }
-
-        const obligations =
-          await window.loadInvoiceLineObligationsFromContract?.() || [];
-
-        window.toggleInvoiceObligationUI?.({
-          hasRevenueContract: !!contractId,
-          hasObligation: obligations.length > 0,
-        });
+        if (contractEl) contractEl.value = "";
+        window.toggleInvoiceContractUI?.({ hasCustomerContracts: false });
+        window.toggleInvoiceObligationUI?.({ hasRevenueContract: false, hasObligation: false });
       } else {
-        if (invRevenueContractEl) {
-          invRevenueContractEl.value = "";
-        }
-
-        window.toggleInvoiceContractUI?.({
-          hasCustomerContracts: false,
-        });
-
-        window.toggleInvoiceObligationUI?.({
-          hasRevenueContract: false,
-          hasObligation: false,
-        });
+        const contracts = await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
+        window.toggleInvoiceContractUI?.({ hasCustomerContracts: contracts.length > 0 });
+        if (contractEl) contractEl.value = contractId ? String(contractId) : "";
+        const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
+        window.toggleInvoiceObligationUI?.({ hasRevenueContract: !!contractId, hasObligation: obligations.length > 0 });
       }
 
-      if (!body) {
-        console.warn("[Invoice Prefill] invLines not found");
-        return;
-      }
+      if (!body) return console.warn("[Invoice Prefill] invLines not found");
 
-      // Clear existing blank/default rows before inserting lease data.
       body.innerHTML = "";
+      const row = window.addLine?.() || body.querySelector("tr");
+      if (!row) return console.warn("[Invoice Prefill] Could not create invoice line");
 
-      let row = window.addLine?.() || null;
+      const itemEl = row.querySelector(".inv-item-pick, .inv-desc");
+      const descEl = row.querySelector(".inv-service");
+      const accountEl = row.querySelector(".inv-acct");
+      const typeEl = row.querySelector(".inv-item-type");
+      const idEl = row.querySelector(".inv-item-id");
+      const codeEl = row.querySelector(".inv-item-code");
+      const obligationEl = row.querySelector(".inv-obligation");
+      const quantityEl = row.querySelector(".inv-qty");
+      const priceEl = row.querySelector(".inv-price");
+      const vatEl = row.querySelector(".inv-vat-code");
 
-      if (!row) {
-        row = body.querySelector("tr");
+      if (itemEl) itemEl.value = itemName;
+      if (descEl) descEl.value = description;
+      if (quantityEl) quantityEl.value = "1";
+      if (priceEl) priceEl.value = String(unitPrice || 0);
+      if (accountEl && payload.line?.account_code) accountEl.value = String(payload.line.account_code);
+      if (typeEl) typeEl.value = isLessorInvoice ? "lease" : payload.line?.item_type || "gl";
+      if (idEl) idEl.value = isLessorInvoice ? String(payload.lessor_lease_id || payload.lease_id || "") : String(payload.line?.item_id || "");
+      if (codeEl) codeEl.value = payload.line?.item_code || "";
+      if (vatEl && isLessorInvoice) vatEl.value = Number(payload.line?.vat_amount || 0) > 0 ? "STANDARD" : "NO_VAT";
+
+      if (obligationEl && !isLessorInvoice) {
+        obligationEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
+        obligationEl.value = obligationId ? String(obligationId) : "";
       }
 
-      if (!row) {
-        console.warn(
-          "[Invoice Prefill] Could not create invoice line"
-        );
-        return;
-      }
+      if (!isLessorInvoice) await window.applyObligationBillingToLine?.(row);
 
-      const itemEl = row.querySelector(
-        ".inv-item-pick, .inv-desc"
-      );
-
-      const descEl =
-        row.querySelector(".inv-service");
-
-      const acctEl =
-        row.querySelector(".inv-acct");
-
-      const typeEl =
-        row.querySelector(".inv-item-type");
-
-      const idEl =
-        row.querySelector(".inv-item-id");
-
-      const codeEl =
-        row.querySelector(".inv-item-code");
-
-      const oblEl =
-        row.querySelector(".inv-obligation");
-
-      const qtyEl =
-        row.querySelector(".inv-qty");
-
-      const priceEl =
-        row.querySelector(".inv-price");
-
-      const vatEl =
-        row.querySelector(".inv-vat-code");
-
-      if (itemEl) {
-        itemEl.value = itemName || "Lease rental";
-      }
-
-      if (descEl) {
-        descEl.value = description || "";
-      }
-
-      if (qtyEl) {
-        qtyEl.value = "1";
-      }
-
-      if (priceEl) {
-        priceEl.value = String(unitPrice || 0);
-      }
-
-      if (
-        acctEl &&
-        payload.line?.account_code
-      ) {
-        acctEl.value =
-          String(payload.line.account_code);
-      }
-
-      if (typeEl) {
-        typeEl.value = isLessorInvoice
-          ? "lease"
-          : (
-              payload.line?.item_type ||
-              "gl"
-            );
-      }
-
-      if (idEl) {
-        idEl.value = isLessorInvoice
-          ? String(
-              payload.lessor_lease_id ||
-              payload.lease_id ||
-              ""
-            )
-          : String(
-              payload.line?.item_id ||
-              ""
-            );
-      }
-
-      if (codeEl) {
-        codeEl.value =
-          payload.line?.item_code || "";
-      }
-
-      if (
-        vatEl &&
-        isLessorInvoice
-      ) {
-        vatEl.value =
-          Number(
-            payload.line?.vat_amount || 0
-          ) > 0
-            ? "STANDARD"
-            : "NO_VAT";
-      }
-
-      if (
-        oblEl &&
-        !isLessorInvoice
-      ) {
-        oblEl.dataset.selectedValue =
-          obligationId
-            ? String(obligationId)
-            : "";
-
-        oblEl.value =
-          obligationId
-            ? String(obligationId)
-            : "";
-      }
-
-      // This function belongs to IFRS 15 revenue obligations.
-      // Do not run it for IFRS 16 lessor invoices.
-      if (!isLessorInvoice) {
-        await window.applyObligationBillingToLine?.(
-          row
-        );
-      }
-
-      window.recalcInvoice?.({
-        force: true
-      });
-
+      window.recalcInvoice?.({ force: true });
       window.saveInvoiceDraftToLocal?.();
 
-      console.log(
-        "✅ [Invoice Prefill] completed",
-        {
-          isLessorInvoice,
-          lessor_lease_id:
-            payload.lessor_lease_id,
-          lessor_schedule_id:
-            payload.lessor_schedule_id,
-        }
-      );
+      console.log("✅ [Invoice Prefill] completed");
     } catch (err) {
-      console.warn(
-        "[prefillInvoiceFromRevenuePayload] failed",
-        err
-      );
+      console.warn("[prefillInvoiceFromRevenuePayload] failed", err);
     }
   }
 
-  window.prefillInvoiceFromRevenuePayload =
-    prefillInvoiceFromRevenuePayload;
+  window.prefillInvoiceFromRevenuePayload = prefillInvoiceFromRevenuePayload;
 
   async function consumePendingRevenueInvoicePrefill() {
     try {

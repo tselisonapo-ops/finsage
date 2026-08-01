@@ -6280,10 +6280,16 @@ def create_invoice(cid: int):
             available_to_bill = Decimal(str(preview.get("available_to_bill") or 0))
 
             if invoice_amount > available_to_bill:
-                raise Exception(
-                    f"Cannot overbill obligation {oid}. "
-                    f"Available: {available_to_bill}, Attempted: {invoice_amount}"
-                )
+                return jsonify({
+                    "ok": False,
+                    "error": "revenue_obligation_overbilled",
+                    "message": "This invoice exceeds the remaining billable amount for the selected performance obligation.",
+                    "details": {
+                        "obligation_id": int(oid),
+                        "available_amount": float(available_to_bill),
+                        "attempted_amount": float(invoice_amount),
+                    },
+                }), 422
     
         current_app.logger.info("create_invoice: before insert")
         invoice_id = db_service.insert_invoice_with_lines(company_id, header, mapped_lines)
@@ -6548,15 +6554,19 @@ def create_invoice(cid: int):
 
         return jsonify(posted), 201
 
-    except Exception as e:
+    except Exception:
         current_app.logger.exception(
             "❌ create_invoice crashed | cid=%s | user=%r | payload=%r",
             cid,
             getattr(g, "current_user", {}),
             request.get_json(silent=True),
         )
-        return jsonify({"error": "Internal server error in create_invoice", "detail": str(e)}), 500
-    
+
+        return jsonify({
+            "ok": False,
+            "error": "invoice_creation_failed",
+            "message": "An unexpected error occurred while creating the invoice.",
+        }), 500
 
 # =========================================================
 # INVOICES (UPDATE)

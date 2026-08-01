@@ -1706,13 +1706,9 @@ class LessorLeaseEngine:
             )
 
         annual_rate = self._annual_rate(
-            lease.get("discount_rate")
-            or lease.get(
-                "implicit_interest_rate"
-            )
-            or lease.get(
-                "interest_rate_implicit"
-            )
+            lease.get("interest_rate_implicit")
+            or lease.get("implicit_interest_rate")
+            or lease.get("discount_rate")
         )
 
         periods_per_year = self._periods_per_year(

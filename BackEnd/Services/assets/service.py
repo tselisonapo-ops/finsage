@@ -455,6 +455,7 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
             FROM {{schema}}.asset_acquisitions acq
             JOIN base b ON b.id = acq.asset_id
             WHERE LOWER(acq.status) = 'posted'
+              AND acq.posted_journal_id IS NOT NULL
               AND acq.acquisition_date <= %s
             GROUP BY acq.asset_id
 
@@ -462,10 +463,8 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
 
             SELECT b.id AS asset_id, TRUE AS any_posted
             FROM base b
-            WHERE
-                b.entry_mode = 'opening_balance'
-                OR b.opening_as_at IS NOT NULL
-                OR COALESCE(b.opening_accum_dep, 0) > 0
+            WHERE b.opening_posted_journal_id IS NOT NULL
+              AND COALESCE(b.opening_as_at, b.acquisition_date) <= %s
         ),
 
         gl_cost AS (
@@ -718,7 +717,8 @@ def list_assets(cur, company_id, status=None, asset_class=None, q=None, limit=50
     cur.execute(sql, (
         *params,
 
-        as_at,       # posted_flags acquisition cutoff
+        as_at,       # posted acquisition cutoff
+        as_at,       # posted opening balance cutoff
 
         company_id,  # gl_cost company
         as_at,       # gl_cost journal date cutoff
@@ -1097,20 +1097,87 @@ def create_compound_asset_acquisition(cur, company_id: int, payload: dict, actor
 def ensure_asset_tax_profile_for_asset_cur(cur, company_id: int, asset_id: int):
     schema = company_schema(company_id)
 
-    # temporary default until company tax setting is available
-    tax_code = "RSL"
+    cur.execute(
+        "SELECT to_regclass(%s) AS table_name",
+        (f"{schema}.asset_tax_profiles",),
+    )
+
+    if not cur.fetchone()["table_name"]:
+        current_app.logger.warning(
+            "Skipping asset tax profile: %s.asset_tax_profiles does not exist",
+            schema,
+        )
+        return None
 
     cur.execute("""
-        SELECT id
-        FROM public.tax_authorities
-        WHERE code = %s
-          AND is_active = TRUE
+        SELECT
+            c.country,
+            c.tax_authority_id,
+            ta.id AS authority_id,
+            ta.code AS authority_code
+        FROM public.companies c
+        LEFT JOIN public.tax_authorities ta
+          ON ta.id = c.tax_authority_id
+         AND ta.is_active = TRUE
+        WHERE c.id = %s
         LIMIT 1
-    """, (tax_code,))
+    """, (company_id,))
 
-    ta = cur.fetchone()
-    if not ta:
+    company = cur.fetchone()
+    if not company:
+        current_app.logger.warning(
+            "Skipping asset tax profile: company_id=%s not found",
+            company_id,
+        )
         return None
+
+    authority_id = company.get("authority_id")
+    authority_code = company.get("authority_code")
+
+    if not authority_id:
+        country = str(company.get("country") or "").strip().upper()
+
+        country_map = {
+            "LESOTHO": "RSL",
+            "SOUTH AFRICA": "SARS",
+            "BOTSWANA": "BURS",
+        }
+        authority_code = country_map.get(country)
+
+        if not authority_code:
+            current_app.logger.warning(
+                "Skipping asset tax profile: no tax authority mapping "
+                "for company_id=%s country=%r",
+                company_id,
+                company.get("country"),
+            )
+            return None
+
+        cur.execute("""
+            SELECT id, code
+            FROM public.tax_authorities
+            WHERE code = %s
+              AND is_active = TRUE
+            LIMIT 1
+        """, (authority_code,))
+
+        authority = cur.fetchone()
+        if not authority:
+            current_app.logger.warning(
+                "Skipping asset tax profile: tax authority %s not found",
+                authority_code,
+            )
+            return None
+
+        authority_id = authority["id"]
+        authority_code = authority["code"]
+
+        cur.execute("""
+            UPDATE public.companies
+            SET tax_authority_id = %s
+            WHERE id = %s
+              AND tax_authority_id IS NULL
+        """, (authority_id, company_id))
 
     cur.execute(_q(schema, """
         INSERT INTO {schema}.asset_tax_profiles (
@@ -1127,7 +1194,7 @@ def ensure_asset_tax_profile_for_asset_cur(cur, company_id: int, asset_id: int):
             %s,
             COALESCE(a.available_for_use_date, a.acquisition_date),
             COALESCE(a.opening_cost, a.cost),
-            'Auto-created from asset register'
+            %s
         FROM {schema}.assets a
         WHERE a.id = %s
           AND a.company_id = %s
@@ -1139,7 +1206,13 @@ def ensure_asset_tax_profile_for_asset_cur(cur, company_id: int, asset_id: int):
                 AND p.tax_authority_id = %s
           )
         RETURNING id
-    """), (ta["id"], asset_id, company_id, ta["id"]))
+    """), (
+        authority_id,
+        f"Auto-created from asset register using {authority_code}",
+        asset_id,
+        company_id,
+        authority_id,
+    ))
 
     row = cur.fetchone()
     return row["id"] if row else None
@@ -1197,34 +1270,30 @@ def create_asset(cur, company_id, payload):
             raise Exception("uop_opening_reading must be 0 or more.")
 
     if m != "UOP":
-        uop_usage_mode = None
+        uop_usage_mode = "DELTA"
         uop_opening_reading = None
-    else:
-        if uop_usage_mode == "READING" and uop_opening_reading is None:
-            raise Exception("uop_opening_reading is required when uop_usage_mode is READING.")
+    elif uop_usage_mode == "READING" and uop_opening_reading is None:
+        raise Exception("uop_opening_reading is required when uop_usage_mode is READING.")
 
     # ----------------------------
     # Opening balance fields
     # ----------------------------
     entered_cost = Decimal(str(payload.get("cost") or 0))
-
-    if entry_mode == "opening_balance":
-        cost = entered_cost
-
-        if opening_cost is None:
-            opening_cost = cost
-    else:
-        cost = Decimal("0.00")
-
     residual_value = Decimal(str(payload.get("residual_value") or 0))
-
     opening_as_at = payload.get("opening_as_at") or None
-
     opening_cost = payload.get("opening_cost", None)
+
     if opening_cost in ("", None):
         opening_cost = None
     else:
         opening_cost = Decimal(str(opening_cost))
+
+    if entry_mode == "opening_balance":
+        cost = entered_cost
+        if opening_cost is None:
+            opening_cost = cost
+    else:
+        cost = Decimal("0.00")
 
     opening_accum_dep = payload.get("opening_accum_dep", None)
     if opening_accum_dep in ("", None):
@@ -1498,6 +1567,8 @@ def create_asset(cur, company_id, payload):
         ))
     asset_id = cur.fetchone()["id"]
 
+    cur.execute("SAVEPOINT asset_tax_profile_sp")
+
     try:
         profile_id = ensure_asset_tax_profile_for_asset_cur(
             cur,
@@ -1505,13 +1576,19 @@ def create_asset(cur, company_id, payload):
             asset_id,
         )
 
-        current_app.logger.info(
-            "Asset tax profile created asset_id=%s profile_id=%s",
-            asset_id,
-            profile_id,
-        )
+        cur.execute("RELEASE SAVEPOINT asset_tax_profile_sp")
+
+        if profile_id:
+            current_app.logger.info(
+                "Asset tax profile created asset_id=%s profile_id=%s",
+                asset_id,
+                profile_id,
+            )
 
     except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT asset_tax_profile_sp")
+        cur.execute("RELEASE SAVEPOINT asset_tax_profile_sp")
+
         current_app.logger.exception(
             "Failed creating asset tax profile for asset_id=%s",
             asset_id,

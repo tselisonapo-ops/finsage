@@ -107,7 +107,51 @@ def _bool(value) -> bool:
         "on",
     }
 
+def _assert_asset_available_for_lessor_lease(
+    company_id: int,
+    asset_id,
+    *,
+    exclude_lease_id=None,
+    cur=None,
+):
+    asset_id = int(asset_id or 0)
+    if not asset_id:
+        raise ValueError("asset_id is required")
 
+    schema = db_service.company_schema(company_id)
+
+    existing = db_service.fetch_one(
+        f"""
+        SELECT id, contract_no, contract_name, status
+        FROM {schema}.lessor_leases
+        WHERE company_id=%s
+          AND asset_id=%s
+          AND COALESCE(status, '') NOT IN ('cancelled', 'terminated')
+          AND (%s::int IS NULL OR id<>%s::int)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (
+            int(company_id),
+            asset_id,
+            exclude_lease_id,
+            exclude_lease_id,
+        ),
+        cur=cur,
+    )
+
+    if existing:
+        name = (
+            existing.get("contract_name")
+            or existing.get("contract_no")
+            or f"Lease {existing['id']}"
+        )
+
+        raise ValueError(
+            f"The selected asset is already linked to {name} "
+            f"with status {existing.get('status') or 'unknown'}."
+        )
+    
 def _number(
     value,
     name: str,
@@ -584,16 +628,97 @@ def lessor_leases(company_id: int):
             return jsonify({"error": "Customer not found"}), 404
 
         with db_service._conn_cursor() as (conn, cur):
+            _assert_asset_available_for_lessor_lease(
+                company_id,
+                payload.get("asset_id"),
+                cur=cur,
+            )
+
             lease = db_service.create_lessor_lease(
                 company_id,
-                payload,
+                {**payload, "status": "draft"},
                 created_by_user_id=user_id,
                 cur=cur,
             )
 
+            lease_id = int(lease["id"])
+            classification = str(lease.get("lease_classification") or "operating").strip().lower()
+
+            billing_rows = build_lessor_billing_schedule(lease)
+            for row in billing_rows:
+                row["vat_rate"] = float(lease.get("vat_rate") or 0)
+
+            saved_billing = db_service.save_lessor_billing_schedule(
+                company_id,
+                lease_id,
+                billing_rows,
+                cur=cur,
+            )
+
+            accounting_result = lessor_lease_engine.build_accounting_schedule(lease)
+            accounting_rows = accounting_result.get("schedule") or []
+
+            if not accounting_rows:
+                raise ValueError("The lessor accounting schedule could not be generated")
+
+            saved_schedule = db_service.save_lessor_accounting_schedule(
+                company_id,
+                lease_id,
+                classification,
+                accounting_rows,
+                cur=cur,
+            )
+
+            journal = db_service.build_lessor_day_one_journal(
+                company_id,
+                lease_id,
+                cur=cur,
+            )
+
+            journal_id = None
+
+            if journal:
+                journal.update({
+                    "prepared_by_user_id": user_id,
+                    "created_by_user_id": user_id,
+                    "updated_by_user_id": user_id,
+                })
+
+                journal_id = db_service.post_journal(
+                    company_id,
+                    journal,
+                    cur=cur,
+                    conn=conn,
+                )
+
+            commenced = db_service.commence_lessor_lease(
+                company_id,
+                lease_id,
+                commencement_date=lease.get("commencement_date") or lease.get("start_date"),
+                journal_id=journal_id,
+                user_id=user_id,
+                cur=cur,
+            )
+
+            if not commenced:
+                raise ValueError("The lessor lease could not be commenced")
+
             conn.commit()
 
-        return jsonify({"ok": True, "item": lease}), 201
+        return jsonify({
+            "ok": True,
+            "item": commenced,
+            "classification": classification,
+            "billing_schedule_count": len(saved_billing),
+            "accounting_schedule_count": len(saved_schedule),
+            "commencement_journal_id": journal_id,
+            "commencement_journal": journal,
+            "message": (
+                "Finance lease created and Day 1 journal posted"
+                if journal_id
+                else "Operating lease created and commenced"
+            ),
+        }), 201
 
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -668,6 +793,11 @@ def classify_lessor_lease(company_id: int):
             raw
         )
 
+        _assert_asset_available_for_lessor_lease(
+            company_id,
+            payload.get("asset_id"),
+        )
+
         result = (
             lessor_lease_engine
             .classify_and_validate(payload)
@@ -720,6 +850,11 @@ def preview_lessor_terms(
 
         payload = _classification_payload(
             raw
+        )
+
+        _assert_asset_available_for_lessor_lease(
+            company_id,
+            payload.get("asset_id"),
         )
 
         payload.update({
@@ -1829,4 +1964,752 @@ def lessor_create_invoices_through(
         )
 
         return _json_error(str(exc), 500)
+    
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lease_id>/subsequent-measurement",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_subsequent_measurement(company_id, lease_id):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    _, deny = _auth(company_id)
+    if deny:
+        return deny
+
+    try:
+        as_at = _date(
+            request.args.get("as_at"),
+            "as_at",
+            required=False,
+        )
+
+        return jsonify({
+            "ok": True,
+            **db_service.get_lessor_subsequent_measurement_workspace(
+                company_id,
+                lease_id,
+                as_at=as_at,
+            ),
+        })
+    except ValueError as e:
+        return _json_error(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception(
+            "lessor_subsequent_measurement failed"
+        )
+        return _json_error(str(e), 500)
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lease_id>/accounting-schedule/"
+    "<int:schedule_id>/journal-preview",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_period_journal_preview(
+    company_id,
+    lease_id,
+    schedule_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    _, deny = _auth(company_id)
+    if deny:
+        return deny
+
+    try:
+        journal = db_service.build_lessor_period_journal(
+            company_id,
+            lease_id,
+            schedule_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "journal": journal,
+            "message": (
+                "Journal preview generated"
+                if journal
+                else "No accounting adjustment is required"
+            ),
+        })
+    except ValueError as e:
+        return _json_error(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception(
+            "lessor_period_journal_preview failed"
+        )
+        return _json_error(str(e), 500)
+    
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/"
+    "<int:lease_id>/accounting-schedule/"
+    "<int:schedule_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def post_lessor_schedule_period(
+    company_id,
+    lease_id,
+    schedule_id,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user_id, deny = _auth(company_id)
+    if deny:
+        return deny
+
+    try:
+        return jsonify({
+            "ok": True,
+            **db_service.post_lessor_period(
+                company_id,
+                lease_id,
+                schedule_id,
+                user_id=user_id,
+            ),
+        }), 201
+    except ValueError as e:
+        return _json_error(str(e), 400)
+    except Exception as e:
+        current_app.logger.exception(
+            "post_lessor_schedule_period failed"
+        )
+        return _json_error(str(e), 500)
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>/lessor-leases/<int:lease_id>/recalculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def recalculate_lessor_lease(company_id: int, lease_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user_id, deny = _auth(company_id)
+    if deny:
+        return deny
+
+    try:
+        raw = request.get_json(silent=True) or {}
+        schema = db_service.company_schema(company_id)
+
+        with db_service._conn_cursor() as (conn, cur):
+            lease = db_service.get_lessor_lease(company_id, lease_id, cur=cur)
+            if not lease:
+                return _json_error("Lessor lease not found", 404)
+
+            if str(lease.get("status") or "").lower() != "draft":
+                raise ValueError("Only a draft lease can be corrected and recalculated")
+
+            if lease.get("commencement_journal_id"):
+                raise ValueError("The lease has already been commenced and cannot be directly corrected")
+
+            consequences = db_service.fetch_one(
+                f"""
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE recognition_journal_id IS NOT NULL
+                    ) AS posted_periods,
+                    COUNT(*) FILTER (
+                        WHERE invoice_id IS NOT NULL
+                    ) AS invoiced_periods,
+                    COALESCE(SUM(receipt_amount), 0) AS receipts
+                FROM {schema}.lessor_lease_schedule
+                WHERE company_id=%s
+                  AND lessor_lease_id=%s
+                """,
+                (int(company_id), int(lease_id)),
+                cur=cur,
+            ) or {}
+
+            if int(consequences.get("posted_periods") or 0) > 0:
+                raise ValueError("A schedule period has already been posted")
+
+            if int(consequences.get("invoiced_periods") or 0) > 0:
+                raise ValueError("A schedule period has already been invoiced")
+
+            if float(consequences.get("receipts") or 0) > 0:
+                raise ValueError("A receipt has already been allocated to this lease")
+
+            billed = db_service.fetch_one(
+                f"""
+                SELECT COUNT(*) AS n
+                FROM {schema}.lessor_lease_bills
+                WHERE company_id=%s
+                  AND lessor_lease_id=%s
+                  AND (
+                      invoice_id IS NOT NULL
+                      OR status IN ('posted', 'paid')
+                  )
+                """,
+                (int(company_id), int(lease_id)),
+                cur=cur,
+            ) or {}
+
+            if int(billed.get("n") or 0) > 0:
+                raise ValueError("The lease already has posted, paid or invoiced billing records")
+
+            start_date = _date(
+                raw.get("start_date") or lease.get("start_date"),
+                "start_date",
+            )
+
+            end_date = _date(
+                raw.get("end_date") or lease.get("end_date"),
+                "end_date",
+            )
+
+            if end_date < start_date:
+                raise ValueError("end_date cannot be before start_date")
+
+            billing_amount = _number(
+                raw.get("billing_amount", lease.get("billing_amount")),
+                "billing_amount",
+                minimum=0,
+            )
+
+            if billing_amount <= 0:
+                raise ValueError("billing_amount must be greater than zero")
+
+            implicit_rate = _number(
+                raw.get(
+                    "interest_rate_implicit",
+                    lease.get("interest_rate_implicit")
+                    or lease.get("implicit_interest_rate")
+                    or lease.get("discount_rate"),
+                ),
+                "interest_rate_implicit",
+                minimum=0,
+            )
+
+            payment_terms_days = int(
+                raw.get(
+                    "payment_terms_days",
+                    lease.get("payment_terms_days") or 0,
+                )
+            )
+
+            vat_rate = _number(
+                raw.get("vat_rate", lease.get("vat_rate")),
+                "vat_rate",
+                minimum=0,
+            )
+
+            if vat_rate > 1:
+                vat_rate /= 100
+
+            lease_term_months = _lease_term_months(start_date, end_date)
+
+            updated = db_service.fetch_one(
+                f"""
+                UPDATE {schema}.lessor_leases
+                SET
+                    start_date=%s,
+                    end_date=%s,
+                    lease_term_months=%s,
+                    billing_amount=%s,
+                    payment_terms_days=%s,
+                    vat_rate=%s,
+                    interest_rate_implicit=%s,
+                    discount_rate=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                  AND id=%s
+                  AND status='draft'
+                RETURNING *
+                """,
+                (
+                    start_date,
+                    end_date,
+                    lease_term_months,
+                    billing_amount,
+                    payment_terms_days,
+                    vat_rate,
+                    implicit_rate,
+                    implicit_rate,
+                    user_id,
+                    int(company_id),
+                    int(lease_id),
+                ),
+                cur=cur,
+            )
+
+            if not updated:
+                raise ValueError("The draft lease could not be updated")
+
+            billing_rows = build_lessor_billing_schedule(updated)
+            classification = str(
+                updated.get("lease_classification") or "operating"
+            ).lower()
+
+            if classification == "finance":
+                accounting_rows = lessor_lease_engine.build_finance_lease_schedule(updated)
+            elif classification == "operating":
+                accounting_rows = lessor_lease_engine.build_operating_lease_schedule(updated)
+            else:
+                raise ValueError("Invalid lessor lease classification")
+
+            billing_by_period = {
+                int(row["period_no"]): row
+                for row in billing_rows
+            }
+
+            schedule_rows = []
+
+            for accounting in accounting_rows:
+                period_no = int(accounting["period_no"])
+                billing = billing_by_period.get(period_no)
+
+                if not billing:
+                    raise ValueError(
+                        f"Billing period {period_no} does not match the accounting schedule"
+                    )
+
+                schedule_rows.append({
+                    **accounting,
+                    "period_no": period_no,
+                    "period_start": accounting.get("period_start") or billing["period_start"],
+                    "period_end": accounting.get("period_end") or billing["period_end"],
+                    "payment_date": accounting.get("payment_date") or billing["bill_date"],
+                    "due_date": billing["due_date"],
+                    "contractual_net": billing["amount_net"],
+                    "vat_amount": billing["vat_amount"],
+                    "contractual_gross": billing["amount_gross"],
+                    "principal_recovery": accounting.get(
+                        "principal_recovery",
+                        accounting.get("principal_reduction", 0),
+                    ),
+                    "accrued_rental_movement": accounting.get(
+                        "accrued_rental_movement",
+                        accounting.get("accrued_rent_movement", 0),
+                    ),
+                    "deferred_rental_movement": accounting.get(
+                        "deferred_rental_movement",
+                        accounting.get("deferred_rent_movement", 0),
+                    ),
+                })
+
+            db_service.fetch_all(
+                f"""
+                DELETE FROM {schema}.lessor_lease_bills
+                WHERE company_id=%s
+                AND lessor_lease_id=%s
+                AND invoice_id IS NULL
+                AND status='draft'
+                RETURNING id
+                """,
+                (int(company_id), int(lease_id)),
+                cur=cur,
+            )
+
+            saved = db_service.save_lessor_accounting_schedule(
+                company_id,
+                lease_id,
+                classification,
+                schedule_rows,
+                cur=cur,
+            )
+
+            conn.commit()
+
+        workspace = db_service.get_lessor_subsequent_measurement_workspace(
+            company_id,
+            lease_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": "Lease updated and schedule recalculated",
+            "item": updated,
+            "schedule_count": len(saved),
+            **workspace,
+        })
+
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+
+    except Exception as exc:
+        current_app.logger.exception("recalculate_lessor_lease failed")
+        return _json_error(str(exc), 500)
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/corrections",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def correct_lessor_lease_route(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user_id, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        raw = request.get_json(
+            silent=True
+        ) or {}
+
+        reason = (
+            raw.pop("reason", None) or ""
+        ).strip()
+
+        if not reason:
+            raise ValueError(
+                "Correction reason is required"
+            )
+
+        result = (
+            db_service.correct_lessor_lease(
+                company_id,
+                lease_id,
+                raw,
+                reason=reason,
+                user_id=user_id,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                "Lease corrected, recalculated "
+                "and recommenced"
+            ),
+            **result,
+        })
+
+    except ValueError as exc:
+        return _json_error(
+            str(exc),
+            400,
+        )
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "correct_lessor_lease_route failed"
+        )
+
+        return _json_error(
+            str(exc),
+            500,
+        )
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/schedule-versions",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_schedule_versions(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    _, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    version_no = request.args.get(
+        "version_no",
+        type=int,
+    )
+
+    return jsonify({
+        "ok": True,
+
+        "versions":
+            db_service
+            .list_lessor_schedule_versions(
+                company_id,
+                lease_id,
+            ),
+
+        "items":
+            db_service
+            .get_lessor_schedule_version(
+                company_id,
+                lease_id,
+                version_no,
+            ),
+    })
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/schedule-versions",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_schedule_versions(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    _, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    version_no = request.args.get(
+        "version_no",
+        type=int,
+    )
+
+    return jsonify({
+        "ok": True,
+
+        "versions":
+            db_service
+            .list_lessor_schedule_versions(
+                company_id,
+                lease_id,
+            ),
+
+        "items":
+            db_service
+            .get_lessor_schedule_version(
+                company_id,
+                lease_id,
+                version_no,
+            ),
+    })
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/billing-workspace",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def lessor_billing_workspace(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    _, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    return jsonify({
+        "ok": True,
+        **db_service.get_lessor_billing_workspace(
+            company_id,
+            lease_id,
+        ),
+    })
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/modifications",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def lessor_modifications_collection(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user_id, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "items":
+                db_service
+                .list_lessor_modifications(
+                    company_id,
+                    lease_id,
+                ),
+        })
+
+    try:
+        lease = db_service.get_lessor_lease(
+            company_id,
+            lease_id,
+        )
+
+        if not lease:
+            return _json_error(
+                "Lessor lease not found",
+                404,
+            )
+
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        payload["effective_date"] = _date(
+            payload.get("effective_date"),
+            "effective_date",
+        )
+
+        preview = (
+            lessor_lease_engine
+            .preview_modification(
+                lease,
+                payload,
+            )
+        )
+
+        with db_service._conn_cursor() as (
+            conn,
+            cur,
+        ):
+            item = (
+                db_service
+                .create_lessor_modification(
+                    company_id,
+                    lease_id,
+                    payload,
+                    preview,
+                    user_id=user_id,
+                    cur=cur,
+                )
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+            "preview": preview,
+        }), 201
+
+    except ValueError as exc:
+        return _json_error(
+            str(exc),
+            400,
+        )
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "lessor_modifications_collection failed"
+        )
+
+        return _json_error(
+            str(exc),
+            500,
+        )
+
+@lessor_bp.route(
+    "/api/companies/<int:company_id>"
+    "/lessor-leases/<int:lease_id>/terminations",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def lessor_terminations_collection(
+    company_id: int,
+    lease_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user_id, deny = _auth(company_id)
+
+    if deny:
+        return deny
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "items":
+                db_service
+                .list_lessor_terminations(
+                    company_id,
+                    lease_id,
+                ),
+        })
+
+    try:
+        lease = db_service.get_lessor_lease(
+            company_id,
+            lease_id,
+        )
+
+        if not lease:
+            return _json_error(
+                "Lessor lease not found",
+                404,
+            )
+
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        payload["termination_date"] = _date(
+            payload.get("termination_date"),
+            "termination_date",
+        )
+
+        preview = (
+            lessor_lease_engine
+            .preview_termination(
+                lease,
+                payload,
+            )
+        )
+
+        with db_service._conn_cursor() as (
+            conn,
+            cur,
+        ):
+            item = (
+                db_service
+                .create_lessor_termination(
+                    company_id,
+                    lease_id,
+                    payload,
+                    preview,
+                    user_id=user_id,
+                    cur=cur,
+                )
+            )
+
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+            "preview": preview,
+        }), 201
+
+    except ValueError as exc:
+        return _json_error(
+            str(exc),
+            400,
+        )
+
+    except Exception as exc:
+        current_app.logger.exception(
+            "lessor_terminations_collection failed"
+        )
+
+        return _json_error(
+            str(exc),
+            500,
+        )
+
     

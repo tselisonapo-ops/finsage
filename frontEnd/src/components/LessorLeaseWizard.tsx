@@ -13,7 +13,6 @@ import { apiFetch } from "../api/apiFetch";
 
 import {
   createLessorLease,
-  generateLessorAccountingSchedule,
   previewLessorClassification,
   previewLessorTerms,
 } from "../api/lessorLeases";
@@ -231,12 +230,25 @@ const LessorLeaseWizard: React.FC<Props> = ({
     useState<number | null>(null);
 
   type ScheduleResult = {
-  created_or_updated?: number;
-  items?: unknown[];
+    created_or_updated?: number;
+    items?: unknown[];
+  };
+
+  type CreateLessorLeaseResponse = {
+    ok?: boolean;
+    item?: { id?: number };
+    commencement_journal_id?: number | null;
+    accounting_schedule_count?: number;
+    billing_schedule_count?: number;
+    accounting_schedule?: unknown[];
+    message?: string;
   };
 
   const [scheduleResult, setScheduleResult] =
   useState<ScheduleResult | null>(null);
+
+  const [commencementJournalId, setCommencementJournalId] =
+    useState<number | null>(null);
 
   const [form, setForm] =
     useState<LessorLeasePayload>({
@@ -1212,8 +1224,7 @@ useEffect(() => {
   }
 
   async function handleCreate() {
-    const validationError =
-      validateStep2();
+    const validationError = validateStep2();
 
     if (validationError) {
       setError(validationError);
@@ -1221,9 +1232,7 @@ useEffect(() => {
     }
 
     if (!termsPreview) {
-      setError(
-        "Calculate and review the accounting preview before creating the lease."
-      );
+      setError("Calculate and review the accounting preview before creating the lease.");
       return;
     }
 
@@ -1234,45 +1243,38 @@ useEffect(() => {
       const payload: LessorLeasePayload = {
         ...form,
         lease_term_months: termMonths,
-        manufacturer_dealer_lessor:
-          manufacturerDealerConfirmed,
+        manufacturer_dealer_lessor: manufacturerDealerConfirmed,
       };
 
-      console.log(
-        "[LESSOR] create payload",
-        payload
-      );
+      console.log("[LESSOR] create and commence payload", payload);
 
       const response = await createLessorLease(
         companyId,
         payload
-      );
-
-      const leaseId = Number(
-        response?.item?.id || 0
-      );
+      ) as CreateLessorLeaseResponse;
+      const leaseId = Number(response?.item?.id || 0);
 
       if (!leaseId) {
-        throw new Error(
-          "Lease was created but no lease ID was returned."
-        );
+        throw new Error("Lease creation did not return a lease ID.");
       }
 
       setCreatedLeaseId(leaseId);
-
-      const schedule =
-        await generateLessorAccountingSchedule(
-          companyId,
-          leaseId
-        );
-
-      setScheduleResult(schedule);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to create lessor lease"
+      setCommencementJournalId(
+        Number(response.commencement_journal_id || 0) || null
       );
+      setScheduleResult({
+        created_or_updated: Number(response.accounting_schedule_count || 0),
+        items: response.accounting_schedule || [],
+      });
+
+      console.log("[LESSOR] lease commenced", {
+        leaseId,
+        journalId: response.commencement_journal_id,
+        billingPeriods: response.billing_schedule_count,
+        accountingPeriods: response.accounting_schedule_count,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create and commence lessor lease");
     } finally {
       setLoading(false);
     }
@@ -1283,6 +1285,7 @@ useEffect(() => {
     setTermsPreview(null);
     setCreatedLeaseId(null);
     setScheduleResult(null);
+    setCommencementJournalId(null);
     setError(null);
     setStep(1);
 
@@ -2090,11 +2093,17 @@ useEffect(() => {
           data-role="lessor"
       >
         <div className="lease-step lease-step-3">
-          <h2>Lessor lease created</h2>
+          <h2>Lessor lease created and commenced</h2>
 
           <p>
-            The lessor lease was created successfully.
+            The lease was created, its schedules were generated and the Day 1 accounting was posted.
           </p>
+
+          {commencementJournalId ? (
+            <p>
+              Commencement journal: #{commencementJournalId}
+            </p>
+          ) : null}
 
           <div className="summary-cards">
             <div className="card">
@@ -2134,8 +2143,8 @@ useEffect(() => {
           </div>
 
           <p>
-            The lease remains ready for review and
-            commencement. No customer invoice has been
+            The lease has been commenced and its accounting
+            schedules are ready. No customer invoice has been
             created.
           </p>
 

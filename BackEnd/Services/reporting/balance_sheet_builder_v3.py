@@ -29,6 +29,12 @@ def _tb_credit(row: Dict[str, Any]) -> float:
 def _tb_code(row: Dict[str, Any]) -> str:
     return str(row.get("code") or row.get("account") or "").strip()
 
+def _tb_role(row: Dict[str, Any]) -> str:
+    return str(
+        row.get("role")
+        or row.get("account_role")
+        or ""
+    ).strip().lower()
 
 def _tb_name(row: Dict[str, Any]) -> str:
     return str(
@@ -98,6 +104,22 @@ def _classify_kind(row: Dict[str, Any]) -> str:
     Uses code_family first, then falls back to text/numeric.
     """
     fam = _code_family(row)
+    role = _tb_role(row)
+
+    if role in (
+        "lessor_net_investment_current",
+        "lessor_net_investment_noncurrent",
+        "lessor_accrued_rental",
+        "lessor_initial_direct_cost_asset",
+    ):
+        return "asset"
+
+    if role in (
+        "lessor_deferred_rental",
+        "lessor_security_deposit_current",
+        "lessor_security_deposit_noncurrent",
+    ):
+        return "liability"
 
     if fam.startswith("BS_"):
         if fam in ("BS_CA", "BS_NCA"):
@@ -131,6 +153,20 @@ def _classify_kind(row: Dict[str, Any]) -> str:
 
 def _is_current_bucket(row: Dict[str, Any], kind: str) -> Optional[bool]:
     if kind == "equity":
+        return False
+
+    role = _tb_role(row)
+
+    if role in (
+        "lessor_net_investment_current",
+        "lessor_accrued_rental",
+    ):
+        return True
+
+    if role in (
+        "lessor_net_investment_noncurrent",
+        "lessor_initial_direct_cost_asset",
+    ):
         return False
 
     txt = _norm(row.get("section"), row.get("category"), _tb_name(row))
@@ -175,6 +211,8 @@ def _is_ppe(row: Dict[str, Any]) -> bool:
     role = str(row.get("role") or "").strip().lower()
     name = str(_tb_name(row) or "").strip().lower()
 
+    if role.startswith("lessor_"):
+        return False
     txt = _norm(section, category, subcategory, role, name)
 
     # Exclude ROU and investment property
@@ -304,6 +342,8 @@ def _raw_close(m: Dict[str, Any]) -> float:
 
 def _is_rou_asset(row: Dict[str, Any], ctx: Dict[str, Any]) -> bool:
     code = str(row.get("code") or "").strip()
+    if _tb_role(row).startswith("lessor_"):
+        return False
     roa = str(ctx.get("roa_code") or "").strip()
 
     if roa and code == roa:
@@ -422,6 +462,8 @@ def _standard_code(row: Dict[str, Any]) -> str:
 def _deferred_tax_source_module(row: Dict[str, Any]) -> str:
     standard = _standard_code(row)
     role = str(row.get("role") or "").strip().lower()
+    if role.startswith("lessor_"):
+        return "lessor_leases"
     text = _norm(
         row.get("section"),
         row.get("category"),
@@ -466,6 +508,17 @@ def _deferred_tax_source_module(row: Dict[str, Any]) -> str:
 def _deferred_tax_source_type(row: Dict[str, Any]) -> str:
     standard = _standard_code(row)
     role = str(row.get("role") or "").strip().lower()
+    if role == "lessor_net_investment_current":
+        return "finance_lease_receivable_current"
+
+    if role == "lessor_net_investment_noncurrent":
+        return "finance_lease_receivable_noncurrent"
+
+    if role == "lessor_accrued_rental":
+        return "operating_lease_accrued_rental"
+
+    if role == "lessor_initial_direct_cost_asset":
+        return "lessor_initial_direct_cost_asset"
     text = _norm(
         row.get("section"),
         row.get("category"),
