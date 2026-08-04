@@ -211,6 +211,7 @@ def build_lessor_billing_schedule(
         for row in rows
     ]
 
+
 class LessorLeaseEngine:
     VALID_CLASSIFICATIONS = {"operating", "finance"}
 
@@ -680,6 +681,46 @@ class LessorLeaseEngine:
             )
 
         return schedule
+
+    @classmethod
+    def _net_lease_payment(
+        cls,
+        lease: Dict[str, Any],
+    ) -> Decimal:
+        amount=cls._decimal(
+            lease.get("billing_amount")
+            or lease.get("lease_payment")
+        )
+
+        if amount<=0:
+            raise ValueError(
+                "billing_amount must be greater than zero"
+            )
+
+        basis=str(
+            lease.get("billing_basis") or "gross"
+        ).strip().lower()
+
+        if basis not in {"gross","net"}:
+            raise ValueError(
+                "billing_basis must be gross or net"
+            )
+
+        vat_rate=cls._decimal(
+            lease.get("vat_rate")
+        )
+
+        if vat_rate>1:
+            vat_rate/=Decimal("100")
+
+        if vat_rate<0:
+            raise ValueError("vat_rate cannot be negative")
+
+        return cls._money_decimal(
+            amount/(Decimal("1")+vat_rate)
+            if basis=="gross" and vat_rate>0
+            else amount
+        )
 
     def preview_lessor_terms(
         self,
@@ -1669,221 +1710,183 @@ class LessorLeaseEngine:
         self,
         lease: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        start_date = self._date_value(
+        start=self._date_value(
             lease.get("start_date")
             or lease.get("commencement_date"),
             "start_date",
         )
-
-        end_date = self._date_value(
+        end=self._date_value(
             lease.get("end_date"),
             "end_date",
         )
 
-        frequency = (
+        if end<start:
+            raise ValueError(
+                "end_date cannot be before start_date"
+            )
+
+        frequency=str(
             lease.get("billing_frequency") or "monthly"
         ).strip().lower()
 
-        delta = _frequency_delta(frequency)
-
-        payment = self._decimal(
-            lease.get("billing_amount")
-            or lease.get("lease_payment")
-        )
-
-        if payment <= 0:
-            raise ValueError(
-                "billing_amount must be greater than zero"
-            )
-
-        timing = (
+        timing=str(
             lease.get("billing_timing") or "arrears"
         ).strip().lower()
 
-        if timing not in {"advance", "arrears"}:
+        if timing not in {"advance","arrears"}:
             raise ValueError(
                 "billing_timing must be advance or arrears"
             )
 
-        annual_rate = self._annual_rate(
+        delta=_frequency_delta(frequency)
+        payment=self._net_lease_payment(lease)
+
+        annual_rate=self._annual_rate(
             lease.get("interest_rate_implicit")
             or lease.get("implicit_interest_rate")
             or lease.get("discount_rate")
         )
-
-        periods_per_year = self._periods_per_year(
-            frequency
+        periodic_rate=(
+            annual_rate
+            / Decimal(
+                self._periods_per_year(frequency)
+            )
         )
 
-        periodic_rate = (
-            annual_rate / Decimal(periods_per_year)
-        )
-
-        unguaranteed_residual = self._decimal(
-            lease.get("unguaranteed_residual_value")
-        )
-
-        guaranteed_residual = self._decimal(
+        guaranteed=self._decimal(
             lease.get("guaranteed_residual_value")
         )
-
-        initial_direct_costs = self._decimal(
+        unguaranteed=self._decimal(
+            lease.get("unguaranteed_residual_value")
+        )
+        residual=guaranteed+unguaranteed
+        direct_costs=self._decimal(
             lease.get("initial_direct_costs")
         )
 
-        rows_meta = []
-        period_start = start_date
-        period_no = 1
+        periods=[]
+        period_start=start
+        period_no=1
 
-        while period_start <= end_date:
-            next_start = period_start + delta
-            period_end = min(
-                next_start - timedelta(days=1),
-                end_date,
+        while period_start<=end:
+            next_start=period_start+delta
+            period_end=min(
+                next_start-timedelta(days=1),
+                end,
             )
 
-            payment_date = (
-                period_start
-                if timing == "advance"
-                else period_end
-            )
-
-            rows_meta.append({
-                "period_no": period_no,
-                "period_start": period_start,
-                "period_end": period_end,
-                "payment_date": payment_date,
+            periods.append({
+                "period_no":period_no,
+                "period_start":period_start,
+                "period_end":period_end,
+                "payment_date":(
+                    period_start
+                    if timing=="advance"
+                    else period_end
+                ),
             })
 
-            period_start = next_start
-            period_no += 1
+            period_start=next_start
+            period_no+=1
 
-        period_count = len(rows_meta)
-
-        if period_count <= 0:
+        if not periods:
             raise ValueError(
                 "No finance lease periods were generated"
             )
 
-        net_investment = self._finance_present_value(
+        opening=self._finance_present_value(
             payment=payment,
-            period_count=period_count,
+            period_count=len(periods),
             periodic_rate=periodic_rate,
             timing=timing,
-            residual_value=(
-                guaranteed_residual
-                + unguaranteed_residual
-            ),
-        )
+            residual_value=residual,
+        )+direct_costs
 
-        net_investment += initial_direct_costs
-
-        explicit_net_investment = self._decimal(
+        explicit=self._decimal(
             lease.get("initial_net_investment")
         )
+        if explicit>0:
+            opening=explicit
 
-        if explicit_net_investment > 0:
-            net_investment = explicit_net_investment
+        opening=self._money_decimal(opening)
+        rows=[]
 
-        opening = net_investment
-        rows: List[FinanceLeasePeriod] = []
+        for index,meta in enumerate(periods):
+            last=index==len(periods)-1
 
-        for meta in rows_meta:
-            if timing == "advance":
-                cash_payment = min(payment, opening)
-
-                finance_income = (
-                    Decimal("0")
-                    if meta["period_no"] == 1
-                    else self._money_decimal(
-                        opening * periodic_rate
-                    )
+            if timing=="advance":
+                cash_payment=min(payment,opening)
+                after_payment=self._money_decimal(
+                    opening-cash_payment
                 )
-
-                principal = self._money_decimal(
-                    cash_payment - finance_income
+                finance_income=self._money_decimal(
+                    after_payment*periodic_rate
                 )
-
-                closing = self._money_decimal(
-                    opening + finance_income - cash_payment
+                closing=self._money_decimal(
+                    after_payment+finance_income
                 )
             else:
-                finance_income = self._money_decimal(
-                    opening * periodic_rate
+                cash_payment=payment
+                finance_income=self._money_decimal(
+                    opening*periodic_rate
+                )
+                closing=self._money_decimal(
+                    opening+finance_income-cash_payment
                 )
 
-                principal = self._money_decimal(
-                    payment - finance_income
-                )
-
-                closing = self._money_decimal(
-                    opening + finance_income - payment
-                )
-
-            if (
-                meta["period_no"] == period_count
-                and timing == "arrears"
-            ):
-                expected_closing = self._money_decimal(
-                    guaranteed_residual
-                    + unguaranteed_residual
-                )
-
-                finance_income = self._money_decimal(
-                    payment
-                    + expected_closing
-                    - opening
-                )
-
-                principal = self._money_decimal(
-                    payment - finance_income
-                )
-
-                closing = expected_closing
-
-            rows.append(
-                FinanceLeasePeriod(
-                    period_no=meta["period_no"],
-                    period_start=meta["period_start"],
-                    period_end=meta["period_end"],
-                    payment_date=meta["payment_date"],
-                    opening_net_investment=float(
-                        self._money_decimal(opening)
-                    ),
-                    lease_payment=float(
-                        self._money_decimal(payment)
-                    ),
-                    finance_income=float(
-                        self._money_decimal(finance_income)
-                    ),
-                    principal_reduction=float(
-                        self._money_decimal(principal)
-                    ),
-                    closing_net_investment=float(
-                        self._money_decimal(closing)
-                    ),
-                )
+            principal=self._money_decimal(
+                cash_payment-finance_income
             )
 
-            opening = closing
+            if last:
+                closing=self._money_decimal(residual)
+                principal=self._money_decimal(
+                    opening-closing
+                )
+                cash_payment=self._money_decimal(
+                    principal+finance_income
+                )
 
-            result = [
-                {
-                    **asdict(row),
-                    "period_start":
-                        row.period_start.isoformat(),
-                    "period_end":
-                        row.period_end.isoformat(),
-                    "payment_date":
-                        row.payment_date.isoformat(),
-                }
-                for row in rows
-            ]
+            if principal<0:
+                raise ValueError(
+                    f"Negative principal recovery in period "
+                    f"{meta['period_no']}"
+                )
 
-            return self._apply_receivable_splits(
-                result,
-                frequency=frequency,
-            )
+            rows.append({
+                "period_no":meta["period_no"],
+                "period_start":meta[
+                    "period_start"
+                ].isoformat(),
+                "period_end":meta[
+                    "period_end"
+                ].isoformat(),
+                "payment_date":meta[
+                    "payment_date"
+                ].isoformat(),
+                "opening_net_investment":float(
+                    self._money_decimal(opening)
+                ),
+                "lease_payment":float(
+                    self._money_decimal(cash_payment)
+                ),
+                "finance_income":float(
+                    self._money_decimal(finance_income)
+                ),
+                "principal_reduction":float(
+                    self._money_decimal(principal)
+                ),
+                "closing_net_investment":float(
+                    self._money_decimal(closing)
+                ),
+            })
+
+            opening=closing
+
+        return self._apply_receivable_splits(
+            rows,
+            frequency=frequency,
+        )
 
     def finance_lease_summary(
         self,

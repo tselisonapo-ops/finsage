@@ -149,15 +149,23 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
 
     actor_user_id = int(payload.get("user_id") or payload.get("sub") or 0) or None
 
-    before_inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
-    before_json = {
-        "status": before_inv.get("status"),
-        "total": before_inv.get("total"),
-        "balance": before_inv.get("balance"),
-        "paid_total": before_inv.get("paid_total"),
-        "currency": before_inv.get("currency"),
-        "number": before_inv.get("number"),
-        "customer_id": before_inv.get("customer_id"),
+    before_inv=db_service.get_invoice_full(
+        company_id,
+        int(invoice_id),
+    ) or {}
+    before_json={
+        "status":before_inv.get("status"),
+        "payment_status":before_inv.get("payment_status"),
+        "total":before_inv.get("total"),
+        "outstanding_amount":before_inv.get("outstanding_amount"),
+        "paid_amount":before_inv.get("paid_amount"),
+        "currency":before_inv.get("currency"),
+        "number":before_inv.get("number"),
+        "customer_id":before_inv.get("customer_id"),
+        "source":before_inv.get("source"),
+        "module_name":before_inv.get("module_name"),
+        "lessor_lease_id":before_inv.get("lessor_lease_id"),
+        "lessor_schedule_id":before_inv.get("lessor_schedule_id"),
     }
 
     try:
@@ -189,7 +197,10 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             ar_ledger_code=ar_ledger_code,
         )
 
-        inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
+        inv=db_service.get_invoice_full(
+            company_id,
+            int(invoice_id),
+        ) or {}
         revenue_contract_id = inv.get("revenue_contract_id")
 
         # only this mirror step is optional / non-blocking
@@ -217,14 +228,22 @@ def allocate_invoice_payment(company_id: int, invoice_id: int):
             except Exception:
                 current_app.logger.exception("⚠️ revenue cash event failed")
 
-        after_inv = db_service.get_invoice_with_lines(company_id, int(invoice_id)) or {}
-        after_json = {
-            "status": after_inv.get("status"),
-            "total": after_inv.get("total"),
-            "balance": after_inv.get("balance"),
-            "paid_total": after_inv.get("paid_total"),
-            "currency": after_inv.get("currency"),
-            "number": after_inv.get("number"),
+        after_inv=db_service.get_invoice_full(
+            company_id,
+            int(invoice_id),
+        ) or {}
+        after_json={
+            "status":after_inv.get("status"),
+            "payment_status":after_inv.get("payment_status"),
+            "total":after_inv.get("total"),
+            "outstanding_amount":after_inv.get("outstanding_amount"),
+            "paid_amount":after_inv.get("paid_amount"),
+            "currency":after_inv.get("currency"),
+            "number":after_inv.get("number"),
+            "source":after_inv.get("source"),
+            "module_name":after_inv.get("module_name"),
+            "lessor_lease_id":after_inv.get("lessor_lease_id"),
+            "lessor_schedule_id":after_inv.get("lessor_schedule_id"),
         }
 
         try:
@@ -415,6 +434,67 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     if not VAT_RAW:
         raise ValueError("VAT output account not set. Set public.company_account_settings.vat_output_code")
 
+    def resolve_posting_code(
+        raw_code,
+        *,
+        field_name="account_code",
+    ) -> str:
+        code = str(raw_code or "").strip()
+
+        if not code:
+            raise ValueError(
+                f"Missing {field_name} on invoice"
+            )
+
+        account = db_service.get_account_row_for_posting(
+            company_id,
+            code,
+        )
+
+        if not account:
+            raise ValueError(
+                f"Account '{code}' from {field_name} was not "
+                f"found in the company COA."
+            )
+
+        posting_code = str(account[1] or "").strip()
+
+        if not posting_code:
+            raise ValueError(
+                f"Resolved posting code is blank for '{code}'"
+            )
+
+        return posting_code
+
+    # ---------- 4) Invoice lines ----------
+    lines = inv.get("lines") or []
+
+    if not lines:
+        raise ValueError("Invoice has no lines")
+
+    is_lessor = (
+        str(inv.get("source") or "").strip().lower()
+        == "lessor_lease_billing"
+
+        or str(inv.get("module_name") or "").strip().lower()
+        == "ifrs16_lessor"
+
+        or bool(inv.get("lessor_lease_id"))
+
+        or any(
+            str(line.get("source") or "").strip().lower()
+            == "lessor_lease_billing"
+
+            or str(line.get("module_name") or "").strip().lower()
+            == "ifrs16_lessor"
+
+            or str(line.get("item_type") or "").strip().lower()
+            == "lease"
+
+            for line in lines
+        )
+    )
+
     # ✅ Resolve to POSTING codes
     ar_row  = db_service.get_account_row_for_posting(company_id, AR_RAW)
     vat_row = db_service.get_account_row_for_posting(company_id, VAT_RAW)
@@ -432,13 +512,33 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     if not VAT_ACCOUNT:
         raise ValueError("VAT output account resolved blank (check COA).")
 
-    # ---------- 4) Invoice lines ----------
-    lines = inv.get("lines") or []
-    if not lines:
-        raise ValueError("Invoice has no lines")
+    if is_lessor:
+        lessor_ar_raw = (
+            inv.get("ar_account_code")
+            or AR_RAW
+        )
+
+        AR_ACCOUNT = resolve_posting_code(
+            lessor_ar_raw,
+            field_name="lessor ar_account_code",
+        )
+
+        lessor_vat_raw = (
+            inv.get("vat_output_account_code")
+            or VAT_RAW
+        )
+
+        VAT_ACCOUNT = resolve_posting_code(
+            lessor_vat_raw,
+            field_name="lessor vat_output_account_code",
+        )
 
     # ---------- IFRS 15 detection ----------
-    revenue_contract_id = inv.get("revenue_contract_id")
+    revenue_contract_id = (
+        None
+        if is_lessor
+        else inv.get("revenue_contract_id")
+    )
     ifrs15_accounts = None
     settlement_pattern = ""
 
@@ -463,20 +563,12 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
             payload_json.get("settlement_pattern") or ""
         ).strip().lower()
 
-    if ifrs15_accounts and not settlement_pattern:
+    if (
+        not is_lessor
+        and ifrs15_accounts
+        and not settlement_pattern
+    ):
         raise ValueError("Settlement pattern not set for revenue contract")
-
-    def resolve_posting_code(raw_code: str) -> str:
-        c = (raw_code or "").strip()
-        if not c:
-            raise ValueError("Missing account_code on invoice line")
-        row = db_service.get_account_row_for_posting(company_id, c)
-        if not row:
-            raise ValueError(f"Account '{c}' not found in company COA (code/template_code).")
-        code = (row[1] or "").strip()
-        if not code:
-            raise ValueError(f"Resolved posting code blank for '{c}'")
-        return code
 
     # ---------- 5) Compute totals (gross before HEADER discount) ----------
     revenue_by_acct: dict[str, float] = {}
@@ -488,7 +580,20 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     vatable_by_rate: dict[float, float] = {}
 
     for ln in lines:
-        rev_code = resolve_posting_code(ln.get("account_code"))
+        raw_credit_code = (
+            inv.get("credit_account_code")
+            if is_lessor
+            else None
+        ) or ln.get("account_code")
+
+        credit_code = resolve_posting_code(
+            raw_credit_code,
+            field_name=(
+                "lessor credit account"
+                if is_lessor
+                else "invoice line account_code"
+            ),
+        )
 
         qty  = float(ln.get("quantity") or 0.0)
         up   = float(ln.get("unit_price") or 0.0)
@@ -501,8 +606,9 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
         net = money(net)
 
         net_gross += net
-        revenue_by_acct[rev_code] = revenue_by_acct.get(rev_code, 0.0) + net
-
+        revenue_by_acct[credit_code] = money(
+            revenue_by_acct.get(credit_code, 0.0) + net
+        )
         if rate > 0:
             vatable_gross += net
             vatable_by_rate[rate] = money(vatable_by_rate.get(rate, 0.0) + net)
@@ -526,6 +632,21 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
     # ✅ Other charges / income (header-level adjustment)
     other_amt = float(inv.get("other_amount") or inv.get("other") or 0.0)
     other_amt = money(other_amt)
+
+    # IFRS 16 lessor invoices must follow the lease schedule
+    if is_lessor and header_disc_amt != 0:
+        raise ValueError(
+            "Discounts cannot be applied directly to a lessor "
+            "schedule invoice. Process the change through the "
+            "lease modification or adjustment workflow."
+        )
+
+    if is_lessor and other_amt != 0:
+        raise ValueError(
+            "Other charges cannot be added directly to a lessor "
+            "schedule invoice. Use a separate invoice line or "
+            "lease adjustment workflow."
+        )
 
     # Allocate discount proportionally to vatable base
     disc_on_vatable_total = (
@@ -578,82 +699,143 @@ def build_invoice_journal_lines(inv: dict, company_id: int) -> dict:
             OTHER_ACCOUNT = next(iter(revenue_by_acct.keys()))
 
     # ---------- 8) Build journal lines ----------
-    # Dr AR = gross after discount + VAT after discount
-    jlines = [{"account_code": AR_ACCOUNT, "dc": "D", "amount": gross_total}]
+
+    jlines = [
+        {
+            "account_code": AR_ACCOUNT,
+            "dc": "D",
+            "amount": gross_total,
+        }
+    ]
 
     remaining_contract_asset = 0.0
 
-    if ifrs15_accounts and revenue_contract_id:
-        contract = db_service.fetch_one(f"""
-            SELECT COALESCE(contract_asset_balance,0) AS ca
-            FROM {db_service.company_schema(company_id)}.revenue_contracts
-            WHERE id = %s
+    if (
+        not is_lessor
+        and ifrs15_accounts
+        and revenue_contract_id
+    ):
+        contract = db_service.fetch_one(
+            f"""
+            SELECT
+                COALESCE(
+                    contract_asset_balance,
+                    0
+                ) AS ca
+            FROM {
+                db_service.company_schema(company_id)
+            }.revenue_contracts
+            WHERE id=%s
             LIMIT 1
-        """, (int(revenue_contract_id),)) or {}
+            """,
+            (int(revenue_contract_id),),
+        ) or {}
 
-        remaining_contract_asset = money(contract.get("ca") or 0.0)
-        
-    # Cr Revenue = gross revenue before header discount (per account)
-    for acct, amt in revenue_by_acct.items():
-        amt = money(amt)
-        if not amt:
+        remaining_contract_asset = money(
+            contract.get("ca") or 0
+        )
+
+
+    for account_code, amount in revenue_by_acct.items():
+        amount = money(amount)
+
+        if not amount:
             continue
 
-        # 🔥 IFRS 15 override
-        if ifrs15_accounts:
-            invoice_amt = amt
+        # ------------------------------------
+        # IFRS 16 lessor invoice
+        # ------------------------------------
+        if is_lessor:
+            jlines.append({
+                "account_code": account_code,
+                "dc": "C",
+                "amount": amount,
+            })
 
-            if settlement_pattern in ("cash_before_service", "billing_before_revenue"):
+            continue
+
+        # ------------------------------------
+        # IFRS 15 invoice
+        # ------------------------------------
+        if ifrs15_accounts:
+            invoice_amount = amount
+
+            if settlement_pattern in {
+                "cash_before_service",
+                "billing_before_revenue",
+            }:
                 jlines.append({
-                    "account_code": ifrs15_accounts["contract_liability_account"],
+                    "account_code": (
+                        ifrs15_accounts[
+                            "contract_liability_account"
+                        ]
+                    ),
                     "dc": "C",
-                    "amount": invoice_amt
+                    "amount": invoice_amount,
                 })
+
                 continue
 
             if settlement_pattern == "revenue_before_billing":
                 if remaining_contract_asset > 0:
-                    clear_amt = min(remaining_contract_asset, invoice_amt)
-                    clear_amt = money(clear_amt)
+                    clear_amount = money(
+                        min(
+                            remaining_contract_asset,
+                            invoice_amount,
+                        )
+                    )
 
-                    if clear_amt > 0:
+                    if clear_amount > 0:
                         jlines.append({
-                            "account_code": ifrs15_accounts["contract_asset_account"],
+                            "account_code": (
+                                ifrs15_accounts[
+                                    "contract_asset_account"
+                                ]
+                            ),
                             "dc": "C",
-                            "amount": clear_amt
+                            "amount": clear_amount,
                         })
 
-                    remaining = money(invoice_amt - clear_amt)
-                    remaining_contract_asset = money(remaining_contract_asset - clear_amt)
+                    remaining = money(
+                        invoice_amount - clear_amount
+                    )
+
+                    remaining_contract_asset = money(
+                        remaining_contract_asset
+                        - clear_amount
+                    )
 
                     if remaining > 0:
                         jlines.append({
-                            "account_code": acct,
+                            "account_code": account_code,
                             "dc": "C",
-                            "amount": remaining
+                            "amount": remaining,
                         })
+
                 else:
                     jlines.append({
-                        "account_code": acct,
+                        "account_code": account_code,
                         "dc": "C",
-                        "amount": invoice_amt
+                        "amount": invoice_amount,
                     })
 
                 continue
 
-            # fallback IFRS 15 behavior: normal revenue
             jlines.append({
-                "account_code": acct,
+                "account_code": account_code,
                 "dc": "C",
-                "amount": invoice_amt
+                "amount": invoice_amount,
             })
+
             continue
 
-        # ✅ NORMAL REVENUE (NO CONTRACT)
+        # ------------------------------------
+        # Normal non-contract sales invoice
+        # ------------------------------------
         jlines.append({
-            "account_code": acct,
+            "account_code": account_code,
             "dc": "C",
-            "amount": amt
+            "amount": amount,
         })
     
     # ✅ Other income/charges line

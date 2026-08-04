@@ -6035,6 +6035,14 @@ def create_invoice(cid: int):
             payload["engagement_id"] = auth_ctx.get("engagement_id")
         current_app.logger.info("create_invoice payload = %r", payload)
 
+        is_lessor_invoice = (
+            str(payload.get("source") or "").strip().lower()
+            == "lessor_lease_billing"
+            or str(payload.get("module_name") or "").strip().lower()
+            == "ifrs16_lessor"
+            or bool(payload.get("lessor_lease_id"))
+        )
+
         # --------------------------
         # 0) Basic validation
         # --------------------------
@@ -6148,6 +6156,61 @@ def create_invoice(cid: int):
             ),
             "discount": to_disc_rate(payload.get("discount")),  # legacy
             "other": to_float(payload.get("other"), 0.0),
+            "source": (
+                "lessor_lease_billing"
+                if is_lessor_invoice
+                else payload.get("source")
+            ),
+            "source_id": (
+                int(payload.get("source_id"))
+                if payload.get("source_id") not in (None, "", 0, "0")
+                else None
+            ),
+            "module_name": (
+                "ifrs16_lessor"
+                if is_lessor_invoice
+                else payload.get("module_name")
+            ),
+            "posting_mode": (
+                "custom_accounts"
+                if is_lessor_invoice
+                else payload.get("posting_mode")
+            ),
+            "lessor_lease_id": (
+                int(payload.get("lessor_lease_id"))
+                if payload.get("lessor_lease_id") not in (None, "", 0, "0")
+                else None
+            ),
+            "lessor_schedule_id": (
+                int(payload.get("lessor_schedule_id"))
+                if payload.get("lessor_schedule_id") not in (None, "", 0, "0")
+                else None
+            ),
+            "lease_classification": (
+                payload.get("lease_classification")
+                if is_lessor_invoice
+                else None
+            ),
+            "accounting_treatment": (
+                payload.get("accounting_treatment")
+                if is_lessor_invoice
+                else None
+            ),
+            "ar_account_code": (
+                payload.get("ar_account_code")
+                if is_lessor_invoice
+                else None
+            ),
+            "credit_account_code": (
+                payload.get("credit_account_code")
+                if is_lessor_invoice
+                else None
+            ),
+            "vat_output_account_code": (
+                payload.get("vat_output_account_code")
+                if is_lessor_invoice
+                else None
+            ),
         }
 
         print("[CREATE_INVOICE HEADER] revenue_contract_id =", header.get("revenue_contract_id"), flush=True)
@@ -6181,9 +6244,18 @@ def create_invoice(cid: int):
             item_id = int(item_id_raw) if item_id_raw is not None and str(item_id_raw).isdigit() else None
             item_code = (ln.get("item_code") or ln.get("itemCode") or ln.get("sku") or ln.get("code") or "").strip() or None
 
-            if item_type not in (None, "", "inventory", "service", "gl"):
-                return jsonify({"error": "Invalid item_type on line", "line": ln}), 400
-
+            if item_type not in (
+                None,
+                "",
+                "inventory",
+                "service",
+                "gl",
+                "lease",
+            ):
+                return jsonify({
+                    "error": "Invalid item_type on line",
+                    "line": ln,
+                }), 400
             if item_type in ("inventory", "service") and not item_id:
                 return jsonify({"error": f"item_id is required when item_type='{item_type}'", "line": ln}), 400
 
@@ -6245,18 +6317,74 @@ def create_invoice(cid: int):
                 "vat_rate": vat_rate,
                 "vat_amount": money(vat),
                 "total_amount": money(total),
+                "source": (
+                    "lessor_lease_billing"
+                    if is_lessor_invoice
+                    else ln.get("source")
+                ),
+                "source_id": (
+                    int(
+                        ln.get("source_id")
+                        or payload.get("lessor_schedule_id")
+                        or 0
+                    )
+                    or None
+                ),
+                "module_name": (
+                    "ifrs16_lessor"
+                    if is_lessor_invoice
+                    else ln.get("module_name")
+                ),
+                "lessor_lease_id": (
+                    int(
+                        ln.get("lessor_lease_id")
+                        or payload.get("lessor_lease_id")
+                        or 0
+                    )
+                    or None
+                ),
+                "lessor_schedule_id": (
+                    int(
+                        ln.get("lessor_schedule_id")
+                        or payload.get("lessor_schedule_id")
+                        or 0
+                    )
+                    or None
+                ),
             })
 
         if not mapped_lines:
             return jsonify({"error": "At least one valid line is required"}), 400
 
+        if is_lessor_invoice:
+            lease_classification=str(
+                header.get("lease_classification") or ""
+            ).strip().lower()
+
+            if lease_classification not in {"operating","finance"}:
+                return jsonify({
+                    "error":"Invalid lessor lease classification"
+                }),400
+
+            credit_role=(
+                "lessor_lease_income"
+                if lease_classification=="operating"
+                else "lessor_net_investment_current"
+            )
+
+            expected=db_service.get_posting_account_by_role(
+                company_id,
+                credit_role,
+            )
+
+            header["credit_account_code"]=expected["code"]
+
+            for line in mapped_lines:
+                line["account_code"]=expected["code"]
+
         # --------------------------
         # 6) Save invoice
         # --------------------------
-        # --------------------------
-        # 5) IFRS 15 overbilling guard
-        # --------------------------
-        from decimal import Decimal
 
         # group invoice amounts per obligation
         obligation_totals = {}
@@ -6290,6 +6418,34 @@ def create_invoice(cid: int):
                         "attempted_amount": float(invoice_amount),
                     },
                 }), 422
+
+        if is_lessor_invoice:
+            lessor_lease_id = int(
+                payload.get("lessor_lease_id") or 0
+            )
+            lessor_schedule_id = int(
+                payload.get("lessor_schedule_id")
+                or payload.get("source_id")
+                or 0
+            )
+
+            if not lessor_lease_id:
+                return jsonify({
+                    "error": "lessor_lease_id is required"
+                }), 400
+
+            if not lessor_schedule_id:
+                return jsonify({
+                    "error": "lessor_schedule_id is required"
+                }), 400
+
+            if payload.get("revenue_contract_id"):
+                return jsonify({
+                    "error": (
+                        "A lessor invoice cannot be linked "
+                        "to an IFRS 15 revenue contract"
+                    )
+                }), 400
     
         current_app.logger.info("create_invoice: before insert")
         invoice_id = db_service.insert_invoice_with_lines(company_id, header, mapped_lines)
@@ -6575,329 +6731,395 @@ def create_invoice(cid: int):
 @require_auth
 def update_invoice(cid: int, invoice_id: int):
     try:
-        company_id = int(cid)
-        user = getattr(g, "current_user", {}) or {}
+        company_id=int(cid)
+        user=getattr(g,"current_user",{}) or {}
 
-        if user.get("company_id") != company_id:
-            return jsonify({"error": "Not authorised for this company"}), 403
+        if int(user.get("company_id") or 0)!=company_id:
+            return jsonify({"error":"Not authorised for this company"}),403
 
-        # --------------------------
-        # helpers
-        # --------------------------
-        def money(x) -> float:
-            return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        def money(v):
+            return float(Decimal(str(v or 0)).quantize(Decimal("0.01"),rounding=ROUND_HALF_UP))
 
-        def to_float(x, default=0.0):
-            try:
-                if x is None:
-                    return default
-                if isinstance(x, str):
-                    x = x.replace(",", "").strip()
-                return float(x)
-            except Exception:
-                return default
+        def num(v,default=0.0):
+            try: return float(str(v).replace(",","").strip()) if v is not None else default
+            except (TypeError,ValueError): return default
 
-        def to_disc_rate(x):
-            r = to_float(x, 0.0)
-            if r > 1.0:
-                r = r / 100.0
-            return max(0.0, min(1.0, r))
+        def opt_int(v):
+            try: return int(v) if v not in (None,"",0,"0") else None
+            except (TypeError,ValueError): return None
 
-        payload = request.get_json(silent=True) or {}
-        current_app.logger.info("update_invoice payload = %r", payload)
+        def rate(v):
+            v=num(v)
+            return max(0.0,min(1.0,v/100 if v>1 else v))
 
-        inv = db_service.get_invoice_with_lines(company_id, invoice_id)
+        payload=request.get_json(silent=True) or {}
+        current_app.logger.info("update_invoice payload=%r",payload)
+
+        inv=db_service.get_invoice_with_lines(company_id,int(invoice_id))
         if not inv:
-            return jsonify({"error": "Invoice not found"}), 404
+            return jsonify({"error":"Invoice not found"}),404
 
-        before = inv  # snapshot for audit
+        if str(inv.get("status") or "").lower()=="posted" or inv.get("posted_journal_id"):
+            return jsonify({"error":"Posted invoices cannot be edited"}),409
 
-        status_now = (inv.get("status") or "").lower()
-        if status_now == "posted" or inv.get("posted_journal_id"):
-            return jsonify({"error": "Posted invoices cannot be edited"}), 409
+        def val(name,default=None):
+            return payload.get(name) if name in payload else inv.get(name,default)
 
-        # --------------------------
-        # POLICY
-        # --------------------------
-        pol = company_policy(company_id)
-        mode = (pol.get("mode") or "owner_managed").strip().lower()
-        policy = pol.get("policy") or {}
-        company_profile = pol.get("company") or {}
+        source=str(val("source","") or "").strip().lower()
+        module_name=str(val("module_name","") or "").strip().lower()
+        lessor_lease_id=opt_int(val("lessor_lease_id"))
+        lessor_schedule_id=opt_int(val("lessor_schedule_id") or val("source_id"))
 
-        review_enabled = bool(pol.get("review_enabled")) or bool(
-            policy.get("review_enabled", False) or
-            policy.get("invoice_review_enabled", False) or
-            policy.get("require_invoice_review", False)
+        is_lessor=(
+            source=="lessor_lease_billing"
+            or module_name=="ifrs16_lessor"
+            or bool(lessor_lease_id)
+            or bool(lessor_schedule_id)
         )
 
-        requested_status = (payload.get("status") or inv.get("status") or "draft").strip().lower()
+        credit_account_code=str(val("credit_account_code","") or "").strip()
+        schema=db_service.company_schema(company_id)
 
-        # ✅ review OFF -> always post; also allow explicit "posted"
-        should_post = (not review_enabled) or (requested_status == "posted")
+        if is_lessor:
+            source="lessor_lease_billing"
+            module_name="ifrs16_lessor"
 
-        allowed_statuses = {"draft", "pending_approval", "approved", "posted"}
-        status_to_save = requested_status or "draft"
-        if status_to_save not in allowed_statuses:
-            status_to_save = "draft"
+            if not lessor_lease_id:
+                return jsonify({"error":"lessor_lease_id is required"}),400
+            if not lessor_schedule_id:
+                return jsonify({"error":"lessor_schedule_id is required"}),400
+            if opt_int(payload.get("revenue_contract_id")):
+                return jsonify({"error":"A lessor invoice cannot be linked to an IFRS 15 revenue contract"}),400
 
-        # review OFF -> we will post, but don't pretend it's approved here
-        if (not review_enabled) and requested_status != "posted":
-            status_to_save = "draft"
-
-        # --------------------------
-        # Required fields
-        # --------------------------
-        customer_id = payload.get("customer_id") or inv.get("customer_id")
-        lines = payload.get("lines") or []
-        if not customer_id:
-            return jsonify({"error": "customer_id is required"}), 400
-        if not isinstance(lines, list) or not lines:
-            return jsonify({"error": "At least one line is required"}), 400
-
-        cust_id = int(customer_id)
-
-        # --------------------------
-        # Customer checks
-        # --------------------------
-        cust = db_service.get_customer(company_id, cust_id)
-        if not cust:
-            return jsonify({"error": "Customer not found"}), 404
-        if not cust.get("is_active", True):
-            return jsonify({"error": "Customer is archived/inactive"}), 409
-
-        credit_status = (cust.get("credit_status") or "").strip().lower()
-        on_hold = (cust.get("on_hold") or "no").strip().lower()
-        if on_hold in {"yes", "true", "1"}:
-            return jsonify({"error": "Customer is on hold"}), 409
-
-        require_customer_approved = must_approve_customer_before_invoicing(mode, policy)
-        allowed_statuses = {"approved", "cod_only"}
-
-        if require_customer_approved and status_to_save != "draft" and credit_status not in allowed_statuses:
-            return jsonify({
-                "error": "Customer is not approved for invoicing.",
-                "customer_id": cust_id,
-                "credit_status": credit_status,
-                "status_to_save": status_to_save,
-                "mode": mode,
-            }), 409
-
-        # --------------------------
-        # Number rules (✅ do NOT block blank on approve/post)
-        # --------------------------
-        inv_no = (payload.get("number") if "number" in payload else inv.get("number")) or ""
-        inv_no = str(inv_no).strip()
-
-        if status_to_save == "draft":
-            inv_no = ""  # drafts have no number
-        # else: may be blank -> DB assigns when leaving draft (inside db_service)
-
-        # --------------------------
-        # Header
-        # --------------------------
-        header = {
-            "customer_id": cust_id,
-            "revenue_contract_id": (
-                int(payload.get("revenue_contract_id"))
-                if payload.get("revenue_contract_id") not in (None, "", 0, "0")
-                else None
-            ),
-            "invoice_date": payload.get("invoice_date") or payload.get("date") or inv.get("invoice_date"),
-            "due_date": payload.get("due_date") if "due_date" in payload else inv.get("due_date"),
-            "currency": payload.get("currency") if "currency" in payload else inv.get("currency"),
-            "number": (inv_no or None) if status_to_save != "draft" else None,
-            "bank_account_id": payload.get("bank_account_id") if "bank_account_id" in payload else inv.get("bank_account_id"),
-            "notes": payload.get("notes") if "notes" in payload else inv.get("notes"),
-            "status": status_to_save,
-
-            "discount_rate": to_disc_rate(
-                payload.get("discount_rate") if "discount_rate" in payload else payload.get("discount")
-            ),
-            "discount": to_disc_rate(payload.get("discount")),
-            "discount_amount": payload.get("discount_amount"),
-            "other": to_float(payload.get("other"), 0.0),
-        }
-
-        header["issued_by"] = user.get("id")
-        header["issued_at"] = payload.get("issued_at")
-
-        if not header["invoice_date"]:
-            return jsonify({"error": "invoice_date is required"}), 400
-
-        inv_date = header["invoice_date"]
-        if isinstance(inv_date, str):
-            try:
-                inv_date_obj = date.fromisoformat(inv_date[:10])
-                if inv_date_obj > date.today():
-                    return jsonify({"error": "Invoice date cannot be in the future."}), 400
-            except Exception:
-                pass
-
-        # --------------------------
-        # Map lines (ID-based)
-        # --------------------------
-        mapped_lines = []
-        for ln in lines:
-            if not isinstance(ln, dict):
-                continue
-
-            item_type = (ln.get("item_type") or ln.get("itemType") or "").strip().lower() or None
-            item_id_raw = ln.get("item_id") or ln.get("itemId")
-            item_id = int(item_id_raw) if item_id_raw is not None and str(item_id_raw).isdigit() else None
-            item_code = (ln.get("item_code") or ln.get("itemCode") or ln.get("sku") or ln.get("code") or "").strip() or None
-
-            if item_type not in (None, "", "inventory", "service", "gl"):
-                return jsonify({"error": "Invalid item_type on line", "line": ln}), 400
-            if item_type in ("inventory", "service") and not item_id:
-                return jsonify({"error": f"item_id is required when item_type='{item_type}'", "line": ln}), 400
-
-            item_name = (ln.get("item_name") or ln.get("itemName") or ln.get("item") or "").strip()
-            desc = (ln.get("description") or "").strip()
-
-            qty = to_float(ln.get("quantity") or ln.get("qty"), 0.0)
-            unit_price = to_float(ln.get("unit_price") or ln.get("unitPrice"), 0.0)
-            discount_amount = to_float(ln.get("discount_amount") or ln.get("discountAmount"), 0.0)
-
-            raw_code = (ln.get("account_code") or ln.get("accountCode") or "").strip()
-
-            vat_code = (ln.get("vatCode") or ln.get("vat_code") or "STANDARD")
-            vat_code = str(vat_code).strip().upper()
-
-            vat_rate = ln.get("vat_rate")
-            if vat_rate is None and vat_code == "CUSTOM":
-                vat_rate = (
-                    ln.get("vatRate") or
-                    ln.get("vat_rate") or
-                    ln.get("customVatRate") or
-                    ln.get("vat_custom_rate") or
-                    ln.get("vatCustomRate")
-                )
-            if vat_rate is None:
-                vat_rate = rate_from_code(vat_code)
-            vat_rate = to_float(vat_rate, 0.0)
-
-            if qty <= 0:
-                return jsonify({"error": "quantity must be > 0", "line": ln}), 400
-            if unit_price < 0:
-                return jsonify({"error": "unit_price must be >= 0", "line": ln}), 400
-            if discount_amount < 0:
-                return jsonify({"error": "discount_amount must be >= 0", "line": ln}), 400
-            if not raw_code:
-                return jsonify({"error": "Each invoice line must have account_code", "line": ln}), 400
-
-            net = max(0.0, (qty * unit_price) - discount_amount)
-            vat = net * (vat_rate / 100.0)
-            total = net + vat
-
-            mapped_lines.append({
-                "item_name": item_name or None,
-                "item_type": item_type,
-                "item_id": item_id,
-                "item_code": item_code,
-                "vat_code": vat_code,
-                "description": (desc or item_name or ""),
-                "revenue_obligation_id": (
-                    int(ln.get("revenue_obligation_id") or ln.get("obligation_id"))
-                    if (ln.get("revenue_obligation_id") or ln.get("obligation_id")) not in (None, "", 0, "0")
-                    else None
-                ),
-                "account_code": raw_code,
-                "quantity": qty,
-                "unit_price": unit_price,
-                "discount_amount": money(discount_amount),
-                "net_amount": money(net),
-                "vat_rate": vat_rate,
-                "vat_amount": money(vat),
-                "total_amount": money(total),
-            })
-
-        if not mapped_lines:
-            return jsonify({"error": "At least one valid line is required"}), 400
-
-        # --------------------------
-        # Save update
-        # --------------------------
-        db_service.update_invoice_with_lines(company_id, invoice_id, header, mapped_lines)
-
-        # --------------------------
-        # Post if needed
-        # --------------------------
-        if should_post:
-            if not can_post_invoices(user, company_profile, mode):
-                return jsonify({"error": "Not allowed to post invoices", "mode": mode}), 403
-
-            inv2 = db_service.get_invoice_with_lines(company_id, invoice_id)
-            payload2 = build_invoice_journal_lines(inv2, company_id)
-
-            journal_id = db_service.post_invoice_to_gl(
-                company_id,
-                int(invoice_id),
-                payload2["lines"],
-                enforce_credit=True,
-                require_approved=require_customer_approved,
+            period=db_service.fetch_one(
+                f"""
+                SELECT s.id,s.invoice_id,s.is_active,l.status AS lease_status
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                  ON l.company_id=s.company_id
+                 AND l.id=s.lessor_lease_id
+                WHERE s.company_id=%s
+                  AND s.id=%s
+                  AND s.lessor_lease_id=%s
+                LIMIT 1
+                """,
+                (company_id,lessor_schedule_id,lessor_lease_id),
             )
 
-            try:
-                record_invoice_revenue_billing_and_allocation(
-                    company_id=company_id,
-                    invoice_id=int(invoice_id),
-                    inv=inv,
-                    journal_id=int(journal_id),
-                    user_id=int(user.get("id") or 0),
-                )
-            except Exception:
-                current_app.logger.exception(
-                    "invoice revenue billing/allocation failed | invoice_id=%s",
-                    invoice_id,
+            if not period:
+                return jsonify({"error":"Lessor schedule period not found for the supplied lease"}),404
+            if not period.get("is_active"):
+                return jsonify({"error":"Inactive lessor schedule versions cannot be invoiced"}),409
+            if period.get("invoice_id") and int(period["invoice_id"])!=int(invoice_id):
+                return jsonify({
+                    "error":"This lessor schedule period is already linked to another invoice",
+                    "invoice_id":int(period["invoice_id"]),
+                }),409
+            if str(period.get("lease_status") or "").lower() not in {"active","commenced"}:
+                return jsonify({"error":"Only an active or commenced lessor lease can be invoiced"}),409
+
+        pol=company_policy(company_id)
+        mode=str(pol.get("mode") or "owner_managed").strip().lower()
+        policy=pol.get("policy") or {}
+        company_profile=pol.get("company") or {}
+        review_enabled=bool(
+            pol.get("review_enabled")
+            or policy.get("review_enabled")
+            or policy.get("invoice_review_enabled")
+            or policy.get("require_invoice_review")
+        )
+
+        requested_status=str(payload.get("status") or inv.get("status") or "draft").strip().lower()
+        status_to_save=requested_status if requested_status in {"draft","pending_approval","approved","posted"} else "draft"
+        should_post=not review_enabled or requested_status=="posted"
+
+        if not review_enabled and requested_status!="posted":
+            status_to_save="draft"
+
+        customer_id=opt_int(payload.get("customer_id") or inv.get("customer_id"))
+        lines=payload.get("lines") if "lines" in payload else inv.get("lines") or []
+
+        if not customer_id:
+            return jsonify({"error":"customer_id is required"}),400
+        if not isinstance(lines,list) or not lines:
+            return jsonify({"error":"At least one line is required"}),400
+
+        customer=db_service.get_customer(company_id,customer_id)
+        if not customer:
+            return jsonify({"error":"Customer not found"}),404
+        if not customer.get("is_active",True):
+            return jsonify({"error":"Customer is archived/inactive"}),409
+        if str(customer.get("on_hold") or "no").lower() in {"yes","true","1"}:
+            return jsonify({"error":"Customer is on hold"}),409
+
+        require_approved=must_approve_customer_before_invoicing(mode,policy)
+        credit_status=str(customer.get("credit_status") or "").lower()
+
+        if require_approved and status_to_save!="draft" and credit_status not in {"approved","cod_only"}:
+            return jsonify({
+                "error":"Customer is not approved for invoicing.",
+                "customer_id":customer_id,
+                "credit_status":credit_status,
+                "status_to_save":status_to_save,
+                "mode":mode,
+            }),409
+
+        invoice_number=str(val("number","") or "").strip()
+        if status_to_save=="draft":
+            invoice_number=""
+
+        discount_rate=rate(
+            payload.get("discount_rate")
+            if "discount_rate" in payload
+            else payload.get("discount",inv.get("discount_rate"))
+        )
+        other_amount=num(
+            payload.get("other")
+            if "other" in payload
+            else inv.get("other_amount",inv.get("other")),
+            0.0,
+        )
+
+        if is_lessor and discount_rate:
+            return jsonify({"error":"Discounts cannot be applied directly to a lessor schedule invoice"}),400
+        if is_lessor and other_amount:
+            return jsonify({"error":"Other charges cannot be applied directly to a lessor schedule invoice"}),400
+
+        header={
+            "customer_id":customer_id,
+            "revenue_contract_id":None if is_lessor else opt_int(val("revenue_contract_id")),
+            "invoice_date":payload.get("invoice_date") or payload.get("date") or inv.get("invoice_date"),
+            "due_date":val("due_date"),
+            "currency":val("currency"),
+            "number":invoice_number or None if status_to_save!="draft" else None,
+            "bank_account_id":opt_int(val("bank_account_id")),
+            "notes":val("notes"),
+            "status":status_to_save,
+            "issued_by":user.get("id"),
+            "issued_at":val("issued_at"),
+            "discount_rate":discount_rate,
+            "discount":discount_rate,
+            "discount_amount":money(val("discount_amount",0)),
+            "other":other_amount,
+            "source":source or None,
+            "source_id":lessor_schedule_id if is_lessor else opt_int(val("source_id")),
+            "module_name":module_name or None,
+            "posting_mode":"custom_accounts" if is_lessor else val("posting_mode"),
+            "lessor_lease_id":lessor_lease_id if is_lessor else None,
+            "lessor_schedule_id":lessor_schedule_id if is_lessor else None,
+            "lease_classification":val("lease_classification") if is_lessor else None,
+            "accounting_treatment":val("accounting_treatment") if is_lessor else None,
+            "ar_account_code":val("ar_account_code") if is_lessor else None,
+            "credit_account_code":credit_account_code if is_lessor else None,
+            "vat_output_account_code":val("vat_output_account_code") if is_lessor else None,
+            "updated_by_user_id":user.get("id"),
+        }
+
+        if not header["invoice_date"]:
+            return jsonify({"error":"invoice_date is required"}),400
+
+        try:
+            inv_date=header["invoice_date"]
+            inv_date=inv_date if isinstance(inv_date,date) else date.fromisoformat(str(inv_date)[:10])
+            if inv_date>date.today():
+                return jsonify({"error":"Invoice date cannot be in the future."}),400
+        except (TypeError,ValueError):
+            return jsonify({"error":"invoice_date must be YYYY-MM-DD"}),400
+
+        mapped=[]
+
+        for index,ln in enumerate(lines,1):
+            if not isinstance(ln,dict):
+                return jsonify({"error":f"Invoice line {index} must be an object"}),400
+
+            item_type=str(ln.get("item_type") or ln.get("itemType") or "").strip().lower() or None
+            if item_type not in {None,"","inventory","service","gl","lease"}:
+                return jsonify({"error":"Invalid item_type on line","line_no":index}),400
+
+            item_id=opt_int(ln.get("item_id") or ln.get("itemId"))
+            if item_type in {"inventory","service"} and not item_id:
+                return jsonify({"error":f"item_id is required when item_type='{item_type}'","line_no":index}),400
+
+            if is_lessor:
+                item_type,item_id="lease",lessor_lease_id
+
+            quantity=num(ln.get("quantity") if ln.get("quantity") is not None else ln.get("qty"))
+            unit_price=num(ln.get("unit_price") if ln.get("unit_price") is not None else ln.get("unitPrice"))
+            line_discount=num(ln.get("discount_amount") if ln.get("discount_amount") is not None else ln.get("discountAmount"))
+
+            if quantity<=0:
+                return jsonify({"error":"quantity must be greater than zero","line_no":index}),400
+            if unit_price<0 or line_discount<0:
+                return jsonify({"error":"Invoice line amounts cannot be negative","line_no":index}),400
+            if is_lessor and line_discount:
+                return jsonify({"error":"Line discounts cannot be applied to a lessor schedule invoice","line_no":index}),400
+
+            account_code=str(
+                (credit_account_code if is_lessor else "")
+                or ln.get("account_code")
+                or ln.get("accountCode")
+                or ""
+            ).strip()
+
+            if not account_code:
+                return jsonify({"error":"Each invoice line must have account_code","line_no":index}),400
+
+            vat_code=str(ln.get("vatCode") or ln.get("vat_code") or "STANDARD").strip().upper()
+            vat_rate_raw=ln.get("vat_rate")
+
+            if vat_rate_raw is None and vat_code=="CUSTOM":
+                vat_rate_raw=(
+                    ln.get("vatRate")
+                    or ln.get("customVatRate")
+                    or ln.get("vat_custom_rate")
+                    or ln.get("vatCustomRate")
                 )
 
-            posted = db_service.get_invoice_with_lines(company_id, invoice_id) or {}
-            posted["_posted_journal_id"] = journal_id
+            vat_rate=num(rate_from_code(vat_code) if vat_rate_raw is None else vat_rate_raw)
+            net_amount=money(max(0,(quantity*unit_price)-line_discount))
+            vat_amount=money(net_amount*(vat_rate/100))
+            item_name=str(ln.get("item_name") or ln.get("itemName") or ln.get("item") or "").strip()
+
+            mapped.append({
+                "item_name":item_name or None,
+                "item_type":item_type,
+                "item_id":item_id,
+                "item_code":str(ln.get("item_code") or ln.get("itemCode") or ln.get("sku") or ln.get("code") or "").strip() or None,
+                "vat_code":vat_code,
+                "description":str(ln.get("description") or item_name or "").strip(),
+                "revenue_obligation_id":None if is_lessor else opt_int(ln.get("revenue_obligation_id") or ln.get("obligation_id")),
+                "account_code":account_code,
+                "quantity":quantity,
+                "unit_price":unit_price,
+                "discount_amount":money(line_discount),
+                "net_amount":net_amount,
+                "vat_rate":vat_rate,
+                "vat_amount":vat_amount,
+                "total_amount":money(net_amount+vat_amount),
+                "source":"lessor_lease_billing" if is_lessor else ln.get("source"),
+                "source_id":lessor_schedule_id if is_lessor else opt_int(ln.get("source_id")),
+                "module_name":"ifrs16_lessor" if is_lessor else ln.get("module_name"),
+                "lessor_lease_id":lessor_lease_id if is_lessor else opt_int(ln.get("lessor_lease_id")),
+                "lessor_schedule_id":lessor_schedule_id if is_lessor else opt_int(ln.get("lessor_schedule_id")),
+            })
+        if is_lessor:
+            lease_classification=str(
+                header.get("lease_classification") or ""
+            ).strip().lower()
+
+            if lease_classification not in {"operating","finance"}:
+                return jsonify({
+                    "error":"Invalid lessor lease classification"
+                }),400
+
+            credit_role=(
+                "lessor_lease_income"
+                if lease_classification=="operating"
+                else "lessor_net_investment_current"
+            )
+
+            expected=db_service.get_posting_account_by_role(
+                company_id,
+                credit_role,
+            )
+
+            header["credit_account_code"]=expected["code"]
+
+            for line in mapped:
+                line["account_code"]=expected["code"]
+
+        db_service.update_invoice_with_lines(company_id,int(invoice_id),header,mapped)
+
+        updated=db_service.get_invoice_with_lines(company_id,int(invoice_id))
+        if not updated:
+            raise RuntimeError("Invoice was updated but could not be reloaded")
+
+        if should_post:
+            if not can_post_invoices(user,company_profile,mode):
+                return jsonify({"error":"Not allowed to post invoices","mode":mode}),403
+
+            journal=build_invoice_journal_lines(updated,company_id)
+            if not journal.get("lines"):
+                raise RuntimeError("No journal lines were generated")
+
+            journal_id=db_service.post_invoice_to_gl(
+                company_id,
+                int(invoice_id),
+                journal["lines"],
+                ar_account=journal.get("ar_account"),
+                enforce_credit=True,
+                require_approved=require_approved,
+            )
+
+            if not is_lessor:
+                try:
+                    record_invoice_revenue_billing_and_allocation(
+                        company_id=company_id,
+                        invoice_id=int(invoice_id),
+                        inv=updated,
+                        journal_id=int(journal_id),
+                        user_id=int(user.get("id") or 0),
+                    )
+                except Exception:
+                    current_app.logger.exception(
+                        "Invoice revenue billing/allocation failed | invoice_id=%s",
+                        invoice_id,
+                    )
+
+            posted=db_service.get_invoice_with_lines(company_id,int(invoice_id)) or {}
+            posted["_posted_journal_id"]=journal_id
 
             db_service.audit_log(
                 company_id=company_id,
                 actor_user_id=int(user.get("id") or 0),
-                module="ar",
+                module="ifrs16_lessor" if is_lessor else "ar",
                 action="post",
                 severity="info",
                 entity_type="invoice",
                 entity_id=str(invoice_id),
-                entity_ref=str(posted.get("number") or inv_no or invoice_id),
+                entity_ref=str(posted.get("number") or invoice_number or invoice_id),
                 journal_id=int(journal_id) if journal_id else None,
-                customer_id=int(posted.get("customer_id") or cust_id or 0) or None,
-                amount=float(posted.get("total_amount") or posted.get("gross_amount") or 0.0),
+                customer_id=customer_id,
+                amount=float(posted.get("total_amount") or posted.get("gross_amount") or 0),
                 currency=posted.get("currency"),
-                before_json=before or {},
-                after_json=posted or {},
-                message="Invoice posted to GL (from update)",
+                before_json=inv,
+                after_json=posted,
+                message="Lessor invoice posted to GL" if is_lessor else "Invoice posted to GL (from update)",
             )
-            return jsonify(posted), 200
+            return jsonify(posted),200
 
-        updated = db_service.get_invoice_with_lines(company_id, invoice_id)
         db_service.audit_log(
             company_id=company_id,
             actor_user_id=int(user.get("id") or 0),
-            module="ar",
+            module="ifrs16_lessor" if is_lessor else "ar",
             action="update",
             severity="info",
             entity_type="invoice",
             entity_id=str(invoice_id),
-            entity_ref=str(updated.get("number") or inv_no or invoice_id),
-            customer_id=int(updated.get("customer_id") or cust_id or 0) or None,
-            amount=float(updated.get("total_amount") or updated.get("gross_amount") or 0.0),
+            entity_ref=str(updated.get("number") or invoice_number or invoice_id),
+            customer_id=customer_id,
+            amount=float(updated.get("total_amount") or updated.get("gross_amount") or 0),
             currency=updated.get("currency"),
-            before_json=before or {},
-            after_json=updated or {},
-            message="Invoice updated",
-        )       
-        return jsonify(updated), 200
+            before_json=inv,
+            after_json=updated,
+            message="Lessor invoice updated" if is_lessor else "Invoice updated",
+        )
 
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        current_app.logger.exception("❌ update_invoice crashed")
-        return jsonify({"error": "Internal server error in update_invoice", "detail": str(e)}), 500
+        return jsonify(updated),200
 
+    except ValueError as exc:
+        return jsonify({"error":str(exc)}),400
+    except Exception as exc:
+        current_app.logger.exception(
+            "update_invoice crashed | company_id=%s invoice_id=%s",
+            cid,
+            invoice_id,
+        )
+        return jsonify({
+            "error":"Internal server error in update_invoice",
+            "detail":str(exc),
+        }),500
+    
 @app.route("/api/companies/<int:cid>/invoices/<int:invoice_id>/post", methods=["POST", "OPTIONS"])
 @require_auth
 def post_invoice(cid: int, invoice_id: int):

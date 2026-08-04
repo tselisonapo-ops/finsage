@@ -1007,7 +1007,73 @@ def _coa_role_from_text(
     # Payroll roles
     # ----------------------------
 
+    # ----------------------------
+    # Payroll and IAS 19 roles
+    # ----------------------------
+
     if is_expense:
+        if has_any(
+            "leave pay expense",
+            "leave expense",
+            "annual leave expense",
+            "leave provision expense",
+            "compensated absence expense",
+        ):
+            return "payroll_leave_expense"
+
+        if has_any(
+            "bonus expense",
+            "bonuses expense",
+            "staff bonus",
+            "employee bonus",
+            "profit-sharing expense",
+            "profit sharing expense",
+        ):
+            return "payroll_bonus_expense"
+
+        if has_any(
+            "defined benefit expense",
+            "defined-benefit expense",
+            "defined benefit service cost",
+            "employee benefit service cost",
+            "pension service cost",
+            "net defined benefit interest",
+        ):
+            return "payroll_defined_benefit_expense"
+
+        if has_any(
+            "other long-term employee benefit expense",
+            "other long term employee benefit expense",
+            "long-service award expense",
+            "long service award expense",
+            "jubilee award expense",
+            "long-term disability benefit expense",
+            "deferred bonus expense",
+        ):
+            return "payroll_long_term_benefit_expense"
+
+        if has_any(
+            "termination benefit expense",
+            "termination benefits expense",
+            "retrenchment expense",
+            "severance expense",
+            "early retirement expense",
+        ):
+            return "payroll_termination_benefit_expense"
+
+        if has_any(
+            "employer contribution",
+            "employer pension",
+            "employer provident",
+            "employer medical",
+            "employer uif",
+            "payroll contributions expense",
+            "defined contribution expense",
+            "defined-contribution expense",
+            "employee benefits expense",
+        ):
+            return "payroll_employer_contribution_expense"
+
         if has_any(
             "salaries & wages",
             "salaries and wages",
@@ -1021,24 +1087,74 @@ def _coa_role_from_text(
         ):
             return "payroll_salary_expense"
 
-        if has_any("bonus expense", "bonuses expense", "staff bonus", "employee bonus"):
-            return "payroll_bonus_expense"
-
-        if has_any("commission expense", "sales commission", "employee commission"):
+        if has_any(
+            "commission expense",
+            "sales commission",
+            "employee commission",
+        ):
             return "payroll_commission_expense"
 
-        if has_any(
-            "employer contribution",
-            "employer pension",
-            "employer provident",
-            "employer medical",
-            "employer uif",
-            "payroll contributions expense",
-            "employee benefits expense",
-        ):
-            return "payroll_employer_contribution_expense"
-
     if is_liability:
+        if has_any(
+            "leave pay provision",
+            "leave provision",
+            "annual leave provision",
+            "leave liability",
+            "compensated absence liability",
+            "accrued leave",
+        ):
+            return "payroll_leave_provision"
+
+        if has_any(
+            "provision for bonuses",
+            "bonus provision",
+            "accrued bonus",
+            "bonuses payable",
+            "profit-sharing payable",
+            "profit sharing payable",
+        ):
+            return "payroll_bonus_payable"
+
+        if has_any(
+            "defined contribution payable",
+            "defined-contribution payable",
+            "pension payable",
+            "provident payable",
+            "retirement fund payable",
+            "retirement contribution payable",
+        ):
+            return "payroll_defined_contribution_payable"
+
+        if has_any(
+            "defined benefit obligation",
+            "defined-benefit obligation",
+            "defined benefit liability",
+            "defined-benefit liability",
+            "net defined benefit liability",
+            "post-employment benefit liability",
+            "post employment benefit liability",
+        ):
+            return "payroll_defined_benefit_liability"
+
+        if has_any(
+            "other long-term employee benefit liability",
+            "other long term employee benefit liability",
+            "long-service award provision",
+            "long service award provision",
+            "jubilee award provision",
+            "deferred bonus liability",
+        ):
+            return "payroll_long_term_benefit_liability"
+
+        if has_any(
+            "termination benefit liability",
+            "termination benefits payable",
+            "retrenchment provision",
+            "severance payable",
+            "severance provision",
+        ):
+            return "payroll_termination_benefit_liability"
+
         if has_any(
             "paye",
             "pay as you earn",
@@ -1048,13 +1164,20 @@ def _coa_role_from_text(
         ):
             return "payroll_paye_payable"
 
-        if has_any("net salary payable", "net salaries payable", "wages payable", "salaries payable", "payroll payable"):
+        if has_any(
+            "net salary payable",
+            "net salaries payable",
+            "wages payable",
+            "salaries payable",
+            "payroll payable",
+        ):
             return "payroll_net_salary_payable"
 
-        if has_any("pension payable", "provident payable", "retirement fund payable"):
-            return "payroll_pension_payable"
-
-        if has_any("medical aid payable", "medical payable", "medical scheme payable"):
+        if has_any(
+            "medical aid payable",
+            "medical payable",
+            "medical scheme payable",
+        ):
             return "payroll_medical_aid_payable"
 
         if has_any(
@@ -1066,9 +1189,24 @@ def _coa_role_from_text(
         ):
             return "payroll_other_deductions_payable"
 
-        if has_any("provision for bonuses", "bonus provision", "accrued bonus", "bonuses payable"):
-            return "payroll_bonus_payable"
+    if is_asset and has_any(
+        "defined benefit plan asset",
+        "defined-benefit plan asset",
+        "net defined benefit asset",
+        "post-employment benefit asset",
+        "post employment benefit asset",
+    ):
+        return "payroll_defined_benefit_asset"
 
+    if "equity" in sec and has_any(
+        "defined benefit remeasurement reserve",
+        "defined-benefit remeasurement reserve",
+        "employee benefit remeasurement reserve",
+        "actuarial gain loss reserve",
+        "actuarial gains and losses reserve",
+        "ias 19 remeasurement reserve",
+    ):
+        return "payroll_defined_benefit_oci"
     # ----------------------------
     # IFRS 16 lessor accounting
     # Must run before generic accrual/deferral rules

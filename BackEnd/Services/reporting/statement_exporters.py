@@ -152,24 +152,46 @@ def _financial_table(rows, amount_keys=None, amount_labels=None, page_width_mm=2
 
     style = TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.black),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+
+        # Header line
+        ("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.black),
+
+        # Light straight line between disclosure rows
+        ("LINEBELOW", (0, 1), (-1, -1), 0.2, colors.HexColor("#D9D9D9")),
     ])
 
     for idx, rt in enumerate(row_types):
         if rt == "header":
             style.add("FONTNAME", (0, idx), (-1, idx), "Helvetica-Bold")
 
-        if rt == "subtotal":
-            style.add("LINEABOVE", (1, idx), (-1, idx), 0.4, colors.black)
+    if rt == "subtotal":
+        style.add(
+            "LINEABOVE",
+            (0, idx),
+            (-1, idx),
+            0.5,
+            colors.black,
+        )
 
-        if rt == "total":
-            style.add("LINEABOVE", (1, idx), (-1, idx), 0.7, colors.black)
-            style.add("LINEBELOW", (1, idx), (-1, idx), 0.7, colors.black)
-
+    if rt == "total":
+        style.add(
+            "LINEABOVE",
+            (0, idx),
+            (-1, idx),
+            0.8,
+            colors.black,
+        )
+        style.add(
+            "LINEBELOW",
+            (0, idx),
+            (-1, idx),
+            1.0,
+            colors.black,
+        )
     table.setStyle(style)
     return table
 
@@ -588,6 +610,97 @@ def _flatten_payload(payload: Dict[str, Any]) -> Tuple[List[str], List[Dict[str,
 
     return ["Line Item", *col_labels], out_rows
 
+def _autofit_worksheet(ws, *, min_width=10, max_width=45):
+    for col_idx in range(1, ws.max_column + 1):
+        width = min_width
+
+        for row_idx in range(1, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+
+            if cell.value is None:
+                continue
+
+            value = str(cell.value)
+            lines = value.splitlines() or [value]
+            width = max(width, max(len(line) for line in lines) + 2)
+
+        ws.column_dimensions[get_column_letter(col_idx)].width = min(
+            width,
+            max_width,
+        )
+
+
+def _format_disclosure_worksheet(ws):
+    thin = Side(style="thin", color="D9E2F3")
+    border = Border(bottom=thin)
+    title_fill = PatternFill("solid", fgColor="1F4E78")
+    section_fill = PatternFill("solid", fgColor="D9EAF7")
+    header_fill = PatternFill("solid", fgColor="5B9BD5")
+
+    ws.freeze_panes = "A2"
+    ws.sheet_view.showGridLines = False
+
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00;[Red](#,##0.00);-'
+
+    for row_idx in range(1, ws.max_row + 1):
+        first = ws.cell(row_idx, 1)
+        values = [
+            ws.cell(row_idx, col_idx).value
+            for col_idx in range(1, ws.max_column + 1)
+        ]
+        non_empty = [value for value in values if value not in (None, "")]
+
+        if row_idx == 1:
+            for cell in ws[row_idx]:
+                cell.fill = title_fill
+                cell.font = Font(color="FFFFFF", bold=True, size=13)
+                cell.alignment = Alignment(
+                    vertical="center",
+                    wrap_text=True,
+                )
+
+            ws.row_dimensions[row_idx].height = 24
+            continue
+
+        if len(non_empty) == 1 and first.value:
+            for cell in ws[row_idx]:
+                cell.fill = section_fill
+                cell.font = Font(bold=True, color="1F1F1F")
+                cell.border = border
+
+            ws.row_dimensions[row_idx].height = 21
+            continue
+
+        first_text = str(first.value or "").strip().lower()
+
+        if first_text in {
+            "description",
+            "bucket",
+            "contract name",
+            "lease name",
+        }:
+            for cell in ws[row_idx]:
+                cell.fill = header_fill
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
+                    wrap_text=True,
+                )
+                cell.border = border
+
+            ws.row_dimensions[row_idx].height = 30
+
+    _autofit_worksheet(ws)
+
 def _xlsx_apply_row_style(ws, row_idx: int, row_type: str, max_col: int):
     if row_type == "header":
         for c in range(1, max_col + 1):
@@ -901,6 +1014,9 @@ def export_statement_xlsx(payload: Dict[str, Any], filename: str = "statement.xl
         ws_cmp.column_dimensions["A"].width = 42
         for col_idx in range(2, len(cmp_headers) + 1):
             ws_cmp.column_dimensions[get_column_letter(col_idx)].width = 18
+
+    for ws in wb.worksheets:
+        _format_disclosure_worksheet(ws)
 
     out = BytesIO()
     wb.save(out)

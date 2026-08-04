@@ -6381,11 +6381,18 @@ class DatabaseService:
         self.ensure_company_account_settings_defaults(company_id)
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
+    PAYROLL_MIGRATION_VERSION=1
 
-    def ensure_company_payroll(self, company_id: int):
-        schema = self.company_schema(company_id)
+    def ensure_company_payroll(
+        self,
+        company_id:int,
+        *,
+        cur=None,
+    )->None:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
 
-        self.execute_ddl(f"""
+        ddl=f"""
         CREATE TABLE IF NOT EXISTS {schema}.payroll_settings (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
@@ -6394,20 +6401,23 @@ class DatabaseService:
             default_currency TEXT,
             payroll_start_date DATE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_payroll_settings_company_fk
+                FOREIGN KEY (company_id)
+                REFERENCES public.companies(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_settings_tax_authority_fk
+                FOREIGN KEY (tax_authority_id)
+                REFERENCES public.tax_authorities(id),
+
+            CONSTRAINT {schema}_payroll_settings_company_uniq
+                UNIQUE (company_id),
+
+            CONSTRAINT {schema}_payroll_settings_frequency_ck
+                CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
         );
-
-        CONSTRAINT {schema}_payroll_settings_company_fk
-            FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
-
-        CONSTRAINT {schema}_payroll_settings_tax_authority_fk
-            FOREIGN KEY (tax_authority_id) REFERENCES public.tax_authorities(id),
-
-        CONSTRAINT {schema}_payroll_settings_company_uniq
-            UNIQUE (company_id),
-
-        CONSTRAINT {schema}_payroll_settings_frequency_ck
-            CHECK (default_frequency IN ('weekly','fortnightly','monthly'))
     
         ALTER TABLE {schema}.payroll_settings
             ADD COLUMN IF NOT EXISTS period_start_day INT,
@@ -6909,6 +6919,27 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_payroll_benefit_company_idx
             ON {schema}.payroll_benefit_types(company_id);
 
+        ALTER TABLE {schema}.payroll_benefit_plans
+            ADD COLUMN IF NOT EXISTS employee_deduction_type_id BIGINT,
+            ADD COLUMN IF NOT EXISTS employer_contribution_type_id BIGINT,
+            ADD COLUMN IF NOT EXISTS calculation_source TEXT
+                NOT NULL DEFAULT 'payroll_actual';
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            DROP CONSTRAINT IF EXISTS
+                chk_payroll_benefit_plan_calculation_source;
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            ADD CONSTRAINT
+                chk_payroll_benefit_plan_calculation_source
+            CHECK(
+                calculation_source IN(
+                    'payroll_actual',
+                    'setup_estimate',
+                    'percentage'
+                )
+            );
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefits (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
@@ -7133,6 +7164,10 @@ class DatabaseService:
                 CHECK (status IN ('draft','calculated','approved','posted','reversed'))
         );
 
+        ALTER TABLE {schema}.payroll_runs
+            ADD COLUMN IF NOT EXISTS reversal_journal_id BIGINT,
+            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
+            
         CREATE TABLE IF NOT EXISTS {schema}.payroll_run_employees (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
@@ -7243,6 +7278,9 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS metadata JSONB
                 NOT NULL DEFAULT '{{}}'::jsonb;
 
+        ALTER TABLE {schema}.payroll_run_lines
+            ADD COLUMN IF NOT EXISTS offset_account_code TEXT;
+
         CREATE INDEX IF NOT EXISTS {schema}_payroll_runs_status_idx
             ON {schema}.payroll_runs(company_id, status);
 
@@ -7260,6 +7298,11 @@ class DatabaseService:
             COALESCE(item_id, 0),
             COALESCE(code, '')
         );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_lines_employee_benefits
+            ON {schema}.payroll_run_lines(
+                company_id,payroll_run_id,source_type,source_id
+            );
 
         CREATE TABLE IF NOT EXISTS
             {schema}.payroll_employee_pay_setups (
@@ -7378,6 +7421,18 @@ class DatabaseService:
                         )
                     )
             );
+
+        ALTER TABLE {schema}.payroll_employee_pay_setup_items
+            ADD COLUMN IF NOT EXISTS source_type TEXT,
+            ADD COLUMN IF NOT EXISTS source_id BIGINT;
+
+        CREATE INDEX IF NOT EXISTS
+            idx_pay_setup_items_source
+        ON {schema}.payroll_employee_pay_setup_items(
+            company_id,
+            source_type,
+            source_id
+        );
 
         CREATE INDEX IF NOT EXISTS
             idx_payroll_employee_pay_setups_employee
@@ -7582,6 +7637,9 @@ class DatabaseService:
             )
         );
 
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_bonus_scheme_code
+        ON {schema}.payroll_bonus_schemes(company_id,code);
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_bonus_assignments (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7595,6 +7653,73 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             notes TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD COLUMN IF NOT EXISTS updated_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD COLUMN IF NOT EXISTS updated_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_runs
+            ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            DROP CONSTRAINT IF EXISTS
+                fk_payroll_bonus_assignment_scheme;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD CONSTRAINT fk_payroll_bonus_assignment_scheme
+            FOREIGN KEY(scheme_id)
+            REFERENCES {schema}.payroll_bonus_schemes(id)
+            ON DELETE CASCADE;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_assignment_scheme,
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_assignment_employee;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD CONSTRAINT fk_payroll_bonus_assignment_scheme
+                FOREIGN KEY(scheme_id)
+                REFERENCES {schema}.payroll_bonus_schemes(id)
+                ON DELETE CASCADE,
+            ADD CONSTRAINT fk_payroll_bonus_assignment_employee
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            DROP CONSTRAINT IF EXISTS
+                fk_payroll_bonus_assignment_employee;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD CONSTRAINT fk_payroll_bonus_assignment_employee
+            FOREIGN KEY(employee_id)
+            REFERENCES {schema}.payroll_employees(id)
+            ON DELETE CASCADE;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            DROP CONSTRAINT IF EXISTS
+                chk_payroll_bonus_assignment_dates;
+
+        ALTER TABLE {schema}.payroll_employee_bonus_assignments
+            ADD CONSTRAINT chk_payroll_bonus_assignment_dates
+            CHECK(
+                effective_to IS NULL
+                OR effective_to>=effective_from
+            );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            uq_payroll_bonus_assignment
+        ON {schema}.payroll_employee_bonus_assignments(
+            company_id,
+            scheme_id,
+            employee_id,
+            effective_from
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_accrual_runs (
@@ -7619,6 +7744,10 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.payroll_bonus_accrual_runs
+            ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_accrual_run_lines (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7642,6 +7771,31 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_line_run;
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            ADD CONSTRAINT fk_payroll_bonus_line_run
+            FOREIGN KEY(run_id)
+            REFERENCES {schema}.payroll_bonus_accrual_runs(id)
+            ON DELETE CASCADE;
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_line_scheme;
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            ADD CONSTRAINT fk_payroll_bonus_line_scheme
+            FOREIGN KEY(scheme_id)
+            REFERENCES {schema}.payroll_bonus_schemes(id);
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_line_employee;
+
+        ALTER TABLE {schema}.payroll_bonus_accrual_run_lines
+            ADD CONSTRAINT fk_payroll_bonus_line_employee
+            FOREIGN KEY(employee_id)
+            REFERENCES {schema}.payroll_employees(id);
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_benefit_plans (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7658,17 +7812,36 @@ class DatabaseService:
             liability_account_code TEXT,
             asset_account_code TEXT,
             oci_account_code TEXT,
+            effective_from DATE,
+            effective_to DATE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_benefit_plan UNIQUE (company_id, code),
-            CONSTRAINT chk_payroll_benefit_plan_type CHECK (
-                plan_type IN (
-                    'defined_contribution','defined_benefit',
-                    'medical_post_employment','other_post_employment'
-                )
+            CONSTRAINT uq_payroll_benefit_plan UNIQUE(company_id,code),
+            CONSTRAINT chk_payroll_benefit_plan_type CHECK(plan_type IN(
+                'defined_contribution','defined_benefit',
+                'medical_post_employment','other_post_employment'
+            )),
+            CONSTRAINT chk_payroll_benefit_plan_dates CHECK(
+                effective_to IS NULL OR effective_from IS NULL OR effective_to>=effective_from
             )
         );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_benefit_plan_code
+        ON {schema}.payroll_benefit_plans(company_id,code);
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            ADD COLUMN IF NOT EXISTS provider_name TEXT,
+            ADD COLUMN IF NOT EXISTS registration_number TEXT,
+            ADD COLUMN IF NOT EXISTS funded BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS employee_contribution_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS employer_contribution_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payable_account_code TEXT,
+            ADD COLUMN IF NOT EXISTS effective_from DATE,
+            ADD COLUMN IF NOT EXISTS effective_to DATE;
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_benefit_plans_company
+            ON {schema}.payroll_benefit_plans(company_id,plan_type,is_active);
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_benefit_plan_members (
             id BIGSERIAL PRIMARY KEY,
@@ -7676,16 +7849,37 @@ class DatabaseService:
             plan_id BIGINT NOT NULL,
             employee_id BIGINT NOT NULL,
             membership_number TEXT,
-            effective_from DATE NOT NULL,
-            effective_to DATE,
             employee_percentage NUMERIC(9,4),
             employer_percentage NUMERIC(9,4),
+            pensionable_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_plan_member UNIQUE (
-                company_id, plan_id, employee_id, effective_from
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_plan_member UNIQUE(company_id,plan_id,employee_id,effective_from),
+            CONSTRAINT fk_payroll_plan_member_plan FOREIGN KEY(plan_id)
+                REFERENCES {schema}.payroll_benefit_plans(id) ON DELETE CASCADE,
+            CONSTRAINT fk_payroll_plan_member_employee FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id) ON DELETE CASCADE,
+            CONSTRAINT chk_payroll_plan_member_dates CHECK(
+                effective_to IS NULL OR effective_to>=effective_from
+            ),
+            CONSTRAINT chk_payroll_plan_member_percentages CHECK(
+                COALESCE(employee_percentage,0) BETWEEN 0 AND 100 AND
+                COALESCE(employer_percentage,0) BETWEEN 0 AND 100 AND
+                pensionable_percentage BETWEEN 0 AND 100
             )
         );
+
+        ALTER TABLE {schema}.payroll_benefit_plan_members
+            ADD COLUMN IF NOT EXISTS pensionable_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            ADD COLUMN IF NOT EXISTS notes TEXT,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_plan_members_lookup
+            ON {schema}.payroll_benefit_plan_members(company_id,plan_id,employee_id,is_active);
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_valuations (
             id BIGSERIAL PRIMARY KEY,
@@ -7731,6 +7925,53 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.payroll_actuarial_valuations
+            ADD COLUMN IF NOT EXISTS valuation_reference TEXT,
+            ADD COLUMN IF NOT EXISTS valuation_period_start DATE,
+            ADD COLUMN IF NOT EXISTS valuation_period_end DATE,
+            ADD COLUMN IF NOT EXISTS report_file_name TEXT,
+            ADD COLUMN IF NOT EXISTS notes TEXT,
+            ADD COLUMN IF NOT EXISTS approved_by_user_id BIGINT,
+            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reversal_journal_id BIGINT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_actuarial_plan_date
+            ON {schema}.payroll_actuarial_valuations(
+                company_id,plan_id,valuation_date
+            );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_actuarial_company_date
+            ON {schema}.payroll_actuarial_valuations(
+                company_id,valuation_date DESC,status
+            );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_assumptions(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            valuation_id BIGINT NOT NULL,
+            assumption_key TEXT NOT NULL,
+            assumption_label TEXT,
+            numeric_value NUMERIC(18,6),
+            text_value TEXT,
+            unit TEXT,
+            source_reference TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_actuarial_assumption
+                UNIQUE(company_id,valuation_id,assumption_key),
+            CONSTRAINT fk_payroll_actuarial_assumption_valuation
+                FOREIGN KEY(valuation_id)
+                REFERENCES {schema}.payroll_actuarial_valuations(id)
+                ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_actuarial_assumptions
+            ON {schema}.payroll_actuarial_assumptions(
+                company_id,valuation_id
+            );
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_assumptions (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7743,6 +7984,96 @@ class DatabaseService:
                 company_id, valuation_id, assumption_key
             )
         );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_defined_contribution_runs(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_no TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            reporting_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            total_pensionable_remuneration NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_employee_contribution NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_employer_contribution NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_payable NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            posted_at TIMESTAMPTZ,
+            reversed_at TIMESTAMPTZ,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_dc_run UNIQUE(company_id,reporting_date),
+            CONSTRAINT chk_payroll_dc_run_dates CHECK(period_end>=period_start),
+            CONSTRAINT chk_payroll_dc_run_status CHECK(
+                status IN('draft','calculated','approved','posted','reversed')
+            )
+        );
+
+        ALTER TABLE {schema}.payroll_defined_contribution_runs
+            ADD COLUMN IF NOT EXISTS payroll_run_id BIGINT;
+
+        ALTER TABLE {schema}.payroll_defined_contribution_runs
+        ADD COLUMN IF NOT EXISTS plan_id BIGINT;
+
+        ALTER TABLE {schema}.payroll_defined_contribution_runs
+        DROP CONSTRAINT IF EXISTS fk_payroll_dc_run_plan;
+
+        ALTER TABLE {schema}.payroll_defined_contribution_runs
+        ADD CONSTRAINT fk_payroll_dc_run_plan
+        FOREIGN KEY(plan_id)
+        REFERENCES {schema}.payroll_benefit_plans(id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_dc_payroll_run
+            ON {schema}.payroll_defined_contribution_runs(
+                company_id,payroll_run_id
+            )
+            WHERE payroll_run_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_defined_contribution_run_lines(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_id BIGINT NOT NULL,
+            plan_id BIGINT NOT NULL,
+            member_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            pensionable_remuneration NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employee_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            employer_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            employee_contribution NUMERIC(18,2) NOT NULL DEFAULT 0,
+            employer_contribution NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_contribution NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            payable_account_code TEXT,
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_dc_run_line UNIQUE(
+                company_id,run_id,plan_id,employee_id
+            ),
+            CONSTRAINT fk_payroll_dc_line_run FOREIGN KEY(run_id)
+                REFERENCES {schema}.payroll_defined_contribution_runs(id)
+                ON DELETE CASCADE,
+            CONSTRAINT fk_payroll_dc_line_plan FOREIGN KEY(plan_id)
+                REFERENCES {schema}.payroll_benefit_plans(id),
+            CONSTRAINT fk_payroll_dc_line_member FOREIGN KEY(member_id)
+                REFERENCES {schema}.payroll_benefit_plan_members(id),
+            CONSTRAINT fk_payroll_dc_line_employee FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+        );
+
+        ALTER TABLE {schema}.payroll_defined_contribution_run_lines
+            ADD COLUMN IF NOT EXISTS payroll_deduction_line_id BIGINT,
+            ADD COLUMN IF NOT EXISTS payroll_contribution_line_id BIGINT;
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_dc_runs_company
+            ON {schema}.payroll_defined_contribution_runs(
+                company_id,reporting_date DESC
+            );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_dc_lines_run
+            ON {schema}.payroll_defined_contribution_run_lines(
+                company_id,run_id,plan_id,employee_id
+            );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_long_term_benefit_schemes (
             id BIGSERIAL PRIMARY KEY,
@@ -7767,6 +8098,151 @@ class DatabaseService:
                 )
             )
         );
+
+        ALTER TABLE {schema}.payroll_long_term_benefit_schemes
+            ADD COLUMN IF NOT EXISTS calculation_basis TEXT NOT NULL DEFAULT 'fixed_amount',
+            ADD COLUMN IF NOT EXISTS salary_multiple NUMERIC(9,4) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS expected_payment_years NUMERIC(9,4) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS effective_from DATE,
+            ADD COLUMN IF NOT EXISTS effective_to DATE,
+            ADD COLUMN IF NOT EXISTS notes TEXT,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.payroll_long_term_benefit_schemes
+            DROP CONSTRAINT IF EXISTS chk_payroll_long_term_calc_basis;
+
+        ALTER TABLE {schema}.payroll_long_term_benefit_schemes
+            ADD CONSTRAINT chk_payroll_long_term_calc_basis CHECK(
+                calculation_basis IN(
+                    'fixed_amount','salary_multiple',
+                    'percentage_of_salary','manual'
+                )
+            );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_long_term_scheme_code
+        ON {schema}.payroll_long_term_benefit_schemes(company_id,code);
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_long_term_benefit_assignments(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            scheme_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            benefit_amount_override NUMERIC(18,2),
+            service_years_override NUMERIC(9,4),
+            probability_percentage NUMERIC(9,4),
+            expected_payment_date DATE,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_long_term_assignment UNIQUE(
+                company_id,scheme_id,employee_id,effective_from
+            ),
+            CONSTRAINT fk_payroll_long_term_assignment_scheme
+                FOREIGN KEY(scheme_id)
+                REFERENCES {schema}.payroll_long_term_benefit_schemes(id)
+                ON DELETE CASCADE,
+            CONSTRAINT fk_payroll_long_term_assignment_employee
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+            CONSTRAINT chk_payroll_long_term_assignment_dates CHECK(
+                effective_to IS NULL OR effective_to>=effective_from
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_long_term_benefit_runs(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_no TEXT NOT NULL,
+            period_start DATE NOT NULL,
+            period_end DATE NOT NULL,
+            reporting_date DATE NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            total_opening_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_current_service_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_interest_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_remeasurement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_benefits_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_closing_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            total_movement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            posted_journal_id BIGINT,
+            reversal_journal_id BIGINT,
+            posted_at TIMESTAMPTZ,
+            reversed_at TIMESTAMPTZ,
+            created_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_long_term_run UNIQUE(
+                company_id,reporting_date
+            ),
+            CONSTRAINT chk_payroll_long_term_run_dates CHECK(
+                period_end>=period_start
+            ),
+            CONSTRAINT chk_payroll_long_term_run_status CHECK(
+                status IN('draft','calculated','approved','posted','reversed')
+            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_long_term_benefit_run_lines(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            run_id BIGINT NOT NULL,
+            scheme_id BIGINT NOT NULL,
+            assignment_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
+            monthly_salary NUMERIC(18,2) NOT NULL DEFAULT 0,
+            completed_service_years NUMERIC(9,4) NOT NULL DEFAULT 0,
+            required_service_years NUMERIC(9,4) NOT NULL DEFAULT 0,
+            vesting_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            probability_percentage NUMERIC(9,4) NOT NULL DEFAULT 100,
+            undiscounted_benefit NUMERIC(18,2) NOT NULL DEFAULT 0,
+            discount_rate_percentage NUMERIC(9,4) NOT NULL DEFAULT 0,
+            years_to_payment NUMERIC(9,4) NOT NULL DEFAULT 0,
+            opening_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            current_service_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            interest_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            remeasurement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            benefits_paid NUMERIC(18,2) NOT NULL DEFAULT 0,
+            closing_liability NUMERIC(18,2) NOT NULL DEFAULT 0,
+            movement_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            expense_account_code TEXT,
+            liability_account_code TEXT,
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_payroll_long_term_run_line UNIQUE(
+                company_id,run_id,scheme_id,employee_id
+            ),
+            CONSTRAINT fk_payroll_long_term_line_run
+                FOREIGN KEY(run_id)
+                REFERENCES {schema}.payroll_long_term_benefit_runs(id)
+                ON DELETE CASCADE,
+            CONSTRAINT fk_payroll_long_term_line_scheme
+                FOREIGN KEY(scheme_id)
+                REFERENCES {schema}.payroll_long_term_benefit_schemes(id),
+            CONSTRAINT fk_payroll_long_term_line_assignment
+                FOREIGN KEY(assignment_id)
+                REFERENCES {schema}.payroll_long_term_benefit_assignments(id),
+            CONSTRAINT fk_payroll_long_term_line_employee
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_long_term_assignments
+            ON {schema}.payroll_long_term_benefit_assignments(
+                company_id,scheme_id,employee_id,is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_long_term_runs
+            ON {schema}.payroll_long_term_benefit_runs(
+                company_id,reporting_date DESC
+            );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_long_term_run_lines
+            ON {schema}.payroll_long_term_benefit_run_lines(
+                company_id,run_id,scheme_id
+            );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_termination_plans (
             id BIGSERIAL PRIMARY KEY,
@@ -7795,6 +8271,33 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.payroll_termination_plans
+            ADD COLUMN IF NOT EXISTS plan_type TEXT NOT NULL DEFAULT 'involuntary_termination',
+            ADD COLUMN IF NOT EXISTS description TEXT,
+            ADD COLUMN IF NOT EXISTS cash_account_code TEXT,
+            ADD COLUMN IF NOT EXISTS recognised_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.payroll_termination_plans
+            DROP CONSTRAINT IF EXISTS chk_payroll_termination_plan_type;
+
+        ALTER TABLE {schema}.payroll_termination_plans
+            ADD CONSTRAINT chk_payroll_termination_plan_type CHECK(
+                plan_type IN(
+                    'involuntary_termination',
+                    'voluntary_retrenchment',
+                    'restructuring',
+                    'early_retirement',
+                    'mutual_separation',
+                    'other'
+                )
+            );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_payroll_termination_plan_no
+        ON {schema}.payroll_termination_plans(company_id,plan_no);
+        
         CREATE TABLE IF NOT EXISTS {schema}.payroll_termination_plan_employees (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7813,6 +8316,46 @@ class DatabaseService:
             )
         );
 
+        ALTER TABLE {schema}.payroll_termination_plan_employees
+            ADD COLUMN IF NOT EXISTS termination_date DATE,
+            ADD COLUMN IF NOT EXISTS weekly_salary NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS severance_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS leave_settlement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS bonus_settlement NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS statutory_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS manual_adjustment NUMERIC(18,2) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS payment_reference TEXT,
+            ADD COLUMN IF NOT EXISTS payment_date DATE,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.payroll_termination_plan_employees
+            DROP CONSTRAINT IF EXISTS fk_payroll_termination_employee_plan;
+
+        ALTER TABLE {schema}.payroll_termination_plan_employees
+            ADD CONSTRAINT fk_payroll_termination_employee_plan
+            FOREIGN KEY(plan_id)
+            REFERENCES {schema}.payroll_termination_plans(id)
+            ON DELETE CASCADE;
+
+        ALTER TABLE {schema}.payroll_termination_plan_employees
+            DROP CONSTRAINT IF EXISTS fk_payroll_termination_employee_employee;
+
+        ALTER TABLE {schema}.payroll_termination_plan_employees
+            ADD CONSTRAINT fk_payroll_termination_employee_employee
+            FOREIGN KEY(employee_id)
+            REFERENCES {schema}.payroll_employees(id)
+            ON DELETE CASCADE;
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_termination_plans
+            ON {schema}.payroll_termination_plans(
+                company_id,status,recognition_date DESC
+            );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_termination_employees
+            ON {schema}.payroll_termination_plan_employees(
+                company_id,plan_id,employee_id
+            );
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefit_journal_links (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7825,12 +8368,26 @@ class DatabaseService:
                 company_id, source_type, source_id, journal_role
             )
         );
-        """)
+        """
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+            migration_key=f"{schema}:payroll",
+            migration_version=self.PAYROLL_MIGRATION_VERSION,
+        )
 
-    def ensure_company_forecast(self, company_id: int):
-        schema = self.company_schema(company_id)
+    FORECAST_MIGRATION_VERSION=1
 
-        self.execute_ddl(f"""
+    def ensure_company_forecast(
+        self,
+        company_id:int,
+        *,
+        cur=None,
+    )->None:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        ddl=f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_budgets (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7854,9 +8411,7 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_budget_lines (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7873,9 +8428,7 @@ class DatabaseService:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             UNIQUE (budget_id, account_code, period_month)
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_versions (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7897,9 +8450,7 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_lines (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7915,9 +8466,7 @@ class DatabaseService:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             UNIQUE (version_id, account_code, period_month)
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_drivers (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7936,9 +8485,7 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_approvals (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7950,9 +8497,7 @@ class DatabaseService:
             comment TEXT,
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
-        """)
-
-        self.execute_ddl(f"""
+       
         CREATE TABLE IF NOT EXISTS {schema}.forecast_import_batches (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7968,9 +8513,7 @@ class DatabaseService:
             error_json JSONB NOT NULL DEFAULT '[]'::jsonb,
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_audit_events (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -7983,9 +8526,7 @@ class DatabaseService:
             after_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
             message TEXT
         );
-        """)
 
-        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.forecast_capex_items (
             id SERIAL PRIMARY KEY,
 
@@ -8104,11 +8645,9 @@ class DatabaseService:
         ON {schema}.forecast_capex_items (
             purchase_month
         );
-        """)
 
 
-        self.execute_ddl(f"""
-        CREATE INDEX IF NOT EXISTS idx_forecast_budgets_company
+       CREATE INDEX IF NOT EXISTS idx_forecast_budgets_company
             ON {schema}.forecast_budgets(company_id);
 
         CREATE INDEX IF NOT EXISTS idx_forecast_budget_lines_budget
@@ -8140,7 +8679,13 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS idx_forecast_approvals_version
             ON {schema}.forecast_approvals(version_id);
-        """)
+        """
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+            migration_key=f"{schema}:forecast",
+            migration_version=self.FORECAST_MIGRATION_VERSION,
+        )
         
     def ensure_company_schema(self, company_id: int) -> None:
         schema = f"company_{company_id}"
@@ -8910,7 +9455,19 @@ class DatabaseService:
 
                         ''payroll_run'',
                         ''payroll_run_reversal'',
-
+                        ''payroll_leave_accrual'',
+                        ''payroll_leave_accrual_reversal'',
+                        ''payroll_bonus_accrual'',
+                        ''payroll_bonus_accrual_reversal'',
+                        ''payroll_defined_contribution'',
+                        ''payroll_defined_contribution_reversal'',
+                        ''payroll_defined_benefit'',
+                        ''payroll_defined_benefit_reversal'',
+                        ''payroll_long_term_benefit'',
+                        ''payroll_long_term_benefit_reversal'',
+                        ''payroll_termination_benefit'',
+                        ''payroll_termination_benefit_reversal'',
+                        ''payroll_termination_benefit_settlement'',
                         ''system''
                     ]::text[])
                 )',
@@ -22440,6 +22997,24 @@ class DatabaseService:
         ALTER TABLE {schema}.invoices ADD COLUMN IF NOT EXISTS issued_at TIMESTAMPTZ NULL;
         ALTER TABLE {schema}.invoices ADD COLUMN IF NOT EXISTS issued_by INT NULL;
 
+        ALTER TABLE {schema}.invoices
+        ADD COLUMN IF NOT EXISTS source TEXT NULL,
+        ADD COLUMN IF NOT EXISTS source_id INT NULL,
+        ADD COLUMN IF NOT EXISTS module_name TEXT NULL,
+        ADD COLUMN IF NOT EXISTS posting_mode TEXT NULL,
+        ADD COLUMN IF NOT EXISTS lessor_lease_id INT NULL,
+        ADD COLUMN IF NOT EXISTS lessor_schedule_id INT NULL,
+        ADD COLUMN IF NOT EXISTS lease_classification TEXT NULL,
+        ADD COLUMN IF NOT EXISTS accounting_treatment TEXT NULL,
+        ADD COLUMN IF NOT EXISTS ar_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS credit_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS vat_output_account_code TEXT NULL,
+        ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        CREATE INDEX IF NOT EXISTS {schema}_invoices_source_idx
+        ON {schema}.invoices(company_id, source, source_id);
+
         -- If older DB had number NOT NULL, drop it
         DO $$
         BEGIN
@@ -22506,6 +23081,10 @@ class DatabaseService:
             END IF;
         END $$;
 
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_uq_invoice_lessor_schedule
+        ON {schema}.invoices(company_id, lessor_schedule_id)
+        WHERE lessor_schedule_id IS NOT NULL;
+
         -- ==================================================
         -- INVOICE LINES
         -- ==================================================
@@ -22533,6 +23112,16 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS item_id INT NULL,        -- references inventory_items.id or service_items.id (soft)
         ADD COLUMN IF NOT EXISTS item_code TEXT NULL,     -- sku or service code
         ADD COLUMN IF NOT EXISTS vat_code TEXT NULL;      -- STANDARD / ZERO / EXEMPT / CUSTOM etc
+
+        ALTER TABLE invoice_lines
+        ADD COLUMN source TEXT,
+        ADD COLUMN source_id INT,
+        ADD COLUMN module_name TEXT,
+        ADD COLUMN lessor_lease_id INT,
+        ADD COLUMN lessor_schedule_id INT,
+        ADD COLUMN account_role TEXT,
+        ADD COLUMN account_name TEXT,
+        ADD COLUMN vat_account_code TEXT;
 
         CREATE INDEX IF NOT EXISTS {schema}_invoice_lines_item_idx
         ON {schema}.invoice_lines(company_id, item_type, item_id);
@@ -23126,11 +23715,6 @@ class DatabaseService:
         END
         $fk_lessor_receipts_receipt$;
 
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_bills_invoice_idx
-        ON {schema}.lessor_lease_bills(invoice_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
-        ON {schema}.lessor_lease_receipts(receipt_id);
 
         CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_classification_idx
         ON {schema}.lessor_leases(company_id, lease_classification, status);
@@ -23323,13 +23907,89 @@ class DatabaseService:
         END
         $fk_lessor_schedule_journal$;
 
+        DO $fk_lessor_schedule_invoice$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lessor_schedule_invoice'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_schedule
+                    ADD CONSTRAINT fk_lessor_schedule_invoice
+                    FOREIGN KEY (invoice_id)
+                    REFERENCES %I.invoices(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_schedule_invoice$;
+
+        DO $fk_lessor_schedule_invoice_line$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lessor_schedule_invoice_line'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_schedule
+                    ADD CONSTRAINT fk_lessor_schedule_invoice_line
+                    FOREIGN KEY (invoice_line_id)
+                    REFERENCES %I.invoice_lines(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_schedule_invoice_line$;
+
+        DO $fk_lessor_schedule_recognition_journal$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lessor_schedule_recognition_journal'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_schedule
+                    ADD CONSTRAINT fk_lessor_schedule_recognition_journal
+                    FOREIGN KEY (recognition_journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_schedule_recognition_journal$;
+
         CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_journal_idx
         ON {schema}.lessor_lease_schedule(recognition_journal_id);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS
-            {schema}_uq_lessor_schedule_invoice
+        DROP INDEX IF EXISTS {schema}.{schema}_uq_lessor_schedule_invoice;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_uq_lessor_schedule_invoice
         ON {schema}.lessor_lease_schedule(invoice_id)
-        WHERE invoice_id IS NOT NULL;
+        WHERE invoice_id IS NOT NULL
+        AND is_active=TRUE;
+
+
+        DROP INDEX IF EXISTS {schema}.{schema}_uq_lessor_schedule_invoice_line;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_uq_lessor_schedule_invoice_line
+        ON {schema}.lessor_lease_schedule(invoice_line_id)
+        WHERE invoice_line_id IS NOT NULL
+        AND is_active=TRUE;
 
         CREATE INDEX IF NOT EXISTS
             {schema}_idx_lessor_schedule_billing
@@ -23340,6 +24000,15 @@ class DatabaseService:
             payment_date,
             status
         );
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_invoice_idx
+        ON {schema}.lessor_lease_schedule(invoice_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_invoice_line_idx
+        ON {schema}.lessor_lease_schedule(invoice_line_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_schedule_recognition_journal_idx
+        ON {schema}.lessor_lease_schedule(recognition_journal_id);
 
         CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_adjustments (
             id SERIAL PRIMARY KEY,
@@ -23560,6 +24229,9 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_status_idx
         ON {schema}.lessor_lease_bills(status);
 
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_bills_invoice_idx
+        ON {schema}.lessor_lease_bills(invoice_id);
+
         -- FK
         DO $fk_lessor_lease_bills_contract$
         BEGIN
@@ -23594,6 +24266,8 @@ class DatabaseService:
             END IF;
         END $fk_lessor_lease_bills_schedule$;
 
+
+        
         CREATE TABLE IF NOT EXISTS {schema}.lessor_lease_payment_terms (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -23862,6 +24536,9 @@ class DatabaseService:
         END $uq_lessor_mods_contract_date_type$;
 
         -- Indexes
+        CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
+        ON {schema}.lessor_lease_receipts(receipt_id);
+
         CREATE INDEX IF NOT EXISTS {schema}_lessor_mods_company_idx
         ON {schema}.lessor_lease_modifications(company_id);
 
@@ -27057,6 +27734,7 @@ class DatabaseService:
             gross_dtl NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             recognized_dta NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recognized_dtl NUMERIC(18,2) NOT NULL DEFAULT 0,
             unrecognized_dta NUMERIC(18,2) NOT NULL DEFAULT 0,
 
             net_deferred_tax NUMERIC(18,2) NOT NULL DEFAULT 0,
@@ -27086,10 +27764,57 @@ class DatabaseService:
                         'void'
                     )
                 ),
-
-            CONSTRAINT uq_deferred_tax_run
-                UNIQUE (company_id, reporting_date)
         );    
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            ${schema}_deferred_tax_active_run_uq
+        ON ${schema}.deferred_tax_runs (
+            company_id,
+            reporting_date,
+            tax_authority_id
+        )
+        WHERE status <> 'void';
+
+        ALTER TABLE {schema}.deferred_tax_runs
+        ADD COLUMN IF NOT EXISTS recognized_dtl
+            NUMERIC(18,2) NOT NULL DEFAULT 0;
+
+        ALTER TABLE {schema}.deferred_tax_runs
+        DROP CONSTRAINT IF EXISTS uq_deferred_tax_run;
+
+        ALTER TABLE {schema}.deferred_tax_runs
+        DROP CONSTRAINT IF EXISTS
+            deferred_tax_runs_company_id_reporting_date_key;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_active_run_uq
+        ON {schema}.deferred_tax_runs (
+            company_id,
+            reporting_date,
+            tax_authority_id
+        )
+        WHERE status <> 'void';
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_runs_date_idx
+        ON {schema}.deferred_tax_runs (
+            company_id,
+            reporting_date DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_lines_run_idx
+        ON {schema}.deferred_tax_run_lines (
+            company_id,
+            run_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_assessment_run_idx
+        ON {schema}.deferred_tax_recognition_assessments (
+            company_id,
+            run_id
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_run_lines (
             id BIGSERIAL PRIMARY KEY,
@@ -27957,11 +28682,14 @@ class DatabaseService:
             print("[/TENANT-FORMAT-FAIL]\n")
             raise
 
-        with self._conn_cursor() as (conn, cur):
+        with self._conn_cursor() as (conn,cur):
             try:
-                cur.execute("SELECT pg_advisory_xact_lock(%s);", (int(company_id),))
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(%s);",
+                    (int(company_id),),
+                )
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v60")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v1")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
@@ -27969,12 +28697,32 @@ class DatabaseService:
                     migration_version=60,
                 )
 
-                print(f"RUNNING MIGRATION {schema}:ap v7")
+                print(f"RUNNING MIGRATION {schema}:ap v1")
                 self.execute_ddl(
                     ddl_ap_sql,
                     cur=cur,
                     migration_key=f"{schema}:ap",
                     migration_version=7,
+                )
+
+                print(
+                    f"RUNNING MIGRATION "
+                    f"{schema}:payroll "
+                    f"v{self.PAYROLL_MIGRATION_VERSION}"
+                )
+                self.ensure_company_payroll(
+                    int(company_id),
+                    cur=cur,
+                )
+
+                print(
+                    f"RUNNING MIGRATION "
+                    f"{schema}:forecast "
+                    f"v{self.FORECAST_MIGRATION_VERSION}"
+                )
+                self.ensure_company_forecast(
+                    int(company_id),
+                    cur=cur,
                 )
 
                 print(f"RUNNING SAFE TENANT SYNC {schema}")
@@ -27986,8 +28734,11 @@ class DatabaseService:
 
                 conn.commit()
 
-            except Exception as e:
-                print("DDL ERROR:", e)
+            except Exception as error:
+                print(
+                    f"DDL ERROR for company {company_id}:",
+                    error,
+                )
                 conn.rollback()
                 raise
 
@@ -30084,6 +30835,35 @@ class DatabaseService:
 
         return (row.get("code") if row and row.get("code") else "BS_CA_9002")
 
+    def get_posting_account_by_role(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        cur=None,
+    ) -> dict:
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(
+            f"""
+            SELECT code,name,role
+            FROM {schema}.coa
+            WHERE LOWER(COALESCE(role,''))=LOWER(%s)
+            AND COALESCE(posting,TRUE)=TRUE
+            ORDER BY code
+            LIMIT 1
+            """,
+            (str(role).strip(),),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError(
+                f"No posting account is configured for COA role '{role}'"
+            )
+
+        return row
+
     def _resolve_unallocated_receipts_liability(self, company_id: int) -> str:
         settings = self.get_company_account_settings(company_id) or {}
         raw = (settings.get("unallocated_receipts_code") or "").strip()
@@ -30842,74 +31622,94 @@ class DatabaseService:
             if source == "lease_payment":
                 # ---- 1. Find original lease payment ----
                 cur.execute(f"""
-                    SELECT id, lease_id, schedule_id, amount_gross, amount_net, vat_amount
+                    SELECT
+                        id,
+                        lease_id,
+                        schedule_id,
+                        amount_gross,
+                        amount_net,
+                        vat_amount
                     FROM {schema}.lease_payments
-                    WHERE company_id = %s
-                    AND posted_journal_id = %s
-                    AND status = 'posted'
+                    WHERE company_id=%s
+                      AND posted_journal_id=%s
+                      AND status='posted'
                     LIMIT 1
                 """, (company_id, journal_id))
 
                 p = cur.fetchone()
-                if not p:
-                    return  # nothing to reverse safely
 
-                p = p if isinstance(p, dict) else {
-                    "id": p[0],
-                    "lease_id": p[1],
-                    "schedule_id": p[2],
-                    "amount_gross": p[3],
-                    "amount_net": p[4],
-                    "vat_amount": p[5],
-                }
+                if p:
+                    p = p if isinstance(p, dict) else {
+                        "id": p[0],
+                        "lease_id": p[1],
+                        "schedule_id": p[2],
+                        "amount_gross": p[3],
+                        "amount_net": p[4],
+                        "vat_amount": p[5],
+                    }
 
-                original_payment_id = p["id"]
+                    original_payment_id = p["id"]
 
-                # ---- 2. Insert reversal lease payment ----
-                cur.execute(f"""
-                    INSERT INTO {schema}.lease_payments (
+                    # ---- 2. Insert reversal lease payment ----
+                    cur.execute(f"""
+                        INSERT INTO {schema}.lease_payments (
+                            company_id,
+                            lease_id,
+                            schedule_id,
+                            payment_date,
+                            amount_gross,
+                            amount_net,
+                            vat_amount,
+                            status,
+                            reverses_payment_id,
+                            posted_journal_id,
+                            posted_at,
+                            reference,
+                            notes
+                        )
+                        VALUES (
+                            %s,%s,%s,
+                            %s,
+                            %s * -1,
+                            %s * -1,
+                            %s * -1,
+                            'posted',
+                            %s,
+                            %s,
+                            NOW(),
+                            %s,
+                            %s
+                        )
+                        RETURNING id
+                    """, (
                         company_id,
-                        lease_id,
-                        schedule_id,
-                        payment_date,
-                        amount_gross,
-                        amount_net,
-                        vat_amount,
-                        status,
-                        reverses_payment_id,
-                        posted_journal_id,
-                        posted_at,
-                        reference,
-                        notes
-                    )
-                    VALUES (
-                        %s, %s, %s,
-                        %s,
-                        %s * -1,
-                        %s * -1,
-                        %s * -1,
-                        'posted',
-                        %s,
-                        %s,
-                        NOW(),
-                        %s,
-                        %s
-                    )
-                    RETURNING id
-                """, (
-                    company_id,
-                    p["lease_id"],
-                    p["schedule_id"],
-                    rev_date.isoformat(),
-                    p["amount_gross"],
-                    p["amount_net"],
-                    p["vat_amount"],
-                    original_payment_id,
-                    reversal_journal_id,
-                    f"REV-{original_payment_id}",
-                    f"Reversal of payment {original_payment_id}",
-                ))
+                        p["lease_id"],
+                        p["schedule_id"],
+                        rev_date.isoformat(),
+                        p["amount_gross"],
+                        p["amount_net"],
+                        p["vat_amount"],
+                        original_payment_id,
+                        reversal_journal_id,
+                        f"REV-{original_payment_id}",
+                        f"Reversal of payment {original_payment_id}",
+                    ))
 
+                    reversal_payment_id = cur.fetchone()[0]
+
+                    # ---- 3. Update original payment ----
+                    cur.execute(f"""
+                        UPDATE {schema}.lease_payments
+                        SET
+                            status='reversed',
+                            reversed_by_payment_id=%s,
+                            posted_journal_id=NULL,
+                            posted_at=NULL
+                        WHERE id=%s
+                    """, (
+                        reversal_payment_id,
+                        original_payment_id,
+                    ))
                 reversal_payment_id = cur.fetchone()[0]
 
                 # ---- 3. Update original payment ----
@@ -30943,6 +31743,58 @@ class DatabaseService:
                     AND posted_journal_id = %s
                     AND status = 'posted'
                 """, (company_id, journal_id))
+
+            elif source=="payroll_run":
+                cur.execute(f"""
+                    SELECT id
+                    FROM {schema}.payroll_runs
+                    WHERE company_id=%s
+                      AND(
+                          posted_journal_id=%s
+                          OR id=%s
+                      )
+                    LIMIT 1
+                """,(
+                    int(company_id),
+                    int(journal_id),
+                    int(source_id or 0),
+                ))
+
+                row=cur.fetchone()
+                payroll_run_id=(
+                    row.get("id")
+                    if isinstance(row,dict)
+                    else row[0]
+                ) if row else None
+
+                if payroll_run_id:
+                    cur.execute(f"""
+                        UPDATE {schema}.payroll_runs
+                        SET status='reversed',
+                            reversal_journal_id=%s,
+                            reversed_at=NOW()
+                        WHERE company_id=%s
+                          AND id=%s
+                          AND status='posted'
+                    """,(
+                        int(reversal_journal_id),
+                        int(company_id),
+                        int(payroll_run_id),
+                    ))
+
+                    cur.execute(f"""
+                        UPDATE {schema}.payroll_defined_contribution_runs
+                        SET status='reversed',
+                            reversal_journal_id=%s,
+                            reversed_at=NOW()
+                        WHERE company_id=%s
+                          AND payroll_run_id=%s
+                          AND status='posted'
+                    """,(
+                        int(reversal_journal_id),
+                        int(company_id),
+                        int(payroll_run_id),
+                    ))
 
             conn.commit()
             return reversal_journal_id
@@ -37271,6 +38123,591 @@ class DatabaseService:
             },
         }
 
+    def get_ifrs16_lessor_disclosure_strict(
+        self,
+        company_id: int,
+        *,
+        from_date,
+        to_date,
+        as_of=None,
+        include_terminated: bool = True,
+        cur=None,
+    ) -> dict:
+        schema = self.company_schema(company_id)
+        company_id = int(company_id)
+        as_of = as_of or to_date
+
+        if from_date > to_date:
+            raise ValueError("from_date must be <= to_date")
+
+        status_sql = "" if include_terminated else "AND COALESCE(l.status,'active') NOT IN ('terminated','cancelled')"
+
+        def one(sql, params):
+            return self.fetch_one(sql, params, cur=cur) or {}
+
+        def all_rows(sql, params):
+            return self.fetch_all(sql, params, cur=cur) or []
+
+        def money(value):
+            return round(float(value or 0), 2)
+
+        portfolio = all_rows(
+            f"""
+            SELECT
+                l.id AS lessor_lease_id,
+                l.contract_no,
+                l.contract_name,
+                l.customer_id,
+                l.asset_id,
+                l.start_date,
+                l.end_date,
+                COALESCE(l.commencement_date,l.start_date) AS commencement_date,
+                COALESCE(l.lease_classification,'operating') AS lease_classification,
+                COALESCE(l.lessor_type,'ordinary') AS lessor_type,
+                COALESCE(l.manufacturer_dealer_lessor,FALSE) AS manufacturer_dealer_lessor,
+                l.billing_frequency,
+                l.billing_timing,
+                l.billing_basis,
+                COALESCE(l.billing_amount,0) AS billing_amount,
+                COALESCE(l.vat_rate,0) AS vat_rate,
+                COALESCE(l.discount_rate,0) AS discount_rate,
+                COALESCE(l.fair_value,0) AS fair_value,
+                COALESCE(l.carrying_amount,0) AS carrying_amount,
+                COALESCE(l.initial_direct_costs,0) AS initial_direct_costs,
+                COALESCE(l.guaranteed_residual_value,0) AS guaranteed_residual_value,
+                COALESCE(l.unguaranteed_residual_value,0) AS unguaranteed_residual_value,
+                COALESCE(l.currency,'ZAR') AS currency,
+                COALESCE(l.status,'active') AS status
+            FROM {schema}.lessor_leases l
+            WHERE l.company_id=%s
+            AND COALESCE(l.commencement_date,l.start_date) <= %s
+            {status_sql}
+            ORDER BY COALESCE(l.commencement_date,l.start_date),l.id
+            """,
+            (company_id, to_date),
+        )
+
+        classifications = one(
+            f"""
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE COALESCE(l.lease_classification,'operating')='operating'
+                ) AS operating_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(l.lease_classification,'operating')='finance'
+                ) AS finance_count,
+                COUNT(*) AS total_count
+            FROM {schema}.lessor_leases l
+            WHERE l.company_id=%s
+            AND COALESCE(l.commencement_date,l.start_date) <= %s
+            {status_sql}
+            """,
+            (company_id, to_date),
+        )
+
+        pnl = one(
+            f"""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.lease_classification,'operating')='operating'
+                        THEN s.straight_line_income ELSE 0
+                    END
+                ),0) AS operating_lease_income,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.lease_classification,'operating')='finance'
+                        THEN s.finance_income ELSE 0
+                    END
+                ),0) AS finance_income,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.lease_classification,'operating')='operating'
+                        THEN s.initial_direct_cost_expense ELSE 0
+                    END
+                ),0) AS initial_direct_cost_expense,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.lease_classification,'operating')='operating'
+                        THEN s.contractual_net ELSE 0
+                    END
+                ),0) AS operating_contractual_income,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN COALESCE(l.lease_classification,'operating')='finance'
+                        THEN s.principal_recovery ELSE 0
+                    END
+                ),0) AS finance_principal_recovery,
+
+                COALESCE(SUM(s.accrued_rental_movement),0) AS accrued_rental_movement,
+                COALESCE(SUM(s.deferred_rental_movement),0) AS deferred_rental_movement
+            FROM {schema}.lessor_lease_schedule s
+            JOIN {schema}.lessor_leases l
+            ON l.id=s.lessor_lease_id
+            AND l.company_id=s.company_id
+            WHERE s.company_id=%s
+            AND s.is_active=TRUE
+            AND COALESCE(s.recognition_journal_id,0)>0
+            AND s.period_end BETWEEN %s AND %s
+            {status_sql}
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        billing = one(
+            f"""
+            SELECT
+                COALESCE(SUM(b.amount_net),0) AS billed_net,
+                COALESCE(SUM(b.vat_amount),0) AS billed_vat,
+                COALESCE(SUM(b.amount_gross),0) AS billed_gross,
+                COUNT(*) AS bill_count
+            FROM {schema}.lessor_lease_bills b
+            JOIN {schema}.lessor_leases l
+            ON l.id=b.lessor_lease_id
+            AND l.company_id=b.company_id
+            WHERE b.company_id=%s
+            AND b.status IN ('posted','paid')
+            AND b.invoice_id IS NOT NULL
+            AND b.bill_date BETWEEN %s AND %s
+            {status_sql}
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        receipts = one(
+            f"""
+            SELECT
+                COALESCE(SUM(r.amount_gross),0) AS receipts_gross,
+                COUNT(*) AS receipt_count
+            FROM {schema}.lessor_lease_receipts r
+            JOIN {schema}.lessor_leases l
+            ON l.id=r.lessor_lease_id
+            AND l.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.status='posted'
+            AND COALESCE(r.posted_journal_id,0)>0
+            AND r.receipt_date BETWEEN %s AND %s
+            {status_sql}
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        adjustments = one(
+            f"""
+            SELECT
+                COALESCE(SUM(a.amount),0) AS adjustment_total,
+                COUNT(*) AS adjustment_count
+            FROM {schema}.lessor_lease_adjustments a
+            JOIN {schema}.lessor_leases l
+            ON l.id=a.lessor_lease_id
+            AND l.company_id=a.company_id
+            WHERE a.company_id=%s
+            AND COALESCE(a.status,'')='posted'
+            AND COALESCE(a.posted_journal_id,0)>0
+            AND a.adjustment_date BETWEEN %s AND %s
+            {status_sql}
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        modifications = one(
+            f"""
+            SELECT
+                COALESCE(SUM(m.net_investment_after-m.net_investment_before),0)
+                    AS net_investment_adjustment,
+                COALESCE(SUM(m.gain_loss_amount),0) AS gain_loss,
+                COUNT(*) AS modification_count
+            FROM {schema}.lessor_lease_modifications m
+            JOIN {schema}.lessor_leases l
+            ON l.id=m.lessor_lease_id
+            AND l.company_id=m.company_id
+            WHERE m.company_id=%s
+            AND COALESCE(m.status,'')='posted'
+            AND COALESCE(m.posted_journal_id,0)>0
+            AND COALESCE(m.effective_date,m.modification_date)
+                BETWEEN %s AND %s
+            {status_sql}
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        terminations = one(
+            f"""
+            SELECT
+                COALESCE(SUM(t.settlement_amount),0) AS settlement_amount,
+                COALESCE(SUM(t.carrying_amount_before),0) AS carrying_amount_derecognised,
+                COALESCE(SUM(t.receivable_before),0) AS receivable_derecognised,
+                COALESCE(SUM(t.accrued_rental_before),0) AS accrued_rental_derecognised,
+                COALESCE(SUM(t.deferred_rental_before),0) AS deferred_rental_derecognised,
+                COALESCE(SUM(t.gain_loss_amount),0) AS gain_loss,
+                COUNT(*) AS termination_count
+            FROM {schema}.lessor_lease_terminations t
+            JOIN {schema}.lessor_leases l
+            ON l.id=t.lessor_lease_id
+            AND l.company_id=t.company_id
+            WHERE t.company_id=%s
+            AND COALESCE(t.status,'')='posted'
+            AND COALESCE(t.posted_journal_id,0)>0
+            AND t.termination_date BETWEEN %s AND %s
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        opening_finance = one(
+            f"""
+            WITH last_rows AS (
+                SELECT DISTINCT ON (s.lessor_lease_id)
+                    s.lessor_lease_id,
+                    s.closing_net_investment,
+                    s.current_portion,
+                    s.noncurrent_portion
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                ON l.id=s.lessor_lease_id
+                AND l.company_id=s.company_id
+                WHERE s.company_id=%s
+                AND s.is_active=TRUE
+                AND COALESCE(l.lease_classification,'operating')='finance'
+                AND COALESCE(s.recognition_journal_id,0)>0
+                AND s.period_end<%s
+                {status_sql}
+                ORDER BY s.lessor_lease_id,s.period_end DESC,s.period_no DESC
+            )
+            SELECT
+                COALESCE(SUM(closing_net_investment),0) AS opening_net_investment,
+                COALESCE(SUM(current_portion),0) AS opening_current,
+                COALESCE(SUM(noncurrent_portion),0) AS opening_noncurrent
+            FROM last_rows
+            """,
+            (company_id, from_date),
+        )
+
+        closing_finance = one(
+            f"""
+            WITH last_rows AS (
+                SELECT DISTINCT ON (s.lessor_lease_id)
+                    s.lessor_lease_id,
+                    s.closing_net_investment,
+                    s.current_portion,
+                    s.noncurrent_portion
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                ON l.id=s.lessor_lease_id
+                AND l.company_id=s.company_id
+                WHERE s.company_id=%s
+                AND s.is_active=TRUE
+                AND COALESCE(l.lease_classification,'operating')='finance'
+                AND COALESCE(s.recognition_journal_id,0)>0
+                AND s.period_end<=%s
+                {status_sql}
+                ORDER BY s.lessor_lease_id,s.period_end DESC,s.period_no DESC
+            )
+            SELECT
+                COALESCE(SUM(closing_net_investment),0) AS closing_net_investment,
+                COALESCE(SUM(current_portion),0) AS current_portion,
+                COALESCE(SUM(noncurrent_portion),0) AS noncurrent_portion
+            FROM last_rows
+            """,
+            (company_id, as_of),
+        )
+
+        finance_additions = one(
+            f"""
+            SELECT
+                COALESCE(SUM(q.opening_net_investment),0) AS additions
+            FROM (
+                SELECT DISTINCT ON (s.lessor_lease_id)
+                    s.lessor_lease_id,
+                    s.opening_net_investment
+                FROM {schema}.lessor_lease_schedule s
+                JOIN {schema}.lessor_leases l
+                ON l.id=s.lessor_lease_id
+                AND l.company_id=s.company_id
+                WHERE s.company_id=%s
+                AND s.is_active=TRUE
+                AND COALESCE(l.lease_classification,'operating')='finance'
+                AND COALESCE(l.commencement_journal_id,0)>0
+                AND COALESCE(l.commencement_date,l.start_date)
+                    BETWEEN %s AND %s
+                {status_sql}
+                ORDER BY s.lessor_lease_id,s.period_no
+            ) q
+            """,
+            (company_id, from_date, to_date),
+        )
+
+        operating_maturity_rows = all_rows(
+            f"""
+            SELECT
+                CASE
+                    WHEN s.payment_date<=%s::date+INTERVAL '1 year' THEN '0-1y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '2 years' THEN '1-2y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '5 years' THEN '2-5y'
+                    ELSE '>5y'
+                END AS bucket,
+                COALESCE(SUM(s.contractual_net),0) AS undiscounted_net,
+                COALESCE(SUM(s.vat_amount),0) AS vat,
+                COALESCE(SUM(s.contractual_gross),0) AS gross
+            FROM {schema}.lessor_lease_schedule s
+            JOIN {schema}.lessor_leases l
+            ON l.id=s.lessor_lease_id
+            AND l.company_id=s.company_id
+            WHERE s.company_id=%s
+            AND s.is_active=TRUE
+            AND COALESCE(l.lease_classification,'operating')='operating'
+            AND s.payment_date>%s
+            AND s.invoice_id IS NULL
+            {status_sql}
+            GROUP BY 1
+            ORDER BY CASE
+                WHEN CASE
+                    WHEN s.payment_date<=%s::date+INTERVAL '1 year' THEN '0-1y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '2 years' THEN '1-2y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '5 years' THEN '2-5y'
+                    ELSE '>5y'
+                END='0-1y' THEN 1
+                WHEN CASE
+                    WHEN s.payment_date<=%s::date+INTERVAL '1 year' THEN '0-1y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '2 years' THEN '1-2y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '5 years' THEN '2-5y'
+                    ELSE '>5y'
+                END='1-2y' THEN 2
+                WHEN CASE
+                    WHEN s.payment_date<=%s::date+INTERVAL '1 year' THEN '0-1y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '2 years' THEN '1-2y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '5 years' THEN '2-5y'
+                    ELSE '>5y'
+                END='2-5y' THEN 3
+                ELSE 4
+            END
+            """,
+            (
+                as_of, as_of, as_of, company_id, as_of,
+                as_of, as_of, as_of,
+                as_of, as_of, as_of,
+                as_of, as_of, as_of,
+            ),
+        )
+
+        finance_maturity_rows = all_rows(
+            f"""
+            SELECT
+                CASE
+                    WHEN s.payment_date<=%s::date+INTERVAL '1 year' THEN '0-1y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '2 years' THEN '1-2y'
+                    WHEN s.payment_date<=%s::date+INTERVAL '5 years' THEN '2-5y'
+                    ELSE '>5y'
+                END AS bucket,
+                COALESCE(SUM(s.contractual_net),0) AS undiscounted_receipts,
+                COALESCE(SUM(s.finance_income),0) AS unearned_finance_income,
+                COALESCE(SUM(s.principal_recovery),0) AS principal_recovery,
+                COALESCE(SUM(s.vat_amount),0) AS vat,
+                COALESCE(SUM(s.contractual_gross),0) AS gross
+            FROM {schema}.lessor_lease_schedule s
+            JOIN {schema}.lessor_leases l
+            ON l.id=s.lessor_lease_id
+            AND l.company_id=s.company_id
+            WHERE s.company_id=%s
+            AND s.is_active=TRUE
+            AND COALESCE(l.lease_classification,'operating')='finance'
+            AND s.payment_date>%s
+            AND s.invoice_id IS NULL
+            {status_sql}
+            GROUP BY 1
+            ORDER BY CASE
+                WHEN MIN(s.payment_date)<=%s::date+INTERVAL '1 year' THEN 1
+                WHEN MIN(s.payment_date)<=%s::date+INTERVAL '2 years' THEN 2
+                WHEN MIN(s.payment_date)<=%s::date+INTERVAL '5 years' THEN 3
+                ELSE 4
+            END
+            """,
+            (as_of, as_of, as_of, company_id, as_of, as_of, as_of, as_of),
+        )
+
+        operating_maturity = [{
+            "bucket": r.get("bucket"),
+            "undiscounted_net": money(r.get("undiscounted_net")),
+            "vat": money(r.get("vat")),
+            "gross": money(r.get("gross")),
+        } for r in operating_maturity_rows]
+
+        finance_maturity = [{
+            "bucket": r.get("bucket"),
+            "undiscounted_receipts": money(r.get("undiscounted_receipts")),
+            "unearned_finance_income": money(r.get("unearned_finance_income")),
+            "principal_recovery": money(r.get("principal_recovery")),
+            "vat": money(r.get("vat")),
+            "gross": money(r.get("gross")),
+        } for r in finance_maturity_rows]
+
+        lease_income_rows = all_rows(
+            f"""
+            SELECT
+                l.id AS lessor_lease_id,
+                l.contract_no,
+                l.contract_name,
+                COALESCE(l.lease_classification,'operating') AS lease_classification,
+                COALESCE(SUM(s.straight_line_income),0) AS operating_lease_income,
+                COALESCE(SUM(s.finance_income),0) AS finance_income,
+                COALESCE(SUM(s.principal_recovery),0) AS principal_recovery,
+                COALESCE(SUM(s.contractual_net),0) AS contractual_net,
+                COALESCE(SUM(s.vat_amount),0) AS vat,
+                COALESCE(SUM(s.contractual_gross),0) AS contractual_gross
+            FROM {schema}.lessor_leases l
+            LEFT JOIN {schema}.lessor_lease_schedule s
+            ON s.lessor_lease_id=l.id
+            AND s.company_id=l.company_id
+            AND s.is_active=TRUE
+            AND COALESCE(s.recognition_journal_id,0)>0
+            AND s.period_end BETWEEN %s AND %s
+            WHERE l.company_id=%s
+            AND COALESCE(l.commencement_date,l.start_date)<=%s
+            {status_sql}
+            GROUP BY
+                l.id,l.contract_no,l.contract_name,l.lease_classification
+            ORDER BY l.contract_name,l.id
+            """,
+            (from_date, to_date, company_id, to_date),
+        )
+
+        opening = money(opening_finance.get("opening_net_investment"))
+        additions = money(finance_additions.get("additions"))
+        finance_income = money(pnl.get("finance_income"))
+        principal = money(pnl.get("finance_principal_recovery"))
+        modification_adjustment = money(modifications.get("net_investment_adjustment"))
+        derecognised = money(terminations.get("receivable_derecognised"))
+        closing_reconciled = money(
+            opening
+            + additions
+            + modification_adjustment
+            - principal
+            - derecognised
+        )
+        closing_schedule = money(closing_finance.get("closing_net_investment"))
+        check_difference = money(closing_schedule - closing_reconciled)
+
+        return {
+            "company_id": company_id,
+            "mode": "strict_posted_only",
+            "perspective": "lessor",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "as_of": as_of.isoformat(),
+            "basis": {
+                "income": "active lessor schedule rows linked to posted recognition journals",
+                "billing": "posted or paid lessor bills linked to invoices",
+                "cash_receipts": "posted lessor receipts linked to posted journals",
+                "net_investment": "last posted finance lease schedule row per lease",
+                "maturity": "future active schedule rows not yet invoiced",
+                "include_terminated": bool(include_terminated),
+            },
+            "classifications": {
+                "operating_count": int(classifications.get("operating_count") or 0),
+                "finance_count": int(classifications.get("finance_count") or 0),
+                "total_count": int(classifications.get("total_count") or 0),
+            },
+            "pnl": {
+                "operating_lease_income": money(pnl.get("operating_lease_income")),
+                "finance_income": finance_income,
+                "initial_direct_cost_expense": money(pnl.get("initial_direct_cost_expense")),
+                "operating_contractual_income": money(pnl.get("operating_contractual_income")),
+                "gain_loss_on_modifications": money(modifications.get("gain_loss")),
+                "gain_loss_on_terminations": money(terminations.get("gain_loss")),
+                "adjustments": money(adjustments.get("adjustment_total")),
+            },
+            "operating_lease": {
+                "straight_line_income": money(pnl.get("operating_lease_income")),
+                "contractual_income": money(pnl.get("operating_contractual_income")),
+                "accrued_rental_movement": money(pnl.get("accrued_rental_movement")),
+                "deferred_rental_movement": money(pnl.get("deferred_rental_movement")),
+                "initial_direct_cost_expense": money(pnl.get("initial_direct_cost_expense")),
+            },
+            "finance_lease": {
+                "finance_income": finance_income,
+                "principal_recovery": principal,
+                "closing_net_investment": closing_schedule,
+                "current_portion": money(closing_finance.get("current_portion")),
+                "noncurrent_portion": money(closing_finance.get("noncurrent_portion")),
+            },
+            "net_investment_reconciliation": {
+                "opening_net_investment": opening,
+                "additions": additions,
+                "finance_income": finance_income,
+                "principal_recovery": principal,
+                "modification_adjustments": modification_adjustment,
+                "derecognitions": derecognised,
+                "closing_net_investment": closing_reconciled,
+            },
+            "net_investment_check": {
+                "closing_from_reconciliation": closing_reconciled,
+                "closing_from_last_posted_schedule": closing_schedule,
+                "difference": check_difference,
+                "ok": abs(check_difference) <= 0.05,
+            },
+            "billing": {
+                "billed_net": money(billing.get("billed_net")),
+                "billed_vat": money(billing.get("billed_vat")),
+                "billed_gross": money(billing.get("billed_gross")),
+                "bill_count": int(billing.get("bill_count") or 0),
+            },
+            "cashflow": {
+                "lease_receipts_gross": money(receipts.get("receipts_gross")),
+                "receipt_count": int(receipts.get("receipt_count") or 0),
+            },
+            "modifications": {
+                "count": int(modifications.get("modification_count") or 0),
+                "net_investment_adjustment": modification_adjustment,
+                "gain_loss": money(modifications.get("gain_loss")),
+            },
+            "terminations": {
+                "count": int(terminations.get("termination_count") or 0),
+                "settlement_amount": money(terminations.get("settlement_amount")),
+                "carrying_amount_derecognised": money(terminations.get("carrying_amount_derecognised")),
+                "receivable_derecognised": derecognised,
+                "accrued_rental_derecognised": money(terminations.get("accrued_rental_derecognised")),
+                "deferred_rental_derecognised": money(terminations.get("deferred_rental_derecognised")),
+                "gain_loss": money(terminations.get("gain_loss")),
+            },
+            "adjustments": {
+                "count": int(adjustments.get("adjustment_count") or 0),
+                "amount": money(adjustments.get("adjustment_total")),
+            },
+            "operating_maturity_analysis": {
+                "as_of": as_of.isoformat(),
+                "rows": operating_maturity,
+                "undiscounted_net_total": money(sum(r["undiscounted_net"] for r in operating_maturity)),
+                "vat_total": money(sum(r["vat"] for r in operating_maturity)),
+                "gross_total": money(sum(r["gross"] for r in operating_maturity)),
+            },
+            "finance_maturity_analysis": {
+                "as_of": as_of.isoformat(),
+                "rows": finance_maturity,
+                "undiscounted_receipts_total": money(sum(r["undiscounted_receipts"] for r in finance_maturity)),
+                "unearned_finance_income_total": money(sum(r["unearned_finance_income"] for r in finance_maturity)),
+                "principal_recovery_total": money(sum(r["principal_recovery"] for r in finance_maturity)),
+                "vat_total": money(sum(r["vat"] for r in finance_maturity)),
+                "gross_total": money(sum(r["gross"] for r in finance_maturity)),
+                "net_investment": closing_schedule,
+            },
+            "lease_income_by_contract": [{
+                "lessor_lease_id": int(r.get("lessor_lease_id") or 0),
+                "contract_no": r.get("contract_no"),
+                "contract_name": r.get("contract_name") or "",
+                "lease_classification": r.get("lease_classification") or "operating",
+                "operating_lease_income": money(r.get("operating_lease_income")),
+                "finance_income": money(r.get("finance_income")),
+                "principal_recovery": money(r.get("principal_recovery")),
+                "contractual_net": money(r.get("contractual_net")),
+                "vat": money(r.get("vat")),
+                "contractual_gross": money(r.get("contractual_gross")),
+            } for r in lease_income_rows],
+            "leases": portfolio,
+        }
+
     def build_lessor_period_journal(
         self,
         company_id: int,
@@ -37553,7 +38990,7 @@ class DatabaseService:
             add_line(
                 net_investment_code,
                 debit=finance_income,
-                memo="Finance income added to net investment",
+                memo="Recognise finance income using the effective interest method",
             )
 
             add_line(
@@ -37572,7 +39009,34 @@ class DatabaseService:
         if not lines:
             return None
 
-        total_debit = money(
+        codes=list({
+            str(x.get("account_code") or "").strip()
+            for x in lines
+            if x.get("account_code")
+        })
+
+        accounts=self.fetch_all(
+            f"""
+            SELECT code,name
+            FROM {schema}.coa
+            WHERE code=ANY(%s)
+            """,
+            (codes,),
+            cur=cur,
+        ) or []
+
+        names={
+            str(x["code"]):x.get("name")
+            for x in accounts
+        }
+
+        for line in lines:
+            line["account_name"]=(
+                names.get(line["account_code"])
+                or "Account not configured"
+            )
+
+        total_debit=money(
             sum(float(x.get("debit") or 0) for x in lines)
         )
 
@@ -38518,6 +39982,7 @@ class DatabaseService:
             "payment_terms_days": int(
                 payload.get("payment_terms_days") or 0
             ),
+            "lease_term_months":payload.get("lease_term_months"),
             "interest_rate_implicit": (
                 payload.get("interest_rate_implicit")
                 or payload.get("implicit_interest_rate")
@@ -38692,6 +40157,7 @@ class DatabaseService:
                 underlying_asset_account_code,
                 start_date,
                 end_date,
+                lease_term_months,
                 billing_amount,
                 billing_basis,
                 vat_rate,
@@ -38757,6 +40223,7 @@ class DatabaseService:
                 %(underlying_asset_account_code)s,
                 %(start_date)s,
                 %(end_date)s,
+                %(lease_term_months)s,
                 %(billing_amount)s,
                 %(billing_basis)s,
                 %(vat_rate)s,
@@ -38913,6 +40380,37 @@ class DatabaseService:
     ) -> list[dict]:
         schema = f"company_{int(company_id)}"
 
+        existing=self.fetch_all(
+            f"""
+            SELECT
+                period_no,
+                invoice_id,
+                invoice_line_id,
+                recognition_journal_id,
+                receipt_amount,
+                status,
+                billed_at,
+                billed_by_user_id,
+                billing_error,
+                posted_at,
+                posted_by_user_id
+            FROM {schema}.lessor_lease_schedule
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND is_active=TRUE
+            """,
+            (
+                int(company_id),
+                int(lessor_lease_id),
+            ),
+            cur=cur,
+        ) or []
+
+        existing_by_period={
+            int(x["period_no"]):x
+            for x in existing
+        }
+
         version = self.fetch_one(
             f"""
             WITH deactivated AS (
@@ -38942,6 +40440,11 @@ class DatabaseService:
         saved = []
 
         for row in rows:
+            old=existing_by_period.get(
+                int(row["period_no"]),
+                {},
+            )
+
             contractual_net = (
                 row.get("contractual_net")
                 if row.get("contractual_net") is not None
@@ -38986,7 +40489,12 @@ class DatabaseService:
                     invoice_line_id,
                     recognition_journal_id,
                     receipt_amount,
-                    status
+                    status,
+                    billed_at,
+                    billed_by_user_id,
+                    billing_error,
+                    posted_at,
+                    posted_by_user_id
                 )
                 VALUES (
                     %(company_id)s,
@@ -39016,7 +40524,12 @@ class DatabaseService:
                     %(invoice_line_id)s,
                     %(recognition_journal_id)s,
                     %(receipt_amount)s,
-                    %(status)s
+                    %(status)s,
+                    %(billed_at)s,
+                    %(billed_by_user_id)s,
+                    %(billing_error)s,
+                    %(posted_at)s,
+                    %(posted_by_user_id)s
                 )
                 ON CONFLICT (
                     lessor_lease_id,
@@ -39053,7 +40566,12 @@ class DatabaseService:
                     recognition_journal_id=
                         EXCLUDED.recognition_journal_id,
                     receipt_amount=EXCLUDED.receipt_amount,
-                    status=EXCLUDED.status
+                    status=EXCLUDED.status, 
+                    billed_at=EXCLUDED.billed_at,
+                    billed_by_user_id=EXCLUDED.billed_by_user_id,
+                    billing_error=EXCLUDED.billing_error,
+                    posted_at=EXCLUDED.posted_at,
+                    posted_by_user_id=EXCLUDED.posted_by_user_id
                 RETURNING *
                 """,
                 {
@@ -39110,11 +40628,22 @@ class DatabaseService:
                     "noncurrent_portion": (
                         row.get("noncurrent_portion") or 0
                     ),
-                    "invoice_id": None,
-                    "invoice_line_id": None,
-                    "recognition_journal_id": None,
-                    "receipt_amount": 0,
-                    "status": "scheduled",
+                    "invoice_id":old.get("invoice_id"),
+                    "invoice_line_id":old.get("invoice_line_id"),
+                    "recognition_journal_id":old.get(
+                        "recognition_journal_id"
+                    ),
+                    "receipt_amount":old.get("receipt_amount") or 0,
+                    "status":old.get("status") or "scheduled",
+                    "billed_at":old.get("billed_at"),
+                    "billed_by_user_id":old.get(
+                        "billed_by_user_id"
+                    ),
+                    "billing_error":old.get("billing_error"),
+                    "posted_at":old.get("posted_at"),
+                    "posted_by_user_id":old.get(
+                        "posted_by_user_id"
+                    ),
                 },
                 cur=cur,
             )
@@ -39176,51 +40705,54 @@ class DatabaseService:
         *,
         cur=None,
     ) -> dict:
-        schema = self.company_schema(company_id)
+        schema=self.company_schema(company_id)
 
-        row = self.fetch_one(
+        row=self.fetch_one(
             f"""
             SELECT
                 s.*,
-
-                l.lease_number,
-                l.lease_name,
-                l.classification,
+                COALESCE(NULLIF(l.contract_no,''),'LEASE-'||l.id::text) AS lease_number,
+                l.contract_no,
+                l.contract_name AS lease_name,
+                l.lease_classification AS classification,
                 l.status AS lease_status,
                 l.customer_id,
+                c.name AS customer_name,
+                l.asset_id,
+                a.asset_name,
+                a.asset_code,
+                COALESCE(NULLIF(a.asset_name,''),NULLIF(l.underlying_asset_description,''),l.contract_name) AS leased_asset_name,
+                l.underlying_asset_description,
                 l.currency,
+                l.vat_rate,
                 l.revenue_account_code,
                 l.vat_output_account_code,
                 l.ar_account_code,
                 l.finance_income_account_code,
                 l.net_investment_current_account_code,
                 l.net_investment_noncurrent_account_code
-
             FROM {schema}.lessor_lease_schedule s
-
             JOIN {schema}.lessor_leases l
             ON l.id=s.lessor_lease_id
             AND l.company_id=s.company_id
-
+            LEFT JOIN {schema}.customers c
+            ON c.id=l.customer_id
+            AND c.company_id=l.company_id
+            LEFT JOIN {schema}.assets a
+            ON a.id=l.asset_id
+            AND a.company_id=l.company_id
             WHERE s.company_id=%s
             AND s.lessor_lease_id=%s
             AND s.id=%s
             AND s.is_active=TRUE
-
             LIMIT 1
             """,
-            (
-                int(company_id),
-                int(lessor_lease_id),
-                int(schedule_id),
-            ),
+            (int(company_id),int(lessor_lease_id),int(schedule_id)),
             cur=cur,
         )
 
         if not row:
-            raise ValueError(
-                "Active lessor lease schedule period not found"
-            )
+            raise ValueError("Active lessor lease schedule period not found")
 
         return row
 
@@ -39232,7 +40764,7 @@ class DatabaseService:
         *,
         cur=None,
     ) -> dict:
-        row = self.get_lessor_billable_period(
+        row=self.get_lessor_billable_period(
             company_id,
             lessor_lease_id,
             schedule_id,
@@ -39240,550 +40772,224 @@ class DatabaseService:
         )
 
         if row.get("invoice_id"):
-            raise ValueError(
-                "This lease schedule period has already been invoiced"
-            )
+            raise ValueError("This lease schedule period has already been invoiced")
 
-        lease_status = str(
-            row.get("lease_status") or ""
-        ).strip().lower()
+        status=str(row.get("lease_status") or "").strip().lower()
+        if status not in {"active","commenced"}:
+            raise ValueError("Only an active or commenced lease can be billed")
 
-        if lease_status not in {
-            "active",
-            "commenced",
-        }:
-            raise ValueError(
-                "Only an active or commenced lease can be billed"
-            )
-
-        customer_id = row.get("customer_id")
-
+        customer_id=int(row.get("customer_id") or 0)
         if not customer_id:
-            raise ValueError(
-                "The lessor lease does not have a customer"
-            )
+            raise ValueError("The lessor lease does not have a customer")
 
-        classification = str(
-            row.get("classification") or ""
-        ).strip().lower()
+        classification=str(row.get("classification") or "").strip().lower()
+        if classification not in {"operating","finance"}:
+            raise ValueError("The lease must be classified before billing")
 
-        if classification not in {
-            "operating",
-            "finance",
-        }:
-            raise ValueError(
-                "The lease must be classified before billing"
-            )
+        net=self._lessor_money(row.get("contractual_net"))
+        vat=self._lessor_money(row.get("vat_amount"))
+        gross=self._lessor_money(row.get("contractual_gross")) or self._lessor_money(net+vat)
 
-        contractual_net = self._lessor_money(
-            row.get("contractual_net")
+        if net<0:
+            raise ValueError("Contractual net billing amount cannot be negative")
+        if vat<0:
+            raise ValueError("VAT amount cannot be negative")
+        if gross<=0:
+            raise ValueError("Invoice amount must be greater than zero")
+
+        credit_role=(
+            "lessor_lease_income"
+            if classification=="operating"
+            else "lessor_net_investment_current"
+        )
+        accounting_treatment=(
+            "rental_income"
+            if classification=="operating"
+            else "net_investment_recovery"
         )
 
-        vat_amount = self._lessor_money(
-            row.get("vat_amount")
+        credit_account=self.get_posting_account_by_role(
+            company_id,
+            credit_role,
+            cur=cur,
         )
 
-        contractual_gross = self._lessor_money(
-            row.get("contractual_gross")
+        credit_account_code=str(
+            credit_account.get("code")
+            or credit_account.get("account_code")
+            or ""
+        ).strip()
+
+        credit_account_name=str(
+            credit_account.get("name")
+            or credit_account.get("account_name")
+            or credit_account_code
+        ).strip()
+
+        ar_account_code=str(
+            row.get("ar_account_code")
+            or self.get_control_account_code(
+                company_id,
+                "AR_CONTROL",
+            )
+            or ""
+        ).strip()
+
+        vat_output_account_code=str(
+            row.get("vat_output_account_code")
+            or self.get_control_account_code(
+                company_id,
+                "VAT_OUTPUT",
+            )
+            or ""
+        ).strip()
+
+        if not credit_account_code:
+            raise ValueError(
+                f"No posting account is configured for role '{credit_role}'"
+            )
+        if not ar_account_code:
+            raise ValueError("AR control account is not configured")
+        if vat and not vat_output_account_code:
+            raise ValueError("VAT output control account is not configured")
+
+        ar_row=self.fetch_one(
+            f"""
+            SELECT code,name
+            FROM {self.company_schema(company_id)}.coa
+            WHERE code=%s
+            LIMIT 1
+            """,
+            (ar_account_code,),
+            cur=cur,
+        ) or {}
+
+        vat_row={}
+        if vat_output_account_code:
+            vat_row=self.fetch_one(
+                f"""
+                SELECT code,name
+                FROM {self.company_schema(company_id)}.coa
+                WHERE code=%s
+                LIMIT 1
+                """,
+                (vat_output_account_code,),
+                cur=cur,
+            ) or {}
+
+        period_no=int(row.get("period_no") or 0)
+        lease_number=row.get("lease_number") or f"LEASE-{lessor_lease_id}"
+        asset_name=(
+            row.get("leased_asset_name")
+            or row.get("asset_name")
+            or row.get("underlying_asset_description")
+            or row.get("lease_name")
+            or "Leased asset"
         )
 
-        if contractual_gross == 0:
-            contractual_gross = self._lessor_money(
-                contractual_net + vat_amount
-            )
+        period_range=""
+        if row.get("period_start") and row.get("period_end"):
+            period_range=f", covering {row['period_start']} to {row['period_end']}"
 
-        if contractual_net < 0:
-            raise ValueError(
-                "Contractual net billing amount cannot be negative"
-            )
-
-        if vat_amount < 0:
-            raise ValueError(
-                "VAT amount cannot be negative"
-            )
-
-        if contractual_gross <= 0:
-            raise ValueError(
-                "Invoice amount must be greater than zero"
-            )
-
-        invoice_date = self._lessor_iso_date(
-            row.get("payment_date")
-            or row.get("period_end")
+        item_name=f"Leased out asset — {asset_name}"
+        description=(
+            f"{'Finance lease instalment' if classification=='finance' else 'Operating lease rental'} "
+            f"for {asset_name}, contract {lease_number}, period {period_no}{period_range}."
         )
 
-        due_date = self._lessor_iso_date(
+        invoice_date=self._lessor_iso_date(
+            row.get("payment_date") or row.get("period_end")
+        )
+        due_date=self._lessor_iso_date(
             row.get("due_date")
             or row.get("payment_date")
             or row.get("period_end")
         )
 
-        lease_number = (
-            row.get("lease_number")
-            or f"LEASE-{lessor_lease_id}"
-        )
-
-        period_no = int(row.get("period_no") or 0)
-
-        description = (
-            f"Lease rental {lease_number} "
-            f"— period {period_no}"
-        )
-
-        if classification == "operating":
-            credit_account_code = row.get(
-                "revenue_account_code"
-            )
-
-            accounting_treatment = "rental_income"
-
-            if not credit_account_code:
-                raise ValueError(
-                    "Operating lease revenue account is not configured"
-                )
-
-        else:
-            credit_account_code = row.get(
-                "net_investment_current_account_code"
-            ) or row.get(
-                "net_investment_noncurrent_account_code"
-            )
-
-            accounting_treatment = "net_investment_recovery"
-
-            if not credit_account_code:
-                raise ValueError(
-                    "Finance lease net investment account is not configured"
-                )
-
-        if vat_amount and not row.get(
-            "vat_output_account_code"
-        ):
-            raise ValueError(
-                "VAT output account is not configured"
-            )
-
-        if not row.get("ar_account_code"):
-            raise ValueError(
-                "Accounts receivable account is not configured"
-            )
+        vat_rate=self._lessor_money(row.get("vat_rate"))
+        if vat_rate and vat_rate<=1:
+            vat_rate*=100
 
         return {
-            "company_id": int(company_id),
-            "lessor_lease_id": int(lessor_lease_id),
-            "schedule_id": int(schedule_id),
-            "customer_id": int(customer_id),
-            "classification": classification,
-            "accounting_treatment": accounting_treatment,
-            "invoice_date": invoice_date,
-            "due_date": due_date,
-            "currency": row.get("currency"),
-            "reference": (
-                f"LESSOR-{lessor_lease_id}-P{period_no}"
+            "company_id":int(company_id),
+            "lessor_lease_id":int(lessor_lease_id),
+            "lessor_schedule_id":int(schedule_id),
+            "schedule_id":int(schedule_id),
+
+            "customer_id":customer_id,
+            "customer_name":row.get("customer_name"),
+            "invoice_date":invoice_date,
+            "due_date":due_date,
+            "currency":row.get("currency"),
+
+            "number":"",
+            "reference":f"LESSOR-{lessor_lease_id}-P{period_no}",
+            "description":description,
+            "notes":description,
+            "status":"draft",
+            "discount_rate":0,
+            "other":0,
+
+            "classification":classification,
+            "lease_classification":classification,
+            "accounting_treatment":accounting_treatment,
+
+            "source":"lessor_lease_billing",
+            "source_id":int(schedule_id),
+            "module_name":"ifrs16_lessor",
+            "posting_mode":"custom_accounts",
+
+            "ar_account_code":ar_account_code,
+            "ar_account_name":ar_row.get("name") or ar_account_code,
+
+            "credit_account_role":credit_role,
+            "credit_account_code":credit_account_code,
+            "credit_account_name":credit_account_name,
+
+            "vat_output_account_code":vat_output_account_code or None,
+            "vat_output_account_name":(
+                vat_row.get("name")
+                or vat_output_account_code
+                or None
             ),
-            "description": description,
-            "period_no": period_no,
-            "period_start": row.get("period_start"),
-            "period_end": row.get("period_end"),
-            "net_amount": contractual_net,
-            "vat_amount": vat_amount,
-            "gross_amount": contractual_gross,
-            "quantity": Decimal("1.00"),
-            "unit_price": contractual_net,
-            "ar_account_code": row.get(
-                "ar_account_code"
-            ),
-            "credit_account_code": credit_account_code,
-            "vat_output_account_code": row.get(
-                "vat_output_account_code"
-            ),
-            "source": "lessor_lease_billing",
-            "module_name": "ifrs16_lessor",
-            "source_id": int(schedule_id),
+
+            "lessor_context":{
+                "lessor_lease_id":int(lessor_lease_id),
+                "schedule_id":int(schedule_id),
+                "period_no":period_no,
+                "classification":classification,
+                "accounting_treatment":accounting_treatment,
+                "credit_account_role":credit_role,
+            },
+
+            "lines":[{
+                "item_type":"lease",
+                "item_id":row.get("asset_id"),
+                "item_code":row.get("asset_code"),
+                "item_name":item_name,
+                "description":description,
+
+                "account_role":credit_role,
+                "account_code":credit_account_code,
+                "account_name":credit_account_name,
+
+                "quantity":1,
+                "unit_price":float(net),
+                "discount_amount":0,
+                "net_amount":float(net),
+                "vat_rate":float(vat_rate),
+                "vat_amount":float(vat),
+                "gross_amount":float(gross),
+                "total_amount":float(gross),
+
+                "vat_account_code":vat_output_account_code or None,
+                "source":"lessor_lease_billing",
+                "source_id":int(schedule_id),
+                "lessor_lease_id":int(lessor_lease_id),
+                "lessor_schedule_id":int(schedule_id),
+            }],
         }
 
-    def _create_lessor_sales_invoice(
-        self,
-        company_id: int,
-        payload: dict,
-        *,
-        user_id=None,
-        cur=None,
-    ) -> dict:
-        invoice_payload = {
-            "customer_id": payload["customer_id"],
-            "invoice_date": payload["invoice_date"],
-            "due_date": payload["due_date"],
-            "currency": payload.get("currency"),
-            "reference": payload["reference"],
-            "description": payload["description"],
-            "source": payload["source"],
-            "source_id": payload["source_id"],
-            "module_name": payload["module_name"],
-
-            # The lessor engine controls the accounting treatment.
-            "posting_mode": "custom_accounts",
-
-            "ar_account_code": (
-                payload["ar_account_code"]
-            ),
-
-            "lines": [
-                {
-                    "description": payload["description"],
-                    "quantity": payload["quantity"],
-                    "unit_price": payload["unit_price"],
-                    "net_amount": payload["net_amount"],
-                    "vat_amount": payload["vat_amount"],
-                    "gross_amount": payload["gross_amount"],
-
-                    # Operating lease:
-                    #   Credit rental income
-                    #
-                    # Finance lease:
-                    #   Credit net investment recovery
-                    "account_code": (
-                        payload["credit_account_code"]
-                    ),
-
-                    "vat_account_code": (
-                        payload.get(
-                            "vat_output_account_code"
-                        )
-                    ),
-
-                    "source": "lessor_lease_billing",
-                    "source_id": payload["schedule_id"],
-                }
-            ],
-        }
-
-        result = self.create_customer_invoice(
-            company_id,
-            invoice_payload,
-            user_id=user_id,
-            cur=cur,
-        )
-
-        if not result:
-            raise ValueError(
-                "Customer invoice could not be created"
-            )
-
-        invoice = result.get("invoice") or result
-
-        invoice_id = (
-            invoice.get("id")
-            or invoice.get("invoice_id")
-        )
-
-        if not invoice_id:
-            raise ValueError(
-                "Invoice creation did not return an invoice ID"
-            )
-
-        lines = (
-            result.get("lines")
-            or invoice.get("lines")
-            or []
-        )
-
-        invoice_line_id = None
-
-        if lines:
-            invoice_line_id = (
-                lines[0].get("id")
-                or lines[0].get("invoice_line_id")
-            )
-
-        return {
-            "invoice_id": int(invoice_id),
-            "invoice_line_id": (
-                int(invoice_line_id)
-                if invoice_line_id
-                else None
-            ),
-            "invoice": invoice,
-            "lines": lines,
-            "result": result,
-        }
-
-    def create_lessor_schedule_invoice(
-        self,
-        company_id: int,
-        lessor_lease_id: int,
-        schedule_id: int,
-        *,
-        user_id=None,
-    ) -> dict:
-        schema = self.company_schema(company_id)
-
-        with self._conn_cursor() as (conn, cur):
-            try:
-                locked = self.fetch_one(
-                    f"""
-                    SELECT
-                        id,
-                        invoice_id,
-                        status,
-                        is_active
-                    FROM {schema}.lessor_lease_schedule
-                    WHERE company_id=%s
-                    AND lessor_lease_id=%s
-                    AND id=%s
-                    FOR UPDATE
-                    """,
-                    (
-                        int(company_id),
-                        int(lessor_lease_id),
-                        int(schedule_id),
-                    ),
-                    cur=cur,
-                )
-
-                if not locked:
-                    raise ValueError(
-                        "Lessor lease schedule period not found"
-                    )
-
-                if not locked.get("is_active"):
-                    raise ValueError(
-                        "Inactive schedule versions cannot be billed"
-                    )
-
-                if locked.get("invoice_id"):
-                    raise ValueError(
-                        "This schedule period has already been invoiced"
-                    )
-
-                payload = self.build_lessor_invoice_payload(
-                    company_id,
-                    lessor_lease_id,
-                    schedule_id,
-                    cur=cur,
-                )
-
-                created = self._create_lessor_sales_invoice(
-                    company_id,
-                    payload,
-                    user_id=user_id,
-                    cur=cur,
-                )
-
-                invoice_id = created["invoice_id"]
-                invoice_line_id = created.get(
-                    "invoice_line_id"
-                )
-
-                schedule = self.fetch_one(
-                    f"""
-                    UPDATE {schema}.lessor_lease_schedule
-                    SET
-                        invoice_id=%s,
-                        invoice_line_id=%s,
-                        billed_at=NOW(),
-                        billed_by_user_id=%s,
-                        billing_error=NULL,
-                        status=CASE
-                            WHEN recognition_journal_id IS NOT NULL
-                                THEN 'posted'
-                            ELSE 'billed'
-                        END,
-                        updated_at=NOW()
-
-                    WHERE company_id=%s
-                    AND lessor_lease_id=%s
-                    AND id=%s
-                    AND is_active=TRUE
-                    AND invoice_id IS NULL
-
-                    RETURNING *
-                    """,
-                    (
-                        int(invoice_id),
-                        invoice_line_id,
-                        user_id,
-                        int(company_id),
-                        int(lessor_lease_id),
-                        int(schedule_id),
-                    ),
-                    cur=cur,
-                )
-
-                if not schedule:
-                    raise ValueError(
-                        "Schedule period was billed by another process"
-                    )
-
-                self.fetch_one(
-                    f"""
-                    INSERT INTO {schema}.lessor_lease_events (
-                        company_id,
-                        lessor_lease_id,
-                        event_type,
-                        event_date,
-                        description,
-                        reference_id,
-                        reference_type,
-                        created_by_user_id
-                    )
-                    VALUES (
-                        %s,
-                        %s,
-                        'invoice_created',
-                        %s,
-                        %s,
-                        %s,
-                        'invoice',
-                        %s
-                    )
-                    RETURNING id
-                    """,
-                    (
-                        int(company_id),
-                        int(lessor_lease_id),
-                        payload["invoice_date"],
-                        (
-                            f"Invoice created for period "
-                            f"{payload['period_no']}"
-                        ),
-                        int(invoice_id),
-                        user_id,
-                    ),
-                    cur=cur,
-                )
-
-                conn.commit()
-
-                return {
-                    "ok": True,
-                    "invoice_id": int(invoice_id),
-                    "invoice_line_id": invoice_line_id,
-                    "schedule": schedule,
-                    "invoice": created.get("invoice"),
-                    "payload": payload,
-                }
-
-            except Exception as exc:
-                conn.rollback()
-
-                try:
-                    with conn.cursor() as error_cur:
-                        error_cur.execute(
-                            f"""
-                            UPDATE {schema}.lessor_lease_schedule
-                            SET
-                                billing_error=%s,
-                                updated_at=NOW()
-                            WHERE company_id=%s
-                            AND lessor_lease_id=%s
-                            AND id=%s
-                            """,
-                            (
-                                str(exc),
-                                int(company_id),
-                                int(lessor_lease_id),
-                                int(schedule_id),
-                            ),
-                        )
-
-                        conn.commit()
-
-                except Exception:
-                    conn.rollback()
-
-                raise
-
-    def create_lessor_invoices_through(
-        self,
-        company_id: int,
-        lessor_lease_id: int,
-        through_date,
-        *,
-        user_id=None,
-    ) -> dict:
-        schema = self.company_schema(company_id)
-
-        through_date = self._lessor_iso_date(
-            through_date
-        )
-
-        if not through_date:
-            raise ValueError(
-                "through_date is required"
-            )
-
-        rows = self.fetch_all(
-            f"""
-            SELECT
-                id,
-                period_no,
-                payment_date,
-                due_date,
-                contractual_gross
-            FROM {schema}.lessor_lease_schedule
-            WHERE company_id=%s
-            AND lessor_lease_id=%s
-            AND is_active=TRUE
-            AND invoice_id IS NULL
-            AND COALESCE(
-                payment_date,
-                due_date,
-                period_end
-            ) <= %s
-            ORDER BY
-                period_no,
-                id
-            """,
-            (
-                int(company_id),
-                int(lessor_lease_id),
-                through_date,
-            ),
-        ) or []
-
-        created = []
-        failed = []
-
-        for row in rows:
-            try:
-                result = self.create_lessor_schedule_invoice(
-                    company_id,
-                    lessor_lease_id,
-                    int(row["id"]),
-                    user_id=user_id,
-                )
-
-                created.append({
-                    "schedule_id": int(row["id"]),
-                    "period_no": int(
-                        row.get("period_no") or 0
-                    ),
-                    "invoice_id": result["invoice_id"],
-                    "gross_amount": row.get(
-                        "contractual_gross"
-                    ),
-                })
-
-            except Exception as exc:
-                failed.append({
-                    "schedule_id": int(row["id"]),
-                    "period_no": int(
-                        row.get("period_no") or 0
-                    ),
-                    "error": str(exc),
-                })
-
-        return {
-            "ok": len(failed) == 0,
-            "lessor_lease_id": int(lessor_lease_id),
-            "through_date": str(through_date),
-            "eligible_count": len(rows),
-            "created_count": len(created),
-            "failed_count": len(failed),
-            "created": created,
-            "failed": failed,
-        }
 
     def preview_lessor_schedule_invoice(
         self,
@@ -39799,42 +41005,9 @@ class DatabaseService:
 
         return {
             "ok": True,
-            "invoice": {
-                "customer_id": payload["customer_id"],
-                "invoice_date": str(
-                    payload["invoice_date"]
-                ),
-                "due_date": str(
-                    payload["due_date"]
-                ),
-                "reference": payload["reference"],
-                "description": payload["description"],
-                "currency": payload.get("currency"),
-                "classification": payload[
-                    "classification"
-                ],
-                "accounting_treatment": payload[
-                    "accounting_treatment"
-                ],
-                "net_amount": float(
-                    payload["net_amount"]
-                ),
-                "vat_amount": float(
-                    payload["vat_amount"]
-                ),
-                "gross_amount": float(
-                    payload["gross_amount"]
-                ),
-                "ar_account_code": payload[
-                    "ar_account_code"
-                ],
-                "credit_account_code": payload[
-                    "credit_account_code"
-                ],
-                "vat_output_account_code": payload.get(
-                    "vat_output_account_code"
-                ),
-            },
+            "action": "open_invoice_form",
+            "invoice": payload,
+            "prefill": payload,
         }
 
 
@@ -40232,51 +41405,77 @@ class DatabaseService:
         if not lease:
             raise ValueError("Lessor lease not found")
 
-        schedule = self.fetch_all(
+        expense_code=(
+            lease.get("initial_direct_cost_expense_account_code")
+        )
+
+        deferred_code=(
+            lease.get("initial_direct_cost_asset_account_code")
+            or lease.get("deferred_initial_direct_cost_account_code")
+        )
+
+        account_codes=[
+            code
+            for code in {expense_code,deferred_code}
+            if code
+        ]
+
+        account_rows=self.fetch_all(
+            f"""
+            SELECT code,name
+            FROM {schema}.coa
+            WHERE code=ANY(%s)
+            """,
+            (account_codes,),
+            cur=cur,
+        ) if account_codes else []
+
+        account_names={
+            str(row["code"]):row.get("name")
+            for row in (account_rows or [])
+        }
+
+        schedule=self.fetch_all(
             f"""
             SELECT
                 s.*,
 
-                b.id AS bill_id,
-                b.invoice_id,
-                b.amount_net AS billed_net,
-                b.vat_amount AS billed_vat,
-                b.amount_gross AS billed_gross,
-                b.status AS bill_status,
+                s.invoice_id AS schedule_invoice_id,
+                s.invoice_line_id AS schedule_invoice_line_id,
+
+                i.number AS invoice_number,
+                i.invoice_date,
+                i.due_date AS invoice_due_date,
+                i.status AS invoice_status,
+                i.posted_journal_id AS invoice_journal_id,
+                i.subtotal_amount AS billed_net,
+                i.vat_amount AS billed_vat,
+                i.total_amount AS billed_gross,
 
                 COALESCE((
-                    SELECT SUM(r.amount_gross)
-                    FROM {schema}.lessor_lease_receipts r
-                    WHERE r.company_id=s.company_id
-                    AND r.lessor_lease_id=s.lessor_lease_id
-                    AND r.bill_id=b.id
-                    AND COALESCE(r.status, '') <> 'void'
-                ), 0) AS received_amount,
+                    SELECT SUM(ra.amount)
+                    FROM {schema}.receipt_allocations ra
+                    WHERE ra.company_id=s.company_id
+                    AND ra.invoice_id=s.invoice_id
+                ),0) AS received_amount,
 
                 GREATEST(
-                    COALESCE(b.amount_gross, s.contractual_gross, 0)
+                    COALESCE(i.total_amount,0)
                     -
                     COALESCE((
-                        SELECT SUM(r.amount_gross)
-                        FROM {schema}.lessor_lease_receipts r
-                        WHERE r.company_id=s.company_id
-                        AND r.lessor_lease_id=s.lessor_lease_id
-                        AND r.bill_id=b.id
-                        AND COALESCE(r.status, '') <> 'void'
-                    ), 0),
+                        SELECT SUM(ra.amount)
+                        FROM {schema}.receipt_allocations ra
+                        WHERE ra.company_id=s.company_id
+                        AND ra.invoice_id=s.invoice_id
+                    ),0),
                     0
                 ) AS outstanding_amount
 
             FROM {schema}.lessor_lease_schedule s
 
-            LEFT JOIN {schema}.lessor_lease_bills b
-            ON b.company_id=s.company_id
-            AND b.lessor_lease_id=s.lessor_lease_id
-            AND (
-                b.schedule_id=s.id
-                OR b.invoice_id=s.invoice_id
-            )
-            AND COALESCE(b.status, '') <> 'void'
+            LEFT JOIN {schema}.invoices i
+            ON i.company_id=s.company_id
+            AND i.id=s.invoice_id
 
             WHERE s.company_id=%s
             AND s.lessor_lease_id=%s
@@ -40291,39 +41490,46 @@ class DatabaseService:
             cur=cur,
         ) or []
 
-        billing = self.fetch_one(
+        billing=self.fetch_one(
             f"""
             SELECT
-                COALESCE(SUM(b.amount_net)
-                    FILTER (
-                        WHERE COALESCE(b.status, '') <> 'void'
-                    ), 0) AS total_billed_net,
+                COALESCE(SUM(i.subtotal_amount),0) AS total_billed_net,
+                COALESCE(SUM(i.vat_amount),0) AS total_billed_vat,
+                COALESCE(SUM(i.total_amount),0) AS total_billed_gross,
 
-                COALESCE(SUM(b.vat_amount)
-                    FILTER (
-                        WHERE COALESCE(b.status, '') <> 'void'
-                    ), 0) AS total_vat,
+                COALESCE(SUM((
+                    SELECT COALESCE(SUM(ra.amount),0)
+                    FROM {schema}.receipt_allocations ra
+                    WHERE ra.company_id=i.company_id
+                    AND ra.invoice_id=i.id
+                )),0) AS total_received,
 
-                COALESCE(SUM(b.amount_gross)
-                    FILTER (
-                        WHERE COALESCE(b.status, '') <> 'void'
-                    ), 0) AS total_billed_gross,
+                GREATEST(
+                    COALESCE(SUM(i.total_amount),0)
+                    -
+                    COALESCE(SUM((
+                        SELECT COALESCE(SUM(ra.amount),0)
+                        FROM {schema}.receipt_allocations ra
+                        WHERE ra.company_id=i.company_id
+                        AND ra.invoice_id=i.id
+                    )),0),
+                    0
+                ) AS total_outstanding,
 
-                COALESCE((
-                    SELECT SUM(r.amount_gross)
-                    FROM {schema}.lessor_lease_receipts r
-                    WHERE r.company_id=%s
-                    AND r.lessor_lease_id=%s
-                    AND COALESCE(r.status, '') <> 'void'
-                ), 0) AS total_received
+                COUNT(DISTINCT i.id) AS invoice_count
 
-            FROM {schema}.lessor_lease_bills b
-            WHERE b.company_id=%s
-            AND b.lessor_lease_id=%s
+            FROM {schema}.lessor_lease_schedule s
+
+            JOIN {schema}.invoices i
+            ON i.company_id=s.company_id
+            AND i.id=s.invoice_id
+
+            WHERE s.company_id=%s
+            AND s.lessor_lease_id=%s
+            AND s.is_active=TRUE
+            AND COALESCE(i.status,'') NOT IN ('void','cancelled')
             """,
             (
-                int(company_id),
-                int(lessor_lease_id),
                 int(company_id),
                 int(lessor_lease_id),
             ),
@@ -40592,21 +41798,19 @@ class DatabaseService:
                     lease.get("initial_direct_costs")
                 ),
 
-                "deferred_direct_cost_account_code": (
-                    lease.get(
-                        "initial_direct_cost_asset_account_code"
-                    )
-                    or lease.get(
-                        "deferred_initial_direct_cost_account_code"
-                    )
+                "deferred_direct_cost_account_code":deferred_code,
+                "deferred_direct_cost_account_name":(
+                    account_names.get(str(deferred_code))
+                    if deferred_code
+                    else None
                 ),
 
-                "direct_cost_expense_account_code": (
-                    lease.get(
-                        "initial_direct_cost_expense_account_code"
-                    )
+                "direct_cost_expense_account_code":expense_code,
+                "direct_cost_expense_account_name":(
+                    account_names.get(str(expense_code))
+                    if expense_code
+                    else None
                 ),
-
                 "commencement_journal_id":
                     lease.get("commencement_journal_id"),
 
@@ -40638,6 +41842,130 @@ class DatabaseService:
             "current_period": current_period,
             "focus_period": focus_period,
         }
+
+    def sync_lessor_bill_from_invoice_cur(
+        self,
+        company_id: int,
+        invoice_id: int,
+        *,
+        user_id=None,
+        cur,
+    ) -> dict | None:
+        schema=self.company_schema(company_id)
+
+        inv=self.fetch_one(
+            f"""
+            SELECT
+                i.id,
+                i.number,
+                i.invoice_date,
+                i.due_date,
+                i.subtotal_amount,
+                i.vat_amount,
+                i.total_amount,
+                i.status,
+                i.source,
+                i.module_name,
+                i.lessor_lease_id,
+                i.lessor_schedule_id,
+                s.period_start,
+                s.period_end,
+                s.payment_date
+            FROM {schema}.invoices i
+            JOIN {schema}.lessor_lease_schedule s
+            ON s.company_id=i.company_id
+            AND s.id=i.lessor_schedule_id
+            AND s.lessor_lease_id=i.lessor_lease_id
+            WHERE i.company_id=%s
+            AND i.id=%s
+            LIMIT 1
+            """,
+            (int(company_id),int(invoice_id)),
+            cur=cur,
+        ) or {}
+
+        is_lessor=(
+            str(inv.get("source") or "").strip().lower()=="lessor_lease_billing"
+            or str(inv.get("module_name") or "").strip().lower()=="ifrs16_lessor"
+            or bool(inv.get("lessor_lease_id"))
+        )
+
+        if not is_lessor:
+            return None
+
+        lease_id=int(inv.get("lessor_lease_id") or 0)
+        schedule_id=int(inv.get("lessor_schedule_id") or 0)
+
+        if not lease_id or not schedule_id:
+            raise ValueError(
+                "Lessor invoice is missing lease or schedule linkage"
+            )
+
+        bill_status=(
+            "posted"
+            if str(inv.get("status") or "").strip().lower()=="posted"
+            else "draft"
+        )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.lessor_lease_bills (
+                company_id,
+                lessor_lease_id,
+                schedule_id,
+                bill_period_start,
+                bill_period_end,
+                bill_date,
+                due_date,
+                amount_net,
+                vat_amount,
+                amount_gross,
+                invoice_id,
+                status,
+                created_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,NOW(),NOW()
+            )
+            ON CONFLICT (
+                lessor_lease_id,
+                bill_period_start,
+                bill_period_end
+            )
+            WHERE status <> 'void'
+            DO UPDATE SET
+                bill_period_start=EXCLUDED.bill_period_start,
+                bill_period_end=EXCLUDED.bill_period_end,
+                bill_date=EXCLUDED.bill_date,
+                due_date=EXCLUDED.due_date,
+                amount_net=EXCLUDED.amount_net,
+                vat_amount=EXCLUDED.vat_amount,
+                amount_gross=EXCLUDED.amount_gross,
+                invoice_id=EXCLUDED.invoice_id,
+                status=EXCLUDED.status,
+                updated_at=NOW()
+            RETURNING *
+            """,
+            (
+                int(company_id),
+                lease_id,
+                schedule_id,
+                inv.get("period_start"),
+                inv.get("period_end"),
+                inv.get("invoice_date") or inv.get("payment_date"),
+                inv.get("due_date"),
+                inv.get("subtotal_amount") or 0,
+                inv.get("vat_amount") or 0,
+                inv.get("total_amount") or 0,
+                int(invoice_id),
+                bill_status,
+                user_id,
+            ),
+            cur=cur,
+        )
 
     def add_lessor_event(
         self,
@@ -40734,93 +42062,117 @@ class DatabaseService:
         ) or []
 
 
-    def get_lessor_schedule_version(
-        self,
-        company_id: int,
-        lease_id: int,
-        version_no=None,
-        *,
-        cur=None,
-    ):
+    def get_lessor_schedule_version(self, company_id: int, lease_id: int, version_no=None, *, cur=None):
         schema = self.company_schema(company_id)
 
-        where = [
-            "company_id=%s",
-            "lessor_lease_id=%s",
-        ]
-
-        params = [
-            int(company_id),
-            int(lease_id),
-        ]
+        where = ["s.company_id=%s", "s.lessor_lease_id=%s"]
+        params = [int(company_id), int(lease_id)]
 
         if version_no is None:
-            where.append("is_active=TRUE")
+            where.append("s.is_active=TRUE")
         else:
-            where.append("version_no=%s")
+            where.append("s.version_no=%s")
             params.append(int(version_no))
 
         return self.fetch_all(
             f"""
-            SELECT *
-            FROM {schema}.lessor_lease_schedule
+            SELECT
+                s.*,
+                b.id AS bill_id,
+                b.status AS bill_status,
+                b.bill_date,
+                b.invoice_id AS bill_invoice_id,
+                b.invoice_line_id,
+                b.amount_net AS billed_net,
+                b.vat_amount AS billed_vat,
+                b.amount_gross AS billed_gross,
+                i.number AS invoice_number,
+                i.invoice_date,
+                i.due_date AS invoice_due_date,
+                i.status AS invoice_status,
+                COALESCE((
+                    SELECT SUM(r.amount_gross)
+                    FROM {schema}.lessor_lease_receipts r
+                    WHERE r.company_id=s.company_id
+                    AND r.lessor_lease_id=s.lessor_lease_id
+                    AND r.bill_id=b.id
+                    AND COALESCE(r.status,'')<>'void'
+                ),0) AS received_amount
+            FROM {schema}.lessor_lease_schedule s
+            LEFT JOIN {schema}.lessor_lease_bills b
+            ON b.company_id=s.company_id
+            AND b.lessor_lease_id=s.lessor_lease_id
+            AND b.schedule_id=s.id
+            AND COALESCE(b.status,'')<>'void'
+            LEFT JOIN {schema}.invoices i
+            ON i.id=COALESCE(b.invoice_id,s.invoice_id)
             WHERE {" AND ".join(where)}
-            ORDER BY period_no
+            ORDER BY s.period_no
             """,
             tuple(params),
             cur=cur,
         ) or []
 
-    def get_lessor_history(
-        self,
-        company_id: int,
-        lease_id: int,
-        *,
-        cur=None,
-    ):
+    def get_lessor_history(self, company_id: int, lease_id: int, *, cur=None):
         schema = self.company_schema(company_id)
 
         events = self.fetch_all(
             f"""
-            SELECT *
+            SELECT
+                id,
+                event_type,
+                event_date,
+                effective_date,
+                source_table,
+                source_id,
+                title,
+                description,
+                payload,
+                created_by_user_id
             FROM {schema}.lessor_lease_events
             WHERE company_id=%s
             AND lessor_lease_id=%s
-            ORDER BY event_date DESC, id DESC
+            ORDER BY event_date DESC,id DESC
             """,
-            (
-                int(company_id),
-                int(lease_id),
-            ),
+            (int(company_id), int(lease_id)),
             cur=cur,
         ) or []
 
         journals = self.fetch_all(
             f"""
-            SELECT
-                id,
-                date,
-                ref,
-                description,
-                source,
-                source_id,
-                created_at
+            SELECT id,date,ref,description,source,source_id,created_at
             FROM {schema}.journal
             WHERE company_id=%s
-            AND module_name='ifrs16_lessor'
             AND (
-                    source_id=%s
-                    OR id IN (
-                        SELECT recognition_journal_id
-                        FROM {schema}.lessor_lease_schedule
-                        WHERE company_id=%s
-                        AND lessor_lease_id=%s
-                        AND recognition_journal_id IS NOT NULL
-                    )
+                (
+                source IN (
+                    'lessor_lease_commencement',
+                    'lessor_lease_modification',
+                    'lessor_lease_termination',
+                    'lessor_lease_deposit'
+                )
+                AND source_id=%s
+                )
+                OR id IN (
+                SELECT recognition_journal_id
+                FROM {schema}.lessor_lease_schedule
+                WHERE company_id=%s
+                    AND lessor_lease_id=%s
+                    AND recognition_journal_id IS NOT NULL
+                )
+                OR id IN (
+                SELECT posted_journal_id
+                FROM {schema}.lessor_lease_receipts
+                WHERE company_id=%s
+                    AND lessor_lease_id=%s
+                    AND posted_journal_id IS NOT NULL
+                )
             )
-            ORDER BY date DESC, id DESC
+            ORDER BY date DESC,id DESC
             """,
             (
+                int(company_id),
+                int(lease_id),
                 int(company_id),
                 int(lease_id),
                 int(company_id),
@@ -40829,14 +42181,107 @@ class DatabaseService:
             cur=cur,
         ) or []
 
+        history = [
+            {
+                "id": e["id"],
+                "type": e.get("event_type") or "event",
+                "date": e.get("effective_date") or e.get("event_date"),
+                "title": e.get("title") or "Lease event",
+                "description": e.get("description"),
+                "reference": f'{e.get("source_table")} #{e.get("source_id")}' if e.get("source_id") else None,
+                "source_table": e.get("source_table"),
+                "source_id": e.get("source_id"),
+                "user_id": e.get("created_by_user_id"),
+                "payload": e.get("payload") or {},
+            }
+            for e in events
+        ]
+
+        history += [
+            {
+                "id": j["id"],
+                "type": "journal",
+                "date": j.get("date") or j.get("created_at"),
+                "title": j.get("description") or "Journal posted",
+                "description": j.get("source"),
+                "reference": j.get("ref") or f'Journal #{j["id"]}',
+                "source_table": "journal",
+                "source_id": j["id"],
+                "user_id": None,
+                "payload": {},
+            }
+            for j in journals
+        ]
+
+        history.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+
         return {
+            "history": history,
             "events": events,
             "journals": journals,
-            "versions": self.list_lessor_schedule_versions(
-                company_id,
-                lease_id,
-                cur=cur,
-            ),
+            "versions": self.list_lessor_schedule_versions(company_id, lease_id, cur=cur),
+        }
+
+    def get_lessor_amortisation_workspace(self, company_id: int, lease_id: int, *, as_at=None, cur=None):
+        schema=self.company_schema(company_id)
+        lease=self.get_lessor_lease(company_id,lease_id,cur=cur)
+        if not lease: raise ValueError("Lessor lease not found")
+
+        rows=self.fetch_all(
+            f"""
+            SELECT
+                s.*,
+                b.id AS bill_id,
+                b.status AS bill_status,
+                b.bill_date,
+                b.amount_net AS billed_net,
+                b.vat_amount AS billed_vat,
+                b.amount_gross AS billed_gross,
+                i.number AS invoice_number,
+                i.invoice_date,
+                i.due_date AS invoice_due_date,
+                i.status AS invoice_status,
+                COALESCE((
+                    SELECT SUM(r.amount_gross)
+                    FROM {schema}.lessor_lease_receipts r
+                    WHERE r.company_id=s.company_id
+                    AND r.lessor_lease_id=s.lessor_lease_id
+                    AND r.bill_id=b.id
+                    AND COALESCE(r.status,'')<>'void'
+                ),0) AS received_amount
+            FROM {schema}.lessor_lease_schedule s
+            LEFT JOIN {schema}.lessor_lease_bills b
+            ON b.company_id=s.company_id
+            AND b.lessor_lease_id=s.lessor_lease_id
+            AND b.schedule_id=s.id
+            AND COALESCE(b.status,'')<>'void'
+            LEFT JOIN {schema}.invoices i
+            ON i.id=COALESCE(b.invoice_id,s.invoice_id)
+            WHERE s.company_id=%s
+            AND s.lessor_lease_id=%s
+            AND s.is_active=TRUE
+            ORDER BY s.period_no
+            """,
+            (int(company_id),int(lease_id)),
+            cur=cur,
+        ) or []
+
+        target=as_at or date.today()
+        if isinstance(target,str): target=date.fromisoformat(target[:10])
+        if isinstance(target,datetime): target=target.date()
+
+        current=next((r for r in rows if r.get("period_start")<=target<=r.get("period_end")),None)
+        if not current:
+            current=next((r for r in rows if r.get("period_end")>=target),None)
+        if not current and rows:
+            current=rows[-1]
+
+        return {
+            "lease":lease,
+            "classification":str(lease.get("lease_classification") or "").lower(),
+            "current_period":current,
+            "schedule":rows,
+            "period_count":len(rows),
         }
 
     def get_lessor_billing_workspace(
@@ -40846,32 +42291,53 @@ class DatabaseService:
         *,
         cur=None,
     ):
-        schema = self.company_schema(company_id)
+        schema=self.company_schema(company_id)
 
-        bills = self.fetch_all(
+        bills=self.fetch_all(
             f"""
             SELECT
                 b.*,
+                s.period_no,
+                s.period_start,
+                s.period_end,
+
                 i.number AS invoice_number,
+                i.invoice_date,
+                i.due_date AS invoice_due_date,
                 i.status AS invoice_status,
 
+                COALESCE(i.subtotal_amount,0) AS invoiced_net,
+                COALESCE(i.vat_amount,0) AS invoiced_vat,
+                COALESCE(i.total_amount,0) AS invoiced_gross,
+
                 COALESCE((
-                    SELECT SUM(r.amount_gross)
-                    FROM {schema}.lessor_lease_receipts r
-                    WHERE r.bill_id=b.id
-                    AND COALESCE(r.status, '')<>'void'
-                ), 0) AS received_amount
+                    SELECT SUM(ra.amount)
+                    FROM {schema}.receipt_allocations ra
+                    WHERE ra.company_id=i.company_id
+                    AND ra.invoice_id=i.id
+                ),0)::numeric(18,2) AS received_amount
 
             FROM {schema}.lessor_lease_bills b
 
+            LEFT JOIN {schema}.lessor_lease_schedule s
+            ON s.company_id=b.company_id
+            AND s.id=b.schedule_id
+
             LEFT JOIN {schema}.invoices i
-            ON i.id=b.invoice_id
+            ON i.company_id=b.company_id
+            AND i.id=b.invoice_id
 
             WHERE b.company_id=%s
             AND b.lessor_lease_id=%s
-            AND COALESCE(b.status, '')<>'void'
+            AND COALESCE(b.status,'')<>'void'
 
-            ORDER BY b.bill_date, b.id
+            ORDER BY
+                COALESCE(
+                    b.bill_date,
+                    b.due_date,
+                    b.bill_period_start
+                ),
+                b.id
             """,
             (
                 int(company_id),
@@ -40880,42 +42346,189 @@ class DatabaseService:
             cur=cur,
         ) or []
 
-        receipts = self.fetch_all(
+        receipts=self.fetch_all(
             f"""
-            SELECT *
-            FROM {schema}.lessor_lease_receipts
-            WHERE company_id=%s
-            AND lessor_lease_id=%s
-            AND COALESCE(status, '')<>'void'
-            ORDER BY receipt_date, id
+            SELECT
+                ra.id AS allocation_id,
+                ra.amount AS allocated_amount,
+
+                r.id AS receipt_id,
+                r.receipt_date,
+                r.reference AS receipt_reference,
+                r.amount AS received_amount,
+                r.currency,
+                r.bank_account_id,
+                r.created_journal_id,
+                r.description,
+
+                i.id AS invoice_id,
+                i.number AS invoice_number,
+                i.status AS invoice_status,
+
+                b.id AS bill_id,
+                b.schedule_id,
+                b.bill_date,
+                b.due_date,
+
+                s.period_no,
+                s.period_start,
+                s.period_end,
+
+                ba.name AS bank_account_name,
+                ba.bank_name
+
+            FROM {schema}.receipt_allocations ra
+
+            JOIN {schema}.receipts r
+            ON r.company_id=ra.company_id
+            AND r.id=ra.receipt_id
+
+            JOIN {schema}.invoices i
+            ON i.company_id=ra.company_id
+            AND i.id=ra.invoice_id
+
+            JOIN {schema}.lessor_lease_bills b
+            ON b.company_id=i.company_id
+            AND b.invoice_id=i.id
+            AND b.lessor_lease_id=%s
+
+            LEFT JOIN {schema}.lessor_lease_schedule s
+            ON s.company_id=b.company_id
+            AND s.id=b.schedule_id
+
+            LEFT JOIN {schema}.company_bank_accounts ba
+            ON ba.id=r.bank_account_id
+
+            WHERE ra.company_id=%s
+
+            ORDER BY r.receipt_date,r.id,ra.id
             """,
             (
-                int(company_id),
                 int(lease_id),
+                int(company_id),
             ),
             cur=cur,
         ) or []
 
-        gross = sum(
-            float(row.get("amount_gross") or 0)
-            for row in bills
+        for bill in bills:
+            invoiced=bool(bill.get("invoice_id"))
+
+            gross=float(
+                bill.get("invoiced_gross")
+                if invoiced
+                else 0
+            )
+
+            net=float(
+                bill.get("invoiced_net")
+                if invoiced
+                else 0
+            )
+
+            vat=float(
+                bill.get("invoiced_vat")
+                if invoiced
+                else 0
+            )
+
+            received=float(
+                bill.get("received_amount") or 0
+            )
+
+            outstanding=max(gross-received,0)
+
+            bill.update({
+                "gross":round(gross,2),
+                "net":round(net,2),
+                "vat":round(vat,2),
+                "received":round(received,2),
+                "outstanding":round(outstanding,2),
+                "display_status":(
+                    "paid"
+                    if invoiced and outstanding<=0
+                    else bill.get("invoice_status")
+                    if invoiced
+                    else "scheduled"
+                ),
+            })
+
+        for receipt in receipts:
+            receipt["amount"]=round(
+                float(receipt.get("allocated_amount") or 0),
+                2,
+            )
+
+        billed=[
+            bill
+            for bill in bills
+            if bill.get("invoice_id")
+            and str(
+                bill.get("invoice_status") or ""
+            ).lower() not in {"void","cancelled"}
+        ]
+
+        gross=round(sum(
+            bill["gross"]
+            for bill in billed
+        ),2)
+
+        received=round(sum(
+            bill["received"]
+            for bill in billed
+        ),2)
+
+        today=date.today()
+        unbilled=[
+            bill
+            for bill in bills
+            if not bill.get("invoice_id")
+        ]
+
+        current_unbilled=next(
+            (
+                bill for bill in unbilled
+                if (
+                    bill.get("period_start")
+                    or bill.get("bill_period_start")
+                    or bill.get("bill_date")
+                )<=today<=(
+                    bill.get("period_end")
+                    or bill.get("bill_period_end")
+                    or bill.get("due_date")
+                )
+            ),
+            None,
         )
 
-        received = sum(
-            float(row.get("amount_gross") or 0)
-            for row in receipts
-        )
+        if not current_unbilled:
+            current_unbilled=next(
+                (
+                    bill for bill in unbilled
+                    if (
+                        bill.get("period_end")
+                        or bill.get("bill_period_end")
+                        or bill.get("due_date")
+                    )>=today
+                ),
+                None,
+            )
+
+        if not current_unbilled and unbilled:
+            current_unbilled=unbilled[-1]
 
         return {
-            "bills": bills,
-            "receipts": receipts,
-            "totals": {
-                "gross": round(gross, 2),
-                "received": round(received, 2),
-                "outstanding": round(
-                    max(gross - received, 0),
+            "bills":bills,
+            "current_unbilled":current_unbilled,
+            "receipts":receipts,
+            "totals":{
+                "gross":gross,
+                "received":received,
+                "outstanding":round(
+                    max(gross-received,0),
                     2,
                 ),
+                "invoice_count":len(billed),
+                "receipt_count":len(receipts),
             },
         }
 
@@ -56790,6 +58403,19 @@ class DatabaseService:
             i.status,
             i.bank_account_id,
             i.notes,
+            i.source,
+            i.source_id,
+            i.module_name,
+            i.posting_mode,
+
+            i.lessor_lease_id,
+            i.lessor_schedule_id,
+            i.lease_classification,
+            i.accounting_treatment,
+
+            i.ar_account_code,
+            i.credit_account_code,
+            i.vat_output_account_code,
 
             -- ✅ payment totals (safe: subquery prevents join multiplication)
             COALESCE(pay.paid_amount, 0)::numeric(18,2) AS paid_amount,
@@ -56841,8 +58467,20 @@ class DatabaseService:
             ba.branch_code,
             ba.swift_code,
             ba.currency        AS bank_currency,
-            ba.ledger_account_code
+            ba.ledger_account_code,
 
+            ls.period_no AS lessor_period_no,
+            ls.period_start AS lessor_period_start,
+            ls.period_end AS lessor_period_end,
+            ls.payment_date AS lessor_payment_date,
+            ls.invoice_line_id AS lessor_invoice_line_id,
+            ls.recognition_journal_id AS lessor_recognition_journal_id,
+
+            ll.contract_no AS lessor_contract_no,
+            ll.contract_name AS lessor_contract_name,
+            ll.asset_id AS lessor_asset_id,
+            ll.lease_classification AS lessor_classification
+                    
         FROM {schema}.invoices i
         JOIN {schema}.customers c
         ON c.id = i.customer_id
@@ -56855,6 +58493,14 @@ class DatabaseService:
 
         LEFT JOIN {schema}.company_bank_accounts ba
         ON ba.id = i.bank_account_id
+
+        LEFT JOIN {schema}.lessor_lease_schedule ls
+        ON ls.company_id=i.company_id
+        AND ls.id=i.lessor_schedule_id
+
+        LEFT JOIN {schema}.lessor_leases ll
+        ON ll.company_id=i.company_id
+        AND ll.id=i.lessor_lease_id
 
         -- ✅ allocations summed separately (cannot be multiplied by joins)
         LEFT JOIN (
@@ -57191,20 +58837,50 @@ class DatabaseService:
         cur.execute(
             f"""
             INSERT INTO {schema}.invoices (
-            company_id, customer_id, revenue_contract_id, number, invoice_date, due_date, currency,
-            subtotal_amount, discount_amount, discount_rate, other_amount,
-            vat_amount, total_amount,
-            status, bank_account_id, notes,
-            issued_at, issued_by
+                company_id,
+                customer_id,
+                revenue_contract_id,
+                number,
+                invoice_date,
+                due_date,
+                currency,
+                subtotal_amount,
+                discount_amount,
+                discount_rate,
+                other_amount,
+                vat_amount,
+                total_amount,
+                status,
+                bank_account_id,
+                notes,
+                issued_at,
+                issued_by,
+                source,
+                source_id,
+                module_name,
+                posting_mode,
+                lessor_lease_id,
+                lessor_schedule_id,
+                lease_classification,
+                accounting_treatment,
+                ar_account_code,
+                credit_account_code,
+                vat_output_account_code,
+                created_by_user_id,
+                updated_by_user_id
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id;
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING id
             """,
             (
-                company_id,
+                int(company_id),
                 int(header["customer_id"]),
-                header.get("revenue_contract_id"),  # ✅ ADD THIS LINE
-                header["number"],
+                header.get("revenue_contract_id"),
+                header.get("number"),
                 header["invoice_date"],
                 header.get("due_date"),
                 header.get("currency"),
@@ -57219,29 +58895,48 @@ class DatabaseService:
                 header.get("notes"),
                 issued_at,
                 issued_by,
+                header.get("source"),
+                header.get("source_id"),
+                header.get("module_name"),
+                header.get("posting_mode"),
+                header.get("lessor_lease_id"),
+                header.get("lessor_schedule_id"),
+                header.get("lease_classification"),
+                header.get("accounting_treatment"),
+                header.get("ar_account_code"),
+                header.get("credit_account_code"),
+                header.get("vat_output_account_code"),
+                header.get("created_by_user_id"),
+                header.get("updated_by_user_id"),
             ),
         )
 
         row = cur.fetchone()
         invoice_id = row["id"] if isinstance(row, dict) else row[0]
-
+            
         # insert lines
+        invoice_line_id=None
+
         for pl in prepared_lines:
             cur.execute(
                 f"""
                 INSERT INTO {schema}.invoice_lines (
-                    company_id, invoice_id, line_no,
-                    item_name, description, account_code,
-                    quantity, unit_price, discount_amount, net_amount,
-                    vat_rate, vat_amount, total_amount,
-                    item_type, item_id, item_code, vat_code,
+                    company_id,invoice_id,line_no,
+                    item_name,description,account_code,
+                    quantity,unit_price,discount_amount,net_amount,
+                    vat_rate,vat_amount,total_amount,
+                    item_type,item_id,item_code,vat_code,
                     revenue_obligation_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
+                RETURNING id
                 """,
                 (
-                    company_id,
-                    invoice_id,
+                    int(company_id),
+                    int(invoice_id),
                     pl["line_no"],
                     pl.get("item_name"),
                     pl["description"],
@@ -57259,6 +58954,71 @@ class DatabaseService:
                     pl.get("vat_code"),
                     pl.get("revenue_obligation_id"),
                 ),
+            )
+
+            inserted=cur.fetchone()
+            line_id=inserted["id"] if isinstance(inserted,dict) else inserted[0]
+
+            if invoice_line_id is None:
+                invoice_line_id=int(line_id)
+
+        lessor_schedule_id=header.get("lessor_schedule_id")
+        lessor_lease_id=header.get("lessor_lease_id")
+
+        if lessor_schedule_id or lessor_lease_id:
+            if not lessor_schedule_id or not lessor_lease_id:
+                raise ValueError(
+                    "Both lessor_lease_id and lessor_schedule_id are required"
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.lessor_lease_schedule
+                SET
+                    invoice_id=%s,
+                    invoice_line_id=%s,
+                    billed_at=COALESCE(billed_at,NOW()),
+                    billed_by_user_id=COALESCE(billed_by_user_id,%s),
+                    billing_error=NULL,
+                    status=CASE
+                        WHEN recognition_journal_id IS NOT NULL
+                            THEN 'posted'
+                        ELSE 'billed'
+                    END,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND lessor_lease_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                AND (
+                    invoice_id IS NULL
+                    OR invoice_id=%s
+                )
+                RETURNING id
+                """,
+                (
+                    int(invoice_id),
+                    invoice_line_id,
+                    header.get("created_by_user_id"),
+                    int(company_id),
+                    int(lessor_lease_id),
+                    int(lessor_schedule_id),
+                    int(invoice_id),
+                ),
+            )
+
+            if not cur.fetchone():
+                raise ValueError(
+                    "Lessor schedule period is inactive, missing, "
+                    "or already linked to another invoice"
+                )
+
+        if lessor_schedule_id and lessor_lease_id:
+            self.sync_lessor_bill_from_invoice_cur(
+                company_id,
+                invoice_id,
+                user_id=header.get("created_by_user_id"),
+                cur=cur,
             )
 
         return int(invoice_id)
@@ -57366,6 +59126,12 @@ class DatabaseService:
                 "item_id": item_id,
                 "item_code": item_code,
                 "vat_code": vat_code,
+                "revenue_obligation_id": (
+                    int(ln["revenue_obligation_id"])
+                    if ln.get("revenue_obligation_id")
+                    not in (None, "", 0, "0")
+                    else None
+                ),
             })
 
         # ---------- header discount/other ----------
@@ -57443,53 +59209,50 @@ class DatabaseService:
         # ---------- update header ----------
         cur.execute(
             f"""
-            UPDATE {schema}.invoices
-            SET
-                customer_id     = %s,
-                number          = %s,
-                invoice_date    = %s,
-                due_date        = %s,
-                currency        = %s,
-                subtotal_amount = %s,
-                discount_amount = %s,
-                discount_rate   = %s,
-                other_amount    = %s,
-                vat_amount      = %s,
-                total_amount    = %s,
-                status          = %s,
-                bank_account_id = %s,
-                notes           = %s,
-
-                issued_by       = COALESCE(%s, issued_by),
-                issued_at       = CASE
-                                    WHEN (COALESCE(%s, status) IN ('issued','sent'))
-                                    AND issued_at IS NULL
-                                    THEN COALESCE(%s, NOW())
-                                    ELSE issued_at
-                                END,
-
-                updated_at      = NOW()
-            WHERE id = %s;
+            INSERT INTO {schema}.invoice_lines (
+                company_id,
+                invoice_id,
+                line_no,
+                item_name,
+                description,
+                account_code,
+                quantity,
+                unit_price,
+                discount_amount,
+                net_amount,
+                vat_rate,
+                vat_amount,
+                total_amount,
+                item_type,
+                item_id,
+                item_code,
+                vat_code,
+                revenue_obligation_id
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s
+            )
             """,
             (
-                int(header["customer_id"]),
-                header.get("number"),
-                header.get("invoice_date"),
-                header.get("due_date"),
-                header.get("currency"),
-                subtotal_after,
-                discount_total,
-                disc_rate,
-                other,
-                vat_total,
-                grand_total,
-                new_status,
-                header.get("bank_account_id"),
-                header.get("notes"),
-                issued_by,
-                new_status,
-                issued_at,
+                int(company_id),
                 int(invoice_id),
+                pl["line_no"],
+                pl.get("item_name"),
+                pl.get("description"),
+                pl.get("account_code"),
+                pl.get("quantity"),
+                pl.get("unit_price"),
+                pl.get("discount_amount"),
+                pl.get("net_amount"),
+                pl.get("vat_rate"),
+                pl.get("vat_amount"),
+                pl.get("total_amount"),
+                pl.get("item_type"),
+                pl.get("item_id"),
+                pl.get("item_code"),
+                pl.get("vat_code"),
+                pl.get("revenue_obligation_id"),
             ),
         )
 
@@ -57902,6 +59665,12 @@ class DatabaseService:
             if not inv:
                 raise ValueError("Invoice not found")
 
+            is_lessor=(
+                str(inv.get("source") or "").strip().lower()=="lessor_lease_billing"
+                or str(inv.get("module_name") or "").strip().lower()=="ifrs16_lessor"
+                or bool(inv.get("lessor_lease_id"))
+            )
+
             revenue_contract_id = inv.get("revenue_contract_id")
             ifrs15_accounts = None
             settlement_pattern = None
@@ -58081,34 +59850,55 @@ class DatabaseService:
             if not posting_jlines and not revenue_contract_id:
                 raise ValueError("No journal lines provided for posting")
             # 4) resolve controls (ok if these read outside, but best if your helpers accept cur too)
-            # 4) resolve controls (prefer passed ar_account from journal builder)
-            AR_ACCOUNT  = (ar_account or self.get_control_account_code(company_id, "AR_CONTROL") or "").strip()
-            VAT_ACCOUNT = (self.get_control_account_code(company_id, "VAT_OUTPUT") or "").strip()
+            AR_ACCOUNT=str(
+                ar_account
+                or (inv.get("ar_account_code") if is_lessor else None)
+                or self.get_control_account_code(company_id,"AR_CONTROL")
+                or ""
+            ).strip()
 
-            print("[post_invoice_to_gl] controls before resolve", {
-                "passed_ar_account": ar_account,
-                "AR_ACCOUNT": AR_ACCOUNT,
-                "VAT_ACCOUNT": VAT_ACCOUNT,
-            }, flush=True)
+            VAT_ACCOUNT=str(
+                (inv.get("vat_output_account_code") if is_lessor else None)
+                or self.get_control_account_code(company_id,"VAT_OUTPUT")
+                or ""
+            ).strip()
+
+            vat_amount=money(
+                inv.get("vat_amount")
+                or inv.get("vat_total")
+                or 0
+            )
 
             if not AR_ACCOUNT:
-                raise ValueError("AR control account not configured (AR_CONTROL)")
-            if not VAT_ACCOUNT:
-                raise ValueError("VAT output account not configured (VAT_OUTPUT)")
-            
-            if not AR_ACCOUNT:
-                raise ValueError("AR control account not configured (AR_CONTROL)")
-            if not VAT_ACCOUNT:
-                raise ValueError("VAT output account not configured (VAT_OUTPUT)")
+                raise ValueError("AR control account is not configured")
 
+            if vat_amount>0 and not VAT_ACCOUNT:
+                raise ValueError("VAT output account is not configured")
             # resolve posting codes
-            ar_row = self.get_account_row_for_posting(company_id, AR_ACCOUNT)
-            if ar_row and ar_row[1]:
-                AR_ACCOUNT = (ar_row[1] or "").strip()
+            ar_row=self.get_account_row_for_posting(
+                company_id,
+                AR_ACCOUNT,
+            )
 
-            vat_row = self.get_account_row_for_posting(company_id, VAT_ACCOUNT)
-            if vat_row and vat_row[1]:
-                VAT_ACCOUNT = (vat_row[1] or "").strip()
+            if not ar_row:
+                raise ValueError(
+                    f"AR account '{AR_ACCOUNT}' was not found in the company COA"
+                )
+
+            AR_ACCOUNT=str(ar_row[1] or "").strip()
+
+            if VAT_ACCOUNT:
+                vat_row=self.get_account_row_for_posting(
+                    company_id,
+                    VAT_ACCOUNT,
+                )
+
+                if not vat_row:
+                    raise ValueError(
+                        f"VAT account '{VAT_ACCOUNT}' was not found in the company COA"
+                    )
+
+                VAT_ACCOUNT=str(vat_row[1] or "").strip()
 
             if revenue_contract_id:
                 if not billing_position:
@@ -58242,7 +60032,7 @@ class DatabaseService:
             print("[post_invoice_to_gl] journal_entry", journal_entry, flush=True)
             posting_lines = []
 
-            for jl in jlines:
+            for jl in posting_jlines:
                 raw_code = (jl.get("account_code") or "").strip()
                 dc = (jl.get("dc") or "").upper()
                 amt = money(jl.get("amount") or 0.0)
@@ -58268,7 +60058,11 @@ class DatabaseService:
             journal_entry.update({
                 "lines": posting_lines,
                 "currency": inv.get("currency") or "USD",
-                "module_name": "accounts_receivable",
+                "module_name":(
+                    "ifrs16_lessor"
+                    if is_lessor
+                    else "accounts_receivable"
+                ),
                 "engagement_company_id": inv.get("engagement_company_id") or inv.get("source_company_id"),
                 "engagement_id": inv.get("engagement_id"),
                 "prepared_by_user_id": inv.get("prepared_by_user_id"),
@@ -58284,6 +60078,31 @@ class DatabaseService:
                 "revenue_billing_event_id": (
                     billing_event.get("event", {}).get("id")
                     if isinstance(billing_event, dict)
+                    else None
+                ),
+                "module_name":(
+                    "ifrs16_lessor"
+                    if is_lessor
+                    else "accounts_receivable"
+                ),
+                "lessor_lease_id":(
+                    inv.get("lessor_lease_id")
+                    if is_lessor
+                    else None
+                ),
+                "lessor_schedule_id":(
+                    inv.get("lessor_schedule_id")
+                    if is_lessor
+                    else None
+                ),
+                "lease_classification":(
+                    inv.get("lease_classification")
+                    if is_lessor
+                    else None
+                ),
+                "accounting_treatment":(
+                    inv.get("accounting_treatment")
+                    if is_lessor
                     else None
                 ),
             })
@@ -58326,6 +60145,15 @@ class DatabaseService:
 
             if not posted_row.get("posted_journal_id"):
                 raise ValueError(f"Invoice {invoice_id} posted but posted_journal_id was not saved")
+
+            if is_lessor:
+                self.sync_lessor_bill_from_invoice_cur(
+                    company_id,
+                    invoice_id,
+                    user_id=inv.get("updated_by_user_id")
+                    or inv.get("created_by_user_id"),
+                    cur=_cur,
+                )
 
             # Synchronize IFRS 15 deferred revenue mirror.
             if revenue_contract_id:
@@ -61082,41 +62910,87 @@ class DatabaseService:
         """, (inserted, skipped, error_count, statement_id, company_id))
 
 
-    def get_invoice_by_id(self, company_id: int, invoice_id: int):
-        schema = self.company_schema(company_id)
+    def get_invoice_by_id(
+        self,
+        company_id: int,
+        invoice_id: int,
+        *,
+        cur=None,
+    ):
+        schema=self.company_schema(company_id)
+
         return self.fetch_one(
             f"""
             SELECT
                 id,
+                company_id,
                 customer_id,
+                revenue_contract_id,
                 number,
                 invoice_date,
                 due_date,
                 total_amount,
+                vat_amount,
                 status,
                 posted_journal_id,
                 bank_account_id,
-                currency
+                currency,
+
+                source,
+                source_id,
+                module_name,
+                posting_mode,
+
+                lessor_lease_id,
+                lessor_schedule_id,
+                lease_classification,
+                accounting_treatment,
+
+                ar_account_code,
+                credit_account_code,
+                vat_output_account_code,
+
+                created_by_user_id,
+                updated_by_user_id
             FROM {schema}.invoices
-            WHERE id=%s
-            LIMIT 1;
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1
             """,
-            (invoice_id,),
+            (
+                int(company_id),
+                int(invoice_id),
+            ),
+            cur=cur,
         )
 
-    def get_invoice_allocated_total(self, company_id: int, invoice_id: int) -> Decimal:
-        schema = self.company_schema(company_id)
-        row = self.fetch_one(
-            f"""
-            SELECT COALESCE(SUM(a.amount), 0)::numeric(18,2) AS paid
-            FROM {schema}.receipt_allocations a
-            WHERE a.invoice_id = %s
-            AND a.company_id = %s;
-            """,
-            (invoice_id, company_id),
-        ) or {}
-        return Decimal(str(row.get("paid") or "0"))
+    def get_invoice_allocated_total(
+        self,
+        company_id: int,
+        invoice_id: int,
+        *,
+        cur=None,
+    ) -> Decimal:
+        schema=self.company_schema(company_id)
 
+        row=self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(amount),0)::numeric(18,2)
+                AS paid
+            FROM {schema}.receipt_allocations
+            WHERE company_id=%s
+            AND invoice_id=%s
+            """,
+            (
+                int(company_id),
+                int(invoice_id),
+            ),
+            cur=cur,
+        ) or {}
+
+        return Decimal(str(row.get("paid") or "0"))
+        
     def get_invoice_allocated_total_asof(self, company_id: int, invoice_id: int, as_of: date) -> Decimal:
         schema = self.company_schema(company_id)
         row = self.fetch_one(
@@ -61131,6 +63005,131 @@ class DatabaseService:
             (company_id, invoice_id, as_of),
         ) or {}
         return Decimal(str(row.get("paid") or "0"))
+
+    def sync_lessor_receipt_from_invoice_cur(
+        self,
+        company_id: int,
+        invoice_id: int,
+        *,
+        cur,
+    ) -> dict | None:
+        schema=self.company_schema(company_id)
+
+        inv=self.get_invoice_by_id(
+            company_id,
+            invoice_id,
+            cur=cur,
+        ) or {}
+
+        is_lessor=(
+            str(inv.get("source") or "").strip().lower()
+            =="lessor_lease_billing"
+            or str(inv.get("module_name") or "").strip().lower()
+            =="ifrs16_lessor"
+            or bool(inv.get("lessor_schedule_id"))
+        )
+
+        if not is_lessor:
+            return None
+
+        lease_id=int(inv.get("lessor_lease_id") or 0)
+        schedule_id=int(inv.get("lessor_schedule_id") or 0)
+
+        if not lease_id or not schedule_id:
+            raise ValueError(
+                "Lessor invoice is missing lease or schedule linkage"
+            )
+
+        paid=self.get_invoice_allocated_total(
+            company_id,
+            invoice_id,
+            cur=cur,
+        )
+
+        total=Decimal(
+            str(inv.get("total_amount") or 0)
+        ).quantize(Decimal("0.01"))
+
+        paid=Decimal(str(paid or 0)).quantize(
+            Decimal("0.01")
+        )
+
+        status=(
+            "paid"
+            if paid>=total and total>0
+            else "posted"
+            if inv.get("posted_journal_id")
+            else "draft"
+        )
+
+        self.fetch_one(
+            f"""
+            UPDATE {schema}.lessor_lease_schedule
+            SET
+                receipt_amount=%s,
+                status=CASE
+                    WHEN %s='paid' THEN 'paid'
+                    WHEN recognition_journal_id IS NOT NULL
+                        THEN 'posted'
+                    WHEN invoice_id IS NOT NULL
+                        THEN 'billed'
+                    ELSE status
+                END,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND id=%s
+            RETURNING id
+            """,
+            (
+                paid,
+                status,
+                int(company_id),
+                lease_id,
+                schedule_id,
+            ),
+            cur=cur,
+        )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.lessor_lease_bills
+            SET
+                status=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND lessor_lease_id=%s
+            AND schedule_id=%s
+            AND invoice_id=%s
+            RETURNING *
+            """,
+            (
+                status,
+                int(company_id),
+                lease_id,
+                schedule_id,
+                int(invoice_id),
+            ),
+            cur=cur,
+        )
+
+    def sync_lessor_receipt_from_invoice(
+        self,
+        company_id: int,
+        invoice_id: int,
+    ):
+        with self._conn_cursor() as (conn,cur):
+            try:
+                result=self.sync_lessor_receipt_from_invoice_cur(
+                    company_id,
+                    invoice_id,
+                    cur=cur,
+                )
+                conn.commit()
+                return result
+            except Exception:
+                conn.rollback()
+                raise
 
     def create_receipt(
         self,
@@ -61451,22 +63450,47 @@ class DatabaseService:
         elif alloc > Decimal("0.00"):
             self.set_invoice_status(company_id, int(invoice_id), "partial")
 
+        self.sync_lessor_receipt_from_invoice(
+            company_id,
+            int(invoice_id),
+        )
+
         return {
-            "receipt_id": receipt_id,
-            "journal_id": journal_id,
-            "received": str(amount),
-            "allocated": str(alloc),
-            "unallocated": str(remainder),
-            "invoice_id": int(invoice_id),
-            "invoice_number": inv.get("number"),
-            "invoice_total": str(total),
-            "paid_before": str(paid_so_far),
-            "paid_after": str(new_paid),
-            "remaining_after": str(new_remaining),
-            "bank_ledger_code": bank_ledger_code,
-            "ar_ledger_code": ar_code,
-            "unallocated_liability_code": unalloc_code,
-            "customer_id": cust_id,
+            "receipt_id":receipt_id,
+            "journal_id":journal_id,
+            "received":str(amount),
+            "allocated":str(alloc),
+            "unallocated":str(remainder),
+
+            "invoice_id":int(invoice_id),
+            "invoice_number":inv.get("number"),
+            "invoice_total":str(total),
+            "invoice_status":(
+                "paid"
+                if new_remaining<=Decimal("0.00")
+                else "partial"
+                if alloc>Decimal("0.00")
+                else str(inv.get("status") or "")
+            ),
+
+            "paid_before":str(paid_so_far),
+            "paid_after":str(new_paid),
+            "remaining_after":str(new_remaining),
+
+            "bank_ledger_code":bank_ledger_code,
+            "ar_ledger_code":ar_code,
+            "unallocated_liability_code":unalloc_code,
+            "customer_id":cust_id,
+
+            "source":inv.get("source"),
+            "source_id":inv.get("source_id"),
+            "module_name":inv.get("module_name"),
+            "posting_mode":inv.get("posting_mode"),
+
+            "lessor_lease_id":inv.get("lessor_lease_id"),
+            "lessor_schedule_id":inv.get("lessor_schedule_id"),
+            "lease_classification":inv.get("lease_classification"),
+            "accounting_treatment":inv.get("accounting_treatment"),
         }
 
     def get_receipt_allocated_total(self, company_id: int, receipt_id: int):
@@ -86670,6 +88694,42 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     For {period_label}, depreciation on right-of-use assets amounted to R{_money(pnl.get("depreciation")):,.2f}, and interest expense on lease liabilities amounted to R{_money(pnl.get("interest")):,.2f}. The closing carrying amount of right-of-use assets was R{_money(rou.get("closing_rou_nbv_as_of")):,.2f}, and the closing lease liability was R{_money(liability.get("closing_liability_as_of")):,.2f}. Undiscounted future lease payments amounted to R{_money(maturity.get("undiscounted_net_total")):,.2f}.{exemption_text}
     """.strip()
 
+    def build_lessor_lease_policy_note_text(
+        self,
+        company_id: int,
+        date_from,
+        date_to,
+        *,
+        cur=None,
+    ) -> str:
+        d = self.get_ifrs16_lessor_disclosure_strict(
+            company_id,
+            from_date=date_from,
+            to_date=date_to,
+            as_of=date_to,
+            include_terminated=True,
+            cur=cur,
+        )
+
+        period_label = self._period_label(date_from, date_to)
+        pnl = d.get("pnl") or {}
+        finance = d.get("finance_lease") or {}
+        operating = d.get("operating_lease") or {}
+        operating_maturity = d.get("operating_maturity_analysis") or {}
+        finance_maturity = d.get("finance_maturity_analysis") or {}
+
+        return f"""
+    The company accounts for leases in which it acts as lessor in accordance with IFRS 16 Leases. Each lease is classified at inception as either an operating lease or a finance lease based on whether substantially all the risks and rewards incidental to ownership of the underlying asset are transferred to the lessee.
+
+    For operating leases, the underlying asset continues to be recognised by the company. Lease income is recognised on a straight-line basis over the lease term unless another systematic basis is more representative of the pattern in which benefit from the underlying asset is diminished. Initial direct costs incurred in negotiating and arranging an operating lease are accounted for consistently with the measurement of the underlying asset.
+
+    For finance leases, the underlying asset is derecognised and a receivable equal to the net investment in the lease is recognised. Finance income is recognised over the lease term using a pattern reflecting a constant periodic rate of return on the company's net investment in the lease. Lease payments are allocated between finance income and reduction of the net investment.
+
+    Management applies judgement when assessing lease classification, including the lease term relative to the economic life of the asset, the present value of lease payments relative to fair value, transfer of ownership, purchase options and whether the underlying asset is specialised.
+
+    For {period_label}, operating lease income amounted to R{_money(operating.get("straight_line_income")):,.2f} and finance income on finance leases amounted to R{_money(finance.get("finance_income")):,.2f}. The closing net investment in finance leases was R{_money(finance.get("closing_net_investment")):,.2f}, comprising a current portion of R{_money(finance.get("current_portion")):,.2f} and a non-current portion of R{_money(finance.get("noncurrent_portion")):,.2f}. Undiscounted future operating lease receipts amounted to R{_money(operating_maturity.get("undiscounted_net_total")):,.2f}, while undiscounted future finance lease receipts amounted to R{_money(finance_maturity.get("undiscounted_receipts_total")):,.2f}. Gains or losses arising from lease modifications and terminations amounted to R{_money(pnl.get("gain_loss_on_modifications")) + _money(pnl.get("gain_loss_on_terminations")):,.2f}.
+        """.strip()
+
     def build_ifrs16_rou_asset_class_table(self, disclosure: dict) -> list[dict]:
         rows = disclosure.get("rou_asset_table") or []
 
@@ -86786,6 +88846,47 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "raw": d,
         }    
 
+    def build_ifrs16_lessor_disclosure_package(
+        self,
+        company_id: int,
+        date_from,
+        date_to,
+        *,
+        cur=None,
+    ) -> dict:
+        d = self.get_ifrs16_lessor_disclosure_strict(
+            company_id,
+            from_date=date_from,
+            to_date=date_to,
+            as_of=date_to,
+            include_terminated=True,
+            cur=cur,
+        )
+
+        return {
+            "policy_note": self.build_lessor_lease_policy_note_text(
+                company_id,
+                date_from,
+                date_to,
+                cur=cur,
+            ),
+            "classification_summary": d.get("classifications") or {},
+            "lease_portfolio_table": d.get("leases") or [],
+            "lease_income_by_contract": d.get("lease_income_by_contract") or [],
+            "operating_lease": d.get("operating_lease") or {},
+            "finance_lease": d.get("finance_lease") or {},
+            "net_investment_reconciliation": d.get("net_investment_reconciliation") or {},
+            "operating_maturity_analysis": d.get("operating_maturity_analysis") or {},
+            "finance_maturity_analysis": d.get("finance_maturity_analysis") or {},
+            "billing": d.get("billing") or {},
+            "cashflow": d.get("cashflow") or {},
+            "modifications": d.get("modifications") or {},
+            "terminations": d.get("terminations") or {},
+            "checks": d.get("net_investment_check") or {},
+            "pnl": d.get("pnl") or {},
+            "raw": d,
+        }
+
     def build_revenue_policy_note_text(self, company_id: int, date_from, date_to, *, cur=None) -> str:
         schema = self.company_schema(company_id)
 
@@ -86880,8 +88981,22 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 lambda: self.build_ppe_policy_note_text(company_id, period_from, period_to, cur=cur),
             ),
             "ifrs16_lease_policy": (
-                "Leases",
-                lambda: self.build_lease_policy_note_text(company_id, period_from, period_to, cur=cur),
+                "Leases – lessee",
+                lambda: self.build_lease_policy_note_text(
+                    company_id,
+                    period_from,
+                    period_to,
+                    cur=cur,
+                ),
+            ),
+            "ifrs16_lessor_lease_policy": (
+                "Leases – lessor",
+                lambda: self.build_lessor_lease_policy_note_text(
+                    company_id,
+                    period_from,
+                    period_to,
+                    cur=cur,
+                ),
             ),
             "ifrs15_revenue_policy": (
                 "Revenue recognition",
@@ -95489,8 +97604,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         country = str(company.get("country") or "").strip().lower()
         is_sa = country in ("south africa", "rsa", "za")
 
-        self.ensure_company_payroll(company_id)
-
         # ── Earnings (same for all countries) ──
         earnings = [
             ("BASIC", "Basic Salary", True, True),
@@ -95608,7 +97721,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     def payroll_ensure_ready(self, company_id: int) -> dict:
         company_id = int(company_id)
 
-        self.ensure_company_payroll(company_id)
         self.payroll_seed_defaults(company_id)
 
         settings = self.payroll_settings_get(company_id)
@@ -96113,13 +98225,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             SELECT
                 e.*,
                 d.name AS department_name,
-                p.title AS position_title
+                p.title AS position_title,
+                contract.employment_start_date
             FROM {schema}.payroll_employees e
-            LEFT JOIN {schema}.payroll_departments d ON d.id = e.department_id
-            LEFT JOIN {schema}.payroll_positions p ON p.id = e.position_id
+            LEFT JOIN {schema}.payroll_departments d
+            ON d.id=e.department_id
+            LEFT JOIN {schema}.payroll_positions p
+            ON p.id=e.position_id
+            LEFT JOIN LATERAL(
+                SELECT MIN(c.effective_from)::date
+                    AS employment_start_date
+                FROM {schema}.payroll_employee_contracts c
+                WHERE c.company_id=e.company_id
+                AND c.employee_id=e.id
+            ) contract ON TRUE
             {where}
-            ORDER BY e.last_name, e.first_name, e.id;
-        """, tuple(params))
+            ORDER BY e.last_name,e.first_name,e.id;
+        """,tuple(params))
 
 
     def payroll_employee_get(self, company_id: int, employee_id: int):
@@ -96417,6 +98539,124 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             cal["payment_date"],
         ))
 
+    def payroll_defined_contribution_lines(
+        self,company_id:int,employee_id:int,period_start,period_end,
+        pensionable_pay
+    )->tuple[list,list]:
+        from decimal import Decimal
+
+        schema=self.company_schema(company_id)
+        base=_payroll_money(pensionable_pay)
+
+        rows=self.fetch_all(f"""
+            SELECT m.id AS member_id,m.plan_id,
+                   p.code,p.name,
+                   COALESCE(m.employee_percentage,
+                            p.employee_contribution_percentage,0)
+                       AS employee_percentage,
+                   COALESCE(m.employer_percentage,
+                            p.employer_contribution_percentage,0)
+                       AS employer_percentage,
+                   COALESCE(m.pensionable_percentage,100)
+                       AS pensionable_percentage,
+                   p.expense_account_code,
+                   p.payable_account_code
+            FROM {schema}.payroll_benefit_plan_members m
+            JOIN {schema}.payroll_benefit_plans p
+              ON p.id=m.plan_id AND p.company_id=m.company_id
+            WHERE m.company_id=%s
+              AND m.employee_id=%s
+              AND m.is_active=TRUE
+              AND p.is_active=TRUE
+              AND p.plan_type='defined_contribution'
+              AND m.effective_from<=%s
+              AND(m.effective_to IS NULL OR m.effective_to>=%s)
+              AND(p.effective_from IS NULL OR p.effective_from<=%s)
+              AND(p.effective_to IS NULL OR p.effective_to>=%s)
+            ORDER BY p.code;
+        """,(
+            int(company_id),int(employee_id),
+            period_end,period_start,period_end,period_start,
+        ))
+
+        deductions,contributions=[],[]
+
+        for x in rows:
+            if not x.get("payable_account_code"):
+                raise ValueError(
+                    f"Defined-contribution plan {x['code']} "
+                    "has no payable account"
+                )
+
+            pensionable=_payroll_money(
+                base*
+                _payroll_decimal(x.get("pensionable_percentage"))/
+                Decimal("100")
+            )
+
+            employee_amount=_payroll_money(
+                pensionable*
+                _payroll_decimal(x.get("employee_percentage"))/
+                Decimal("100")
+            )
+
+            employer_amount=_payroll_money(
+                pensionable*
+                _payroll_decimal(x.get("employer_percentage"))/
+                Decimal("100")
+            )
+
+            metadata={
+                "plan_id":int(x["plan_id"]),
+                "member_id":int(x["member_id"]),
+                "plan_code":x["code"],
+                "pensionable_pay":str(pensionable),
+                "employee_percentage":str(x["employee_percentage"]),
+                "employer_percentage":str(x["employer_percentage"]),
+            }
+
+            if employee_amount>0:
+                deductions.append({
+                    "item_type":"benefit_plan",
+                    "item_id":int(x["plan_id"]),
+                    "code":f"DC-EMP-{x['code']}",
+                    "name":f"{x['name']} employee contribution",
+                    "amount":employee_amount,
+                    "percentage":x["employee_percentage"],
+                    "taxable":False,
+                    "pensionable":False,
+                    "source_type":"defined_contribution_plan",
+                    "source_id":int(x["member_id"]),
+                    "gl_account_code":x["payable_account_code"],
+                    "offset_account_code":None,
+                    "metadata":metadata,
+                })
+
+            if employer_amount>0:
+                if not x.get("expense_account_code"):
+                    raise ValueError(
+                        f"Defined-contribution plan {x['code']} "
+                        "has no expense account"
+                    )
+
+                contributions.append({
+                    "item_type":"benefit_plan",
+                    "item_id":int(x["plan_id"]),
+                    "code":f"DC-ER-{x['code']}",
+                    "name":f"{x['name']} employer contribution",
+                    "amount":employer_amount,
+                    "percentage":x["employer_percentage"],
+                    "taxable":False,
+                    "pensionable":False,
+                    "source_type":"defined_contribution_plan",
+                    "source_id":int(x["member_id"]),
+                    "gl_account_code":x["payable_account_code"],
+                    "offset_account_code":x["expense_account_code"],
+                    "metadata":metadata,
+                })
+
+        return deductions,contributions
+    
     def payroll_run_calculate(
         self,
         company_id: int,
@@ -96682,6 +98922,26 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     tax_result["paye"]
                 )
 
+            pensionable_pay=sum(
+                (
+                    _payroll_decimal(x.get("amount"))
+                    for x in earning_lines
+                    if x.get("pensionable")
+                ),
+                Decimal("0"),
+            )
+
+            dc_deductions,dc_contributions=(
+                self.payroll_defined_contribution_lines(
+                    company_id,employee_id,
+                    run["period_start"],run["period_end"],
+                    pensionable_pay,
+                )
+            )
+
+            deduction_lines.extend(dc_deductions)
+            contribution_lines.extend(dc_contributions)
+
             employee_deductions = sum(
                 (
                     _payroll_decimal(line["amount"])
@@ -96711,43 +98971,31 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
             run_employee = self.fetch_one(f"""
-                INSERT INTO {schema}.payroll_run_employees (
-                    company_id,
-                    payroll_run_id,
-                    employee_id,
-                    pay_setup_id,
-                    gross_pay,
-                    taxable_income,
-                    total_deductions,
-                    paye,
-                    employer_contributions,
-                    employer_cost,
-                    net_pay,
-                    tax_authority_code,
-                    tax_year_label,
-                    calculation_status
-                )
-                VALUES (
-                    %s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,'calculated'
-                )
-                RETURNING *;
-            """, (
-                company_id,
-                payroll_run_id,
-                employee_id,
-                setup["id"],
-                _payroll_money(gross),
-                _payroll_money(taxable_income),
-                _payroll_money(total_deductions),
-                _payroll_money(paye),
-                _payroll_money(employer_contributions),
-                _payroll_money(employer_cost),
-                _payroll_money(net_pay),
-                tax_result["authority_code"],
-                tax_result["tax_year_label"],
-            ))
+                    INSERT INTO {schema}.payroll_run_lines(
+                        company_id,payroll_run_id,run_employee_id,
+                        employee_id,line_type,item_type,item_id,code,
+                        description,quantity,rate,percentage,amount,
+                        taxable,pensionable,source_type,source_id,
+                        gl_account_code,offset_account_code,metadata
+                    ) VALUES(
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb
+                    )
+                    RETURNING *;
+                """,(
+                    company_id,payroll_run_id,run_employee["id"],
+                    employee_id,line_type,line.get("item_type"),
+                    line.get("item_id"),line.get("code"),
+                    line.get("name") or line.get("description"),
+                    line.get("quantity"),line.get("rate"),
+                    line.get("percentage"),amount,
+                    bool(line.get("taxable")),
+                    bool(line.get("pensionable")),
+                    line.get("source_type"),line.get("source_id"),
+                    line.get("gl_account_code"),
+                    line.get("offset_account_code"),
+                    json.dumps(line.get("metadata") or {}),
+                ))
 
             all_lines = (
                 [
@@ -96879,8 +99127,161 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         result["skipped_employees"] = skipped
 
+        result["defined_contribution_run"]=(
+            self.payroll_sync_defined_contribution_run(
+                company_id,payroll_run_id
+            )
+        )
         return result
 
+    def payroll_sync_defined_contribution_run(
+        self,company_id:int,payroll_run_id:int,user_id=None
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT * FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s;
+        """,(int(company_id),int(payroll_run_id)))
+
+        if not run: raise ValueError("Payroll run not found")
+
+        lines=self.fetch_all(f"""
+            SELECT l.*,e.employee_no
+            FROM {schema}.payroll_run_lines l
+            JOIN {schema}.payroll_employees e
+              ON e.id=l.employee_id AND e.company_id=l.company_id
+            WHERE l.company_id=%s
+              AND l.payroll_run_id=%s
+              AND l.source_type='defined_contribution_plan'
+            ORDER BY l.employee_id,l.source_id,l.line_type;
+        """,(int(company_id),int(payroll_run_id)))
+
+        if not lines:
+            self.execute_sql(f"""
+                DELETE FROM {schema}.payroll_defined_contribution_runs
+                WHERE company_id=%s AND payroll_run_id=%s
+                  AND status<>'posted';
+            """,(int(company_id),int(payroll_run_id)))
+            return None
+
+        dc=self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_defined_contribution_runs(
+                company_id,payroll_run_id,run_no,
+                period_start,period_end,reporting_date,
+                status,created_by_user_id
+            ) VALUES(
+                %s,%s,'DC-'||%s,%s,%s,%s,'calculated',%s
+            )
+            ON CONFLICT(company_id,payroll_run_id)
+            WHERE payroll_run_id IS NOT NULL
+            DO UPDATE SET
+                period_start=EXCLUDED.period_start,
+                period_end=EXCLUDED.period_end,
+                reporting_date=EXCLUDED.reporting_date,
+                status=CASE
+                    WHEN {schema}.payroll_defined_contribution_runs.status='posted'
+                    THEN 'posted'
+                    ELSE 'calculated'
+                END
+            RETURNING *;
+        """,(
+            int(company_id),int(payroll_run_id),run["run_no"],
+            run["period_start"],run["period_end"],
+            run["payment_date"],user_id,
+        ))
+
+        self.execute_sql(f"""
+            DELETE FROM {schema}.payroll_defined_contribution_run_lines
+            WHERE company_id=%s AND run_id=%s;
+        """,(int(company_id),int(dc["id"])))
+
+        grouped={}
+
+        for line in lines:
+            meta=line.get("metadata") or {}
+            if isinstance(meta,str):
+                meta=json.loads(meta or "{}")
+
+            member_id=int(line.get("source_id") or 0)
+            key=(member_id,int(line["employee_id"]))
+            item=grouped.setdefault(key,{
+                "member_id":member_id,
+                "employee_id":int(line["employee_id"]),
+                "plan_id":int(meta.get("plan_id") or line.get("item_id") or 0),
+                "pensionable":_payroll_money(meta.get("pensionable_pay")),
+                "employee_percentage":meta.get("employee_percentage") or 0,
+                "employer_percentage":meta.get("employer_percentage") or 0,
+                "employee":Decimal("0"),
+                "employer":Decimal("0"),
+                "deduction_line_id":None,
+                "contribution_line_id":None,
+                "expense_account_code":line.get("offset_account_code"),
+                "payable_account_code":line.get("gl_account_code"),
+            })
+
+            if line["line_type"]=="deduction":
+                item["employee"]+=_payroll_decimal(line["amount"])
+                item["deduction_line_id"]=line["id"]
+
+            if line["line_type"]=="employer_contribution":
+                item["employer"]+=_payroll_decimal(line["amount"])
+                item["contribution_line_id"]=line["id"]
+                item["expense_account_code"]=line.get("offset_account_code")
+
+        totals={
+            "pensionable":Decimal("0"),
+            "employee":Decimal("0"),
+            "employer":Decimal("0"),
+        }
+
+        for x in grouped.values():
+            total=_payroll_money(x["employee"]+x["employer"])
+
+            self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_defined_contribution_run_lines(
+                    company_id,run_id,plan_id,member_id,employee_id,
+                    pensionable_remuneration,employee_percentage,
+                    employer_percentage,employee_contribution,
+                    employer_contribution,total_contribution,
+                    expense_account_code,payable_account_code,
+                    payroll_deduction_line_id,
+                    payroll_contribution_line_id,metadata
+                ) VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s::jsonb
+                );
+            """,(
+                int(company_id),int(dc["id"]),x["plan_id"],
+                x["member_id"],x["employee_id"],x["pensionable"],
+                x["employee_percentage"],x["employer_percentage"],
+                _payroll_money(x["employee"]),
+                _payroll_money(x["employer"]),total,
+                x["expense_account_code"],x["payable_account_code"],
+                x["deduction_line_id"],x["contribution_line_id"],
+                json.dumps({"payroll_run_id":int(payroll_run_id)}),
+            ))
+
+            totals["pensionable"]+=x["pensionable"]
+            totals["employee"]+=x["employee"]
+            totals["employer"]+=x["employer"]
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.payroll_defined_contribution_runs SET
+                total_pensionable_remuneration=%s,
+                total_employee_contribution=%s,
+                total_employer_contribution=%s,
+                total_payable=%s
+            WHERE company_id=%s AND id=%s
+            RETURNING *;
+        """,(
+            _payroll_money(totals["pensionable"]),
+            _payroll_money(totals["employee"]),
+            _payroll_money(totals["employer"]),
+            _payroll_money(totals["employee"]+totals["employer"]),
+            int(company_id),int(dc["id"]),
+        ))
+    
     def payroll_run_get(
         self,
         company_id: int,
@@ -97025,6 +99426,18 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             RETURNING *;
         """, (int(journal_id), int(company_id), int(payroll_run_id)))
 
+        self.execute_sql(f"""
+            UPDATE {schema}.payroll_defined_contribution_runs
+            SET status='posted',
+                posted_journal_id=%s,
+                posted_at=NOW()
+            WHERE company_id=%s
+              AND payroll_run_id=%s
+              AND status IN('calculated','approved');
+        """,(
+            int(journal_id),int(company_id),int(payroll_run_id),
+        ))
+        
         return {
             "run": out,
             "journal_id": int(journal_id),
@@ -97087,17 +99500,19 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if x.get("line_type") == "tax"
         ), 2)
 
-        deduction_total = round(sum(
+        deduction_total=round(sum(
             float(x.get("amount") or 0)
-            for x in run.get("lines", [])
-            if x.get("line_type") == "deduction"
-        ), 2)
+            for x in run.get("lines",[])
+            if x.get("line_type")=="deduction"
+            and x.get("source_type")!="defined_contribution_plan"
+        ),2)
 
-        employer_total = round(sum(
+        employer_total=round(sum(
             float(x.get("amount") or 0)
-            for x in run.get("lines", [])
-            if x.get("line_type") == "employer_contribution"
-        ), 2)
+            for x in run.get("lines",[])
+            if x.get("line_type")=="employer_contribution"
+            and x.get("source_type")!="defined_contribution_plan"
+        ),2)
 
         lines = []
 
@@ -97166,6 +99581,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             credit=net,
             bucket="net_pay"
         )
+
+        plan_groups={}
+
+        for x in run.get("lines",[]):
+            if x.get("source_type")!="defined_contribution_plan":
+                continue
+
+            payable=x.get("gl_account_code")
+            expense=x.get("offset_account_code")
+            key=(x.get("line_type"),expense,payable)
+            plan_groups[key]=round(
+                plan_groups.get(key,0)+float(x.get("amount") or 0),2
+            )
+
+        for (line_type,expense,payable),amount in plan_groups.items():
+            if not payable:
+                missing.append("defined_contribution_payable_account")
+                continue
+
+            if line_type=="deduction":
+                add_line(
+                    payable,
+                    "Employee defined-contribution deductions payable",
+                    credit=amount,
+                    bucket="defined_contribution_employee",
+                )
+
+            elif line_type=="employer_contribution":
+                if not expense:
+                    missing.append(
+                        "defined_contribution_expense_account"
+                    )
+                    continue
+
+                add_line(
+                    expense,
+                    "Employer defined-contribution expense",
+                    debit=amount,
+                    bucket="defined_contribution_employer_expense",
+                )
+
+                add_line(
+                    payable,
+                    "Employer defined-contribution payable",
+                    credit=amount,
+                    bucket="defined_contribution_employer_payable",
+                )
 
         debits = round(sum(float(x.get("debit") or 0) for x in lines), 2)
         credits = round(sum(float(x.get("credit") or 0) for x in lines), 2)
@@ -99747,6 +102209,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 reversal_pattern,
                 expected_reversal_date,
                 is_manual,
+                scan_status,
                 calculation_json
             )
             VALUES (
@@ -99754,7 +102217,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
-                %s, %s, %s, %s::jsonb
+                %s, %s, %s, %s, %s::jsonb
             )
             RETURNING *;
         """, (
@@ -99784,6 +102247,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payload.get("reversal_pattern"),
             payload.get("expected_reversal_date"),
             bool(payload.get("is_manual", True)),
+            "resolved",
             json_dumps(
                 _json_dict(payload.get("calculation_json"))
             ),
@@ -99985,54 +102449,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ).quantize(Decimal("0.01"))
 
         calculation_summary = {
-            "recognized_dtl": str(
-                recognized_dtl.quantize(
-                    Decimal("0.01")
-                )
-            ),
+            "recognized_dta": str(recognized_dta.quantize(Decimal("0.01"))),
+            "recognized_dtl": str(recognized_dtl.quantize(Decimal("0.01"))),
+            "unrecognized_dta": str(unrecognized_dta.quantize(Decimal("0.01"))),
             "unresolved_dtl": str(
-                Decimal(str(
-                    totals.get("unresolved_dtl") or 0
-                )).quantize(Decimal("0.01"))
+                Decimal(str(totals.get("unresolved_dtl") or 0))
+                .quantize(Decimal("0.01"))
             ),
             "requires_review_count": int(
                 totals.get("requires_review_count") or 0
             ),
             "reconciliation_error_count": int(
-                totals.get(
-                    "reconciliation_error_count"
-                ) or 0
+                totals.get("reconciliation_error_count") or 0
             ),
         }
 
         self.execute_sql(f"""
             UPDATE {schema}.deferred_tax_runs
-            SET
-                total_taxable_difference = %s,
-                total_deductible_difference = %s,
-                gross_dta = %s,
-                gross_dtl = %s,
-                recognized_dta = %s,
-                unrecognized_dta = %s,
-                net_deferred_tax = %s,
-                calculation_json = COALESCE(
+            SET total_taxable_difference=%s,
+                total_deductible_difference=%s,
+                gross_dta=%s,
+                gross_dtl=%s,
+                recognized_dta=%s,
+                recognized_dtl=%s,
+                unrecognized_dta=%s,
+                net_deferred_tax=%s,
+                calculation_json=COALESCE(
                     calculation_json,
                     '{{}}'::jsonb
                 ) || %s::jsonb
-            WHERE company_id = %s
-            AND id = %s;
+            WHERE company_id=%s AND id=%s
         """, (
             total_taxable_difference,
             total_deductible_difference,
             gross_dta,
             gross_dtl,
             recognized_dta,
+            recognized_dtl,
             unrecognized_dta,
             net_deferred_tax,
-            json.dumps(
-                calculation_summary,
-                default=str,
-            ),
+            json.dumps(calculation_summary, default=str),
             int(company_id),
             int(run_id),
         ))
@@ -100101,33 +102557,72 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
-        self.deferred_tax_refresh_totals(
-            company_id,
-            run_id,
-        )
+        self.deferred_tax_refresh_totals(company_id, run_id)
 
         run = self.fetch_one(f"""
-            UPDATE {schema}.deferred_tax_runs
-            SET
-                status = 'reviewed',
-                reviewed_by_user_id = %s,
-                reviewed_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
-            AND status = 'draft'
-            RETURNING *;
-        """, (
-            int(user_id),
-            int(company_id),
-            int(run_id),
-        ))
+            SELECT id, status
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(run_id)))
 
         if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "draft":
             raise ValueError(
                 "Only a draft deferred-tax run can be reviewed."
             )
 
-        return run
+        checks = self.fetch_one(f"""
+            SELECT
+                COUNT(*)::int AS line_count,
+                COUNT(*) FILTER (
+                    WHERE scan_status='requires_review'
+                )::int AS review_count,
+                COUNT(*) FILTER (
+                    WHERE scan_status='reconciliation_error'
+                )::int AS reconciliation_error_count
+            FROM {schema}.deferred_tax_run_lines
+            WHERE company_id=%s AND run_id=%s;
+        """, (int(company_id), int(run_id))) or {}
+
+        line_count = int(checks.get("line_count") or 0)
+        review_count = int(checks.get("review_count") or 0)
+        error_count = int(
+            checks.get("reconciliation_error_count") or 0
+        )
+
+        if line_count == 0:
+            raise ValueError(
+                "The deferred-tax run has no temporary-difference lines. "
+                "Scan the balance sheet or add a manual line first."
+            )
+
+        if review_count:
+            raise ValueError(
+                f"{review_count} deferred-tax line(s) still require review."
+            )
+
+        if error_count:
+            raise ValueError(
+                f"{error_count} deferred-tax line(s) have reconciliation errors."
+            )
+
+        return self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET status='reviewed',
+                reviewed_by_user_id=%s,
+                reviewed_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            AND status='draft'
+            RETURNING *;
+        """, (
+            int(user_id) if user_id else None,
+            int(company_id),
+            int(run_id),
+        ))
 
     def deferred_tax_approve_run(
         self,
@@ -100137,28 +102632,67 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     ) -> Dict[str, Any]:
         schema = self.company_schema(company_id)
 
+        self.deferred_tax_refresh_totals(company_id, run_id)
+
         run = self.fetch_one(f"""
-            UPDATE {schema}.deferred_tax_runs
-            SET
-                status = 'approved',
-                approved_by_user_id = %s,
-                approved_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
-            AND status = 'reviewed'
-            RETURNING *;
-        """, (
-            int(user_id),
-            int(company_id),
-            int(run_id),
-        ))
+            SELECT id, status
+            FROM {schema}.deferred_tax_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """, (int(company_id), int(run_id)))
 
         if not run:
+            raise ValueError("Deferred-tax run not found.")
+
+        if run["status"] != "reviewed":
             raise ValueError(
                 "Only a reviewed deferred-tax run can be approved."
             )
 
-        return run
+        checks = self.fetch_one(f"""
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE scan_status='requires_review'
+                )::int AS review_count,
+                COUNT(*) FILTER (
+                    WHERE scan_status='reconciliation_error'
+                )::int AS reconciliation_error_count
+            FROM {schema}.deferred_tax_run_lines
+            WHERE company_id=%s AND run_id=%s;
+        """, (int(company_id), int(run_id))) or {}
+
+        review_count = int(checks.get("review_count") or 0)
+        error_count = int(
+            checks.get("reconciliation_error_count") or 0
+        )
+
+        if review_count or error_count:
+            raise ValueError(
+                "The deferred-tax run contains unresolved lines. "
+                "Return it to draft and resolve them before approval."
+            )
+
+        approved = self.fetch_one(f"""
+            UPDATE {schema}.deferred_tax_runs
+            SET status='approved',
+                approved_by_user_id=%s,
+                approved_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            AND status='reviewed'
+            RETURNING *;
+        """, (
+            int(user_id) if user_id else None,
+            int(company_id),
+            int(run_id),
+        ))
+
+        if not approved:
+            raise ValueError(
+                "The deferred-tax run could not be approved."
+            )
+
+        return approved
 
     def deferred_tax_void_run(
         self,

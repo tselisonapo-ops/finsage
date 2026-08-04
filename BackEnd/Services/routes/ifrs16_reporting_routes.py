@@ -13,7 +13,10 @@ class IFRS16DisclosureRequestProxy:
         self.args = original_request.args.copy()
         self.args["preset"] = preset
 
-@bp_ifrs16.route("/api/companies/<int:company_id>/ifrs16/disclosure", methods=["GET", "OPTIONS"])
+@bp_ifrs16.route(
+    "/api/companies/<int:company_id>/ifrs16/disclosure",
+    methods=["GET", "OPTIONS"],
+)
 @require_auth
 def ifrs16_disclosure(company_id: int):
     if request.method == "OPTIONS":
@@ -26,10 +29,24 @@ def ifrs16_disclosure(company_id: int):
         try:
             return datetime.strptime(raw, "%Y-%m-%d").date()
         except Exception:
-            raise ValueError(f"Invalid {param_name} date. Use YYYY-MM-DD.")
+            raise ValueError(
+                f"Invalid {param_name} date. Use YYYY-MM-DD."
+            )
 
     try:
-        preset_raw = (request.args.get("preset") or "").strip().lower()
+        perspective = (
+            request.args.get("perspective") or "lessee"
+        ).strip().lower()
+
+        current_app.logger.warning(
+            "[IFRS16 ROUTE V2] company=%s perspective=%s args=%s",
+            company_id,
+            perspective,
+            dict(request.args),
+        )
+        preset_raw = (
+            request.args.get("preset") or ""
+        ).strip().lower()
 
         preset_map = {
             "previous financial year": "prev_year",
@@ -50,8 +67,15 @@ def ifrs16_disclosure(company_id: int):
             "prev_quarter": "prev_quarter",
         }
 
-        preset = preset_map.get(preset_raw, preset_raw or "this_year")
-        req_for_period = IFRS16DisclosureRequestProxy(request, preset)
+        preset = preset_map.get(
+            preset_raw,
+            preset_raw or "this_year",
+        )
+
+        req_for_period = IFRS16DisclosureRequestProxy(
+            request,
+            preset,
+        )
 
         from_d, to_d, meta = resolve_company_period(
             db_service,
@@ -61,15 +85,27 @@ def ifrs16_disclosure(company_id: int):
         )
 
         if not from_d or not to_d:
-            return jsonify({"ok": False, "error": "Unable to resolve period."}), 400
+            return jsonify({
+                "ok": False,
+                "error": "Unable to resolve period.",
+            }), 400
 
-        as_of = parse_date("as_of", default=to_d)
+        as_of = parse_date(
+            "as_of",
+            default=to_d,
+        )
 
         if from_d > to_d:
-            return jsonify({"ok": False, "error": "from must be <= to"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "from must be <= to",
+            }), 400
 
         if as_of < from_d:
-            return jsonify({"ok": False, "error": "as_of must be >= from"}), 400
+            return jsonify({
+                "ok": False,
+                "error": "as_of must be >= from",
+            }), 400
 
         include_terminated = (
             (request.args.get("include_terminated") or "1")
@@ -78,28 +114,72 @@ def ifrs16_disclosure(company_id: int):
             in ("1", "true", "yes", "y")
         )
 
+        perspective = (
+            request.args.get("perspective") or "lessee"
+        ).strip().lower()
+
+        if perspective not in ("lessee", "lessor"):
+            raise ValueError(
+                "perspective must be 'lessee' or 'lessor'"
+            )
+
         current_app.logger.warning({
             "ifrs16_disclosure_period": {
                 "preset_in": preset_raw,
                 "preset_used": preset,
+                "perspective": perspective,
                 "from": from_d.isoformat(),
                 "to": to_d.isoformat(),
                 "as_of": as_of.isoformat(),
             }
         })
 
-        out = db_service.get_ifrs16_disclosure_strict(
-            int(company_id),
-            from_date=from_d,
-            to_date=to_d,
-            as_of=as_of,
-            include_terminated=include_terminated,
-        )
+        if perspective == "lessor":
+            current_app.logger.warning(
+                "[IFRS16 ROUTE V2] calling LESSOR disclosure"
+            )
 
-        return jsonify({"ok": True, "meta": meta, **out}), 200
+            out = db_service.get_ifrs16_lessor_disclosure_strict(
+                int(company_id),
+                from_date=from_d,
+                to_date=to_d,
+                as_of=as_of,
+                include_terminated=include_terminated,
+            )
+        else:
+            current_app.logger.warning(
+                "[IFRS16 ROUTE V2] calling LESSEE disclosure"
+            )
+
+            out = db_service.get_ifrs16_disclosure_strict(
+                int(company_id),
+                from_date=from_d,
+                to_date=to_d,
+                as_of=as_of,
+                include_terminated=include_terminated,
+            )
+
+        return jsonify({
+            "ok": True,
+            "route_version": "ifrs16_disclosure_v2",
+            "meta": {
+                **(meta or {}),
+                "perspective": perspective,
+            },
+            **out,
+        }), 200
 
     except ValueError as ve:
-        return jsonify({"ok": False, "error": str(ve)}), 400
+        return jsonify({
+            "ok": False,
+            "error": str(ve),
+        }), 400
+
     except Exception:
-        current_app.logger.exception("ifrs16 disclosure failed")
-        return jsonify({"ok": False, "error": "Internal server error"}), 500
+        current_app.logger.exception(
+            "ifrs16 disclosure failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": "Internal server error",
+        }), 500

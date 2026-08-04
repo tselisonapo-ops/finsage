@@ -1260,6 +1260,9 @@ const ENDPOINTS = {
     postTermination: (companyId, termId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/leases/terminations/${encodeURIComponent(termId)}/post`,
 
+    terminationPlanEmployee:(companyId,planId,employeeLineId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/termination-plans/${encodeURIComponent(planId)}/employees/${encodeURIComponent(employeeLineId)}`,
+
     // GET /api/companies/<cid>/leases/<lease_id>/schedule
     listSchedule: (
       companyId,
@@ -1334,6 +1337,9 @@ const ENDPOINTS = {
     subsequent: (cid, leaseId, asAt = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/subsequent-measurement${asAt ? `?as_at=${encodeURIComponent(String(asAt).slice(0, 10))}` : ""}`,
 
+    recalculate: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/recalculate`,
+
     journalPreview: (cid, leaseId, scheduleId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/accounting-schedule/${encodeURIComponent(scheduleId)}/journal-preview`,
 
@@ -1346,12 +1352,6 @@ const ENDPOINTS = {
     invoicePreview: (cid, leaseId, scheduleId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule/${encodeURIComponent(scheduleId)}/invoice-preview`,
 
-    createInvoice: (cid, leaseId, scheduleId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule/${encodeURIComponent(scheduleId)}/invoice`,
-
-    createInvoicesThrough: (cid, leaseId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/invoices/create-through`,
-
     reconciliation: (cid, leaseId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/reconciliation`,
 
@@ -1360,45 +1360,61 @@ const ENDPOINTS = {
 
     recalculate: (cid, leaseId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/recalculate`,
-  
-    correction: (cid, leaseId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/corrections`,
+
+    accountingSchedule: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/accounting-schedule`,
 
     scheduleVersions: (cid, leaseId, versionNo = "") =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/schedule-versions${versionNo !== "" ? `?version_no=${encodeURIComponent(versionNo)}` : ""}`,
 
-    history: (cid, leaseId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/history`,
+    amortisationSchedule: (cid, id, asAt = "") =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(id)}/amortisation-schedule${asAt ? `?as_at=${encodeURIComponent(asAt)}` : ""}`,
 
     billingWorkspace: (cid, leaseId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/billing-workspace`,
+
+    history: (cid, leaseId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/history`,
 
     modifications: (cid, leaseId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/modifications`,
 
     terminations: (cid, leaseId) =>
-      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/terminations`,
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/lessor-leases/${encodeURIComponent(leaseId)}/termination`,
   },
 
   ifrs16: {
     disclosure: (
       companyId,
-      { from = "", to = "", as_of = "", preset = "", include_terminated = "1" } = {}
+      {
+        from = "",
+        to = "",
+        as_of = "",
+        preset = "",
+        include_terminated = "1",
+        perspective = "lessee",
+      } = {}
     ) => {
       const params = new URLSearchParams();
 
       if (from) params.append("from", String(from).slice(0, 10));
       if (to) params.append("to", String(to).slice(0, 10));
 
-      // ✅ add this
       if (!from && !to && preset) {
         params.append("preset", String(preset));
       }
 
-      if (as_of) params.append("as_of", String(as_of).slice(0, 10));
+      if (as_of) {
+        params.append("as_of", String(as_of).slice(0, 10));
+      }
 
       if (include_terminated !== "" && include_terminated != null) {
         params.append("include_terminated", String(include_terminated));
+      }
+
+      // NEW
+      if (perspective) {
+        params.append("perspective", String(perspective));
       }
 
       const qs = params.toString();
@@ -1613,6 +1629,9 @@ const ENDPOINTS = {
 
     leave: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/leave`,
+
+    leaveTypes:companyId=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/leave-types`,
 
     loans: (companyId, employeeId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employees/${encodeURIComponent(employeeId)}/loans`,
@@ -2073,6 +2092,30 @@ const ENDPOINTS = {
 
     employeeBenefitDiagnostics: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/diagnostics`,
+
+    calculateDefinedContribution:(companyId,runId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs/${encodeURIComponent(runId)}/calculate`,
+
+    reverseDefinedContribution:(companyId,runId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/defined-contribution-runs/${encodeURIComponent(runId)}/reverse`,
+
+    validateActuarialValuation:(companyId,valuationId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/validate`,
+
+    approveActuarialValuation:(companyId,valuationId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/actuarial-valuations/${encodeURIComponent(valuationId)}/approve`,
+    
+    longTermBenefitAssignments:(companyId,schemeId="")=>{
+      const q=new URLSearchParams();
+      if(schemeId)q.set("scheme_id",schemeId);
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-assignments${q.toString()?`?${q}`:""}`;
+    },
+
+    longTermBenefitAssignment:(companyId,assignmentId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-assignments/${encodeURIComponent(assignmentId)}`,
+
+    reverseLongTermBenefits:(companyId,runId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/reverse`,
 
     taxTables: {
       regimes: (companyId) =>
@@ -2840,6 +2883,15 @@ const ENDPOINTS = {
 
       iaNotePayload: (companyId, params = {}) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ppe/ia-note-payload?${new URLSearchParams(params).toString()}`,
+
+      ppeDisclosureExport: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/disclosures/ppe/export`,
+
+      leaseDisclosureExport: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/disclosures/leases/export`,
+
+      revenueDisclosureExport: (companyId) =>
+        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/disclosures/revenue/export`,
     },  
   },
   
@@ -3380,14 +3432,19 @@ const ENDPOINTS = {
     revenueRecognitionEntriesExport: (cid) => `/api/companies/${cid}/reports/revenue-recognition-entries/export`,
 
     ppeDisclosureExport: (cid) =>
-      `/api/companies/${cid}/disclosures/ppe/export`,
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/disclosures/ppe/export`,
 
     leaseDisclosureExport: (cid) =>
-      `/api/companies/${cid}/disclosures/leases/export`,
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/disclosures/leases/export`,
 
     revenueDisclosureExport: (cid) =>
-      `/api/companies/${cid}/disclosures/revenue/export`,
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/disclosures/revenue/export`,
+    
+    ipDisclosureExport: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/disclosures/ip/export`,
 
+    iaDisclosureExport: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/disclosures/ia/export`,    
     // ---------------------------------
     // Editable financial statement notes
     // GET = load note
@@ -3398,6 +3455,9 @@ const ENDPOINTS = {
 
     fsNoteReset: (cid, noteKey) =>
       `/api/companies/${cid}/fs-notes/${encodeURIComponent(noteKey)}/reset`,
+  
+    exportToken: (cid) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/reports/export-token`,  
   },
 
   // --- Dashboard / snapshots ---
@@ -5335,54 +5395,104 @@ FS.modePrompt.open = function openModePrompt({ title, message, bullets, enableLa
 };
 
 async function downloadUrl(url, reportKey = null) {
-  let finalUrl = url;
-
   const cid =
     typeof getActiveCompanyId === "function"
       ? getActiveCompanyId()
       : window.CURRENT_COMPANY_ID;
 
   const key = reportKey || inferReportKeyFromExportUrl(url);
+  const signed = /[?&]t=/.test(String(url || ""));
 
-  const alreadySigned =
-    String(url || "").includes("?t=") ||
-    String(url || "").includes("&t=");
+  let finalUrl = url;
 
-  if (key && cid && !alreadySigned) {
+  if (key && cid && !signed) {
     finalUrl = await getReportExportUrl(cid, key, url);
   }
 
-  console.log("[downloadUrl:final]", { finalUrl });
+  const downloadUrl = toApiUrl(finalUrl);
 
-  // TEMP DEBUG: expose backend 400 message
-  const debugUrl = toApiUrl(finalUrl);
-  const res = await fetch(debugUrl, { method: "GET" });
+  console.log("[downloadUrl:final]", {
+    reportKey: key,
+    finalUrl: downloadUrl,
+  });
 
-  if (!res.ok) {
-    const txt = await res.text();
+  const res = await fetch(downloadUrl, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  const contentType = String(
+    res.headers.get("content-type") || ""
+  ).toLowerCase();
+
+  const isFile =
+    contentType.includes("application/pdf") ||
+    contentType.includes("spreadsheet") ||
+    contentType.includes("application/vnd.ms-excel") ||
+    contentType.includes("text/csv") ||
+    contentType.includes("application/octet-stream");
+
+  if (!res.ok && !isFile) {
+    const text = await res.text();
+
     console.error("[EXPORT FAILED]", {
       status: res.status,
-      url: debugUrl,
-      body: txt,
+      url: downloadUrl,
+      contentType,
+      body: text,
     });
-    alert(`Export failed ${res.status}: ${txt.slice(0, 500)}`);
-    return;
+
+    let message = text;
+
+    try {
+      const parsed = JSON.parse(text);
+      message = parsed.error || parsed.message || text;
+    } catch (_) {}
+
+    throw new Error(
+      `Export failed (${res.status}): ${String(message).slice(0, 500)}`
+    );
   }
 
   const blob = await res.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
 
-  const cd = res.headers.get("content-disposition") || "";
-  const match = cd.match(/filename="?([^"]+)"?/i);
-  a.download = match?.[1] || "export.csv";
+  const disposition =
+    res.headers.get("content-disposition") || "";
+
+  const utf8Match = disposition.match(
+    /filename\*=UTF-8''([^;]+)/i
+  );
+
+  const normalMatch = disposition.match(
+    /filename="?([^";]+)"?/i
+  );
+
+  const filename = decodeURIComponent(
+    utf8Match?.[1] ||
+    normalMatch?.[1] ||
+    getDefaultExportFilename(contentType)
+  );
+
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.style.display = "none";
 
   document.body.appendChild(a);
   a.click();
   a.remove();
 
-  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
 }
+
+function getDefaultExportFilename(contentType = "") {
+  if (contentType.includes("pdf")) return "export.pdf";
+  if (contentType.includes("spreadsheet")) return "export.xlsx";
+  if (contentType.includes("csv")) return "export.csv";
+  return "export.bin";
+}
+
 window.downloadUrl = downloadUrl;
 
 async function downloadVatFiling() {
@@ -6701,6 +6811,7 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
             { name: "Corporate Structure", screen: "company-structure", icon: "🧬", permission: "can_manage_company_setup" },
             { name: "Reporting Periods", screen: "company-reporting", icon: "🗓️", permission: "can_manage_company_setup" },
             { name: "Management Packs", screen: "company-mgmt-packs", icon: "🎁", minRole: "manager", permission: "can_manage_company_setup" },
+            { name: "Data Migration", screen: "data-migration", icon: "🔁", minRole: "assistant", permissionAny: [ "can_manage_company_setup", "can_prepare_financials", "can_post_journals"],},
           ],
         },
 
@@ -8428,6 +8539,16 @@ const SCREEN_POLICY = {
       "can_view_reports"
     ],
   },
+
+  "data-migration": {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_manage_company_setup",
+      "can_prepare_financials",
+      "can_post_journals"
+    ],
+  },
 };
 
 
@@ -9819,6 +9940,10 @@ async function switchScreen(name) {
 
   const isDeferredTaxWorkflow = 
     name === "deferred-tax";
+
+  const isDataMigrationWorkflow =
+    name === "data-migration";    
+
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -9876,6 +10001,7 @@ async function switchScreen(name) {
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
   else if (isDeferredTaxWorkflow) base = "deferred-tax";
+  else if (isDataMigrationWorkflow) base = "data-migration";
   else base = name.split("-")[0];
 
   // Remember current screen
@@ -9902,6 +10028,16 @@ async function switchScreen(name) {
     getControlsMount(); // clears mount safely
   }
 
+  if (base === "data-migration") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[DataMigration] company load failed:", e);
+    }
+
+    window.bindDataMigrationScreen?.();
+    return;
+  }
 
   // Customers + Customer Approvals binder
   if (base === "customers" || base === "cust-approvals" || base === "cust") {
@@ -10439,7 +10575,7 @@ async function switchScreen(name) {
     "lessor-subsequent": "IFRS 16 - Lessor Subsequent Measurement",
     projects: "Project Desk",
     "project-detail": "Project Desk",
-
+    "data-migration": "Data Migration Workspace",
     "project-budgets": "Project Desk - Budgets / BOQ",
     "project-material-issues": "Project Desk - Material Issues",
     "project-profitability": "Project Desk - Profitability",
@@ -23604,6 +23740,7 @@ function bindReportsScreen() {
   const renderBtn   = document.getElementById("renderStmt");
   const exportBtn   = document.getElementById("exportStmt");
   const periodLbl   = document.getElementById("stmtPeriodLabel");
+  const notesPackSel = document.getElementById("notesPack");
 
   const dashPeriodFilter = document.getElementById("fsPeriodFilter");
 
@@ -23634,10 +23771,38 @@ function bindReportsScreen() {
 
   updateCustomDateVisibility();
 
-  // ✅ Bind the "Generate Notes" button (IFRS16 disclosure)
+  // Bind Generate Notes
   if (typeof bindGenerateNotesBtnReportsScreen === "function") {
     bindGenerateNotesBtnReportsScreen();
   }
+
+  // Clear the previously rendered pack when selection changes
+  notesPackSel?.addEventListener("change", () => {
+    const pack = notesPackSel.value;
+    const canvas = document.getElementById("stmtCanvas");
+
+    window._notesState = null;
+    window.__notesPack = pack;
+
+    if (canvas) {
+      canvas.innerHTML = `
+        <div class="text-xs text-slate-600">
+          <b>${escHtml(notesPackSel.selectedOptions?.[0]?.textContent || "Notes")}</b>
+          selected. Click <b>Generate Notes</b>.
+        </div>
+      `;
+    }
+
+    const fsNoteKeySel = document.getElementById("fsNoteKey");
+    const editorPanel = document.getElementById("fsNotesPanel");
+    const editorKey = getEditorNoteKeyFromNotesPack();
+
+    if (fsNoteKeySel) fsNoteKeySel.value = editorKey;
+
+    if (editorPanel && !editorPanel.classList.contains("hidden")) {
+      loadFinancialStatementNote(editorKey);
+    }
+  });
 
   bindInterpretationToolbar();
 
@@ -26758,26 +26923,33 @@ async function exportStatement(stmtType, format) {
       url = ENDPOINTS.reports.trialBalanceExport(cid);
       break;
     case "notes": {
-      const pack = document.getElementById("notesPack")?.value || "ifrs15_revenue";
-
-      let reportKey = null;
+      const pack =
+        document.getElementById("notesPack")?.value ||
+        "ifrs16_lessee";
 
       if (pack === "ias16_ppe") {
         url = ENDPOINTS.reports.ppeDisclosureExport(cid);
-        reportKey = "ppe_disclosure";
-      } else if (pack === "ifrs16") {
+        window.__notesReportKey = "ppe_disclosure";
+      } else if (
+        pack === "ifrs16_lessee" ||
+        pack === "ifrs16_lessor"
+      ) {
         url = ENDPOINTS.reports.leaseDisclosureExport(cid);
-        reportKey = "lease_disclosure";
+        window.__notesReportKey = "lease_disclosure";
       } else if (pack === "ifrs15_revenue") {
         url = ENDPOINTS.reports.revenueDisclosureExport(cid);
-        reportKey = "revenue_disclosure";
+        window.__notesReportKey = "revenue_disclosure";
+      } else if (pack === "ias40_ip") {
+        url = ENDPOINTS.reports.ipDisclosureExport(cid);
+        window.__notesReportKey = "ip_disclosure";
+      } else if (pack === "ias38_ia") {
+        url = ENDPOINTS.reports.iaDisclosureExport(cid);
+        window.__notesReportKey = "ia_disclosure";
       } else {
-        return alert("Unknown notes pack.");
+        return alert(`Notes export is not configured for: ${pack}`);
       }
 
-      // 🔥 IMPORTANT: attach reportKey to opts for later use
-      window.__notesReportKey = reportKey;
-
+      window.__notesPack = pack;
       break;
     }
     default:
@@ -26803,6 +26975,14 @@ async function exportStatement(stmtType, format) {
 
   if (from) params.from = from;
   if (to) params.to = to;
+
+  if (t === "notes") {
+    const pack = window.__notesPack || "";
+
+    if (pack === "ifrs16_lessee" || pack === "ifrs16_lessor") {
+      params.perspective = pack === "ifrs16_lessor" ? "lessor" : "lessee";
+    }
+  }
 
   if (t === "bs" && to) {
     params.as_of = to;
@@ -26854,6 +27034,493 @@ function restoreNotesIfPresent() {
     return true;
   }
   return false;
+}
+
+function renderIFRS16LessorDisclosureHTML(d) {
+  const pnl = d?.pnl || {};
+  const operating = d?.operating_lease || {};
+  const finance = d?.finance_lease || {};
+  const recon = d?.net_investment_reconciliation || {};
+  const billing = d?.billing || {};
+  const cashflow = d?.cashflow || {};
+  const checks = d?.net_investment_check || {};
+  const classes = d?.classifications || {};
+  const operatingMat = d?.operating_maturity_analysis || {};
+  const financeMat = d?.finance_maturity_analysis || {};
+  const operatingRows = Array.isArray(operatingMat.rows) ? operatingMat.rows : [];
+  const financeRows = Array.isArray(financeMat.rows) ? financeMat.rows : [];
+  const incomeRows = Array.isArray(d?.lease_income_by_contract)
+    ? d.lease_income_by_contract
+    : [];
+  const leases = Array.isArray(d?.leases) ? d.leases : [];
+
+  const checkClass = checks.ok === false
+    ? "text-red-700 bg-red-50 border-red-200"
+    : "text-emerald-700 bg-emerald-50 border-emerald-200";
+
+  const classificationLabel = value =>
+    String(value || "operating")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, c => c.toUpperCase());
+
+  return `
+    <div class="text-sm space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="font-semibold text-slate-800">
+            IFRS 16 Lessor Disclosures (Strict / Posted-only)
+          </div>
+          <div class="text-slate-500 text-xs mt-0.5">
+            Period: ${escHtml(d?.from_date || "")} → ${escHtml(d?.to_date || "")}
+            &nbsp;|&nbsp; As of: ${escHtml(d?.as_of || "")}
+          </div>
+        </div>
+
+        <div class="text-xs border rounded px-2 py-1 ${checkClass}">
+          Net investment check:
+          <b>${checks.ok === false ? "Difference found" : "OK"}</b>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">Lease portfolio</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between gap-3">
+              <span>Operating leases</span>
+              <b>${Number(classes.operating_count || 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Finance leases</span>
+              <b>${Number(classes.finance_count || 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3 border-t pt-2 mt-2">
+              <span>Total leases</span>
+              <b>${Number(classes.total_count || 0)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">Profit or Loss</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between gap-3">
+              <span>Operating lease income</span>
+              <b>${fmtMoney(pnl.operating_lease_income ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Finance income</span>
+              <b>${fmtMoney(pnl.finance_income ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Initial direct cost expense</span>
+              <b>${fmtMoney(pnl.initial_direct_cost_expense ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Modification gain / loss</span>
+              <b>${fmtMoney(pnl.gain_loss_on_modifications ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Termination gain / loss</span>
+              <b>${fmtMoney(pnl.gain_loss_on_terminations ?? 0)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">Billing and receipts</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between gap-3">
+              <span>Net amount billed</span>
+              <b>${fmtMoney(billing.billed_net ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>VAT billed</span>
+              <b>${fmtMoney(billing.billed_vat ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Gross amount billed</span>
+              <b>${fmtMoney(billing.billed_gross ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3 border-t pt-2 mt-2">
+              <span>Cash receipts</span>
+              <b>${fmtMoney(cashflow.lease_receipts_gross ?? 0)}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">Operating leases</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between gap-3">
+              <span>Straight-line lease income</span>
+              <b>${fmtMoney(operating.straight_line_income ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Contractual lease income</span>
+              <b>${fmtMoney(operating.contractual_income ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Accrued rental movement</span>
+              <b>${fmtMoney(operating.accrued_rental_movement ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Deferred rental movement</span>
+              <b>${fmtMoney(operating.deferred_rental_movement ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Initial direct cost expense</span>
+              <b>${fmtMoney(operating.initial_direct_cost_expense ?? 0)}</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="border rounded-lg p-3">
+          <div class="font-semibold mb-2">Finance leases</div>
+          <div class="text-xs space-y-1">
+            <div class="flex justify-between gap-3">
+              <span>Finance income</span>
+              <b>${fmtMoney(finance.finance_income ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Principal recovery</span>
+              <b>${fmtMoney(finance.principal_recovery ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Current net investment</span>
+              <b>${fmtMoney(finance.current_portion ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3">
+              <span>Non-current net investment</span>
+              <b>${fmtMoney(finance.noncurrent_portion ?? 0)}</b>
+            </div>
+            <div class="flex justify-between gap-3 border-t pt-2 mt-2">
+              <span>Closing net investment</span>
+              <b>${fmtMoney(finance.closing_net_investment ?? 0)}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">Net investment reconciliation</div>
+
+        <div class="overflow-auto">
+          <table class="w-full text-xs border">
+            <thead>
+              <tr class="bg-slate-50">
+                <th class="p-2 border text-left">Movement</th>
+                <th class="p-2 border text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="p-2 border">Opening net investment</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(recon.opening_net_investment ?? 0)}
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2 border">Additions</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(recon.additions ?? 0)}
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2 border">Finance income</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(recon.finance_income ?? 0)}
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2 border">Principal recovery</td>
+                <td class="p-2 border text-right">
+                  (${fmtMoney(recon.principal_recovery ?? 0)})
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2 border">Modification adjustments</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(recon.modification_adjustments ?? 0)}
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2 border">Derecognitions</td>
+                <td class="p-2 border text-right">
+                  (${fmtMoney(recon.derecognitions ?? 0)})
+                </td>
+              </tr>
+              <tr class="font-semibold bg-slate-50">
+                <td class="p-2 border">Closing net investment</td>
+                <td class="p-2 border text-right">
+                  ${fmtMoney(recon.closing_net_investment ?? 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-2 text-xs ${checks.ok === false ? "text-red-700" : "text-slate-600"}">
+          Closing from reconciliation:
+          <b>${fmtMoney(checks.closing_from_reconciliation ?? 0)}</b>
+          &nbsp;|&nbsp;
+          Closing from posted schedule:
+          <b>${fmtMoney(checks.closing_from_last_posted_schedule ?? 0)}</b>
+          &nbsp;|&nbsp;
+          Difference:
+          <b>${fmtMoney(checks.difference ?? 0)}</b>
+        </div>
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">
+          Operating lease maturity analysis
+        </div>
+
+        ${
+          operatingRows.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Maturity period</th>
+                      <th class="p-2 border text-right">Net receipts</th>
+                      <th class="p-2 border text-right">VAT</th>
+                      <th class="p-2 border text-right">Gross receipts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${operatingRows.map(r => `
+                      <tr>
+                        <td class="p-2 border">${escHtml(r.bucket || "")}</td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.undiscounted_net ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.vat ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.gross ?? 0)}
+                        </td>
+                      </tr>
+                    `).join("")}
+
+                    <tr class="font-semibold bg-slate-50">
+                      <td class="p-2 border">Total</td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(operatingMat.undiscounted_net_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(operatingMat.vat_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(operatingMat.gross_total ?? 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `<div class="text-xs text-slate-500">No future operating lease receipts.</div>`
+        }
+      </div>
+
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">
+          Finance lease maturity analysis
+        </div>
+
+        ${
+          financeRows.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Maturity period</th>
+                      <th class="p-2 border text-right">Lease receipts</th>
+                      <th class="p-2 border text-right">Unearned finance income</th>
+                      <th class="p-2 border text-right">Principal</th>
+                      <th class="p-2 border text-right">VAT</th>
+                      <th class="p-2 border text-right">Gross receipts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${financeRows.map(r => `
+                      <tr>
+                        <td class="p-2 border">${escHtml(r.bucket || "")}</td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.undiscounted_receipts ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.unearned_finance_income ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.principal_recovery ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.vat ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.gross ?? 0)}
+                        </td>
+                      </tr>
+                    `).join("")}
+
+                    <tr class="font-semibold bg-slate-50">
+                      <td class="p-2 border">Total</td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(financeMat.undiscounted_receipts_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(financeMat.unearned_finance_income_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(financeMat.principal_recovery_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(financeMat.vat_total ?? 0)}
+                      </td>
+                      <td class="p-2 border text-right">
+                        ${fmtMoney(financeMat.gross_total ?? 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `<div class="text-xs text-slate-500">No future finance lease receipts.</div>`
+        }
+      </div>
+
+      ${
+        incomeRows.length
+          ? `
+            <div class="border rounded-lg p-3">
+              <div class="font-semibold mb-2">Lease income by contract</div>
+
+              <div class="overflow-auto">
+                <table class="min-w-[1100px] w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Contract</th>
+                      <th class="p-2 border text-left">Classification</th>
+                      <th class="p-2 border text-right">Operating income</th>
+                      <th class="p-2 border text-right">Finance income</th>
+                      <th class="p-2 border text-right">Principal recovery</th>
+                      <th class="p-2 border text-right">Contractual net</th>
+                      <th class="p-2 border text-right">VAT</th>
+                      <th class="p-2 border text-right">Contractual gross</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${incomeRows.map(r => `
+                      <tr>
+                        <td class="p-2 border">
+                          ${escHtml(r.contract_name || "")}
+                          ${
+                            r.contract_no
+                              ? `<div class="text-slate-500">${escHtml(r.contract_no)}</div>`
+                              : ""
+                          }
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(classificationLabel(r.lease_classification))}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.operating_lease_income ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.finance_income ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.principal_recovery ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.contractual_net ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.vat ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(r.contractual_gross ?? 0)}
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        leases.length
+          ? `
+            <div class="border rounded-lg p-3">
+              <div class="font-semibold mb-2">Lessor lease portfolio</div>
+
+              <div class="overflow-auto">
+                <table class="min-w-[1200px] w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">Contract</th>
+                      <th class="p-2 border text-left">Classification</th>
+                      <th class="p-2 border text-left">Start</th>
+                      <th class="p-2 border text-left">End</th>
+                      <th class="p-2 border text-left">Frequency</th>
+                      <th class="p-2 border text-right">Billing amount</th>
+                      <th class="p-2 border text-right">Discount rate</th>
+                      <th class="p-2 border text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${leases.map(l => `
+                      <tr>
+                        <td class="p-2 border">
+                          ${escHtml(l.contract_name || `Lease ${l.lessor_lease_id ?? ""}`)}
+                          ${
+                            l.contract_no
+                              ? `<div class="text-slate-500">${escHtml(l.contract_no)}</div>`
+                              : ""
+                          }
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(classificationLabel(l.lease_classification))}
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(l.start_date || "")}
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(l.end_date || "")}
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(l.billing_frequency || "")}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${fmtMoney(l.billing_amount ?? 0)}
+                        </td>
+                        <td class="p-2 border text-right">
+                          ${escHtml(`${(Number(l.discount_rate || 0) * 100).toFixed(2)}%`)}
+                        </td>
+                        <td class="p-2 border">
+                          ${escHtml(l.status || "active")}
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `
+          : ""
+      }
+    </div>
+  `;
 }
 
 function renderIFRS16DisclosureHTML(d) {
@@ -27130,7 +27797,7 @@ function bindGenerateNotesBtnReportsScreen() {
     if (!cid) return alert("No active company selected.");
 
     const packEl = document.getElementById("notesPack");
-    const noteKey = packEl?.value || "ifrs16";
+    const noteKey = packEl?.value || "ifrs16_lessee";
     const reg = NOTES_REGISTRY[noteKey];
     if (!reg) return alert("Unknown notes pack selected.");
 
@@ -27153,7 +27820,7 @@ function bindGenerateNotesBtnReportsScreen() {
         noteKey,
         label: reg.label,
         period,
-        ...out.meta,
+        ...(out.meta || {}),
       });
 
     } catch (e) {
@@ -27870,31 +28537,62 @@ function renderIANoteHTML(payload) {
     </div>`;
 }
 
+function buildIFRS16NotesQuery(period, perspective) {
+  const p = period?.params || period || {};
+  const q = {
+    perspective,
+    include_terminated: "1",
+  };
+
+  if (p.from && p.to) {
+    q.from = p.from;
+    q.to = p.to;
+    q.as_of = p.as_of || p.to;
+  } else {
+    q.preset =
+      p.preset ||
+      document.getElementById("stmtPreset")?.value ||
+      "this_year";
+  }
+
+  return q;
+}
+
 const NOTES_REGISTRY = {
-  ifrs16: {
-    label: "IFRS 16 Lease disclosures",
+  ifrs16_lessee: {
+    label: "IFRS 16 Lessee disclosures",
     fetch: async (cid, period) => {
-      const q = { include_terminated: "1" };
-
-      if (period.from && period.to) {
-        q.from = period.from;
-        q.to = period.to;
-        q.as_of = period.as_of || period.to;
-      } else {
-        q.preset = period.preset || "this_year";
-      }
-
-      console.log("IFRS16 FINAL PARAMS:", q);
-
+      const q = buildIFRS16NotesQuery(period, "lessee");
       const url = ENDPOINTS.ifrs16.disclosure(cid, q);
+
+      console.log("[IFRS16 LESSEE]", { q, url });
+
       const data = await window.apiFetch(url, { method: "GET" });
 
       return {
         data,
         html: renderIFRS16DisclosureHTML(data),
-        meta: { q }
+        meta: { q, perspective: "lessee" },
       };
-    }
+    },
+  },
+
+  ifrs16_lessor: {
+    label: "IFRS 16 Lessor disclosures",
+    fetch: async (cid, period) => {
+      const q = buildIFRS16NotesQuery(period, "lessor");
+      const url = ENDPOINTS.ifrs16.disclosure(cid, q);
+
+      console.log("[IFRS16 LESSOR]", { q, url });
+
+      const data = await window.apiFetch(url, { method: "GET" });
+
+      return {
+        data,
+        html: renderIFRS16LessorDisclosureHTML(data),
+        meta: { q, perspective: "lessor" },
+      };
+    },
   },
 
   ifrs15_revenue: {
@@ -28175,13 +28873,15 @@ async function resetFinancialStatementNote() {
 function getEditorNoteKeyFromNotesPack() {
   const pack = document.getElementById("notesPack")?.value;
   const map = {
-    ifrs16: "ifrs16_lease_policy",
+    ifrs16_lessee: "ifrs16_lease_policy",
+    ifrs16_lessor: "ifrs16_lessor_lease_policy",
     ias16_ppe: "ias16_ppe_policy",
     ifrs15_revenue: "ifrs15_revenue_policy",
     ias40_ip: "ias40_ip_policy",
     ias38_ia: "ias38_ia_policy",
   };
-  return map[pack] || "ifrs15_revenue_policy";
+
+  return map[pack] || "ifrs16_lease_policy";
 }
 
 function bindFinancialStatementNotesEditor() {
@@ -34250,6 +34950,7 @@ window.postTerm = async function postTerm() {
       "lsmInvoiceThroughBtn",
       "lsmPostThroughBtn",
       "lsmEditLeaseBtn",
+      "lsmRecalculateBtn",
       "lsmSaveRecalculateBtn",
     ].forEach(id => {
       const el = $(id);
@@ -34568,11 +35269,17 @@ window.postTerm = async function postTerm() {
           ["Initial direct costs", money(data.initial_direct_costs)],
           [
             "Deferred direct-cost account",
-            text(data.deferred_direct_cost_account_code, "Not configured"),
+            text(
+              data.deferred_direct_cost_account_name,
+              "Not configured"
+            ),
           ],
           [
             "Direct-cost expense account",
-            text(data.direct_cost_expense_account_code, "Not configured"),
+            text(
+              data.direct_cost_expense_account_name,
+              "Not configured"
+            ),
           ],
           [
             "Asset treatment",
@@ -34942,10 +35649,14 @@ window.postTerm = async function postTerm() {
     renderSchedule();
     renderReporting();
 
+    const hasPostedPeriods=state.schedule.some(
+      row=>Number(row.recognition_journal_id || 0)>0
+    );
     const active = !!state.lease;
     $("lsmPostThroughBtn").disabled = !active;
     $("lsmInvoiceThroughBtn").disabled = !active;
     $("lsmEditLeaseBtn").disabled = !active || !canCorrectLease();
+    $("lsmRecalculateBtn").disabled=!active || hasPostedPeriods;
   }
 
   async function loadWorkspace() {
@@ -35038,6 +35749,62 @@ window.postTerm = async function postTerm() {
     $("lsmEditVatRate").value = vat <= 1 ? +(vat * 100).toFixed(4) : vat;
     $("lsmEditPanel").classList.remove("hidden");
     $("lsmEditPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function recalculateSchedule() {
+    const leaseId=Number(state.lease?.id || 0);
+    if (!leaseId) throw new Error("Select a lessor lease first.");
+
+    const posted=state.schedule.some(
+      row=>Number(row.recognition_journal_id || 0)>0
+    );
+
+    if (posted) {
+      throw new Error(
+        "Reverse posted period journals before recalculating."
+      );
+    }
+
+    if (!confirm(
+      "Recalculate the active accounting schedule? " +
+      "Existing invoice links will be preserved."
+    )) return;
+
+    busy(true,"Recalculating accounting schedule...");
+
+    try {
+      const res=await api(
+        ENDPOINTS.lessorLeases.recalculate(cid(),leaseId),
+        {method:"POST"}
+      );
+
+      state.workspace=res;
+      state.lease=res.lease || res.item || state.lease;
+      state.schedule=
+        res.schedule ||
+        res.accounting_schedule ||
+        res.items ||
+        [];
+      state.billing=res.billing || {};
+      state.metrics=res.measurement || res.metrics || {};
+      state.reporting=res.reporting || {};
+      state.initialRecognition=res.initial_recognition || {};
+      state.focusPeriod=
+        res.focus_period ||
+        res.next_unpaid_period ||
+        res.current_period ||
+        null;
+
+      renderAll();
+
+      showMessage(
+        `${res.message || "Schedule recalculated"}. ` +
+        `${state.schedule.length} period(s) loaded.`,
+        "success"
+      );
+    } finally {
+      busy(false);
+    }
   }
 
   async function saveAndRecalculate() {
@@ -35136,12 +35903,8 @@ window.postTerm = async function postTerm() {
               <td>
                 <strong>${esc(
                   line.account_name ||
-                  line.account_code ||
-                  "Account"
+                  "Account not configured"
                 )}</strong>
-                ${line.account_name && line.account_code
-                  ? `<small>${esc(line.account_code)}</small>`
-                  : ""}
               </td>
               <td class="lsm-wrap">${esc(line.memo || "")}</td>
               <td class="num">${esc(money(line.debit))}</td>
@@ -35222,151 +35985,235 @@ window.postTerm = async function postTerm() {
     }
   }
 
-  function buildLessorInvoiceHandoff(preview, row) {
-    const invoice = preview?.invoice || preview?.data?.invoice || preview || {};
-    const lease = state.lease || {};
-    const scheduleId = Number(row.id);
-    const leaseId = Number(lease.id);
+  function buildLessorInvoiceHandoff(preview,row) {
+    const invoice=
+      preview?.prefill ||
+      preview?.invoice ||
+      preview?.data?.prefill ||
+      preview?.data?.invoice ||
+      preview ||
+      {};
 
-    const itemName = text(
-      lease.contract_name,
-      lease.underlying_asset_description,
-      `Lessor lease ${leaseId}`
-    );
+    const lease=state.lease || {};
+    const scheduleId=Number(row.id);
+    const leaseId=Number(lease.id);
+    const backendLine=invoice.lines?.[0] || invoice.line || {};
 
-    const description = text(
-      lease.notes,
-      invoice.description,
-      `Lease rental for period ${row.period_no}`
-    );
+    const line={
+      ...backendLine,
+      item_type:"lease",
+      item_id:backendLine.item_id ?? null,
+      item_code:backendLine.item_code ?? null,
+      item_name:text(
+        backendLine.item_name,
+        "Leased out asset"
+      ),
+      item:text(
+        backendLine.item_name,
+        backendLine.item,
+        "Leased out asset"
+      ),
+      description:text(
+        backendLine.description,
+        invoice.description
+      ),
+      quantity:n(backendLine.quantity || 1),
+      unit_price:n(
+        backendLine.unit_price ??
+        backendLine.net_amount ??
+        row.contractual_net ??
+        row.contractual_income ??
+        row.amount_net
+      ),
+      net_amount:n(
+        backendLine.net_amount ??
+        row.contractual_net ??
+        row.contractual_income ??
+        row.amount_net
+      ),
+      vat_rate:n(
+        backendLine.vat_rate ??
+        invoice.vat_rate ??
+        lease.vat_rate
+      ),
+      vat_amount:n(
+        backendLine.vat_amount ??
+        invoice.vat_amount ??
+        row.vat_amount
+      ),
+      gross_amount:n(
+        backendLine.gross_amount ??
+        backendLine.total_amount ??
+        invoice.gross_amount ??
+        row.contractual_gross ??
+        row.amount_gross
+      ),
+      total_amount:n(
+        backendLine.total_amount ??
+        backendLine.gross_amount ??
+        invoice.gross_amount ??
+        row.contractual_gross ??
+        row.amount_gross
+      ),
+      account_role:text(
+        backendLine.account_role,
+        invoice.credit_account_role
+      ),
+      account_code:text(
+        backendLine.account_code,
+        invoice.credit_account_code
+      ),
+      account_name:text(
+        backendLine.account_name,
+        invoice.credit_account_name
+      ),
+      source:"lessor_lease_billing",
+      source_id:scheduleId,
+      lessor_lease_id:leaseId,
+      lessor_schedule_id:scheduleId,
+    };
 
     return {
-      handoff_type: "lessor_lease_invoice",
-      source: "lessor_lease_billing",
-      module_name: "ifrs16_lessor",
-      posting_mode: "custom_accounts",
+      ...invoice,
 
-      source_id: scheduleId,
-      lessor_lease_id: leaseId,
-      lessor_schedule_id: scheduleId,
-      lease_id: leaseId,
-      schedule_id: scheduleId,
-      period_no: Number(row.period_no || 0),
+      handoff_type:"lessor_lease_invoice",
+      source:"lessor_lease_billing",
+      module_name:"ifrs16_lessor",
+      posting_mode:"custom_accounts",
 
-      customerId: Number(
+      source_id:scheduleId,
+      lessor_lease_id:leaseId,
+      lessor_schedule_id:scheduleId,
+      lease_id:leaseId,
+      schedule_id:scheduleId,
+      period_no:Number(
+        invoice.lessor_context?.period_no ??
+        row.period_no ??
+        0
+      ),
+
+      customerId:Number(
         invoice.customer_id ??
         lease.customer_id ??
         0
       ) || null,
 
-      customer_id: Number(
+      customer_id:Number(
         invoice.customer_id ??
         lease.customer_id ??
         0
       ) || null,
 
-      customerName: text(
+      customerName:text(
         invoice.customer_name,
         lease.customer_name
       ),
 
-      customer_name: text(
+      customer_name:text(
         invoice.customer_name,
         lease.customer_name
       ),
 
-      invoiceDate: iso(
+      invoiceDate:iso(
         invoice.invoice_date ??
         row.payment_date ??
         row.period_end
       ),
 
-      invoice_date: iso(
+      invoice_date:iso(
         invoice.invoice_date ??
         row.payment_date ??
         row.period_end
       ),
 
-      due_date: iso(
+      due_date:iso(
         invoice.due_date ??
         row.due_date ??
         row.period_end
       ),
 
-      currency: text(invoice.currency, lease.currency, currency()),
-      reference: text(invoice.reference, `LESSOR-${leaseId}-P${row.period_no}`),
-      number: text(invoice.reference, `LESSOR-${leaseId}-P${row.period_no}`),
-      memo: description,
+      currency:text(
+        invoice.currency,
+        lease.currency,
+        currency()
+      ),
 
-      leaseClassification: classification(),
-      lease_classification: classification(),
-      accounting_treatment: invoice.accounting_treatment,
+      // Keep blank. Normal AR flow assigns the invoice number.
+      number:"",
 
-      ar_account_code: text(
+      reference:text(
+        invoice.reference,
+        `LESSOR-${leaseId}-P${row.period_no}`
+      ),
+
+      memo:text(
+        invoice.notes,
+        invoice.description,
+        line.description
+      ),
+
+      description:text(
+        invoice.description,
+        line.description
+      ),
+
+      leaseClassification:text(
+        invoice.lease_classification,
+        invoice.classification,
+        classification()
+      ),
+
+      lease_classification:text(
+        invoice.lease_classification,
+        invoice.classification,
+        classification()
+      ),
+
+      accounting_treatment:text(
+        invoice.accounting_treatment
+      ),
+
+      ar_account_code:text(
         invoice.ar_account_code,
         lease.ar_account_code
       ),
 
-      credit_account_code: text(
-        invoice.credit_account_code,
-        classification() === "finance"
-          ? lease.net_investment_current_account_code ||
-            lease.net_investment_noncurrent_account_code
-          : lease.revenue_account_code
+      ar_account_name:text(
+        invoice.ar_account_name
       ),
 
-      vat_output_account_code: text(
+      credit_account_role:text(
+        invoice.credit_account_role,
+        line.account_role
+      ),
+
+      credit_account_code:text(
+        invoice.credit_account_code,
+        line.account_code
+      ),
+
+      credit_account_name:text(
+        invoice.credit_account_name,
+        line.account_name
+      ),
+
+      vat_output_account_code:text(
         invoice.vat_output_account_code,
         lease.vat_output_account_code
       ),
 
-      vat_enabled: n(invoice.vat_amount) > 0 || n(lease.vat_rate) > 0,
-      vat_rate: n(lease.vat_rate),
+      vat_output_account_name:text(
+        invoice.vat_output_account_name
+      ),
 
-      line: {
-        item_name: itemName,
-        item: itemName,
-        description,
-        quantity: 1,
-        unit_price: n(
-          invoice.net_amount ??
-          row.contractual_net ??
-          row.contractual_income ??
-          row.amount_net
-        ),
+      vat_enabled:
+        n(line.vat_amount)>0 ||
+        n(line.vat_rate)>0,
 
-        net_amount: n(
-          invoice.net_amount ??
-          row.contractual_net ??
-          row.contractual_income ??
-          row.amount_net
-        ),
+      vat_rate:n(line.vat_rate),
 
-        vat_amount: n(
-          invoice.vat_amount ??
-          row.vat_amount
-        ),
-
-        total_amount: n(
-          invoice.gross_amount ??
-          row.contractual_gross ??
-          row.amount_gross
-        ),
-
-        account_code: text(
-          invoice.credit_account_code,
-          lease.revenue_account_code
-        ),
-
-        item_type: "lease",
-        item_id: leaseId,
-        item_code: null,
-
-        source: "lessor_lease_billing",
-        source_id: scheduleId,
-        lessor_lease_id: leaseId,
-        lessor_schedule_id: scheduleId,
-      },
+      line,
+      lines:[line],
     };
   }
 
@@ -35406,41 +36253,25 @@ window.postTerm = async function postTerm() {
     }
   }
 
-  async function createInvoicesThrough() {
-    const leaseId = Number(state.lease?.id || 0);
-    const throughDate = $("lsmAsAt")?.value;
-
+  async function handoffNextInvoiceThroughDate() {
+    const throughDate = iso($("lsmAsAt")?.value);
     if (!throughDate) throw new Error("Select an as-at date first.");
 
-    const ok = confirm(
-      `Automatically create all eligible customer invoices through ${throughDate}?\n\nUse the individual Invoice button instead when you want to review an invoice in AR before saving it.`
-    );
+    const row = state.schedule
+      .filter(item =>
+        !item.invoice_id &&
+        canInvoice(item) &&
+        iso(item.payment_date || item.due_date || item.period_end) <= throughDate
+      )
+      .sort((a, b) => n(a.period_no) - n(b.period_no))[0];
 
-    if (!ok) return;
-
-    busy(true, "Creating lessor invoices...");
-
-    try {
-      const res = await api(
-        ENDPOINTS.lessorLeases.createInvoicesThrough(cid(), leaseId),
-        {
-          method: "POST",
-          body: JSON.stringify({ through_date: throughDate }),
-        }
+    if (!row) {
+      throw new Error(
+        "No eligible uninvoiced period exists through the selected date."
       );
-
-      const created = Number(res.created_count || 0);
-      const failed = Number(res.failed_count || 0);
-
-      showMessage(
-        `${created} invoice(s) created${failed ? `; ${failed} failed.` : "."}`,
-        failed ? "warning" : "success"
-      );
-
-      await loadWorkspace();
-    } finally {
-      busy(false);
     }
+
+    await handoffInvoice(Number(row.id));
   }
 
   function openInvoice(invoiceId) {
@@ -35483,6 +36314,39 @@ window.postTerm = async function postTerm() {
     }
   }
 
+  function bindLessorPaymentRefresh() {
+    if (window.__LSM_PAYMENT_REFRESH_BOUND__) return;
+    window.__LSM_PAYMENT_REFRESH_BOUND__=true;
+
+    window.addEventListener(
+      "finsage:lessor-payment-updated",
+      async e=>{
+        const detail=e.detail || {};
+        const openLeaseId=Number(
+          state.lease?.id || 0
+        );
+
+        if (
+          !openLeaseId ||
+          Number(detail.lessor_lease_id || 0)
+            !==openLeaseId
+        ) return;
+
+        try {
+          await loadWorkspace(
+            openLeaseId,
+            {silent:true}
+          );
+        } catch (err) {
+          console.warn(
+            "[Lessor payment refresh failed]",
+            err
+          );
+        }
+      }
+    );
+  }
+
   function bindOnce() {
     const screen = $("screen-lessor-subsequent");
     if (!screen || screen.dataset.bound === "1") return;
@@ -35492,6 +36356,21 @@ window.postTerm = async function postTerm() {
 
     $("lsmCloseEditBtn")?.addEventListener("click", () =>
       $("lsmEditPanel")?.classList.add("hidden")
+    );
+
+    $("lsmRecalculateBtn")?.addEventListener(
+      "click",
+      async ()=>{
+        try {
+          await recalculateSchedule();
+        } catch (e) {
+          console.error("[Lessor recalculation]",e);
+          showMessage(
+            e.message || "Could not recalculate the schedule.",
+            "error"
+          );
+        }
+      }
     );
 
     $("lsmSaveRecalculateBtn")?.addEventListener("click", async () => {
@@ -35537,8 +36416,11 @@ window.postTerm = async function postTerm() {
     });
 
     $("lsmInvoiceThroughBtn")?.addEventListener("click", async () => {
-      try { await createInvoicesThrough(); }
-      catch (e) { showMessage(e.message, "error"); }
+      try {
+        await handoffNextInvoiceThroughDate();
+      } catch (e) {
+        showMessage(e.message, "error");
+      }
     });
 
     $("lsmBackBtn")?.addEventListener("click", () =>
@@ -35573,6 +36455,7 @@ window.postTerm = async function postTerm() {
       console.error("[bindLessorSubsequentScreen]", e);
       showMessage(e.message || "Could not load lessor leases.", "error");
     }
+    bindLessorPaymentRefresh();
   };
 
   window.openLessorSubsequentMeasurement = async function (leaseId) {
@@ -35585,486 +36468,1150 @@ window.postTerm = async function postTerm() {
 })();
 
 (() => {
-  const $ = id => document.getElementById(id);
-  const cid = () => Number(getActiveCompanyId?.() || 0);
-  const amount = value => Number(String(value ?? 0).replace(/,/g, "")) || 0;
+  const $ = id => document.getElementById(id), n = v => Number(String(v ?? 0).replace(/,/g, "")) || 0;
+  const cid = () => Number(window.getActiveCompanyId?.() || window.CURRENT_COMPANY_ID || 0);
   const leaseId = () => Number(window.__LESSOR_WORKSPACE_LEASE?.id || $("lsmLeaseId")?.value || 0);
-  const api = (url, options = {}) => apiFetch(url, options);
-
-  const showMessage = (message, type = "info") => {
-    const el = $("lsmMessage");
-    if (!el) return;
-    el.textContent = message;
-    el.className = `lsm-message lsm-message-${type}${message ? "" : " hidden"}`;
-  };
-
-  const openPanel = panelId => {
-    [
-      "lsmCorrectionPanel",
-      "lsmModificationPanel",
-      "lsmTerminationPanel",
-      "lsmVersionsPanel",
-      "lsmBillingPanel",
-      "lsmHistoryPanel",
-    ].forEach(id => $(id)?.classList.toggle("hidden", id !== panelId));
-
-    $(panelId)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  };
-
-  const rowHtml = (title, meta = "") => `
-    <div class="lsm-mini-row">
-      <div>
-        <strong>${title}</strong>
-        <span>${meta}</span>
-      </div>
-    </div>
-  `;
-
-  async function loadSelectedLease() {
+  const api = (url, options = {}) => window.apiFetch(url, options);
+  const esc = v => window.escapeHtml
+    ? window.escapeHtml(String(v ?? ""))
+    : String(v ?? "").replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+  const iso = v => { if (!v) return ""; const s = String(v); if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); const d = new Date(s); return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10); };
+  const date = v => iso(v) ? new Date(`${iso(v)}T00:00:00`).toLocaleDateString("en-ZA", { day:"2-digit", month:"short", year:"numeric" }) : "—";
+  const currency = () => window.__LESSOR_WORKSPACE_LEASE?.currency || window.CURRENT_COMPANY?.currency || "USD";
+  const money = v => { try { return new Intl.NumberFormat(undefined, { style:"currency", currency:currency() }).format(n(v)); } catch (_) { return `${currency()} ${n(v).toFixed(2)}`; } };
+  const views = ["lsmWorkspaceView","lsmScheduleView","lsmBillingView","lsmHistoryView","lsmModificationView","lsmTerminationView"];
+  const show = id => views.forEach(view => $(view)?.classList.toggle("hidden", view !== id));
+  const message = (text, type = "info") => { const el = $("lsmMessage"); if (!el) return; el.textContent = text; el.className = `lsm-message lsm-message-${type}${text ? "" : " hidden"}`; };
+  const empty = (cols, text) => `<tr><td colspan="${cols}" class="lsm-empty">${esc(text)}</td></tr>`;
+  const selectedLease = async () => {
     const id = leaseId();
     if (!id) throw new Error("Select a lessor lease first.");
+    const res = await api(ENDPOINTS.lessorLeases.get(cid(), id));
+    return window.__LESSOR_WORKSPACE_LEASE = res.item || res.lease || res;
+  };
 
-    const result = await api(
-      ENDPOINTS.lessorLeases.get(cid(), id)
-    );
+  let scheduleExpanded=false,billingExpanded=false,scheduleRows=[],billingData=null;
 
-    window.__LESSOR_WORKSPACE_LEASE =
-      result.item || result.lease || result;
-
-    return window.__LESSOR_WORKSPACE_LEASE;
+  async function openSchedule() {
+    await selectedLease();
+    const asAt=$("lsmAsAt")?.value||"";
+    const res=await api(ENDPOINTS.lessorLeases.amortisationSchedule(cid(),leaseId(),asAt));
+    scheduleRows=res.schedule||[];
+    scheduleExpanded=false;
+    renderSchedule(res.current_period?[res.current_period]:scheduleRows.slice(0,1),res);
+    show("lsmScheduleView");
   }
 
-  async function openCorrection() {
-    const lease = await loadSelectedLease();
+  function renderSchedule(rows,res={}) {
+    const lease=res.lease||window.__LESSOR_WORKSPACE_LEASE||{};
+    $("lsmFullScheduleBadge").textContent=`${scheduleRows.length} period${scheduleRows.length===1?"":"s"}`;
+    $("lsmCurrentScheduleTitle").textContent=res.classification==="operating"?"Straight-line income schedule":"Finance lease amortisation schedule";
+    $("lsmFullScheduleMeta").textContent=`${lease.asset_name||lease.underlying_asset_description||lease.contract_name||"Lease"} · ${currency()}`;
 
-    let rate = amount(
-      lease.interest_rate_implicit ||
-      lease.discount_rate
-    );
+    $("lsmFullScheduleBody").innerHTML=rows.length?rows.map(r=>`<tr>
+      <td>${r.period_no??"—"}</td><td>${date(r.period_start)}</td><td>${date(r.period_end)}</td>
+      <td>${date(r.payment_date)}</td><td>${date(r.due_date)}</td>
+      <td class="num">${money(r.opening_net_investment)}</td>
+      <td class="num">${money(r.finance_income)}</td>
+      <td class="num">${money(r.principal_recovery??r.principal_reduction)}</td>
+      <td class="num">${money(r.contractual_net)}</td>
+      <td class="num">${money(r.vat_amount)}</td>
+      <td class="num">${money(r.contractual_gross)}</td>
+      <td class="num">${money(r.closing_net_investment)}</td>
+      <td class="num">${money(r.current_portion)}</td>
+      <td class="num">${money(r.noncurrent_portion)}</td>
+      <td>${esc(r.invoice_number||(r.invoice_id?`Invoice #${r.invoice_id}`:"Not invoiced"))}</td>
+      <td>${esc(r.accounting_status||"Scheduled")}</td>
+    </tr>`).join(""):empty(16,"No amortisation periods found.");
 
-    let vat = amount(lease.vat_rate);
-
-    if (rate <= 1) rate *= 100;
-    if (vat <= 1) vat *= 100;
-
-    $("lsmCorrectionRate").value = rate;
-    $("lsmCorrectionAmount").value =
-      amount(lease.billing_amount).toFixed(2);
-
-    $("lsmCorrectionStart").value =
-      String(lease.start_date || "").slice(0, 10);
-
-    $("lsmCorrectionEnd").value =
-      String(lease.end_date || "").slice(0, 10);
-
-    $("lsmCorrectionTerms").value =
-      Number(lease.payment_terms_days || 0);
-
-    $("lsmCorrectionVat").value = vat;
-
-    openPanel("lsmCorrectionPanel");
+    $("lsmExpandScheduleBtn").textContent=scheduleExpanded?"Show current period":"Expand full schedule";
   }
 
-  async function applyCorrection() {
-    const reason =
-      $("lsmCorrectionReason").value.trim();
-
-    if (!reason) {
-      throw new Error(
-        "Correction reason is required."
-      );
-    }
-
-    const confirmed = confirm(
-      "Reverse the existing Day 1 journal, " +
-      "correct the lease, rebuild the schedules " +
-      "and post the corrected Day 1 journal?"
-    );
-
-    if (!confirmed) return;
-
-    const payload = {
-      reason,
-
-      interest_rate_implicit:
-        amount($("lsmCorrectionRate").value) / 100,
-
-      billing_amount:
-        amount($("lsmCorrectionAmount").value),
-
-      start_date:
-        $("lsmCorrectionStart").value,
-
-      end_date:
-        $("lsmCorrectionEnd").value,
-
-      payment_terms_days:
-        Number($("lsmCorrectionTerms").value || 0),
-
-      vat_rate:
-        amount($("lsmCorrectionVat").value) / 100,
-    };
-
-    const result = await api(
-      ENDPOINTS.lessorLeases.correction(
-        cid(),
-        leaseId()
-      ),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    showMessage(
-      result.message || "Lease corrected.",
-      "success"
-    );
-
-    $("lsmCorrectionPanel")
-      ?.classList.add("hidden");
-
-    await window.openLessorSubsequentMeasurement?.(
-      leaseId()
-    );
-  }
-
-  async function openVersions() {
-    const result = await api(
-      ENDPOINTS.lessorLeases.scheduleVersions(
-        cid(),
-        leaseId()
-      )
-    );
-
-    $("lsmVersionsList").innerHTML =
-      (result.versions || []).map(version =>
-        rowHtml(
-          `Version ${version.version_no}${
-            version.is_active ? " · Active" : ""
-          }`,
-          `${version.period_count} periods · ` +
-          `${version.posted_count} posted · ` +
-          `${version.invoiced_count} invoiced`
-        )
-      ).join("") || "<p>No schedule versions found.</p>";
-
-    openPanel("lsmVersionsPanel");
+  function toggleSchedule() {
+    scheduleExpanded=!scheduleExpanded;
+    renderSchedule(scheduleExpanded?scheduleRows:scheduleRows.filter(r=>{
+      const d=$("lsmAsAt")?.value||new Date().toISOString().slice(0,10);
+      return iso(r.period_start)<=d&&iso(r.period_end)>=d;
+    }).slice(0,1));
   }
 
   async function openBilling() {
-    const result = await api(
-      ENDPOINTS.lessorLeases.billingWorkspace(
-        cid(),
-        leaseId()
-      )
-    );
+    await selectedLease();
+    billingData=await api(ENDPOINTS.lessorLeases.billingWorkspace(cid(),leaseId()));
+    billingExpanded=false;
+    renderBilling(billingData);
+    show("lsmBillingView");
+  }
 
-    const totals = result.totals || {};
+  function renderBilling(res) {
+    const totals=res.totals||{},bills=res.bills||[],receipts=res.receipts||[];
+    const shown=billingExpanded?bills:(res.current_unbilled?[res.current_unbilled]:bills.filter(b=>!b.invoice_id).slice(0,1));
 
-    $("lsmBillingSummary").innerHTML = [
-      ["Billed", totals.gross],
-      ["Received", totals.received],
-      ["Outstanding", totals.outstanding],
-    ].map(([label, value]) => `
-      <article class="lsm-metric">
-        <span>${label}</span>
-        <strong>${amount(value).toFixed(2)}</strong>
-      </article>
-    `).join("");
+    $("lsmBillingMetrics").innerHTML=[
+      ["Billed",totals.gross],["Received",totals.received],
+      ["Outstanding",totals.outstanding],["Invoices",totals.invoice_count||0]
+    ].map(([label,value],i)=>`<article class="lsm-metric"><span>${label}</span><strong>${i===3?n(value):money(value)}</strong></article>`).join("");
 
-    $("lsmBillingList").innerHTML =
-      (result.bills || []).map(bill =>
-        rowHtml(
-          bill.invoice_number ||
-          bill.reference ||
-          `Bill #${bill.id}`,
+    $("lsmBillingCountBadge").textContent=`${bills.length} record${bills.length===1?"":"s"}`;
+    $("lsmReceiptCountBadge").textContent=`${receipts.length} receipt${receipts.length===1?"":"s"}`;
 
-          `${String(bill.bill_date || "").slice(0, 10)} · ` +
-          `${amount(bill.amount_gross).toFixed(2)} · ` +
-          `received ${amount(bill.received_amount).toFixed(2)}`
-        )
-      ).join("") || "<p>No billing records found.</p>";
+    $("lsmBillingBody").innerHTML=shown.length?shown.map(b=>`<tr>
+      <td>${date(b.bill_period_start||b.period_start)} – ${date(b.bill_period_end||b.period_end)}</td>
+      <td>${esc(b.invoice_number||(b.invoice_id?`Invoice #${b.invoice_id}`:"Not invoiced"))}</td>
+      <td>${date(b.invoice_date)}</td><td>${date(b.invoice_due_date||b.due_date)}</td>
+      <td class="num">${money(b.net)}</td><td class="num">${money(b.vat)}</td>
+      <td class="num">${money(b.gross)}</td><td class="num">${money(b.received)}</td>
+      <td class="num">${money(b.outstanding)}</td><td>${esc(b.display_status)}</td>
+    </tr>`).join(""):empty(10,"No current unbilled period found.");
 
-    openPanel("lsmBillingPanel");
+    $("lsmReceiptsBody").innerHTML=receipts.length?receipts.map(r=>{
+      const received=n(r.amount),allocated=r.bill_id?received:0;
+      return `<tr>
+        <td>${date(r.receipt_date)}</td><td>${esc(r.reference||`Receipt #${r.id}`)}</td>
+        <td>${esc(r.invoice_number||(r.invoice_id?`Invoice #${r.invoice_id}`:"Unallocated"))}</td>
+        <td>${r.period_start||r.period_end?`${date(r.period_start)} – ${date(r.period_end)}`:"—"}</td>
+        <td>${esc(r.bank_account_code||"—")}</td>
+        <td class="num">${money(received)}</td><td class="num">${money(allocated)}</td>
+        <td class="num">${money(Math.max(received-allocated,0))}</td>
+        <td>${esc(r.status||(r.bill_id?"Allocated":"Unallocated"))}</td>
+      </tr>`;
+    }).join(""):empty(9,"No customer receipts have been allocated to this lease.");
+
+    $("lsmExpandBillingBtn").textContent=billingExpanded?"Show current unbilled period":"Expand all billing periods";
+  }
+
+  function toggleBilling() {
+    billingExpanded=!billingExpanded;
+    renderBilling(billingData||{});
   }
 
   async function openHistory() {
-    const result = await api(
-      ENDPOINTS.lessorLeases.history(
-        cid(),
-        leaseId()
-      )
-    );
-
-    $("lsmHistoryList").innerHTML =
-      (result.events || []).map(event => `
-        <div class="lsm-timeline-item">
+    await selectedLease();
+    const res = await api(ENDPOINTS.lessorLeases.history(cid(), leaseId()));
+    const events = res.history || [];
+    $("lsmHistoryCountBadge").textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
+    $("lsmHistoryTimeline").innerHTML = events.length
+      ? events.map(e => `<div class="lsm-timeline-item">
           <i></i>
-
           <div>
-            <strong>${event.title || "Lease event"}</strong>
-
-            <span>
-              ${String(
-                event.effective_date ||
-                event.event_date ||
-                ""
-              ).slice(0, 10)}
-            </span>
-
-            <p>${event.description || ""}</p>
+            <strong>${esc(e.title || "Lease event")}</strong>
+            <span>${date(e.date)}${e.reference ? ` · ${esc(e.reference)}` : ""}</span>
+            <p>${esc(e.description || "")}</p>
           </div>
-        </div>
-      `).join("") || "<p>No lifecycle events recorded.</p>";
-
-    openPanel("lsmHistoryPanel");
+        </div>`).join("")
+      : `<p class="lsm-empty">No lease history has been recorded.</p>`;
+    show("lsmHistoryView");
   }
 
   async function openModifications() {
-    const result = await api(
-      ENDPOINTS.lessorLeases.modifications(
-        cid(),
-        leaseId()
-      )
-    );
-
-    $("lsmModificationList").innerHTML =
-      (result.items || []).map(item =>
-        rowHtml(
-          `${item.modification_type || "Modification"} · ${item.status}`,
-          `${String(item.effective_date || "").slice(0, 10)} · ${item.reason || ""}`
-        )
-      ).join("") || "<p>No modifications found.</p>";
-
-    openPanel("lsmModificationPanel");
+    await selectedLease();
+    const res = await api(ENDPOINTS.lessorLeases.modifications(cid(), leaseId()));
+    $("lsmModificationList").innerHTML = (res.items || []).map(x => `<div class="lsm-mini-row"><div><strong>${esc(x.modification_type || "Modification")} · ${esc(x.status || "draft")}</strong><span>${date(x.effective_date)} · ${esc(x.reason || "")}</span></div></div>`).join("") || `<p class="lsm-empty">No modifications found.</p>`;
+    show("lsmModificationView");
   }
 
   async function createModification() {
-    const payload = {
-      effective_date:
-        $("lsmModDate").value,
-
-      modification_type:
-        $("lsmModType").value,
-
-      new_payment_amount:
-        amount($("lsmModAmount").value),
-
-      new_end_date:
-        $("lsmModEnd").value || null,
-
-      new_discount_rate:
-        amount($("lsmModRate").value) / 100,
-
-      reason:
-        $("lsmModReason").value.trim(),
-    };
-
-    if (
-      !payload.effective_date ||
-      !payload.reason
-    ) {
-      throw new Error(
-        "Effective date and reason are required."
-      );
-    }
-
-    await api(
-      ENDPOINTS.lessorLeases.modifications(
-        cid(),
-        leaseId()
-      ),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    showMessage(
-      "Draft modification created.",
-      "success"
-    );
-
+    const payload = { effective_date:$("lsmModDate").value, modification_type:$("lsmModType").value, new_payment_amount:n($("lsmModAmount").value), new_end_date:$("lsmModEnd").value || null, new_discount_rate:n($("lsmModRate").value) / 100, reason:$("lsmModReason").value.trim() };
+    if (!payload.effective_date || !payload.reason) throw new Error("Effective date and reason are required.");
+    await api(ENDPOINTS.lessorLeases.modifications(cid(), leaseId()), { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload) });
+    message("Draft modification created.", "success");
     await openModifications();
   }
 
   async function openTerminations() {
-    const result = await api(
-      ENDPOINTS.lessorLeases.terminations(
-        cid(),
-        leaseId()
-      )
-    );
-
-    $("lsmTerminationList").innerHTML =
-      (result.items || []).map(item =>
-        rowHtml(
-          `${item.termination_type || "Termination"} · ${item.status}`,
-          `${String(item.termination_date || "").slice(0, 10)} · ${item.reason || ""}`
-        )
-      ).join("") || "<p>No terminations found.</p>";
-
-    openPanel("lsmTerminationPanel");
+    await selectedLease();
+    const res = await api(ENDPOINTS.lessorLeases.terminations(cid(), leaseId()));
+    $("lsmTerminationList").innerHTML = (res.items || []).map(x => `<div class="lsm-mini-row"><div><strong>${esc(x.termination_type || "Termination")} · ${esc(x.status || "draft")}</strong><span>${date(x.termination_date)} · ${esc(x.reason || "")}</span></div></div>`).join("") || `<p class="lsm-empty">No terminations found.</p>`;
+    show("lsmTerminationView");
   }
 
   async function createTermination() {
-    const payload = {
-      termination_date:
-        $("lsmTermDate").value,
-
-      termination_type:
-        $("lsmTermType").value,
-
-      settlement_amount:
-        amount($("lsmTermSettlement").value),
-
-      reason:
-        $("lsmTermReason").value.trim(),
-    };
-
-    if (
-      !payload.termination_date ||
-      !payload.reason
-    ) {
-      throw new Error(
-        "Termination date and reason are required."
-      );
-    }
-
-    await api(
-      ENDPOINTS.lessorLeases.terminations(
-        cid(),
-        leaseId()
-      ),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    showMessage(
-      "Draft termination created.",
-      "success"
-    );
-
+    const payload = { termination_date:$("lsmTermDate").value, termination_type:$("lsmTermType").value, settlement_amount:n($("lsmTermSettlement").value), reason:$("lsmTermReason").value.trim() };
+    if (!payload.termination_date || !payload.reason) throw new Error("Termination date and reason are required.");
+    await api(ENDPOINTS.lessorLeases.terminations(cid(), leaseId()), { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(payload) });
+    message("Draft termination created.", "success");
     await openTerminations();
   }
 
-  function bindLifecycleActions() {
-    const screen =
-      $("screen-lessor-subsequent");
-
-    if (
-      !screen ||
-      screen.dataset.lifecycleBound === "1"
-    ) {
-      return;
-    }
-
+  function bind() {
+    const screen = $("screen-lessor-subsequent");
+    if (!screen || screen.dataset.lifecycleBound === "1") return;
     screen.dataset.lifecycleBound = "1";
 
-    const bind = (id, handler) => {
-      $(id)?.addEventListener(
-        "click",
-        () => handler().catch(error =>
-          showMessage(
-            error.message,
-            "error"
-          )
-        )
-      );
+    const events = {
+      lsmSchedulesBtn:openSchedule,
+      lsmRefreshScheduleBtn:openSchedule,
+      lsmExpandScheduleBtn:toggleSchedule,
+      lsmBillingBtn:openBilling,
+      lsmRefreshBillingBtn:openBilling,
+      lsmExpandBillingBtn:toggleBilling,
+      lsmBillingBtn:openBilling, lsmRefreshBillingBtn:openBilling,
+      lsmHistoryBtn:openHistory, lsmRefreshHistoryBtn:openHistory,
+      lsmModifyBtn:openModifications, lsmCreateModificationBtn:createModification,
+      lsmTerminateBtn:openTerminations, lsmCreateTerminationBtn:createTermination
     };
 
-    bind(
-      "lsmCorrectionBtn",
-      openCorrection
-    );
-
-    bind(
-      "lsmApplyCorrectionBtn",
-      applyCorrection
-    );
-
-    bind(
-      "lsmSchedulesBtn",
-      openVersions
-    );
-
-    bind(
-      "lsmBillingBtn",
-      openBilling
-    );
-
-    bind(
-      "lsmHistoryBtn",
-      openHistory
-    );
-
-    bind(
-      "lsmModifyBtn",
-      openModifications
-    );
-
-    bind(
-      "lsmCreateModificationBtn",
-      createModification
-    );
-
-    bind(
-      "lsmTerminateBtn",
-      openTerminations
-    );
-
-    bind(
-      "lsmCreateTerminationBtn",
-      createTermination
-    );
-
-    screen.addEventListener(
-      "click",
-      event => {
-        const button =
-          event.target.closest(
-            "[data-lsm-close]"
-          );
-
-        if (!button) return;
-
-        document
-          .getElementById(
-            button.dataset.lsmClose
-          )
-          ?.classList.add("hidden");
-      }
-    );
+    Object.entries(events).forEach(([id, fn]) => $(id)?.addEventListener("click", () => fn().catch(e => message(e.message, "error"))));
+      screen.addEventListener("click", e => {
+      if (!e.target.closest("[data-lsm-back]")) return;
+      message("");
+      show("lsmWorkspaceView");
+    });
   }
 
-  const previousBind =
-    window.bindLessorSubsequentScreen;
+  const previousBind = window.bindLessorSubsequentScreen;
+  window.bindLessorSubsequentScreen = async function () {
+    await previousBind?.();
+    bind();
+  };
+})();
 
-  window.bindLessorSubsequentScreen =
-    async function () {
-      await previousBind?.();
+/* =========================================================
+   DATA MIGRATION WORKSPACE
+========================================================= */
+(function dataMigrationWorkspace() {
+  "use strict";
 
-      bindLifecycleActions();
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  })[c]);
+  const text = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? ""; };
+  const value = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ""; };
+  const log = msg => state.activity.push(`${new Date().toLocaleTimeString()} — ${msg}`);
+  const money = v => new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: window.CURRENT_COMPANY?.currency || "ZAR"
+  }).format(Number(v || 0));
+  const bytes = n => !n ? "—" : n < 1024 ? `${n} B` : n < 1048576
+    ? `${(n / 1024).toFixed(1)} KB`
+    : `${(n / 1048576).toFixed(1)} MB`;
+  const extension = name => String(name || "").split(".").pop()?.toUpperCase() || "FILE";
 
-      try {
-        await loadSelectedLease();
-      } catch (_) {}
+  const steps = [
+    ["project", "Project"],
+    ["source", "Source"],
+    ["scope", "Scope"],
+    ["files", "Files"],
+    ["detect", "Detection"],
+    ["mapping", "Field Mapping"],
+    ["accounts", "Account Mapping"],
+    ["validate", "Validation"],
+    ["preview", "Preview"],
+    ["stage", "Staging"],
+    ["reconcile", "Reconcile"],
+    ["commit", "Commit"]
+  ];
+
+  const entities = {
+    chart_of_accounts: "Chart of Accounts",
+    customers: "Customers",
+    vendors: "Vendors",
+    products: "Products and Services",
+    inventory: "Inventory",
+    opening_balances: "Opening Balances",
+    journals: "General Journals",
+    sales_invoices: "Sales Invoices",
+    receipts: "Customer Receipts",
+    supplier_bills: "Supplier Bills",
+    supplier_payments: "Supplier Payments",
+    bank_transactions: "Bank Transactions",
+    fixed_assets: "Fixed Assets",
+    leases: "Lease Contracts",
+    employees: "Employees",
+    payroll_balances: "Payroll Balances"
+  };
+
+  const state = {
+    bound: false,
+    activeStep: "project",
+    project: {
+      id: 1,
+      reference: "MIG-2026-0001",
+      name: "ABC Trading Migration",
+      status: "Draft",
+      sourceSystem: "Sage Pastel",
+      cutoverDate: "2026-07-31",
+      depth: "current"
+    },
+    projects: [
+      { id: 1, name: "ABC Trading Migration" },
+      { id: 2, name: "Demo Retail Import" }
+    ],
+    files: [],
+    selectedEntities: new Set([
+      "chart_of_accounts",
+      "customers",
+      "vendors",
+      "opening_balances",
+      "sales_invoices"
+    ]),
+    detected: [],
+    fieldMappings: [],
+    accountMappings: [],
+    issues: [],
+    preview: null,
+    staged: false,
+    reconciliation: [],
+    committed: false,
+    activity: ["Workspace initialised"]
+  };
+
+  const unresolvedErrors = () =>
+    state.issues.filter(x => x.severity === "error" && x.status !== "resolved").length;
+
+  const reconPassed = () =>
+    state.reconciliation.length > 0 &&
+    state.reconciliation.every(x => Number(x.difference) === 0);
+
+  const readiness = () => {
+    const checks = [
+      state.files.length,
+      state.detected.length,
+      state.fieldMappings.length,
+      state.accountMappings.length,
+      state.issues.length && unresolvedErrors() === 0,
+      state.preview,
+      state.staged,
+      reconPassed()
+    ];
+    return Math.round(checks.filter(Boolean).length / checks.length * 100);
+  };
+
+  function bindDataMigrationScreen() {
+    const root = $("#migrationWorkspace");
+    if (!root) return console.warn("[DataMigration] #migrationWorkspace not found");
+
+    if (!state.bound) {
+      state.bound = true;
+      root.addEventListener("click", handleClick);
+      root.addEventListener("change", handleChange);
+      $("#mwFileInput")?.addEventListener("change", e => {
+        addFiles(e.target.files);
+        e.target.value = "";
+      });
+    }
+
+    render();
+  }
+
+  function handleClick(e) {
+    const step = e.target.closest("[data-mw-step]")?.dataset.mwStep;
+    if (step) return go(step);
+
+    const action = e.target.closest("[data-mw-action]")?.dataset.mwAction;
+    if (!action) return;
+
+    ({
+      "new-project": newProject,
+      "save-project": saveProject,
+      previous,
+      next,
+      "choose-files": () => $("#mwFileInput")?.click(),
+      "run-detection": runDetection,
+      "auto-map-fields": autoMapFields,
+      "auto-map-accounts": autoMapAccounts,
+      "run-validation": runValidation,
+      "resolve-errors": resolveErrors,
+      "generate-preview": generatePreview,
+      "stage-import": stageImport,
+      "run-reconciliation": runReconciliation,
+      "commit-import": commitImport,
+      "rollback-import": rollbackImport
+    })[action]?.();
+  }
+
+  function handleChange(e) {
+    const el = e.target;
+
+    if (el.id === "mwProjectSelect") return loadProject(Number(el.value));
+
+    if (el.id === "mwSourceSystem") {
+      state.project.sourceSystem = el.value;
+      log(`Source system changed to ${el.value}`);
+      return render();
+    }
+
+    if (el.id === "mwCutoverDate") {
+      state.project.cutoverDate = el.value;
+      log(`Cutover date changed to ${el.value}`);
+      return render();
+    }
+
+    if (el.id === "mwMigrationDepth") {
+      state.project.depth = el.value;
+      log("Migration depth updated");
+      return render();
+    }
+
+    if (el.matches("[data-mw-entity]")) {
+      el.checked
+        ? state.selectedEntities.add(el.value)
+        : state.selectedEntities.delete(el.value);
+
+      log(`Scope updated: ${entities[el.value]}`);
+      return render();
+    }
+
+    if (el.matches("[data-mw-target-field]")) {
+      const row = state.fieldMappings.find(x => x.source === el.dataset.mwTargetField);
+      if (row) row.target = el.value;
+    }
+
+    if (el.matches("[data-mw-target-account]")) {
+      const row = state.accountMappings.find(x => x.sourceCode === el.dataset.mwTargetAccount);
+      if (row) row.target = el.value;
+    }
+  }
+
+  function render() {
+    renderSelectors();
+    renderSummary();
+    renderStepper();
+    renderMain();
+    renderSide();
+    text("mwFooterHint", `Current phase: ${steps.find(x => x[0] === state.activeStep)?.[1] || ""}`);
+  }
+
+  function renderSelectors() {
+    const select = $("#mwProjectSelect");
+
+    if (select) {
+      select.innerHTML = state.projects.map(x => `
+        <option value="${x.id}" ${x.id === state.project.id ? "selected" : ""}>
+          ${esc(x.name)}
+        </option>
+      `).join("");
+    }
+
+    value("mwSourceSystem", state.project.sourceSystem);
+    value("mwCutoverDate", state.project.cutoverDate);
+    value("mwMigrationDepth", state.project.depth);
+  }
+
+  function renderSummary() {
+    text("mwStatus", state.committed ? "Committed" : state.staged ? "Staged" : state.project.status);
+    text("mwFileCount", state.files.length);
+    text("mwRecordCount", state.detected.reduce((n, x) => n + x.records, 0).toLocaleString());
+    text("mwErrorCount", unresolvedErrors());
+    text("mwReconStatus", state.reconciliation.length ? reconPassed() ? "Passed" : "Review" : "Not run");
+  }
+
+  function renderStepper() {
+    const active = steps.findIndex(x => x[0] === state.activeStep);
+
+    $("#mwStepper").innerHTML = steps.map(([id, label], i) => `
+      <button type="button"
+        class="mw-step ${id === state.activeStep ? "active" : ""} ${i < active ? "done" : ""}"
+        data-mw-step="${id}">
+        <small>Phase ${i + 1}</small>
+        <strong>${label}</strong>
+      </button>
+    `).join("");
+  }
+
+  function renderMain() {
+    const renderers = {
+      project: projectView,
+      source: sourceView,
+      scope: scopeView,
+      files: filesView,
+      detect: detectionView,
+      mapping: fieldMappingView,
+      accounts: accountMappingView,
+      validate: validationView,
+      preview: previewView,
+      stage: stagingView,
+      reconcile: reconciliationView,
+      commit: commitView
     };
+
+    $("#mwMain").innerHTML = renderers[state.activeStep]?.() || "";
+  }
+
+  function projectView() {
+    return `
+      <h2>Migration project</h2>
+      <p class="mw-muted">Create a controlled migration project that can be saved, reviewed and resumed.</p>
+
+      <div class="mw-grid-2">
+        ${field("Project name", state.project.name)}
+        ${field("Migration reference", state.project.reference, true)}
+        ${field("Target company", "Current active company", true)}
+        ${field("Project owner", "Current user", true)}
+      </div>
+
+      <div class="mw-alert warn" style="margin-top:16px">
+        <strong>Control:</strong> Imported records pass through staging before live tables are updated.
+      </div>
+    `;
+  }
+
+  function sourceView() {
+    const sources = [
+      ["Excel / CSV", "Workbooks, exported ledgers and migration templates."],
+      ["Accounting export", "Sage, QuickBooks, Xero and other system exports."],
+      ["JSON / XML", "Structured application exports."],
+      ["SQL extract", "Database exports supplied by an administrator."],
+      ["Opening balances", "Trial balance and subledger opening positions."],
+      ["Manual template", "FinSage standard migration workbook."]
+    ];
+
+    return `
+      <h2>Choose source format</h2>
+      <p class="mw-muted">All supported formats are normalised into one staging model.</p>
+
+      <div class="mw-grid-3">
+        ${sources.map(([title, description], i) => `
+          <div class="mw-card">
+            <span class="mw-badge ${i === 0 ? "info" : ""}">
+              ${i === 0 ? "Recommended" : "Supported"}
+            </span>
+            <h3 style="margin-top:10px">${title}</h3>
+            <p class="mw-muted">${description}</p>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function scopeView() {
+    return `
+      <h2>Select migration scope</h2>
+      <p class="mw-muted">Choose the records to migrate. Dependencies will be validated before staging.</p>
+
+      <div class="mw-grid-3">
+        ${Object.entries(entities).map(([key, label]) => `
+          <label class="mw-card mw-check">
+            <input type="checkbox" data-mw-entity value="${key}"
+              ${state.selectedEntities.has(key) ? "checked" : ""}>
+            <span>
+              <strong>${label}</strong><br>
+              <small class="mw-muted">${scopeHint(key)}</small>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function filesView() {
+    return `
+      <h2>Upload source files</h2>
+      <p class="mw-muted">Upload one or more files linked to this migration project.</p>
+
+      <div class="mw-dropzone" data-mw-action="choose-files">
+        <div style="font-size:34px">📤</div>
+        <h3>Choose migration files</h3>
+        <p class="mw-muted">CSV, XLSX, XLS, JSON, XML, SQL or TXT</p>
+        <button type="button" class="mw-btn primary">Browse files</button>
+      </div>
+
+      ${table(
+        ["File", "Type", "Size", "Status"],
+        state.files.map(f => [
+          esc(f.name),
+          esc(f.type || extension(f.name)),
+          bytes(f.size),
+          badge("Ready", "ok")
+        ]),
+        "No source files have been uploaded."
+      )}
+    `;
+  }
+
+  function detectionView() {
+    return `
+      ${heading(
+        "Detect files and entities",
+        "FinSage inspects headings, formats and sample rows to identify each dataset.",
+        button("Run detection", "run-detection", "primary")
+      )}
+
+      ${table(
+        ["Source dataset", "Detected entity", "Records", "Confidence", "Status"],
+        state.detected.map(x => [
+          esc(x.file),
+          entities[x.entity] || esc(x.entity),
+          x.records.toLocaleString(),
+          `${x.confidence}%`,
+          badge("Detected", "ok")
+        ]),
+        "Run detection after adding source files."
+      )}
+    `;
+  }
+
+  function fieldMappingView() {
+    const targets = [
+      "code", "name", "description", "email", "phone",
+      "tax_number", "invoice_date", "due_date",
+      "amount", "balance", "account_code"
+    ];
+
+    return `
+      ${heading(
+        "Field mapping",
+        "Map source columns to FinSage fields.",
+        button("Auto-map fields", "auto-map-fields")
+      )}
+
+      ${table(
+        ["Entity", "Source field", "Sample value", "FinSage field", "Confidence"],
+        state.fieldMappings.map(x => [
+          entities[x.entity] || x.entity,
+          esc(x.source),
+          esc(x.sample),
+          select(
+            targets,
+            x.target,
+            `data-mw-target-field="${esc(x.source)}"`,
+            "Ignore field"
+          ),
+          badge(`${x.confidence}%`, x.confidence > 85 ? "ok" : "warn")
+        ]),
+        "Run source detection and then auto-map the fields."
+      )}
+    `;
+  }
+
+  function accountMappingView() {
+    const targets = [
+      "Cash & Bank",
+      "Accounts Receivable Control",
+      "Inventory",
+      "VAT Output",
+      "Accounts Payable Control",
+      "Revenue from Contracts with Customers",
+      "Cost of Sales",
+      "Operating Expenses",
+      "Retained Earnings"
+    ];
+
+    return `
+      ${heading(
+        "Chart of accounts mapping",
+        "Map source accounts to the current FinSage chart of accounts.",
+        button("Suggest mappings", "auto-map-accounts")
+      )}
+
+      ${table(
+        ["Source code", "Source account", "FinSage account", "Rule", "Status"],
+        state.accountMappings.map(x => [
+          esc(x.sourceCode),
+          esc(x.sourceName),
+          select(
+            targets,
+            x.target,
+            `data-mw-target-account="${esc(x.sourceCode)}"`,
+            "Select account"
+          ),
+          esc(x.rule),
+          badge(x.target ? "Mapped" : "Review", x.target ? "ok" : "warn")
+        ]),
+        "Generate suggested account mappings."
+      )}
+    `;
+  }
+
+  function validationView() {
+    return `
+      ${heading(
+        "Validation centre",
+        "Resolve errors before staging. Warnings can later be approved with an audit note.",
+        `
+          ${button("Resolve demo issues", "resolve-errors")}
+          ${button("Run validation", "run-validation", "primary")}
+        `
+      )}
+
+      ${table(
+        ["Severity", "Entity", "Source row", "Issue", "Status"],
+        state.issues.map(x => [
+          badge(x.severity, x.severity),
+          entities[x.entity] || x.entity,
+          x.row,
+          `<strong>${esc(x.code)}</strong><br><small class="mw-muted">${esc(x.message)}</small>`,
+          badge(x.status, x.status === "resolved" ? "ok" : "warn")
+        ]),
+        "No validation run has been completed."
+      )}
+    `;
+  }
+
+  function previewView() {
+    return `
+      ${heading(
+        "Migration preview",
+        "Review expected records and control totals before staging.",
+        button("Generate preview", "generate-preview", "primary")
+      )}
+
+      ${state.preview ? `
+        <div class="mw-grid-3">
+          ${metric("Customers", state.preview.customers)}
+          ${metric("Vendors", state.preview.vendors)}
+          ${metric("Invoices", state.preview.invoices)}
+          ${metric("Journals", state.preview.journals)}
+          ${metric("Debits", money(state.preview.debits))}
+          ${metric("Credits", money(state.preview.credits))}
+        </div>
+
+        <div class="mw-alert ${state.preview.debits === state.preview.credits ? "ok" : "error"}"
+          style="margin-top:16px">
+          <strong>Trial balance control:</strong>
+          ${state.preview.debits === state.preview.credits
+            ? "Debits and credits agree."
+            : "A trial balance difference was detected."}
+        </div>
+      ` : `<div class="mw-empty">Generate a preview to inspect expected migration totals.</div>`}
+    `;
+  }
+
+  function stagingView() {
+    const blocked = unresolvedErrors() > 0 || !state.preview;
+
+    return `
+      <h2>Stage migration</h2>
+      <p class="mw-muted">Create normalised staging records without affecting live accounting data.</p>
+
+      <div class="mw-alert ${blocked ? "warn" : "ok"}">
+        <strong>${blocked ? "Not ready" : "Ready to stage"}:</strong>
+        ${blocked
+          ? "Generate a preview and resolve all blocking errors."
+          : "Validation and preview controls are complete."}
+      </div>
+
+      <div style="margin-top:18px">
+        <button class="mw-btn primary" data-mw-action="stage-import" ${blocked ? "disabled" : ""}>
+          ${state.staged ? "Rebuild staging batch" : "Create staging batch"}
+        </button>
+      </div>
+    `;
+  }
+
+  function reconciliationView() {
+    return `
+      ${heading(
+        "Migration reconciliation",
+        "Compare source control totals with staged FinSage totals.",
+        `<button class="mw-btn primary" data-mw-action="run-reconciliation"
+          ${state.staged ? "" : "disabled"}>Run reconciliation</button>`
+      )}
+
+      ${table(
+        ["Control", "Source", "Staged", "Difference", "Status"],
+        state.reconciliation.map(x => [
+          esc(x.control),
+          money(x.source),
+          money(x.staged),
+          money(x.difference),
+          badge(Number(x.difference) === 0 ? "Passed" : "Review",
+            Number(x.difference) === 0 ? "ok" : "error")
+        ]),
+        "Stage the migration and then run reconciliation."
+      )}
+    `;
+  }
+
+  function commitView() {
+    const ready = state.staged && reconPassed() && !state.committed;
+
+    return `
+      <h2>Commit migration</h2>
+      <p class="mw-muted">Create live FinSage records from the approved staging batch.</p>
+
+      <div class="mw-alert ${state.committed ? "ok" : ready ? "warn" : "error"}">
+        <strong>
+          ${state.committed ? "Migration committed" : ready ? "Final approval required" : "Commit blocked"}:
+        </strong>
+        ${state.committed
+          ? "The demo migration has been completed."
+          : ready
+            ? "Confirm the cutover date, source totals and reconciliation results."
+            : "Staging and reconciliation must pass before committing."}
+      </div>
+
+      <div class="mw-inline" style="margin-top:18px">
+        <button class="mw-btn success" data-mw-action="commit-import" ${ready ? "" : "disabled"}>
+          Commit migration
+        </button>
+
+        <button class="mw-btn danger" data-mw-action="rollback-import"
+          ${state.staged || state.committed ? "" : "disabled"}>
+          Rollback batch
+        </button>
+      </div>
+    `;
+  }
+
+  function renderSide() {
+    const percent = readiness();
+    const bar = $("#mwReadinessBar");
+
+    if (bar) bar.style.width = `${percent}%`;
+
+    text("mwReadinessText", `${percent}% complete`);
+
+    $("#mwControls").innerHTML = [
+      control("Source files", state.files.length > 0),
+      control("Entities detected", state.detected.length > 0),
+      control("Fields mapped", state.fieldMappings.length > 0),
+      control("Accounts mapped", state.accountMappings.length > 0),
+      control("No blocking errors", state.issues.length > 0 && unresolvedErrors() === 0),
+      control("Preview generated", !!state.preview),
+      control("Staging created", state.staged),
+      control("Reconciliation passed", reconPassed())
+    ].join("");
+
+    $("#mwActivity").innerHTML = state.activity
+      .slice()
+      .reverse()
+      .map(x => `<div>${esc(x)}</div>`)
+      .join("");
+  }
+
+  function addFiles(fileList) {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+
+    state.files.push(...files.map(f => ({
+      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+      name: f.name,
+      size: f.size,
+      type: f.type || extension(f.name)
+    })));
+
+    log(`${files.length} migration file(s) added`);
+    render();
+  }
+
+  function runDetection() {
+    const files = state.files.length ? state.files : [
+      { name: "Customers.xlsx" },
+      { name: "GL Accounts.csv" },
+      { name: "Invoices.csv" }
+    ];
+
+    const types = ["customers", "chart_of_accounts", "sales_invoices", "vendors"];
+    const counts = [248, 96, 1430, 81];
+    const confidence = [98, 96, 93, 91];
+
+    state.detected = files.map((f, i) => ({
+      file: f.name,
+      entity: types[i % types.length],
+      records: counts[i % counts.length],
+      confidence: confidence[i % confidence.length]
+    }));
+
+    state.fieldMappings = [
+      ["customers", "CustomerCode", "CUST-001", "code", 98],
+      ["customers", "CustomerName", "ABC Retail", "name", 99],
+      ["customers", "VATNo", "4123456789", "tax_number", 89],
+      ["sales_invoices", "InvoiceDate", "2026-07-12", "invoice_date", 97],
+      ["sales_invoices", "TotalIncl", "1850.00", "amount", 94]
+    ].map(([entity, source, sample, target, confidence]) => ({
+      entity, source, sample, target, confidence
+    }));
+
+    log("Source detection completed");
+    render();
+  }
+
+  function autoMapFields() {
+    if (!state.fieldMappings.length) return runDetection();
+    state.fieldMappings.forEach(x => x.confidence = Math.max(x.confidence, 92));
+    log("Field mapping suggestions refreshed");
+    render();
+  }
+
+  function autoMapAccounts() {
+    state.accountMappings = [
+      ["1000", "Bank Account", "Cash & Bank", "Account type and name"],
+      ["1100", "Trade Debtors", "Accounts Receivable Control", "Control account"],
+      ["2000", "Trade Creditors", "Accounts Payable Control", "Control account"],
+      ["4000", "Sales", "Revenue from Contracts with Customers", "Revenue classification"],
+      ["5000", "Cost of Sales", "Cost of Sales", "Expense classification"]
+    ].map(([sourceCode, sourceName, target, rule]) => ({
+      sourceCode, sourceName, target, rule
+    }));
+
+    log("Account mapping suggestions generated");
+    render();
+  }
+
+  function runValidation() {
+    state.issues = [
+      {
+        severity: "error",
+        entity: "sales_invoices",
+        row: 84,
+        code: "CUSTOMER_NOT_FOUND",
+        message: "Customer CUST-991 is missing from the customer dataset.",
+        status: "unresolved"
+      },
+      {
+        severity: "warning",
+        entity: "customers",
+        row: 22,
+        code: "DUPLICATE_TAX_NUMBER",
+        message: "The same tax number is used by two customer records.",
+        status: "unresolved"
+      },
+      {
+        severity: "info",
+        entity: "chart_of_accounts",
+        row: 0,
+        code: "ACCOUNT_NAME_NORMALISED",
+        message: "Three account names will be trimmed and standardised.",
+        status: "resolved"
+      }
+    ];
+
+    log("Validation completed with one blocking error");
+    render();
+  }
+
+  function resolveErrors() {
+    if (!state.issues.length) runValidation();
+    state.issues.forEach(x => x.status = "resolved");
+    log("Demo validation issues resolved");
+    render();
+  }
+
+  function generatePreview() {
+    state.preview = {
+      customers: 248,
+      vendors: 81,
+      invoices: 1430,
+      journals: 612,
+      debits: 1280000,
+      credits: 1280000
+    };
+
+    log("Migration preview generated");
+    render();
+  }
+
+  function stageImport() {
+    if (unresolvedErrors() || !state.preview) {
+      return alert("Resolve blocking errors and generate the preview first.");
+    }
+
+    state.staged = true;
+    state.project.status = "Staged";
+    log("Migration staging batch created");
+    render();
+  }
+
+  function runReconciliation() {
+    if (!state.staged) return alert("Create the staging batch first.");
+
+    state.reconciliation = [
+      ["Trial balance debits", 1280000, 1280000],
+      ["Trial balance credits", 1280000, 1280000],
+      ["Customer balances", 365000, 365000],
+      ["Supplier balances", 142500, 142500],
+      ["Inventory value", 210800, 210800]
+    ].map(([control, source, staged]) => ({
+      control,
+      source,
+      staged,
+      difference: source - staged
+    }));
+
+    log("Migration reconciliation passed");
+    render();
+  }
+
+  function commitImport() {
+    if (!state.staged || !reconPassed()) {
+      return alert("Staging and reconciliation must pass first.");
+    }
+
+    if (!confirm("Commit this migration batch to the live company?")) return;
+
+    state.committed = true;
+    state.project.status = "Committed";
+    log("Migration batch committed");
+    render();
+  }
+
+  function rollbackImport() {
+    if (!state.staged && !state.committed) return;
+    if (!confirm("Rollback this migration batch?")) return;
+
+    state.staged = false;
+    state.committed = false;
+    state.reconciliation = [];
+    state.project.status = "Draft";
+
+    log("Migration batch rolled back");
+    render();
+  }
+
+  function newProject() {
+    const id = Date.now();
+
+    state.project = {
+      id,
+      reference: `MIG-${new Date().getFullYear()}-${String(state.projects.length + 1).padStart(4, "0")}`,
+      name: "New Migration Project",
+      status: "Draft",
+      sourceSystem: "Excel / CSV",
+      cutoverDate: new Date().toISOString().slice(0, 10),
+      depth: "opening"
+    };
+
+    state.projects.push({ id, name: state.project.name });
+
+    Object.assign(state, {
+      files: [],
+      detected: [],
+      fieldMappings: [],
+      accountMappings: [],
+      issues: [],
+      preview: null,
+      staged: false,
+      reconciliation: [],
+      committed: false,
+      activeStep: "project"
+    });
+
+    log("New migration project created");
+    render();
+  }
+
+  function saveProject() {
+    const project = state.projects.find(x => x.id === state.project.id);
+    if (project) project.name = state.project.name;
+
+    log("Migration project saved in demo mode");
+    render();
+    alert("Migration project saved in demo mode.");
+  }
+
+  function loadProject(id) {
+    const project = state.projects.find(x => x.id === id);
+    if (!project) return;
+
+    state.project.id = project.id;
+    state.project.name = project.name;
+
+    log(`Loaded ${project.name}`);
+    render();
+  }
+
+  function go(id) {
+    if (!steps.some(x => x[0] === id)) return;
+    state.activeStep = id;
+    render();
+  }
+
+  function previous() {
+    const i = steps.findIndex(x => x[0] === state.activeStep);
+    if (i > 0) go(steps[i - 1][0]);
+  }
+
+  function next() {
+    const i = steps.findIndex(x => x[0] === state.activeStep);
+    if (i >= 0 && i < steps.length - 1) go(steps[i + 1][0]);
+  }
+
+  function field(label, val, readonly = false) {
+    return `
+      <div class="mw-field">
+        <label>${label}</label>
+        <input class="mw-input" value="${esc(val)}" ${readonly ? "readonly" : ""}>
+      </div>
+    `;
+  }
+
+  function heading(title, description, actions = "") {
+    return `
+      <div class="mw-inline" style="justify-content:space-between">
+        <div>
+          <h2>${title}</h2>
+          <p class="mw-muted">${description}</p>
+        </div>
+        <div class="mw-inline">${actions}</div>
+      </div>
+    `;
+  }
+
+  function button(label, action, style = "") {
+    return `<button class="mw-btn ${style}" data-mw-action="${action}">${label}</button>`;
+  }
+
+  function badge(label, type = "") {
+    return `<span class="mw-badge ${type}">${esc(label)}</span>`;
+  }
+
+  function metric(label, val) {
+    return `<div class="mw-stat"><span>${esc(label)}</span><strong>${esc(val)}</strong></div>`;
+  }
+
+  function control(label, ready) {
+    return `
+      <div class="mw-list-item">
+        ${badge(ready ? "Ready" : "Pending", ready ? "ok" : "warn")}
+        <strong>${esc(label)}</strong>
+      </div>
+    `;
+  }
+
+  function select(options, selected, attrs = "", first = "") {
+    return `
+      <select class="mw-select" ${attrs}>
+        <option value="">${first}</option>
+        ${options.map(x => `
+          <option value="${esc(x)}" ${x === selected ? "selected" : ""}>${esc(x)}</option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function table(headers, rows, emptyText) {
+    return `
+      <div class="mw-table-wrap" style="margin-top:16px">
+        <table class="mw-table">
+          <thead>
+            <tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr>
+          </thead>
+          <tbody>
+            ${rows.length
+              ? rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")
+              : `<tr><td colspan="${headers.length}" class="mw-empty">${emptyText}</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function scopeHint(entity) {
+    return ({
+      chart_of_accounts: "Required for general ledger mapping.",
+      opening_balances: "Trial balance and subledger balances.",
+      leases: "Lessee and lessor lease contracts.",
+      fixed_assets: "Asset cost and accumulated depreciation.",
+      sales_invoices: "Historical invoices and balances.",
+      bank_transactions: "Imported cashbook and bank history."
+    })[entity] || "Import master records and transaction history.";
+  }
+
+  window.bindDataMigrationScreen = bindDataMigrationScreen;
+
+  window.FS_MIGRATION_WORKSPACE = {
+    bind: bindDataMigrationScreen,
+    open: () => window.switchScreen?.("data-migration"),
+    refresh: render,
+    getState: () => ({
+      ...state,
+      selectedEntities: [...state.selectedEntities]
+    })
+  };
 })();
 
 // IFRS 16 Lease wizard → initial recognition
@@ -45057,28 +46604,42 @@ async function saveEditModal() {
 
       <div class="dt-summary-grid">
         <div class="dt-summary-card">
-          <span>Opening Tax WDV</span>
-          <strong>${money(totalOpening)}</strong>
+          <span>Gross DTA</span>
+          <strong>${money(run.gross_dta)}</strong>
         </div>
 
         <div class="dt-summary-card">
-          <span>Additions</span>
-          <strong>${money(totalAdditions)}</strong>
+          <span>Gross DTL</span>
+          <strong>${money(run.gross_dtl)}</strong>
         </div>
 
         <div class="dt-summary-card">
-          <span>Capital Allowance</span>
-          <strong>${money(totalAllowance)}</strong>
+          <span>Recognized DTA</span>
+          <strong>${money(run.recognized_dta)}</strong>
         </div>
 
         <div class="dt-summary-card">
-          <span>Closing Tax WDV</span>
-          <strong>${money(totalClosing)}</strong>
+          <span>Recognized DTL</span>
+          <strong>${money(run.recognized_dtl)}</strong>
         </div>
 
         <div class="dt-summary-card">
-          <span>Tax Adjustment</span>
-          <strong>${money(totalAdjustment)}</strong>
+          <span>Unrecognized DTA</span>
+          <strong>${money(run.unrecognized_dta)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Net Deferred Tax</span>
+          <strong>${money(Math.abs(Number(run.net_deferred_tax || 0)))}</strong>
+          <small>
+            ${
+              Number(run.net_deferred_tax || 0) > 0
+                ? "Net liability"
+                : Number(run.net_deferred_tax || 0) < 0
+                  ? "Net asset"
+                  : "Nil"
+            }
+          </small>
         </div>
       </div>
 
@@ -45830,17 +47391,39 @@ async function saveEditModal() {
           <span>Gross DTA</span>
           <strong>${money(run.gross_dta)}</strong>
         </div>
+
         <div class="dt-summary-card">
           <span>Gross DTL</span>
           <strong>${money(run.gross_dtl)}</strong>
         </div>
+
         <div class="dt-summary-card">
           <span>Recognized DTA</span>
           <strong>${money(run.recognized_dta)}</strong>
         </div>
+
+        <div class="dt-summary-card">
+          <span>Recognized DTL</span>
+          <strong>${money(run.recognized_dtl)}</strong>
+        </div>
+
+        <div class="dt-summary-card">
+          <span>Unrecognized DTA</span>
+          <strong>${money(run.unrecognized_dta)}</strong>
+        </div>
+
         <div class="dt-summary-card">
           <span>Net Deferred Tax</span>
-          <strong>${money(run.net_deferred_tax)}</strong>
+          <strong>${money(Math.abs(run.net_deferred_tax))}</strong>
+          <small>
+            ${
+              Number(run.net_deferred_tax || 0) > 0
+                ? "Liability"
+                : Number(run.net_deferred_tax || 0) < 0
+                  ? "Asset"
+                  : "Nil"
+            }
+          </small>
         </div>
       </div>
 
@@ -56896,24 +58479,46 @@ async function saveEditModal() {
     bonusRuns: [],
     selectedBonusRun: null,
     benefitPlans: [],
+    selectedBenefitPlan:null,
+    planMembers:[],
     actuarialValuations: [],
     selectedActuarialValuation: null,
     disclosure: null,
     diagnostics: null,
     activeTab: "overview",
     loaded: false,
+    definedContributionRuns:[],
+    selectedDefinedContributionRun:null,
+    definedContributionPreview:null,
+    definedBenefitPlans:[],
+    actuarialReconciliation:null,
+    actuarialAssumptions:[],
+    longTermSchemes:[],
+    longTermAssignments:[],
+    longTermRuns:[],
+    selectedLongTermRun:null,
+    terminationPlans:[],
+    selectedTerminationPlan:null,
+    terminationJournalPreview:null,
+    movementReport:null,
+    benefitJournals:[],
+    selectedBenefitJournal:null,
+    coa:[],
+    coaLoaded:false,
   };
 
-  function payrollBenefitPanelId(tab) {
-    const map = {
-      overview: "payrollBenefitPanelOverview",
-      leave: "payrollBenefitPanelLeave",
-      bonuses: "payrollBenefitPanelBonuses",
-      actuarial: "payrollBenefitPanelActuarial",
-      disclosures: "payrollBenefitPanelDisclosures",
-      settings: "payrollBenefitPanelSettings",
-    };
-    return map[tab];
+  function payrollBenefitPanelId(tab){
+    return({
+      overview:"payrollBenefitPanelOverview",
+      leave:"payrollBenefitPanelLeave",
+      bonuses:"payrollBenefitPanelBonuses",
+      plans:"payrollBenefitPanelPlans",
+      actuarial:"payrollBenefitPanelActuarial",
+      "long-term":"payrollBenefitPanelLongTerm",
+      termination:"payrollBenefitPanelTermination",
+      disclosures:"payrollBenefitPanelDisclosures",
+      settings:"payrollBenefitPanelSettings",
+    })[tab];
   }
 
   async function switchPayrollBenefitTab(tab) {
@@ -56933,8 +58538,11 @@ async function saveEditModal() {
       "payrollBenefitPanelLeave",
       "payrollBenefitPanelBonuses",
       "payrollBenefitPanelActuarial",
+      "payrollBenefitPanelLongTerm",
+      "payrollBenefitPanelTermination",
       "payrollBenefitPanelDisclosures",
       "payrollBenefitPanelSettings",
+      "payrollBenefitPanelPlans",
     ].forEach(id => $(id)?.classList.add("hidden"));
 
     $(payrollBenefitPanelId(tab))?.classList.remove("hidden");
@@ -56943,8 +58551,11 @@ async function saveEditModal() {
     if (tab === "leave") await loadPayrollLeaveWorkspace();
     if (tab === "bonuses") await loadPayrollBonusWorkspace();
     if (tab === "actuarial") await loadPayrollActuarialWorkspace();
+    if(tab==="long-term")await loadPayrollLongTermWorkspace();
+    if(tab==="termination")await loadPayrollTerminationWorkspace();
     if (tab === "disclosures") await loadPayrollBenefitDisclosure();
     if (tab === "settings") await loadPayrollBenefitSettings();
+    if(tab==="plans") await loadPayrollBenefitPlans();
   }
 
   async function loadPayrollEmployeeBenefitsWorkspace() {
@@ -56967,71 +58578,1835 @@ async function saveEditModal() {
     renderPayrollEmployeeBenefitsDashboard();
   }
 
-  function renderPayrollEmployeeBenefitsDashboard() {
-    const data = payrollState.employeeBenefits.dashboard || {};
+  async function loadPayrollBenefitPlans(){
+    const [p,r]=await Promise.all([
+      apiFetch(ENDPOINTS.payroll.benefitPlans(cid())),
+      apiFetch(ENDPOINTS.payroll.definedContributionRuns(cid())),
+    ]);
+    payrollState.employeeBenefits.benefitPlans=p?.items||[];
+    payrollState.employeeBenefits.definedContributionRuns=r?.items||[];
+    renderPayrollBenefitPlans();
+  }
 
-    if ($("payrollBenefitReportingDate")) {
-      $("payrollBenefitReportingDate").value =
-        payrollState.employeeBenefits.reportingDate;
-    }
+  function renderPayrollBenefitPlans(){
+    const el=$("payrollBenefitPanelPlans");
+    const plans=payrollState.employeeBenefits.benefitPlans||[];
+    const runs=payrollState.employeeBenefits.definedContributionRuns||[];
+    if(!el)return;
 
-    setTxt(
-      "payrollBenefitCurrentLiability",
-      money(data.current_liability)
-    );
-    setTxt(
-      "payrollBenefitNonCurrentLiability",
-      money(data.noncurrent_liability)
-    );
-    setTxt("payrollBenefitPlanAssets", money(data.plan_assets));
-    setTxt("payrollBenefitExpense", money(data.expense));
-    setTxt("payrollBenefitOci", money(data.oci));
-
-    const panel = $("payrollBenefitPanelOverview");
-    if (!panel) return;
-
-    panel.innerHTML = `
+    el.innerHTML=`
       <div class="payroll-card">
         <div class="payroll-card-head">
           <div>
-            <h3>Employee-benefit position</h3>
+            <h3>Post-employment benefit plans</h3>
+            <p class="payroll-muted">Defined-contribution, defined-benefit and other post-employment plans.</p>
+          </div>
+          <button id="payrollNewBenefitPlanBtn" class="payroll-primary" type="button">+ Benefit Plan</button>
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Type</th>
+                <th>Provider</th>
+                <th>Employee %</th>
+                <th>Employer %</th>
+                <th>Members</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${plans.length?plans.map(p=>`
+                <tr>
+                  <td>
+                    <strong>${esc(p.code)} — ${esc(p.name)}</strong>
+                    <div class="payroll-muted">${p.funded?"Funded":"Unfunded"}</div>
+                  </td>
+                  <td>${esc(cap(String(p.plan_type||"").replaceAll("_"," ")))}</td>
+                  <td>${esc(p.provider_name||"—")}</td>
+                  <td>${money(p.employee_contribution_percentage)}%</td>
+                  <td>${money(p.employer_contribution_percentage)}%</td>
+                  <td>${Number(p.active_members||0)}</td>
+                  <td>
+                    <button class="payroll-link" data-open-benefit-plan="${p.id}">Open</button>
+                  </td>
+                </tr>
+              `).join(""):`<tr><td colspan="7">No benefit plans configured.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="payrollBenefitPlanDetail"></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Defined-contribution runs</h3>
+            <p class="payroll-muted">Calculate employer and employee plan contributions.</p>
+          </div>
+          <button id="payrollNewDcRunBtn" class="payroll-primary" type="button">+ Contribution Run</button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${runs.length?runs.map(r=>`
+            <div class="payroll-mini-row">
+              <strong>${esc(r.run_no)}</strong>
+              <span>${esc(String(r.reporting_date||""))}</span>
+              <span>${money(r.total_payable)}</span>
+              <span class="payroll-pill">${esc(r.status)}</span>
+              <button class="payroll-link" data-open-dc-run="${r.id}">Open</button>
+            </div>
+          `).join(""):`<p class="payroll-muted">No defined-contribution runs.</p>`}
+        </div>
+
+        <div id="payrollDcRunDetail"></div>
+      </div>`;
+
+    $("payrollNewBenefitPlanBtn")?.addEventListener("click",()=>editPayrollBenefitPlan());
+    $("payrollNewDcRunBtn")?.addEventListener(
+      "click",
+      openPayrollDcRunSetup
+    );
+    el.querySelectorAll("[data-open-benefit-plan]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollBenefitPlan(Number(b.dataset.openBenefitPlan)))
+    );
+
+    el.querySelectorAll("[data-open-dc-run]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollDcRun(Number(b.dataset.openDcRun)))
+    );
+  }
+
+  function payrollRunPresetRange(preset){
+    const now=new Date();
+    const iso=d=>{
+      const y=d.getFullYear();
+      const m=String(d.getMonth()+1).padStart(2,"0");
+      const day=String(d.getDate()).padStart(2,"0");
+      return`${y}-${m}-${day}`;
+    };
+
+    const monthStart=d=>
+      new Date(d.getFullYear(),d.getMonth(),1);
+
+    const monthEnd=d=>
+      new Date(d.getFullYear(),d.getMonth()+1,0);
+
+    const quarterMonth=m=>Math.floor(m/3)*3;
+
+    let start,end;
+
+    switch(preset){
+      case"last_month":{
+        const d=new Date(
+          now.getFullYear(),
+          now.getMonth()-1,
+          1
+        );
+        start=monthStart(d);
+        end=monthEnd(d);
+        break;
+      }
+
+      case"this_quarter":{
+        const q=quarterMonth(now.getMonth());
+        start=new Date(now.getFullYear(),q,1);
+        end=new Date(now.getFullYear(),q+3,0);
+        break;
+      }
+
+      case"last_quarter":{
+        const q=quarterMonth(now.getMonth())-3;
+        start=new Date(now.getFullYear(),q,1);
+        end=new Date(now.getFullYear(),q+3,0);
+        break;
+      }
+
+      case"current_year":
+        start=new Date(now.getFullYear(),0,1);
+        end=new Date(now.getFullYear(),11,31);
+        break;
+
+      default:
+        start=monthStart(now);
+        end=monthEnd(now);
+    }
+
+    return{
+      start:iso(start),
+      end:iso(end),
+    };
+  }
+
+  function payrollDateWithinRange(value,start,end){
+    value=String(value||"");
+    if(value<start)return start;
+    if(value>end)return end;
+    return value;
+  }
+
+  async function openPayrollDcRunSetup(){
+    const today=new Date().toISOString().slice(0,10);
+    const range=payrollRunPresetRange("this_month");
+
+    let plans=payrollState.employeeBenefits.benefitPlans||[];
+
+    if(!plans.length){
+      await loadPayrollBenefitPlans();
+      plans=payrollState.employeeBenefits.benefitPlans||[];
+    }
+
+    const dcPlans=plans.filter(p=>
+      p.plan_type==="defined_contribution"&&
+      p.is_active!==false
+    );
+
+    if(!dcPlans.length){
+      showPayrollStatus(
+        "Create an active defined-contribution plan first.",
+        "error"
+      );
+      return;
+    }
+
+    const x=await payrollForm("New contribution run",[
+      {
+        name:"plan_id",
+        label:"Benefit plan",
+        type:"select",
+        required:true,
+        placeholder:"Select defined-contribution plan…",
+        options:dcPlans.map(p=>[
+          p.id,
+          `${p.code} — ${p.name}`,
+        ]),
+      },
+      {
+        name:"preset",
+        label:"Period preset",
+        type:"select",
+        value:"this_month",
+        options:[
+          ["this_month","This month"],
+          ["last_month","Last month"],
+          ["this_quarter","This quarter"],
+          ["last_quarter","Last quarter"],
+          ["current_year","Current year"],
+          ["custom","Custom"],
+        ],
+        onChange:(value,form)=>{
+          const start=form.elements.period_start;
+          const end=form.elements.period_end;
+          const reporting=form.elements.reporting_date;
+
+          if(value==="custom"){
+            start.readOnly=false;
+            end.readOnly=false;
+            return;
+          }
+
+          const dates=payrollRunPresetRange(value);
+
+          start.readOnly=true;
+          end.readOnly=true;
+          start.value=dates.start;
+          end.value=dates.end;
+          reporting.value=payrollDateWithinRange(
+            today,
+            dates.start,
+            dates.end
+          );
+        },
+      },
+      {
+        name:"period_start",
+        label:"Period start",
+        type:"date",
+        required:true,
+        readonly:true,
+        value:range.start,
+      },
+      {
+        name:"period_end",
+        label:"Period end",
+        type:"date",
+        required:true,
+        readonly:true,
+        value:range.end,
+      },
+      {
+        name:"reporting_date",
+        label:"Reporting date",
+        type:"date",
+        required:true,
+        value:payrollDateWithinRange(
+          today,
+          range.start,
+          range.end
+        ),
+      },
+    ]);
+
+    if(!x)return;
+
+    x.plan_id=Number(x.plan_id||0);
+    x.period_start=x.period_start||null;
+    x.period_end=x.period_end||null;
+    x.reporting_date=x.reporting_date||today;
+
+    if(!x.plan_id){
+      showPayrollStatus("Select a benefit plan.","error");
+      return;
+    }
+
+    if(!x.period_start||!x.period_end){
+      showPayrollStatus(
+        "Select the contribution period.",
+        "error"
+      );
+      return;
+    }
+
+    if(x.period_end<x.period_start){
+      showPayrollStatus(
+        "Period end cannot precede period start.",
+        "error"
+      );
+      return;
+    }
+
+    x.reporting_date=payrollDateWithinRange(
+      x.reporting_date,
+      x.period_start,
+      x.period_end
+    );
+
+    delete x.preset;
+    await createPayrollDcRun(x);
+  }
+
+  async function loadPayrollLongTermWorkspace(){
+    const [s,a,r]=await Promise.all([
+      apiFetch(ENDPOINTS.payroll.longTermBenefitSchemes(cid())),
+      apiFetch(ENDPOINTS.payroll.longTermBenefitAssignments(cid())),
+      apiFetch(ENDPOINTS.payroll.longTermBenefitRuns(cid())),
+    ]);
+    payrollState.employeeBenefits.longTermSchemes=s?.items||[];
+    payrollState.employeeBenefits.longTermAssignments=a?.items||[];
+    payrollState.employeeBenefits.longTermRuns=r?.items||[];
+    renderPayrollLongTermWorkspace();
+  }
+
+  function renderPayrollLongTermWorkspace(){
+    const el=$("payrollBenefitPanelLongTerm");
+    const schemes=payrollState.employeeBenefits.longTermSchemes||[];
+    const assignments=payrollState.employeeBenefits.longTermAssignments||[];
+    const runs=payrollState.employeeBenefits.longTermRuns||[];
+    if(!el)return;
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Other long-term benefit schemes</h3>
+            <p class="payroll-muted">Long-service awards, deferred bonuses, sabbatical and disability benefits.</p>
+          </div>
+          <button id="payrollNewLongTermSchemeBtn" class="payroll-primary">+ Scheme</button>
+        </div>
+
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <thead><tr><th>Scheme</th><th>Type</th><th>Basis</th><th>Service</th><th>Discount</th><th>Employees</th><th></th></tr></thead>
+          <tbody>${schemes.length?schemes.map(s=>`
+            <tr>
+              <td><strong>${esc(s.code)} — ${esc(s.name)}</strong></td>
+              <td>${esc(cap(String(s.scheme_type||"").replaceAll("_"," ")))}</td>
+              <td>${esc(cap(String(s.calculation_basis||"").replaceAll("_"," ")))}</td>
+              <td>${money(s.service_years_required)} years</td>
+              <td>${money(s.discount_rate_percentage)}%</td>
+              <td>${Number(s.active_assignments||0)}</td>
+              <td><button class="payroll-link" data-edit-long-term-scheme="${s.id}">Edit</button></td>
+            </tr>`).join(""):`<tr><td colspan="7">No long-term schemes configured.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div><h3>Employee assignments</h3><p class="payroll-muted">Assign employees and benefit overrides.</p></div>
+          <button id="payrollNewLongTermAssignmentBtn" class="payroll-primary">+ Assignment</button>
+        </div>
+        <div class="payroll-sublist">
+          ${assignments.length?assignments.map(a=>`
+            <div class="payroll-mini-row">
+              <strong>${esc(a.employee_no)} — ${esc(a.employee_name)}</strong>
+              <span>${esc(a.scheme_code)} — ${esc(a.scheme_name)}</span>
+              <span>${a.expected_payment_date?esc(String(a.expected_payment_date)):"No payment date"}</span>
+              <span class="payroll-pill">${a.is_active?"Active":"Inactive"}</span>
+              <button class="payroll-link" data-edit-long-term-assignment="${a.id}">Edit</button>
+            </div>`).join(""):`<p class="payroll-muted">No employees assigned.</p>`}
+        </div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div><h3>Measurement runs</h3><p class="payroll-muted">Measure the discounted long-term employee-benefit obligation.</p></div>
+          <button id="payrollNewLongTermRunBtn" class="payroll-primary">+ Measurement Run</button>
+        </div>
+        <div class="payroll-sublist">
+          ${runs.length?runs.map(r=>`
+            <div class="payroll-mini-row">
+              <strong>${esc(r.run_no)}</strong>
+              <span>${esc(String(r.reporting_date||""))}</span>
+              <span>${money(r.total_closing_liability)}</span>
+              <span class="payroll-pill">${esc(r.status)}</span>
+              <button class="payroll-link" data-open-long-term-run="${r.id}">Open</button>
+            </div>`).join(""):`<p class="payroll-muted">No measurement runs.</p>`}
+        </div>
+        <div id="payrollLongTermRunDetail"></div>
+      </div>`;
+
+    $("payrollNewLongTermSchemeBtn")?.addEventListener("click",()=>editPayrollLongTermScheme());
+    $("payrollNewLongTermAssignmentBtn")?.addEventListener("click",()=>editPayrollLongTermAssignment());
+    $("payrollNewLongTermRunBtn")?.addEventListener("click",createPayrollLongTermRun);
+
+    el.querySelectorAll("[data-edit-long-term-scheme]").forEach(b=>
+      b.addEventListener("click",()=>editPayrollLongTermScheme(
+        schemes.find(x=>Number(x.id)===Number(b.dataset.editLongTermScheme))
+      ))
+    );
+
+    el.querySelectorAll("[data-edit-long-term-assignment]").forEach(b=>
+      b.addEventListener("click",()=>editPayrollLongTermAssignment(
+        assignments.find(x=>Number(x.id)===Number(b.dataset.editLongTermAssignment))
+      ))
+    );
+
+    el.querySelectorAll("[data-open-long-term-run]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollLongTermRun(
+        Number(b.dataset.openLongTermRun)
+      ))
+    );
+  }
+
+  async function editPayrollLongTermScheme(s={}){
+    const x=await payrollForm("Long-term benefit scheme",[
+      payrollGeneratedCodeField(
+        "code","Scheme code",s.code
+      ),
+      {
+        name:"name",
+        label:"Name",
+        required:true,
+        value:s.name||"",
+      },
+      {
+        name:"scheme_type",
+        label:"Scheme type",
+        type:"select",
+        required:true,
+        value:s.scheme_type||"long_service_award",
+        options:[
+          ["long_service_award","Long-service award"],
+          ["long_term_disability","Long-term disability"],
+          ["sabbatical_leave","Sabbatical leave"],
+          ["deferred_bonus","Deferred bonus"],
+          ["jubilee_award","Jubilee award"],
+          ["other","Other"],
+        ],
+      },
+      {
+        name:"calculation_basis",
+        label:"Calculation basis",
+        type:"select",
+        value:s.calculation_basis||"fixed_amount",
+        options:[
+          ["fixed_amount","Fixed amount"],
+          ["salary_multiple","Salary multiple"],
+          ["percentage_of_salary","Percentage of annual salary"],
+          ["manual","Manual valuation"],
+        ],
+      },
+      {
+        name:"benefit_amount",
+        label:"Amount or annual salary %",
+        type:"number",
+        step:"0.01",
+        value:s.benefit_amount||0,
+      },
+      {
+        name:"salary_multiple",
+        label:"Salary multiple",
+        type:"number",
+        step:"0.0001",
+        value:s.salary_multiple||0,
+      },
+      {
+        name:"service_years_required",
+        label:"Required service years",
+        type:"number",
+        step:"0.01",
+        value:s.service_years_required||0,
+      },
+      {
+        name:"probability_percentage",
+        label:"Probability %",
+        type:"number",
+        step:"0.0001",
+        min:0,
+        max:100,
+        value:s.probability_percentage??100,
+      },
+      {
+        name:"discount_rate_percentage",
+        label:"Discount rate %",
+        type:"number",
+        step:"0.0001",
+        value:s.discount_rate_percentage||0,
+      },
+      {
+        name:"salary_growth_percentage",
+        label:"Salary growth %",
+        type:"number",
+        step:"0.0001",
+        value:s.salary_growth_percentage||0,
+      },
+      {
+        name:"expected_payment_years",
+        label:"Default years to payment",
+        type:"number",
+        step:"0.01",
+        value:s.expected_payment_years||0,
+      },
+      {
+        name:"expense_account_code",
+        label:"Long-term benefit expense account",
+        type:"account",
+        accountKind:"expense",
+        required:true,
+        value:s.expense_account_code||"",
+      },
+      {
+        name:"liability_account_code",
+        label:"Long-term benefit liability account",
+        type:"account",
+        accountKind:"liability",
+        required:true,
+        value:s.liability_account_code||"",
+      },
+      {
+        name:"effective_from",
+        label:"Effective from",
+        type:"date",
+        value:s.effective_from||"",
+      },
+      {
+        name:"effective_to",
+        label:"Effective to",
+        type:"date",
+        value:s.effective_to||"",
+      },
+      {
+        name:"notes",
+        label:"Notes",
+        type:"textarea",
+        value:s.notes||"",
+      },
+      {
+        name:"is_active",
+        label:"Active",
+        type:"checkbox",
+        value:s.is_active!==false,
+      },
+    ],s);
+
+    if(!x)return;
+
+    x.effective_from=x.effective_from||null;
+    x.effective_to=x.effective_to||null;
+    x.notes=x.notes?.trim()||null;
+
+    await apiFetch(
+      s.id
+        ?ENDPOINTS.payroll.longTermBenefitScheme(cid(),s.id)
+        :ENDPOINTS.payroll.longTermBenefitSchemes(cid()),
+      {
+        method:s.id?"PATCH":"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollLongTermWorkspace();
+    showPayrollStatus("Long-term benefit scheme saved.","success");
+  }
+
+  async function editPayrollLongTermAssignment(a={}){
+    const schemes=payrollState.employeeBenefits.longTermSchemes||[];
+    const employees=(payrollState.employees||[])
+      .filter(e=>e.employment_status==="active");
+
+    const selectedEmployee=employees.find(
+      e=>String(e.id)===String(a.employee_id||"")
+    );
+
+    const x=await payrollForm("Long-term benefit assignment",[
+      {
+        name:"scheme_id",
+        label:"Scheme",
+        type:"select",
+        required:true,
+        value:a.scheme_id||"",
+        options:schemes.map(s=>[
+          s.id,
+          `${s.code} — ${s.name}`,
+        ]),
+      },
+      {
+        name:"employee_id",
+        label:"Employee",
+        type:"select",
+        required:true,
+        value:a.employee_id||"",
+        options:employees.map(e=>[
+          e.id,
+          `${e.employee_no} — ${e.first_name} ${e.last_name}`,
+        ]),
+      },
+      {
+        name:"employment_start_date",
+        label:"Employment start date",
+        readonly:true,
+        value:
+          a.employment_start_date||
+          selectedEmployee?.employment_start_date||
+          "",
+      },
+      {
+        name:"benefit_amount_override",
+        label:"Benefit amount override",
+        type:"number",
+        step:"0.01",
+        value:a.benefit_amount_override??"",
+      },
+      {
+        name:"service_years_override",
+        label:"Service-years override",
+        type:"number",
+        step:"0.01",
+        value:a.service_years_override??"",
+      },
+      {
+        name:"probability_percentage",
+        label:"Probability override %",
+        type:"number",
+        step:"0.0001",
+        value:a.probability_percentage??"",
+      },
+      {
+        name:"expected_payment_date",
+        label:"Expected payment date",
+        type:"date",
+        value:a.expected_payment_date||"",
+      },
+      {
+        name:"effective_from",
+        label:"Effective from",
+        type:"date",
+        value:
+          a.effective_from||
+          selectedEmployee?.employment_start_date||
+          new Date().toISOString().slice(0,10),
+      },
+      {
+        name:"effective_to",
+        label:"Effective to",
+        type:"date",
+        value:a.effective_to||"",
+      },
+      {
+        name:"notes",
+        label:"Notes",
+        value:a.notes||"",
+      },
+      {
+        name:"is_active",
+        label:"Active",
+        type:"checkbox",
+        value:a.is_active!==false,
+      },
+    ],a);
+
+    if(!x)return;
+
+    delete x.employment_start_date;
+
+    x.benefit_amount_override=
+      x.benefit_amount_override===""?null:Number(x.benefit_amount_override);
+
+    x.service_years_override=
+      x.service_years_override===""?null:Number(x.service_years_override);
+
+    x.probability_percentage=
+      x.probability_percentage===""?null:Number(x.probability_percentage);
+
+    x.expected_payment_date=x.expected_payment_date||null;
+    x.effective_from=x.effective_from||null;
+    x.effective_to=x.effective_to||null;
+    x.notes=x.notes?.trim()||null;
+
+    await apiFetch(
+      a.id
+        ?ENDPOINTS.payroll.longTermBenefitAssignment(cid(),a.id)
+        :ENDPOINTS.payroll.longTermBenefitAssignments(cid()),
+      {
+        method:a.id?"PATCH":"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollLongTermWorkspace();
+    showPayrollStatus(
+      "Long-term benefit assignment saved.",
+      "success"
+    );
+  }
+
+  async function createPayrollLongTermRun(){
+    const d=$("payrollBenefitReportingDate")?.value||new Date().toISOString().slice(0,10);
+    await apiFetch(ENDPOINTS.payroll.longTermBenefitRuns(cid()),{
+      method:"POST",
+      body:JSON.stringify({
+        period_start:`${d.slice(0,7)}-01`,
+        period_end:d,
+        reporting_date:d,
+      }),
+    });
+    await loadPayrollLongTermWorkspace();
+    showPayrollStatus("Long-term measurement run created.","success");
+  }
+
+  async function openPayrollLongTermRun(id){
+    const r=await apiFetch(ENDPOINTS.payroll.longTermBenefitRun(cid(),id));
+    payrollState.employeeBenefits.selectedLongTermRun=r?.data||null;
+    renderPayrollLongTermRunDetail();
+  }
+
+  function renderPayrollLongTermRunDetail(){
+    const r=payrollState.employeeBenefits.selectedLongTermRun;
+    const el=$("payrollLongTermRunDetail");
+    if(!el||!r)return;
+    const lines=r.lines||[];
+
+    el.innerHTML=`
+      <div class="payroll-posting-card">
+        <div><h3>${esc(r.run_no)}</h3><p class="payroll-muted">${esc(String(r.period_start))} — ${esc(String(r.period_end))}</p></div>
+        <span class="payroll-pill">${esc(r.status)}</span>
+        <div class="payroll-run-actions">
+          <button id="payrollCalculateLongTermBtn" class="payroll-secondary dark">Calculate</button>
+          <button id="payrollPreviewLongTermBtn" class="payroll-secondary dark">Preview Journal</button>
+          <button id="payrollPostLongTermBtn" class="payroll-primary">Post</button>
+          ${r.status==="posted"?`<button id="payrollReverseLongTermBtn" class="payroll-danger">Reverse</button>`:""}
+        </div>
+      </div>
+
+      <div class="payroll-benefit-summary-grid">
+        <div><span>Opening liability</span><strong>${money(r.total_opening_liability)}</strong></div>
+        <div><span>Service cost</span><strong>${money(r.total_current_service_cost)}</strong></div>
+        <div><span>Interest cost</span><strong>${money(r.total_interest_cost)}</strong></div>
+        <div><span>Remeasurement</span><strong>${money(r.total_remeasurement)}</strong></div>
+        <div><span>Closing liability</span><strong>${money(r.total_closing_liability)}</strong></div>
+        <div><span>Movement</span><strong>${money(r.total_movement)}</strong></div>
+      </div>
+
+      <div class="payroll-table-wrap"><table class="payroll-preview-table">
+        <thead><tr><th>Employee</th><th>Scheme</th><th>Service</th><th>Vesting</th><th>Benefit</th><th>Closing liability</th><th>Movement</th></tr></thead>
+        <tbody>${lines.length?lines.map(x=>`
+          <tr>
+            <td>${esc(x.employee_no)} — ${esc(x.employee_name)}</td>
+            <td>${esc(x.scheme_code)} — ${esc(x.scheme_name)}</td>
+            <td>${money(x.completed_service_years)} years</td>
+            <td>${money(x.vesting_percentage)}%</td>
+            <td>${money(x.undiscounted_benefit)}</td>
+            <td>${money(x.closing_liability)}</td>
+            <td>${money(x.movement_amount)}</td>
+          </tr>`).join(""):`<tr><td colspan="7">Calculate the run to create valuation lines.</td></tr>`}
+        </tbody>
+      </table></div>
+
+      <div id="payrollLongTermJournalPreview"></div>`;
+
+    $("payrollCalculateLongTermBtn")?.addEventListener("click",()=>calculatePayrollLongTermRun(r.id));
+    $("payrollPreviewLongTermBtn")?.addEventListener("click",()=>previewPayrollLongTermRun(r.id));
+    $("payrollPostLongTermBtn")?.addEventListener("click",()=>postPayrollLongTermRun(r.id));
+    $("payrollReverseLongTermBtn")?.addEventListener("click",()=>reversePayrollLongTermRun(r.id));
+  }
+
+  async function calculatePayrollLongTermRun(id){
+    const r=await apiFetch(ENDPOINTS.payroll.calculateLongTermBenefits(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    payrollState.employeeBenefits.selectedLongTermRun=r?.data;
+    renderPayrollLongTermRunDetail();
+    await loadPayrollLongTermWorkspace();
+    showPayrollStatus("Long-term benefits measured.","success");
+  }
+
+  async function previewPayrollLongTermRun(id){
+    const r=await apiFetch(ENDPOINTS.payroll.longTermBenefitPreview(cid(),id));
+    renderPayrollBenefitJournal($("payrollLongTermJournalPreview"),r?.data);
+  }
+
+  async function postPayrollLongTermRun(id){
+    await apiFetch(ENDPOINTS.payroll.postLongTermBenefits(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    await openPayrollLongTermRun(id);
+    await loadPayrollLongTermWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Long-term benefit journal posted.","success");
+  }
+
+  async function reversePayrollLongTermRun(id){
+    if(!confirm("Reverse this long-term benefit journal?"))return;
+    await apiFetch(ENDPOINTS.payroll.reverseLongTermBenefits(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    await openPayrollLongTermRun(id);
+    await loadPayrollLongTermWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Long-term benefit journal reversed.","success");
+  }
+
+  async function createPayrollDcRun(payload){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.definedContributionRuns(cid()),
+      {
+        method:"POST",
+        body:JSON.stringify(payload),
+      }
+    );
+
+    await loadPayrollEmployeeBenefitsWorkspace();
+
+    const run=res?.data||res;
+    if(run?.id)await openPayrollDcRun(run.id);
+
+    showPayrollStatus(
+      "Defined-contribution run created.",
+      "success"
+    );
+  }
+
+  async function loadPayrollTerminationWorkspace(){
+    const r=await apiFetch(ENDPOINTS.payroll.terminationPlans(cid()));
+    payrollState.employeeBenefits.terminationPlans=r?.items||[];
+    renderPayrollTerminationWorkspace();
+  }
+
+  function renderPayrollTerminationWorkspace(){
+    const el=$("payrollBenefitPanelTermination");
+    const items=payrollState.employeeBenefits.terminationPlans||[];
+    if(!el)return;
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>Termination benefit plans</h3>
+            <p class="payroll-muted">Measure, recognise and settle termination obligations.</p>
+          </div>
+          <button id="payrollNewTerminationPlanBtn" class="payroll-primary">
+            + Termination Plan
+          </button>
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Plan</th>
+                <th>Type</th>
+                <th>Recognition date</th>
+                <th>Employees</th>
+                <th>Recognised</th>
+                <th>Settled</th>
+                <th>Outstanding</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.length?items.map(p=>`
+                <tr>
+                  <td><strong>${esc(p.plan_no)} — ${esc(p.name)}</strong></td>
+                  <td>${esc(cap(String(p.plan_type||"").replaceAll("_"," ")))}</td>
+                  <td>${esc(String(p.recognition_date||"—"))}</td>
+                  <td>${Number(p.employee_count||0)}</td>
+                  <td>${money(p.total_recognised)}</td>
+                  <td>${money(p.total_settled)}</td>
+                  <td>${money(p.outstanding_liability)}</td>
+                  <td><span class="payroll-pill">${esc(p.status)}</span></td>
+                  <td>
+                    <button class="payroll-link"
+                      data-open-termination-plan="${p.id}">
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr><td colspan="9">No termination plans.</td></tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="payrollTerminationPlanDetail"></div>
+      </div>`;
+
+    $("payrollNewTerminationPlanBtn")
+      ?.addEventListener("click",()=>editPayrollTerminationPlan());
+
+    el.querySelectorAll("[data-open-termination-plan]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollTerminationPlan(
+        Number(b.dataset.openTerminationPlan)
+      ))
+    );
+  }
+
+  async function editPayrollTerminationPlan(p={}){
+    const x=await payrollForm("Termination benefit plan",[
+      payrollGeneratedCodeField(
+        "plan_no","Plan number",p.plan_no
+      ),
+      {
+        name:"name",
+        label:"Plan name",
+        required:true,
+        value:p.name||"",
+      },
+      {
+        name:"plan_type",
+        label:"Plan type",
+        type:"select",
+        required:true,
+        value:p.plan_type||"involuntary_termination",
+        options:[
+          ["involuntary_termination","Involuntary termination"],
+          ["voluntary_retrenchment","Voluntary retrenchment"],
+          ["restructuring","Restructuring"],
+          ["early_retirement","Early retirement"],
+          ["mutual_separation","Mutual separation"],
+          ["other","Other"],
+        ],
+      },
+      {
+        name:"description",
+        label:"Description",
+        type:"textarea",
+        value:p.description||"",
+      },
+      {
+        name:"communication_date",
+        label:"Communication date",
+        type:"date",
+        value:p.communication_date||"",
+      },
+      {
+        name:"withdrawal_offer_expiry_date",
+        label:"Offer withdrawal expiry",
+        type:"date",
+        value:p.withdrawal_offer_expiry_date||"",
+      },
+      {
+        name:"restructuring_recognition_date",
+        label:"Restructuring recognition date",
+        type:"date",
+        value:p.restructuring_recognition_date||"",
+      },
+      {
+        name:"expected_settlement_date",
+        label:"Expected settlement date",
+        type:"date",
+        value:p.expected_settlement_date||"",
+      },
+      {
+        name:"expense_account_code",
+        label:"Termination benefit expense account",
+        type:"account",
+        accountKind:"expense",
+        required:true,
+        value:p.expense_account_code||"",
+      },
+      {
+        name:"liability_account_code",
+        label:"Termination benefit liability account",
+        type:"account",
+        accountKind:"liability",
+        required:true,
+        value:p.liability_account_code||"",
+      },
+      {
+        name:"cash_account_code",
+        label:"Default settlement cash account",
+        type:"account",
+        accountKind:"cash",
+        value:p.cash_account_code||"",
+      },
+      {
+        name:"cannot_withdraw_offer",
+        label:"Offer cannot be withdrawn",
+        type:"checkbox",
+        value:!!p.cannot_withdraw_offer,
+      },
+    ],p);
+
+    if(!x)return;
+
+    await apiFetch(
+      p.id
+        ?ENDPOINTS.payroll.terminationPlan(cid(),p.id)
+        :ENDPOINTS.payroll.terminationPlans(cid()),
+      {
+        method:p.id?"PATCH":"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollTerminationWorkspace();
+    showPayrollStatus("Termination benefit plan saved.","success");
+  }
+
+  async function openPayrollTerminationPlan(id){
+    const r=await apiFetch(
+      ENDPOINTS.payroll.terminationPlan(cid(),id)
+    );
+    payrollState.employeeBenefits.selectedTerminationPlan=r?.data||null;
+    renderPayrollTerminationPlanDetail();
+  }
+
+  function renderPayrollTerminationPlanDetail(){
+    const d=payrollState.employeeBenefits.selectedTerminationPlan;
+    const el=$("payrollTerminationPlanDetail");
+    if(!el||!d)return;
+
+    const p=d.plan||{},employees=d.employees||[];
+    const locked=["recognised","part_settled","settled","reversed"]
+      .includes(p.status);
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>${esc(p.plan_no)} — ${esc(p.name)}</h3>
             <p class="payroll-muted">
-              IAS 19 obligations and movements at
-              ${esc(data.reporting_date || "")}.
+              Recognition date: ${esc(String(p.recognition_date||"Not determined"))}
             </p>
           </div>
-
-          <button
-            type="button"
-            id="payrollBenefitRunDiagnosticsBtn"
-            class="payroll-secondary dark"
-          >
-            Run Diagnostics
-          </button>
+          <span class="payroll-pill">${esc(p.status)}</span>
         </div>
 
         <div class="payroll-benefit-summary-grid">
           <div>
-            <span>Leave liability</span>
-            <strong>${money(data.leave_liability)}</strong>
+            <span>Measured</span>
+            <strong>${money(p.total_recognised)}</strong>
           </div>
           <div>
-            <span>Bonus liability</span>
-            <strong>${money(data.bonus_liability)}</strong>
+            <span>Settled</span>
+            <strong>${money(p.total_settled)}</strong>
           </div>
           <div>
-            <span>Termination liability</span>
-            <strong>${money(data.termination_liability)}</strong>
+            <span>Outstanding</span>
+            <strong>${money(p.outstanding_liability)}</strong>
+          </div>
+          <div>
+            <span>Employees</span>
+            <strong>${employees.length}</strong>
           </div>
         </div>
 
-        <div id="payrollBenefitDiagnosticsResult"></div>
-      </div>
-    `;
+        <div class="payroll-card-head">
+          <div>
+            <h3>Affected employees</h3>
+            <p class="payroll-muted">Severance, notice pay and other termination benefits.</p>
+          </div>
+          ${!locked?`
+            <button id="payrollAddTerminationEmployeeBtn"
+              class="payroll-primary">
+              + Employee
+            </button>
+          `:""}
+        </div>
 
-    $("payrollBenefitRunDiagnosticsBtn")?.addEventListener(
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Service</th>
+                <th>Salary</th>
+                <th>Severance</th>
+                <th>Notice</th>
+                <th>Other</th>
+                <th>Measured</th>
+                <th>Settled</th>
+                <th>Outstanding</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${employees.length?employees.map(x=>`
+                <tr>
+                  <td>${esc(x.employee_no)} — ${esc(x.employee_name)}</td>
+                  <td>${money(x.service_years)} years</td>
+                  <td>${money(x.monthly_salary)}</td>
+                  <td>${money(x.severance_amount)}</td>
+                  <td>${money(x.notice_pay)}</td>
+                  <td>${money(
+                    Number(x.leave_settlement||0)+
+                    Number(x.bonus_settlement||0)+
+                    Number(x.statutory_amount||0)+
+                    Number(x.other_benefits||0)+
+                    Number(x.manual_adjustment||0)
+                  )}</td>
+                  <td>${money(x.measured_amount)}</td>
+                  <td>${money(x.settled_amount)}</td>
+                  <td>${money(x.outstanding_amount)}</td>
+                  <td>
+                    ${!locked?`
+                      <button class="payroll-link"
+                        data-edit-termination-employee="${x.id}">
+                        Edit
+                      </button>
+                    `:""}
+                    ${["recognised","part_settled"].includes(p.status)&&
+                      Number(x.outstanding_amount||0)>0?`
+                      <button class="payroll-link"
+                        data-settle-termination-employee="${x.id}">
+                        Settle
+                      </button>
+                    `:""}
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="10">No employees added to this plan.</td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="payroll-run-actions">
+          ${!locked?`
+            <button id="payrollEditTerminationPlanBtn"
+              class="payroll-secondary dark">Edit Plan</button>
+            <button id="payrollCalculateTerminationBtn"
+              class="payroll-secondary dark">Calculate</button>
+          `:""}
+
+          ${p.status==="measured"?`
+            <button id="payrollPreviewTerminationBtn"
+              class="payroll-secondary dark">Preview Journal</button>
+            <button id="payrollRecogniseTerminationBtn"
+              class="payroll-primary">Recognise</button>
+          `:""}
+
+          ${["recognised","part_settled"].includes(p.status)?`
+            <button id="payrollSettleTerminationPlanBtn"
+              class="payroll-primary">Settle Plan</button>
+          `:""}
+
+          ${p.status==="recognised"&&Number(p.total_settled||0)===0?`
+            <button id="payrollReverseTerminationBtn"
+              class="payroll-danger">Reverse</button>
+          `:""}
+        </div>
+
+        <div id="payrollTerminationJournalPreview"></div>
+      </div>`;
+
+    $("payrollEditTerminationPlanBtn")
+      ?.addEventListener("click",()=>editPayrollTerminationPlan(p));
+
+    $("payrollAddTerminationEmployeeBtn")
+      ?.addEventListener("click",()=>editPayrollTerminationEmployee());
+
+    $("payrollCalculateTerminationBtn")
+      ?.addEventListener("click",()=>calculatePayrollTermination(p.id));
+
+    $("payrollPreviewTerminationBtn")
+      ?.addEventListener("click",()=>previewPayrollTermination(p.id));
+
+    $("payrollRecogniseTerminationBtn")
+      ?.addEventListener("click",()=>recognisePayrollTermination(p.id));
+
+    $("payrollSettleTerminationPlanBtn")
+      ?.addEventListener("click",()=>settlePayrollTermination(p.id));
+
+    $("payrollReverseTerminationBtn")
+      ?.addEventListener("click",()=>reversePayrollTermination(p.id));
+
+    el.querySelectorAll("[data-edit-termination-employee]").forEach(b=>
+      b.addEventListener("click",()=>editPayrollTerminationEmployee(
+        employees.find(
+          x=>Number(x.id)===Number(b.dataset.editTerminationEmployee)
+        )
+      ))
+    );
+
+    el.querySelectorAll("[data-settle-termination-employee]").forEach(b=>
+      b.addEventListener("click",()=>settlePayrollTermination(
+        p.id,
+        employees.find(
+          x=>Number(x.id)===Number(b.dataset.settleTerminationEmployee)
+        )
+      ))
+    );
+  }
+
+  async function editPayrollTerminationEmployee(x={}){
+    const d=payrollState.employeeBenefits.selectedTerminationPlan;
+    if(!d?.plan)return;
+
+    const employees=(payrollState.employees||[])
+      .filter(e=>e.employment_status==="active");
+
+    const body=await payrollForm("Termination-plan employee",[
+      {
+        name:"employee_id",label:"Employee",type:"select",
+        value:x.employee_id||"",
+        options:employees.map(e=>[
+          e.id,
+          `${e.employee_no} — ${e.first_name} ${e.last_name}`
+        ])
+      },
+      {
+        name:"termination_date",label:"Termination date",
+        type:"date",
+        value:x.termination_date||
+          d.plan.expected_settlement_date||
+          ""
+      },
+      {
+        name:"service_years",label:"Service years override",
+        type:"number",step:"0.0001",
+        value:x.service_years??""
+      },
+      {
+        name:"monthly_salary",label:"Monthly salary override",
+        type:"number",step:"0.01",
+        value:x.monthly_salary??""
+      },
+      {
+        name:"severance_weeks_per_year",
+        label:"Severance weeks per service year",
+        type:"number",step:"0.0001",
+        value:x.severance_weeks_per_year||0
+      },
+      {
+        name:"notice_pay",label:"Notice pay",
+        type:"number",step:"0.01",value:x.notice_pay||0
+      },
+      {
+        name:"leave_settlement",label:"Leave settlement",
+        type:"number",step:"0.01",value:x.leave_settlement||0
+      },
+      {
+        name:"bonus_settlement",label:"Bonus settlement",
+        type:"number",step:"0.01",value:x.bonus_settlement||0
+      },
+      {
+        name:"statutory_amount",label:"Statutory amount",
+        type:"number",step:"0.01",value:x.statutory_amount||0
+      },
+      {
+        name:"other_benefits",label:"Other benefits",
+        type:"number",step:"0.01",value:x.other_benefits||0
+      },
+      {
+        name:"manual_adjustment",label:"Manual adjustment",
+        type:"number",step:"0.01",value:x.manual_adjustment||0
+      },
+      {name:"notes",label:"Notes",value:x.notes||""},
+    ],x);
+
+    if(!body)return;
+
+    await apiFetch(
+      x.id
+        ?ENDPOINTS.payroll.terminationPlanEmployee(
+            cid(),d.plan.id,x.id
+          )
+        :ENDPOINTS.payroll.terminationPlanEmployees(
+            cid(),d.plan.id
+          ),
+      {
+        method:x.id?"PATCH":"POST",
+        body:JSON.stringify(body),
+      }
+    );
+
+    await openPayrollTerminationPlan(d.plan.id);
+    await loadPayrollTerminationWorkspace();
+    showPayrollStatus("Termination-plan employee saved.","success");
+  }
+
+  async function calculatePayrollTermination(id){
+    const r=await apiFetch(
+      ENDPOINTS.payroll.terminationCalculation(cid(),id),
+      {method:"POST",body:"{}"}
+    );
+
+    payrollState.employeeBenefits.selectedTerminationPlan=r?.data||null;
+    renderPayrollTerminationPlanDetail();
+    await loadPayrollTerminationWorkspace();
+    showPayrollStatus("Termination benefits measured.","success");
+  }
+
+  async function previewPayrollTermination(id){
+    const r=await apiFetch(
+      ENDPOINTS.payroll.terminationJournalPreview(cid(),id)
+    );
+
+    payrollState.employeeBenefits.terminationJournalPreview=r?.data||null;
+    renderPayrollBenefitJournal(
+      $("payrollTerminationJournalPreview"),
+      r?.data
+    );
+  }
+
+  async function recognisePayrollTermination(id){
+    await apiFetch(
+      ENDPOINTS.payroll.recogniseTerminationBenefits(cid(),id),
+      {method:"POST",body:"{}"}
+    );
+
+    await openPayrollTerminationPlan(id);
+    await loadPayrollTerminationWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Termination obligation recognised.","success");
+  }
+
+  async function settlePayrollTermination(id,employee=null){
+    const d=payrollState.employeeBenefits.selectedTerminationPlan;
+    const outstanding=Number(
+      employee?.outstanding_amount||
+      d?.plan?.outstanding_liability||
+      0
+    );
+
+    const body=await payrollForm("Termination settlement",[
+      {
+        name:"amount",label:"Settlement amount",
+        type:"number",step:"0.01",value:outstanding
+      },
+      {
+        name:"payment_date",label:"Payment date",
+        type:"date",value:new Date().toISOString().slice(0,10)
+      },
+      {
+        name:"payment_reference",label:"Payment reference",
+        value:`SET-${d?.plan?.plan_no||id}`
+      },
+      {
+        name:"cash_account_code",label:"Cash account",
+        value:d?.plan?.cash_account_code||""
+      },
+    ],{});
+
+    if(!body)return;
+    if(employee)body.employee_line_id=employee.id;
+
+    await apiFetch(
+      ENDPOINTS.payroll.settleTerminationBenefits(cid(),id),
+      {
+        method:"POST",
+        body:JSON.stringify(body),
+      }
+    );
+
+    await openPayrollTerminationPlan(id);
+    await loadPayrollTerminationWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Termination settlement posted.","success");
+  }
+
+  async function reversePayrollTermination(id){
+    if(!confirm("Reverse the recognised termination-benefit journal?"))return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.reverseTerminationBenefits(cid(),id),
+      {method:"POST",body:"{}"}
+    );
+
+    await openPayrollTerminationPlan(id);
+    await loadPayrollTerminationWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Termination recognition reversed.","success");
+  }
+
+  async function openPayrollDcRun(runId){
+    const r=await apiFetch(ENDPOINTS.payroll.definedContributionRun(cid(),runId));
+    payrollState.employeeBenefits.selectedDefinedContributionRun=r?.data||null;
+    renderPayrollDcRunDetail();
+  }
+
+  function renderPayrollDcRunDetail(){
+    const d=payrollState.employeeBenefits.selectedDefinedContributionRun;
+    const el=$("payrollDcRunDetail");
+    if(!el||!d)return;
+
+    const r=d.run||{},lines=d.lines||[];
+    const locked=["posted","reversed"].includes(r.status);
+
+    el.innerHTML=`
+      <div class="payroll-posting-card">
+        <div>
+          <h3>${esc(r.run_no||"Contribution Run")}</h3>
+          <p class="payroll-muted">
+            ${esc(String(r.period_start||""))}
+            —
+            ${esc(String(r.period_end||""))}
+          </p>
+        </div>
+
+        <span class="payroll-pill">
+          ${esc(r.status||"draft")}
+        </span>
+
+        <div class="payroll-run-actions">
+          <button
+            id="payrollCalculateDcBtn"
+            class="payroll-secondary dark"
+            type="button"
+            ${locked?"disabled":""}>
+            Reconcile
+          </button>
+
+          <button
+            class="payroll-primary"
+            type="button"
+            disabled
+            title="Defined-contribution amounts are posted through the payroll run">
+            Posted through Payroll
+          </button>
+        </div>
+      </div>
+
+      <div class="payroll-benefit-summary-grid">
+        <div>
+          <span>Pensionable pay</span>
+          <strong>${money(r.total_pensionable_remuneration)}</strong>
+        </div>
+
+        <div>
+          <span>Employee</span>
+          <strong>${money(r.total_employee_contribution)}</strong>
+        </div>
+
+        <div>
+          <span>Employer</span>
+          <strong>${money(r.total_employer_contribution)}</strong>
+        </div>
+
+        <div>
+          <span>Total payable</span>
+          <strong>${money(r.total_payable)}</strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Plan</th>
+              <th>Pensionable</th>
+              <th>Employee</th>
+              <th>Employer</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${
+              lines.length
+                ?lines.map(x=>`
+                  <tr>
+                    <td>
+                      ${esc(x.employee_no||"")}
+                      —
+                      ${esc(x.employee_name||"")}
+                    </td>
+
+                    <td>
+                      ${esc(x.plan_code||"")}
+                      —
+                      ${esc(x.plan_name||"")}
+                    </td>
+
+                    <td>${money(x.pensionable_remuneration)}</td>
+                    <td>${money(x.employee_contribution)}</td>
+                    <td>${money(x.employer_contribution)}</td>
+                    <td>${money(x.total_contribution)}</td>
+                  </tr>
+                `).join("")
+                :`
+                  <tr>
+                    <td colspan="6">
+                      Reconcile the run to load contributions from payroll.
+                    </td>
+                  </tr>
+                `
+            }
+          </tbody>
+        </table>
+      </div>`;
+
+    $("payrollCalculateDcBtn")?.addEventListener(
       "click",
-      runPayrollBenefitDiagnostics
+      ()=>calculatePayrollDcRun(r.id)
+    );
+  }
+
+  async function calculatePayrollDcRun(runId){
+    const r=await apiFetch(ENDPOINTS.payroll.calculateDefinedContribution(cid(),runId),{method:"POST"});
+    payrollState.employeeBenefits.selectedDefinedContributionRun=r?.data;
+    renderPayrollDcRunDetail();
+    await loadPayrollBenefitPlans();
+    showPayrollStatus("Contributions calculated.","success");
+  }
+
+  async function previewPayrollDcRun(runId){
+    const r=await apiFetch(ENDPOINTS.payroll.definedContributionPreview(cid(),runId));
+    const p=r?.data||{},el=$("payrollDcJournalPreview");
+    payrollState.employeeBenefits.definedContributionPreview=p;
+    if(!el)return;
+
+    el.innerHTML=`
+      ${Number(p.payroll_employee_deduction_required||0)>0?`
+        <div class="notice error">
+          Employee contributions of ${money(p.payroll_employee_deduction_required)}
+          must first be processed through payroll deductions.
+        </div>`:""}
+      <div class="payroll-table-wrap"><table class="payroll-preview-table">
+        <thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
+        <tbody>${(p.lines||[]).map(x=>`
+          <tr>
+            <td>${esc(x.account_code||"")}</td>
+            <td>${esc(x.description||"")}</td>
+            <td>${money(x.debit)}</td>
+            <td>${money(x.credit)}</td>
+          </tr>`).join("")}
+        </tbody>
+        <tfoot><tr><th colspan="2">Total</th><th>${money(p.debit)}</th><th>${money(p.credit)}</th></tr></tfoot>
+      </table></div>`;
+  }
+
+  async function postPayrollDcRun(runId){
+    await apiFetch(ENDPOINTS.payroll.postDefinedContribution(cid(),runId),{method:"POST"});
+    await openPayrollDcRun(runId);
+    await loadPayrollBenefitPlans();
+    showPayrollStatus("Defined-contribution journal posted.","success");
+  }
+
+  async function reversePayrollDcRun(runId){
+    await apiFetch(ENDPOINTS.payroll.reverseDefinedContribution(cid(),runId),{method:"POST"});
+    await openPayrollDcRun(runId);
+    await loadPayrollBenefitPlans();
+    showPayrollStatus("Defined-contribution journal reversed.","success");
+  }
+
+  async function editPayrollBenefitPlan(plan={}){
+    const x=await payrollForm("Benefit plan",[
+      payrollGeneratedCodeField(
+        "code","Plan code",plan.code
+      ),
+      {
+        name:"name",
+        label:"Name",
+        required:true,
+        value:plan.name||"",
+      },
+      {
+        name:"plan_type",
+        label:"Plan type",
+        type:"select",
+        required:true,
+        value:plan.plan_type||"defined_contribution",
+        options:[
+          ["defined_contribution","Defined contribution"],
+          ["defined_benefit","Defined benefit"],
+          ["medical_post_employment","Post-employment medical"],
+          ["other_post_employment","Other post-employment"],
+        ],
+      },
+      {
+        name:"provider_name",
+        label:"Provider",
+        value:plan.provider_name||"",
+      },
+      {
+        name:"registration_number",
+        label:"Provider registration number",
+        value:plan.registration_number||"",
+      },
+      {
+        name:"calculation_source",
+        label:"Contribution source",
+        type:"select",
+        value:p.calculation_source||"payroll_actual",
+        options:[
+          ["payroll_actual","Actual payroll amounts"],
+          ["setup_estimate","Employee pay setup amounts"],
+          ["percentage","Plan percentages"],
+        ],
+      },
+      {
+        name:"employee_deduction_type_id",
+        label:"Employee contribution deduction",
+        type:"select",
+        required:true,
+        value:p.employee_deduction_type_id||"",
+        options:(payrollState.deductionTypes||[]).map(x=>[
+          x.id,
+          x.name,
+        ]),
+      },
+      {
+        name:"employer_contribution_type_id",
+        label:"Employer contribution item",
+        type:"select",
+        required:true,
+        value:p.employer_contribution_type_id||"",
+        options:(payrollState.employerContributionTypes||[]).map(x=>[
+          x.id,
+          x.name,
+        ]),
+      },
+      {
+        name:"employee_contribution_percentage",
+        label:"Employee %",
+        type:"number",
+        step:"0.0001",
+        min:0,
+        max:100,
+        value:plan.employee_contribution_percentage||0,
+      },
+      {
+        name:"employer_contribution_percentage",
+        label:"Employer %",
+        type:"number",
+        step:"0.0001",
+        min:0,
+        max:100,
+        value:plan.employer_contribution_percentage||0,
+      },
+      {
+        name:"effective_from",
+        label:"Effective from",
+        type:"date",
+        value:plan.effective_from||"",
+      },
+      {
+        name:"effective_to",
+        label:"Effective to",
+        type:"date",
+        value:plan.effective_to||"",
+      },
+      {
+        name:"expense_account_code",
+        label:"Expense account",
+        type:"account",
+        accountKind:"expense",
+        value:plan.expense_account_code||"",
+      },
+      {
+        name:"payable_account_code",
+        label:"Contribution payable account",
+        type:"account",
+        accountKind:"liability",
+        value:plan.payable_account_code||"",
+      },
+      {
+        name:"liability_account_code",
+        label:"Benefit liability account",
+        type:"account",
+        accountKind:"liability",
+        value:plan.liability_account_code||"",
+      },
+      {
+        name:"asset_account_code",
+        label:"Plan asset account",
+        type:"account",
+        accountKind:"asset",
+        value:plan.asset_account_code||"",
+      },
+      {
+        name:"oci_account_code",
+        label:"OCI reserve account",
+        type:"account",
+        accountKind:"oci",
+        value:plan.oci_account_code||"",
+      },
+      {
+        name:"funded",
+        label:"Funded plan",
+        type:"checkbox",
+        value:!!plan.funded,
+      },
+      {
+        name:"is_active",
+        label:"Active",
+        type:"checkbox",
+        value:plan.is_active!==false,
+      },
+    ],plan);
+
+    if(!x)return;
+
+    await apiFetch(
+      plan.id
+        ?ENDPOINTS.payroll.benefitPlan(cid(),plan.id)
+        :ENDPOINTS.payroll.benefitPlans(cid()),
+      {
+        method:plan.id?"PATCH":"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollBenefitPlans();
+    showPayrollStatus("Benefit plan saved.","success");
+  }
+
+  async function openPayrollBenefitPlan(planId){
+    const r=await apiFetch(ENDPOINTS.payroll.benefitPlan(cid(),planId));
+    payrollState.employeeBenefits.selectedBenefitPlan=r?.data?.plan||null;
+    payrollState.employeeBenefits.planMembers=r?.data?.members||[];
+    renderPayrollBenefitPlanDetail();
+  }
+
+  function renderPayrollBenefitPlanDetail(){
+    const p=payrollState.employeeBenefits.selectedBenefitPlan,m=payrollState.employeeBenefits.planMembers||[],el=$("payrollBenefitPlanDetail");
+    if(!el||!p)return;
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div><h3>${esc(p.code)} — ${esc(p.name)}</h3><p class="payroll-muted">${esc(p.provider_name||"No provider")} · ${Number(p.active_members||0)} active member(s)</p></div>
+          <div><button id="payrollEditBenefitPlanBtn" class="payroll-secondary dark">Edit Plan</button> <button id="payrollAddPlanMemberBtn" class="payroll-primary">+ Member</button></div>
+        </div>
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <thead><tr><th>Employee</th><th>Membership</th><th>Employee %</th><th>Employer %</th><th>Effective</th><th>Status</th><th></th></tr></thead>
+          <tbody>${m.length?m.map(x=>`
+            <tr>
+              <td><strong>${esc(x.employee_no)} — ${esc(x.employee_name)}</strong></td>
+              <td>${esc(x.membership_number||"—")}</td>
+              <td>${money(x.effective_employee_percentage)}%</td>
+              <td>${money(x.effective_employer_percentage)}%</td>
+              <td>${esc(String(x.effective_from||""))}${x.effective_to?` → ${esc(String(x.effective_to))}`:""}</td>
+              <td>${x.is_active?"Active":"Inactive"}</td>
+              <td><button class="payroll-link" data-edit-plan-member="${x.id}">Edit</button></td>
+            </tr>`).join(""):`<tr><td colspan="7">No employees assigned to this plan.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+    $("payrollEditBenefitPlanBtn")?.addEventListener("click",()=>editPayrollBenefitPlan(p));
+    $("payrollAddPlanMemberBtn")?.addEventListener("click",()=>editPayrollPlanMember());
+    el.querySelectorAll("[data-edit-plan-member]").forEach(b=>b.addEventListener("click",()=>editPayrollPlanMember(m.find(x=>Number(x.id)===Number(b.dataset.editPlanMember)))));
+  }
+
+  async function editPayrollPlanMember(member={}){
+    const p=payrollState.employeeBenefits.selectedBenefitPlan;
+    if(!p)return;
+    const employees=(payrollState.employees||[]).filter(x=>x.employment_status==="active");
+    const x=await payrollForm("Plan member",[
+      {name:"employee_id",label:"Employee",type:"select",value:member.employee_id||"",options:employees.map(e=>[e.id,`${e.employee_no} — ${e.first_name} ${e.last_name}`])},
+      {name:"membership_number",label:"Membership number",value:member.membership_number||""},
+      {name:"employee_percentage",label:"Employee contribution override %",type:"number",step:"0.0001",value:member.employee_percentage??""},
+      {name:"employer_percentage",label:"Employer contribution override %",type:"number",step:"0.0001",value:member.employer_percentage??""},
+      {name:"pensionable_percentage",label:"Pensionable remuneration %",type:"number",step:"0.0001",value:member.pensionable_percentage??100},
+      {name:"effective_from",label:"Effective from",type:"date",value:member.effective_from||new Date().toISOString().slice(0,10)},
+      {name:"effective_to",label:"Effective to",type:"date",value:member.effective_to||""},
+      {name:"notes",label:"Notes",value:member.notes||""},
+      {name:"is_active",label:"Active",type:"checkbox",value:member.is_active!==false},
+    ],member);
+    if(!x)return;
+    await apiFetch(member.id?ENDPOINTS.payroll.planMember(cid(),p.id,member.id):ENDPOINTS.payroll.planMembers(cid(),p.id),{
+      method:member.id?"PATCH":"POST",body:JSON.stringify(x)
+    });
+    await openPayrollBenefitPlan(p.id);
+    await loadPayrollBenefitPlans();
+    showPayrollStatus("Plan membership saved.","success");
+  }
+
+  function renderPayrollEmployeeBenefitsDashboard(){
+    const d=payrollState.employeeBenefits.dashboard||{};
+    if($("payrollBenefitReportingDate"))
+      $("payrollBenefitReportingDate").value=
+        payrollState.employeeBenefits.reportingDate;
+
+    setTxt("payrollBenefitCurrentLiability",money(d.current_liability));
+    setTxt("payrollBenefitNonCurrentLiability",money(d.noncurrent_liability));
+    setTxt("payrollBenefitPlanAssets",money(d.plan_assets));
+    setTxt("payrollBenefitExpense",money(d.expense));
+    setTxt("payrollBenefitOci",money(d.oci));
+
+    const el=$("payrollBenefitPanelOverview");
+    if(!el)return;
+
+    const next=d.next_valuation||{};
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>IAS 19 employee-benefit position</h3>
+            <p class="payroll-muted">Position at ${esc(d.reporting_date||"")}.</p>
+          </div>
+          <button id="payrollBenefitRunDiagnosticsBtn"
+            class="payroll-secondary dark">Run Diagnostics</button>
+        </div>
+
+        <div class="payroll-benefit-summary-grid">
+          <div><span>Leave liability</span><strong>${money(d.leave_liability)}</strong></div>
+          <div><span>Bonus liability</span><strong>${money(d.bonus_liability)}</strong></div>
+          <div><span>Contribution payable</span><strong>${money(d.defined_contribution_payable)}</strong></div>
+          <div><span>Defined-benefit liability</span><strong>${money(d.defined_benefit_liability)}</strong></div>
+          <div><span>Other long-term liability</span><strong>${money(d.long_term_liability)}</strong></div>
+          <div><span>Termination liability</span><strong>${money(d.termination_liability)}</strong></div>
+          <div><span>Funding ratio</span><strong>${money(d.funding_ratio)}%</strong></div>
+          <div><span>Employees covered</span><strong>${Number(d.employees_covered||0)} / ${Number(d.active_employees||0)}</strong></div>
+          <div><span>Coverage</span><strong>${money(d.coverage_percentage)}%</strong></div>
+          <div><span>Unposted items</span><strong>${Number(d.unposted_items||0)}</strong></div>
+        </div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Upcoming actions</h3></div>
+        <div class="payroll-sublist">
+          <div class="payroll-mini-row">
+            <strong>Next actuarial valuation</strong>
+            <span>${esc(next.code||"—")} ${esc(next.name||"")}</span>
+            <span>${esc(String(next.next_valuation_date||"Not scheduled"))}</span>
+          </div>
+          <div class="payroll-mini-row">
+            <strong>Unposted measurements</strong>
+            <span>${Number(d.unposted_items||0)} item(s)</span>
+            <button class="payroll-link"
+              data-payroll-benefit-tab-link="disclosures">Review</button>
+          </div>
+        </div>
+        <div id="payrollBenefitDiagnosticsResult"></div>
+      </div>`;
+
+    $("payrollBenefitRunDiagnosticsBtn")
+      ?.addEventListener("click",runPayrollBenefitDiagnostics);
+
+    el.querySelectorAll("[data-payroll-benefit-tab-link]").forEach(b=>
+      b.addEventListener("click",()=>switchPayrollBenefitTab(
+        b.dataset.payrollBenefitTabLink
+      ))
     );
   }
 
@@ -57063,17 +60438,16 @@ async function saveEditModal() {
     `;
   }
 
-  async function loadPayrollLeaveWorkspace() {
-    const companyId = cid();
-    const [policiesRes, runsRes] = await Promise.all([
-      apiFetch(ENDPOINTS.payroll.leavePolicies(companyId)),
-      apiFetch(ENDPOINTS.payroll.leaveAccrualRuns(companyId)),
+  async function loadPayrollLeaveWorkspace(){
+    const [policies,runs,types]=await Promise.all([
+      apiFetch(ENDPOINTS.payroll.leavePolicies(cid())),
+      apiFetch(ENDPOINTS.payroll.leaveAccrualRuns(cid())),
+      apiFetch(ENDPOINTS.payroll.leaveTypes(cid())),
     ]);
 
-    payrollState.employeeBenefits.leavePolicies =
-      policiesRes?.items || [];
-    payrollState.employeeBenefits.leaveRuns =
-      runsRes?.items || [];
+    payrollState.employeeBenefits.leavePolicies=policies?.items||[];
+    payrollState.employeeBenefits.leaveRuns=runs?.items||[];
+    payrollState.employeeBenefits.leaveTypes=types?.items||[];
 
     renderPayrollLeaveWorkspace();
   }
@@ -57212,65 +60586,181 @@ async function saveEditModal() {
       });
   }
 
-  function openPayrollLeavePolicyModal(policy = null) {
-    $("payrollLeavePolicyId").value = policy?.id || "";
-    $("payrollLeavePolicyName").value = policy?.name || "";
-    $("payrollLeavePolicyTypeId").value = policy?.leave_type_id || "";
-    $("payrollLeavePolicyEntitlement").value =
-      policy?.annual_entitlement_days || 0;
-    $("payrollLeavePolicyMethod").value =
-      policy?.accrual_method || "straight_line";
-    $("payrollLeavePolicyMonthlyDays").value =
-      policy?.monthly_accrual_days || "";
-    $("payrollLeavePolicyRateBasis").value =
-      policy?.daily_rate_basis || "monthly_div_21_67";
-    $("payrollLeavePolicyExpenseAccount").value =
-      policy?.expense_account_code || "";
-    $("payrollLeavePolicyLiabilityAccount").value =
-      policy?.liability_account_code || "";
-    $("payrollLeavePolicyVesting").checked = !!policy?.vesting;
-    $("payrollLeavePolicyProvisionRequired").checked =
-      policy?.provision_required !== false;
+  async function openPayrollLeavePolicyModal(policy=null){
+    await loadPayrollBenefitCoa();
 
-    $("payrollLeavePolicyModal")?.classList.remove("hidden");
+    $("payrollLeavePolicyId").value=policy?.id||"";
+    $("payrollLeavePolicyName").value=policy?.name||"";
+    $("payrollLeavePolicyEntitlement").value=
+      policy?.annual_entitlement_days??0;
+    $("payrollLeavePolicyMethod").value=
+      policy?.accrual_method||"straight_line";
+    $("payrollLeavePolicyMonthlyDays").value=
+      policy?.monthly_accrual_days??"";
+    $("payrollLeavePolicyRateBasis").value=
+      policy?.daily_rate_basis||"monthly_div_21_67";
+    $("payrollLeavePolicyVesting").checked=!!policy?.vesting;
+    $("payrollLeavePolicyProvisionRequired").checked=
+      policy?.provision_required!==false;
+
+    fillPayrollLeaveTypeSelect(policy?.leave_type_id);
+
+    fillPayrollAccountSelect(
+        "payrollLeavePolicyExpenseAccount",
+        "expense",
+        policy?.expense_account_code
+    );
+
+    fillPayrollAccountSelect(
+        "payrollLeavePolicyLiabilityAccount",
+        "liability",
+        policy?.liability_account_code
+    );
+
+    togglePayrollLeaveProvisionAccounts();
+
+    const modal=$("payrollLeavePolicyModal");
+    modal?.classList.remove("hidden");
+    document.body.classList.add("payroll-modal-open");
+
+    setTimeout(()=>$("payrollLeavePolicyName")?.focus(),0);
   }
 
-  async function savePayrollLeavePolicy() {
-    const companyId = cid();
-    const policyId = Number($("payrollLeavePolicyId")?.value || 0);
+  function togglePayrollLeaveProvisionAccounts(){
+    const required=$("payrollLeavePolicyProvisionRequired")?.checked;
+    const expense=$("payrollLeavePolicyExpenseAccount");
+    const liability=$("payrollLeavePolicyLiabilityAccount");
 
-    const payload = {
-      leave_type_id: Number($("payrollLeavePolicyTypeId").value || 0),
-      name: $("payrollLeavePolicyName").value.trim(),
-      annual_entitlement_days:
-        Number($("payrollLeavePolicyEntitlement").value || 0),
-      accrual_method: $("payrollLeavePolicyMethod").value,
+    if(expense){
+      expense.disabled=!required;
+      expense.required=!!required;
+    }
+
+    if(liability){
+      liability.disabled=!required;
+      liability.required=!!required;
+    }
+  }
+
+  function fillPayrollLeaveTypeSelect(value=""){
+    const el=$("payrollLeavePolicyTypeId");
+    if(!el)return;
+
+    const items=payrollState.employeeBenefits.leaveTypes||
+      payrollState.leaveTypes||[];
+
+    el.innerHTML=`
+      <option value="">Select leave type…</option>
+      ${items.map(x=>`
+        <option value="${esc(x.id)}"
+          ${String(x.id)===String(value)?"selected":""}>
+          ${esc(x.name||x.code||`Leave type ${x.id}`)}
+        </option>
+      `).join("")}`;
+  }
+
+  function fillPayrollAccountSelect(id,kind,value=""){
+    const el=$(id);
+    if(!el)return;
+
+    const options=payrollAccountOptions(kind);
+
+    el.innerHTML=`
+      <option value="">Select account…</option>
+      ${options.map(([code,name])=>`
+        <option value="${esc(code)}"
+          title="${esc(code)}"
+          ${String(code)===String(value)?"selected":""}>
+          ${esc(name)}
+        </option>
+      `).join("")}`;
+
+    if(value&&!options.some(([code])=>String(code)===String(value))){
+      const account=(payrollState.employeeBenefits.coa||[])
+        .find(x=>String(x.code)===String(value));
+
+      el.insertAdjacentHTML("beforeend",`
+        <option value="${esc(value)}" selected>
+          ${esc(account?.name||value)}
+        </option>
+      `);
+    }
+  }
+
+  function closePayrollLeavePolicyModal(){
+    $("payrollLeavePolicyModal")?.classList.add("hidden");
+    document.body.classList.remove("payroll-modal-open");
+  }
+
+  async function savePayrollLeavePolicy(){
+    const companyId=cid();
+    const policyId=Number($("payrollLeavePolicyId")?.value||0);
+    const provisionRequired=
+      $("payrollLeavePolicyProvisionRequired")?.checked;
+
+    const payload={
+      leave_type_id:Number(
+        $("payrollLeavePolicyTypeId")?.value||0
+      ),
+      name:$("payrollLeavePolicyName")?.value.trim()||"",
+      annual_entitlement_days:Number(
+        $("payrollLeavePolicyEntitlement")?.value||0
+      ),
+      accrual_method:
+        $("payrollLeavePolicyMethod")?.value||"straight_line",
       monthly_accrual_days:
-        Number($("payrollLeavePolicyMonthlyDays").value || 0) || null,
-      daily_rate_basis: $("payrollLeavePolicyRateBasis").value,
-      expense_account_code:
-        $("payrollLeavePolicyExpenseAccount").value || null,
-      liability_account_code:
-        $("payrollLeavePolicyLiabilityAccount").value || null,
-      vesting: $("payrollLeavePolicyVesting").checked,
-      provision_required:
-        $("payrollLeavePolicyProvisionRequired").checked,
-      is_active: true,
+        $("payrollLeavePolicyMonthlyDays")?.value===""
+          ?null
+          :Number($("payrollLeavePolicyMonthlyDays").value),
+      daily_rate_basis:
+        $("payrollLeavePolicyRateBasis")?.value||
+        "monthly_div_21_67",
+      expense_account_code:provisionRequired
+        ?$("payrollLeavePolicyExpenseAccount")?.value||null
+        :null,
+      liability_account_code:provisionRequired
+        ?$("payrollLeavePolicyLiabilityAccount")?.value||null
+        :null,
+      vesting:!!$("payrollLeavePolicyVesting")?.checked,
+      provision_required:!!provisionRequired,
+      is_active:true,
     };
+
+    if(!payload.name){
+      showPayrollStatus("Policy name is required.","error");
+      return;
+    }
+
+    if(!payload.leave_type_id){
+      showPayrollStatus("Select a leave type.","error");
+      return;
+    }
+
+    if(
+      provisionRequired&&
+      (!payload.expense_account_code||
+      !payload.liability_account_code)
+    ){
+      showPayrollStatus(
+        "Select both the expense and liability accounts.",
+        "error"
+      );
+      return;
+    }
 
     await apiFetch(
       policyId
-        ? ENDPOINTS.payroll.leavePolicy(companyId, policyId)
-        : ENDPOINTS.payroll.leavePolicies(companyId),
+        ?ENDPOINTS.payroll.leavePolicy(companyId,policyId)
+        :ENDPOINTS.payroll.leavePolicies(companyId),
       {
-        method: policyId ? "PATCH" : "POST",
-        body: JSON.stringify(payload),
+        method:policyId?"PATCH":"POST",
+        body:JSON.stringify(payload),
       }
     );
 
-    $("payrollLeavePolicyModal")?.classList.add("hidden");
+    closePayrollLeavePolicyModal();
     await loadPayrollLeaveWorkspace();
-    showPayrollStatus("Leave policy saved.", "success");
+    showPayrollStatus("Leave policy saved.","success");
   }
 
   async function createPayrollLeaveRun() {
@@ -57309,6 +60799,7 @@ async function saveEditModal() {
     const el = $("payrollLeaveRunDetail");
     if (!el || !run) return;
 
+    const status=String(run.status||"draft").toLowerCase();
     el.innerHTML = `
       <div class="payroll-posting-card">
         <div>
@@ -57480,6 +60971,260 @@ async function saveEditModal() {
     `;
   }
 
+  async function openPayrollBonusRun(runId){
+    runId=Number(runId||0);
+
+    if(!runId){
+      showPayrollStatus("Invalid bonus run.","error");
+      return;
+    }
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.bonusAccrualRun(cid(),runId)
+    );
+
+    payrollState.employeeBenefits.selectedBonusRun=
+      res?.data?.run
+        ?{...res.data.run,lines:res.data.lines||[]}
+        :res?.data||res;
+
+    renderPayrollBonusRunDetail();
+  }
+
+  function renderPayrollBonusRunDetail(){
+    const run=payrollState.employeeBenefits.selectedBonusRun;
+    const el=$("payrollBonusRunDetail");
+    if(!el||!run)return;
+
+    const status=String(run.status||"draft").toLowerCase();
+
+    el.innerHTML=`
+      <div class="payroll-posting-card">
+        <div>
+          <h3>${esc(run.run_no||"Bonus accrual run")}</h3>
+          <p class="payroll-muted">
+            ${esc(String(run.period_start||""))}
+            —
+            ${esc(String(run.period_end||""))}
+          </p>
+        </div>
+
+        <div class="payroll-run-actions">
+          <button id="payrollCalculateBonusRunBtn"
+            class="payroll-secondary dark" type="button"
+            ${["posted","reversed"].includes(status)?"disabled":""}>
+            Calculate
+          </button>
+
+          <button id="payrollPreviewBonusRunBtn"
+            class="payroll-secondary dark" type="button">
+            Preview Journal
+          </button>
+
+          <button id="payrollPostBonusRunBtn"
+            class="payroll-primary" type="button"
+            ${["posted","reversed"].includes(status)?"disabled":""}>
+            Post
+          </button>
+
+          <button id="payrollReverseBonusRunBtn"
+            class="payroll-secondary" type="button"
+            ${status!=="posted"?"disabled":""}>
+            Reverse
+          </button>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Scheme</th>
+              <th>Eligible salary</th>
+              <th>Accrual</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(run.lines||[]).length
+              ?run.lines.map(line=>`
+                <tr>
+                  <td>
+                    ${esc(
+                      `${line.employee_no||""} ${line.first_name||""} ${line.last_name||""}`
+                    )}
+                  </td>
+                  <td>${esc(line.scheme_name||line.scheme_code||"")}</td>
+                  <td>${money(line.eligible_salary||0)}</td>
+                  <td>${money(line.accrual_amount||line.amount||0)}</td>
+                </tr>
+              `).join("")
+              :`<tr><td colspan="4">No bonus accrual lines.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+
+      <div id="payrollBonusJournalPreview"></div>
+    `;
+
+    const runId=Number(run.id||0);
+
+    $("payrollCalculateBonusRunBtn")?.addEventListener(
+      "click",
+      ()=>calculatePayrollBonusRun(runId)
+    );
+
+    $("payrollPreviewBonusRunBtn")?.addEventListener(
+      "click",
+      ()=>previewPayrollBonusRun(runId)
+    );
+
+    $("payrollPostBonusRunBtn")?.addEventListener(
+      "click",
+      ()=>postPayrollBonusRun(runId)
+    );
+
+    $("payrollReverseBonusRunBtn")?.addEventListener(
+      "click",
+      ()=>reversePayrollBonusRun(runId)
+    );
+  }
+
+  function payrollBonusPresetRange(preset){
+    const now=new Date();
+    const iso=d=>d.toISOString().slice(0,10);
+    const startOfMonth=d=>new Date(d.getFullYear(),d.getMonth(),1);
+    const endOfMonth=d=>new Date(d.getFullYear(),d.getMonth()+1,0);
+    const quarterStart=m=>Math.floor(m/3)*3;
+
+    let start,end;
+
+    switch(preset){
+      case"last_month":{
+        const d=new Date(now.getFullYear(),now.getMonth()-1,1);
+        start=startOfMonth(d);
+        end=endOfMonth(d);
+        break;
+      }
+
+      case"this_quarter":{
+        start=new Date(
+          now.getFullYear(),
+          quarterStart(now.getMonth()),
+          1
+        );
+        end=new Date(
+          now.getFullYear(),
+          quarterStart(now.getMonth())+3,
+          0
+        );
+        break;
+      }
+
+      case"last_quarter":{
+        const q=quarterStart(now.getMonth())-3;
+        start=new Date(now.getFullYear(),q,1);
+        end=new Date(now.getFullYear(),q+3,0);
+        break;
+      }
+
+      case"current_year":
+        start=new Date(now.getFullYear(),0,1);
+        end=new Date(now.getFullYear(),11,31);
+        break;
+
+      default:
+        start=startOfMonth(now);
+        end=endOfMonth(now);
+    }
+
+    return{
+      start:iso(start),
+      end:iso(end),
+    };
+  }
+
+  async function openPayrollBonusRunSetup(){
+    const today=new Date().toISOString().slice(0,10);
+    const monthStart=`${today.slice(0,7)}-01`;
+
+    const x=await payrollForm("New bonus accrual run",[
+      {
+        name:"preset",
+        label:"Period preset",
+        type:"select",
+        value:"this_month",
+        options:[
+          ["this_month","This month"],
+          ["last_month","Last month"],
+          ["this_quarter","This quarter"],
+          ["last_quarter","Last quarter"],
+          ["current_year","Current year"],
+          ["custom","Custom"],
+        ],
+        onChange:(value,form)=>{
+          const range=payrollBonusPresetRange(value);
+          const start=form.elements.period_start;
+          const end=form.elements.period_end;
+          const reporting=form.elements.reporting_date;
+
+          if(value==="custom"){
+            start.readOnly=false;
+            end.readOnly=false;
+            return;
+          }
+
+          start.readOnly=true;
+          end.readOnly=true;
+          start.value=range.start;
+          end.value=range.end;
+          reporting.value=range.end;
+        },
+      },
+      {
+        name:"period_start",
+        label:"Period start",
+        type:"date",
+        required:true,
+        readonly:true,
+        value:monthStart,
+      },
+      {
+        name:"period_end",
+        label:"Period end",
+        type:"date",
+        required:true,
+        readonly:true,
+        value:today,
+      },
+      {
+        name:"reporting_date",
+        label:"Reporting date",
+        type:"date",
+        required:true,
+        value:today,
+      },
+    ]);
+
+    if(!x)return;
+
+    if(!x.period_start||!x.period_end||!x.reporting_date){
+      showPayrollStatus("Complete the bonus run dates.","error");
+      return;
+    }
+
+    if(x.period_end<x.period_start){
+      showPayrollStatus(
+        "Period end cannot precede period start.",
+        "error"
+      );
+      return;
+    }
+
+    delete x.preset;
+    await createPayrollBonusRun(x);
+  }
+
   async function loadPayrollBonusWorkspace() {
     const companyId = cid();
 
@@ -57594,7 +61339,10 @@ async function saveEditModal() {
 
     $("payrollNewBonusSchemeBtn")?.addEventListener("click", () => openPayrollBonusScheme());
     $("payrollNewBonusAssignmentBtn")?.addEventListener("click", () => openPayrollBonusAssignment());
-    $("payrollNewBonusRunBtn")?.addEventListener("click", createPayrollBonusRun);
+    $("payrollNewBonusRunBtn")?.addEventListener(
+      "click",
+      openPayrollBonusRunSetup
+    );
 
     panel.querySelectorAll("[data-edit-bonus-scheme]").forEach(btn => {
       btn.onclick = () => {
@@ -57610,61 +61358,149 @@ async function saveEditModal() {
       };
     });
 
-    panel.querySelectorAll("[data-open-bonus-run]").forEach(btn => {
-      btn.onclick = () => openPayrollBonusRun(Number(btn.dataset.openBonusRun));
+    panel.querySelectorAll("[data-open-bonus-run]").forEach(btn=>{
+      btn.onclick=()=>openPayrollBonusRun(
+        Number(btn.dataset.openBonusRun)
+      );
     });
   }
 
-  async function openPayrollBonusScheme(item = {}) {
-    const payload = await payrollForm(item.id ? "Edit bonus scheme" : "New bonus scheme", [
-      { name: "code", label: "Code", required: true },
-      { name: "name", label: "Name", required: true },
-      {
-        name: "scheme_type",
-        label: "Scheme type",
-        type: "select",
-        options: [
-          { value: "performance_bonus", label: "Performance bonus" },
-          { value: "profit_sharing", label: "Profit sharing" },
-          { value: "thirteenth_cheque", label: "Thirteenth cheque" },
-          { value: "retention_bonus", label: "Retention bonus" },
-          { value: "commission_accrual", label: "Commission accrual" },
-          { value: "other", label: "Other" },
-        ],
-      },
-      {
-        name: "measurement_basis",
-        label: "Measurement basis",
-        type: "select",
-        options: [
-          { value: "basic_salary", label: "Basic salary" },
-          { value: "gross_pay", label: "Gross pay" },
-          { value: "manual", label: "Manual" },
-        ],
-      },
-      { name: "target_percentage", label: "Target %", type: "number", step: "0.01" },
-      { name: "probability_percentage", label: "Probability %", type: "number", step: "0.01" },
-      { name: "performance_percentage", label: "Performance %", type: "number", step: "0.01" },
-      { name: "required_service_months", label: "Required service months", type: "number" },
-      { name: "payment_due_date", label: "Payment due date", type: "date" },
-      { name: "expense_account_code", label: "Expense account code" },
-      { name: "liability_account_code", label: "Liability account code" },
-      { name: "is_short_term", label: "Short-term benefit", type: "checkbox", value: true },
-      { name: "is_active", label: "Active", type: "checkbox", value: true },
-    ], item);
+  function payrollGeneratedCodeField(name,label,value=""){
+    return{
+      name,
+      label,
+      value:value||"Generated automatically",
+      readonly:true,
+      backendGenerated:true,
+    };
+  }
+
+  async function openPayrollBonusScheme(item={}){
+    const payload=await payrollForm(
+      item.id?"Edit bonus scheme":"New bonus scheme",
+      [
+        payrollGeneratedCodeField(
+          "code","Scheme code",item.code
+        ),
+        {
+          name:"name",
+          label:"Scheme name",
+          required:true,
+          value:item.name||"",
+        },
+        {
+          name:"scheme_type",
+          label:"Scheme type",
+          type:"select",
+          required:true,
+          value:item.scheme_type||"performance_bonus",
+          options:[
+            ["performance_bonus","Performance bonus"],
+            ["profit_sharing","Profit sharing"],
+            ["thirteenth_cheque","Thirteenth cheque"],
+            ["retention_bonus","Retention bonus"],
+            ["commission_accrual","Commission accrual"],
+            ["other","Other"],
+          ],
+        },
+        {
+          name:"measurement_basis",
+          label:"Remuneration basis",
+          type:"select",
+          required:true,
+          value:s.measurement_basis||"basic_salary",
+          options:[
+            ["basic_salary","Basic salary"],
+            ["gross_salary","Gross payroll earnings"],
+            ["pensionable_salary","Pensionable payroll earnings"],
+            ["taxable_salary","Taxable payroll earnings"],
+          ],
+        },
+        {
+          name:"target_percentage",
+          label:"Target %",
+          type:"number",
+          step:"0.01",
+          min:0,
+          value:item.target_percentage||0,
+        },
+        {
+          name:"probability_percentage",
+          label:"Probability %",
+          type:"number",
+          step:"0.01",
+          min:0,
+          max:100,
+          value:item.probability_percentage??100,
+        },
+        {
+          name:"performance_percentage",
+          label:"Performance %",
+          type:"number",
+          step:"0.01",
+          min:0,
+          value:item.performance_percentage??100,
+        },
+        {
+          name:"required_service_months",
+          label:"Required service months",
+          type:"number",
+          step:"1",
+          min:0,
+          value:item.required_service_months||0,
+        },
+        {
+          name:"payment_due_date",
+          label:"Payment due date",
+          type:"date",
+          value:item.payment_due_date||"",
+        },
+        {
+          name:"expense_account_code",
+          label:"Bonus expense account",
+          type:"account",
+          accountKind:"expense",
+          required:true,
+          value:item.expense_account_code||"",
+        },
+        {
+          name:"liability_account_code",
+          label:"Bonus liability account",
+          type:"account",
+          accountKind:"liability",
+          required:true,
+          value:item.liability_account_code||"",
+        },
+        {
+          name:"is_short_term",
+          label:"Short-term benefit",
+          type:"checkbox",
+          value:item.is_short_term!==false,
+        },
+        {
+          name:"is_active",
+          label:"Active",
+          type:"checkbox",
+          value:item.is_active!==false,
+        },
+      ],
+      item
+    );
+
+    if(!payload)return;
 
     await apiFetch(
       item.id
-        ? ENDPOINTS.payroll.bonusScheme(cid(), item.id)
-        : ENDPOINTS.payroll.bonusSchemes(cid()),
+        ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
+        :ENDPOINTS.payroll.bonusSchemes(cid()),
       {
-        method: item.id ? "PATCH" : "POST",
-        body: JSON.stringify(payload),
+        method:item.id?"PATCH":"POST",
+        body:JSON.stringify(payload),
       }
     );
 
     await loadPayrollBonusWorkspace();
-    showPayrollStatus("Bonus scheme saved.", "success");
+    showPayrollStatus("Bonus scheme saved.","success");
   }
 
   async function openPayrollBonusAssignment(item = {}) {
@@ -57720,84 +61556,132 @@ async function saveEditModal() {
     showPayrollStatus("Bonus assignment saved.", "success");
   }
 
-  async function createPayrollBonusRun() {
-    const date = $("payrollBenefitReportingDate")?.value || new Date().toISOString().slice(0, 10);
+  function payrollSelectedBonusRunId(value=null){
+    if(typeof value==="number"&&value>0)return value;
 
-    await apiFetch(ENDPOINTS.payroll.bonusAccrualRuns(cid()), {
-      method: "POST",
-      body: JSON.stringify({
-        period_start: `${date.slice(0, 7)}-01`,
-        period_end: date,
-        reporting_date: date,
-      }),
-    });
+    if(typeof value==="string"&&Number(value)>0){
+      return Number(value);
+    }
 
-    await loadPayrollBonusWorkspace();
-    showPayrollStatus("Bonus accrual run created.", "success");
+    const selected=payrollState.employeeBenefits.selectedBonusRun;
+
+    return Number(
+      selected?.id||
+      selected?.run?.id||
+      selected?.data?.id||
+      0
+    );
   }
 
-  async function calculatePayrollBonusRun(runId) {
-    await apiFetch(ENDPOINTS.payroll.calculateBonusAccrual(cid(), runId), {
-      method: "POST",
-      body: "{}",
-    });
+  async function createPayrollBonusRun(payload){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.bonusAccrualRuns(cid()),
+      {
+        method:"POST",
+        body:JSON.stringify(payload),
+      }
+    );
+
+    await loadPayrollBonusWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+
+    const run=res?.data||res;
+    if(run?.id)await openPayrollBonusRun(run.id);
+
+    showPayrollStatus("Bonus accrual run created.","success");
+  }
+
+  async function calculatePayrollBonusRun(value=null){
+    const runId=payrollSelectedBonusRunId(value);
+
+    if(!runId){
+      showPayrollStatus("Open a bonus run first.","error");
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.calculateBonusAccrual(cid(),runId),
+      {method:"POST",body:"{}"}
+    );
 
     await openPayrollBonusRun(runId);
-    await loadPayrollEmployeeBenefitsWorkspace();
-    showPayrollStatus("Bonus accrual calculated.", "success");
-  }
-
-  async function previewPayrollBonusRun(runId) {
-    const res = await apiFetch(ENDPOINTS.payroll.bonusAccrualPreview(cid(), runId));
-    renderPayrollBenefitJournal($("payrollBonusJournalPreview"), res?.data);
-  }
-  async function postPayrollBonusRun(runId) {
-    await apiFetch(ENDPOINTS.payroll.postBonusAccrual(cid(), runId), {
-      method: "POST",
-      body: "{}",
-    });
-
     await loadPayrollBonusWorkspace();
     await loadPayrollEmployeeBenefitsWorkspace();
-    showPayrollStatus("Bonus accrual posted.", "success");
+    showPayrollStatus("Bonus accrual calculated.","success");
   }
-  async function reversePayrollBonusRun(runId) {
-    if (!confirm("Reverse this posted bonus accrual journal?")) return;
+  async function previewPayrollBonusRun(value=null){
+    const runId=payrollSelectedBonusRunId(value);
 
-    await apiFetch(ENDPOINTS.payroll.reverseBonusAccrual(cid(), runId), {
-      method: "POST",
-      body: "{}",
-    });
+    if(!runId){
+      showPayrollStatus("Open a bonus run first.","error");
+      return;
+    }
 
-    await loadPayrollBonusWorkspace();
-    await loadPayrollEmployeeBenefitsWorkspace();
-    showPayrollStatus("Bonus accrual reversed.", "success");
-  }
-
-  async function loadPayrollActuarialWorkspace() {
-    const res = await apiFetch(
-      ENDPOINTS.payroll.actuarialValuations(cid())
+    const res=await apiFetch(
+      ENDPOINTS.payroll.bonusAccrualPreview(cid(),runId)
     );
-    payrollState.employeeBenefits.actuarialValuations =
-      res?.items || [];
 
-    const panel = $("payrollBenefitPanelActuarial");
-    if (!panel) return;
+    renderPayrollBenefitJournal(
+      $("payrollBonusJournalPreview"),
+      res?.data||res
+    );
+  }
+  async function postPayrollBonusRun(value=null){
+    const runId=payrollSelectedBonusRunId(value);
 
-    panel.innerHTML = `
+    if(!runId){
+      showPayrollStatus("Open a bonus run first.","error");
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.postBonusAccrual(cid(),runId),
+      {method:"POST",body:"{}"}
+    );
+
+    await openPayrollBonusRun(runId);
+    await loadPayrollBonusWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Bonus accrual posted.","success");
+  }
+  async function reversePayrollBonusRun(value=null){
+    const runId=payrollSelectedBonusRunId(value);
+
+    if(!runId){
+      showPayrollStatus("Open a bonus run first.","error");
+      return;
+    }
+
+    if(!confirm("Reverse this posted bonus accrual journal?"))return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.reverseBonusAccrual(cid(),runId),
+      {method:"POST",body:"{}"}
+    );
+
+    await openPayrollBonusRun(runId);
+    await loadPayrollBonusWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Bonus accrual reversed.","success");
+  }
+
+  function renderPayrollActuarialWorkspace(){
+    const el=$("payrollBenefitPanelActuarial");
+    const items=payrollState.employeeBenefits.actuarialValuations||[];
+    if(!el)return;
+
+    el.innerHTML=`
       <div class="payroll-card">
         <div class="payroll-card-head">
           <div>
             <h3>Defined-benefit actuarial valuations</h3>
-            <p class="payroll-muted">
-              Import and reconcile valuation outputs supplied by an actuary.
-            </p>
+            <p class="payroll-muted">Record, validate, approve and post valuation outputs supplied by an actuary.</p>
           </div>
+          <button id="payrollNewActuarialValuationBtn" class="payroll-primary">+ Valuation</button>
         </div>
 
         <div class="notice info">
-          FinSage records, validates, posts and discloses actuarial results.
-          It does not replace the professional actuarial valuation.
+          FinSage records and validates actuarial outputs but does not replace a professional actuarial valuation.
         </div>
 
         <div class="payroll-table-wrap">
@@ -57805,73 +61689,427 @@ async function saveEditModal() {
             <thead>
               <tr>
                 <th>Plan</th>
-                <th>Valuation date</th>
+                <th>Date</th>
                 <th>DBO</th>
                 <th>Plan assets</th>
                 <th>Net liability</th>
+                <th>P/L</th>
                 <th>OCI</th>
+                <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              ${(payrollState.employeeBenefits.actuarialValuations || [])
-                .map(v => `
-                  <tr>
-                    <td>${esc(v.plan_name || v.plan_code || "")}</td>
-                    <td>${esc(String(v.valuation_date || ""))}</td>
-                    <td>${money(v.closing_dbo)}</td>
-                    <td>${money(v.closing_plan_assets)}</td>
-                    <td>${money(v.net_defined_benefit_liability)}</td>
-                    <td>${money(v.oci_remeasurement_amount)}</td>
-                  </tr>
-                `).join("") ||
-                `<tr><td colspan="6">No actuarial valuations.</td></tr>`}
+              ${items.length?items.map(v=>`
+                <tr>
+                  <td>${esc(v.plan_code||"")} — ${esc(v.plan_name||"")}</td>
+                  <td>${esc(String(v.valuation_date||""))}</td>
+                  <td>${money(v.closing_dbo)}</td>
+                  <td>${money(v.closing_plan_assets)}</td>
+                  <td>${money(v.net_defined_benefit_liability)}</td>
+                  <td>${money(v.profit_or_loss_amount)}</td>
+                  <td>${money(v.oci_remeasurement_amount)}</td>
+                  <td><span class="payroll-pill">${esc(v.status)}</span></td>
+                  <td><button class="payroll-link" data-open-actuarial="${v.id}">Open</button></td>
+                </tr>
+              `).join(""):`<tr><td colspan="9">No actuarial valuations.</td></tr>`}
             </tbody>
           </table>
         </div>
-      </div>
-    `;
+
+        <div id="payrollActuarialDetail"></div>
+      </div>`;
+
+    $("payrollNewActuarialValuationBtn")?.addEventListener("click",()=>editPayrollActuarialValuation());
+    el.querySelectorAll("[data-open-actuarial]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollActuarialValuation(Number(b.dataset.openActuarial)))
+    );
   }
 
-  async function loadPayrollBenefitDisclosure() {
-    const reportingDate =
-      $("payrollBenefitReportingDate")?.value ||
-      new Date().toISOString().slice(0, 10);
+  async function editPayrollActuarialValuation(v={}){
+    const plans=payrollState.employeeBenefits.definedBenefitPlans||[];
+    if(!plans.length){
+      showPayrollStatus("Create a defined-benefit plan first.","error");
+      return;
+    }
 
-    const res = await apiFetch(
-      ENDPOINTS.payroll.employeeBenefitDisclosure(
-        cid(),
-        { reportingDate }
-      )
+    const fields=[
+      {name:"plan_id",label:"Defined-benefit plan",type:"select",value:v.plan_id||"",options:plans.map(p=>[p.id,`${p.code} — ${p.name}`])},
+      {name:"valuation_date",label:"Valuation date",type:"date",value:v.valuation_date||new Date().toISOString().slice(0,10)},
+      {name:"valuation_reference",label:"Valuation reference",value:v.valuation_reference||""},
+      {name:"actuary_name",label:"Actuary name",value:v.actuary_name||""},
+      {name:"actuary_firm",label:"Actuary firm",value:v.actuary_firm||""},
+
+      {name:"opening_dbo",label:"Opening DBO",type:"number",step:"0.01",value:v.opening_dbo||0},
+      {name:"current_service_cost",label:"Current service cost",type:"number",step:"0.01",value:v.current_service_cost||0},
+      {name:"past_service_cost",label:"Past service cost",type:"number",step:"0.01",value:v.past_service_cost||0},
+      {name:"interest_cost",label:"Interest cost",type:"number",step:"0.01",value:v.interest_cost||0},
+      {name:"benefits_paid",label:"Benefits paid",type:"number",step:"0.01",value:v.benefits_paid||0},
+      {name:"settlements",label:"Settlements",type:"number",step:"0.01",value:v.settlements||0},
+      {name:"curtailments",label:"Curtailments",type:"number",step:"0.01",value:v.curtailments||0},
+      {name:"actuarial_gain_loss_obligation",label:"Obligation actuarial gain/(loss)",type:"number",step:"0.01",value:v.actuarial_gain_loss_obligation||0},
+      {name:"closing_dbo",label:"Closing DBO",type:"number",step:"0.01",value:v.closing_dbo||0},
+
+      {name:"opening_plan_assets",label:"Opening plan assets",type:"number",step:"0.01",value:v.opening_plan_assets||0},
+      {name:"interest_income_plan_assets",label:"Interest income on assets",type:"number",step:"0.01",value:v.interest_income_plan_assets||0},
+      {name:"employer_contributions",label:"Employer contributions",type:"number",step:"0.01",value:v.employer_contributions||0},
+      {name:"employee_contributions",label:"Employee contributions",type:"number",step:"0.01",value:v.employee_contributions||0},
+      {name:"return_on_assets_excluding_interest",label:"Asset return excluding interest",type:"number",step:"0.01",value:v.return_on_assets_excluding_interest||0},
+      {name:"closing_plan_assets",label:"Closing plan assets",type:"number",step:"0.01",value:v.closing_plan_assets||0},
+
+      {name:"asset_ceiling",label:"Asset ceiling",type:"number",step:"0.01",value:v.asset_ceiling||0},
+      {name:"effect_of_asset_ceiling",label:"Effect of asset ceiling",type:"number",step:"0.01",value:v.effect_of_asset_ceiling||0},
+      {name:"net_defined_benefit_liability",label:"Net defined-benefit liability",type:"number",step:"0.01",value:v.net_defined_benefit_liability||0},
+      {name:"net_defined_benefit_asset",label:"Net defined-benefit asset",type:"number",step:"0.01",value:v.net_defined_benefit_asset||0},
+      {name:"profit_or_loss_amount",label:"Profit or loss amount",type:"number",step:"0.01",value:v.profit_or_loss_amount||0},
+      {name:"oci_remeasurement_amount",label:"OCI remeasurement",type:"number",step:"0.01",value:v.oci_remeasurement_amount||0},
+      {name:"notes",label:"Notes",value:v.notes||""},
+    ];
+
+    const x=await payrollForm("Actuarial valuation",fields,v);
+    if(!x)return;
+
+    await apiFetch(
+      v.id
+        ?ENDPOINTS.payroll.actuarialValuation(cid(),v.id)
+        :ENDPOINTS.payroll.actuarialValuations(cid()),
+      {method:v.id?"PATCH":"POST",body:JSON.stringify(x)}
     );
 
-    const data = res?.data || {};
-    payrollState.employeeBenefits.disclosure = data;
+    await loadPayrollActuarialWorkspace();
+    showPayrollStatus("Actuarial valuation saved.","success");
+  }
 
-    const panel = $("payrollBenefitPanelDisclosures");
-    if (!panel) return;
+  async function loadPayrollActuarialWorkspace(){
+    const [v,p]=await Promise.all([
+      apiFetch(ENDPOINTS.payroll.actuarialValuations(cid())),
+      apiFetch(ENDPOINTS.payroll.benefitPlans(cid(),"defined_benefit")),
+    ]);
 
-    panel.innerHTML = `
+    payrollState.employeeBenefits.actuarialValuations=v?.items||[];
+    payrollState.employeeBenefits.definedBenefitPlans=p?.items||[];
+    renderPayrollActuarialWorkspace();
+  }
+
+  async function loadPayrollBenefitDisclosure(){
+    const reportingDate=$("payrollBenefitReportingDate")?.value||
+      payrollState.employeeBenefits.reportingDate||
+      new Date().toISOString().slice(0,10);
+
+    const dateFrom=`${reportingDate.slice(0,4)}-01-01`;
+
+    const [d,m,j]=await Promise.all([
+      apiFetch(ENDPOINTS.payroll.employeeBenefitDisclosure(cid(),{
+        dateFrom,dateTo:reportingDate,reportingDate
+      })),
+      apiFetch(ENDPOINTS.payroll.employeeBenefitMovementReport(cid(),{
+        dateFrom,dateTo:reportingDate
+      })),
+      apiFetch(ENDPOINTS.payroll.employeeBenefitJournals(cid(),{
+        dateFrom,dateTo:reportingDate
+      })),
+    ]);
+
+    payrollState.employeeBenefits.disclosure=d?.data||{};
+    payrollState.employeeBenefits.movementReport=m?.data||{};
+    payrollState.employeeBenefits.benefitJournals=j?.items||[];
+    renderPayrollBenefitDisclosure();
+  }
+
+  async function loadPayrollBenefitCoa(force=false){
+    const state=payrollState.employeeBenefits;
+
+    if(state.coaLoaded&&!force&&state.coa?.length)return state.coa;
+
+    const res=await apiFetch(ENDPOINTS.coa(cid()));
+
+    const rows=
+      (Array.isArray(res)&&res)||
+      (Array.isArray(res?.items)&&res.items)||
+      (Array.isArray(res?.accounts)&&res.accounts)||
+      (Array.isArray(res?.rows)&&res.rows)||
+      (Array.isArray(res?.coa)&&res.coa)||
+      (Array.isArray(res?.data)&&res.data)||
+      (Array.isArray(res?.data?.items)&&res.data.items)||
+      (Array.isArray(res?.data?.accounts)&&res.data.accounts)||
+      [];
+
+    state.coa=rows.map(a=>{
+      const posting=a.posting;
+      const active=a.is_active;
+
+      return{
+        code:String(
+          a.code||
+          a.account_code||
+          a.template_code||
+          ""
+        ).trim(),
+
+        name:String(
+          a.name||
+          a.account_name||
+          a.description||
+          ""
+        ).trim(),
+
+        section:String(a.section||"").trim(),
+        category:String(a.category||"").trim(),
+        role:String(a.role||"").trim(),
+
+        posting:posting===undefined||posting===null
+          ?true
+          :["true","1","yes","y"].includes(String(posting).toLowerCase()),
+
+        active:active===undefined||active===null
+          ?true
+          :["true","1","yes","y"].includes(String(active).toLowerCase()),
+      };
+    })
+    .filter(a=>a.code&&a.name&&a.posting&&a.active)
+    .sort((a,b)=>a.name.localeCompare(b.name));
+
+    state.coaLoaded=true;
+
+    console.log("[PAYROLL COA]",{
+      rawResponse:res,
+      rawCount:rows.length,
+      postingAccounts:state.coa.length,
+      sample:state.coa.slice(0,5),
+    });
+
+    return state.coa;
+  }
+
+  function payrollAccountClass(a){
+    const s=`${a.section} ${a.category} ${a.role} ${a.name}`.toLowerCase();
+
+    if(/cash|bank|cash equivalent/.test(s))return"cash";
+    if(/asset/.test(s))return"asset";
+    if(/liabil|payable|provision|accrual/.test(s))return"liability";
+    if(/equity|reserve|other comprehensive|oci/.test(s))return"equity";
+    if(/income|revenue|sales/.test(s))return"income";
+    if(/expense|cost|wage|salary/.test(s))return"expense";
+    return"other";
+  }
+
+  function payrollAccountOptions(kind="all"){
+    const accounts=payrollState.employeeBenefits.coa||[];
+
+    const matches=accounts.filter(a=>{
+      const text=[
+        a.section,
+        a.category,
+        a.role,
+        a.name,
+        a.code,
+      ].join(" ").toLowerCase();
+
+      if(kind==="all")return true;
+
+      if(kind==="expense")
+        return /expense|cost|salary|wage|payroll|employee benefit/.test(text);
+
+      if(kind==="liability")
+        return /liabil|payable|provision|accrual|creditor/.test(text);
+
+      if(kind==="asset")
+        return /asset|receivable|debtor/.test(text);
+
+      if(kind==="cash")
+        return /cash|bank|cash equivalent/.test(text);
+
+      if(kind==="oci")
+        return /other comprehensive|\boci\b|reserve|equity/.test(text);
+
+      return true;
+    });
+
+    const selected=matches.length?matches:accounts;
+
+    return selected
+      .sort((a,b)=>a.name.localeCompare(b.name))
+      .map(a=>[a.code,a.name]);
+  }
+
+  function renderPayrollBenefitDisclosure(){
+    const el=$("payrollBenefitPanelDisclosures");
+    const d=payrollState.employeeBenefits.disclosure||{};
+    const sfp=d.statement_of_financial_position||{};
+    const current=sfp.current_employee_benefit_liabilities||{};
+    const noncurrent=sfp.noncurrent_employee_benefits||{};
+    const pl=d.profit_or_loss||{};
+    const db=d.defined_benefit||{};
+    const dbo=db.obligation||{},assets=db.plan_assets||{};
+    const movements=payrollState.employeeBenefits.movementReport?.items||[];
+    const journals=payrollState.employeeBenefits.benefitJournals||[];
+    if(!el)return;
+
+    el.innerHTML=`
       <div class="payroll-card">
-        <h3>IAS 19 disclosure summary</h3>
-
-        <div class="payroll-benefit-summary-grid">
+        <div class="payroll-card-head">
           <div>
-            <span>Opening leave provision</span>
-            <strong>${money(data.leave_reconciliation?.opening)}</strong>
+            <h3>IAS 19 employee-benefit disclosure</h3>
+            <p class="payroll-muted">
+              Reporting date ${esc(String(d.reporting_date||""))},
+              period ${esc(String(d.date_from||""))} — ${esc(String(d.date_to||""))}.
+            </p>
           </div>
-          <div>
-            <span>Leave movement</span>
-            <strong>${money(data.leave_reconciliation?.movement)}</strong>
-          </div>
-          <div>
-            <span>Closing leave provision</span>
-            <strong>${money(data.leave_reconciliation?.closing)}</strong>
-          </div>
+          <button id="payrollRefreshDisclosureBtn"
+            class="payroll-secondary dark">Refresh</button>
         </div>
 
-        <p class="payroll-muted">${esc(data.note || "")}</p>
+        <div class="payroll-benefit-summary-grid">
+          <div><span>Current liabilities</span><strong>${money(current.total)}</strong></div>
+          <div><span>Non-current net liability</span><strong>${money(noncurrent.net_liability)}</strong></div>
+          <div><span>Employee-benefit expense</span><strong>${money(pl.total)}</strong></div>
+          <div><span>OCI remeasurement</span><strong>${money(d.other_comprehensive_income?.defined_benefit_remeasurement)}</strong></div>
+        </div>
       </div>
-    `;
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Statement of financial position</h3></div>
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <thead><tr><th>Benefit class</th><th>Current</th><th>Non-current</th></tr></thead>
+          <tbody>
+            <tr><td>Leave</td><td>${money(current.leave)}</td><td>—</td></tr>
+            <tr><td>Bonus and profit-sharing</td><td>${money(current.bonus)}</td><td>—</td></tr>
+            <tr><td>Defined-contribution payable</td><td>${money(current.defined_contribution_payable)}</td><td>—</td></tr>
+            <tr><td>Termination benefits</td><td>${money(current.termination)}</td><td>—</td></tr>
+            <tr><td>Other long-term benefits</td><td>—</td><td>${money(noncurrent.other_long_term)}</td></tr>
+            <tr><td>Defined-benefit liability</td><td>—</td><td>${money(noncurrent.defined_benefit_liability)}</td></tr>
+            <tr><td>Defined-benefit asset</td><td>—</td><td>(${money(noncurrent.defined_benefit_asset)})</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Employee-benefit expense</h3></div>
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <tbody>
+            <tr><td>Leave expense</td><td>${money(pl.leave_expense)}</td></tr>
+            <tr><td>Bonus expense</td><td>${money(pl.bonus_expense)}</td></tr>
+            <tr><td>Defined-contribution expense</td><td>${money(pl.defined_contribution_expense)}</td></tr>
+            <tr><td>Defined-benefit expense</td><td>${money(pl.defined_benefit_expense)}</td></tr>
+            <tr><td>Other long-term benefit expense</td><td>${money(pl.other_long_term_expense)}</td></tr>
+            <tr><td>Termination-benefit expense</td><td>${money(pl.termination_expense)}</td></tr>
+            <tr><th>Total</th><th>${money(pl.total)}</th></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Defined-benefit reconciliation</h3></div>
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <thead><tr><th>Movement</th><th>Obligation</th><th>Plan assets</th></tr></thead>
+          <tbody>
+            <tr><td>Opening balance</td><td>${money(dbo.opening)}</td><td>${money(assets.opening)}</td></tr>
+            <tr><td>Current service cost</td><td>${money(dbo.current_service_cost)}</td><td>—</td></tr>
+            <tr><td>Past service cost</td><td>${money(dbo.past_service_cost)}</td><td>—</td></tr>
+            <tr><td>Interest</td><td>${money(dbo.interest_cost)}</td><td>${money(assets.interest_income)}</td></tr>
+            <tr><td>Contributions</td><td>—</td><td>${money(Number(assets.employer_contributions||0)+Number(assets.employee_contributions||0))}</td></tr>
+            <tr><td>Remeasurement</td><td>${money(dbo.actuarial_gain_loss)}</td><td>${money(assets.return_excluding_interest)}</td></tr>
+            <tr><td>Benefits paid</td><td>(${money(dbo.benefits_paid)})</td><td>(${money(assets.benefits_paid)})</td></tr>
+            <tr><th>Closing balance</th><th>${money(dbo.closing)}</th><th>${money(assets.closing)}</th></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Significant actuarial assumptions</h3></div>
+        <div class="payroll-sublist">
+          ${(db.significant_assumptions||[]).length?
+            db.significant_assumptions.map(a=>`
+              <div class="payroll-mini-row">
+                <strong>${esc(a.plan_code||"")} — ${esc(a.assumption_label||a.assumption_key)}</strong>
+                <span>${a.numeric_value!=null?money(a.numeric_value):esc(a.text_value||"—")} ${esc(a.unit||"")}</span>
+                <span>${esc(a.source_reference||"")}</span>
+              </div>`).join("")
+            :`<p class="payroll-muted">No significant assumptions recorded.</p>`}
+        </div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Benefit movements</h3></div>
+        <div class="payroll-table-wrap"><table class="payroll-preview-table">
+          <thead><tr><th>Date</th><th>Reference</th><th>Class</th><th>Movement</th><th>OCI</th><th>Closing</th><th>Status</th></tr></thead>
+          <tbody>${movements.length?movements.map(x=>`
+            <tr>
+              <td>${esc(String(x.movement_date||""))}</td>
+              <td>${esc(x.reference||"")}</td>
+              <td>${esc(cap(String(x.benefit_class||"").replaceAll("_"," ")))}</td>
+              <td>${money(x.amount)}</td>
+              <td>${money(x.oci_amount)}</td>
+              <td>${money(x.closing_amount)}</td>
+              <td><span class="payroll-pill">${esc(x.status||"")}</span></td>
+            </tr>`).join(""):`<tr><td colspan="7">No movements for the period.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="payroll-card">
+        <div class="payroll-card-head"><h3>Employee-benefit journals</h3></div>
+        <div class="payroll-sublist">
+          ${journals.length?journals.map(j=>`
+            <div class="payroll-mini-row">
+              <strong>${esc(j.ref||`Journal ${j.id}`)}</strong>
+              <span>${esc(String(j.date||""))}</span>
+              <span>${esc(cap(String(j.source||"").replaceAll("_"," ")))}</span>
+              <span>${money(j.debits)}</span>
+              <button class="payroll-link" data-open-benefit-journal="${j.id}">Open</button>
+            </div>`).join(""):`<p class="payroll-muted">No employee-benefit journals.</p>`}
+        </div>
+        <div id="payrollBenefitJournalDetail"></div>
+      </div>`;
+
+    $("payrollRefreshDisclosureBtn")?.addEventListener(
+      "click",loadPayrollBenefitDisclosure
+    );
+
+    el.querySelectorAll("[data-open-benefit-journal]").forEach(b=>
+      b.addEventListener("click",()=>openPayrollBenefitJournal(
+        Number(b.dataset.openBenefitJournal)
+      ))
+    );
+  }
+
+  async function openPayrollBenefitJournal(id){
+    const r=await apiFetch(
+      ENDPOINTS.payroll.employeeBenefitJournal(cid(),id)
+    );
+
+    payrollState.employeeBenefits.selectedBenefitJournal=r?.data||null;
+    const d=r?.data||{},j=d.journal||{},lines=d.lines||[];
+    const el=$("payrollBenefitJournalDetail");
+    if(!el)return;
+
+    el.innerHTML=`
+      <div class="payroll-posting-card">
+        <div>
+          <h3>${esc(j.ref||`Journal ${j.id}`)}</h3>
+          <p class="payroll-muted">${esc(String(j.date||""))} · ${esc(j.description||"")}</p>
+        </div>
+        <span class="payroll-pill">${esc(j.status||"posted")}</span>
+      </div>
+
+      <div class="payroll-table-wrap"><table class="payroll-preview-table">
+        <thead><tr><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
+        <tbody>${lines.map(x=>`
+          <tr>
+            <td>${esc(x.account_code||"")} — ${esc(x.account_name||"")}</td>
+            <td>${esc(x.description||"")}</td>
+            <td>${money(x.debit)}</td>
+            <td>${money(x.credit)}</td>
+          </tr>`).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th colspan="2">Total</th>
+            <th>${money(lines.reduce((n,x)=>n+Number(x.debit||0),0))}</th>
+            <th>${money(lines.reduce((n,x)=>n+Number(x.credit||0),0))}</th>
+          </tr>
+        </tfoot>
+      </table></div>`;
   }
 
   async function loadPayrollBenefitSettings() {
@@ -57889,6 +62127,175 @@ async function saveEditModal() {
       s.working_days_per_year || 260;
     $("payrollBenefitApprovalRequired").checked =
       !!s.approval_required;
+  }
+
+  async function openPayrollActuarialValuation(id){
+    const r=await apiFetch(ENDPOINTS.payroll.actuarialValuation(cid(),id));
+    payrollState.employeeBenefits.selectedActuarialValuation=r?.data||null;
+    payrollState.employeeBenefits.actuarialAssumptions=r?.data?.assumptions||[];
+    payrollState.employeeBenefits.actuarialReconciliation=r?.data?.reconciliation||null;
+    renderPayrollActuarialDetail();
+  }
+
+  function renderPayrollActuarialDetail(){
+    const v=payrollState.employeeBenefits.selectedActuarialValuation;
+    const a=payrollState.employeeBenefits.actuarialAssumptions||[];
+    const r=payrollState.employeeBenefits.actuarialReconciliation||{};
+    const el=$("payrollActuarialDetail");
+    if(!el||!v)return;
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>${esc(v.plan_code)} — ${esc(v.plan_name)}</h3>
+            <p class="payroll-muted">Valuation at ${esc(String(v.valuation_date||""))}</p>
+          </div>
+          <span class="payroll-pill">${esc(v.status)}</span>
+        </div>
+
+        <div class="payroll-benefit-summary-grid">
+          <div><span>Closing DBO</span><strong>${money(v.closing_dbo)}</strong></div>
+          <div><span>Plan assets</span><strong>${money(v.closing_plan_assets)}</strong></div>
+          <div><span>Net liability</span><strong>${money(v.net_defined_benefit_liability)}</strong></div>
+          <div><span>Net asset</span><strong>${money(v.net_defined_benefit_asset)}</strong></div>
+          <div><span>Profit or loss</span><strong>${money(v.profit_or_loss_amount)}</strong></div>
+          <div><span>OCI</span><strong>${money(v.oci_remeasurement_amount)}</strong></div>
+        </div>
+
+        <div class="${r.reconciled?"notice success":"notice error"}">
+          ${r.reconciled?"Actuarial valuation reconciles.":"Actuarial valuation contains reconciliation differences."}
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead><tr><th>Reconciliation</th><th>Expected</th><th>Reported</th><th>Difference</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Defined-benefit obligation</td>
+                <td>${money(r.expected_closing_dbo)}</td>
+                <td>${money(r.reported_closing_dbo)}</td>
+                <td>${money(r.dbo_difference)}</td>
+              </tr>
+              <tr>
+                <td>Plan assets</td>
+                <td>${money(r.expected_closing_plan_assets)}</td>
+                <td>${money(r.reported_closing_plan_assets)}</td>
+                <td>${money(r.plan_asset_difference)}</td>
+              </tr>
+              <tr>
+                <td>Net position</td>
+                <td>${money(r.calculated_net_position)}</td>
+                <td>${money(r.recorded_net_position)}</td>
+                <td>${money(r.net_position_difference)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="payroll-card-head">
+          <h3>Actuarial assumptions</h3>
+          <button id="payrollAddActuarialAssumptionBtn" class="payroll-secondary dark">+ Assumption</button>
+        </div>
+
+        <div class="payroll-sublist">
+          ${a.length?a.map(x=>`
+            <div class="payroll-mini-row">
+              <strong>${esc(x.assumption_label||x.assumption_key)}</strong>
+              <span>${x.numeric_value!=null?money(x.numeric_value):esc(x.text_value||"—")} ${esc(x.unit||"")}</span>
+              <span>${esc(x.source_reference||"")}</span>
+            </div>
+          `).join(""):`<p class="payroll-muted">No assumptions recorded.</p>`}
+        </div>
+
+        <div class="payroll-run-actions">
+          <button id="payrollEditActuarialBtn" class="payroll-secondary dark">Edit</button>
+          <button id="payrollValidateActuarialBtn" class="payroll-secondary dark">Validate</button>
+          <button id="payrollApproveActuarialBtn" class="payroll-secondary dark">Approve</button>
+          <button id="payrollPreviewActuarialBtn" class="payroll-secondary dark">Preview Journal</button>
+          <button id="payrollPostActuarialBtn" class="payroll-primary">Post</button>
+          ${v.status==="posted"?`<button id="payrollReverseActuarialBtn" class="payroll-danger">Reverse</button>`:""}
+        </div>
+
+        <div id="payrollActuarialJournalPreview"></div>
+      </div>`;
+
+    $("payrollEditActuarialBtn")?.addEventListener("click",()=>editPayrollActuarialValuation(v));
+    $("payrollAddActuarialAssumptionBtn")?.addEventListener("click",addPayrollActuarialAssumption);
+    $("payrollValidateActuarialBtn")?.addEventListener("click",()=>validatePayrollActuarial(v.id));
+    $("payrollApproveActuarialBtn")?.addEventListener("click",()=>approvePayrollActuarial(v.id));
+    $("payrollPreviewActuarialBtn")?.addEventListener("click",()=>previewPayrollActuarial(v.id));
+    $("payrollPostActuarialBtn")?.addEventListener("click",()=>postPayrollActuarial(v.id));
+    $("payrollReverseActuarialBtn")?.addEventListener("click",()=>reversePayrollActuarial(v.id));
+  }
+
+  async function addPayrollActuarialAssumption(){
+    const v=payrollState.employeeBenefits.selectedActuarialValuation;
+    if(!v)return;
+
+    const x=await payrollForm("Actuarial assumption",[
+      {name:"assumption_key",label:"Key",value:"discount_rate"},
+      {name:"assumption_label",label:"Label",value:"Discount rate"},
+      {name:"numeric_value",label:"Numeric value",type:"number",step:"0.000001",value:""},
+      {name:"text_value",label:"Text value",value:""},
+      {name:"unit",label:"Unit",value:"%"},
+      {name:"source_reference",label:"Source reference",value:""},
+    ],{});
+
+    if(!x)return;
+
+    await apiFetch(ENDPOINTS.payroll.actuarialAssumptions(cid(),v.id),{
+      method:"POST",body:JSON.stringify(x)
+    });
+
+    await openPayrollActuarialValuation(v.id);
+    showPayrollStatus("Actuarial assumption saved.","success");
+  }
+
+  async function validatePayrollActuarial(id){
+    await apiFetch(ENDPOINTS.payroll.validateActuarialValuation(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    await openPayrollActuarialValuation(id);
+    await loadPayrollActuarialWorkspace();
+    showPayrollStatus("Actuarial valuation validated.","success");
+  }
+
+  async function approvePayrollActuarial(id){
+    await apiFetch(ENDPOINTS.payroll.approveActuarialValuation(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    await openPayrollActuarialValuation(id);
+    await loadPayrollActuarialWorkspace();
+    showPayrollStatus("Actuarial valuation approved.","success");
+  }
+
+  async function previewPayrollActuarial(id){
+    const r=await apiFetch(ENDPOINTS.payroll.actuarialJournalPreview(cid(),id));
+    renderPayrollBenefitJournal($("payrollActuarialJournalPreview"),r?.data);
+  }
+
+  async function postPayrollActuarial(id){
+    await apiFetch(ENDPOINTS.payroll.postActuarialValuation(cid(),id),{
+      method:"POST",body:"{}"
+    });
+    await openPayrollActuarialValuation(id);
+    await loadPayrollActuarialWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Actuarial valuation posted.","success");
+  }
+
+  async function reversePayrollActuarial(id){
+    if(!confirm("Reverse this posted actuarial valuation journal?"))return;
+
+    await apiFetch(ENDPOINTS.payroll.reverseActuarialValuation(cid(),id),{
+      method:"POST",body:"{}"
+    });
+
+    await openPayrollActuarialValuation(id);
+    await loadPayrollActuarialWorkspace();
+    await loadPayrollEmployeeBenefitsWorkspace();
+    showPayrollStatus("Actuarial valuation reversed.","success");
   }
 
   async function savePayrollBenefitSettings() {
@@ -58767,77 +63174,175 @@ async function saveEditModal() {
     return Number.isFinite(n) ? n : 0;
   }
 
-  function payrollForm(title, fields, values = {}) {
+  async function payrollForm(title,fields,values={}){
+    await loadPayrollBenefitCoa();
     $("payrollBenefitDynamicModal")?.remove();
 
-    const modal = document.createElement("div");
-    modal.id = "payrollBenefitDynamicModal";
-    modal.className = "payroll-modal";
+    const modal=document.createElement("div");
+    modal.id="payrollBenefitDynamicModal";
+    modal.className="payroll-modal";
 
-    const html = fields.map(f => {
-      const value = values[f.name] ?? f.value ?? "";
+    const control=f=>{
+      const value=values[f.name]??f.value??"";
+      const required=f.required?"required":"";
+      const disabled=f.disabled?"disabled":"";
+      const readonly=f.readonly?"readonly":"";
 
-      if (f.type === "checkbox") return `
+      if(f.type==="account"){
+        const options=payrollAccountOptions(f.accountKind||"all");
+
+        return `
+          <label>
+            ${esc(f.label)}
+            <select name="${esc(f.name)}" ${required} ${disabled}>
+              <option value="">Select account…</option>
+              ${options.map(([code,label])=>`
+                <option value="${esc(code)}"
+                  ${String(code)===String(value)?"selected":""}>
+                  ${esc(label)}
+                </option>
+              `).join("")}
+            </select>
+          </label>`;
+      }
+
+      if(f.type==="checkbox")return `
         <label class="payroll-check">
-          <input name="${f.name}" type="checkbox" ${value ? "checked" : ""}>
-          ${esc(f.label)}
+          <input name="${esc(f.name)}" type="checkbox"
+            ${value?"checked":""} ${disabled}>
+          <span>${esc(f.label)}</span>
         </label>`;
 
-      if (f.type === "select") return `
-        <label>${esc(f.label)}
-          <select name="${f.name}" ${f.required ? "required" : ""}>
-            ${(f.options || []).map(o => `
-              <option value="${esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>
-                ${esc(o.label)}
-              </option>`).join("")}
+      if(f.type==="select")return `
+        <label>
+          ${esc(f.label)}
+          <select name="${esc(f.name)}" ${required} ${disabled}>
+            ${f.placeholder?`
+              <option value="">${esc(f.placeholder)}</option>
+            `:""}
+            ${(f.options||[]).map(o=>{
+              const x=Array.isArray(o)?{value:o[0],label:o[1]}:o;
+              return `
+                <option value="${esc(x.value)}"
+                  ${String(x.value)===String(value)?"selected":""}>
+                  ${esc(x.label)}
+                </option>`;
+            }).join("")}
           </select>
         </label>`;
 
-      return `
-        <label>${esc(f.label)}
-          <input name="${f.name}" type="${f.type || "text"}" value="${esc(value)}"
-            ${f.step ? `step="${f.step}"` : ""} ${f.required ? "required" : ""}>
+      if(f.type==="textarea")return `
+        <label>
+          ${esc(f.label)}
+          <textarea name="${esc(f.name)}"
+            ${required} ${readonly} ${disabled}>${esc(value)}</textarea>
         </label>`;
-    }).join("");
 
-    modal.innerHTML = `
+      return `
+        <label>
+          ${esc(f.label)}
+          <input name="${esc(f.name)}"
+            type="${esc(f.type||"text")}"
+            value="${esc(value)}"
+            ${f.step?`step="${esc(f.step)}"`:""}
+            ${f.min!=null?`min="${esc(f.min)}"`:""}
+            ${f.max!=null?`max="${esc(f.max)}"`:""}
+            ${f.placeholder?`placeholder="${esc(f.placeholder)}"`:""}
+            ${required} ${readonly} ${disabled}>
+        </label>`;
+    };
+
+    modal.innerHTML=`
       <div class="payroll-modal-card">
         <div class="payroll-card-head">
           <h3>${esc(title)}</h3>
           <button type="button" data-close>×</button>
         </div>
 
-        <form id="payrollBenefitDynamicForm" class="payroll-form-grid">
-          ${html}
+        <form class="payroll-form-grid">
+          ${fields.map(control).join("")}
+
           <div class="payroll-modal-actions">
-            <button type="button" class="payroll-secondary" data-close>Cancel</button>
-            <button type="submit" class="payroll-primary">Save</button>
+            <button type="button"
+              class="payroll-secondary dark" data-close>Cancel</button>
+            <button type="submit"
+              class="payroll-primary">Save</button>
           </div>
         </form>
       </div>`;
 
-    document.body.appendChild(modal);
-    modal.querySelectorAll("[data-close]").forEach(btn => btn.onclick = () => modal.remove());
+      document.body.appendChild(modal);
+      document.body.classList.add("payroll-modal-open");
 
-    return new Promise(resolve => {
-      modal.querySelector("form").onsubmit = e => {
+      const form=modal.querySelector("form");
+
+      fields.forEach(field=>{
+        if(!field.onChange)return;
+
+        const input=form.querySelector(
+          `[name="${CSS.escape(field.name)}"]`
+        );
+
+        input?.addEventListener("change",event=>{
+          field.onChange(
+            event.target.value,
+            form,
+            values
+          );
+        });
+      });
+
+      return new Promise(resolve=>{
+      let done=false;
+
+      const close=result=>{
+        if(done)return;
+        done=true;
+        document.body.classList.remove("payroll-modal-open");
+        modal.remove();
+        resolve(result);
+      };
+
+      modal.querySelectorAll("[data-close]").forEach(b=>
+        b.addEventListener("click",()=>close(null))
+      );
+
+      modal.addEventListener("click",e=>{
+        if(e.target===modal)close(null);
+      });
+
+      form.addEventListener("submit",e=>{
         e.preventDefault();
-        const form = e.currentTarget;
-        const data = new FormData(form);
-        const out = {};
 
-        fields.forEach(f => {
-          const control = form.elements[f.name];
-          if (f.type === "checkbox") out[f.name] = control.checked;
-          else if (f.type === "number") {
-            const raw = data.get(f.name);
-            out[f.name] = raw === "" || raw == null ? null : Number(raw);
-          } else out[f.name] = data.get(f.name);
+        const form=e.currentTarget;
+        const data=new FormData(form);
+        const out={};
+
+        fields.forEach(f=>{
+          const input=form.elements[f.name];
+
+          if(f.type==="checkbox"){
+            out[f.name]=!!input?.checked;
+            return;
+          }
+
+          if(f.readonly&&f.backendGenerated){
+            return;
+          }
+
+          const raw=data.get(f.name);
+
+          out[f.name]=f.type==="number"
+            ?raw===""||raw==null?null:Number(raw)
+            :String(raw??"").trim();
         });
 
-        modal.remove();
-        resolve(out);
-      };
+        close(out);
+      });
+
+      modal.querySelector(
+        "input:not([readonly]),select,textarea"
+      )?.focus();
     });
   }
 
@@ -59266,40 +63771,93 @@ async function saveEditModal() {
     ) || null;
   }
 
-  function payrollPostingAccounts() {
-    const rows =
-      window.COA_CACHE ||
-      window.COMPANY_COA ||
-      window.CHART_OF_ACCOUNTS ||
-      [];
+  function payrollPostingAccounts(kind="all"){
+    const rows=
+      payrollState.employeeBenefits?.coa?.length
+        ?payrollState.employeeBenefits.coa
+        :(window.COA_CACHE||
+          window.COMPANY_COA||
+          window.CHART_OF_ACCOUNTS||
+          []);
 
-    return (Array.isArray(rows) ? rows : [])
-      .filter(account => account.posting !== false);
+    const accounts=(Array.isArray(rows)?rows:[])
+      .map(account=>({
+        ...account,
+        code:String(
+          account.code||
+          account.account_code||
+          account.template_code||
+          ""
+        ).trim(),
+        name:String(
+          account.name||
+          account.account_name||
+          account.description||
+          ""
+        ).trim(),
+        posting:account.posting===undefined
+          ?true
+          :!["false","0","no"].includes(
+              String(account.posting).toLowerCase()
+            ),
+        active:account.is_active===undefined
+          ?true
+          :!["false","0","no"].includes(
+              String(account.is_active).toLowerCase()
+            ),
+      }))
+      .filter(account=>
+        account.code&&
+        account.name&&
+        account.posting&&
+        account.active
+      );
+
+    const filtered=accounts.filter(account=>{
+      const text=[
+        account.section,
+        account.category,
+        account.role,
+        account.name,
+      ].join(" ").toLowerCase();
+
+      if(kind==="all")return true;
+      if(kind==="expense")
+        return /expense|cost|salary|wage|employee benefit/.test(text);
+      if(kind==="liability")
+        return /liabil|payable|provision|accrual|creditor/.test(text);
+      if(kind==="asset")
+        return /asset|receivable|debtor/.test(text);
+      if(kind==="cash")
+        return /cash|bank|cash equivalent/.test(text);
+      if(kind==="oci")
+        return /other comprehensive|\boci\b|reserve|equity/.test(text);
+
+      return true;
+    });
+
+    return(filtered.length?filtered:accounts)
+      .sort((a,b)=>a.name.localeCompare(b.name));
   }
 
   function fillPayrollAccountSelect(
     selectId,
-    selectedCode = "",
-  ) {
-    const el = $(selectId);
-    if (!el) return;
+    kind="all",
+    selectedCode="",
+  ){
+    const el=$(selectId);
+    if(!el)return;
 
-    const accounts = payrollPostingAccounts();
+    const accounts=payrollPostingAccounts(kind);
 
-    el.innerHTML = `
+    el.innerHTML=`
       <option value="">Select account…</option>
-
-      ${accounts.map(account => `
+      ${accounts.map(account=>`
         <option
           value="${esc(account.code)}"
-          ${
-            String(account.code) ===
-            String(selectedCode)
-              ? "selected"
-              : ""
-          }
-        >
-          ${esc(account.code)} — ${esc(account.name)}
+          title="${esc(account.code)}"
+          ${String(account.code)===String(selectedCode)?"selected":""}>
+          ${esc(account.name)}
         </option>
       `).join("")}
     `;
@@ -61407,19 +65965,32 @@ async function saveEditModal() {
     }
   }
 
-  function renderPayrollEmployeeRow(e) {
-    const name = `${e.first_name || ""} ${e.last_name || ""}`.trim();
-    const dept = e.department_name || e.position_title || "—";
-    const status = e.employment_status || "active";
+  function renderPayrollEmployeeRow(e){
+    const name=`${e.first_name||""} ${e.last_name||""}`.trim();
+    const dept=e.department_name||e.position_title||"—";
+    const status=e.employment_status||"active";
+    const start=e.employment_start_date
+      ?String(e.employment_start_date).slice(0,10)
+      :"Not set";
 
-    return `
-      <div class="payroll-row" data-payroll-employee-id="${esc(e.id)}">
-        <strong>${esc(e.employee_no || "")}</strong>
+    return`
+      <div class="payroll-row"
+        data-payroll-employee-id="${esc(e.id)}">
+
+        <strong>${esc(e.employee_no||"")}</strong>
+
         <div>
-          <strong>${esc(name || "Unnamed Employee")}</strong>
-          <div class="payroll-muted">${esc(e.email || "")}</div>
+          <strong>${esc(name||"Unnamed Employee")}</strong>
+          <div class="payroll-muted">${esc(e.email||"")}</div>
         </div>
-        <div>${esc(dept)}</div>
+
+        <div>
+          <strong>${esc(dept)}</strong>
+          <div class="payroll-muted">
+            Employed: ${esc(start)}
+          </div>
+        </div>
+
         <span class="payroll-pill">${esc(status)}</span>
         <span class="payroll-arrow">›</span>
       </div>
@@ -65161,6 +69732,28 @@ async function saveEditModal() {
         });
       }
     );
+
+    $("payrollLeavePolicyProvisionRequired")?.addEventListener(
+      "change",
+      togglePayrollLeaveProvisionAccounts
+    );
+
+    document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
+      btn.addEventListener("click",closePayrollLeavePolicyModal)
+    );
+
+    $("payrollLeavePolicyModal")?.addEventListener("click",e=>{
+      if(e.target===e.currentTarget)closePayrollLeavePolicyModal();
+    });
+
+    document.addEventListener("keydown",e=>{
+      if(
+        e.key==="Escape"&&
+        !$("payrollLeavePolicyModal")?.classList.contains("hidden")
+      ){
+        closePayrollLeavePolicyModal();
+      }
+    });
 
     $("payrollLeavePolicySaveBtn")?.addEventListener(
       "click",
@@ -77453,6 +82046,59 @@ async function loadInvoiceIntoForm(invoiceId) {
   const inv = res?.data || res || {};
   const $ = (id) => document.getElementById(id);
 
+  const isLessorInvoice =
+    inv.source === "lessor_lease_billing" ||
+    inv.module_name === "ifrs16_lessor" ||
+    Number(inv.lessor_lease_id || 0) > 0;
+
+  window._CURRENT_INVOICE_SOURCE = isLessorInvoice
+    ? {
+        handoff_type: "lessor_lease_invoice",
+        source: "lessor_lease_billing",
+        source_id:
+          inv.source_id ??
+          inv.lessor_schedule_id ??
+          null,
+
+        module_name: "ifrs16_lessor",
+        posting_mode:
+          inv.posting_mode ||
+          "custom_accounts",
+
+        lessor_lease_id:
+          inv.lessor_lease_id ??
+          inv.lease_id ??
+          null,
+
+        lessor_schedule_id:
+          inv.lessor_schedule_id ??
+          inv.schedule_id ??
+          inv.source_id ??
+          null,
+
+        lease_classification:
+          inv.lease_classification ??
+          null,
+
+        accounting_treatment:
+          inv.accounting_treatment ??
+          null,
+
+        ar_account_code:
+          inv.ar_account_code ??
+          null,
+
+        credit_account_code:
+          inv.credit_account_code ??
+          inv.lines?.[0]?.account_code ??
+          null,
+
+        vat_output_account_code:
+          inv.vat_output_account_code ??
+          null,
+      }
+    : null;
+
   $("invId") && ($("invId").value = inv.id || "");
   $("invCustomerName") && ($("invCustomerName").value = inv.customer_name || "");
   $("invCustomerId") && ($("invCustomerId").value = inv.customer_id || "");
@@ -77718,13 +82364,13 @@ async function renderArCustomerList({ closeOnPick = true } = {}) {
 }
 
 async function initReceivablesScreen() {
-  const screen = document.getElementById("screen-ar");
+  const screen=document.getElementById("screen-ar");
   if (!screen) return;
 
   bindARPanels();
 
-  if (screen.dataset.bound !== "1") {
-    screen.dataset.bound = "1";
+  if (screen.dataset.bound!=="1") {
+    screen.dataset.bound="1";
 
     bindAR();
     loadInvoiceItemCatalog();
@@ -77736,20 +82382,19 @@ async function initReceivablesScreen() {
     bindInvoiceAllocatePaymentUI();
     bindInvoiceRecalcButton();
     bindViewerActivitySheets();
-
     wireQuotesScreen();
     bindInvoiceCustomerLookup();
   }
 
   await fillInvoiceCustomerList();
-  await renderArCustomerList?.({ closeOnPick: true });
+  await renderArCustomerList?.({closeOnPick:true});
   await loadRevenueAccountsForInvoice?.();
   await renderDraftInvoiceList?.();
 
-  // ✅ Force invoice form/template to start clean when AR opens
   if (!window.__AR_FIRST_OPEN_CLEANED__) {
-    window.__AR_FIRST_OPEN_CLEANED__ = true;
+    window.__AR_FIRST_OPEN_CLEANED__=true;
     await window.resetInvoiceForm?.();
+    setInvoiceAccountingContext({});
     syncInvoiceDueDateLabel?.();
   }
 
@@ -78081,127 +82726,150 @@ function bindInvoiceTermsDueDate() {
 }
 
 function collectInvoiceFromForm() {
-  const invoiceId = document.getElementById("invId")?.value
-    ? parseInt(document.getElementById("invId").value, 10)
-    : null;
+  const sourceMeta=window._CURRENT_INVOICE_SOURCE || {};
+  const isLessorInvoice=
+    sourceMeta.handoff_type==="lessor_lease_invoice" ||
+    sourceMeta.source==="lessor_lease_billing" ||
+    sourceMeta.module_name==="ifrs16_lessor";
 
-  const customerName = document.getElementById("invCustomerName")?.value?.trim() || "";
-  const number = document.getElementById("invNumber")?.value?.trim() || "";
-  const terms = document.getElementById("invTerms")?.value || "on_receipt";
-  const currency = document.getElementById("invCurrency")?.value || "USD";
-  const invoice_date = toIsoDateOnly(document.getElementById("invDate")?.value || "");
+  const invoiceId=Number(document.getElementById("invId")?.value || 0) || null;
+  const customerName=document.getElementById("invCustomerName")?.value?.trim() || "";
+  const customerId=resolveInvoiceCustomerId();
+  const number=document.getElementById("invNumber")?.value?.trim() || "";
+  const terms=document.getElementById("invTerms")?.value || "on_receipt";
+  const currency=document.getElementById("invCurrency")?.value || "USD";
+  const invoice_date=toIsoDateOnly(document.getElementById("invDate")?.value || "");
+  const due_date=computeDueDate(invoice_date,terms);
+  const todayIso=new Date().toISOString().slice(0,10);
 
   if (!customerName) throw new Error("Customer is required.");
-  if (!number) throw new Error("Invoice number is required.");
-  if (!invoice_date) throw new Error("Invoice date is required.");
-
-  const due_date = computeDueDate(invoice_date, terms);
-  const todayIso = new Date().toISOString().slice(0, 10);
-
-  if (invoice_date > todayIso) throw new Error(`Invoice date cannot be in the future (${invoice_date}).`);
-  if (due_date && due_date < invoice_date) throw new Error("Due date cannot be earlier than invoice date.");
-
-  const customerId = resolveInvoiceCustomerId();
   if (!customerId) throw new Error("Please select a valid customer from the list.");
+  if (!invoice_date) throw new Error("Invoice date is required.");
+  if (invoice_date>todayIso) throw new Error(`Invoice date cannot be in the future (${invoice_date}).`);
+  if (due_date && due_date<invoice_date) throw new Error("Due date cannot be earlier than invoice date.");
 
-  const revenueCodeDefault = document.getElementById("invRevenueAccount")?.value?.trim() || "";
-  if (!revenueCodeDefault) throw new Error("Please select a Revenue account.");
-
-  const vatEnabled = !!document.getElementById("invVatEnabled")?.checked;
-  const defaultVatCode = (document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
-  const totals = window.recalcInvoice?.() || {};
-  const discount_rate = totals.discount_rate ?? parsePercent(document.getElementById("invDisc")?.value || "0");
-  const discount_amount = Number(totals.discount_amount) || 0;
-  const other = parseFloat(document.getElementById("invOther")?.value || "0") || 0;
-  const notes = document.getElementById("invMemo")?.value?.trim() || "";
-  const bankAccountId = document.getElementById("invoiceBankAccount")?.value
-    ? parseInt(document.getElementById("invoiceBankAccount").value, 10)
+  const lessorLeaseId=isLessorInvoice
+    ? Number(
+        sourceMeta.lessor_lease_id ??
+        sourceMeta.lease_id ??
+        sourceMeta.lessor_context?.lessor_lease_id ??
+        sourceMeta.lines?.[0]?.lessor_lease_id ??
+        0
+      ) || null
     : null;
 
-  const revenueContractId = document.getElementById("invRevenueContractId")?.value
-    ? parseInt(document.getElementById("invRevenueContractId").value, 10)
+  const lessorScheduleId=isLessorInvoice
+    ? Number(
+        sourceMeta.lessor_schedule_id ??
+        sourceMeta.schedule_id ??
+        sourceMeta.source_id ??
+        sourceMeta.lessor_context?.schedule_id ??
+        sourceMeta.lines?.[0]?.lessor_schedule_id ??
+        0
+      ) || null
     : null;
 
-  const sourceMeta = window._CURRENT_INVOICE_SOURCE || {};
-  const isLessorInvoice =
-    sourceMeta.handoff_type === "lessor_lease_invoice" ||
-    sourceMeta.source === "lessor_lease_billing" ||
-    sourceMeta.module_name === "ifrs16_lessor";
+  const creditAccountCode=
+    document.getElementById("invRevenueAccount")?.value?.trim() ||
+    sourceMeta.credit_account_code ||
+    sourceMeta.lines?.[0]?.account_code ||
+    "";
 
-  const lessorLeaseId = isLessorInvoice
-    ? Number(sourceMeta.lessor_lease_id ?? sourceMeta.lease_id ?? sourceMeta.line?.lessor_lease_id ?? 0) || null
-    : null;
+  if (!creditAccountCode) {
+    throw new Error(
+      isLessorInvoice
+        ? "The lessor invoice credit account is missing."
+        : "Please select a Revenue account."
+    );
+  }
 
-  const lessorScheduleId = isLessorInvoice
-    ? Number(sourceMeta.lessor_schedule_id ?? sourceMeta.schedule_id ?? sourceMeta.source_id ?? sourceMeta.line?.lessor_schedule_id ?? 0) || null
-    : null;
+  const vatEnabled=!!document.getElementById("invVatEnabled")?.checked;
+  const defaultVatCode=(document.getElementById("invDefaultVat")?.value || "STANDARD").trim().toUpperCase();
+  const totals=window.recalcInvoice?.() || {};
+  const discount_rate=totals.discount_rate ?? parsePercent(document.getElementById("invDisc")?.value || "0");
+  const discount_amount=Number(totals.discount_amount) || 0;
+  const other=Number(document.getElementById("invOther")?.value || 0) || 0;
+  const notes=document.getElementById("invMemo")?.value?.trim() || "";
+  const bankAccountId=Number(document.getElementById("invoiceBankAccount")?.value || 0) || null;
+  const revenueContractId=Number(document.getElementById("invRevenueContractId")?.value || 0) || null;
 
-  const lines = Array.from(document.querySelectorAll("#invLines tr")).map(tr => {
-    const item = tr.querySelector(".inv-item-pick, .inv-desc")?.value?.trim() || "";
-    const description = tr.querySelector(".inv-service")?.value?.trim() || "";
-    const quantity = parseFloat(tr.querySelector(".inv-qty")?.value || "0") || 0;
-    const unitPrice = parseFloat(tr.querySelector(".inv-price")?.value || "0") || 0;
-    const vatCode = (tr.querySelector(".inv-vat-code")?.value || defaultVatCode).trim().toUpperCase();
-    const obligationRaw = tr.querySelector(".inv-obligation")?.value?.trim() || "";
-    const itemIdRaw = tr.querySelector(".inv-item-id")?.value?.trim() || "";
+  const lines=Array.from(document.querySelectorAll("#invLines tr"))
+    .map(tr=>{
+      const item=tr.querySelector(".inv-item-pick, .inv-desc")?.value?.trim() || "";
+      const description=tr.querySelector(".inv-service")?.value?.trim() || "";
+      const quantity=Number(tr.querySelector(".inv-qty")?.value || 0) || 0;
+      const unitPrice=Number(tr.querySelector(".inv-price")?.value || 0) || 0;
+      const vatCode=(tr.querySelector(".inv-vat-code")?.value || defaultVatCode).trim().toUpperCase();
+      const obligationRaw=tr.querySelector(".inv-obligation")?.value?.trim() || "";
+      const itemIdRaw=tr.querySelector(".inv-item-id")?.value?.trim() || "";
+      const lineAccount=tr.querySelector(".inv-acct")?.value?.trim() || creditAccountCode;
 
-    if (!(item || description) || !(quantity || unitPrice)) return null;
+      if (!(item || description) || !(quantity || unitPrice)) return null;
 
-    let vat_rate = null;
-    if (vatCode === "CUSTOM") vat_rate = parseFloat(tr.querySelector(".inv-vat-custom")?.value || "0") || 0;
+      let vat_rate=null;
+      if (vatCode==="CUSTOM") {
+        vat_rate=Number(tr.querySelector(".inv-vat-custom")?.value || 0) || 0;
+      }
 
-    return {
-      item_name: item,
-      item,
-      description,
-      quantity,
-      unit_price: unitPrice,
-      vatCode,
-      vat_rate,
-      account_code: tr.querySelector(".inv-acct")?.value?.trim() || revenueCodeDefault,
-      revenue_obligation_id: isLessorInvoice ? null : obligationRaw ? Number(obligationRaw) : null,
-      item_type: isLessorInvoice ? "lease" : (tr.querySelector(".inv-item-type")?.value || "gl").trim().toLowerCase(),
-      item_id: isLessorInvoice ? lessorLeaseId : itemIdRaw ? Number(itemIdRaw) : null,
-      item_code: tr.querySelector(".inv-item-code")?.value?.trim() || null,
-      source: isLessorInvoice ? "lessor_lease_billing" : null,
-      source_id: isLessorInvoice ? lessorScheduleId : null,
-      module_name: isLessorInvoice ? "ifrs16_lessor" : null,
-      lessor_lease_id: lessorLeaseId,
-      lessor_schedule_id: lessorScheduleId,
-    };
-  }).filter(Boolean);
+      return {
+        item_name:item,
+        item,
+        description,
+        quantity,
+        unit_price:unitPrice,
+        vatCode,
+        vat_rate,
+        account_code:lineAccount,
+        revenue_obligation_id:isLessorInvoice ? null : obligationRaw ? Number(obligationRaw) : null,
+        item_type:isLessorInvoice
+          ? "lease"
+          : (tr.querySelector(".inv-item-type")?.value || "gl").trim().toLowerCase(),
+        item_id:itemIdRaw ? Number(itemIdRaw) : null,
+        item_code:tr.querySelector(".inv-item-code")?.value?.trim() || null,
+        source:isLessorInvoice ? "lessor_lease_billing" : null,
+        source_id:isLessorInvoice ? lessorScheduleId : null,
+        module_name:isLessorInvoice ? "ifrs16_lessor" : null,
+        lessor_lease_id:lessorLeaseId,
+        lessor_schedule_id:lessorScheduleId,
+      };
+    })
+    .filter(Boolean);
 
   if (!lines.length) throw new Error("Invoice must have at least one valid line.");
 
   return {
-    id: invoiceId,
-    customer_id: customerId,
-    customer_name: customerName,
-    revenue_contract_id: isLessorInvoice ? null : revenueContractId,
+    id:invoiceId,
+    customer_id:customerId,
+    customer_name:customerName,
+    revenue_contract_id:isLessorInvoice ? null : revenueContractId,
     invoice_date,
     due_date,
     number,
     terms,
     currency,
-    vat_enabled: vatEnabled,
-    default_vat_code: defaultVatCode,
+    vat_enabled:vatEnabled,
+    default_vat_code:defaultVatCode,
     discount_rate,
     discount_amount,
-    discount: discount_rate,
+    discount:discount_rate,
     other,
     notes,
-    bank_account_id: bankAccountId,
-    source: isLessorInvoice ? "lessor_lease_billing" : null,
-    source_id: isLessorInvoice ? lessorScheduleId : null,
-    module_name: isLessorInvoice ? "ifrs16_lessor" : null,
-    posting_mode: isLessorInvoice ? "custom_accounts" : null,
-    lessor_lease_id: lessorLeaseId,
-    lessor_schedule_id: lessorScheduleId,
-    lease_classification: isLessorInvoice ? sourceMeta.lease_classification || null : null,
-    accounting_treatment: isLessorInvoice ? sourceMeta.accounting_treatment || null : null,
-    ar_account_code: isLessorInvoice ? sourceMeta.ar_account_code || null : null,
-    credit_account_code: isLessorInvoice ? sourceMeta.credit_account_code || null : null,
-    vat_output_account_code: isLessorInvoice ? sourceMeta.vat_output_account_code || null : null,
+    bank_account_id:bankAccountId,
+    source:isLessorInvoice ? "lessor_lease_billing" : null,
+    source_id:isLessorInvoice ? lessorScheduleId : null,
+    module_name:isLessorInvoice ? "ifrs16_lessor" : null,
+    posting_mode:isLessorInvoice ? "custom_accounts" : null,
+    lessor_lease_id:lessorLeaseId,
+    lessor_schedule_id:lessorScheduleId,
+    lease_classification:isLessorInvoice
+      ? sourceMeta.lease_classification || sourceMeta.classification || sourceMeta.lessor_context?.classification || null
+      : null,
+    accounting_treatment:isLessorInvoice
+      ? sourceMeta.accounting_treatment || sourceMeta.lessor_context?.accounting_treatment || null
+      : null,
+    ar_account_code:isLessorInvoice ? sourceMeta.ar_account_code || null : null,
+    credit_account_code:isLessorInvoice ? creditAccountCode : null,
+    vat_output_account_code:isLessorInvoice ? sourceMeta.vat_output_account_code || null : null,
     lines,
   };
 }
@@ -78257,6 +82925,7 @@ function resetInvoiceForm() {
     window._CURRENT_INVOICE_DRAFT =
       null;
   } catch (_) {}
+  setInvoiceAccountingContext({});
 }
 
 // 👇 THIS LINE IS THE FIX
@@ -83971,111 +88640,252 @@ function bindAR() {
     };
   }
 
+  function ensureInvoiceAccountOption(select,code,name="") {
+    if (!select || !code) return;
 
-  async function prefillInvoiceFromRevenuePayload(payload = {}) {
-    try {
-      console.log("🧾 [Invoice Prefill]", payload);
+    const value=String(code).trim();
+    const label=String(name || code).trim();
+    let option=Array.from(select.options).find(o=>o.value===value);
 
-      const isLessorInvoice =
-        payload.handoff_type === "lessor_lease_invoice" ||
-        payload.source === "lessor_lease_billing" ||
-        payload.module_name === "ifrs16_lessor";
+    if (!option) {
+      option=new Option(label,value);
+      select.add(option);
+    }
 
-      if (isLessorInvoice) window._CURRENT_INVOICE_SOURCE = payload;
+    option.text=label;
+    option.textContent=label;
+    option.label=label;
+    select.value=value;
+  }
 
-      const customerId = payload.customerId ?? payload.customer_id ?? null;
-      const customerName = payload.customerName ?? payload.customer_name ?? "";
-      const contractId = isLessorInvoice ? null : payload.contractId ?? payload.revenue_contract_id ?? null;
-      const obligationId = isLessorInvoice ? null : payload.obligationId ?? payload.revenue_obligation_id ?? payload.line?.revenue_obligation_id ?? null;
-      const itemName = payload.obligationName ?? payload.revenue_obligation_name ?? payload.line?.item_name ?? payload.line?.item ?? payload.contractTitle ?? "Lease rental";
-      const description = payload.obligationNotes ?? payload.revenue_obligation_notes ?? payload.line?.description ?? payload.memo ?? "";
-      const unitPrice = payload.allocatedPrice ?? payload.line?.unit_price ?? payload.line?.net_amount ?? 0;
-      const currency = resolveCurrency(payload.currency || "USD");
-      const invoiceDate = toIsoDateOnly(payload.invoiceDate ?? payload.invoice_date ?? new Date().toISOString().slice(0, 10));
+  function setInvoiceAccountingContext(payload={}) {
+    const line=payload.lines?.[0] || payload.line || {};
 
-      const customerIdEl = document.getElementById("invCustomerId");
-      const customerNameEl = document.getElementById("invCustomerName");
-      const dateEl = document.getElementById("invDate");
-      const numberEl = document.getElementById("invNumber");
-      const termsEl = document.getElementById("invTerms");
-      const currencyEl = document.getElementById("invCurrency");
-      const memoEl = document.getElementById("invMemo");
-      const contractEl = document.getElementById("invRevenueContractId");
-      const body = document.getElementById("invLines");
+    const isLessor=(
+      payload.handoff_type==="lessor_lease_invoice" ||
+      payload.source==="lessor_lease_billing" ||
+      payload.module_name==="ifrs16_lessor" ||
+      Number(payload.lessor_lease_id || 0)>0 ||
+      String(line.item_type || "").toLowerCase()==="lease"
+    );
 
-      if (customerIdEl) customerIdEl.value = customerId ? String(customerId) : "";
-      if (customerNameEl) customerNameEl.value = customerName;
-      if (dateEl) dateEl.value = invoiceDate;
-      if (numberEl && payload.number) numberEl.value = String(payload.number);
-      if (currencyEl) currencyEl.value = currency;
-      if (memoEl) memoEl.value = payload.memo || description || `Invoice for ${itemName}`;
+    const classification=String(
+      payload.lease_classification ||
+      payload.classification ||
+      payload.lessor_context?.classification ||
+      ""
+    ).toLowerCase();
 
-      if (termsEl && payload.due_date && invoiceDate) {
-        const invoiceDay = new Date(`${invoiceDate}T00:00:00`);
-        const dueDate = toIsoDateOnly(payload.due_date);
-        const dueDay = new Date(`${dueDate}T00:00:00`);
-        const days = Math.max(0, Math.round((dueDay - invoiceDay) / 86400000));
-        if (days === 0) termsEl.value = "on_receipt";
-        else if (days === 15) termsEl.value = "15";
-        else if (days === 30) termsEl.value = "30";
+    const label=document.getElementById("invAccountLabel");
+    const help=document.getElementById("invAccountHelp");
+    const column=document.getElementById("invAccountColumnLabel");
+
+    if (!isLessor) {
+      if (label) label.textContent="Revenue account *";
+      if (column) column.textContent="Revenue";
+      if (help) {
+        help.textContent=
+          "Used as the default revenue account for new invoice lines.";
       }
+      return;
+    }
 
-      if (isLessorInvoice) {
-        if (contractEl) contractEl.value = "";
-        window.toggleInvoiceContractUI?.({ hasCustomerContracts: false });
-        window.toggleInvoiceObligationUI?.({ hasRevenueContract: false, hasObligation: false });
-      } else {
-        const contracts = await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
-        window.toggleInvoiceContractUI?.({ hasCustomerContracts: contracts.length > 0 });
-        if (contractEl) contractEl.value = contractId ? String(contractId) : "";
-        const obligations = await window.loadInvoiceLineObligationsFromContract?.() || [];
-        window.toggleInvoiceObligationUI?.({ hasRevenueContract: !!contractId, hasObligation: obligations.length > 0 });
-      }
+    if (label) label.textContent="Credit account *";
+    if (column) column.textContent="Credit account";
 
-      if (!body) return console.warn("[Invoice Prefill] invLines not found");
-
-      body.innerHTML = "";
-      const row = window.addLine?.() || body.querySelector("tr");
-      if (!row) return console.warn("[Invoice Prefill] Could not create invoice line");
-
-      const itemEl = row.querySelector(".inv-item-pick, .inv-desc");
-      const descEl = row.querySelector(".inv-service");
-      const accountEl = row.querySelector(".inv-acct");
-      const typeEl = row.querySelector(".inv-item-type");
-      const idEl = row.querySelector(".inv-item-id");
-      const codeEl = row.querySelector(".inv-item-code");
-      const obligationEl = row.querySelector(".inv-obligation");
-      const quantityEl = row.querySelector(".inv-qty");
-      const priceEl = row.querySelector(".inv-price");
-      const vatEl = row.querySelector(".inv-vat-code");
-
-      if (itemEl) itemEl.value = itemName;
-      if (descEl) descEl.value = description;
-      if (quantityEl) quantityEl.value = "1";
-      if (priceEl) priceEl.value = String(unitPrice || 0);
-      if (accountEl && payload.line?.account_code) accountEl.value = String(payload.line.account_code);
-      if (typeEl) typeEl.value = isLessorInvoice ? "lease" : payload.line?.item_type || "gl";
-      if (idEl) idEl.value = isLessorInvoice ? String(payload.lessor_lease_id || payload.lease_id || "") : String(payload.line?.item_id || "");
-      if (codeEl) codeEl.value = payload.line?.item_code || "";
-      if (vatEl && isLessorInvoice) vatEl.value = Number(payload.line?.vat_amount || 0) > 0 ? "STANDARD" : "NO_VAT";
-
-      if (obligationEl && !isLessorInvoice) {
-        obligationEl.dataset.selectedValue = obligationId ? String(obligationId) : "";
-        obligationEl.value = obligationId ? String(obligationId) : "";
-      }
-
-      if (!isLessorInvoice) await window.applyObligationBillingToLine?.(row);
-
-      window.recalcInvoice?.({ force: true });
-      window.saveInvoiceDraftToLocal?.();
-
-      console.log("✅ [Invoice Prefill] completed");
-    } catch (err) {
-      console.warn("[prefillInvoiceFromRevenuePayload] failed", err);
+    if (help) {
+      help.textContent=classification==="finance"
+        ? "Controlled by the IFRS 16 finance lease classification. The invoice credits the lease receivable."
+        : "Controlled by the IFRS 16 operating lease classification. The invoice credits lease rental income.";
     }
   }
 
-  window.prefillInvoiceFromRevenuePayload = prefillInvoiceFromRevenuePayload;
+  window.setInvoiceAccountingContext=setInvoiceAccountingContext;
+
+  async function prefillInvoiceFromRevenuePayload(payload={}) {
+    try {
+      const lessor=
+        payload.handoff_type==="lessor_lease_invoice" ||
+        payload.source==="lessor_lease_billing" ||
+        payload.module_name==="ifrs16_lessor";
+
+      setInvoiceAccountingContext(payload);
+
+      const line=payload.lines?.[0] || payload.line || {};
+      if (lessor) window._CURRENT_INVOICE_SOURCE=payload;
+
+      const customerId=payload.customerId ?? payload.customer_id ?? null;
+      const customerName=payload.customerName ?? payload.customer_name ?? "";
+      const contractId=lessor ? null : payload.contractId ?? payload.revenue_contract_id ?? null;
+      const obligationId=lessor ? null : payload.obligationId ?? payload.revenue_obligation_id ?? line.revenue_obligation_id ?? null;
+      const itemName=line.item_name || line.item || payload.contractTitle || (lessor ? "Leased out asset" : "");
+      const description=line.description || payload.description || payload.memo || "";
+      const unitPrice=Number(line.unit_price ?? line.net_amount ?? payload.allocatedPrice ?? 0);
+      const invoiceDate=toIsoDateOnly(payload.invoiceDate ?? payload.invoice_date ?? new Date().toISOString().slice(0,10));
+      const currency=resolveCurrency(payload.currency || "USD");
+
+      const set=(id,value)=>{
+        const el=document.getElementById(id);
+        if (el) el.value=value ?? "";
+        return el;
+      };
+
+      set("invCustomerId",customerId ? String(customerId) : "");
+      set("invCustomerName",customerName);
+      set("invDate",invoiceDate);
+      set("invNumber","");
+      set("invCurrency",currency);
+      set("invMemo",payload.notes || payload.memo || description);
+
+      const termsEl=document.getElementById("invTerms");
+      if (termsEl && payload.due_date && invoiceDate) {
+        const days=Math.max(0,Math.round(
+          (new Date(`${toIsoDateOnly(payload.due_date)}T00:00:00`)-
+          new Date(`${invoiceDate}T00:00:00`))/86400000
+        ));
+        termsEl.value=days===30 ? "30" : days===15 ? "15" : "on_receipt";
+      }
+
+      const contractEl=document.getElementById("invRevenueContractId");
+
+      if (lessor) {
+        if (contractEl) contractEl.value="";
+        window.toggleInvoiceContractUI?.({hasCustomerContracts:false});
+        window.toggleInvoiceObligationUI?.({hasRevenueContract:false,hasObligation:false});
+      } else {
+        const contracts=await window.loadRevenueContractsForSelectedCustomer?.(contractId) || [];
+        window.toggleInvoiceContractUI?.({hasCustomerContracts:contracts.length>0});
+        if (contractEl) contractEl.value=contractId ? String(contractId) : "";
+        const obligations=await window.loadInvoiceLineObligationsFromContract?.() || [];
+        window.toggleInvoiceObligationUI?.({
+          hasRevenueContract:!!contractId,
+          hasObligation:obligations.length>0,
+        });
+      }
+
+      const body=document.getElementById("invLines");
+      if (!body) return;
+
+      body.innerHTML="";
+
+      const row=window.addLine?.({
+        ...line,
+        item_type:lessor ? "lease" : line.item_type,
+        item_name:itemName,
+        description,
+        quantity:Number(line.quantity || 1),
+        unit_price:unitPrice,
+        account_code:line.account_code || payload.credit_account_code || "",
+        account_name:line.account_name || payload.credit_account_name || "",
+        vatCode:Number(line.vat_amount || 0)>0 ? "STANDARD" : "ZERO",
+      });
+
+      if (!row) return;
+
+      row.querySelector(".inv-item-pick, .inv-desc").value=itemName;
+      row.querySelector(".inv-service").value=description;
+      row.querySelector(".inv-qty").value=String(line.quantity || 1);
+      row.querySelector(".inv-price").value=String(unitPrice);
+      row.querySelector(".inv-item-type").value=lessor ? "lease" : line.item_type || "gl";
+      row.querySelector(".inv-item-id").value=lessor
+        ? String(line.item_id || payload.asset_id || payload.lessor_lease_id || "")
+        : String(line.item_id || "");
+      row.querySelector(".inv-item-code").value=line.item_code || "";
+
+      const creditCode=
+        line.account_code ||
+        payload.credit_account_code ||
+        "";
+
+      const creditName=
+        line.account_name ||
+        payload.credit_account_name ||
+        creditCode;
+
+      const headerAccountEl=document.getElementById("invRevenueAccount");
+      const lineAccountEl=row.querySelector(".inv-acct");
+
+      ensureInvoiceAccountOption(
+        headerAccountEl,
+        creditCode,
+        creditName
+      );
+
+      ensureInvoiceAccountOption(
+        lineAccountEl,
+        creditCode,
+        creditName
+      );
+
+      if (headerAccountEl) {
+        headerAccountEl.disabled=lessor;
+        headerAccountEl.title=lessor
+          ? "Controlled by the IFRS 16 lease classification."
+          : "";
+      }
+
+      if (lineAccountEl) {
+        lineAccountEl.disabled=lessor;
+        lineAccountEl.title=lessor
+          ? "Controlled by the IFRS 16 lease classification."
+          : "";
+      }
+
+      const hasVat=Number(line.vat_amount || 0)>0;
+      const vatEnabled=document.getElementById("invVatEnabled");
+      const defaultVat=document.getElementById("invDefaultVat");
+      const vatSelect=row.querySelector(".inv-vat-code");
+
+      if (vatEnabled) vatEnabled.checked=hasVat;
+      if (defaultVat) defaultVat.value=hasVat ? "STANDARD" : "ZERO";
+      if (vatSelect) vatSelect.value=hasVat ? "STANDARD" : "ZERO";
+
+      const obligationEl=row.querySelector(".inv-obligation");
+      if (obligationEl && !lessor) {
+        obligationEl.dataset.selectedValue=obligationId ? String(obligationId) : "";
+        obligationEl.value=obligationId ? String(obligationId) : "";
+        await window.applyObligationBillingToLine?.(row);
+      }
+
+      window.recalcInvoice?.({force:true});
+      window.saveInvoiceDraftToLocal?.();
+
+      requestAnimationFrame(()=>{
+        const headerEl=document.getElementById("invRevenueAccount");
+        const lineEl=row.querySelector(".inv-acct");
+
+        ensureInvoiceAccountOption(
+          headerEl,
+          creditCode,
+          creditName
+        );
+
+        ensureInvoiceAccountOption(
+          lineEl,
+          creditCode,
+          creditName
+        );
+
+        if (headerEl) {
+          headerEl.disabled=lessor;
+          headerEl.title=lessor
+            ? "Controlled by the IFRS 16 lease classification."
+            : "";
+        }
+
+        if (lineEl) {
+          lineEl.disabled=lessor;
+          lineEl.title=lessor
+            ? "Controlled by the IFRS 16 lease classification."
+            : "";
+        }
+      });
+    } catch (err) {
+      console.warn("[prefillInvoiceFromRevenuePayload] failed",err);
+    }
+  }
+
+  window.prefillInvoiceFromRevenuePayload=prefillInvoiceFromRevenuePayload;
 
   async function consumePendingRevenueInvoicePrefill() {
     try {
@@ -84558,6 +89368,27 @@ function bindAR() {
   }
   window.loadRevenueContractsForSelectedCustomer = loadRevenueContractsForSelectedCustomer;
 
+  function setLockedInvoiceAccount(select,code,name,locked=false) {
+    if (!select || !code) return;
+
+    const value=String(code).trim();
+    const label=String(name || code).trim();
+    let option=Array.from(select.options).find(o=>o.value===value);
+
+    if (!option) {
+      option=new Option(label,value);
+      select.add(option);
+    }
+
+    option.textContent=label;
+    option.label=label;
+    select.value=value;
+    select.disabled=!!locked;
+    select.title=locked
+      ? "Controlled by the IFRS 16 lease classification."
+      : "";
+  }
+
   // --------------------------
   // Add invoice line
   // --------------------------
@@ -84688,7 +89519,7 @@ function bindAR() {
     const preCode =
       (data.item_code ?? data.itemCode ?? data.sku ?? data.code ?? "").toString().trim();
 
-    if (preType === "service" || preType === "inventory") {
+    if (["service","inventory","lease"].includes(preType)) {
       const t = row.querySelector(".inv-item-type");
       const id = row.querySelector(".inv-item-id");
       const code = row.querySelector(".inv-item-code");
@@ -84775,23 +89606,46 @@ function bindAR() {
     if (totSpan && backendTotal != null) totSpan.textContent = F(backendTotal);
 
     // Revenue accounts dropdown
-    const acctSel = row.querySelector(".inv-acct");
+    const acctSel=row.querySelector(".inv-acct");
+
     if (acctSel) {
-      const list = Array.isArray(window.REVENUE_ACCOUNTS_CACHE)
+      const list=Array.isArray(window.REVENUE_ACCOUNTS_CACHE)
         ? window.REVENUE_ACCOUNTS_CACHE
         : [];
 
-      acctSel.innerHTML =
-        `<option value="">(Default)</option>` +
-        list.map(a =>
-          `<option value="${escapeHtml(String(a.code))}">${escapeHtml(String(a.name || "Revenue"))}</option>`
+      acctSel.innerHTML=
+        `<option value="">(Default)</option>`+
+        list.map(a=>
+          `<option value="${escapeHtml(String(a.code))}">
+            ${escapeHtml(String(a.name || a.code))}
+          </option>`
         ).join("");
 
-      const headerRev = (document.getElementById("invRevenueAccount")?.value || "").trim();
-      const pre = String(data.account_code ?? data.accountCode ?? "").trim();
+      const source=window._CURRENT_INVOICE_SOURCE || {};
+      const isLessor=
+        source.source==="lessor_lease_billing" ||
+        source.module_name==="ifrs16_lessor";
 
-      if (pre) acctSel.value = pre;
-      else if (headerRev) acctSel.value = headerRev;
+      const code=String(
+        data.account_code ??
+        data.accountCode ??
+        source.credit_account_code ??
+        ""
+      ).trim();
+
+      const name=String(
+        data.account_name ??
+        data.accountName ??
+        source.credit_account_name ??
+        ""
+      ).trim();
+
+      setLockedInvoiceAccount(
+        acctSel,
+        code,
+        name,
+        isLessor
+      );
     }
 
     // Recalc on edit (recalcInvoice respects _INV_TOTALS_LOCKED unless forced)
@@ -85694,10 +90548,55 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
         : `${ENDPOINTS.invoices(cid)}/${invoiceId}`
     );
 
-    const payload = unwrapApi(raw);
-    const inv = (typeof normalizeInvoiceFromApi === "function")
+    const payload=unwrapApi(raw) || {};
+    const normalized=typeof normalizeInvoiceFromApi==="function"
       ? normalizeInvoiceFromApi(payload)
-      : payload;
+      : {};
+
+    const inv={
+      ...payload,
+      ...normalized,
+
+      source:payload.source ?? normalized.source ?? null,
+      source_id:payload.source_id ?? normalized.source_id ?? null,
+      module_name:payload.module_name ?? normalized.module_name ?? null,
+      posting_mode:payload.posting_mode ?? normalized.posting_mode ?? null,
+
+      lessor_lease_id:
+        payload.lessor_lease_id ??
+        normalized.lessor_lease_id ??
+        null,
+
+      lessor_schedule_id:
+        payload.lessor_schedule_id ??
+        normalized.lessor_schedule_id ??
+        null,
+
+      lease_classification:
+        payload.lease_classification ??
+        normalized.lease_classification ??
+        null,
+
+      accounting_treatment:
+        payload.accounting_treatment ??
+        normalized.accounting_treatment ??
+        null,
+
+      ar_account_code:
+        payload.ar_account_code ??
+        normalized.ar_account_code ??
+        null,
+
+      credit_account_code:
+        payload.credit_account_code ??
+        normalized.credit_account_code ??
+        null,
+
+      vat_output_account_code:
+        payload.vat_output_account_code ??
+        normalized.vat_output_account_code ??
+        null,
+    };
 
     if (!inv || !inv.id) throw new Error("Invoice payload invalid (missing id).");
 
@@ -85958,7 +90857,7 @@ async function openInvoiceViewer(invoiceId, opts = {}) {
     `;
 
     // ✅ bind AFTER content exists
-    bindInvoiceViewerPaymentUI?.(inv);
+    bindInvoiceViewerPaymentUI?.();
     bindInvoiceEmailButtons?.();
     bindReceiptToolbarButtons?.();
     setReceiptButtonsState?.(inv);
@@ -86149,7 +91048,7 @@ function setModalButtonsDisabled(disabled) {
   });
 }
 
-function bindInvoiceViewerPaymentUI(invFromCaller) {
+function bindInvoiceViewerPaymentUI() {
   const modal = document.getElementById("invoiceViewerModal");
   if (!modal) return;
 
@@ -86173,6 +91072,14 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
   const currencyEl = document.getElementById("invViewPayCurrency");
 
   if (!btnAllocate || !panel || !btnSave || !btnX) return;
+
+  const currentInvoice=()=>getOpenInvoiceObj?.() || null;
+
+  const isLessorInvoice=inv=>(
+    inv?.source==="lessor_lease_billing" ||
+    inv?.module_name==="ifrs16_lessor" ||
+    Number(inv?.lessor_lease_id || 0)>0
+  );
 
   // ---------- helpers ----------
   const parseNumberInput = (s) => {
@@ -86229,24 +91136,28 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
     return st;
   }
 
-  function patchInvoiceViewerAfterPayment(invId, result) {
-    // result should contain: paid_after, remaining_after, maybe invoice_status, maybe due_date
-    const paidAfter = toNum(result?.paid_after);
-    const remaining = toNum(result?.remaining_after);
+  function patchInvoiceViewerAfterPayment(invId,result={}) {
+    const inv=currentInvoice();
+    if (!inv || Number(inv.id)!==Number(invId)) return;
 
-    const inv = getOpenInvoiceObj?.() || null;
-    if (inv && inv.id === invId) {
-      inv.paid_amount = paidAfter;
-      inv.outstanding = remaining;
-      inv.amount_due  = remaining;
-      inv.balance_due = remaining;
+    const paid=toNum(result.paid_after);
+    const remaining=toNum(result.remaining_after);
 
-      // If your invoice model uses "status", update it
-      inv.status = computeUiStatus({
-        invoiceStatus: result?.invoice_status,
-        remaining,
-        dueDate: inv?.due_date || result?.due_date,
-      });
+    inv.paid_amount=paid;
+    inv.outstanding_amount=remaining;
+    inv.outstanding=remaining;
+    inv.amount_due=remaining;
+    inv.balance_due=remaining;
+
+    inv.payment_status=
+      remaining<=0
+        ? "paid"
+        : paid>0
+          ? "partial"
+          : "unpaid";
+
+    if (result.invoice_status) {
+      inv.status=result.invoice_status;
     }
   }
 
@@ -86367,8 +91278,8 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
 
     if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
 
-    const inv = invFromCaller || getOpenInvoiceObj?.() || null;
-
+    const inv=currentInvoice();
+    if (!inv) return alert("Invoice details are not loaded.");
     // currency comes from invoice (best), then company context fallback
     const ccy = inv?.currency || window.COMPANY_CONTEXT?.currency || "";
 
@@ -86411,7 +91322,10 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
 
     const cid = getActiveCompanyId?.();
     const invId = getOpenInvoiceId?.();
+    const inv=currentInvoice();
+
     if (!cid || !invId) return alert("No invoice open.");
+    if (!inv) return alert("Invoice details are not loaded.");
 
     const amount    = parseNumberInput(amtEl?.value);
     const payDate   = (dateEl?.value || "").trim();
@@ -86430,12 +91344,18 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
       const res = await apiFetch(ENDPOINTS.invoiceAllocatePayment(cid, invId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: payDate,
+        body:JSON.stringify({
+          date:payDate,
           amount,
-          bank_account_id: bankId,
+          bank_account_id:bankId,
           reference,
-          description: `Payment allocation for invoice ${reference || invId}`,
+          description:`Payment allocation for invoice ${reference || inv.number || invId}`,
+
+          // Context only. Backend should still resolve truth using invoice_id.
+          source:inv.source || null,
+          module_name:inv.module_name || null,
+          lessor_lease_id:inv.lessor_lease_id || null,
+          lessor_schedule_id:inv.lessor_schedule_id || null,
         }),
       });
 
@@ -86452,6 +91372,26 @@ function bindInvoiceViewerPaymentUI(invFromCaller) {
       // IMPORTANT: call computeInvoiceBadge *inside* patchCustomerInvoiceRow,
       // because that function has access to the updated inv object.
       patchCustomerInvoiceRow?.(invId, payload);
+
+      if (isLessorInvoice(inv)) {
+        window.dispatchEvent(new CustomEvent(
+          "finsage:lessor-payment-updated",
+          {
+            detail:{
+              company_id:Number(cid),
+              invoice_id:Number(invId),
+              lessor_lease_id:Number(inv.lessor_lease_id || 0),
+              lessor_schedule_id:Number(inv.lessor_schedule_id || 0),
+              paid_after:toNum(payload.paid_after),
+              remaining_after:toNum(payload.remaining_after),
+              payment_status:
+                toNum(payload.remaining_after)<=0
+                  ? "paid"
+                  : "partial",
+            },
+          }
+        ));
+      }
 
       // ✅ 3) Refresh viewer to re-render totals/status from updated object (truth refresh)
       setMsg("Allocated ✅");

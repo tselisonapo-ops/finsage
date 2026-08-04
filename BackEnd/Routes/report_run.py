@@ -1,6 +1,7 @@
 
 from flask import Blueprint, current_app, jsonify, request, g
-
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.routes.invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.reporting.balance_sheet_templates import get_balance_sheet_v3_exact
@@ -62,6 +63,12 @@ from BackEnd.Services.reporting.disclosure_builders import (
     build_ppe_disclosure_multi_year,
     build_revenue_disclosure_multi_year,
     build_lease_disclosure_multi_year,
+    build_lessor_lease_note_export_payload,
+    build_lessor_lease_disclosure_export_payload,
+    build_ip_note_export_payload,
+    build_ia_note_export_payload,
+    build_ip_disclosure_export_payload,
+    build_ia_disclosure_export_payload,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -106,23 +113,6 @@ def _deny_report_access(company_id: int):
         int(company_id),
         db_service=_get_db(),
     )
-
-def _export_statement_payload(payload, statement_key):
-    fmt = (request.args.get("format") or "xlsx").lower().strip()
-
-    if fmt == "pdf":
-        if not callable(export_statement_pdf):
-            raise RuntimeError(
-                f"export_statement_pdf is not callable. Got: {type(export_statement_pdf)}"
-            )
-        return export_statement_pdf(payload, filename=f"{statement_key}.pdf")
-
-    if not callable(export_statement_xlsx):
-        raise RuntimeError(
-            f"export_statement_xlsx is not callable. Got: {type(export_statement_xlsx)}"
-        )
-
-    return export_statement_xlsx(payload, filename=f"{statement_key}.xlsx")
 
 def _deny_report_export_access(company_id: int, expected_report_key: str):
     """
@@ -1701,47 +1691,79 @@ def export_lease_disclosure(company_id):
     try:
         db = _get_db()
         date_from, date_to, meta = resolve_company_period(
-            db,
-            company_id,
-            request,
-            mode="range",
+            db, company_id, request, mode="range",
         )
 
-        fmt = (request.args.get("format") or "xlsx").lower()
+        fmt = (request.args.get("format") or "xlsx").strip().lower()
+        perspective = (request.args.get("perspective") or "lessee").strip().lower()
         comparison_years = _comparison_years_arg(1)
 
-        # PDF: FS note export with wording + designed tables
+        if perspective not in {"lessee", "lessor"}:
+            raise ValueError("perspective must be 'lessee' or 'lessor'")
+
+        if fmt not in {"pdf", "xlsx", "excel"}:
+            raise ValueError("format must be 'pdf' or 'xlsx'")
+
         if fmt == "pdf":
-            lease_note = build_lease_note_export_payload(
+            note = (
+                build_lessor_lease_note_export_payload(
+                    db,
+                    company_id,
+                    date_from,
+                    date_to,
+                )
+                if perspective == "lessor"
+                else build_lease_note_export_payload(
+                    db,
+                    company_id,
+                    date_from,
+                    date_to,
+                    comparison_years=comparison_years,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [note],
+                filename=f"{perspective}_lease_disclosure.pdf",
+            )
+
+        payload = (
+            build_lessor_lease_disclosure_export_payload(
                 db,
                 company_id,
                 date_from,
                 date_to,
+                as_of=date_to,
+            )
+            if perspective == "lessor"
+            else build_lease_disclosure_multi_year(
+                db,
+                company_id,
+                date_from,
+                date_to,
+                as_of=date_to,
                 comparison_years=comparison_years,
             )
-
-            return export_fs_notes_pdf(
-                [lease_note],
-                filename="lease_disclosure.pdf",
-            )
-
-        # Excel / table export
-        payload = build_lease_disclosure_multi_year(
-            db,
-            company_id,
-            date_from,
-            date_to,
-            as_of=date_to,
-            comparison_years=comparison_years,
         )
 
         payload.setdefault("meta", {})
-        payload["meta"].update(meta or {})
+        payload["meta"].update({
+            **(meta or {}),
+            "perspective": perspective,
+            "comparison_years": comparison_years if perspective == "lessee" else 0,
+        })
 
-        return _export_statement_payload(payload, "lease_disclosure")
+        return _export_statement_payload(
+            payload,
+            f"{perspective}_lease_disclosure",
+        )
 
     except Exception as e:
-        current_app.logger.exception("export_lease_disclosure failed")
+        current_app.logger.exception(
+            "export_lease_disclosure failed company_id=%s perspective=%s",
+            company_id,
+            request.args.get("perspective") or "lessee",
+        )
         return jsonify({"ok": False, "error": str(e)}), 400
     
 @report_bp.route("/api/companies/<int:company_id>/disclosures/revenue/export", methods=["GET"])
@@ -1941,3 +1963,124 @@ def reset_fs_note(company_id, note_key):
     except Exception as e:
         current_app.logger.exception("reset_fs_note failed")
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/ip/export",
+    methods=["GET"],
+)
+def export_ip_disclosure(company_id):
+    deny = _deny_report_export_access(company_id, "ip_disclosure")
+    if deny:
+        return deny
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        fmt = (request.args.get("format") or "xlsx").strip().lower()
+
+        if fmt not in {"pdf", "xlsx", "excel"}:
+            raise ValueError("format must be 'pdf' or 'xlsx'")
+
+        if fmt == "pdf":
+            note = build_ip_note_export_payload(
+                db,
+                company_id,
+                date_from,
+                date_to,
+            )
+
+            return export_fs_notes_pdf(
+                [note],
+                filename="investment_property_disclosure.pdf",
+            )
+
+        payload = build_ip_disclosure_export_payload(
+            db,
+            company_id,
+            date_from,
+            date_to,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return export_statement_xlsx(
+            payload,
+            filename="investment_property_disclosure.xlsx",
+        )
+
+    except Exception as e:
+        current_app.logger.exception(
+            "export_ip_disclosure failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/ia/export",
+    methods=["GET"],
+)
+def export_ia_disclosure(company_id):
+    deny = _deny_report_export_access(company_id, "ia_disclosure")
+    if deny:
+        return deny
+
+    try:
+        db = _get_db()
+        date_from, date_to, meta = resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        fmt = (request.args.get("format") or "xlsx").strip().lower()
+
+        if fmt not in {"pdf", "xlsx", "excel"}:
+            raise ValueError("format must be 'pdf' or 'xlsx'")
+
+        if fmt == "pdf":
+            note = build_ia_note_export_payload(
+                db,
+                company_id,
+                date_from,
+                date_to,
+            )
+
+            return export_fs_notes_pdf(
+                [note],
+                filename="intangible_assets_disclosure.pdf",
+            )
+
+        payload = build_ia_disclosure_export_payload(
+            db,
+            company_id,
+            date_from,
+            date_to,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return export_statement_xlsx(
+            payload,
+            filename="intangible_assets_disclosure.xlsx",
+        )
+
+    except Exception as e:
+        current_app.logger.exception(
+            "export_ia_disclosure failed"
+        )
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+        }), 400
+

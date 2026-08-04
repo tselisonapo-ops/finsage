@@ -173,6 +173,222 @@ def _shift_year(d: date, years: int = 1) -> date:
     except ValueError:
         return d.replace(year=d.year - years, day=28)
 
+def _asset_note_export_payload(db, company_id, period_from, period_to, *, kind, cur=None):
+    kind = str(kind or "").lower()
+    if kind not in {"ip", "ia"}:
+        raise ValueError("kind must be 'ip' or 'ia'")
+
+    note_key = "ias40_ip_policy" if kind == "ip" else "ias38_ia_policy"
+    title = "Investment property" if kind == "ip" else "Intangible assets"
+
+    note = db.get_or_build_financial_statement_note(
+        company_id,
+        note_key,
+        period_from,
+        period_to,
+        cur=cur,
+    )
+
+    def load_payload(cursor):
+        fn = db.get_ip_note_payload if kind == "ip" else db.get_ia_note_payload
+        return fn(cursor, company_id, period_from, period_to)
+
+    if cur is not None:
+        data = load_payload(cur)
+    else:
+        with db._conn_cursor() as (_conn, cursor):
+            data = load_payload(cursor)
+
+    section_data = data.get("sections") or {}
+    class_names = [
+        str(c)
+        for c in (section_data.get("columns") or [])
+        if str(c).lower() != "total"
+    ]
+
+    columns = [
+        {"key": c, "label": c}
+        for c in class_names
+    ] + [{"key": "Total", "label": "Total"}]
+
+    sections = []
+
+    for sec in section_data.get("sections") or []:
+        rows = []
+
+        for row in sec.get("rows") or []:
+            values = row.get("values") or {}
+            rows.append({
+                "label": row.get("label") or "",
+                "values": {
+                    c["key"]: _money(values.get(c["key"]))
+                    for c in columns
+                },
+                "row_type": (
+                    "total"
+                    if "closing" in str(row.get("row_key") or "").lower()
+                    else "normal"
+                ),
+            })
+
+        if rows:
+            sections.append({
+                "title": sec.get("title") or "",
+                "rows": rows,
+                "columns": columns,
+                "amount_keys": [c["key"] for c in columns],
+                "amount_labels": {
+                    c["key"]: c["label"]
+                    for c in columns
+                },
+            })
+
+    return {
+        "title": title,
+        "text": note.get("content_text") or note.get("system_draft") or "",
+        "sections": sections,
+        "raw": data,
+    }
+
+
+def build_ip_note_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+):
+    return _asset_note_export_payload(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        kind="ip",
+        cur=cur,
+    )
+
+
+def build_ia_note_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+):
+    return _asset_note_export_payload(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        kind="ia",
+        cur=cur,
+    )
+
+def _asset_disclosure_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    kind,
+    cur=None,
+):
+    note = _asset_note_export_payload(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        kind=kind,
+        cur=cur,
+    )
+
+    ctx = (
+        db.get_company_context(company_id)
+        if hasattr(db, "get_company_context")
+        else {}
+    ) or {}
+
+    sections = []
+
+    for sec in note.get("sections") or []:
+        sections.append({
+            "label": sec.get("title") or "",
+            "key": str(sec.get("title") or "").lower().replace(" ", "_"),
+            "lines": [
+                {
+                    "label": row.get("label") or "",
+                    "name": row.get("label") or "",
+                    "values": row.get("values") or {},
+                    "row_type": row.get("row_type") or "normal",
+                }
+                for row in sec.get("rows") or []
+            ],
+        })
+
+    first_columns = (
+        (note.get("sections") or [{}])[0].get("columns") or
+        [{"key": "amount", "label": "Amount"}]
+    )
+
+    standard = "IAS 40" if kind == "ip" else "IAS 38"
+    statement = "investment_property_disclosure" if kind == "ip" else "intangible_assets_disclosure"
+    report_name = "Investment Property Disclosure" if kind == "ip" else "Intangible Assets Disclosure"
+
+    return {
+        "meta": {
+            "company_id": company_id,
+            "company_name": ctx.get("company_name") or ctx.get("name"),
+            "currency": ctx.get("currency") or "USD",
+            "statement": statement,
+            "report_name": report_name,
+            "standard": standard,
+            "period": {
+                "from": period_from.isoformat(),
+                "to": period_to.isoformat(),
+            },
+        },
+        "columns": first_columns,
+        "sections": sections,
+        "raw": note.get("raw") or {},
+    }
+
+
+def build_ip_disclosure_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+):
+    return _asset_disclosure_export_payload(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        kind="ip",
+        cur=cur,
+    )
+
+
+def build_ia_disclosure_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+):
+    return _asset_disclosure_export_payload(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        kind="ia",
+        cur=cur,
+    )
 
 def _multi_year_ranges(date_from: date, date_to: date, comparison_years: int = 1):
     try:
@@ -283,6 +499,294 @@ def build_lease_note_export_payload(
         "sections": sections,
     }
 
+def build_lessor_lease_note_export_payload(
+    db, company_id, period_from, period_to, *, cur=None,
+):
+    note = db.get_or_build_financial_statement_note(
+        company_id, "ifrs16_lessor_lease_policy",
+        period_from, period_to, cur=cur,
+    )
+    d = db.get_ifrs16_lessor_disclosure_strict(
+        company_id, from_date=period_from, to_date=period_to,
+        as_of=period_to, include_terminated=True, cur=cur,
+    )
+
+    op = d.get("operating_lease") or {}
+    fin = d.get("finance_lease") or {}
+    rec = d.get("net_investment_reconciliation") or {}
+    op_mat = d.get("operating_maturity_analysis") or {}
+    fin_mat = d.get("finance_maturity_analysis") or {}
+
+    def row(label, amount=0, row_type="normal"):
+        return {
+            "label": label,
+            "values": {"amount": _money(amount)},
+            "row_type": row_type,
+        }
+
+    def section(title, rows, columns=None):
+        columns = columns or [{"key": "amount", "label": "Amount"}]
+        keys = [c["key"] for c in columns]
+        return {
+            "title": title,
+            "rows": rows,
+            "columns": columns,
+            "amount_keys": keys,
+            "amount_labels": {c["key"]: c["label"] for c in columns},
+        }
+
+    op_rows = [
+        {
+            "label": r.get("bucket") or "",
+            "values": {
+                "amount": _money(r.get("undiscounted_net")),
+            },
+        }
+        for r in op_mat.get("rows") or []
+    ]
+    op_rows.append(row(
+        "Total undiscounted operating lease receipts",
+        op_mat.get("undiscounted_net_total"),
+        "total",
+    ))
+
+    fin_rows = [
+        {
+            "label": r.get("bucket") or "",
+            "values": {
+                "gross_investment": _money(r.get("undiscounted_receipts")),
+                "unearned_income": _money(r.get("unearned_finance_income")),
+                "net_investment": _money(r.get("principal_recovery")),
+            },
+        }
+        for r in fin_mat.get("rows") or []
+    ]
+    fin_rows.append({
+        "label": "Total",
+        "values": {
+            "gross_investment": _money(
+                fin_mat.get("undiscounted_receipts_total")
+            ),
+            "unearned_income": _money(
+                fin_mat.get("unearned_finance_income_total")
+            ),
+            "net_investment": _money(
+                fin_mat.get("principal_recovery_total")
+            ),
+        },
+        "row_type": "total",
+    })
+
+    sections = [
+        section("Lease income", [
+            row(
+                "Operating lease income recognised on a straight-line basis",
+                op.get("straight_line_income"),
+            ),
+            row(
+                "Finance income on the net investment in finance leases",
+                fin.get("finance_income"),
+            ),
+            row(
+                "Initial direct costs recognised as an expense",
+                op.get("initial_direct_cost_expense"),
+            ),
+            row(
+                "Total lease income",
+                _money(op.get("straight_line_income"))
+                + _money(fin.get("finance_income")),
+                "total",
+            ),
+        ]),
+
+        section("Net investment in finance leases", [
+            row("Opening net investment", rec.get("opening_net_investment")),
+            row("Additions from new finance leases", rec.get("additions")),
+            row(
+                "Principal recovered",
+                -abs(_money(rec.get("principal_recovery"))),
+            ),
+            row(
+                "Modifications and remeasurements",
+                rec.get("modification_adjustments"),
+            ),
+            row(
+                "Derecognitions",
+                -abs(_money(rec.get("derecognitions"))),
+            ),
+            row(
+                "Closing net investment",
+                fin.get("closing_net_investment"),
+                "total",
+            ),
+        ]),
+
+        section("Classification of net investment", [
+            row("Current", fin.get("current_portion")),
+            row("Non-current", fin.get("noncurrent_portion")),
+            row(
+                "Total net investment",
+                fin.get("closing_net_investment"),
+                "total",
+            ),
+        ]),
+
+        section("Operating lease maturity analysis", op_rows),
+
+        section(
+            "Finance lease maturity analysis",
+            fin_rows,
+            [
+                {"key": "gross_investment", "label": "Gross investment"},
+                {"key": "unearned_income", "label": "Unearned finance income"},
+                {"key": "net_investment", "label": "Net investment"},
+            ],
+        ),
+    ]
+
+    return {
+        "title": "Leases – lessor",
+        "text": note.get("content_text") or note.get("system_draft") or "",
+        "sections": sections,
+        "checks": d.get("net_investment_check") or {},
+    }
+
+def build_lessor_lease_disclosure_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    as_of=None,
+    cur=None,
+):
+    as_of = as_of or period_to
+
+    d = db.get_ifrs16_lessor_disclosure_strict(
+        company_id,
+        from_date=period_from,
+        to_date=period_to,
+        as_of=as_of,
+        include_terminated=True,
+        cur=cur,
+    )
+
+    pnl = d.get("pnl") or {}
+    finance = d.get("finance_lease") or {}
+    recon = d.get("net_investment_reconciliation") or {}
+    billing = d.get("billing") or {}
+    cashflow = d.get("cashflow") or {}
+
+    sections = [
+        {
+            "title": "Lease income",
+            "rows": [
+                {"description": "Operating lease income", "amount": pnl.get("operating_lease_income", 0)},
+                {"description": "Finance income", "amount": pnl.get("finance_income", 0)},
+                {"description": "Initial direct cost expense", "amount": pnl.get("initial_direct_cost_expense", 0)},
+                {"description": "Modification gain or loss", "amount": pnl.get("gain_loss_on_modifications", 0)},
+                {"description": "Termination gain or loss", "amount": pnl.get("gain_loss_on_terminations", 0)},
+            ],
+            "columns": [{"key": "amount", "label": "Amount"}],
+        },
+        {
+            "title": "Net investment in finance leases",
+            "rows": [
+                {"description": "Opening net investment", "amount": recon.get("opening_net_investment", 0)},
+                {"description": "Additions", "amount": recon.get("additions", 0)},
+                {"description": "Finance income", "amount": recon.get("finance_income", 0)},
+                {"description": "Principal recovery", "amount": -float(recon.get("principal_recovery") or 0)},
+                {"description": "Modification adjustments", "amount": recon.get("modification_adjustments", 0)},
+                {"description": "Derecognitions", "amount": -float(recon.get("derecognitions") or 0)},
+                {"description": "Closing net investment", "amount": recon.get("closing_net_investment", 0)},
+            ],
+            "columns": [{"key": "amount", "label": "Amount"}],
+        },
+        {
+            "title": "Net investment classification",
+            "rows": [
+                {"description": "Current portion", "amount": finance.get("current_portion", 0)},
+                {"description": "Non-current portion", "amount": finance.get("noncurrent_portion", 0)},
+                {"description": "Closing net investment", "amount": finance.get("closing_net_investment", 0)},
+            ],
+            "columns": [{"key": "amount", "label": "Amount"}],
+        },
+        {
+            "title": "Operating lease maturity analysis",
+            "rows": (d.get("operating_maturity_analysis") or {}).get("rows") or [],
+            "columns": [
+                {"key": "bucket", "label": "Maturity period", "type": "text"},
+                {"key": "undiscounted_net", "label": "Net receipts", "type": "amount"},
+                {"key": "vat", "label": "VAT", "type": "amount"},
+                {"key": "gross", "label": "Gross receipts", "type": "amount"},
+            ],
+        },
+        {
+            "title": "Finance lease maturity analysis",
+            "rows": (d.get("finance_maturity_analysis") or {}).get("rows") or [],
+            "columns": [
+                {"key": "bucket", "label": "Maturity period", "type": "text"},
+                {"key": "undiscounted_receipts", "label": "Lease receipts", "type": "amount"},
+                {"key": "unearned_finance_income", "label": "Unearned finance income", "type": "amount"},
+                {"key": "principal_recovery", "label": "Principal", "type": "amount"},
+                {"key": "vat", "label": "VAT", "type": "amount"},
+                {"key": "gross", "label": "Gross receipts", "type": "amount"},
+            ],
+        },
+        {
+            "title": "Billing and cash receipts",
+            "rows": [
+                {"description": "Net amount billed", "amount": billing.get("billed_net", 0)},
+                {"description": "VAT billed", "amount": billing.get("billed_vat", 0)},
+                {"description": "Gross amount billed", "amount": billing.get("billed_gross", 0)},
+                {"description": "Cash receipts", "amount": cashflow.get("lease_receipts_gross", 0)},
+            ],
+            "columns": [{"key": "amount", "label": "Amount"}],
+        },
+    ]
+
+    contract_rows = d.get("lease_income_by_contract") or []
+    if contract_rows:
+        sections.append({
+            "title": "Lease income by contract",
+            "rows": contract_rows,
+            "columns": [
+                {"key": "contract_no", "label": "Contract number", "type": "text"},
+                {"key": "contract_name", "label": "Contract name", "type": "text"},
+                {"key": "lease_classification", "label": "Classification", "type": "text"},
+                {"key": "operating_lease_income", "label": "Operating income", "type": "amount"},
+                {"key": "finance_income", "label": "Finance income", "type": "amount"},
+                {"key": "principal_recovery", "label": "Principal recovery", "type": "amount"},
+                {"key": "contractual_net", "label": "Contractual net", "type": "amount"},
+                {"key": "vat", "label": "VAT", "type": "amount"},
+                {"key": "contractual_gross", "label": "Contractual gross", "type": "amount"},
+            ],
+        })
+
+    for section in sections:
+        columns = section.get("columns") or []
+
+        section["amount_keys"] = [
+            col["key"]
+            for col in columns
+            if col.get("key") and col.get("type", "amount") == "amount"
+        ]
+
+        section["amount_labels"] = {
+            col["key"]: col.get("label") or col["key"]
+            for col in columns
+            if col.get("key") and col.get("type", "amount") == "amount"
+        }
+    return {
+        "title": "Leases – lessor",
+        "statement": "lessor_lease_disclosure",
+        "period_from": period_from.isoformat(),
+        "period_to": period_to.isoformat(),
+        "as_of": as_of.isoformat(),
+        "sections": sections,
+        "checks": d.get("net_investment_check") or {},
+        "raw": d,
+    }
 
 def build_ppe_disclosure(db, company_id: int, date_from: date, date_to: date) -> Dict[str, Any]:
     """
