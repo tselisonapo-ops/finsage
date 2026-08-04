@@ -67,6 +67,7 @@ class RestoreApiPrefixMiddleware:
                 )
 
                 environ["PATH_INFO"] = new_path
+                environ["SCRIPT_NAME"] = ""
 
             return self.app(environ, start_response)
 

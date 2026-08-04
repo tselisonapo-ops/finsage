@@ -10783,59 +10783,6 @@ def adjust_inventory(cid: int):
         current_app.logger.exception("adjust_inventory failed")
         return jsonify({"error": str(e)}), 400
 
-def ensure_stocktake_tables(company_id: int):
-    schema = _schema(company_id)
-
-    db_service.execute_sql(f"""
-    CREATE TABLE IF NOT EXISTS {schema}.stocktake_sessions (
-      id SERIAL PRIMARY KEY,
-      company_id INT NOT NULL DEFAULT {company_id},
-      title TEXT NULL,
-      status TEXT NOT NULL DEFAULT 'draft',          -- draft|posted|void
-      as_of_date DATE NOT NULL,
-      notes TEXT NULL,
-      posted_tx_id INT NULL,                         -- inventory_tx id when posted
-      posted_at TIMESTAMPTZ NULL,
-      posted_by INT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    """)
-
-    db_service.execute_sql(f"""
-    CREATE TABLE IF NOT EXISTS {schema}.stocktake_lines (
-      id SERIAL PRIMARY KEY,
-      company_id INT NOT NULL DEFAULT {company_id},
-      session_id INT NOT NULL REFERENCES {schema}.stocktake_sessions(id) ON DELETE CASCADE,
-      line_no INT NOT NULL,
-      item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
-      counted_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
-      note TEXT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    """)
-
-    # basic indexes + unique line_no
-    db_service.execute_sql(f"CREATE INDEX IF NOT EXISTS {schema}_st_sessions_company_idx ON {schema}.stocktake_sessions(company_id, as_of_date);")
-    db_service.execute_sql(f"CREATE INDEX IF NOT EXISTS {schema}_st_lines_sess_idx ON {schema}.stocktake_lines(company_id, session_id);")
-
-    db_service.execute_sql(f"""
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint c
-        JOIN pg_namespace n ON n.oid=c.connamespace
-        WHERE n.nspname='{schema}'
-          AND c.conname='uq_stocktake_lines_session_line'
-      ) THEN
-        EXECUTE format(
-          'ALTER TABLE %I.stocktake_lines ADD CONSTRAINT uq_stocktake_lines_session_line UNIQUE (session_id, line_no)',
-          '{schema}'
-        );
-      END IF;
-    END $$;
-    """)
 
 @app.route("/api/companies/<int:cid>/inventory/stocktake", methods=["POST"])
 @require_auth
@@ -10847,7 +10794,7 @@ def create_stocktake(cid: int):
     user_id = int(user.get("id") or 0)
 
     try:
-        ensure_stocktake_tables(company_id)
+        db_service.ensure_stocktake_tables(company_id)
         schema = _schema(company_id)
 
         payload = request.get_json(silent=True) or {}
@@ -10911,7 +10858,7 @@ def save_stocktake_lines(cid: int, session_id: int):
     user_id = int(user.get("id") or 0)
 
     try:
-        ensure_stocktake_tables(company_id)
+        db_service.ensure_stocktake_tables(company_id)
         schema = _schema(company_id)
 
         sess = db_service.fetch_one(
@@ -11010,7 +10957,7 @@ def compare_stocktake(cid: int, session_id: int):
     user_id = int(user.get("id") or 0)  # ✅ used
 
     try:
-        ensure_stocktake_tables(company_id)
+        db_service.ensure_stocktake_tables(company_id)
         schema = _schema(company_id)
 
         sess = db_service.fetch_one(
@@ -11076,7 +11023,7 @@ def post_stocktake(cid: int, session_id: int):
     user_id = int(user.get("id") or 0)
 
     try:
-        ensure_stocktake_tables(company_id)
+        db_service.ensure_stocktake_tables(company_id)
         schema = _schema(company_id)
 
         sess = db_service.fetch_one(

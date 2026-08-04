@@ -4770,9 +4770,9 @@ class DatabaseService:
         );
 
 
-        # -------------------------------------------------
-        # 2) Indexes
-        # -------------------------------------------------
+        -- -------------------------------------------------
+        -- 2) Indexes
+        -- -------------------------------------------------
 
         CREATE INDEX IF NOT EXISTS asset_grni_links_asset_idx
         ON {schema}.asset_grni_links(company_id, asset_id);
@@ -6511,7 +6511,7 @@ class DatabaseService:
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {int(company_id)},
             holiday_date DATE NOT NULL,
-            name TEXT NOT NULL,
+            holiday_name TEXT NOT NULL,
             holiday_type TEXT NULL,
             is_paid BOOLEAN NOT NULL DEFAULT TRUE,
             notes TEXT NULL,
@@ -29519,9 +29519,6 @@ class DatabaseService:
         self.execute_ddl(f"ALTER TABLE {schema}.coa ALTER COLUMN company_id SET DEFAULT {company_id};")
         self.execute_ddl(f"ALTER TABLE {schema}.coa ALTER COLUMN company_id SET NOT NULL;")
 
-        # ------------------------------------------------------------
-        # 2) Indexes / constraints
-        # ------------------------------------------------------------
         self.execute_ddl(f"""
             CREATE UNIQUE INDEX IF NOT EXISTS {schema}_coa_code_uniq
             ON {schema}.coa(code);
@@ -43590,6 +43587,61 @@ class DatabaseService:
         ON CONFLICT (template_code_scoped) DO NOTHING
         """
         return self.bulk_insert(sql, rows)
+
+    def ensure_stocktake_tables(company_id: int):
+        schema = f"company_{company_id}"
+
+        db_service.execute_sql(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.stocktake_sessions (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL DEFAULT {company_id},
+        title TEXT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',          -- draft|posted|void
+        as_of_date DATE NOT NULL,
+        notes TEXT NULL,
+        posted_tx_id INT NULL,                         -- inventory_tx id when posted
+        posted_at TIMESTAMPTZ NULL,
+        posted_by INT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """)
+
+        db_service.execute_sql(f"""
+        CREATE TABLE IF NOT EXISTS {schema}.stocktake_lines (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL DEFAULT {company_id},
+        session_id INT NOT NULL REFERENCES {schema}.stocktake_sessions(id) ON DELETE CASCADE,
+        line_no INT NOT NULL,
+        item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+        counted_qty NUMERIC(18,4) NOT NULL DEFAULT 0,
+        note TEXT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        """)
+
+        # basic indexes + unique line_no
+        db_service.execute_sql(f"CREATE INDEX IF NOT EXISTS {schema}_st_sessions_company_idx ON {schema}.stocktake_sessions(company_id, as_of_date);")
+        db_service.execute_sql(f"CREATE INDEX IF NOT EXISTS {schema}_st_lines_sess_idx ON {schema}.stocktake_lines(company_id, session_id);")
+
+        db_service.execute_sql(f"""
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}'
+            AND c.conname='uq_stocktake_lines_session_line'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.stocktake_lines ADD CONSTRAINT uq_stocktake_lines_session_line UNIQUE (session_id, line_no)',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+        """)
+
 
     def find_default_inventory_account_code(
         self,
