@@ -2174,10 +2174,6 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS pos_is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
-        ALTER TABLE public.company_invites
-        ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
-        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
-
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS employee_code TEXT,
         ADD COLUMN IF NOT EXISTS pin_hash TEXT,
@@ -2292,6 +2288,10 @@ class DatabaseService:
 
         ALTER TABLE public.company_invites
         ADD COLUMN IF NOT EXISTS access_scope TEXT NOT NULL DEFAULT 'core';
+
+        ALTER TABLE public.company_invites
+        ADD COLUMN IF NOT EXISTS pos_role TEXT NULL,
+        ADD COLUMN IF NOT EXISTS pos_permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
 
         UPDATE public.company_invites
         SET access_scope = 'core'
