@@ -2,9 +2,12 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=ENV_PATH, override=False)
+APP_ENV = str(os.getenv("APP_ENV") or "development").strip().lower()
 
+if APP_ENV != "production":
+    ENV_PATH = Path(__file__).resolve().parent / ".env"
+    if ENV_PATH.exists():
+        load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)

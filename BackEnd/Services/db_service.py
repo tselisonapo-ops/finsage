@@ -9,9 +9,12 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import re
-ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=ENV_PATH, override=False)
+APP_ENV = str(os.getenv("APP_ENV") or "development").strip().lower()
 
+if APP_ENV != "production":
+    ENV_PATH = Path(__file__).resolve().parent / ".env"
+    if ENV_PATH.exists():
+        load_dotenv(dotenv_path=ENV_PATH, override=False)
 CODE_RE = re.compile(r"^(BS|PL)_[A-Z]{2,4}_[0-9]{3,5}$")  # e.g. BS_CL_2215, PL_OPEX_6105
 
 # ────────────────────────────────────────────────────────────────

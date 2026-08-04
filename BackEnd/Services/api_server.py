@@ -1,9 +1,7 @@
-﻿# BackEnd/Services/api_server.py
-
-print("[BOOT] api_server.py import started")
+﻿print("[BOOT] api_server.py import started")
 
 # ────────────────────────────────────────────────────────────────
-# Load .env FIRST (before ANY BackEnd.Services imports)
+# Load environment FIRST (before ANY BackEnd.Services imports)
 # ────────────────────────────────────────────────────────────────
 import os
 from pathlib import Path
@@ -16,25 +14,57 @@ import openpyxl
 
 ALLOWED_LOGO_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
-# ✅ Load env FIRST (before importing db_service/auth_service/etc.)
+# ----------------------------------------------------------------
+# Environment loading
+# ----------------------------------------------------------------
+APP_ENV = str(os.getenv("APP_ENV") or "development").strip().lower()
 ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=ENV_PATH, override=False)
+
+if APP_ENV == "production":
+    # Running under Passenger/cPanel.
+    # Environment variables come from .htaccess.
+    print("[BOOT] Production mode - using Passenger environment variables")
+else:
+    # Local development only.
+    if ENV_PATH.exists():
+        load_dotenv(
+            dotenv_path=ENV_PATH,
+            override=False,
+        )
+        print(f"[BOOT] Development .env loaded: {ENV_PATH}")
+    else:
+        print(f"[BOOT] Development .env not found: {ENV_PATH}")
 
 import logging
 import re
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger("finsage")
 
-# Optional: fail fast with a clear message
-print("[BOOT] env ok, MASTER_DB_DSN present =", bool(os.getenv("MASTER_DB_DSN")))
-if not os.getenv("MASTER_DB_DSN"):
-    raise RuntimeError(f"MASTER_DB_DSN is not set (expected in {ENV_PATH})")
+print("[BOOT] Environment:", APP_ENV)
+print(
+    "[BOOT] MASTER_DB_DSN present:",
+    bool(os.getenv("MASTER_DB_DSN")),
+)
 
-# ✅ Add these EXACTLY here:
+if not os.getenv("MASTER_DB_DSN"):
+    source = (
+        "Passenger (.htaccess)"
+        if APP_ENV == "production"
+        else str(ENV_PATH)
+    )
+    raise RuntimeError(
+        f"MASTER_DB_DSN is not set (expected from {source})"
+    )
+
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or ""
+
 if not JWT_SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY is not set")
 
