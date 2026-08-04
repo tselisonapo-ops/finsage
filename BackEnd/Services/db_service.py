@@ -4756,7 +4756,7 @@ class DatabaseService:
         # -------------------------------------------------
         # 1) Table
         # -------------------------------------------------
-        self.execute_sql(f"""
+        self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.asset_grni_links (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -4768,25 +4768,24 @@ class DatabaseService:
 
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
-        """)
+
 
         # -------------------------------------------------
         # 2) Indexes
         # -------------------------------------------------
-        self.execute_sql(f"""
+
         CREATE INDEX IF NOT EXISTS asset_grni_links_asset_idx
         ON {schema}.asset_grni_links(company_id, asset_id);
-        """)
 
-        self.execute_sql(f"""
+
+
         CREATE INDEX IF NOT EXISTS asset_grni_links_tx_idx
         ON {schema}.asset_grni_links(company_id, receipt_tx_id);
-        """)
+
 
         # -------------------------------------------------
         # 3) FK → assets
         # -------------------------------------------------
-        self.execute_sql(f"""
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -4807,12 +4806,10 @@ class DatabaseService:
             END IF;
         END $$;
 
-        """)
 
         # -------------------------------------------------
         # 4) FK → inventory_tx
         # -------------------------------------------------
-        self.execute_sql(f"""
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -6377,6 +6374,13 @@ class DatabaseService:
     # ---------------------------
     def initialize_company_schema(self, company_id: int) -> None:
         self.ensure_company_schema(company_id)
+
+        # Tables maintained outside the main tenant DDL
+        self.ensure_asset_grni_link_table(company_id)
+        self.ensure_company_payroll(company_id)
+        self.ensure_company_vat_filings(company_id)
+        self.ensure_company_forecast(company_id)
+
         self.ensure_mandatory_company_accounts(company_id)
         self.apply_basic_cashflow_tags(company_id)
         self.ensure_required_control_accounts(company_id)
@@ -6502,6 +6506,25 @@ class DatabaseService:
         MINVALUE 1
         NO MAXVALUE
         CACHE 1;
+
+        CREATE TABLE IF NOT EXISTS {schema}.company_holidays (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {int(company_id)},
+            holiday_date DATE NOT NULL,
+            name TEXT NOT NULL,
+            holiday_type TEXT NULL,
+            is_paid BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            {schema}_company_holidays_date_uq
+        ON {schema}.company_holidays(
+            company_id,
+            holiday_date
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_pay_calendars (
             id SERIAL PRIMARY KEY,
@@ -15876,10 +15899,12 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS nonrecoverable_vat_capitalized_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(18,2) DEFAULT 0,
         ADD COLUMN IF NOT EXISTS net_amount NUMERIC(18,2),
-        ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2);
+        ADD COLUMN IF NOT EXISTS gross_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS vat_rate_percent NUMERIC(8,4);
 
         ALTER TABLE {schema}.asset_acquisitions
         ADD COLUMN IF NOT EXISTS vat_treatment TEXT NOT NULL DEFAULT 'no_vat';
+
         ALTER TABLE {schema}.asset_acquisitions
         ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
         ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
@@ -22429,33 +22454,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_menu_alloc_item_idx
         ON {schema}.pos_menu_cost_allocations(company_id, menu_item_id);
 
-        CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_consumptions (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-
-            sale_id INT NULL REFERENCES {schema}.pos_sales(id),
-            sale_line_id INT NULL REFERENCES {schema}.pos_sale_lines(id),
-
-            menu_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
-            recipe_id INT NULL REFERENCES {schema}.pos_recipe_headers(id),
-            ingredient_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
-
-            qty_sold NUMERIC(18,4) NOT NULL DEFAULT 0,
-            ingredient_qty_consumed NUMERIC(18,6) NOT NULL DEFAULT 0,
-            fifo_cost_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            source TEXT NOT NULL DEFAULT 'pos_sale',
-            source_id INT NULL,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_sale_idx
-        ON {schema}.pos_recipe_consumptions(company_id, sale_id, sale_line_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_item_idx
-        ON {schema}.pos_recipe_consumptions(company_id, ingredient_item_id);
-
         CREATE TABLE IF NOT EXISTS {schema}.pos_receipt_settings (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -22830,6 +22828,34 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_lines_ingredient_idx
         ON {schema}.pos_recipe_lines(company_id, ingredient_item_id);
 
+        CREATE TABLE IF NOT EXISTS {schema}.pos_recipe_consumptions (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sale_id INT NULL REFERENCES {schema}.pos_sales(id),
+            sale_line_id INT NULL REFERENCES {schema}.pos_sale_lines(id),
+
+            menu_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+            recipe_id INT NULL REFERENCES {schema}.pos_recipe_headers(id),
+            ingredient_item_id INT NOT NULL REFERENCES {schema}.inventory_items(id),
+
+            qty_sold NUMERIC(18,4) NOT NULL DEFAULT 0,
+            ingredient_qty_consumed NUMERIC(18,6) NOT NULL DEFAULT 0,
+            fifo_cost_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            source TEXT NOT NULL DEFAULT 'pos_sale',
+            source_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_sale_idx
+        ON {schema}.pos_recipe_consumptions(company_id, sale_id, sale_line_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_pos_recipe_cons_item_idx
+        ON {schema}.pos_recipe_consumptions(company_id, ingredient_item_id);
+
+        
         CREATE TABLE IF NOT EXISTS {schema}.pos_staff_attendance (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -26726,13 +26752,14 @@ class DatabaseService:
             event_type TEXT NOT NULL DEFAULT 'initial',
             -- initial / adjustment / addition / reduction / termination / reversal / manual
 
-            amount NUMERIC(18,2) NOcurrency TEXT NOT NULL,T NULL DEFAULT 0,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
             currency TEXT NOT NULL,
 
             source_invoice_id INT NULL,
             source_bill_id INT NULL,
             source_receipt_id INT NULL,
             source_payment_id INT NULL,
+            source_journal_id INT NULL,
             originating_journal_id INT NULL,
 
             notes TEXT NULL,
@@ -27766,17 +27793,8 @@ class DatabaseService:
                         'reversed',
                         'void'
                     )
-                ),
+                )
         );    
-
-        CREATE UNIQUE INDEX IF NOT EXISTS
-            ${schema}_deferred_tax_active_run_uq
-        ON ${schema}.deferred_tax_runs (
-            company_id,
-            reporting_date,
-            tax_authority_id
-        )
-        WHERE status <> 'void';
 
         ALTER TABLE {schema}.deferred_tax_runs
         ADD COLUMN IF NOT EXISTS recognized_dtl
@@ -27805,19 +27823,6 @@ class DatabaseService:
             reporting_date DESC
         );
 
-        CREATE INDEX IF NOT EXISTS
-            {schema}_deferred_tax_lines_run_idx
-        ON {schema}.deferred_tax_run_lines (
-            company_id,
-            run_id
-        );
-
-        CREATE INDEX IF NOT EXISTS
-            {schema}_deferred_tax_assessment_run_idx
-        ON {schema}.deferred_tax_recognition_assessments (
-            company_id,
-            run_id
-        );
 
         CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_run_lines (
             id BIGSERIAL PRIMARY KEY,
@@ -27938,6 +27943,15 @@ class DatabaseService:
         )
         WHERE bs_account_code IS NOT NULL;
 
+        CREATE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_lines_run_idx
+        ON {schema}.deferred_tax_run_lines (
+            company_id,
+            run_id
+        );
+
+
+
         CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_tax_base_overrides (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -27982,6 +27996,13 @@ class DatabaseService:
                         'investment_exemption'
                     )
                 )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_deferred_tax_assessment_run_idx
+        ON {schema}.deferred_tax_recognition_assessments (
+            company_id,
+            run_id
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.asset_tax_rule_overrides (
