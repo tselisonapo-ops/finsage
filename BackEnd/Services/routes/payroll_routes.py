@@ -2299,17 +2299,15 @@ def api_payroll_tax_brackets(company_id: int, year_id: int):
         )
         return jsonify({"ok": False, "error": str(e)}), 400
 
-
-# ═══════════════════════════════════════════════════════════════
-#  ROUTE: Update a bracket
-# ═══════════════════════════════════════════════════════════════
 @payroll_bp.route(
-    "/api/companies/<int:company_id>/payroll/tax-tables/brackets/<int:bracket_id>",
-    methods=["PATCH", "OPTIONS"],
+    "/api/companies/<int:company_id>/payroll/"
+    "tax-tables/brackets/<int:bracket_id>",
+    methods=["PATCH", "DELETE", "OPTIONS"],
 )
 @require_auth
-def api_payroll_tax_bracket_update(
-    company_id: int, bracket_id: int
+def api_payroll_tax_bracket(
+    company_id: int,
+    bracket_id: int,
 ):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
@@ -2326,8 +2324,20 @@ def api_payroll_tax_bracket_update(
         }), 401
 
     try:
+        if request.method == "DELETE":
+            db_service.payroll_tax_bracket_delete(
+                int(bracket_id),
+                user_id=user_id,
+            )
+            return jsonify({
+                "ok": True,
+                "deleted": True,
+            }), 200
+
         out = db_service.payroll_tax_bracket_update(
-            int(bracket_id), _payroll_body(), user_id=user_id
+            int(bracket_id),
+            _payroll_body(),
+            user_id=user_id,
         )
 
         if not out:
@@ -2336,52 +2346,19 @@ def api_payroll_tax_bracket_update(
                 "error": "Bracket not found",
             }), 404
 
-        return jsonify({"ok": True, "data": out}), 200
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 200
 
-    except Exception as e:
+    except Exception as error:
         current_app.logger.exception(
-            "api_payroll_tax_bracket_update failed"
+            "api_payroll_tax_bracket failed"
         )
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-# ═══════════════════════════════════════════════════════════════
-#  ROUTE: Delete a bracket
-# ═══════════════════════════════════════════════════════════════
-@payroll_bp.route(
-    "/api/companies/<int:company_id>/payroll/tax-tables/brackets/<int:bracket_id>",
-    methods=["DELETE", "OPTIONS"],
-)
-@require_auth
-def api_payroll_tax_bracket_delete(
-    company_id: int, bracket_id: int
-):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
-
-    deny = _payroll_company_guard(company_id)
-    if deny:
-        return deny
-
-    user_id = _jwt_user_id()
-    if not user_id:
         return jsonify({
             "ok": False,
-            "error": "AUTH|missing_user_id",
-        }), 401
-
-    try:
-        db_service.payroll_tax_bracket_delete(
-            int(bracket_id), user_id=user_id
-        )
-        return jsonify({"ok": True}), 200
-    except Exception as e:
-        current_app.logger.exception(
-            "api_payroll_tax_bracket_delete failed"
-        )
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
+            "error": str(error),
+        }), 400
 # ═══════════════════════════════════════════════════════════════
 #  ROUTE: List parameters for a tax year
 # ═══════════════════════════════════════════════════════════════
@@ -2440,16 +2417,16 @@ def api_payroll_tax_parameters(company_id: int, year_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
-# ═══════════════════════════════════════════════════════════════
-#  ROUTE: Update a parameter
-# ═══════════════════════════════════════════════════════════════
+
 @payroll_bp.route(
-    "/api/companies/<int:company_id>/payroll/tax-tables/parameters/<int:param_id>",
-    methods=["PATCH", "OPTIONS"],
+    "/api/companies/<int:company_id>/payroll/"
+    "tax-tables/parameters/<int:param_id>",
+    methods=["PATCH", "DELETE", "OPTIONS"],
 )
 @require_auth
-def api_payroll_tax_parameter_update(
-    company_id: int, param_id: int
+def api_payroll_tax_parameter(
+    company_id: int,
+    param_id: int,
 ):
     if request.method == "OPTIONS":
         return _corsify(make_response("", 204))
@@ -2466,8 +2443,20 @@ def api_payroll_tax_parameter_update(
         }), 401
 
     try:
+        if request.method == "DELETE":
+            db_service.payroll_tax_parameter_delete(
+                int(param_id),
+                user_id=user_id,
+            )
+            return jsonify({
+                "ok": True,
+                "deleted": True,
+            }), 200
+
         out = db_service.payroll_tax_parameter_update(
-            int(param_id), _payroll_body(), user_id=user_id
+            int(param_id),
+            _payroll_body(),
+            user_id=user_id,
         )
 
         if not out:
@@ -2476,52 +2465,20 @@ def api_payroll_tax_parameter_update(
                 "error": "Parameter not found",
             }), 404
 
-        return jsonify({"ok": True, "data": out}), 200
+        return jsonify({
+            "ok": True,
+            "data": out,
+        }), 200
 
-    except Exception as e:
+    except Exception as error:
         current_app.logger.exception(
-            "api_payroll_tax_parameter_update failed"
+            "api_payroll_tax_parameter failed"
         )
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-# ═══════════════════════════════════════════════════════════════
-#  ROUTE: Delete a parameter
-# ═══════════════════════════════════════════════════════════════
-@payroll_bp.route(
-    "/api/companies/<int:company_id>/payroll/tax-tables/parameters/<int:param_id>",
-    methods=["DELETE", "OPTIONS"],
-)
-@require_auth
-def api_payroll_tax_parameter_delete(
-    company_id: int, param_id: int
-):
-    if request.method == "OPTIONS":
-        return _corsify(make_response("", 204))
-
-    deny = _payroll_company_guard(company_id)
-    if deny:
-        return deny
-
-    user_id = _jwt_user_id()
-    if not user_id:
         return jsonify({
             "ok": False,
-            "error": "AUTH|missing_user_id",
-        }), 401
-
-    try:
-        db_service.payroll_tax_parameter_delete(
-            int(param_id), user_id=user_id
-        )
-        return jsonify({"ok": True}), 200
-    except Exception as e:
-        current_app.logger.exception(
-            "api_payroll_tax_parameter_delete failed"
-        )
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
+            "error": str(error),
+        }), 400
+    
 # ═══════════════════════════════════════════════════════════════
 #  ROUTE: Clone a tax year (brackets + parameters)
 # ═══════════════════════════════════════════════════════════════

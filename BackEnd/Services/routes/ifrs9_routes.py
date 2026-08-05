@@ -210,32 +210,6 @@ def api_ifrs9_ecl_models(company_id: int):
 
 
 @bp_ifrs9.route(
-    "/api/companies/<int:company_id>/ifrs9/ecl/models/<int:model_id>",
-    methods=["GET", "OPTIONS"],
-)
-@require_auth
-def api_ifrs9_get_ecl_model(company_id: int, model_id: int):
-    if request.method == "OPTIONS":
-        return _opt()
-
-    user = _ifrs9_user()
-    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
-    if deny:
-        return deny
-
-    try:
-        result = db_service.ifrs9_get_ecl_model(company_id, model_id)
-        if not result:
-            return _json_error("IFRS 9 ECL model not found", 404)
-
-        return jsonify({"ok": True, **result}), 200
-
-    except Exception as e:
-        current_app.logger.exception("ifrs9_get_ecl_model failed")
-        return _json_error(str(e), 400)
-
-
-@bp_ifrs9.route(
     "/api/companies/<int:company_id>/ifrs9/ecl/models/<int:model_id>/bands",
     methods=["PUT", "OPTIONS"],
 )
