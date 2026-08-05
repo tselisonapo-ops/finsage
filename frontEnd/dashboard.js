@@ -10786,20 +10786,23 @@ const wizardMap = {
 
   // Open/close IFRS 16 wizard drawer
 function openLeaseWizard(ctx = {}) {
+  const pending = window.__LEASE_WIZARD_PENDING_CONTEXT__ || {};
+
   ctx = {
-    ...(window.__LEASE_WIZARD_PENDING_CONTEXT__ || {}),
+    ...pending,
     ...ctx,
     defaults: {
-      ...(window.__LEASE_WIZARD_PENDING_CONTEXT__?.defaults || {}),
+      ...(pending.defaults || {}),
       ...(ctx.defaults || {}),
     },
     meta: {
-      ...(window.__LEASE_WIZARD_PENDING_CONTEXT__?.meta || {}),
+      ...(pending.meta || {}),
       ...(ctx.meta || {}),
     },
   };
 
   window.__LEASE_WIZARD_PENDING_CONTEXT__ = null;
+
   const drawer = document.getElementById("leaseWizardDrawer");
   const frame = document.getElementById("leaseWizardFrame");
 
@@ -10808,17 +10811,11 @@ function openLeaseWizard(ctx = {}) {
     return;
   }
 
-  const isLocal = ["localhost", "127.0.0.1"].includes(
-    window.location.hostname
-  );
-
+  const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
   const url = isLocal
     ? "http://localhost:5173/lease-wizard.html"
-    : `${window.location.origin}/lease-wizard.html`;
-
-  const origin = isLocal
-    ? "http://localhost:5173"
-    : window.location.origin;
+    : `${location.origin}/lease-wizard.html?v=20260805b`;
+  const origin = isLocal ? "http://localhost:5173" : location.origin;
 
   const accountCode = String(
     ctx.accountCode ||
@@ -10834,10 +10831,7 @@ function openLeaseWizard(ctx = {}) {
     ""
   ).trim();
 
-  const isLessor = [
-    "BS_CA_1710",
-    "BS_NCA_1720",
-  ].includes(accountCode);
+  const isLessor = ["BS_CA_1710", "BS_NCA_1720"].includes(accountCode);
 
   const payload = {
     type: "lease_wizard_context",
@@ -10845,14 +10839,15 @@ function openLeaseWizard(ctx = {}) {
       window.getToken?.() ||
       sessionStorage.getItem("fs_user_token") ||
       localStorage.getItem("fs_user_token"),
-    companyId:
+    companyId: Number(
       window.getActiveCompanyId?.() ||
-      localStorage.getItem("company_id"),
+      localStorage.getItem("company_id")
+    ),
     role: localStorage.getItem("userRole"),
-    source: "journal",
+    source: ctx.source || "journal",
     ctx: {
       mode: ctx.mode || (isLessor ? "inception" : "existing"),
-      leaseRole: isLessor ? "lessor" : "lessee",
+      leaseRole: ctx.leaseRole || (isLessor ? "lessor" : "lessee"),
       accountCode,
       accountName,
       defaults: {
@@ -10860,14 +10855,14 @@ function openLeaseWizard(ctx = {}) {
         openingAsAt: ctx.defaults?.openingAsAt || null,
         postingDate: ctx.defaults?.postingDate || null,
         reference: ctx.defaults?.reference || null,
-        source: ctx.defaults?.source || "journal_guard",
-        journalSide: ctx.defaults?.journalSide || null,
+        source: ctx.defaults?.source || ctx.source || "journal_guard",
+        journalSide: ctx.defaults?.journalSide || ctx.side || null,
         moduleKey: ctx.defaults?.moduleKey || "lease",
       },
       meta: {
         account_code: accountCode,
         account_name: accountName,
-        journal_side: ctx.meta?.journal_side || "",
+        journal_side: ctx.meta?.journal_side || ctx.side || "",
         journal_ref: ctx.meta?.journal_ref || "",
         journal_date: ctx.meta?.journal_date || "",
       },
@@ -10883,10 +10878,8 @@ function openLeaseWizard(ctx = {}) {
     console.log("[LEASE HOST] context sent", payload);
   };
 
-  const sendAfterLoad = () => {
+  const onLoaded = () => {
     frame.dataset.loaded = "1";
-
-    // Send more than once so React has time to attach its message listener.
     sendContext();
     setTimeout(sendContext, 150);
     setTimeout(sendContext, 500);
@@ -10898,26 +10891,32 @@ function openLeaseWizard(ctx = {}) {
   drawer.classList.add("active");
 
   const currentUrl = frame.getAttribute("src") || "";
-  const alreadyLoaded =
+  const loaded =
     frame.dataset.loaded === "1" ||
     frame.contentDocument?.readyState === "complete";
 
-  if (!currentUrl || frame.src !== url) {
+  if (currentUrl !== url) {
     frame.dataset.loaded = "0";
-    frame.addEventListener("load", sendAfterLoad, { once: true });
+    frame.addEventListener("load", onLoaded, { once: true });
     frame.src = url;
-  } else if (alreadyLoaded) {
-    sendAfterLoad();
-  } else {
-    frame.addEventListener("load", sendAfterLoad, { once: true });
-
-    // Prevent waiting forever when the iframe loaded before this listener.
-    setTimeout(() => {
-      if (frame.contentDocument?.readyState === "complete") {
-        sendAfterLoad();
-      }
-    }, 100);
+    return;
   }
+
+  if (loaded) {
+    onLoaded();
+    return;
+  }
+
+  frame.addEventListener("load", onLoaded, { once: true });
+
+  setTimeout(() => {
+    if (
+      frame.dataset.loaded !== "1" &&
+      frame.contentDocument?.readyState === "complete"
+    ) {
+      onLoaded();
+    }
+  }, 150);
 }
 
 window.openLeaseWizard = openLeaseWizard;
@@ -34657,192 +34656,94 @@ window.postTerm = async function postTerm() {
 // IFRS 16 Lease Wizard drawer open/close
 // ===============================
 (function bindLeaseWizardDrawer() {
-  const leaseNavBtn   = document.getElementById("openLeaseWizardNav");
-  const leaseDrawer   = document.getElementById("leaseWizardDrawer");
-  const leaseCloseBtn = document.getElementById("closeLeaseWizard");
-  const leaseFrame    = document.getElementById("leaseWizardFrame");
+  const navBtn = document.getElementById("openLeaseWizardNav");
+  const drawer = document.getElementById("leaseWizardDrawer");
+  const closeBtn = document.getElementById("closeLeaseWizard");
+  const frame = document.getElementById("leaseWizardFrame");
 
-  if (!leaseDrawer || !leaseFrame) {
+  if (!drawer || !frame) {
     console.warn("[LEASE HOST] drawer or iframe missing");
     return;
   }
 
-  if (window.__LEASE_WIZARD_BOUND__ === true) return;
+  if (window.__LEASE_WIZARD_BOUND__) return;
   window.__LEASE_WIZARD_BOUND__ = true;
 
-  const IS_LOCAL =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1";
+  const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
+  const origin = isLocal ? "http://localhost:5173" : location.origin;
 
-  const PROD_ORIGIN = "https://finspheresolutions.com";
-
-  const LEASE_WIZARD_URL = IS_LOCAL
-    ? "http://localhost:5173/lease-wizard.html"
-    : `${PROD_ORIGIN}/lease-wizard.html`;
-
-  const LEASE_WIZARD_ORIGIN = IS_LOCAL
-    ? "http://localhost:5173"
-    : PROD_ORIGIN;
-
-  function closeLeaseDrawerHard() {
+  function closeDrawer() {
     console.log("[LEASE HOST] hard close drawer");
-
-    leaseDrawer.classList.remove("active");
-    leaseDrawer.classList.add("hidden");
-
-    leaseDrawer.style.display = "none";
-    leaseDrawer.style.pointerEvents = "none";
+    drawer.classList.remove("active");
+    drawer.classList.add("hidden");
+    drawer.style.display = "none";
+    drawer.style.pointerEvents = "none";
   }
 
-  function openLeaseDrawerHard() {
-    leaseDrawer.classList.remove("hidden");
-    leaseDrawer.style.display = "";
-    leaseDrawer.style.pointerEvents = "";
-    leaseDrawer.classList.add("active");
-  }
+  function sendActiveContext() {
+    const payload = window.__LEASE_WIZARD_ACTIVE_CONTEXT__;
+    if (!payload || !frame.contentWindow) return;
 
-  window.closeLeaseWizard = closeLeaseDrawerHard;
-
-  function sendLeaseWizardContext() {
-    const token =
+    payload.token =
       window.getToken?.() ||
-      localStorage.getItem("fs_user_token") ||
       sessionStorage.getItem("fs_user_token") ||
-      localStorage.getItem("authToken") ||
-      sessionStorage.getItem("authToken");
+      localStorage.getItem("fs_user_token");
 
-    const companyId =
+    payload.companyId = Number(
       window.getActiveCompanyId?.() ||
-      localStorage.getItem("company_id") ||
-      window.CURRENT_COMPANY_ID;
+      localStorage.getItem("company_id")
+    );
 
-    if (
-      !token ||
-      !companyId ||
-      !leaseFrame.contentWindow
-    ) {
-      console.warn(
-        "[LEASE HOST] cannot send context",
-        {
-          hasToken: !!token,
-          companyId,
-          hasFrameWindow:
-            !!leaseFrame.contentWindow,
-        }
-      );
+    console.log("[LEASE HOST] sending active context", payload);
+    frame.contentWindow.postMessage(payload, origin);
+  }
 
+  window.closeLeaseWizard = closeDrawer;
+
+  navBtn?.addEventListener("click", () => {
+    const companyId = window.getActiveCompanyId?.();
+
+    if (!companyId) {
+      alert("Select a company first.");
       return;
     }
 
-    const savedContext =
-      window.__LEASE_WIZARD_ACTIVE_CONTEXT__;
+    sessionStorage.removeItem("lease_wizard_context");
 
-    const payload =
-      savedContext || {
-        type: "lease_wizard_context",
-        token,
-        companyId,
-        source: "nav",
-
-        ctx: {
-          mode: "inception",
-          leaseRole: "lessee",
-          accountCode: "",
-          accountName: "",
-        },
-      };
-
-    payload.token = token;
-    payload.companyId = Number(companyId);
-
-    console.log(
-      "[LEASE HOST] sending context",
-      payload
-    );
-
-    leaseFrame.contentWindow.postMessage(
-      payload,
-      LEASE_WIZARD_ORIGIN
-    );
-  }
-
-  if (leaseNavBtn) {
-    leaseNavBtn.addEventListener("click", () => {
-      const cid = window.getActiveCompanyId?.();
-
-      if (!cid) {
-        alert("Select a company first.");
-        return;
-      }
-
-      sessionStorage.removeItem(
-        "lease_wizard_context"
-      );
-
-      window.__LEASE_WIZARD_ACTIVE_CONTEXT__ = {
-        type: "lease_wizard_context",
-        token:
-          window.getToken?.() ||
-          localStorage.getItem("fs_user_token") ||
-          sessionStorage.getItem("fs_user_token"),
-        companyId: cid,
-        source: "nav",
-        ctx: {
-          mode: "inception",
-          leaseRole: "lessee",
-          accountCode: "",
-          accountName: "",
-        },
-      };
-
-      openLeaseDrawerHard();
-
-      if (leaseFrame.src !== LEASE_WIZARD_URL) {
-        leaseFrame.src = LEASE_WIZARD_URL;
-        leaseFrame.dataset.loaded = "0";
-      }
-
-      if (leaseFrame.dataset.loaded === "1") {
-        sendLeaseWizardContext();
-      } else {
-        leaseFrame.addEventListener(
-          "load",
-          () => {
-            leaseFrame.dataset.loaded = "1";
-            setTimeout(sendLeaseWizardContext, 150);
-          },
-          { once: true }
-        );
-      }
+    window.openLeaseWizard?.({
+      source: "nav",
+      mode: "inception",
+      leaseRole: "lessee",
+      accountCode: "",
+      accountName: "",
     });
-  }
+  });
 
-  leaseCloseBtn?.addEventListener("click", closeLeaseDrawerHard);
+  closeBtn?.addEventListener("click", closeDrawer);
 
   window.addEventListener("message", async (event) => {
+    if (event.origin !== origin) return;
+
     const data = event.data || {};
 
     console.log("[LEASE HOST] message received", {
       origin: event.origin,
-      expected: LEASE_WIZARD_ORIGIN,
       type: data.type,
       data,
     });
 
-    if (event.origin !== LEASE_WIZARD_ORIGIN) return;
-
     if (data.type === "lease_wizard_ready") {
-      sendLeaseWizardContext();
+      sendActiveContext();
       return;
     }
 
     if (data.type === "lease_wizard_close") {
-      closeLeaseDrawerHard();
+      closeDrawer();
       return;
     }
 
     if (data.type === "lease_create_ap_bill") {
-      closeLeaseDrawerHard();
+      closeDrawer();
 
       localStorage.setItem(
         "fs_lease_ap_bill_prefill",
@@ -34858,8 +34759,6 @@ window.postTerm = async function postTerm() {
       setTimeout(() => {
         window.openBillFromLeaseDirectCost?.(data.payload || {});
       }, 150);
-
-      return;
     }
   });
 })();
