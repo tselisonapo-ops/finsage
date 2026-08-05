@@ -2943,15 +2943,12 @@ class DatabaseService:
                     raise
 
             print("[MASTER-DDL] base tables done, calling initialize_public_schema()")
-            #self.initialize_public_schema()
+            self.initialize_public_schema()
             print("[MASTER-DDL] initialize_public_schema() done")
 
 
     def initialize_public_schema(self) -> None:
 
-        # ------------------------------------------------------------
-        # ✅ COMPANY ACCOUNT SETTINGS (controls & defaults)
-        # ------------------------------------------------------------
         self.execute_ddl("""
         CREATE TABLE IF NOT EXISTS public.company_account_settings (
             company_id INT PRIMARY KEY,
@@ -3043,9 +3040,6 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS inventory_control_code TEXT;
         """)
 
-        # ------------------------------------------------------------
-        # ✅ Continue: add missing columns (leases + ROA)
-        # ------------------------------------------------------------
         self.execute_ddl("""
         ALTER TABLE public.company_account_settings
         ADD COLUMN IF NOT EXISTS roa_code TEXT;
@@ -3106,9 +3100,7 @@ class DatabaseService:
         ON public.company_account_settings(company_id);
         """)
 
-        # ------------------------------------------------------------
-        # ✅ Companies: add slug columns + indexes (skip safely on lock)
-        # ------------------------------------------------------------
+
         try:
             self.execute_ddl("""
             ALTER TABLE public.companies
@@ -3132,9 +3124,7 @@ class DatabaseService:
             else:
                 raise
 
-        # ------------------------------------------------------------
-        # ✅ COA POOL (robust bootstrap)
-        # ------------------------------------------------------------
+
         self.execute_ddl("""
         CREATE TABLE IF NOT EXISTS public.coa_pool (
             id SERIAL PRIMARY KEY,
@@ -4410,9 +4400,7 @@ class DatabaseService:
             return [int(r["id"]) for r in rows if r and r.get("id") is not None]
 
     def ensure_company_account_settings(self, company_id: int) -> None:
-        # -----------------------------
-        # Required controls (existing)
-        # -----------------------------
+
         cash_bank_def   = REQUIRED_CONTROL_TEMPLATES["1000"]["code"]
         ar_default      = REQUIRED_CONTROL_TEMPLATES["9002"]["code"]  # BS_CA_9002
         vat_out_def     = REQUIRED_CONTROL_TEMPLATES["2310"]["code"]  # BS_CL_2310
@@ -4430,9 +4418,7 @@ class DatabaseService:
         sales_disc_def       = REQUIRED_CONTROL_TEMPLATES["8010"]["code"]  # PL_REV_ADJ_8010
         purch_disc_def       = REQUIRED_CONTROL_TEMPLATES["8011"]["code"]  # PL_EXP_ADJ_8011
 
-        # -----------------------------
-        # IFRS 16 defaults (NEW)
-        # -----------------------------
+
         rou_asset_def      = REQUIRED_CONTROL_TEMPLATES["1610"]["code"]  # BS_NCA_1610
         ll_current_def     = REQUIRED_CONTROL_TEMPLATES["2610"]["code"]  # BS_CL_2610
         ll_non_current_def = REQUIRED_CONTROL_TEMPLATES["2620"]["code"]  # BS_NCL_2620
@@ -4753,9 +4739,6 @@ class DatabaseService:
     def ensure_asset_grni_link_table(self, company_id: int):
         schema = self.company_schema(company_id)
 
-        # -------------------------------------------------
-        # 1) Table
-        # -------------------------------------------------
         self.execute_ddl(f"""
         CREATE TABLE IF NOT EXISTS {schema}.asset_grni_links (
             id SERIAL PRIMARY KEY,
@@ -4783,9 +4766,6 @@ class DatabaseService:
         ON {schema}.asset_grni_links(company_id, receipt_tx_id);
 
 
-        # -------------------------------------------------
-        # 3) FK → assets
-        # -------------------------------------------------
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -4806,10 +4786,6 @@ class DatabaseService:
             END IF;
         END $$;
 
-
-        # -------------------------------------------------
-        # 4) FK → inventory_tx
-        # -------------------------------------------------
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -5011,9 +4987,7 @@ class DatabaseService:
         schema = f"company_{company_id}"
 
         mandatory = [
-            # ----------------------------
-            # Existing mandatory controls
-            # ----------------------------
+
             dict(
                 code="BS_CA_1410",
                 name="VAT Input",
@@ -5236,9 +5210,6 @@ class DatabaseService:
                 code_numeric=1500,
             ),
 
-            # ----------------------------
-            # ✅ IFRS 16 mandatory controls (NEW)
-            # ----------------------------
             dict(
                 code="BS_NCA_1610",
                 name="Right-of-Use Asset",
@@ -6388,7 +6359,7 @@ class DatabaseService:
         self.ensure_company_account_settings_defaults(company_id)
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
-    PAYROLL_MIGRATION_VERSION=1
+    PAYROLL_MIGRATION_VERSION=2
 
     def ensure_company_payroll(
         self,
@@ -7191,6 +7162,13 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.payroll_runs
+            ADD COLUMN IF NOT EXISTS submitted_by_user_id BIGINT,
+            ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS approved_by_user_id BIGINT,
+            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS returned_by_user_id BIGINT,
+            ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS return_reason TEXT,
             ADD COLUMN IF NOT EXISTS reversal_journal_id BIGINT,
             ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
             
@@ -7235,6 +7213,33 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.payroll_run_employees
+            ADD COLUMN IF NOT EXISTS eligible_from DATE,
+            ADD COLUMN IF NOT EXISTS eligible_to DATE,
+            ADD COLUMN IF NOT EXISTS scheduled_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS eligible_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS worked_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS paid_leave_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS unpaid_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS scheduled_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS worked_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS unpaid_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS proration_method TEXT,
+            ADD COLUMN IF NOT EXISTS proration_factor NUMERIC(12,8)
+                NOT NULL DEFAULT 1,
+            ADD COLUMN IF NOT EXISTS full_basic_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS prorated_basic_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0;
+
+        ALTER TABLE {schema}.payroll_run_employees
             ADD COLUMN IF NOT EXISTS pay_setup_id BIGINT,
             ADD COLUMN IF NOT EXISTS taxable_income NUMERIC(18,2)
                 NOT NULL DEFAULT 0,
@@ -7246,7 +7251,542 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS tax_year_label TEXT,
             ADD COLUMN IF NOT EXISTS calculation_status TEXT
                 NOT NULL DEFAULT 'calculated',
-            ADD COLUMN IF NOT EXISTS calculation_message TEXT;
+            ADD COLUMN IF NOT EXISTS calculation_message TEXT,
+            ADD COLUMN IF NOT EXISTS eligible_from DATE,
+            ADD COLUMN IF NOT EXISTS eligible_to DATE,
+            ADD COLUMN IF NOT EXISTS scheduled_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS eligible_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS worked_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS paid_leave_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS unpaid_days NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS scheduled_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS worked_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS unpaid_hours NUMERIC(10,4)
+                NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS proration_factor NUMERIC(12,8)
+                NOT NULL DEFAULT 1;
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_attendance_inputs (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            payroll_run_id INT NOT NULL,
+            employee_id INT NOT NULL,
+            attendance_date DATE NOT NULL,
+            attendance_type TEXT NOT NULL DEFAULT 'present',
+            scheduled_hours NUMERIC(10,4) NOT NULL DEFAULT 0,
+            worked_hours NUMERIC(10,4) NOT NULL DEFAULT 0,
+            overtime_hours NUMERIC(10,4) NOT NULL DEFAULT 0,
+            unpaid_hours NUMERIC(10,4) NOT NULL DEFAULT 0,
+            notes TEXT,
+            approved BOOLEAN NOT NULL DEFAULT FALSE,
+            created_by_user_id BIGINT,
+            approved_by_user_id BIGINT,
+            approved_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_payroll_attendance_run_fk
+                FOREIGN KEY (payroll_run_id)
+                REFERENCES {schema}.payroll_runs(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_attendance_employee_fk
+                FOREIGN KEY (employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_payroll_attendance_type_ck
+                CHECK (
+                    attendance_type IN (
+                        'present',
+                        'absent',
+                        'paid_leave',
+                        'unpaid_leave',
+                        'sick_leave',
+                        'public_holiday',
+                        'rest_day',
+                        'partial_day'
+                    )
+                ),
+
+            CONSTRAINT {schema}_payroll_attendance_uniq
+                UNIQUE (
+                    company_id,
+                    payroll_run_id,
+                    employee_id,
+                    attendance_date
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_payroll_attendance_run_idx
+        ON {schema}.payroll_attendance_inputs (
+            company_id,
+            payroll_run_id,
+            employee_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_period_inputs (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            payroll_run_id INT NOT NULL,
+            employee_id INT NOT NULL,
+
+            input_type TEXT NOT NULL,
+            item_type TEXT NOT NULL,
+
+            source_module TEXT
+                NOT NULL DEFAULT 'manual',
+
+            source_record_id BIGINT,
+
+            item_id BIGINT,
+
+            code TEXT,
+            description TEXT NOT NULL,
+
+            quantity NUMERIC(18,4)
+                NOT NULL DEFAULT 1,
+
+            rate NUMERIC(18,4)
+                NOT NULL DEFAULT 0,
+
+            percentage NUMERIC(10,4),
+
+            amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            taxable BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            pensionable BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            affects_leave BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            affects_overtime BOOLEAN
+                NOT NULL DEFAULT FALSE,
+
+            effective_from DATE,
+            effective_to DATE,
+
+            notes TEXT,
+
+            source TEXT
+                NOT NULL DEFAULT 'system',
+
+            status TEXT
+                NOT NULL DEFAULT 'draft',
+
+            created_by_user_id BIGINT,
+            approved_by_user_id BIGINT,
+
+            approved_at TIMESTAMPTZ,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_period_input_run_fk
+                FOREIGN KEY (payroll_run_id)
+                REFERENCES {schema}.payroll_runs(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_period_input_employee_fk
+                FOREIGN KEY (employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_period_input_type_ck
+                CHECK (
+                    input_type IN (
+                        'earning',
+                        'deduction',
+                        'employer_contribution'
+                    )
+                ),
+
+            CONSTRAINT {schema}_period_item_type_ck
+                CHECK (
+                    item_type IN (
+                        'earning',
+                        'deduction',
+                        'contribution'
+                    )
+                ),
+
+            CONSTRAINT {schema}_period_source_module_ck
+                CHECK (
+                    source_module IN (
+                        'manual',
+                        'attendance',
+                        'leave',
+                        'performance',
+                        'commission',
+                        'production',
+                        'timesheet',
+                        'benefit_plan',
+                        'system'
+                    )
+                ),
+
+            CONSTRAINT {schema}_period_status_ck
+                CHECK (
+                    status IN (
+                        'draft',
+                        'approved',
+                        'rejected',
+                        'cancelled'
+                    )
+                )
+        );
+        CREATE INDEX IF NOT EXISTS
+            {schema}_payroll_period_inputs_run_idx
+        ON {schema}.payroll_period_inputs (
+            company_id,
+            payroll_run_id,
+            employee_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_payroll_period_inputs_module_idx
+        ON {schema}.payroll_period_inputs (
+            company_id,
+            source_module,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_payroll_period_inputs_item_idx
+        ON {schema}.payroll_period_inputs (
+            company_id,
+            item_type,
+            item_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_incentive_plans (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            frequency TEXT NOT NULL DEFAULT 'monthly',
+            metric_name TEXT NOT NULL,
+            payout_basis TEXT NOT NULL DEFAULT 'fixed_amount',
+            taxable BOOLEAN NOT NULL DEFAULT TRUE,
+            pensionable BOOLEAN NOT NULL DEFAULT FALSE,
+            effective_from DATE,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_incentive_plan_code_uk
+                UNIQUE(company_id,code),
+
+            CONSTRAINT {schema}_incentive_plan_frequency_ck
+                CHECK(
+                    frequency IN(
+                        'weekly',
+                        'fortnightly',
+                        'monthly',
+                        'quarterly',
+                        'annual'
+                    )
+                ),
+
+            CONSTRAINT {schema}_incentive_plan_basis_ck
+                CHECK(
+                    payout_basis IN(
+                        'fixed_amount',
+                        'percentage_basic',
+                        'percentage_gross',
+                        'percentage_target'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_incentive_plans_company_idx
+        ON {schema}.payroll_incentive_plans(
+            company_id,
+            is_active
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_incentive_rules (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            incentive_plan_id BIGINT NOT NULL,
+            from_percentage NUMERIC(12,4) NOT NULL,
+            to_percentage NUMERIC(12,4),
+            reward_method TEXT NOT NULL,
+            reward_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+            display_order INT NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_incentive_rule_plan_fk
+                FOREIGN KEY(incentive_plan_id)
+                REFERENCES {schema}.payroll_incentive_plans(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_incentive_reward_method_ck
+                CHECK(
+                    reward_method IN(
+                        'fixed_amount',
+                        'percentage_basic',
+                        'percentage_gross',
+                        'percentage_target'
+                    )
+                ),
+
+            CONSTRAINT {schema}_incentive_rule_range_ck
+                CHECK(
+                    to_percentage IS NULL
+                    OR to_percentage>=from_percentage
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_incentive_rules_plan_idx
+        ON {schema}.payroll_incentive_rules(
+            company_id,
+            incentive_plan_id,
+            display_order
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_incentive_assignments (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            incentive_plan_id BIGINT NOT NULL,
+            employee_id INT NOT NULL,
+            target_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+            effective_from DATE NOT NULL,
+            effective_to DATE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT,
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_incentive_assignment_plan_fk
+                FOREIGN KEY(incentive_plan_id)
+                REFERENCES {schema}.payroll_incentive_plans(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_incentive_assignment_employee_fk
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_incentive_assignment_dates_ck
+                CHECK(
+                    effective_to IS NULL
+                    OR effective_to>=effective_from
+                ),
+
+            CONSTRAINT {schema}_incentive_assignment_uk
+                UNIQUE(
+                    company_id,
+                    incentive_plan_id,
+                    employee_id,
+                    effective_from
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_incentive_assignments_employee_idx
+        ON {schema}.payroll_incentive_assignments(
+            company_id,
+            employee_id,
+            is_active
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.performance_plans (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+
+            evaluation_frequency TEXT NOT NULL DEFAULT 'monthly',
+            calculation_method TEXT NOT NULL DEFAULT 'target_range',
+            payout_method TEXT NOT NULL DEFAULT 'fixed_amount',
+
+            target_metric TEXT,
+
+            taxable BOOLEAN NOT NULL DEFAULT TRUE,
+            pensionable BOOLEAN NOT NULL DEFAULT FALSE,
+
+            payment_delay_periods INT NOT NULL DEFAULT 0,
+
+            effective_from DATE,
+            effective_to DATE,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_performance_plan_code_uk
+                UNIQUE(company_id,code),
+
+            CONSTRAINT {schema}_performance_frequency_ck
+                CHECK(
+                    evaluation_frequency IN(
+                        'weekly',
+                        'monthly',
+                        'quarterly',
+                        'annual'
+                    )
+                ),
+
+            CONSTRAINT {schema}_performance_calc_ck
+                CHECK(
+                    calculation_method IN(
+                        'target_range',
+                        'weighted_score',
+                        'formula',
+                        'manual'
+                    )
+                ),
+
+            CONSTRAINT {schema}_performance_payout_ck
+                CHECK(
+                    payout_method IN(
+                        'fixed_amount',
+                        'percentage_salary',
+                        'percentage_target',
+                        'formula'
+                    )
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.performance_plan_kpis (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            performance_plan_id BIGINT NOT NULL,
+
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+
+            weight NUMERIC(8,4) NOT NULL DEFAULT 100,
+
+            target_value NUMERIC(18,4),
+            minimum_value NUMERIC(18,4),
+            maximum_value NUMERIC(18,4),
+
+            display_order INT NOT NULL DEFAULT 1,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_performance_plan_kpi_fk
+                FOREIGN KEY(performance_plan_id)
+                REFERENCES {schema}.performance_plans(id)
+                ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.performance_plan_rules (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+            performance_plan_id BIGINT NOT NULL,
+
+            from_score NUMERIC(10,4) NOT NULL,
+            to_score NUMERIC(10,4),
+
+            reward_method TEXT NOT NULL,
+            reward_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_performance_rule_fk
+                FOREIGN KEY(performance_plan_id)
+                REFERENCES {schema}.performance_plans(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_reward_method_ck
+                CHECK(
+                    reward_method IN(
+                        'fixed_amount',
+                        'percentage_salary',
+                        'percentage_target'
+                    )
+                )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.employee_performance_reviews (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL,
+
+            employee_id INT NOT NULL,
+            performance_plan_id BIGINT NOT NULL,
+
+            payroll_run_id BIGINT,
+
+            review_period_start DATE NOT NULL,
+            review_period_end DATE NOT NULL,
+
+            target_score NUMERIC(18,4),
+            achieved_score NUMERIC(18,4),
+            final_score NUMERIC(18,4),
+
+            incentive_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            manager_id BIGINT,
+            approved_by_user_id BIGINT,
+
+            approved_at TIMESTAMPTZ,
+
+            notes TEXT,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_performance_review_employee_fk
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_performance_review_plan_fk
+                FOREIGN KEY(performance_plan_id)
+                REFERENCES {schema}.performance_plans(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_performance_review_status_ck
+                CHECK(
+                    status IN(
+                        'draft',
+                        'submitted',
+                        'approved',
+                        'paid',
+                        'cancelled'
+                    )
+                )
+        );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_run_lines (
             id SERIAL PRIMARY KEY,
@@ -7389,6 +7929,30 @@ class DatabaseService:
                     )
             );
 
+            ALTER TABLE {schema}.payroll_employee_pay_setups
+                ADD COLUMN IF NOT EXISTS proration_method TEXT
+                    NOT NULL DEFAULT 'working_days',
+                ADD COLUMN IF NOT EXISTS hours_per_day NUMERIC(10,4)
+                    NOT NULL DEFAULT 8,
+                ADD COLUMN IF NOT EXISTS attendance_required BOOLEAN
+                    NOT NULL DEFAULT FALSE;
+
+            ALTER TABLE {schema}.payroll_employee_pay_setups
+                DROP CONSTRAINT IF EXISTS chk_payroll_proration_method;
+
+            ALTER TABLE {schema}.payroll_employee_pay_setups
+                ADD CONSTRAINT chk_payroll_proration_method
+                CHECK (
+                    proration_method IN (
+                        'working_days',
+                        'calendar_days',
+                        'fixed_30_days',
+                        'scheduled_hours',
+                        'actual_hours',
+                        'no_proration'
+                    )
+                );
+
         CREATE TABLE IF NOT EXISTS
             {schema}.payroll_employee_pay_setup_items (
                 id BIGSERIAL PRIMARY KEY,
@@ -7473,6 +8037,32 @@ class DatabaseService:
         ON {schema}.payroll_employee_pay_setup_items (
             company_id,
             pay_setup_id
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_run_audit (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            payroll_run_id INT NOT NULL,
+            action TEXT NOT NULL,
+            from_status TEXT,
+            to_status TEXT,
+            message TEXT,
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_payroll_run_audit_run_fk
+                FOREIGN KEY(payroll_run_id)
+                REFERENCES {schema}.payroll_runs(id)
+                ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_payroll_run_audit_idx
+        ON {schema}.payroll_run_audit(
+            company_id,
+            payroll_run_id,
+            created_at DESC
         );
 
         -- FinSage IAS 19 company-schema migration.
@@ -27300,9 +27890,70 @@ class DatabaseService:
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
+        ALTER TABLE {schema}.ifrs9_ecl_models
+        ADD COLUMN IF NOT EXISTS effective_from DATE,
+        ADD COLUMN IF NOT EXISTS effective_to DATE,
+        ADD COLUMN IF NOT EXISTS version_no INT NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'draft',
+        ADD COLUMN IF NOT EXISTS approved_by INT,
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS review_date DATE,
+        ADD COLUMN IF NOT EXISTS model_owner TEXT;
+
+        UPDATE {schema}.ifrs9_ecl_models
+        SET version_no = COALESCE(version_no, 1),
+            approval_status = COALESCE(
+                NULLIF(approval_status, ''),
+                'draft'
+            )
+        WHERE version_no IS NULL
+        OR approval_status IS NULL
+        OR approval_status = '';
+        
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_models_company_idx
         ON {schema}.ifrs9_ecl_models(company_id, is_active);
 
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_model_status_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_models
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        model_type IN (
+                            ''simplified'',
+                            ''general'',
+                            ''manual''
+                        )
+                        AND basis IN (
+                            ''provision_matrix'',
+                            ''pd_lgd_ead'',
+                            ''manual''
+                        )
+                        AND approval_status IN (
+                            ''draft'',
+                            ''approved'',
+                            ''rejected'',
+                            ''retired''
+                        )
+                        AND version_no > 0
+                        AND (
+                            effective_to IS NULL
+                            OR effective_from IS NULL
+                            OR effective_to >= effective_from
+                        )
+                    )',
+                    '{schema}',
+                    '{schema}_ifrs9_ecl_model_status_ck'
+                );
+            END IF;
+        END $$;
 
         -- 6) ECL provision matrix bands
         CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_matrix_bands (
@@ -27367,11 +28018,19 @@ class DatabaseService:
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
-        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_date_idx
-        ON {schema}.ifrs9_ecl_runs(company_id, reporting_date DESC);
+        ALTER TABLE {schema}.ifrs9_ecl_runs
+        ADD COLUMN IF NOT EXISTS reversal_journal_id INT,
+        ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS reversed_by INT,
+        ADD COLUMN IF NOT EXISTS reversal_reason TEXT,
+        ADD COLUMN IF NOT EXISTS version_no INT NOT NULL DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS supersedes_run_id INT,
+        ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS locked_by INT;
 
-        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_journal_idx
-        ON {schema}.ifrs9_ecl_runs(journal_id);
+        UPDATE {schema}.ifrs9_ecl_runs
+        SET version_no = COALESCE(version_no, 1)
+        WHERE version_no IS NULL;
 
         DO $$
         BEGIN
@@ -27408,7 +28067,64 @@ class DatabaseService:
             END IF;
         END $$;
 
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_reversal_journal_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (reversal_journal_id)
+                    REFERENCES %I.journal(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_ifrs9_ecl_reversal_journal_fk',
+                    '{schema}'
+                );
+            END IF;
 
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_ecl_supersedes_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_ecl_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (supersedes_run_id)
+                    REFERENCES %I.ifrs9_ecl_runs(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_ifrs9_ecl_supersedes_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $$;
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_status_idx
+        ON {schema}.ifrs9_ecl_runs(company_id, status, reporting_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_reversal_journal_idx
+        ON {schema}.ifrs9_ecl_runs(reversal_journal_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_active_date_uq
+        ON {schema}.ifrs9_ecl_runs(company_id, model_id, reporting_date)
+        WHERE status IN ('draft', 'posted');
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_date_idx
+        ON {schema}.ifrs9_ecl_runs(company_id, reporting_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_ecl_runs_journal_idx
+        ON {schema}.ifrs9_ecl_runs(journal_id);
+
+        
         -- 8) ECL calculation lines
         CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_run_lines (
             id SERIAL PRIMARY KEY,
@@ -27746,6 +28462,172 @@ class DatabaseService:
 
         CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_disclosure_year_uq
         ON {schema}.ifrs9_disclosure_snapshots(company_id, financial_year, reporting_date);
+
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_writeoffs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            instrument_id INT NULL,
+            customer_id INT NULL,
+            invoice_id INT NULL,
+
+            writeoff_date DATE NOT NULL,
+            gross_receivable_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allowance_used NUMERIC(18,2) NOT NULL DEFAULT 0,
+            additional_loss NUMERIC(18,2) NOT NULL DEFAULT 0,
+            writeoff_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            recovered_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            reason TEXT NOT NULL,
+            approval_status TEXT NOT NULL DEFAULT 'draft',
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            journal_id INT NULL,
+            reversal_journal_id INT NULL,
+
+            created_by INT NULL,
+            approved_by INT NULL,
+            posted_by INT NULL,
+
+            approved_at TIMESTAMPTZ NULL,
+            posted_at TIMESTAMPTZ NULL,
+            reversed_at TIMESTAMPTZ NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.ifrs9_writeoff_recoveries (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            writeoff_id INT NOT NULL,
+
+            recovery_date DATE NOT NULL,
+            recovery_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            payment_reference TEXT NULL,
+            notes TEXT NULL,
+
+            journal_id INT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            created_by INT NULL,
+            posted_by INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_writeoffs_company_idx
+        ON {schema}.ifrs9_writeoffs(company_id, writeoff_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_writeoffs_invoice_idx
+        ON {schema}.ifrs9_writeoffs(company_id, invoice_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_writeoffs_instrument_idx
+        ON {schema}.ifrs9_writeoffs(company_id, instrument_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_writeoff_recovery_idx
+        ON {schema}.ifrs9_writeoff_recoveries(company_id, writeoff_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_writeoffs_active_invoice_uq
+        ON {schema}.ifrs9_writeoffs(company_id, invoice_id)
+        WHERE invoice_id IS NOT NULL
+        AND status IN ('draft', 'approved', 'posted');
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_writeoff_instrument_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_writeoffs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_ifrs9_writeoff_instrument_fk',
+                    '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_writeoff_customer_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_writeoffs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (customer_id)
+                    REFERENCES %I.customers(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_ifrs9_writeoff_customer_fk',
+                    '{schema}'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_writeoff_recovery_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_writeoff_recoveries
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (writeoff_id)
+                    REFERENCES %I.ifrs9_writeoffs(id)
+                    ON DELETE CASCADE',
+                    '{schema}',
+                    '{schema}_ifrs9_writeoff_recovery_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_writeoff_amount_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_writeoffs
+                    ADD CONSTRAINT %I CHECK (
+                        gross_receivable_amount >= 0
+                        AND allowance_used >= 0
+                        AND additional_loss >= 0
+                        AND writeoff_amount > 0
+                        AND recovered_amount >= 0
+                        AND allowance_used + additional_loss = writeoff_amount
+                        AND recovered_amount <= writeoff_amount
+                        AND approval_status IN (
+                            ''draft'',''approved'',''rejected''
+                        )
+                        AND status IN (
+                            ''draft'',''approved'',''posted'',''reversed'',''void''
+                        )
+                    )',
+                    '{schema}',
+                    '{schema}_ifrs9_writeoff_amount_ck'
+                );
+            END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.deferred_tax_runs (
             id BIGSERIAL PRIMARY KEY,
@@ -28713,7 +29595,7 @@ class DatabaseService:
                     (int(company_id),),
                 )
 
-                print(f"RUNNING MIGRATION {schema}:bootstrap v1")
+                print(f"RUNNING MIGRATION {schema}:bootstrap v3")
                 self.execute_ddl(
                     ddl_bootstrap_sql,
                     cur=cur,
@@ -93825,12 +94707,64 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         """, (int(company_id),))
 
 
-    def ifrs9_create_ecl_model(self, company_id: int, payload: dict):
+    def ifrs9_create_ecl_model(
+        self,
+        company_id: int,
+        payload: dict,
+    ):
         schema = self.company_schema(company_id)
 
-        model_name = (payload.get("model_name") or "").strip()
+        model_name = str(
+            payload.get("model_name") or ""
+        ).strip()
+
+        model_type = str(
+            payload.get("model_type") or "simplified"
+        ).strip()
+
+        applies_to = str(
+            payload.get("applies_to") or "trade_receivable"
+        ).strip()
+
+        basis = str(
+            payload.get("basis") or "provision_matrix"
+        ).strip()
+
         if not model_name:
             raise ValueError("model_name is required")
+
+        # Only this workflow is implemented in Phase 1.
+        if model_type != "simplified":
+            raise ValueError(
+                "Only simplified ECL models are currently supported"
+            )
+
+        if applies_to != "trade_receivable":
+            raise ValueError(
+                "Phase 1 ECL models must apply to trade receivables"
+            )
+
+        if basis != "provision_matrix":
+            raise ValueError(
+                "Only provision matrix ECL models are currently supported"
+            )
+
+        duplicate = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id=%s
+            AND LOWER(TRIM(model_name))=LOWER(TRIM(%s))
+            AND is_active=TRUE
+            LIMIT 1
+        """, (
+            int(company_id),
+            model_name,
+        ))
+
+        if duplicate:
+            raise ValueError(
+                "An active ECL model with this name already exists"
+            )
 
         return self.execute_sql(f"""
             INSERT INTO {schema}.ifrs9_ecl_models (
@@ -93840,59 +94774,394 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 applies_to,
                 basis,
                 is_active,
+                effective_from,
+                effective_to,
+                version_no,
+                approval_status,
+                review_date,
+                model_owner,
                 created_by,
+                created_at,
+                updated_at,
                 meta_json
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
+            VALUES (
+                %s,%s,%s,%s,%s,TRUE,%s,%s,1,'draft',
+                %s,%s,%s,NOW(),NOW(),
+                COALESCE(%s::jsonb, '{{}}'::jsonb)
+            )
             RETURNING *
         """, (
             int(company_id),
             model_name,
-            payload.get("model_type") or "simplified",
-            payload.get("applies_to") or "trade_receivable",
-            payload.get("basis") or "provision_matrix",
-            bool(payload.get("is_active", True)),
+            model_type,
+            applies_to,
+            basis,
+            payload.get("effective_from"),
+            payload.get("effective_to"),
+            payload.get("review_date"),
+            payload.get("model_owner"),
             payload.get("created_by"),
             payload.get("meta_json"),
         ), fetchone=True)
 
+    def ifrs9_update_ecl_model(
+        self,
+        company_id: int,
+        model_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        existing = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id=%s
+            AND id=%s
+        """, (
+            int(company_id),
+            int(model_id),
+        ))
+
+        if not existing:
+            raise ValueError("IFRS 9 ECL model not found")
+
+        posted_runs = self.fetch_one(f"""
+            SELECT COUNT(*) AS count
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id=%s
+            AND model_id=%s
+            AND status='posted'
+        """, (
+            int(company_id),
+            int(model_id),
+        ))
+
+        has_posted_runs = int(
+            (posted_runs or {}).get("count") or 0
+        ) > 0
+
+        immutable_fields = {
+            "model_type",
+            "applies_to",
+            "basis",
+        }
+
+        if has_posted_runs and any(
+            key in payload
+            and payload.get(key) != existing.get(key)
+            for key in immutable_fields
+        ):
+            raise ValueError(
+                "Model type, application and basis cannot be changed "
+                "after ECL runs have been posted"
+            )
+
+        model_name = str(
+            payload.get(
+                "model_name",
+                existing.get("model_name"),
+            ) or ""
+        ).strip()
+
+        if not model_name:
+            raise ValueError("model_name is required")
+
+        effective_from = payload.get(
+            "effective_from",
+            existing.get("effective_from"),
+        )
+
+        effective_to = payload.get(
+            "effective_to",
+            existing.get("effective_to"),
+        )
+
+        if (
+            effective_from
+            and effective_to
+            and str(effective_to) < str(effective_from)
+        ):
+            raise ValueError(
+                "effective_to cannot be earlier than effective_from"
+            )
+
+        return self.execute_sql(f"""
+            UPDATE {schema}.ifrs9_ecl_models
+            SET model_name=%s,
+                effective_from=%s,
+                effective_to=%s,
+                review_date=%s,
+                model_owner=%s,
+                updated_at=NOW(),
+                meta_json=COALESCE(
+                    %s::jsonb,
+                    meta_json,
+                    '{{}}'::jsonb
+                )
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *
+        """, (
+            model_name,
+            effective_from,
+            effective_to,
+            payload.get(
+                "review_date",
+                existing.get("review_date"),
+            ),
+            payload.get(
+                "model_owner",
+                existing.get("model_owner"),
+            ),
+            payload.get("meta_json"),
+            int(company_id),
+            int(model_id),
+        ), fetchone=True)
+
+    def ifrs9_activate_ecl_model(
+        self,
+        company_id: int,
+        model_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        model = self.ifrs9_get_ecl_model(
+            company_id,
+            model_id,
+        )
+
+        if not model:
+            raise ValueError("IFRS 9 ECL model not found")
+
+        item = model["model"]
+        bands = model.get("bands") or []
+
+        if item.get("model_type") != "simplified":
+            raise ValueError(
+                "Only simplified ECL models may currently be activated"
+            )
+
+        if item.get("applies_to") != "trade_receivable":
+            raise ValueError(
+                "The model must apply to trade receivables"
+            )
+
+        if item.get("basis") != "provision_matrix":
+            raise ValueError(
+                "The model must use a provision matrix"
+            )
+
+        if not bands:
+            raise ValueError(
+                "Configure the provision matrix before activating the model"
+            )
+
+        ordered = sorted(
+            bands,
+            key=lambda row: int(row.get("days_from") or 0),
+        )
+
+        if int(ordered[0].get("days_from") or 0) != 0:
+            raise ValueError(
+                "The provision matrix must start at day 0"
+            )
+
+        if ordered[-1].get("days_to") is not None:
+            raise ValueError(
+                "The final provision matrix band must be open-ended"
+            )
+
+        for index, current in enumerate(ordered[:-1]):
+            following = ordered[index + 1]
+
+            current_to = current.get("days_to")
+            following_from = int(
+                following.get("days_from") or 0
+            )
+
+            if current_to is None:
+                raise ValueError(
+                    "Only the final matrix band may be open-ended"
+                )
+
+            if following_from != int(current_to) + 1:
+                raise ValueError(
+                    "The provision matrix contains a gap or overlap"
+                )
+
+        return self.execute_sql(f"""
+            UPDATE {schema}.ifrs9_ecl_models
+            SET is_active=TRUE,
+                approval_status='approved',
+                approved_by=%s,
+                approved_at=NOW(),
+                effective_from=COALESCE(
+                    effective_from,
+                    CURRENT_DATE
+                ),
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *
+        """, (
+            user_id,
+            int(company_id),
+            int(model_id),
+        ), fetchone=True)
+
+    def ifrs9_deactivate_ecl_model(
+        self,
+        company_id: int,
+        model_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        draft_run = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id=%s
+            AND model_id=%s
+            AND status='draft'
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(model_id),
+        ))
+
+        if draft_run:
+            raise ValueError(
+                f"Model cannot be deactivated while draft ECL run "
+                f"{draft_run['id']} exists"
+            )
+
+        return self.execute_sql(f"""
+            UPDATE {schema}.ifrs9_ecl_models
+            SET is_active=FALSE,
+                approval_status='retired',
+                effective_to=COALESCE(
+                    effective_to,
+                    CURRENT_DATE
+                ),
+                updated_at=NOW(),
+                meta_json=COALESCE(
+                    meta_json,
+                    '{{}}'::jsonb
+                ) || jsonb_build_object(
+                    'deactivated_by', %s,
+                    'deactivated_at', NOW()
+                )
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *
+        """, (
+            user_id,
+            int(company_id),
+            int(model_id),
+        ))
 
     def ifrs9_set_ecl_matrix_bands(self, company_id: int, model_id: int, bands: list):
         schema = self.company_schema(company_id)
+        model = self.fetch_one(f"""
+            SELECT id, model_type, basis, is_active
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id=%s AND id=%s
+        """, (int(company_id), int(model_id)))
+
+        if not model:
+            raise ValueError("IFRS 9 ECL model not found")
+        if model.get("basis") != "provision_matrix":
+            raise ValueError("Provision matrix bands can only be saved for provision matrix models")
+        if not bands:
+            raise ValueError("At least one provision matrix band is required")
+
+        cleaned = []
+        labels = set()
+
+        for raw in bands:
+            label = str(raw.get("band_label") or "").strip()
+            days_from = int(raw.get("days_from") or 0)
+            days_to = raw.get("days_to")
+            days_to = None if days_to in (None, "") else int(days_to)
+            loss_rate = Decimal(str(raw.get("loss_rate") or 0))
+
+            if not label:
+                raise ValueError("Every provision matrix band requires a name")
+            if label.lower() in labels:
+                raise ValueError(f"Duplicate provision matrix band name: {label}")
+            if days_from < 0:
+                raise ValueError(f"{label}: days_from cannot be negative")
+            if days_to is not None and days_to < days_from:
+                raise ValueError(f"{label}: days_to cannot be less than days_from")
+            if loss_rate < 0 or loss_rate > 1:
+                raise ValueError(f"{label}: loss_rate must be between 0 and 1")
+
+            labels.add(label.lower())
+            cleaned.append({
+                "band_label": label,
+                "days_from": days_from,
+                "days_to": days_to,
+                "loss_rate": loss_rate,
+            })
+
+        cleaned.sort(key=lambda row: row["days_from"])
+
+        if cleaned[0]["days_from"] != 0:
+            raise ValueError("The first provision matrix band must begin at day 0")
+
+        open_ended = [row for row in cleaned if row["days_to"] is None]
+        if len(open_ended) != 1:
+            raise ValueError("Exactly one open-ended provision matrix band is required")
+        if cleaned[-1]["days_to"] is not None:
+            raise ValueError("The final provision matrix band must be open-ended")
+
+        for index, row in enumerate(cleaned[:-1]):
+            next_row = cleaned[index + 1]
+
+            if row["days_to"] is None:
+                raise ValueError("Only the final provision matrix band may be open-ended")
+            if next_row["days_from"] <= row["days_to"]:
+                raise ValueError(
+                    f"Provision matrix bands overlap between "
+                    f"'{row['band_label']}' and '{next_row['band_label']}'"
+                )
+            if next_row["days_from"] != row["days_to"] + 1:
+                raise ValueError(
+                    f"Provision matrix gap exists between "
+                    f"'{row['band_label']}' and '{next_row['band_label']}'"
+                )
 
         with self.transaction() as (conn, cur):
             cur.execute(f"""
                 DELETE FROM {schema}.ifrs9_ecl_matrix_bands
-                WHERE company_id = %s
-                AND model_id = %s
+                WHERE company_id=%s AND model_id=%s
             """, (int(company_id), int(model_id)))
 
             inserted = []
-
-            for b in bands or []:
+            for row in cleaned:
                 cur.execute(f"""
                     INSERT INTO {schema}.ifrs9_ecl_matrix_bands (
-                        company_id,
-                        model_id,
-                        band_label,
-                        days_from,
-                        days_to,
-                        loss_rate
+                        company_id, model_id, band_label,
+                        days_from, days_to, loss_rate
                     )
                     VALUES (%s,%s,%s,%s,%s,%s)
                     RETURNING *
                 """, (
                     int(company_id),
                     int(model_id),
-                    b.get("band_label"),
-                    int(b.get("days_from") or 0),
-                    b.get("days_to"),
-                    b.get("loss_rate") or 0,
+                    row["band_label"],
+                    row["days_from"],
+                    row["days_to"],
+                    row["loss_rate"],
                 ))
                 inserted.append(cur.fetchone())
 
         return inserted
-
 
     def ifrs9_get_ecl_model(self, company_id: int, model_id: int):
         schema = self.company_schema(company_id)
@@ -94052,72 +95321,196 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def ifrs9_required_account_keys(self):
         return [
-            "ecl_impairment_loss",
-            "ecl_allowance_trade_receivables",
-            "bad_debt_writeoff",
-            "fair_value_gain_loss_fvpl",
-            "fair_value_oci_reserve",
-            "modification_gain",
-            "modification_loss",
-            "derecognition_gain",
-            "derecognition_loss",
-            "interest_income_amortised_cost",
-            "interest_expense_amortised_cost",
-            "financial_asset_amortised_cost",
-            "financial_liability_amortised_cost",
+            {
+                "mapping_key": "ecl_impairment_loss",
+                "label": "ECL impairment loss",
+                "description": "Profit or loss expense for expected credit losses",
+                "account_kind": "expense",
+                "phase": "ecl",
+            },
+            {
+                "mapping_key": "ecl_allowance_trade_receivables",
+                "label": "Trade receivables loss allowance",
+                "description": "Contra-asset account for trade receivables ECL",
+                "account_kind": "asset",
+                "phase": "ecl",
+            },
+            {
+                "mapping_key": "bad_debt_writeoff",
+                "label": "Bad debt write-off",
+                "description": "Expense account for receivable write-offs",
+                "account_kind": "expense",
+                "phase": "ecl",
+            },
+            {
+                "mapping_key": "fair_value_gain_loss_fvpl",
+                "label": "FVPL gain or loss",
+                "description": "Profit or loss account for fair-value movements",
+                "account_kind": "income_expense",
+                "phase": "fair_value",
+            },
+            {
+                "mapping_key": "fair_value_oci_reserve",
+                "label": "FVOCI reserve",
+                "description": "Other comprehensive income reserve for FVOCI movements",
+                "account_kind": "oci",
+                "phase": "fair_value",
+            },
+            {
+                "mapping_key": "modification_gain",
+                "label": "Modification gain",
+                "description": "Gain arising from financial-instrument modification",
+                "account_kind": "income",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "modification_loss",
+                "label": "Modification loss",
+                "description": "Loss arising from financial-instrument modification",
+                "account_kind": "expense",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "derecognition_gain",
+                "label": "Derecognition gain",
+                "description": "Gain arising from derecognition",
+                "account_kind": "income",
+                "phase": "derecognition",
+            },
+            {
+                "mapping_key": "derecognition_loss",
+                "label": "Derecognition loss",
+                "description": "Loss arising from derecognition",
+                "account_kind": "expense",
+                "phase": "derecognition",
+            },
+            {
+                "mapping_key": "interest_income_amortised_cost",
+                "label": "Amortised-cost interest income",
+                "description": "Effective-interest income on financial assets",
+                "account_kind": "income",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "interest_expense_amortised_cost",
+                "label": "Amortised-cost interest expense",
+                "description": "Effective-interest expense on financial liabilities",
+                "account_kind": "expense",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "financial_asset_amortised_cost",
+                "label": "Financial assets at amortised cost",
+                "description": "Control account for financial assets at amortised cost",
+                "account_kind": "asset",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "financial_liability_amortised_cost",
+                "label": "Financial liabilities at amortised cost",
+                "description": "Control account for financial liabilities at amortised cost",
+                "account_kind": "liability",
+                "phase": "amortised_cost",
+            },
+            {
+                "mapping_key": "bad_debt_recovery_income",
+                "label": "Bad debt recovery income",
+                "description": "Income recognised when previously written-off receivables are recovered",
+                "account_kind": "income",
+                "phase": "ecl",
+            },
         ]
-
 
     def ifrs9_coa_readiness(self, company_id: int):
         schema = self.company_schema(company_id)
         required = self.ifrs9_required_account_keys()
 
         rows = self.fetch_all(f"""
-            SELECT mapping_key, account_code
-            FROM {schema}.ifrs9_account_mappings
-            WHERE company_id = %s
-            AND is_active = TRUE
+            SELECT
+                m.mapping_key,
+                m.account_code,
+                m.description,
+                m.updated_at,
+                c.name AS account_name,
+                c.role AS account_role,
+                c.section AS account_section,
+                c.category AS account_category,
+                c.posting,
+                COALESCE(c.is_active, TRUE) AS account_active
+            FROM {schema}.ifrs9_account_mappings m
+            LEFT JOIN {schema}.coa c
+            ON c.company_id = m.company_id
+            AND (
+                c.code = m.account_code
+                OR c.template_code = m.account_code
+            )
+            WHERE m.company_id = %s
+            AND m.is_active = TRUE
         """, (int(company_id),))
 
-        mapped = {r["mapping_key"]: r["account_code"] for r in rows or []}
+        mapped = {
+            str(row.get("mapping_key")): row
+            for row in rows or []
+        }
 
         items = []
         missing = []
 
-        for key in required:
-            raw_code = mapped.get(key)
-            account = None
+        for config in required:
+            key = config["mapping_key"]
+            row = mapped.get(key) or {}
+            account_code = row.get("account_code")
 
-            if raw_code:
-                row = self.get_account_row_for_posting(company_id, raw_code)
-                if row:
-                    account = {
-                        "raw_code": raw_code,
-                        "posting_code": row[1],
-                        "found": True,
-                    }
+            valid = bool(
+                account_code
+                and row.get("account_name")
+                and row.get("posting") is not False
+                and row.get("account_active") is not False
+            )
 
-            ok = bool(account)
-
-            if not ok:
+            if not valid:
                 missing.append(key)
 
             items.append({
-                "mapping_key": key,
-                "account_code": raw_code,
-                "ok": ok,
-                "account": account,
+                **config,
+                "account_code": account_code,
+                "ok": valid,
+                "account": {
+                    "code": account_code,
+                    "name": row.get("account_name"),
+                    "role": row.get("account_role"),
+                    "section": row.get("account_section"),
+                    "category": row.get("account_category"),
+                    "posting": row.get("posting"),
+                    "active": row.get("account_active"),
+                } if account_code else None,
+                "updated_at": row.get("updated_at"),
             })
+
+        required_ecl = {
+            "ecl_impairment_loss",
+            "ecl_allowance_trade_receivables",
+        }
+
+        ecl_missing = [
+            key for key in missing
+            if key in required_ecl
+        ]
 
         return {
             "items": items,
             "missing": missing,
-            "ready": len(missing) == 0,
+            "ready": not missing,
+            "ecl_ready": not ecl_missing,
+            "ecl_missing": ecl_missing,
         }
-
 
     def ifrs9_resolve_account(self, company_id: int, mapping_key: str) -> str:
         schema = self.company_schema(company_id)
+        mapping_key = str(mapping_key or "").strip()
+
+        if not mapping_key:
+            raise ValueError("IFRS 9 mapping key is required")
 
         row = self.fetch_one(f"""
             SELECT account_code
@@ -94125,56 +95518,83 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE company_id = %s
             AND mapping_key = %s
             AND is_active = TRUE
-            ORDER BY id DESC
+            ORDER BY updated_at DESC, id DESC
             LIMIT 1
-        """, (int(company_id), mapping_key))
+        """, (
+            int(company_id),
+            mapping_key,
+        ))
 
         if not row or not row.get("account_code"):
-            raise ValueError(f"IFRS 9 account mapping missing: {mapping_key}")
-
-        acct_row = self.get_account_row_for_posting(company_id, row["account_code"])
-
-        if not acct_row:
             raise ValueError(
-                f"IFRS 9 account '{row['account_code']}' for '{mapping_key}' not found in company COA"
+                f"IFRS 9 account mapping missing: {mapping_key}"
             )
 
-        posting_code = (acct_row[1] or "").strip()
+        account = self.get_account_row_for_posting(
+            company_id,
+            row["account_code"],
+        )
+
+        if not account:
+            raise ValueError(
+                f"IFRS 9 account '{row['account_code']}' "
+                f"for '{mapping_key}' is not a valid posting account"
+            )
+
+        posting_code = str(account[1] or "").strip()
 
         if not posting_code:
-            raise ValueError(f"IFRS 9 account mapping resolved blank: {mapping_key}")
+            raise ValueError(
+                f"IFRS 9 account mapping resolved blank: {mapping_key}"
+            )
 
         return posting_code
-
 
     def ifrs9_upsert_account_mapping(self, company_id: int, payload: dict):
         schema = self.company_schema(company_id)
 
-        mapping_key = (payload.get("mapping_key") or "").strip()
-        account_code = (payload.get("account_code") or "").strip()
+        mapping_key = str(
+            payload.get("mapping_key") or ""
+        ).strip()
 
-        if not mapping_key:
-            raise ValueError("mapping_key is required")
+        account_code = str(
+            payload.get("account_code") or ""
+        ).strip()
+
+        valid_keys = {
+            item["mapping_key"]
+            for item in self.ifrs9_required_account_keys()
+        }
+
+        if mapping_key not in valid_keys:
+            raise ValueError(
+                f"Invalid IFRS 9 mapping key: {mapping_key}"
+            )
 
         if not account_code:
             raise ValueError("account_code is required")
 
-        # validate posting account
-        acct_row = self.get_account_row_for_posting(company_id, account_code)
-        if not acct_row:
-            raise ValueError(f"Account '{account_code}' not found in company COA")
+        account = self.get_account_row_for_posting(
+            company_id,
+            account_code,
+        )
 
-        return self.execute_sql(
-            f"""
+        if not account:
+            raise ValueError(
+                f"Account '{account_code}' is not a valid posting account"
+            )
+
+        return self.execute_sql(f"""
             INSERT INTO {schema}.ifrs9_account_mappings (
                 company_id,
                 mapping_key,
                 account_code,
                 description,
                 is_active,
+                created_at,
                 updated_at
             )
-            VALUES (%s,%s,%s,%s,TRUE,NOW())
+            VALUES (%s,%s,%s,%s,TRUE,NOW(),NOW())
             ON CONFLICT (company_id, mapping_key)
             WHERE is_active = TRUE
             DO UPDATE SET
@@ -94182,16 +95602,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 description = EXCLUDED.description,
                 updated_at = NOW()
             RETURNING *
-            """,
-            (
-                int(company_id),
-                mapping_key,
-                account_code,
-                payload.get("description"),
-            ),
-            fetchone=True,
-        )
-    
+        """, (
+            int(company_id),
+            mapping_key,
+            account_code,
+            payload.get("description"),
+        ), fetchone=True)
+        
     def _money2(self, v, default=0):
         from decimal import Decimal, ROUND_HALF_UP
         if v is None or v == "":
@@ -94237,22 +95654,426 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY days_past_due DESC, c.name, i.id
         """, (int(company_id), reporting_date, int(company_id), reporting_date))
 
+    def ifrs9_previous_posted_ecl(
+        self,
+        company_id: int,
+        reporting_date,
+    ):
+        return self.ifrs9_allowance_balance_as_at(
+            company_id,
+            reporting_date,
+            before_date=True,
+        )
 
-    def ifrs9_previous_posted_ecl(self, company_id: int, reporting_date):
+    def ifrs9_allowance_balance_as_at(
+        self,
+        company_id: int,
+        as_at,
+        *,
+        before_date=False,
+    ):
         schema = self.company_schema(company_id)
 
+        allowance_code = self.ifrs9_resolve_account(
+            company_id,
+            "ecl_allowance_trade_receivables",
+        )
+
+        operator = "<" if before_date else "<="
+
         row = self.fetch_one(f"""
-            SELECT total_ecl
-            FROM {schema}.ifrs9_ecl_runs
+            SELECT COALESCE(
+                SUM(
+                    COALESCE(jl.credit, 0)
+                    - COALESCE(jl.debit, 0)
+                ),
+                0
+            ) AS allowance_balance
+            FROM {schema}.journal j
+            JOIN {schema}.journal_lines jl
+            ON jl.company_id = j.company_id
+            AND jl.journal_id = j.id
+            WHERE j.company_id = %s
+            AND j.date {operator} %s::date
+            AND jl.account_code = %s
+            AND COALESCE(j.status, 'posted') NOT IN (
+                'draft',
+                'void',
+                'cancelled'
+            )
+        """, (
+            int(company_id),
+            as_at,
+            allowance_code,
+        ))
+
+        balance = self._money2(
+            (row or {}).get("allowance_balance")
+        )
+
+        return max(balance, self._money2(0))
+
+    def ifrs9_ecl_reconciliation(
+        self,
+        company_id: int,
+        *,
+        from_date,
+        to_date,
+        model_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        if not from_date:
+            raise ValueError("from date is required")
+
+        if not to_date:
+            raise ValueError("to date is required")
+
+        if str(from_date) > str(to_date):
+            raise ValueError(
+                "from date cannot be later than to date"
+            )
+
+        opening = self.ifrs9_allowance_balance_as_at(
+            company_id,
+            from_date,
+            before_date=True,
+        )
+
+        run_where = [
+            "r.company_id = %s",
+            "r.reporting_date BETWEEN %s::date AND %s::date",
+            "r.status = 'posted'",
+            "r.journal_id IS NOT NULL",
+        ]
+
+        run_params = [
+            int(company_id),
+            from_date,
+            to_date,
+        ]
+
+        if model_id:
+            run_where.append("r.model_id = %s")
+            run_params.append(int(model_id))
+
+        runs = self.fetch_all(f"""
+            SELECT
+                r.id,
+                r.model_id,
+                r.reporting_date,
+                r.total_exposure,
+                r.total_ecl,
+                r.journal_id,
+                r.status,
+                r.meta_json,
+                m.model_name
+            FROM {schema}.ifrs9_ecl_runs r
+            LEFT JOIN {schema}.ifrs9_ecl_models m
+            ON m.company_id = r.company_id
+            AND m.id = r.model_id
+            WHERE {" AND ".join(run_where)}
+            ORDER BY r.reporting_date, r.id
+        """, tuple(run_params))
+
+        charges = self._money2(0)
+        reversals = self._money2(0)
+        run_rows = []
+
+        for run in runs or []:
+            meta = run.get("meta_json") or {}
+            movement = self._money2(
+                meta.get("movement_ecl")
+            )
+
+            charge = movement if movement > 0 else self._money2(0)
+            reversal = abs(movement) if movement < 0 else self._money2(0)
+
+            charges += charge
+            reversals += reversal
+
+            run_rows.append({
+                "run_id": run.get("id"),
+                "model_id": run.get("model_id"),
+                "model_name": run.get("model_name"),
+                "reporting_date": run.get("reporting_date"),
+                "journal_id": run.get("journal_id"),
+                "total_exposure": self._money2(
+                    run.get("total_exposure")
+                ),
+                "closing_ecl": self._money2(
+                    run.get("total_ecl")
+                ),
+                "movement": movement,
+                "charge": charge,
+                "reversal": reversal,
+            })
+
+        writeoff_rows = self.fetch_all(f"""
+            SELECT
+                w.id,
+                w.writeoff_date,
+                w.customer_id,
+                w.invoice_id,
+                w.writeoff_amount,
+                w.allowance_used,
+                w.additional_loss,
+                w.recovered_amount,
+                w.journal_id,
+                w.reason,
+                c.name AS customer_name,
+                i.invoice_number
+            FROM {schema}.ifrs9_writeoffs w
+            LEFT JOIN {schema}.customers c
+            ON c.company_id = w.company_id
+            AND c.id = w.customer_id
+            LEFT JOIN {schema}.invoices i
+            ON i.company_id = w.company_id
+            AND i.id = w.invoice_id
+            WHERE w.company_id = %s
+            AND w.status = 'posted'
+            AND w.writeoff_date
+                BETWEEN %s::date AND %s::date
+            ORDER BY w.writeoff_date, w.id
+        """, (
+            int(company_id),
+            from_date,
+            to_date,
+        ))
+
+        allowance_used = sum(
+            (
+                self._money2(
+                    row.get("allowance_used")
+                )
+                for row in writeoff_rows or []
+            ),
+            self._money2(0),
+        )
+
+        additional_writeoff_loss = sum(
+            (
+                self._money2(
+                    row.get("additional_loss")
+                )
+                for row in writeoff_rows or []
+            ),
+            self._money2(0),
+        )
+
+        gross_writeoffs = sum(
+            (
+                self._money2(
+                    row.get("writeoff_amount")
+                )
+                for row in writeoff_rows or []
+            ),
+            self._money2(0),
+        )
+
+        recovery_rows = self.fetch_all(f"""
+            SELECT
+                r.id,
+                r.writeoff_id,
+                r.recovery_date,
+                r.recovery_amount,
+                r.payment_reference,
+                r.journal_id,
+                r.notes
+            FROM {schema}.ifrs9_writeoff_recoveries r
+            WHERE r.company_id = %s
+            AND r.status = 'posted'
+            AND r.recovery_date
+                BETWEEN %s::date AND %s::date
+            ORDER BY r.recovery_date, r.id
+        """, (
+            int(company_id),
+            from_date,
+            to_date,
+        ))
+
+        recoveries = sum(
+            (
+                self._money2(
+                    row.get("recovery_amount")
+                )
+                for row in recovery_rows or []
+            ),
+            self._money2(0),
+        )
+
+        calculated_closing = self._money2(
+            opening
+            + charges
+            - reversals
+            - allowance_used
+        )
+
+        ledger_closing = self.ifrs9_allowance_balance_as_at(
+            company_id,
+            to_date,
+        )
+
+        difference = self._money2(
+            ledger_closing - calculated_closing
+        )
+
+        return {
+            "period": {
+                "from": str(from_date),
+                "to": str(to_date),
+            },
+            "model_id": int(model_id) if model_id else None,
+            "currency": self.company_currency(company_id),
+            "summary": {
+                "opening_allowance": float(opening),
+                "ecl_charges": float(charges),
+                "ecl_reversals": float(reversals),
+                "allowance_used_on_writeoffs": float(
+                    allowance_used
+                ),
+                "calculated_closing_allowance": float(
+                    calculated_closing
+                ),
+                "ledger_closing_allowance": float(
+                    ledger_closing
+                ),
+                "reconciliation_difference": float(
+                    difference
+                ),
+                "gross_writeoffs": float(gross_writeoffs),
+                "additional_writeoff_loss": float(
+                    additional_writeoff_loss
+                ),
+                "recoveries": float(recoveries),
+            },
+            "runs": run_rows,
+            "writeoffs": writeoff_rows or [],
+            "recoveries": recovery_rows or [],
+            "balanced": abs(difference) < self._money2("0.01"),
+        }
+
+    def ifrs9_save_ecl_reconciliation_snapshot(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        from_date = payload.get("from")
+        to_date = payload.get("to")
+        financial_year = payload.get("financial_year")
+        model_id = payload.get("model_id")
+
+        if not financial_year:
+            raise ValueError("financial_year is required")
+
+        result = self.ifrs9_ecl_reconciliation(
+            company_id,
+            from_date=from_date,
+            to_date=to_date,
+            model_id=model_id,
+        )
+
+        summary = result["summary"]
+
+        trade = self.fetch_one(f"""
+            SELECT
+                COALESCE(SUM(carrying_amount), 0)
+                    AS gross_receivables
+            FROM {schema}.ifrs9_financial_instruments
             WHERE company_id = %s
-            AND status = 'posted'
-            AND reporting_date < %s
-            ORDER BY reporting_date DESC, id DESC
-            LIMIT 1
-        """, (int(company_id), reporting_date))
+            AND instrument_type = 'trade_receivable'
+            AND status = 'active'
+        """, (int(company_id),))
 
-        return self._money2(row.get("total_ecl") if row else 0)
+        gross_receivables = self._money2(
+            (trade or {}).get("gross_receivables")
+        )
 
+        closing_ecl = self._money2(
+            summary["ledger_closing_allowance"]
+        )
+
+        net_receivables = self._money2(
+            gross_receivables - closing_ecl
+        )
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_disclosure_snapshots (
+                company_id,
+                financial_year,
+                reporting_date,
+                trade_receivables_gross,
+                trade_receivables_ecl,
+                trade_receivables_net,
+                ecl_opening,
+                ecl_charge,
+                ecl_writeoffs,
+                ecl_closing,
+                credit_risk_json,
+                generated_at,
+                generated_by,
+                meta_json
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s::jsonb,NOW(),%s,%s::jsonb
+            )
+            ON CONFLICT (
+                company_id,
+                financial_year,
+                reporting_date
+            )
+            DO UPDATE SET
+                trade_receivables_gross =
+                    EXCLUDED.trade_receivables_gross,
+                trade_receivables_ecl =
+                    EXCLUDED.trade_receivables_ecl,
+                trade_receivables_net =
+                    EXCLUDED.trade_receivables_net,
+                ecl_opening = EXCLUDED.ecl_opening,
+                ecl_charge = EXCLUDED.ecl_charge,
+                ecl_writeoffs = EXCLUDED.ecl_writeoffs,
+                ecl_closing = EXCLUDED.ecl_closing,
+                credit_risk_json =
+                    EXCLUDED.credit_risk_json,
+                generated_at = NOW(),
+                generated_by = EXCLUDED.generated_by,
+                meta_json = EXCLUDED.meta_json
+            RETURNING *
+        """, (
+            int(company_id),
+            int(financial_year),
+            to_date,
+            gross_receivables,
+            closing_ecl,
+            max(net_receivables, self._money2(0)),
+            self._money2(summary["opening_allowance"]),
+            self._money2(summary["ecl_charges"])
+            - self._money2(summary["ecl_reversals"]),
+            self._money2(
+                summary["allowance_used_on_writeoffs"]
+            ),
+            closing_ecl,
+            json.dumps({
+                "recoveries": summary["recoveries"],
+                "gross_writeoffs": summary["gross_writeoffs"],
+                "additional_writeoff_loss":
+                    summary["additional_writeoff_loss"],
+                "reconciliation_difference":
+                    summary["reconciliation_difference"],
+            }, default=str),
+            user_id,
+            json.dumps({
+                "period": result["period"],
+                "model_id": result.get("model_id"),
+                "balanced": result["balanced"],
+                "reconciliation": summary,
+            }, default=str),
+        ), fetchone=True)
 
     def ifrs9_calculate_trade_receivables_ecl(self, company_id: int, payload: dict):
         model_id = payload.get("model_id")
@@ -94267,6 +96088,53 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         model_data = self.ifrs9_get_ecl_model(company_id, int(model_id))
         if not model_data:
             raise ValueError("ECL model not found")
+
+        if not model.get("is_active"):
+            raise ValueError(
+                "The selected ECL model is inactive"
+            )
+
+        if model.get("approval_status") != "approved":
+            raise ValueError(
+                "The selected ECL model has not been approved"
+            )
+
+        if model.get("model_type") != "simplified":
+            raise ValueError(
+                "Only simplified ECL models are currently supported"
+            )
+
+        if model.get("applies_to") != "trade_receivable":
+            raise ValueError(
+                "The selected model does not apply to trade receivables"
+            )
+
+        if model.get("basis") != "provision_matrix":
+            raise ValueError(
+                "Only provision matrix calculations are currently supported"
+            )
+
+        reporting_text = str(reporting_date)
+
+        if (
+            model.get("effective_from")
+            and reporting_text
+                < str(model["effective_from"])
+        ):
+            raise ValueError(
+                "The selected ECL model is not yet effective "
+                "on the reporting date"
+            )
+
+        if (
+            model.get("effective_to")
+            and reporting_text
+                > str(model["effective_to"])
+        ):
+            raise ValueError(
+                "The selected ECL model expired before "
+                "the reporting date"
+            )
 
         model = model_data["model"]
         bands = model_data.get("bands") or []
@@ -94346,16 +96214,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if movement_ecl == 0:
             raise ValueError("movement_ecl cannot be zero")
 
-        expense_code = self.ifrs9_account_by_role(
+        expense_code = self.ifrs9_resolve_account(
             company_id,
-            "ifrs9_ecl_impairment_loss",
-            required=True,
+            "ecl_impairment_loss",
         )
 
-        allowance_code = self.ifrs9_account_by_role(
+        allowance_code = self.ifrs9_resolve_account(
             company_id,
-            "ifrs9_ecl_allowance_trade_receivables",
-            required=True,
+            "ecl_allowance_trade_receivables",
         )
 
         schema = self.company_schema(company_id)
@@ -94446,6 +96312,875 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "cr_total": cr_total,
         }
 
+    def ifrs9_list_writeoffs(
+        self,
+        company_id: int,
+        *,
+        status=None,
+        customer_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        where = ["w.company_id=%s"]
+        params = [int(company_id)]
+
+        if status:
+            where.append("w.status=%s")
+            params.append(status)
+
+        if customer_id:
+            where.append("w.customer_id=%s")
+            params.append(int(customer_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                w.*,
+                c.name AS customer_name,
+                i.invoice_number,
+                fi.instrument_name,
+                COALESCE(r.recovery_total, 0) AS posted_recovery_total
+            FROM {schema}.ifrs9_writeoffs w
+            LEFT JOIN {schema}.customers c
+            ON c.company_id=w.company_id
+            AND c.id=w.customer_id
+            LEFT JOIN {schema}.invoices i
+            ON i.company_id=w.company_id
+            AND i.id=w.invoice_id
+            LEFT JOIN {schema}.ifrs9_financial_instruments fi
+            ON fi.company_id=w.company_id
+            AND fi.id=w.instrument_id
+            LEFT JOIN (
+                SELECT
+                    company_id,
+                    writeoff_id,
+                    SUM(recovery_amount) AS recovery_total
+                FROM {schema}.ifrs9_writeoff_recoveries
+                WHERE status='posted'
+                GROUP BY company_id, writeoff_id
+            ) r
+            ON r.company_id=w.company_id
+            AND r.writeoff_id=w.id
+            WHERE {" AND ".join(where)}
+            ORDER BY w.writeoff_date DESC, w.id DESC
+        """, tuple(params))
+
+    def ifrs9_calculate_writeoff(
+        self,
+        company_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        invoice_id = payload.get("invoice_id")
+        requested_amount = self._money2(
+            payload.get("writeoff_amount")
+        )
+
+        if not invoice_id:
+            raise ValueError("invoice_id is required")
+
+        if requested_amount <= 0:
+            raise ValueError("writeoff_amount must be greater than zero")
+
+        invoice = self.fetch_one(f"""
+            SELECT
+                i.*,
+                c.name AS customer_name
+            FROM {schema}.invoices i
+            LEFT JOIN {schema}.customers c
+            ON c.company_id=i.company_id
+            AND c.id=i.customer_id
+            WHERE i.company_id=%s
+            AND i.id=%s
+        """, (
+            int(company_id),
+            int(invoice_id),
+        ))
+
+        if not invoice:
+            raise ValueError("Customer invoice not found")
+
+        if str(invoice.get("status") or "").lower() not in {
+            "approved",
+            "posted",
+            "partially_paid",
+            "overdue",
+        }:
+            raise ValueError(
+                "Only posted or approved customer invoices may be written off"
+            )
+
+        gross = self._money2(
+            invoice.get("balance_due")
+            or invoice.get("outstanding_amount")
+            or invoice.get("amount_due")
+            or 0
+        )
+
+        if gross <= 0:
+            raise ValueError("Invoice has no outstanding balance")
+
+        if requested_amount > gross:
+            raise ValueError(
+                f"Write-off amount exceeds invoice balance of {gross}"
+            )
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id=%s
+            AND instrument_type='trade_receivable'
+            AND (
+                invoice_id=%s
+                OR (
+                    source_table='invoices'
+                    AND source_id=%s
+                )
+            )
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(invoice_id),
+            int(invoice_id),
+        ))
+
+        allowance_balance = self.ifrs9_trade_receivable_allowance_balance(
+            company_id,
+            customer_id=invoice.get("customer_id"),
+            invoice_id=int(invoice_id),
+        )
+
+        allowance_used = min(
+            requested_amount,
+            self._money2(allowance_balance),
+        )
+
+        additional_loss = self._money2(
+            requested_amount - allowance_used
+        )
+
+        return {
+            "invoice_id": int(invoice_id),
+            "customer_id": invoice.get("customer_id"),
+            "customer_name": invoice.get("customer_name"),
+            "invoice_number": invoice.get("invoice_number"),
+            "instrument_id": instrument.get("id") if instrument else None,
+            "gross_receivable_amount": gross,
+            "writeoff_amount": requested_amount,
+            "available_allowance": self._money2(allowance_balance),
+            "allowance_used": allowance_used,
+            "additional_loss": additional_loss,
+            "remaining_invoice_balance": self._money2(
+                gross - requested_amount
+            ),
+        }
+
+
+    def ifrs9_calculate_writeoff(
+        self,
+        company_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        invoice_id = payload.get("invoice_id")
+        requested_amount = self._money2(
+            payload.get("writeoff_amount")
+        )
+
+        if not invoice_id:
+            raise ValueError("invoice_id is required")
+
+        if requested_amount <= 0:
+            raise ValueError("writeoff_amount must be greater than zero")
+
+        invoice = self.fetch_one(f"""
+            SELECT
+                i.*,
+                c.name AS customer_name
+            FROM {schema}.invoices i
+            LEFT JOIN {schema}.customers c
+            ON c.company_id=i.company_id
+            AND c.id=i.customer_id
+            WHERE i.company_id=%s
+            AND i.id=%s
+        """, (
+            int(company_id),
+            int(invoice_id),
+        ))
+
+        if not invoice:
+            raise ValueError("Customer invoice not found")
+
+        if str(invoice.get("status") or "").lower() not in {
+            "approved",
+            "posted",
+            "partially_paid",
+            "overdue",
+        }:
+            raise ValueError(
+                "Only posted or approved customer invoices may be written off"
+            )
+
+        gross = self._money2(
+            invoice.get("balance_due")
+            or invoice.get("outstanding_amount")
+            or invoice.get("amount_due")
+            or 0
+        )
+
+        if gross <= 0:
+            raise ValueError("Invoice has no outstanding balance")
+
+        if requested_amount > gross:
+            raise ValueError(
+                f"Write-off amount exceeds invoice balance of {gross}"
+            )
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id=%s
+            AND instrument_type='trade_receivable'
+            AND (
+                invoice_id=%s
+                OR (
+                    source_table='invoices'
+                    AND source_id=%s
+                )
+            )
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(invoice_id),
+            int(invoice_id),
+        ))
+
+        allowance_balance = self.ifrs9_trade_receivable_allowance_balance(
+            company_id,
+            customer_id=invoice.get("customer_id"),
+            invoice_id=int(invoice_id),
+        )
+
+        allowance_used = min(
+            requested_amount,
+            self._money2(allowance_balance),
+        )
+
+        additional_loss = self._money2(
+            requested_amount - allowance_used
+        )
+
+        return {
+            "invoice_id": int(invoice_id),
+            "customer_id": invoice.get("customer_id"),
+            "customer_name": invoice.get("customer_name"),
+            "invoice_number": invoice.get("invoice_number"),
+            "instrument_id": instrument.get("id") if instrument else None,
+            "gross_receivable_amount": gross,
+            "writeoff_amount": requested_amount,
+            "available_allowance": self._money2(allowance_balance),
+            "allowance_used": allowance_used,
+            "additional_loss": additional_loss,
+            "remaining_invoice_balance": self._money2(
+                gross - requested_amount
+            ),
+        }
+
+    def ifrs9_create_writeoff(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+        reason = str(payload.get("reason") or "").strip()
+
+        if not reason:
+            raise ValueError("Write-off reason is required")
+
+        calculation = self.ifrs9_calculate_writeoff(
+            company_id,
+            payload,
+        )
+
+        existing = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.ifrs9_writeoffs
+            WHERE company_id=%s
+            AND invoice_id=%s
+            AND status IN ('draft','approved','posted')
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            calculation["invoice_id"],
+        ))
+
+        if existing:
+            raise ValueError(
+                f"An active write-off already exists for this invoice "
+                f"(write-off {existing['id']}, status {existing['status']})"
+            )
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_writeoffs (
+                company_id,
+                instrument_id,
+                customer_id,
+                invoice_id,
+                writeoff_date,
+                gross_receivable_amount,
+                allowance_used,
+                additional_loss,
+                writeoff_amount,
+                recovered_amount,
+                reason,
+                approval_status,
+                status,
+                created_by,
+                meta_json
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,0,
+                %s,'draft','draft',%s,%s::jsonb
+            )
+            RETURNING *
+        """, (
+            int(company_id),
+            calculation.get("instrument_id"),
+            calculation.get("customer_id"),
+            calculation["invoice_id"],
+            payload.get("writeoff_date") or date.today().isoformat(),
+            calculation["gross_receivable_amount"],
+            calculation["allowance_used"],
+            calculation["additional_loss"],
+            calculation["writeoff_amount"],
+            reason,
+            user_id,
+            json.dumps({
+                "calculation": calculation,
+            }, default=str),
+        ), fetchone=True)
+
+    def ifrs9_preview_writeoff_journal(
+        self,
+        company_id: int,
+        writeoff_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        item = self.fetch_one(f"""
+            SELECT
+                w.*,
+                i.invoice_number,
+                c.name AS customer_name
+            FROM {schema}.ifrs9_writeoffs w
+            LEFT JOIN {schema}.invoices i
+            ON i.company_id=w.company_id
+            AND i.id=w.invoice_id
+            LEFT JOIN {schema}.customers c
+            ON c.company_id=w.company_id
+            AND c.id=w.customer_id
+            WHERE w.company_id=%s
+            AND w.id=%s
+        """, (
+            int(company_id),
+            int(writeoff_id),
+        ))
+
+        if not item:
+            raise ValueError("IFRS 9 write-off not found")
+
+        if item.get("status") not in {"draft", "approved"}:
+            raise ValueError(
+                f"Write-off cannot be previewed from status {item.get('status')}"
+            )
+
+        allowance_code = self.ifrs9_resolve_account(
+            company_id,
+            "ecl_allowance_trade_receivables",
+        )
+
+        expense_code = self.ifrs9_resolve_account(
+            company_id,
+            "bad_debt_writeoff",
+        )
+
+        receivable_code = self.ifrs9_receivable_account_for_invoice(
+            company_id,
+            item["invoice_id"],
+        )
+
+        lines = []
+
+        allowance_used = self._money2(item.get("allowance_used"))
+        additional_loss = self._money2(item.get("additional_loss"))
+        writeoff_amount = self._money2(item.get("writeoff_amount"))
+
+        if allowance_used > 0:
+            lines.append({
+                "account_code": allowance_code,
+                "description": (
+                    f"Loss allowance used for invoice "
+                    f"{item.get('invoice_number') or item['invoice_id']}"
+                ),
+                "debit": allowance_used,
+                "credit": 0,
+            })
+
+        if additional_loss > 0:
+            lines.append({
+                "account_code": expense_code,
+                "description": (
+                    f"Additional write-off loss for invoice "
+                    f"{item.get('invoice_number') or item['invoice_id']}"
+                ),
+                "debit": additional_loss,
+                "credit": 0,
+            })
+
+        lines.append({
+            "account_code": receivable_code,
+            "description": (
+                f"Write off receivable: "
+                f"{item.get('customer_name') or 'Customer'}"
+            ),
+            "debit": 0,
+            "credit": writeoff_amount,
+        })
+
+        return {
+            "writeoff": item,
+            "date": item["writeoff_date"],
+            "reference": f"IFRS9-WO-{writeoff_id}",
+            "description": (
+                f"IFRS 9 receivable write-off "
+                f"{item.get('invoice_number') or item['invoice_id']}"
+            ),
+            "total_debit": sum(
+                self._money2(line["debit"])
+                for line in lines
+            ),
+            "total_credit": sum(
+                self._money2(line["credit"])
+                for line in lines
+            ),
+            "lines": lines,
+            "ready_to_post": True,
+        } 
+
+    def ifrs9_receivable_account_for_invoice(
+        self,
+        company_id: int,
+        invoice_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(f"""
+            SELECT jl.account_code
+            FROM {schema}.journal j
+            JOIN {schema}.journal_lines jl
+            ON jl.company_id=j.company_id
+            AND jl.journal_id=j.id
+            WHERE j.company_id=%s
+            AND (
+                (j.source IN ('invoice','ar_invoice') AND j.source_id=%s)
+                OR EXISTS (
+                    SELECT 1
+                    FROM {schema}.invoices i
+                    WHERE i.company_id=j.company_id
+                        AND i.id=%s
+                        AND i.journal_id=j.id
+                )
+            )
+            AND COALESCE(jl.debit,0) > 0
+            ORDER BY jl.debit DESC, jl.id
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(invoice_id),
+            int(invoice_id),
+        ))
+
+        if row and row.get("account_code"):
+            account = self.get_account_row_for_posting(
+                company_id,
+                row["account_code"],
+            )
+
+            if account:
+                return str(account[1])
+
+        return self.ifrs9_resolve_account(
+            company_id,
+            "financial_asset_amortised_cost",
+        )
+
+    def ifrs9_post_writeoff(
+        self,
+        company_id: int,
+        writeoff_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            item = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.ifrs9_writeoffs
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(writeoff_id),
+            ), cur=cur)
+
+            if not item:
+                raise ValueError("IFRS 9 write-off not found")
+
+            if item.get("status") not in {"draft", "approved"}:
+                raise ValueError(
+                    f"Only draft or approved write-offs may be posted. "
+                    f"Current status: {item.get('status')}"
+                )
+
+            if item.get("journal_id"):
+                raise ValueError(
+                    f"Write-off already has journal {item['journal_id']}"
+                )
+
+            preview = self.ifrs9_preview_writeoff_journal(
+                company_id,
+                writeoff_id,
+            )
+
+            entry = {
+                "date": item["writeoff_date"],
+                "ref": preview["reference"],
+                "description": preview["description"],
+                "gross_amount": item["writeoff_amount"],
+                "net_amount": item["writeoff_amount"],
+                "vat_amount": 0,
+                "currency": self.company_currency(company_id),
+                "source": "ifrs9_writeoff",
+                "source_id": int(writeoff_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": [
+                    {
+                        **line,
+                        "line_no": index,
+                        "source": "ifrs9_writeoff",
+                        "source_id": int(writeoff_id),
+                    }
+                    for index, line in enumerate(
+                        preview["lines"],
+                        start=1,
+                    )
+                ],
+            }
+
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_writeoffs
+                SET status='posted',
+                    approval_status='approved',
+                    approved_by=COALESCE(approved_by,%s),
+                    approved_at=COALESCE(approved_at,NOW()),
+                    posted_by=%s,
+                    posted_at=NOW(),
+                    journal_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                AND status IN ('draft','approved')
+                AND journal_id IS NULL
+                RETURNING *
+            """, (
+                user_id,
+                user_id,
+                int(journal_id),
+                int(company_id),
+                int(writeoff_id),
+            ))
+
+            posted = cur.fetchone()
+
+            if not posted:
+                raise ValueError(
+                    "Write-off changed before posting completed"
+                )
+
+            if item.get("instrument_id"):
+                cur.execute(f"""
+                    UPDATE {schema}.ifrs9_financial_instruments
+                    SET carrying_amount=GREATEST(
+                            carrying_amount-%s,
+                            0
+                        ),
+                        status=CASE
+                            WHEN carrying_amount-%s <= 0
+                            THEN 'written_off'
+                            ELSE status
+                        END,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                """, (
+                    item["writeoff_amount"],
+                    item["writeoff_amount"],
+                    int(company_id),
+                    int(item["instrument_id"]),
+                ))
+
+            cur.execute(f"""
+                UPDATE {schema}.invoices
+                SET updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+            """, (
+                int(company_id),
+                int(item["invoice_id"]),
+            ))
+
+        return {
+            "item": posted,
+            "journal_id": journal_id,
+        }
+
+    def ifrs9_create_writeoff_recovery(
+        self,
+        company_id: int,
+        writeoff_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+        amount = self._money2(payload.get("recovery_amount"))
+
+        if amount <= 0:
+            raise ValueError("Recovery amount must be greater than zero")
+
+        writeoff = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_writeoffs
+            WHERE company_id=%s
+            AND id=%s
+        """, (
+            int(company_id),
+            int(writeoff_id),
+        ))
+
+        if not writeoff:
+            raise ValueError("IFRS 9 write-off not found")
+
+        if writeoff.get("status") != "posted":
+            raise ValueError(
+                "Only posted write-offs may receive recoveries"
+            )
+
+        previous = self.fetch_one(f"""
+            SELECT COALESCE(SUM(recovery_amount),0) AS total
+            FROM {schema}.ifrs9_writeoff_recoveries
+            WHERE company_id=%s
+            AND writeoff_id=%s
+            AND status='posted'
+        """, (
+            int(company_id),
+            int(writeoff_id),
+        ))
+
+        recovered = self._money2(
+            (previous or {}).get("total")
+        )
+
+        available = self._money2(
+            writeoff["writeoff_amount"] - recovered
+        )
+
+        if amount > available:
+            raise ValueError(
+                f"Recovery exceeds the remaining recoverable amount of {available}"
+            )
+
+        item = self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_writeoff_recoveries (
+                company_id,
+                writeoff_id,
+                recovery_date,
+                recovery_amount,
+                payment_reference,
+                notes,
+                status,
+                created_by,
+                meta_json
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,'draft',%s,'{{}}'::jsonb)
+            RETURNING *
+        """, (
+            int(company_id),
+            int(writeoff_id),
+            payload.get("recovery_date") or date.today().isoformat(),
+            amount,
+            payload.get("payment_reference"),
+            payload.get("notes"),
+            user_id,
+        ), fetchone=True)
+
+        return item
+
+    def ifrs9_post_writeoff_recovery(
+        self,
+        company_id: int,
+        writeoff_id: int,
+        recovery_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            recovery = self.fetch_one(f"""
+                SELECT r.*, w.writeoff_amount, w.invoice_id
+                FROM {schema}.ifrs9_writeoff_recoveries r
+                JOIN {schema}.ifrs9_writeoffs w
+                ON w.company_id=r.company_id
+                AND w.id=r.writeoff_id
+                WHERE r.company_id=%s
+                AND r.writeoff_id=%s
+                AND r.id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(writeoff_id),
+                int(recovery_id),
+            ), cur=cur)
+
+            if not recovery:
+                raise ValueError("Write-off recovery not found")
+
+            if recovery.get("status") != "draft":
+                raise ValueError(
+                    f"Only draft recoveries may be posted. "
+                    f"Current status: {recovery.get('status')}"
+                )
+
+            bank_code = self.resolve_cash_or_bank_account(
+                company_id,
+                recovery.get("meta_json") or {},
+            )
+
+            income_code = self.ifrs9_resolve_account(
+                company_id,
+                "bad_debt_recovery_income",
+            )
+
+            amount = self._money2(
+                recovery["recovery_amount"]
+            )
+
+            entry = {
+                "date": recovery["recovery_date"],
+                "ref": f"IFRS9-REC-{recovery_id}",
+                "description": (
+                    f"Recovery of previously written-off receivable "
+                    f"{writeoff_id}"
+                ),
+                "gross_amount": amount,
+                "net_amount": amount,
+                "vat_amount": 0,
+                "currency": self.company_currency(company_id),
+                "source": "ifrs9_writeoff_recovery",
+                "source_id": int(recovery_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": [
+                    {
+                        "line_no": 1,
+                        "account_code": bank_code,
+                        "description": "Cash recovered from written-off receivable",
+                        "debit": amount,
+                        "credit": 0,
+                        "source": "ifrs9_writeoff_recovery",
+                        "source_id": int(recovery_id),
+                    },
+                    {
+                        "line_no": 2,
+                        "account_code": income_code,
+                        "description": "Bad debt recovery income",
+                        "debit": 0,
+                        "credit": amount,
+                        "source": "ifrs9_writeoff_recovery",
+                        "source_id": int(recovery_id),
+                    },
+                ],
+            }
+
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_writeoff_recoveries
+                SET status='posted',
+                    journal_id=%s,
+                    posted_by=%s,
+                    posted_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                AND status='draft'
+                RETURNING *
+            """, (
+                int(journal_id),
+                user_id,
+                int(company_id),
+                int(recovery_id),
+            ))
+
+            posted = cur.fetchone()
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_writeoffs
+                SET recovered_amount=(
+                        SELECT COALESCE(SUM(recovery_amount),0)
+                        FROM {schema}.ifrs9_writeoff_recoveries
+                        WHERE company_id=%s
+                        AND writeoff_id=%s
+                        AND status='posted'
+                    ),
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+            """, (
+                int(company_id),
+                int(writeoff_id),
+                int(company_id),
+                int(writeoff_id),
+            ))
+
+        return {
+            "item": posted,
+            "journal_id": journal_id,
+        }
+
     def preview_ifrs9_ecl_journal(self, conn, company_id: int, *, data: dict):
         reporting_date = data.get("reporting_date")
         movement_ecl = self._money2(data.get("movement_ecl"))
@@ -94490,6 +97225,44 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         if not reporting_date:
             raise ValueError("reporting_date is required")
+
+        existing = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.ifrs9_ecl_runs
+            WHERE company_id=%s
+            AND model_id=%s
+            AND reporting_date=%s
+            AND status IN ('draft', 'posted')
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(model_id),
+            reporting_date,
+        ))
+
+        if existing:
+            raise ValueError(
+                f"An IFRS 9 ECL run already exists for this model and reporting date "
+                f"(run {existing['id']}, status {existing['status']})"
+            )
+
+        model = self.fetch_one(f"""
+            SELECT id, model_type, applies_to, basis, is_active
+            FROM {schema}.ifrs9_ecl_models
+            WHERE company_id=%s AND id=%s
+        """, (int(company_id), int(model_id)))
+
+        if not model:
+            raise ValueError("IFRS 9 ECL model not found")
+        if not model.get("is_active"):
+            raise ValueError("The selected IFRS 9 ECL model is inactive")
+        if model.get("model_type") != "simplified":
+            raise ValueError("Only simplified ECL models are currently supported")
+        if model.get("applies_to") != "trade_receivable":
+            raise ValueError("The selected ECL model does not apply to trade receivables")
+        if model.get("basis") != "provision_matrix":
+            raise ValueError("Only provision matrix ECL models are currently supported")
 
         calculated = self.ifrs9_calculate_trade_receivables_ecl(company_id, {
             "model_id": model_id,
@@ -94654,8 +97427,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not run:
                 raise ValueError("IFRS 9 ECL run not found")
 
-            if run.get("status") == "posted":
-                raise ValueError("IFRS 9 ECL run already posted")
+            status = run.get("status")
+
+            if status != "draft":
+                raise ValueError(
+                    f"Only draft IFRS 9 ECL runs may be posted. Current status: {status}"
+                )
+
+            if run.get("journal_id"):
+                raise ValueError(
+                    f"IFRS 9 ECL run already has journal {run['journal_id']}"
+                )
 
             meta = run.get("meta_json") or {}
             movement_ecl = self._money2(meta.get("movement_ecl"))
@@ -94687,6 +97469,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "lines": preview["lines"],
             }
 
+            duplicate = self.fetch_one(f"""
+                SELECT id
+                FROM {schema}.journal
+                WHERE company_id=%s
+                AND source='ifrs9_ecl'
+                AND source_id=%s
+                ORDER BY id DESC
+                LIMIT 1
+            """, (int(company_id), int(run_id)), cur=cur)
+
+            if duplicate:
+                raise ValueError(
+                    f"An IFRS 9 journal already exists for this run: {duplicate['id']}"
+                )
+
             journal_id = self.post_journal(
                 company_id,
                 entry,
@@ -94696,19 +97493,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             cur.execute(f"""
                 UPDATE {schema}.ifrs9_ecl_runs
-                SET journal_id = %s,
-                    status = 'posted',
-                    meta_json = COALESCE(meta_json, '{{}}'::jsonb)
+                SET journal_id=%s,
+                    status='posted',
+                    locked_at=NOW(),
+                    locked_by=%s,
+                    meta_json=COALESCE(meta_json, '{{}}'::jsonb)
                         || jsonb_build_object(
                             'posted_by', %s,
                             'posted_at', NOW(),
                             'journal_preview', %s::jsonb
                         )
-                WHERE company_id = %s
-                AND id = %s
+                WHERE company_id=%s
+                AND id=%s
+                AND status='draft'
+                AND journal_id IS NULL
                 RETURNING *
             """, (
                 int(journal_id),
+                user_id,
                 user_id,
                 json.dumps(preview, default=str),
                 int(company_id),
@@ -94716,6 +97518,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ))
 
             posted_run = cur.fetchone()
+
+            if not posted_run:
+                raise ValueError("The ECL run changed before posting could be completed")
 
             try:
                 self.audit_log(
@@ -94742,6 +97547,235 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "run": posted_run,
             "journal_id": journal_id,
             "preview": preview,
+        }
+
+    def ifrs9_reverse_ecl_run(
+        self,
+        company_id: int,
+        run_id: int,
+        *,
+        reason: str,
+        reversal_date=None,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+        reason = str(reason or "").strip()
+
+        if not reason:
+            raise ValueError("Reversal reason is required")
+
+        with self.transaction() as (conn, cur):
+            run = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.ifrs9_ecl_runs
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(run_id),
+            ), cur=cur)
+
+            if not run:
+                raise ValueError("IFRS 9 ECL run not found")
+
+            if run.get("status") != "posted":
+                raise ValueError(
+                    f"Only posted ECL runs may be reversed. "
+                    f"Current status: {run.get('status')}"
+                )
+
+            if not run.get("journal_id"):
+                raise ValueError(
+                    "The posted ECL run has no journal to reverse"
+                )
+
+            if run.get("reversal_journal_id"):
+                raise ValueError(
+                    f"ECL run already reversed by journal "
+                    f"{run['reversal_journal_id']}"
+                )
+
+            journal = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.journal
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(run["journal_id"]),
+            ), cur=cur)
+
+            if not journal:
+                raise ValueError("Original ECL journal not found")
+
+            if journal.get("reversed_by_journal_id"):
+                raise ValueError(
+                    f"Original journal already reversed by journal "
+                    f"{journal['reversed_by_journal_id']}"
+                )
+
+            original_lines = self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.journal_lines
+                WHERE company_id=%s
+                AND journal_id=%s
+                ORDER BY line_no, id
+            """, (
+                int(company_id),
+                int(run["journal_id"]),
+            ), cur=cur)
+
+            if not original_lines:
+                raise ValueError(
+                    "Original ECL journal has no journal lines"
+                )
+
+            reversal_lines = []
+
+            for index, line in enumerate(original_lines, start=1):
+                reversal_lines.append({
+                    "line_no": index,
+                    "account_code": line.get("account_code"),
+                    "description": (
+                        f"Reversal: "
+                        f"{line.get('description') or journal.get('description') or 'IFRS 9 ECL'}"
+                    ),
+                    "debit": self._money2(line.get("credit")),
+                    "credit": self._money2(line.get("debit")),
+                    "source": "ifrs9_ecl_reversal",
+                    "source_id": int(run_id),
+                })
+
+            entry = {
+                "date": (
+                    reversal_date
+                    or date.today().isoformat()
+                ),
+                "ref": f"REV-IFRS9-ECL-{run_id}",
+                "description": (
+                    f"Reversal of IFRS 9 ECL run {run_id}: {reason}"
+                ),
+                "gross_amount": self._money2(
+                    journal.get("gross_amount")
+                    or journal.get("net_amount")
+                    or 0
+                ),
+                "net_amount": self._money2(
+                    journal.get("net_amount")
+                    or journal.get("gross_amount")
+                    or 0
+                ),
+                "vat_amount": 0,
+                "currency": (
+                    journal.get("currency")
+                    or self.company_currency(company_id)
+                ),
+                "source": "ifrs9_ecl_reversal",
+                "source_id": int(run_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "is_reversal": True,
+                "reversal_of_journal_id": int(run["journal_id"]),
+                "lines": reversal_lines,
+            }
+
+            reversal_journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.journal
+                SET reversed_by_journal_id=%s
+                WHERE company_id=%s
+                AND id=%s
+                AND reversed_by_journal_id IS NULL
+            """, (
+                int(reversal_journal_id),
+                int(company_id),
+                int(run["journal_id"]),
+            ))
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_ecl_runs
+                SET status='reversed',
+                    reversal_journal_id=%s,
+                    reversed_at=NOW(),
+                    reversed_by=%s,
+                    reversal_reason=%s,
+                    meta_json=COALESCE(meta_json, '{{}}'::jsonb)
+                        || jsonb_build_object(
+                            'reversal_journal_id', %s,
+                            'reversed_at', NOW(),
+                            'reversed_by', %s,
+                            'reversal_reason', %s
+                        )
+                WHERE company_id=%s
+                AND id=%s
+                AND status='posted'
+                AND reversal_journal_id IS NULL
+                RETURNING *
+            """, (
+                int(reversal_journal_id),
+                user_id,
+                reason,
+                int(reversal_journal_id),
+                user_id,
+                reason,
+                int(company_id),
+                int(run_id),
+            ))
+
+            reversed_run = cur.fetchone()
+
+            if not reversed_run:
+                raise ValueError(
+                    "The ECL run changed before reversal completed"
+                )
+
+            try:
+                self.audit_log(
+                    company_id,
+                    actor_user_id=user_id or 0,
+                    module="ifrs9",
+                    action="reverse_ecl_run",
+                    severity="warning",
+                    entity_type="ifrs9_ecl_run",
+                    entity_id=str(run_id),
+                    entity_ref=f"IFRS9-ECL-{run_id}",
+                    journal_id=int(reversal_journal_id),
+                    amount=float(
+                        abs(
+                            self._money2(
+                                (run.get("meta_json") or {}).get(
+                                    "movement_ecl"
+                                )
+                            )
+                        )
+                    ),
+                    currency=entry["currency"],
+                    before_json={
+                        "run": run,
+                        "journal_id": run.get("journal_id"),
+                    },
+                    after_json={
+                        "run": reversed_run,
+                        "reversal_journal_id": reversal_journal_id,
+                    },
+                    message=f"Reversed IFRS 9 ECL run {run_id}",
+                    source="api",
+                )
+            except Exception:
+                pass
+
+        return {
+            "run": reversed_run,
+            "reversal_journal_id": reversal_journal_id,
         }
 
     def ifrs9_ar_exposure(self, company_id: int):
@@ -98733,18 +101767,289 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return deductions,contributions
     
-    def payroll_run_calculate(
+    def payroll_employee_period_facts(
         self,
-        company_id: int,
-        payroll_run_id: int,
-    ) -> dict:
-        company_id = int(company_id)
-        payroll_run_id = int(payroll_run_id)
+        company_id:int,
+        payroll_run_id:int,
+        employee:dict,
+        setup:dict,
+        run:dict|None=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
 
-        schema = self.company_schema(company_id)
+        if not run:
+            run=self.fetch_one(f"""
+                SELECT period_start,period_end
+                FROM {schema}.payroll_runs
+                WHERE company_id=%s AND id=%s
+                LIMIT 1;
+            """,(company_id,payroll_run_id))
 
-        run = self.fetch_one(f"""
-            SELECT r.*, c.frequency
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        start=max(run["period_start"],employee["start_date"])
+        end=min(
+            run["period_end"],
+            employee.get("termination_date") or run["period_end"],
+        )
+
+        zero=Decimal("0")
+
+        if end<start:
+            return{
+                "eligible":False,
+                "eligible_from":start,
+                "eligible_to":end,
+                "scheduled_days":zero,
+                "eligible_days":zero,
+                "worked_days":zero,
+                "paid_leave_days":zero,
+                "unpaid_days":zero,
+                "scheduled_hours":zero,
+                "worked_hours":zero,
+                "unpaid_hours":zero,
+                "proration_method":
+                    setup.get("proration_method") or "working_days",
+                "proration_factor":zero,
+            }
+
+        hours_per_day=_payroll_decimal(
+            setup.get("hours_per_day") or 8
+        )
+
+        days=self.fetch_one(f"""
+            WITH dates AS(
+                SELECT d::date AS work_date
+                FROM generate_series(
+                    %s::date,
+                    %s::date,
+                    INTERVAL '1 day'
+                ) d
+            )
+            SELECT
+                COUNT(*)::NUMERIC AS calendar_days,
+
+                COUNT(*) FILTER(
+                    WHERE work_date BETWEEN %s AND %s
+                )::NUMERIC AS eligible_calendar_days,
+
+                COUNT(*) FILTER(
+                    WHERE EXTRACT(ISODOW FROM work_date)<6
+                    AND h.id IS NULL
+                )::NUMERIC AS working_days,
+
+                COUNT(*) FILTER(
+                    WHERE work_date BETWEEN %s AND %s
+                    AND EXTRACT(ISODOW FROM work_date)<6
+                    AND h.id IS NULL
+                )::NUMERIC AS eligible_working_days
+            FROM dates
+            LEFT JOIN {schema}.company_holidays h
+            ON h.company_id=%s
+            AND h.holiday_date=dates.work_date;
+        """,(
+            run["period_start"],
+            run["period_end"],
+            start,
+            end,
+            start,
+            end,
+            company_id,
+        )) or {}
+
+        attendance=self.fetch_one(f"""
+            SELECT
+                COUNT(*) FILTER(
+                    WHERE approved=TRUE
+                    AND attendance_type='present'
+                )::NUMERIC AS worked_days,
+
+                COUNT(*) FILTER(
+                    WHERE approved=TRUE
+                    AND attendance_type IN(
+                        'paid_leave',
+                        'sick_leave',
+                        'public_holiday'
+                    )
+                )::NUMERIC AS paid_leave_days,
+
+                COUNT(*) FILTER(
+                    WHERE approved=TRUE
+                    AND attendance_type IN(
+                        'unpaid_leave',
+                        'absent'
+                    )
+                )::NUMERIC AS unpaid_days,
+
+                COALESCE(SUM(worked_hours)
+                    FILTER(WHERE approved=TRUE),0
+                ) AS worked_hours,
+
+                COALESCE(SUM(unpaid_hours)
+                    FILTER(WHERE approved=TRUE),0
+                ) AS unpaid_hours
+            FROM {schema}.payroll_attendance_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND employee_id=%s
+            AND attendance_date BETWEEN %s AND %s;
+        """,(
+            company_id,
+            payroll_run_id,
+            int(employee["id"]),
+            start,
+            end,
+        )) or {}
+
+        calendar_days=_payroll_decimal(
+            days.get("calendar_days")
+        )
+        eligible_calendar=_payroll_decimal(
+            days.get("eligible_calendar_days")
+        )
+        working_days=_payroll_decimal(
+            days.get("working_days")
+        )
+        eligible_days=_payroll_decimal(
+            days.get("eligible_working_days")
+        )
+        unpaid_days=_payroll_decimal(
+            attendance.get("unpaid_days")
+        )
+        worked_days=_payroll_decimal(
+            attendance.get("worked_days")
+        )
+        paid_leave_days=_payroll_decimal(
+            attendance.get("paid_leave_days")
+        )
+        worked_hours=_payroll_decimal(
+            attendance.get("worked_hours")
+        )
+        unpaid_hours=_payroll_decimal(
+            attendance.get("unpaid_hours")
+        )
+
+        scheduled_hours=eligible_days*hours_per_day
+        method=setup.get("proration_method") or "working_days"
+
+        if method=="calendar_days":
+            factor=(
+                eligible_calendar/calendar_days
+                if calendar_days else zero
+            )
+
+        elif method=="fixed_30_days":
+            payable=max(eligible_calendar-unpaid_days,zero)
+            factor=payable/Decimal("30")
+
+        elif method=="scheduled_hours":
+            full_hours=working_days*hours_per_day
+            payable=max(scheduled_hours-unpaid_hours,zero)
+            factor=payable/full_hours if full_hours else zero
+
+        elif method=="actual_hours":
+            full_hours=working_days*hours_per_day
+            factor=worked_hours/full_hours if full_hours else zero
+
+        elif method=="no_proration":
+            factor=Decimal("1")
+
+        else:
+            payable=max(eligible_days-unpaid_days,zero)
+            factor=payable/working_days if working_days else zero
+
+        factor=max(zero,min(factor,Decimal("1")))
+
+        return{
+            "eligible":True,
+            "eligible_from":start,
+            "eligible_to":end,
+            "calendar_days":calendar_days,
+            "eligible_calendar_days":eligible_calendar,
+            "scheduled_days":working_days,
+            "eligible_days":eligible_days,
+            "worked_days":worked_days,
+            "paid_leave_days":paid_leave_days,
+            "unpaid_days":unpaid_days,
+            "scheduled_hours":scheduled_hours,
+            "worked_hours":worked_hours,
+            "unpaid_hours":unpaid_hours,
+            "hours_per_day":hours_per_day,
+            "proration_method":method,
+            "proration_factor":factor,
+        }
+
+
+    def payroll_calculate_basic_pay(
+        self,
+        setup:dict,
+        facts:dict,
+    )->dict:
+        basis=setup.get("pay_basis") or "monthly"
+        factor=_payroll_decimal(
+            facts.get("proration_factor")
+        )
+        full=_payroll_money(
+            setup.get("fixed_basic_amount")
+        )
+        quantity=Decimal("0")
+        rate=_payroll_decimal(setup.get("rate"))
+
+        if basis=="monthly":
+            amount=_payroll_money(full*factor)
+
+        elif basis=="daily":
+            quantity=max(
+                _payroll_decimal(facts.get("eligible_days"))
+                -_payroll_decimal(facts.get("unpaid_days")),
+                Decimal("0"),
+            )
+            amount=_payroll_money(quantity*rate)
+
+        elif basis=="hourly":
+            worked=_payroll_decimal(
+                facts.get("worked_hours")
+            )
+            scheduled=max(
+                _payroll_decimal(facts.get("scheduled_hours"))
+                -_payroll_decimal(facts.get("unpaid_hours")),
+                Decimal("0"),
+            )
+            quantity=worked if worked>0 else scheduled
+            amount=_payroll_money(quantity*rate)
+
+        elif basis=="quantity":
+            quantity=_payroll_decimal(
+                setup.get("standard_quantity")
+            )
+            amount=_payroll_money(quantity*rate)
+
+        else:
+            amount=Decimal("0.00")
+
+        return{
+            "pay_basis":basis,
+            "full_basic_amount":full,
+            "quantity":quantity,
+            "rate":rate,
+            "proration_factor":factor,
+            "prorated_basic_amount":amount,
+        }
+
+    def payroll_run_eligibility(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT r.*,c.frequency
             FROM {schema}.payroll_runs r
             JOIN {schema}.payroll_pay_calendars c
             ON c.id=r.pay_calendar_id
@@ -98752,23 +102057,1622 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE r.company_id=%s
             AND r.id=%s
             LIMIT 1;
-        """, (
-            company_id,
-            payroll_run_id,
-        ))
+        """,(company_id,payroll_run_id))
 
         if not run:
             raise ValueError("Payroll run not found")
 
-        if run["status"] == "posted":
-            raise ValueError(
-                "Posted payroll cannot be recalculated"
+        employees=self.fetch_all(f"""
+            SELECT e.*
+            FROM {schema}.payroll_employees e
+            WHERE e.company_id=%s
+            AND e.start_date<=%s
+            AND(
+                e.termination_date IS NULL
+                OR e.termination_date>=%s
+            )
+            AND e.employment_status IN(
+                'active',
+                'terminated',
+                'suspended'
+            )
+            ORDER BY e.employee_no;
+        """,(
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ))
+
+        items=[]
+        errors=[]
+        warnings=[]
+
+        for employee in employees:
+            employee_id=int(employee["id"])
+            name=" ".join(filter(None,[
+                employee.get("first_name"),
+                employee.get("last_name"),
+            ]))
+
+            setup=self.payroll_employee_pay_setup_for_period(
+                company_id,
+                employee_id,
+                run["period_end"],
             )
 
-        tax_context = self.payroll_company_tax_context(
+            if not setup:
+                message=(
+                    f"{employee['employee_no']} {name}: "
+                    "no effective remuneration setup."
+                )
+                errors.append(message)
+                items.append({
+                    "employee_id":employee_id,
+                    "employee_no":employee["employee_no"],
+                    "employee_name":name,
+                    "eligible":False,
+                    "error":"No effective remuneration setup",
+                })
+                continue
+
+            facts=self.payroll_employee_period_facts(
+                company_id,
+                payroll_run_id,
+                employee,
+                setup,
+                run,
+            )
+            basic=self.payroll_calculate_basic_pay(
+                setup,
+                facts,
+            )
+
+            employee_warnings=[]
+
+            if employee["start_date"]>run["period_start"]:
+                employee_warnings.append(
+                    "Employee starts during this payroll period."
+                )
+
+            termination=employee.get("termination_date")
+
+            if termination and termination<run["period_end"]:
+                employee_warnings.append(
+                    "Employee terminates during this payroll period."
+                )
+
+            if (
+                setup.get("attendance_required")
+                and facts["eligible_days"]>0
+                and(
+                    facts["worked_days"]
+                    +facts["paid_leave_days"]
+                    +facts["unpaid_days"]
+                )<=0
+            ):
+                employee_warnings.append(
+                    "Attendance is required but has not been captured."
+                )
+
+            warnings.extend(
+                f"{employee['employee_no']} {name}: {message}"
+                for message in employee_warnings
+            )
+
+            items.append({
+                "employee_id":employee_id,
+                "employee_no":employee["employee_no"],
+                "employee_name":name,
+                "employment_status":
+                    employee.get("employment_status"),
+                "start_date":employee.get("start_date"),
+                "termination_date":
+                    employee.get("termination_date"),
+                "pay_setup_id":setup["id"],
+                "pay_basis":setup.get("pay_basis"),
+                "attendance_required":bool(
+                    setup.get("attendance_required")
+                ),
+                **facts,
+                **basic,
+                "warnings":employee_warnings,
+            })
+
+        return{
+            "run":{
+                "id":run["id"],
+                "run_no":run.get("run_no"),
+                "period_start":run["period_start"],
+                "period_end":run["period_end"],
+                "payment_date":run["payment_date"],
+                "status":run["status"],
+                "frequency":run["frequency"],
+            },
+            "items":items,
+            "summary":{
+                "candidate_count":len(employees),
+                "eligible_count":sum(
+                    1 for item in items
+                    if item.get("eligible")
+                ),
+                "error_count":len(errors),
+                "warning_count":len(warnings),
+                "ready":not errors,
+            },
+            "errors":errors,
+            "warnings":warnings,
+        }
+
+    def payroll_assert_run_editable(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(int(company_id),int(payroll_run_id)))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if(
+            run.get("status") in(
+                "approved",
+                "posted",
+                "reversed",
+                "cancelled",
+            )
+            or run.get("submitted_at")
+        ):
+            state=(
+                "submitted"
+                if run.get("submitted_at")
+                and run.get("status")=="calculated"
+                else run.get("status")
+            )
+
+            raise ValueError(
+                f"Payroll inputs cannot be changed while "
+                f"the payroll run is {state}."
+            )
+
+        return run
+
+
+    def payroll_attendance_get(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        attendance_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                a.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name
+            FROM {schema}.payroll_attendance_inputs a
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=a.company_id
+            AND e.id=a.employee_id
+            WHERE a.company_id=%s
+            AND a.payroll_run_id=%s
+            AND a.id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            int(attendance_id),
+        ))
+
+
+    def payroll_attendance_list(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int|None=None,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+        params=[
+            int(company_id),
+            int(payroll_run_id),
+        ]
+        employee_sql=""
+
+        if employee_id:
+            employee_sql="AND a.employee_id=%s"
+            params.append(int(employee_id))
+
+        return self.fetch_all(f"""
+            SELECT
+                a.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name
+            FROM {schema}.payroll_attendance_inputs a
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=a.company_id
+            AND e.id=a.employee_id
+            WHERE a.company_id=%s
+            AND a.payroll_run_id=%s
+            {employee_sql}
+            ORDER BY
+                a.attendance_date,
+                e.employee_no;
+        """,tuple(params))
+
+
+    def payroll_attendance_upsert(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_assert_run_editable(
             company_id,
-            run["payment_date"],
+            payroll_run_id,
         )
+
+        employee_id=int(body.get("employee_id") or 0)
+        attendance_date=body.get("attendance_date")
+
+        if not employee_id:
+            raise ValueError("employee_id is required")
+
+        if not attendance_date:
+            raise ValueError("attendance_date is required")
+
+        if not(
+            run["period_start"]
+            <=date.fromisoformat(str(attendance_date))
+            <=run["period_end"]
+        ):
+            raise ValueError(
+                "Attendance date must fall within "
+                "the payroll period."
+            )
+
+        employee=self.fetch_one(f"""
+            SELECT id,start_date,termination_date
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,employee_id))
+
+        if not employee:
+            raise ValueError("Payroll employee not found")
+
+        attendance_day=date.fromisoformat(
+            str(attendance_date)
+        )
+
+        if attendance_day<employee["start_date"]:
+            raise ValueError(
+                "Attendance cannot be recorded "
+                "before the employee start date."
+            )
+
+        if(
+            employee.get("termination_date")
+            and attendance_day>employee["termination_date"]
+        ):
+            raise ValueError(
+                "Attendance cannot be recorded "
+                "after the employee termination date."
+            )
+
+        attendance_type=str(
+            body.get("attendance_type") or "present"
+        ).strip().lower()
+
+        allowed={
+            "present",
+            "absent",
+            "paid_leave",
+            "unpaid_leave",
+            "sick_leave",
+            "public_holiday",
+            "rest_day",
+            "partial_day",
+        }
+
+        if attendance_type not in allowed:
+            raise ValueError("Invalid attendance_type")
+
+        scheduled=_payroll_decimal(
+            body.get("scheduled_hours")
+        )
+        worked=_payroll_decimal(
+            body.get("worked_hours")
+        )
+        overtime=_payroll_decimal(
+            body.get("overtime_hours")
+        )
+        unpaid=_payroll_decimal(
+            body.get("unpaid_hours")
+        )
+
+        if min(scheduled,worked,overtime,unpaid)<0:
+            raise ValueError(
+                "Attendance hours cannot be negative"
+            )
+
+        if attendance_type in(
+            "absent",
+            "unpaid_leave",
+        ):
+            worked=Decimal("0")
+            unpaid=unpaid or scheduled
+
+        elif attendance_type in(
+            "paid_leave",
+            "sick_leave",
+            "public_holiday",
+            "rest_day",
+        ):
+            worked=Decimal("0")
+            unpaid=Decimal("0")
+
+        approved=bool(body.get("approved",False))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_attendance_inputs(
+                company_id,
+                payroll_run_id,
+                employee_id,
+                attendance_date,
+                attendance_type,
+                scheduled_hours,
+                worked_hours,
+                overtime_hours,
+                unpaid_hours,
+                notes,
+                approved,
+                created_by_user_id,
+                approved_by_user_id,
+                approved_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,
+                CASE WHEN %s THEN %s ELSE NULL END,
+                CASE WHEN %s THEN NOW() ELSE NULL END
+            )
+            ON CONFLICT(
+                company_id,
+                payroll_run_id,
+                employee_id,
+                attendance_date
+            )
+            DO UPDATE SET
+                attendance_type=
+                    EXCLUDED.attendance_type,
+                scheduled_hours=
+                    EXCLUDED.scheduled_hours,
+                worked_hours=
+                    EXCLUDED.worked_hours,
+                overtime_hours=
+                    EXCLUDED.overtime_hours,
+                unpaid_hours=
+                    EXCLUDED.unpaid_hours,
+                notes=EXCLUDED.notes,
+                approved=EXCLUDED.approved,
+                approved_by_user_id=
+                    EXCLUDED.approved_by_user_id,
+                approved_at=EXCLUDED.approved_at,
+                updated_at=NOW()
+            RETURNING *;
+        """,(
+            company_id,
+            payroll_run_id,
+            employee_id,
+            attendance_date,
+            attendance_type,
+            scheduled,
+            worked,
+            overtime,
+            unpaid,
+            str(body.get("notes") or "").strip() or None,
+            approved,
+            user_id,
+            approved,
+            user_id,
+            approved,
+        ))
+
+
+    def payroll_attendance_bulk_save(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict,
+        user_id=None,
+    )->list[dict]:
+        rows=body.get("items") or []
+
+        if not isinstance(rows,list):
+            raise ValueError("items must be an array")
+
+        if not rows:
+            raise ValueError("At least one attendance row is required")
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        return[
+            self.payroll_attendance_upsert(
+                company_id,
+                payroll_run_id,
+                item,
+                user_id,
+            )
+            for item in rows
+        ]
+
+
+    def payroll_attendance_generate(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        employee_id=body.get("employee_id")
+        hours_per_day=_payroll_decimal(
+            body.get("hours_per_day") or 8
+        )
+        approved=bool(body.get("approved",False))
+
+        params=[
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ]
+        employee_sql=""
+
+        if employee_id:
+            employee_sql="AND e.id=%s"
+            params.append(int(employee_id))
+
+        employees=self.fetch_all(f"""
+            SELECT e.*
+            FROM {schema}.payroll_employees e
+            WHERE e.company_id=%s
+            AND e.start_date<=%s
+            AND(
+                e.termination_date IS NULL
+                OR e.termination_date>=%s
+            )
+            {employee_sql}
+            ORDER BY e.employee_no;
+        """,tuple(params))
+
+        created=0
+
+        for employee in employees:
+            start=max(
+                run["period_start"],
+                employee["start_date"],
+            )
+            end=min(
+                run["period_end"],
+                employee.get("termination_date")
+                or run["period_end"],
+            )
+
+            rows=self.fetch_all(f"""
+                SELECT
+                    d::date AS attendance_date,
+                    CASE
+                        WHEN h.id IS NOT NULL
+                            THEN 'public_holiday'
+                        WHEN EXTRACT(ISODOW FROM d)>=6
+                            THEN 'rest_day'
+                        ELSE 'present'
+                    END AS attendance_type,
+                    CASE
+                        WHEN h.id IS NOT NULL
+                            OR EXTRACT(ISODOW FROM d)>=6
+                        THEN 0
+                        ELSE %s
+                    END AS scheduled_hours
+                FROM generate_series(
+                    %s::date,
+                    %s::date,
+                    INTERVAL '1 day'
+                ) d
+                LEFT JOIN {schema}.company_holidays h
+                ON h.company_id=%s
+                AND h.holiday_date=d::date
+                ORDER BY d;
+            """,(
+                hours_per_day,
+                start,
+                end,
+                company_id,
+            ))
+
+            for row in rows:
+                row_type=row["attendance_type"]
+                scheduled=row["scheduled_hours"]
+
+                self.payroll_attendance_upsert(
+                    company_id,
+                    payroll_run_id,
+                    {
+                        "employee_id":employee["id"],
+                        "attendance_date":
+                            row["attendance_date"],
+                        "attendance_type":row_type,
+                        "scheduled_hours":scheduled,
+                        "worked_hours":
+                            scheduled
+                            if row_type=="present"
+                            else 0,
+                        "overtime_hours":0,
+                        "unpaid_hours":0,
+                        "approved":approved,
+                        "notes":"Generated from payroll period",
+                    },
+                    user_id,
+                )
+                created+=1
+
+        return{
+            "employee_count":len(employees),
+            "attendance_count":created,
+        }
+
+
+    def payroll_attendance_delete(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        attendance_id:int,
+    )->bool:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_attendance_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            company_id,
+            payroll_run_id,
+            int(attendance_id),
+        ))
+
+        return bool(row)
+
+
+    def payroll_attendance_summary(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        items=self.fetch_all(f"""
+            SELECT
+                a.employee_id,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+
+                COUNT(*) FILTER(
+                    WHERE a.attendance_type='present'
+                )::INT AS present_days,
+
+                COUNT(*) FILTER(
+                    WHERE a.attendance_type='absent'
+                )::INT AS absent_days,
+
+                COUNT(*) FILTER(
+                    WHERE a.attendance_type IN(
+                        'paid_leave',
+                        'sick_leave'
+                    )
+                )::INT AS paid_leave_days,
+
+                COUNT(*) FILTER(
+                    WHERE a.attendance_type='unpaid_leave'
+                )::INT AS unpaid_leave_days,
+
+                COALESCE(SUM(a.scheduled_hours),0)
+                    AS scheduled_hours,
+
+                COALESCE(SUM(a.worked_hours),0)
+                    AS worked_hours,
+
+                COALESCE(SUM(a.overtime_hours),0)
+                    AS overtime_hours,
+
+                COALESCE(SUM(a.unpaid_hours),0)
+                    AS unpaid_hours,
+
+                COUNT(*) FILTER(
+                    WHERE a.approved=FALSE
+                )::INT AS unapproved_count
+
+            FROM {schema}.payroll_attendance_inputs a
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=a.company_id
+            AND e.id=a.employee_id
+
+            WHERE a.company_id=%s
+            AND a.payroll_run_id=%s
+
+            GROUP BY
+                a.employee_id,
+                e.employee_no,
+                e.first_name,
+                e.last_name
+
+            ORDER BY e.employee_no;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+        ))
+
+        return{
+            "items":items,
+            "totals":{
+                "employees":len(items),
+                "scheduled_hours":sum(
+                    _payroll_decimal(
+                        x.get("scheduled_hours")
+                    )
+                    for x in items
+                ),
+                "worked_hours":sum(
+                    _payroll_decimal(
+                        x.get("worked_hours")
+                    )
+                    for x in items
+                ),
+                "overtime_hours":sum(
+                    _payroll_decimal(
+                        x.get("overtime_hours")
+                    )
+                    for x in items
+                ),
+                "unpaid_hours":sum(
+                    _payroll_decimal(
+                        x.get("unpaid_hours")
+                    )
+                    for x in items
+                ),
+                "unapproved_count":sum(
+                    int(x.get("unapproved_count") or 0)
+                    for x in items
+                ),
+            },
+        }
+
+    def payroll_period_input_get(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        input_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                p.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name
+            FROM {schema}.payroll_period_inputs p
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=p.company_id
+            AND e.id=p.employee_id
+            WHERE p.company_id=%s
+            AND p.payroll_run_id=%s
+            AND p.id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            int(input_id),
+        ))
+
+
+    def payroll_period_inputs_list(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int|None=None,
+        status:str|None=None,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+        params=[
+            int(company_id),
+            int(payroll_run_id),
+        ]
+        where=[]
+
+        if employee_id:
+            where.append("p.employee_id=%s")
+            params.append(int(employee_id))
+
+        if status:
+            where.append("p.status=%s")
+            params.append(str(status).strip().lower())
+
+        extra=(
+            "AND "+" AND ".join(where)
+            if where else ""
+        )
+
+        return self.fetch_all(f"""
+            SELECT
+                p.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name
+            FROM {schema}.payroll_period_inputs p
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=p.company_id
+            AND e.id=p.employee_id
+            WHERE p.company_id=%s
+            AND p.payroll_run_id=%s
+            {extra}
+            ORDER BY
+                e.employee_no,
+                p.input_type,
+                p.id;
+        """,tuple(params))
+
+
+    def payroll_period_input_validate(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        employee_id=int(body.get("employee_id") or 0)
+        input_type=str(
+            body.get("input_type") or ""
+        ).strip().lower()
+
+        if not employee_id:
+            raise ValueError("employee_id is required")
+
+        if input_type not in{
+            "earning",
+            "deduction",
+            "employer_contribution",
+        }:
+            raise ValueError("Invalid input_type")
+
+        employee=self.fetch_one(f"""
+            SELECT
+                id,
+                employee_no,
+                start_date,
+                termination_date
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,employee_id))
+
+        if not employee:
+            raise ValueError("Payroll employee not found")
+
+        run=self.fetch_one(f"""
+            SELECT period_start,period_end
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,payroll_run_id))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if employee["start_date"]>run["period_end"]:
+            raise ValueError(
+                "Employee starts after this payroll period"
+            )
+
+        if(
+            employee.get("termination_date")
+            and employee["termination_date"]<run["period_start"]
+        ):
+            raise ValueError(
+                "Employee terminated before this payroll period"
+            )
+
+        description=str(
+            body.get("description") or ""
+        ).strip()
+
+        if not description:
+            raise ValueError("description is required")
+
+        quantity=_payroll_decimal(
+            body.get("quantity")
+            if body.get("quantity") not in(None,"")
+            else 1
+        )
+        rate=_payroll_decimal(
+            body.get("rate")
+        )
+        percentage=(
+            _payroll_decimal(body.get("percentage"))
+            if body.get("percentage") not in(None,"")
+            else None
+        )
+        amount=_payroll_decimal(
+            body.get("amount")
+        )
+
+        if quantity<0 or rate<0 or amount<0:
+            raise ValueError(
+                "Quantity, rate and amount cannot be negative"
+            )
+
+        if percentage is not None and percentage<0:
+            raise ValueError(
+                "Percentage cannot be negative"
+            )
+
+        if amount<=0 and quantity>0 and rate>0:
+            amount=_payroll_money(quantity*rate)
+
+        if amount<=0:
+            raise ValueError(
+                "Enter an amount or a quantity and rate"
+            )
+
+        source_module=str(
+            body.get("source_module") or "manual"
+        ).strip().lower()
+
+        allowed_sources={
+            "manual",
+            "attendance",
+            "leave",
+            "performance",
+            "commission",
+            "production",
+            "timesheet",
+            "benefit_plan",
+            "system",
+        }
+
+        if source_module not in allowed_sources:
+            raise ValueError("Invalid source_module")
+
+        status=str(
+            body.get("status") or "draft"
+        ).strip().lower()
+
+        if status not in{
+            "draft",
+            "approved",
+            "rejected",
+            "cancelled",
+        }:
+            raise ValueError("Invalid period input status")
+
+        item_type={
+            "earning":"earning",
+            "deduction":"deduction",
+            "employer_contribution":"contribution",
+        }[input_type]
+
+        return{
+            "employee_id":employee_id,
+            "input_type":input_type,
+            "item_type":item_type,
+            "item_id":(
+                int(body["item_id"])
+                if body.get("item_id") not in(None,"")
+                else None
+            ),
+            "code":str(
+                body.get("code") or ""
+            ).strip() or None,
+            "description":description,
+            "quantity":quantity,
+            "rate":rate,
+            "percentage":percentage,
+            "amount":_payroll_money(amount),
+            "taxable":bool(
+                body.get("taxable",False)
+            ),
+            "pensionable":bool(
+                body.get("pensionable",False)
+            ),
+            "affects_leave":bool(
+                body.get("affects_leave",False)
+            ),
+            "affects_overtime":bool(
+                body.get("affects_overtime",False)
+            ),
+            "effective_from":
+                body.get("effective_from") or None,
+            "effective_to":
+                body.get("effective_to") or None,
+            "notes":str(
+                body.get("notes") or ""
+            ).strip() or None,
+            "source_module":source_module,
+            "source_record_id":(
+                int(body["source_record_id"])
+                if body.get("source_record_id")
+                not in(None,"")
+                else None
+            ),
+            "source":str(
+                body.get("source") or "manual"
+            ).strip() or "manual",
+            "status":status,
+        }
+
+
+    def payroll_period_input_save(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict,
+        user_id=None,
+        input_id:int|None=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        values=self.payroll_period_input_validate(
+            company_id,
+            payroll_run_id,
+            body,
+        )
+
+        approved=values["status"]=="approved"
+
+        if input_id:
+            existing=self.payroll_period_input_get(
+                company_id,
+                payroll_run_id,
+                input_id,
+            )
+
+            if not existing:
+                raise ValueError(
+                    "Payroll period input not found"
+                )
+
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_period_inputs
+                SET
+                    employee_id=%s,
+                    input_type=%s,
+                    item_type=%s,
+                    item_id=%s,
+                    code=%s,
+                    description=%s,
+                    quantity=%s,
+                    rate=%s,
+                    percentage=%s,
+                    amount=%s,
+                    taxable=%s,
+                    pensionable=%s,
+                    affects_leave=%s,
+                    affects_overtime=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    notes=%s,
+                    source_module=%s,
+                    source_record_id=%s,
+                    source=%s,
+                    status=%s,
+                    approved_by_user_id=
+                        CASE
+                            WHEN %s
+                            THEN %s
+                            ELSE NULL
+                        END,
+                    approved_at=
+                        CASE
+                            WHEN %s
+                            THEN NOW()
+                            ELSE NULL
+                        END,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND payroll_run_id=%s
+                AND id=%s
+                RETURNING *;
+            """,(
+                values["employee_id"],
+                values["input_type"],
+                values["item_type"],
+                values["item_id"],
+                values["code"],
+                values["description"],
+                values["quantity"],
+                values["rate"],
+                values["percentage"],
+                values["amount"],
+                values["taxable"],
+                values["pensionable"],
+                values["affects_leave"],
+                values["affects_overtime"],
+                values["effective_from"],
+                values["effective_to"],
+                values["notes"],
+                values["source_module"],
+                values["source_record_id"],
+                values["source"],
+                values["status"],
+                approved,
+                user_id,
+                approved,
+                company_id,
+                payroll_run_id,
+                int(input_id),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_period_inputs(
+                company_id,
+                payroll_run_id,
+                employee_id,
+                input_type,
+                item_type,
+                item_id,
+                code,
+                description,
+                quantity,
+                rate,
+                percentage,
+                amount,
+                taxable,
+                pensionable,
+                affects_leave,
+                affects_overtime,
+                effective_from,
+                effective_to,
+                notes,
+                source_module,
+                source_record_id,
+                source,
+                status,
+                created_by_user_id,
+                approved_by_user_id,
+                approved_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,
+                CASE WHEN %s THEN %s ELSE NULL END,
+                CASE WHEN %s THEN NOW() ELSE NULL END
+            )
+            RETURNING *;
+        """,(
+            company_id,
+            payroll_run_id,
+            values["employee_id"],
+            values["input_type"],
+            values["item_type"],
+            values["item_id"],
+            values["code"],
+            values["description"],
+            values["quantity"],
+            values["rate"],
+            values["percentage"],
+            values["amount"],
+            values["taxable"],
+            values["pensionable"],
+            values["affects_leave"],
+            values["affects_overtime"],
+            values["effective_from"],
+            values["effective_to"],
+            values["notes"],
+            values["source_module"],
+            values["source_record_id"],
+            values["source"],
+            values["status"],
+            user_id,
+            approved,
+            user_id,
+            approved,
+        ))
+
+
+    def payroll_period_input_set_status(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        input_id:int,
+        status:str,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        status=str(status or "").strip().lower()
+
+        if status not in{
+            "draft",
+            "approved",
+            "rejected",
+            "cancelled",
+        }:
+            raise ValueError("Invalid period input status")
+
+        approved=status=="approved"
+
+        row=self.fetch_one(f"""
+            UPDATE {schema}.payroll_period_inputs
+            SET
+                status=%s,
+                approved_by_user_id=
+                    CASE
+                        WHEN %s
+                        THEN %s
+                        ELSE NULL
+                    END,
+                approved_at=
+                    CASE
+                        WHEN %s
+                        THEN NOW()
+                        ELSE NULL
+                    END,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND id=%s
+            RETURNING *;
+        """,(
+            status,
+            approved,
+            user_id,
+            approved,
+            company_id,
+            payroll_run_id,
+            int(input_id),
+        ))
+
+        if not row:
+            raise ValueError(
+                "Payroll period input not found"
+            )
+
+        return row
+
+
+    def payroll_period_input_delete(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        input_id:int,
+    )->bool:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_period_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            company_id,
+            payroll_run_id,
+            int(input_id),
+        ))
+
+        return bool(row)
+
+
+    def payroll_period_input_summary(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        rows=self.fetch_all(f"""
+            SELECT
+                input_type,
+                status,
+                COUNT(*)::INT AS item_count,
+                COALESCE(SUM(amount),0) AS amount
+            FROM {schema}.payroll_period_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            GROUP BY input_type,status
+            ORDER BY input_type,status;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+        ))
+
+        totals={
+            "earnings":Decimal("0"),
+            "deductions":Decimal("0"),
+            "employer_contributions":Decimal("0"),
+            "approved":0,
+            "draft":0,
+            "rejected":0,
+            "cancelled":0,
+            "items":0,
+        }
+
+        for row in rows:
+            amount=_payroll_decimal(row.get("amount"))
+            count=int(row.get("item_count") or 0)
+            input_type=row.get("input_type")
+            status=row.get("status")
+
+            totals["items"]+=count
+            totals[status]=totals.get(status,0)+count
+
+            if status!="approved":
+                continue
+
+            if input_type=="earning":
+                totals["earnings"]+=amount
+            elif input_type=="deduction":
+                totals["deductions"]+=amount
+            elif input_type=="employer_contribution":
+                totals["employer_contributions"]+=amount
+
+        totals["net_effect"]=(
+            totals["earnings"]
+            -totals["deductions"]
+        )
+
+        return{
+            "items":rows,
+            "totals":totals,
+        }
+
+    def payroll_employee_period_facts(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee:dict,
+        setup:dict,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT period_start,period_end
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s;
+        """,(int(company_id),int(payroll_run_id)))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        eligible_from=max(
+            run["period_start"],
+            employee["start_date"],
+        )
+
+        eligible_to=min(
+            run["period_end"],
+            employee.get("termination_date")
+            or run["period_end"],
+        )
+
+        if eligible_to<eligible_from:
+            return {
+                "eligible_from":eligible_from,
+                "eligible_to":eligible_to,
+                "scheduled_days":Decimal("0"),
+                "eligible_days":Decimal("0"),
+                "worked_days":Decimal("0"),
+                "paid_leave_days":Decimal("0"),
+                "unpaid_days":Decimal("0"),
+                "scheduled_hours":Decimal("0"),
+                "worked_hours":Decimal("0"),
+                "unpaid_hours":Decimal("0"),
+                "proration_factor":Decimal("0"),
+            }
+
+        hours_per_day=_payroll_decimal(
+            setup.get("hours_per_day") or 8
+        )
+
+        days=self.fetch_one(f"""
+            WITH dates AS(
+                SELECT d::date AS work_date
+                FROM generate_series(
+                    %s::date,%s::date,INTERVAL '1 day'
+                ) d
+            )
+            SELECT
+                COUNT(*) FILTER(
+                    WHERE EXTRACT(ISODOW FROM work_date)<6
+                    AND h.id IS NULL
+                ) AS full_working_days,
+
+                COUNT(*) FILTER(
+                    WHERE work_date BETWEEN %s AND %s
+                    AND EXTRACT(ISODOW FROM work_date)<6
+                    AND h.id IS NULL
+                ) AS eligible_working_days,
+
+                COUNT(*) AS calendar_days,
+
+                COUNT(*) FILTER(
+                    WHERE work_date BETWEEN %s AND %s
+                ) AS eligible_calendar_days
+            FROM dates
+            LEFT JOIN {schema}.company_holidays h
+            ON h.company_id=%s
+            AND h.holiday_date=dates.work_date;
+        """,(
+            run["period_start"],
+            run["period_end"],
+            eligible_from,
+            eligible_to,
+            eligible_from,
+            eligible_to,
+            int(company_id),
+        )) or {}
+
+        attendance=self.fetch_one(f"""
+            SELECT
+                COUNT(*) FILTER(
+                    WHERE attendance_type='present'
+                    AND approved=TRUE
+                ) AS present_days,
+
+                COUNT(*) FILTER(
+                    WHERE attendance_type IN(
+                        'paid_leave','sick_leave',
+                        'public_holiday'
+                    )
+                    AND approved=TRUE
+                ) AS paid_leave_days,
+
+                COUNT(*) FILTER(
+                    WHERE attendance_type IN(
+                        'unpaid_leave','absent'
+                    )
+                    AND approved=TRUE
+                ) AS unpaid_days,
+
+                COALESCE(SUM(worked_hours)
+                    FILTER(WHERE approved=TRUE),0
+                ) AS worked_hours,
+
+                COALESCE(SUM(unpaid_hours)
+                    FILTER(WHERE approved=TRUE),0
+                ) AS unpaid_hours
+            FROM {schema}.payroll_attendance_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND employee_id=%s
+            AND attendance_date BETWEEN %s AND %s;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            int(employee["id"]),
+            eligible_from,
+            eligible_to,
+        )) or {}
+
+        method=setup.get("proration_method") or "working_days"
+        full_working=_payroll_decimal(
+            days.get("full_working_days")
+        )
+        eligible_working=_payroll_decimal(
+            days.get("eligible_working_days")
+        )
+        full_calendar=_payroll_decimal(
+            days.get("calendar_days")
+        )
+        eligible_calendar=_payroll_decimal(
+            days.get("eligible_calendar_days")
+        )
+
+        unpaid_days=_payroll_decimal(
+            attendance.get("unpaid_days")
+        )
+
+        payable_working=max(
+            eligible_working-unpaid_days,
+            Decimal("0"),
+        )
+
+        scheduled_hours=eligible_working*hours_per_day
+        unpaid_hours=_payroll_decimal(
+            attendance.get("unpaid_hours")
+        )
+        worked_hours=_payroll_decimal(
+            attendance.get("worked_hours")
+        )
+
+        if method=="calendar_days":
+            factor=(
+                eligible_calendar/full_calendar
+                if full_calendar else Decimal("0")
+            )
+        elif method=="fixed_30_days":
+            factor=eligible_calendar/Decimal("30")
+        elif method=="scheduled_hours":
+            full_hours=full_working*hours_per_day
+            payable_hours=max(
+                scheduled_hours-unpaid_hours,
+                Decimal("0"),
+            )
+            factor=(
+                payable_hours/full_hours
+                if full_hours else Decimal("0")
+            )
+        elif method=="actual_hours":
+            full_hours=full_working*hours_per_day
+            factor=(
+                worked_hours/full_hours
+                if full_hours else Decimal("0")
+            )
+        elif method=="no_proration":
+            factor=Decimal("1")
+        else:
+            factor=(
+                payable_working/full_working
+                if full_working else Decimal("0")
+            )
+
+        factor=max(
+            Decimal("0"),
+            min(factor,Decimal("1")),
+        )
+
+        return {
+            "eligible_from":eligible_from,
+            "eligible_to":eligible_to,
+            "scheduled_days":full_working,
+            "eligible_days":eligible_working,
+            "worked_days":_payroll_decimal(
+                attendance.get("present_days")
+            ),
+            "paid_leave_days":_payroll_decimal(
+                attendance.get("paid_leave_days")
+            ),
+            "unpaid_days":unpaid_days,
+            "scheduled_hours":scheduled_hours,
+            "worked_hours":worked_hours,
+            "unpaid_hours":unpaid_hours,
+            "proration_factor":factor,
+        }
+
+    def _payroll_prepare_run(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->tuple[dict,list]:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT r.*,c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id=r.pay_calendar_id
+            AND c.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+            LIMIT 1;
+        """,(company_id,payroll_run_id))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] in("posted","reversed"):
+            raise ValueError(
+                f"{run['status'].title()} payroll "
+                "cannot be recalculated"
+            )
+
+        employees=self.fetch_all(f"""
+            SELECT e.*
+            FROM {schema}.payroll_employees e
+            WHERE e.company_id=%s
+            AND e.start_date<=%s
+            AND(
+                e.termination_date IS NULL
+                OR e.termination_date>=%s
+            )
+            AND e.employment_status IN(
+                'active',
+                'terminated',
+                'suspended'
+            )
+            ORDER BY e.employee_no;
+        """,(
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ))
+
+        return run,employees
+
+
+    def _payroll_clear_run_results(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->None:
+        schema=self.company_schema(company_id)
 
         self.execute_sql(f"""
             DELETE FROM {schema}.payroll_run_lines
@@ -98778,401 +103682,802 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             DELETE FROM {schema}.payroll_run_employees
             WHERE company_id=%s
             AND payroll_run_id=%s;
-        """, (
-            company_id,
-            payroll_run_id,
-            company_id,
-            payroll_run_id,
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            int(company_id),
+            int(payroll_run_id),
         ))
 
-        employees = self.fetch_all(f"""
-            SELECT e.*
-            FROM {schema}.payroll_employees e
-            WHERE e.company_id=%s
-            AND e.employment_status='active'
-            AND e.start_date <= %s
-            AND (
-                e.termination_date IS NULL
-                OR e.termination_date >= %s
+
+    def _payroll_contract_for_period(
+        self,
+        company_id:int,
+        employee_id:int,
+        period_start,
+        period_end,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_contracts
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND effective_from<=%s
+            AND(
+                effective_to IS NULL
+                OR effective_to>=%s
             )
-            ORDER BY e.employee_no;
-        """, (
-            company_id,
-            run["period_end"],
-            run["period_start"],
+            ORDER BY
+                is_active DESC,
+                effective_from DESC,
+                id DESC
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(employee_id),
+            period_end,
+            period_start,
         ))
 
-        totals = {
-            "gross": Decimal("0"),
-            "deductions": Decimal("0"),
-            "employer": Decimal("0"),
-            "net": Decimal("0"),
+
+    def _payroll_tax_profile_for_run(
+        self,
+        company_id:int,
+        employee_id:int,
+        payment_date,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_tax_profiles
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND effective_from<=%s
+            AND(
+                effective_to IS NULL
+                OR effective_to>=%s
+            )
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(employee_id),
+            payment_date,
+            payment_date,
+        )) or {
+            "residency_status":"resident",
+            "paye_exempt":False,
         }
 
-        calculated_count = 0
-        skipped = []
 
-        for employee in employees:
-            employee_id = int(employee["id"])
+    def _payroll_setup_lines(
+        self,
+        setup:dict,
+        basic,
+    )->dict:
+        earnings=[]
+        deductions=[]
+        benefits=[]
+        contributions=[]
 
-            setup = self.payroll_employee_pay_setup_for_period(
-                company_id,
-                employee_id,
-                run["period_end"],
-            )
+        basic=_payroll_money(basic)
 
-            if not setup:
-                skipped.append({
-                    "employee_id": employee_id,
-                    "employee_no": employee["employee_no"],
-                    "reason": "No effective pay setup",
-                })
+        if basic>0:
+            earnings.append({
+                "item_type":"earning",
+                "item_id":
+                    setup.get("basic_earning_type_id"),
+                "code":"BASIC",
+                "name":"Basic Salary",
+                "amount":basic,
+                "quantity":
+                    setup.get("standard_quantity"),
+                "rate":setup.get("rate"),
+                "percentage":None,
+                "taxable":True,
+                "pensionable":True,
+                "source_type":"pay_setup",
+                "source_id":setup["id"],
+                "gl_account_code":None,
+                "offset_account_code":None,
+                "metadata":{},
+            })
+
+        for item in setup.get("items") or []:
+            if(
+                item.get("item_type")=="earning"
+                and item.get("code")=="BASIC"
+            ):
                 continue
 
-            tax_profile = self.fetch_one(f"""
-                SELECT *
-                FROM {schema}.payroll_employee_tax_profiles
-                WHERE company_id=%s
-                AND employee_id=%s
-                AND effective_from <= %s
-                AND (
-                    effective_to IS NULL
-                    OR effective_to >= %s
-                )
-                ORDER BY effective_from DESC, id DESC
-                LIMIT 1;
-            """, (
-                company_id,
-                employee_id,
-                run["payment_date"],
-                run["payment_date"],
-            )) or {
-                "residency_status": "resident",
-                "paye_exempt": False,
+            if item.get("calculation_method")=="manual":
+                continue
+
+            amount=self.payroll_setup_item_amount(
+                item,
+                basic,
+            )
+
+            if amount<=0:
+                continue
+
+            line={
+                **item,
+                "name":
+                    item.get("name")
+                    or item.get("description"),
+                "amount":amount,
+                "source_type":"pay_setup_item",
+                "source_id":item["id"],
+                "metadata":{},
             }
 
-            pay_basis = setup["pay_basis"]
+            item_type=item.get("item_type")
 
-            if pay_basis == "monthly":
-                basic = _payroll_money(
-                    setup.get("fixed_basic_amount")
-                )
-            elif pay_basis in {
-                "hourly",
-                "daily",
-                "quantity",
-            }:
-                basic = _payroll_money(
-                    _payroll_decimal(
-                        setup.get("standard_quantity")
-                    )
-                    * _payroll_decimal(setup.get("rate"))
-                )
-            else:
-                basic = Decimal("0")
+            if item_type=="earning":
+                earnings.append(line)
 
-            earning_lines = []
-            deduction_lines = []
-            benefit_lines = []
-            contribution_lines = []
+            elif item_type=="deduction":
+                if item.get("code")!="PAYE":
+                    deductions.append(line)
 
-            # Basic earning is controlled by the setup header.
-            if basic > 0:
-                earning_lines.append({
-                    "item_type": "earning",
-                    "item_id":
-                        setup.get("basic_earning_type_id"),
-                    "code": "BASIC",
-                    "name": "Basic Salary",
-                    "amount": basic,
-                    "quantity":
-                        setup.get("standard_quantity"),
-                    "rate": setup.get("rate"),
-                    "taxable": True,
-                    "pensionable": True,
-                    "source_type": "pay_setup",
-                    "source_id": setup["id"],
-                })
+            elif item_type=="benefit":
+                benefits.append(line)
 
-            for item in setup.get("items", []):
-                # Avoid duplicating BASIC when it appears as both
-                # the header basic earning and a checked item.
-                if (
-                    item.get("item_type") == "earning"
-                    and item.get("code") == "BASIC"
-                ):
-                    continue
+            elif item_type=="contribution":
+                contributions.append(line)
 
-                amount = self.payroll_setup_item_amount(
-                    item,
-                    basic,
-                )
+        return{
+            "earnings":earnings,
+            "deductions":deductions,
+            "benefits":benefits,
+            "contributions":contributions,
+        }
 
-                if item["calculation_method"] == "manual":
-                    continue
 
-                line = {
-                    **item,
-                    "amount": amount,
-                    "source_type": "pay_setup_item",
-                    "source_id": item["id"],
-                }
+    def _payroll_period_input_lines(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int,
+    )->dict:
+        earnings=[]
+        deductions=[]
+        contributions=[]
 
-                if item["item_type"] == "earning":
-                    earning_lines.append(line)
-                elif item["item_type"] == "deduction":
-                    # PAYE is calculated by the tax engine below.
-                    if item.get("code") != "PAYE":
-                        deduction_lines.append(line)
-                elif item["item_type"] == "benefit":
-                    benefit_lines.append(line)
-                elif item["item_type"] == "contribution":
-                    contribution_lines.append(line)
+        items=self.payroll_period_inputs_list(
+            company_id,
+            payroll_run_id,
+            employee_id,
+            "approved",
+        )
 
-            gross = sum(
-                (
-                    _payroll_decimal(line["amount"])
-                    for line in earning_lines
+        for item in items:
+            line={
+                "item_type":item.get("item_type"),
+                "item_id":item.get("item_id"),
+                "code":item.get("code"),
+                "name":item.get("description"),
+                "amount":_payroll_money(
+                    item.get("amount")
                 ),
-                Decimal("0"),
-            )
-
-            taxable_benefits = sum(
-                (
-                    _payroll_decimal(line["amount"])
-                    for line in benefit_lines
-                    if line.get("taxable")
+                "quantity":item.get("quantity"),
+                "rate":item.get("rate"),
+                "percentage":item.get("percentage"),
+                "taxable":bool(item.get("taxable")),
+                "pensionable":bool(
+                    item.get("pensionable")
                 ),
-                Decimal("0"),
-            )
-
-            taxable_earnings = sum(
-                (
-                    _payroll_decimal(line["amount"])
-                    for line in earning_lines
-                    if line.get("taxable")
-                ),
-                Decimal("0"),
-            )
-
-            taxable_income = (
-                taxable_earnings
-                + taxable_benefits
-            )
-
-            if setup.get("tax_treatment") == "manual":
-                paye = _payroll_money(
-                    setup.get("manual_paye_amount")
-                )
-
-                tax_result = {
-                    "paye": paye,
-                    "authority_code":
-                        tax_context["authority_code"],
-                    "tax_year_label":
-                        tax_context["tax_year_label"],
-                    "method": "manual",
-                }
-
-            elif setup.get("tax_treatment") == "exempt":
-                paye = Decimal("0.00")
-
-                tax_result = {
-                    "paye": paye,
-                    "authority_code":
-                        tax_context["authority_code"],
-                    "tax_year_label":
-                        tax_context["tax_year_label"],
-                    "method": "exempt",
-                }
-
-            else:
-                tax_result = self.payroll_calculate_paye(
-                    tax_context=tax_context,
-                    taxable_income=taxable_income,
-                    frequency=run["frequency"],
-                    tax_profile=tax_profile,
-                )
-
-                paye = _payroll_decimal(
-                    tax_result["paye"]
-                )
-
-            pensionable_pay=sum(
-                (
-                    _payroll_decimal(x.get("amount"))
-                    for x in earning_lines
-                    if x.get("pensionable")
-                ),
-                Decimal("0"),
-            )
-
-            dc_deductions,dc_contributions=(
-                self.payroll_defined_contribution_lines(
-                    company_id,employee_id,
-                    run["period_start"],run["period_end"],
-                    pensionable_pay,
-                )
-            )
-
-            deduction_lines.extend(dc_deductions)
-            contribution_lines.extend(dc_contributions)
-
-            employee_deductions = sum(
-                (
-                    _payroll_decimal(line["amount"])
-                    for line in deduction_lines
-                ),
-                Decimal("0"),
-            )
-
-            employer_contributions = sum(
-                (
-                    _payroll_decimal(line["amount"])
-                    for line in contribution_lines
-                ),
-                Decimal("0"),
-            )
-
-            total_deductions = (
-                employee_deductions
-                + paye
-            )
-
-            net_pay = gross - total_deductions
-
-            employer_cost = (
-                gross
-                + employer_contributions
-            )
-
-            run_employee = self.fetch_one(f"""
-                    INSERT INTO {schema}.payroll_run_lines(
-                        company_id,payroll_run_id,run_employee_id,
-                        employee_id,line_type,item_type,item_id,code,
-                        description,quantity,rate,percentage,amount,
-                        taxable,pensionable,source_type,source_id,
-                        gl_account_code,offset_account_code,metadata
-                    ) VALUES(
-                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb
-                    )
-                    RETURNING *;
-                """,(
-                    company_id,payroll_run_id,run_employee["id"],
-                    employee_id,line_type,line.get("item_type"),
-                    line.get("item_id"),line.get("code"),
-                    line.get("name") or line.get("description"),
-                    line.get("quantity"),line.get("rate"),
-                    line.get("percentage"),amount,
-                    bool(line.get("taxable")),
-                    bool(line.get("pensionable")),
-                    line.get("source_type"),line.get("source_id"),
-                    line.get("gl_account_code"),
-                    line.get("offset_account_code"),
-                    json.dumps(line.get("metadata") or {}),
-                ))
-
-            all_lines = (
-                [
-                    ("earning", line)
-                    for line in earning_lines
-                ]
-                + [
-                    ("benefit", line)
-                    for line in benefit_lines
-                ]
-                + [
-                    ("deduction", line)
-                    for line in deduction_lines
-                ]
-                + [
-                    ("employer_contribution", line)
-                    for line in contribution_lines
-                ]
-            )
-
-            all_lines.append((
-                "tax",
-                {
-                    "item_type": "deduction",
-                    "item_id": None,
-                    "code": "PAYE",
-                    "name": "PAYE",
-                    "amount": paye,
-                    "taxable": False,
-                    "pensionable": False,
-                    "source_type": "tax_engine",
-                    "source_id": None,
+                "source_type":"payroll_period_input",
+                "source_id":item["id"],
+                "gl_account_code":None,
+                "offset_account_code":None,
+                "metadata":{
+                    "source_module":
+                        item.get("source_module"),
+                    "source_record_id":
+                        item.get("source_record_id"),
                 },
-            ))
+            }
 
-            for line_type, line in all_lines:
-                amount = _payroll_money(
-                    line.get("amount")
-                )
+            if item["input_type"]=="earning":
+                earnings.append(line)
 
-                if amount <= 0:
-                    continue
+            elif item["input_type"]=="deduction":
+                deductions.append(line)
 
-                self.fetch_one(f"""
-                    INSERT INTO {schema}.payroll_run_lines (
-                        company_id,
-                        payroll_run_id,
-                        run_employee_id,
-                        employee_id,
-                        line_type,
-                        item_type,
-                        item_id,
-                        code,
-                        description,
-                        quantity,
-                        rate,
-                        percentage,
-                        amount,
-                        taxable,
-                        pensionable,
-                        source_type,
-                        source_id,
-                        metadata
-                    )
-                    VALUES (
-                        %s,%s,%s,%s,
-                        %s,%s,%s,%s,%s,
-                        %s,%s,%s,%s,
-                        %s,%s,%s,%s,%s::jsonb
-                    )
-                    RETURNING *;
-                """, (
+            elif(
+                item["input_type"]
+                =="employer_contribution"
+            ):
+                contributions.append(line)
+
+        return{
+            "earnings":earnings,
+            "deductions":deductions,
+            "contributions":contributions,
+        }
+
+
+    def _payroll_save_run_employee(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee:dict,
+        contract:dict|None,
+        setup:dict,
+        facts:dict,
+        basic_result:dict,
+        result:dict,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_run_employees(
+                company_id,
+                payroll_run_id,
+                employee_id,
+                contract_id,
+                pay_setup_id,
+
+                basic_pay,
+                gross_pay,
+                total_deductions,
+                employer_contributions,
+                net_pay,
+                status,
+
+                taxable_income,
+                paye,
+                employer_cost,
+                tax_authority_code,
+                tax_year_label,
+
+                calculation_status,
+                calculation_message,
+
+                eligible_from,
+                eligible_to,
+                scheduled_days,
+                eligible_days,
+                worked_days,
+                paid_leave_days,
+                unpaid_days,
+                scheduled_hours,
+                worked_hours,
+                unpaid_hours,
+
+                proration_method,
+                proration_factor,
+                full_basic_amount,
+                prorated_basic_amount
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s
+            )
+            RETURNING *;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            int(employee["id"]),
+            contract.get("id") if contract else None,
+            int(setup["id"]),
+
+            basic_result["prorated_basic_amount"],
+            result["gross"],
+            result["total_deductions"],
+            result["employer_contributions"],
+            result["net_pay"],
+            "calculated",
+
+            result["taxable_income"],
+            result["paye"],
+            result["employer_cost"],
+            result["tax_authority_code"],
+            result["tax_year_label"],
+
+            "calculated",
+            result.get("calculation_message"),
+
+            facts.get("eligible_from"),
+            facts.get("eligible_to"),
+            facts.get("scheduled_days") or 0,
+            facts.get("eligible_days") or 0,
+            facts.get("worked_days") or 0,
+            facts.get("paid_leave_days") or 0,
+            facts.get("unpaid_days") or 0,
+            facts.get("scheduled_hours") or 0,
+            facts.get("worked_hours") or 0,
+            facts.get("unpaid_hours") or 0,
+
+            facts.get("proration_method"),
+            facts.get("proration_factor") or 0,
+            basic_result.get("full_basic_amount") or 0,
+            basic_result.get(
+                "prorated_basic_amount"
+            ) or 0,
+        ))
+
+
+    def _payroll_save_run_lines(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        run_employee_id:int,
+        employee_id:int,
+        lines:list,
+    )->None:
+        schema=self.company_schema(company_id)
+
+        for line_type,line in lines:
+            amount=_payroll_money(
+                line.get("amount")
+            )
+
+            if amount<=0:
+                continue
+
+            item_type=line.get("item_type")
+            item_id=line.get("item_id")
+
+            earning_type_id=(
+                item_id
+                if item_type=="earning"
+                else None
+            )
+            deduction_type_id=(
+                item_id
+                if item_type=="deduction"
+                else None
+            )
+            contribution_type_id=(
+                item_id
+                if item_type=="contribution"
+                else None
+            )
+
+            self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_run_lines(
                     company_id,
                     payroll_run_id,
-                    run_employee["id"],
+                    run_employee_id,
                     employee_id,
                     line_type,
-                    line.get("item_type"),
-                    line.get("item_id"),
-                    line.get("code"),
-                    line.get("name")
-                    or line.get("description"),
-                    line.get("quantity"),
-                    line.get("rate"),
-                    line.get("percentage"),
+                    description,
+
+                    earning_type_id,
+                    deduction_type_id,
+                    contribution_type_id,
+
                     amount,
-                    bool(line.get("taxable")),
-                    bool(line.get("pensionable")),
-                    line.get("source_type"),
-                    line.get("source_id"),
-                    "{}",
-                ))
+                    gl_account_code,
+                    offset_account_code,
 
-            totals["gross"] += gross
-            totals["deductions"] += total_deductions
-            totals["employer"] += employer_contributions
-            totals["net"] += net_pay
+                    item_type,
+                    item_id,
+                    code,
+                    quantity,
+                    rate,
+                    percentage,
+                    taxable,
+                    pensionable,
+                    source_type,
+                    source_id,
+                    metadata
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s::jsonb
+                )
+                RETURNING *;
+            """,(
+                int(company_id),
+                int(payroll_run_id),
+                int(run_employee_id),
+                int(employee_id),
+                line_type,
+                line.get("name")
+                or line.get("description")
+                or line.get("code")
+                or line_type,
 
-            calculated_count += 1
+                earning_type_id,
+                deduction_type_id,
+                contribution_type_id,
 
-        self.fetch_one(f"""
+                amount,
+                line.get("gl_account_code"),
+                line.get("offset_account_code"),
+
+                item_type,
+                item_id,
+                line.get("code"),
+                line.get("quantity"),
+                line.get("rate"),
+                line.get("percentage"),
+                bool(line.get("taxable")),
+                bool(line.get("pensionable")),
+                line.get("source_type"),
+                line.get("source_id"),
+                json.dumps(
+                    line.get("metadata") or {}
+                ),
+            ))
+
+
+    def _payroll_calculate_employee(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        run:dict,
+        employee:dict,
+        tax_context:dict,
+    )->dict:
+        employee_id=int(employee["id"])
+        name=" ".join(filter(None,[
+            employee.get("first_name"),
+            employee.get("last_name"),
+        ]))
+
+        setup=self.payroll_employee_pay_setup_for_period(
+            company_id,
+            employee_id,
+            run["period_end"],
+        )
+
+        if not setup:
+            return{
+                "skipped":True,
+                "employee_id":employee_id,
+                "employee_no":
+                    employee.get("employee_no"),
+                "employee_name":name,
+                "reason":"No effective pay setup",
+            }
+
+        contract=self._payroll_contract_for_period(
+            company_id,
+            employee_id,
+            run["period_start"],
+            run["period_end"],
+        )
+
+        tax_profile=self._payroll_tax_profile_for_run(
+            company_id,
+            employee_id,
+            run["payment_date"],
+        )
+
+        facts=self.payroll_employee_period_facts(
+            company_id,
+            payroll_run_id,
+            employee,
+            setup,
+            run,
+        )
+
+        if not facts.get("eligible"):
+            return{
+                "skipped":True,
+                "employee_id":employee_id,
+                "employee_no":
+                    employee.get("employee_no"),
+                "employee_name":name,
+                "reason":
+                    "Employee is outside the payroll period",
+            }
+
+        if(
+            setup.get("attendance_required")
+            and _payroll_decimal(
+                facts.get("eligible_days")
+            )>0
+        ):
+            attendance_count=sum((
+                _payroll_decimal(
+                    facts.get("worked_days")
+                ),
+                _payroll_decimal(
+                    facts.get("paid_leave_days")
+                ),
+                _payroll_decimal(
+                    facts.get("unpaid_days")
+                ),
+            ),Decimal("0"))
+
+            if attendance_count<=0:
+                raise ValueError(
+                    f"Attendance has not been captured for "
+                    f"{employee.get('employee_no')} {name}."
+                )
+
+        basic_result=self.payroll_calculate_basic_pay(
+            setup,
+            facts,
+        )
+        basic=basic_result["prorated_basic_amount"]
+
+        setup_lines=self._payroll_setup_lines(
+            setup,
+            basic,
+        )
+        period_lines=self._payroll_period_input_lines(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        )
+
+        earning_lines=(
+            setup_lines["earnings"]
+            +period_lines["earnings"]
+        )
+        deduction_lines=(
+            setup_lines["deductions"]
+            +period_lines["deductions"]
+        )
+        benefit_lines=setup_lines["benefits"]
+        contribution_lines=(
+            setup_lines["contributions"]
+            +period_lines["contributions"]
+        )
+
+        gross=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in earning_lines
+            ),
+            Decimal("0"),
+        )
+
+        taxable_earnings=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in earning_lines
+                if x.get("taxable")
+            ),
+            Decimal("0"),
+        )
+
+        taxable_benefits=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in benefit_lines
+                if x.get("taxable")
+            ),
+            Decimal("0"),
+        )
+
+        taxable_income=_payroll_money(
+            taxable_earnings+taxable_benefits
+        )
+
+        tax_treatment=(
+            setup.get("tax_treatment")
+            or "standard"
+        )
+
+        if(
+            tax_treatment=="manual"
+            or tax_profile.get(
+                "calculation_method"
+            )=="manual"
+        ):
+            paye=_payroll_money(
+                setup.get("manual_paye_amount")
+                if setup.get("manual_paye_amount")
+                not in(None,"")
+                else tax_profile.get(
+                    "manual_paye_amount"
+                )
+            )
+
+            tax_result={
+                "paye":paye,
+                "authority_code":
+                    tax_context.get("authority_code"),
+                "tax_year_label":
+                    tax_context.get("tax_year_label"),
+                "method":"manual",
+            }
+
+        elif(
+            tax_treatment=="exempt"
+            or tax_profile.get("paye_exempt")
+            or tax_profile.get(
+                "calculation_method"
+            )=="exempt"
+        ):
+            paye=Decimal("0.00")
+
+            tax_result={
+                "paye":paye,
+                "authority_code":
+                    tax_context.get("authority_code"),
+                "tax_year_label":
+                    tax_context.get("tax_year_label"),
+                "method":"exempt",
+            }
+
+        else:
+            tax_result=self.payroll_calculate_paye(
+                tax_context=tax_context,
+                taxable_income=taxable_income,
+                frequency=run["frequency"],
+                tax_profile=tax_profile,
+            )
+            paye=_payroll_money(
+                tax_result.get("paye")
+            )
+
+        pensionable_pay=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in earning_lines
+                if x.get("pensionable")
+            ),
+            Decimal("0"),
+        )
+
+        dc_deductions,dc_contributions=(
+            self.payroll_defined_contribution_lines(
+                company_id,
+                employee_id,
+                run["period_start"],
+                run["period_end"],
+                pensionable_pay,
+            )
+        )
+
+        deduction_lines.extend(dc_deductions)
+        contribution_lines.extend(dc_contributions)
+
+        employee_deductions=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in deduction_lines
+            ),
+            Decimal("0"),
+        )
+
+        employer_contributions=sum(
+            (
+                _payroll_decimal(x.get("amount"))
+                for x in contribution_lines
+            ),
+            Decimal("0"),
+        )
+
+        total_deductions=_payroll_money(
+            employee_deductions+paye
+        )
+        gross=_payroll_money(gross)
+        employer_contributions=_payroll_money(
+            employer_contributions
+        )
+        net_pay=_payroll_money(
+            gross-total_deductions
+        )
+        employer_cost=_payroll_money(
+            gross+employer_contributions
+        )
+
+        if net_pay<0:
+            raise ValueError(
+                f"Total deductions exceed gross pay for "
+                f"{employee.get('employee_no')} {name}."
+            )
+
+        result={
+            "gross":gross,
+            "taxable_income":taxable_income,
+            "paye":paye,
+            "total_deductions":total_deductions,
+            "employer_contributions":
+                employer_contributions,
+            "net_pay":net_pay,
+            "employer_cost":employer_cost,
+            "tax_authority_code":
+                tax_result.get("authority_code"),
+            "tax_year_label":
+                tax_result.get("tax_year_label"),
+            "calculation_message":None,
+        }
+
+        run_employee=self._payroll_save_run_employee(
+            company_id,
+            payroll_run_id,
+            employee,
+            contract,
+            setup,
+            facts,
+            basic_result,
+            result,
+        )
+
+        all_lines=[
+            *[
+                ("earning",x)
+                for x in earning_lines
+            ],
+            *[
+                ("benefit",x)
+                for x in benefit_lines
+            ],
+            *[
+                ("deduction",x)
+                for x in deduction_lines
+            ],
+            *[
+                ("employer_contribution",x)
+                for x in contribution_lines
+            ],
+            (
+                "tax",
+                {
+                    "item_type":"deduction",
+                    "item_id":None,
+                    "code":"PAYE",
+                    "name":"PAYE",
+                    "amount":paye,
+                    "quantity":None,
+                    "rate":None,
+                    "percentage":None,
+                    "taxable":False,
+                    "pensionable":False,
+                    "source_type":"tax_engine",
+                    "source_id":None,
+                    "gl_account_code":None,
+                    "offset_account_code":None,
+                    "metadata":{
+                        "method":
+                            tax_result.get("method"),
+                        "taxable_income":
+                            str(taxable_income),
+                    },
+                },
+            ),
+        ]
+
+        self._payroll_save_run_lines(
+            company_id,
+            payroll_run_id,
+            run_employee["id"],
+            employee_id,
+            all_lines,
+        )
+
+        return{
+            "skipped":False,
+            "employee_id":employee_id,
+            "run_employee_id":run_employee["id"],
+            "gross":gross,
+            "deductions":total_deductions,
+            "employer":employer_contributions,
+            "net":net_pay,
+        }
+
+
+    def _payroll_update_run_totals(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        totals:dict,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
             UPDATE {schema}.payroll_runs
             SET
                 status='calculated',
@@ -99183,31 +104488,136 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             WHERE company_id=%s
             AND id=%s
             RETURNING *;
-        """, (
+        """,(
             _payroll_money(totals["gross"]),
             _payroll_money(totals["deductions"]),
             _payroll_money(totals["employer"]),
             _payroll_money(totals["net"]),
-            company_id,
-            payroll_run_id,
+            int(company_id),
+            int(payroll_run_id),
         ))
 
-        result = self.payroll_run_get(
+        if not row:
+            raise ValueError("Payroll run not found")
+
+        return row
+
+
+    def payroll_run_calculate(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+
+        run,employees=self._payroll_prepare_run(
             company_id,
             payroll_run_id,
         )
 
-        result["calculated_employee_count"] = (
-            calculated_count
+        eligibility=self.payroll_run_eligibility(
+            company_id,
+            payroll_run_id,
         )
 
-        result["skipped_employees"] = skipped
+        errors=eligibility.get("errors") or []
+
+        if errors:
+            raise ValueError(
+                "Payroll cannot be calculated: "
+                +"; ".join(errors)
+            )
+
+        tax_context=self.payroll_company_tax_context(
+            company_id,
+            run["payment_date"],
+        )
+
+        if not tax_context:
+            raise ValueError(
+                "No payroll tax context is configured "
+                "for the payment date."
+            )
+
+        self._payroll_clear_run_results(
+            company_id,
+            payroll_run_id,
+        )
+
+        totals={
+            "gross":Decimal("0"),
+            "deductions":Decimal("0"),
+            "employer":Decimal("0"),
+            "net":Decimal("0"),
+        }
+
+        skipped=[]
+        calculated=0
+
+        for employee in employees:
+            result=self._payroll_calculate_employee(
+                company_id,
+                payroll_run_id,
+                run,
+                employee,
+                tax_context,
+            )
+
+            if result.get("skipped"):
+                skipped.append(result)
+                continue
+
+            totals["gross"]+=result["gross"]
+            totals["deductions"]+=result["deductions"]
+            totals["employer"]+=result["employer"]
+            totals["net"]+=result["net"]
+            calculated+=1
+
+        self._payroll_update_run_totals(
+            company_id,
+            payroll_run_id,
+            totals,
+        )
+
+        result=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        result["calculated_employee_count"]=calculated
+        result["skipped_employees"]=skipped
+        result["eligibility_summary"]=(
+            eligibility.get("summary") or {}
+        )
 
         result["defined_contribution_run"]=(
             self.payroll_sync_defined_contribution_run(
-                company_id,payroll_run_id
+                company_id,
+                payroll_run_id,
             )
         )
+
+        self.payroll_run_audit_add(
+            company_id,
+            payroll_run_id,
+            "calculate",
+            from_status=run.get("status"),
+            to_status="calculated",
+            message=(
+                f"Calculated payroll for "
+                f"{calculated} employee(s)"
+            ),
+            metadata={
+                "calculated_employee_count":calculated,
+                "skipped_employee_count":len(skipped),
+                "gross":str(totals["gross"]),
+                "deductions":str(totals["deductions"]),
+                "employer":str(totals["employer"]),
+                "net":str(totals["net"]),
+            },
+        )
+
         return result
 
     def payroll_sync_defined_contribution_run(
@@ -99443,82 +104853,1769 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY r.period_start DESC, r.id DESC;
         """, (int(company_id),))
 
+    def _payroll_validation_item(
+        self,
+        severity:str,
+        code:str,
+        message:str,
+        *,
+        employee_id=None,
+        employee_no=None,
+        details=None,
+    )->dict:
+        return{
+            "severity":severity,
+            "code":code,
+            "message":message,
+            "employee_id":employee_id,
+            "employee_no":employee_no,
+            "details":details or {},
+        }
 
-    def payroll_run_post(self, company_id: int, payroll_run_id: int, user_id=None) -> dict:
-        schema = self.company_schema(company_id)
 
-        run = self.payroll_run_get(company_id, payroll_run_id)
+    def payroll_employee_validation(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        employee_id=int(employee_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT r.*,c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.id=r.pay_calendar_id
+            AND c.company_id=r.company_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+            LIMIT 1;
+        """,(company_id,payroll_run_id))
+
         if not run:
             raise ValueError("Payroll run not found")
 
-        if run["status"] == "posted":
-            raise ValueError("Payroll run already posted")
+        employee=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,employee_id))
 
-        if run["status"] not in ("calculated", "approved"):
-            raise ValueError("Payroll run must be calculated before posting")
+        if not employee:
+            raise ValueError("Payroll employee not found")
 
-        preview = self.payroll_run_journal_preview(company_id, payroll_run_id)
+        issues=[]
+        employee_no=employee.get("employee_no")
+        name=" ".join(filter(None,[
+            employee.get("first_name"),
+            employee.get("last_name"),
+        ]))
+
+        def add(severity,code,message,details=None):
+            issues.append(self._payroll_validation_item(
+                severity,
+                code,
+                message,
+                employee_id=employee_id,
+                employee_no=employee_no,
+                details=details,
+            ))
+
+        if employee["start_date"]>run["period_end"]:
+            add(
+                "error",
+                "EMPLOYEE_NOT_STARTED",
+                f"{employee_no} {name} starts after "
+                "the payroll period.",
+            )
+
+        if(
+            employee.get("termination_date")
+            and employee["termination_date"]<run["period_start"]
+        ):
+            add(
+                "error",
+                "EMPLOYEE_ALREADY_TERMINATED",
+                f"{employee_no} {name} terminated before "
+                "the payroll period.",
+            )
+
+        if employee["start_date"]>run["period_start"]:
+            add(
+                "warning",
+                "PART_PERIOD_START",
+                f"{employee_no} {name} starts during "
+                "the payroll period.",
+                {
+                    "start_date":employee["start_date"],
+                },
+            )
+
+        if(
+            employee.get("termination_date")
+            and employee["termination_date"]<run["period_end"]
+        ):
+            add(
+                "warning",
+                "PART_PERIOD_TERMINATION",
+                f"{employee_no} {name} terminates during "
+                "the payroll period.",
+                {
+                    "termination_date":
+                        employee["termination_date"],
+                },
+            )
+
+        setup=self.payroll_employee_pay_setup_for_period(
+            company_id,
+            employee_id,
+            run["period_end"],
+        )
+
+        if not setup:
+            add(
+                "error",
+                "PAY_SETUP_MISSING",
+                f"{employee_no} {name} has no effective "
+                "remuneration setup.",
+            )
+
+        contract=self._payroll_contract_for_period(
+            company_id,
+            employee_id,
+            run["period_start"],
+            run["period_end"],
+        )
+
+        if not contract:
+            add(
+                "warning",
+                "CONTRACT_MISSING",
+                f"{employee_no} {name} has no contract "
+                "covering this payroll period.",
+            )
+
+        tax_profile=self.fetch_one(f"""
+            SELECT id,tax_number,paye_exempt,
+                effective_from,effective_to
+            FROM {schema}.payroll_employee_tax_profiles
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND effective_from<=%s
+            AND(
+                effective_to IS NULL
+                OR effective_to>=%s
+            )
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """,(
+            company_id,
+            employee_id,
+            run["payment_date"],
+            run["payment_date"],
+        ))
+
+        if not tax_profile:
+            add(
+                "warning",
+                "TAX_PROFILE_MISSING",
+                f"{employee_no} {name} has no tax profile "
+                "for the payment date.",
+            )
+
+        bank=self.fetch_one(f"""
+            SELECT id,bank_name,account_number,is_primary
+            FROM {schema}.payroll_employee_bank_accounts
+            WHERE company_id=%s
+            AND employee_id=%s
+            ORDER BY is_primary DESC,id DESC
+            LIMIT 1;
+        """,(company_id,employee_id))
+
+        if not bank:
+            add(
+                "warning",
+                "BANK_ACCOUNT_MISSING",
+                f"{employee_no} {name} has no bank account.",
+            )
+
+        attendance=self.fetch_one(f"""
+            SELECT
+                COUNT(*)::INT AS row_count,
+
+                COUNT(*) FILTER(
+                    WHERE approved=FALSE
+                )::INT AS unapproved_count,
+
+                COUNT(*) FILTER(
+                    WHERE approved=TRUE
+                )::INT AS approved_count
+
+            FROM {schema}.payroll_attendance_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND employee_id=%s;
+        """,(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        )) or {}
+
+        if(
+            setup
+            and setup.get("attendance_required")
+            and int(attendance.get("row_count") or 0)==0
+        ):
+            add(
+                "error",
+                "ATTENDANCE_MISSING",
+                f"{employee_no} {name} requires attendance, "
+                "but none has been captured.",
+            )
+
+        if int(attendance.get("unapproved_count") or 0)>0:
+            add(
+                "error",
+                "ATTENDANCE_UNAPPROVED",
+                f"{employee_no} {name} has "
+                f"{attendance['unapproved_count']} unapproved "
+                "attendance record(s).",
+            )
+
+        inputs=self.fetch_one(f"""
+            SELECT
+                COUNT(*)::INT AS item_count,
+
+                COUNT(*) FILTER(
+                    WHERE status='draft'
+                )::INT AS draft_count,
+
+                COUNT(*) FILTER(
+                    WHERE status='rejected'
+                )::INT AS rejected_count
+
+            FROM {schema}.payroll_period_inputs
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND employee_id=%s;
+        """,(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        )) or {}
+
+        if int(inputs.get("draft_count") or 0)>0:
+            add(
+                "warning",
+                "PERIOD_INPUTS_DRAFT",
+                f"{employee_no} {name} has "
+                f"{inputs['draft_count']} draft payroll "
+                "input(s) that will not be calculated.",
+            )
+
+        run_employee=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_run_employees
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND employee_id=%s
+            LIMIT 1;
+        """,(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        ))
+
+        if run["status"] in(
+            "calculated",
+            "approved",
+            "posted",
+        ):
+            if not run_employee:
+                add(
+                    "error",
+                    "CALCULATION_RESULT_MISSING",
+                    f"{employee_no} {name} has no payroll "
+                    "calculation result.",
+                )
+
+            elif(
+                run_employee.get("calculation_status")
+                not in(None,"calculated")
+            ):
+                add(
+                    "error",
+                    "CALCULATION_FAILED",
+                    run_employee.get("calculation_message")
+                    or (
+                        f"{employee_no} {name} was not "
+                        "calculated successfully."
+                    ),
+                )
+
+            elif _payroll_decimal(
+                run_employee.get("net_pay")
+            )<0:
+                add(
+                    "error",
+                    "NEGATIVE_NET_PAY",
+                    f"{employee_no} {name} has negative "
+                    "net pay.",
+                )
+
+        errors=[
+            x for x in issues
+            if x["severity"]=="error"
+        ]
+        warnings=[
+            x for x in issues
+            if x["severity"]=="warning"
+        ]
+        information=[
+            x for x in issues
+            if x["severity"]=="info"
+        ]
+
+        return{
+            "employee":{
+                "id":employee_id,
+                "employee_no":employee_no,
+                "employee_name":name,
+            },
+            "issues":issues,
+            "errors":errors,
+            "warnings":warnings,
+            "information":information,
+            "summary":{
+                "error_count":len(errors),
+                "warning_count":len(warnings),
+                "information_count":len(information),
+                "ready":not errors,
+            },
+        }
+
+
+    def payroll_run_validation(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        candidates=self.fetch_all(f"""
+            SELECT e.id
+            FROM {schema}.payroll_employees e
+            WHERE e.company_id=%s
+            AND e.start_date<=%s
+            AND(
+                e.termination_date IS NULL
+                OR e.termination_date>=%s
+            )
+            AND e.employment_status IN(
+                'active',
+                'terminated',
+                'suspended'
+            )
+            ORDER BY e.employee_no;
+        """,(
+            company_id,
+            run["period_end"],
+            run["period_start"],
+        ))
+
+        employee_results=[
+            self.payroll_employee_validation(
+                company_id,
+                payroll_run_id,
+                row["id"],
+            )
+            for row in candidates
+        ]
+
+        issues=[
+            issue
+            for result in employee_results
+            for issue in result["issues"]
+        ]
+
+        def add(severity,code,message,details=None):
+            issues.append(self._payroll_validation_item(
+                severity,
+                code,
+                message,
+                details=details,
+            ))
+
+        if not candidates:
+            add(
+                "error",
+                "NO_EMPLOYEES",
+                "No employees overlap this payroll period.",
+            )
+
+        if run["status"] in(
+            "calculated",
+            "approved",
+            "posted",
+        ):
+            calculated=len(run.get("employees") or [])
+
+            if calculated==0:
+                add(
+                    "error",
+                    "NO_CALCULATED_EMPLOYEES",
+                    "The payroll run contains no calculated "
+                    "employees.",
+                )
+
+            if _payroll_decimal(run.get("gross_pay"))<=0:
+                add(
+                    "warning",
+                    "ZERO_GROSS_PAY",
+                    "The payroll run has zero gross pay.",
+                )
+
+            if _payroll_decimal(run.get("net_pay"))<0:
+                add(
+                    "error",
+                    "NEGATIVE_RUN_NET_PAY",
+                    "The payroll run has negative net pay.",
+                )
+
+        attendance=self.payroll_attendance_summary(
+            company_id,
+            payroll_run_id,
+        )
+        attendance_totals=attendance.get("totals") or {}
+
+        if int(
+            attendance_totals.get("unapproved_count") or 0
+        )>0:
+            add(
+                "error",
+                "RUN_ATTENDANCE_UNAPPROVED",
+                "The payroll run contains "
+                f"{attendance_totals['unapproved_count']} "
+                "unapproved attendance record(s).",
+            )
+
+        input_summary=self.payroll_period_input_summary(
+            company_id,
+            payroll_run_id,
+        )
+        input_totals=input_summary.get("totals") or {}
+
+        if int(input_totals.get("draft") or 0)>0:
+            add(
+                "warning",
+                "RUN_INPUTS_DRAFT",
+                "The payroll run contains "
+                f"{input_totals['draft']} draft payroll "
+                "input(s).",
+            )
+
+        if int(input_totals.get("rejected") or 0)>0:
+            add(
+                "info",
+                "RUN_INPUTS_REJECTED",
+                "The payroll run contains "
+                f"{input_totals['rejected']} rejected "
+                "payroll input(s).",
+            )
+
+        journal=None
+
+        if run["status"] in(
+            "calculated",
+            "approved",
+            "posted",
+        ):
+            journal=self.payroll_run_journal_preview(
+                company_id,
+                payroll_run_id,
+            )
+
+            missing=journal.get("missing_mappings") or []
+            invalid=journal.get("invalid_accounts") or []
+            difference=_payroll_decimal(
+                journal.get("difference")
+            )
+
+            if missing:
+                add(
+                    "error",
+                    "GL_MAPPINGS_MISSING",
+                    "Payroll GL mappings are missing: "
+                    +", ".join(missing)+".",
+                    {"missing_mappings":missing},
+                )
+
+            if invalid:
+                add(
+                    "error",
+                    "GL_ACCOUNTS_INVALID",
+                    "Payroll journal contains invalid or "
+                    "non-posting accounts: "
+                    +", ".join(invalid)+".",
+                    {"invalid_accounts":invalid},
+                )
+
+            if difference!=0:
+                add(
+                    "error",
+                    "JOURNAL_UNBALANCED",
+                    "Payroll journal is out of balance by "
+                    f"{difference}.",
+                    {"difference":difference},
+                )
+
+        errors=[
+            x for x in issues
+            if x["severity"]=="error"
+        ]
+        warnings=[
+            x for x in issues
+            if x["severity"]=="warning"
+        ]
+        information=[
+            x for x in issues
+            if x["severity"]=="info"
+        ]
+
+        ready_to_calculate=(
+            run["status"] not in("posted","cancelled")
+            and not[
+                x for x in errors
+                if x["code"] not in{
+                    "NO_CALCULATED_EMPLOYEES",
+                    "GL_MAPPINGS_MISSING",
+                    "GL_ACCOUNTS_INVALID",
+                    "JOURNAL_UNBALANCED",
+                }
+            ]
+        )
+
+        ready_to_approve=(
+            run["status"]=="calculated"
+            and not errors
+        )
+
+        ready_to_post=(
+            run["status"]=="approved"
+            and not errors
+            and bool(journal)
+            and bool(journal.get("ready_to_post"))
+        )
+
+        return{
+            "run":{
+                "id":run["id"],
+                "run_no":run.get("run_no"),
+                "status":run.get("status"),
+                "period_start":run.get("period_start"),
+                "period_end":run.get("period_end"),
+                "payment_date":run.get("payment_date"),
+            },
+            "issues":issues,
+            "errors":errors,
+            "warnings":warnings,
+            "information":information,
+            "employees":employee_results,
+            "attendance_summary":attendance,
+            "period_input_summary":input_summary,
+            "journal_summary":{
+                "ready_to_post":
+                    bool(journal and journal.get(
+                        "ready_to_post"
+                    )),
+                "missing_mappings":
+                    journal.get("missing_mappings",[])
+                    if journal else [],
+                "invalid_accounts":
+                    journal.get("invalid_accounts",[])
+                    if journal else [],
+                "difference":
+                    journal.get("difference",0)
+                    if journal else 0,
+            },
+            "summary":{
+                "employee_count":len(candidates),
+                "error_count":len(errors),
+                "warning_count":len(warnings),
+                "information_count":len(information),
+                "ready_to_calculate":ready_to_calculate,
+                "ready_to_approve":ready_to_approve,
+                "ready_to_post":ready_to_post,
+            },
+        }
+
+    def payroll_incentive_plans_list(
+        self,
+        company_id:int,
+        active_only:bool=False,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+        active_sql="AND p.is_active=TRUE" if active_only else ""
+
+        return self.fetch_all(f"""
+            SELECT
+                p.*,
+                COUNT(DISTINCT r.id)::INT AS rule_count,
+                COUNT(DISTINCT a.id) FILTER(
+                    WHERE a.is_active=TRUE
+                )::INT AS active_assignment_count
+            FROM {schema}.payroll_incentive_plans p
+            LEFT JOIN {schema}.payroll_incentive_rules r
+            ON r.company_id=p.company_id
+            AND r.incentive_plan_id=p.id
+            LEFT JOIN {schema}.payroll_incentive_assignments a
+            ON a.company_id=p.company_id
+            AND a.incentive_plan_id=p.id
+            WHERE p.company_id=%s
+            {active_sql}
+            GROUP BY p.id
+            ORDER BY p.is_active DESC,p.code;
+        """,(int(company_id),))
+
+
+    def payroll_incentive_plan_get(
+        self,
+        company_id:int,
+        plan_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        plan=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_incentive_plans
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(plan_id),
+        ))
+
+        if not plan:
+            return None
+
+        plan["rules"]=self.payroll_incentive_rules_list(
+            company_id,
+            plan_id,
+        )
+
+        plan["assignments"]=(
+            self.payroll_incentive_assignments_list(
+                company_id,
+                plan_id=plan_id,
+            )
+        )
+
+        return plan
+
+
+    def payroll_incentive_plan_save(
+        self,
+        company_id:int,
+        body:dict,
+        user_id=None,
+        plan_id:int|None=None,
+    )->dict:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        code=str(body.get("code") or "").strip().upper()
+        name=str(body.get("name") or "").strip()
+        metric=str(body.get("metric_name") or "").strip()
+
+        if not code:
+            raise ValueError("Plan code is required")
+
+        if not name:
+            raise ValueError("Plan name is required")
+
+        if not metric:
+            raise ValueError("Metric name is required")
+
+        frequency=str(
+            body.get("frequency") or "monthly"
+        ).strip().lower()
+
+        if frequency not in{
+            "weekly",
+            "fortnightly",
+            "monthly",
+            "quarterly",
+            "annual",
+        }:
+            raise ValueError("Invalid incentive frequency")
+
+        payout_basis=str(
+            body.get("payout_basis") or "fixed_amount"
+        ).strip().lower()
+
+        if payout_basis not in{
+            "fixed_amount",
+            "percentage_basic",
+            "percentage_gross",
+            "percentage_target",
+        }:
+            raise ValueError("Invalid payout basis")
+
+        params=(
+            code,
+            name,
+            str(body.get("description") or "").strip()
+            or None,
+            frequency,
+            metric,
+            payout_basis,
+            bool(body.get("taxable",True)),
+            bool(body.get("pensionable",False)),
+            body.get("effective_from") or None,
+            body.get("effective_to") or None,
+            bool(body.get("is_active",True)),
+        )
+
+        if plan_id:
+            row=self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_plans
+                SET
+                    code=%s,
+                    name=%s,
+                    description=%s,
+                    frequency=%s,
+                    metric_name=%s,
+                    payout_basis=%s,
+                    taxable=%s,
+                    pensionable=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    is_active=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                *params,
+                user_id,
+                company_id,
+                int(plan_id),
+            ))
+
+            if not row:
+                raise ValueError(
+                    "Incentive plan not found"
+                )
+
+            return self.payroll_incentive_plan_get(
+                company_id,
+                plan_id,
+            )
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_incentive_plans(
+                company_id,
+                code,
+                name,
+                description,
+                frequency,
+                metric_name,
+                payout_basis,
+                taxable,
+                pensionable,
+                effective_from,
+                effective_to,
+                is_active,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING *;
+        """,(
+            company_id,
+            *params,
+            user_id,
+            user_id,
+        ))
+
+        return self.payroll_incentive_plan_get(
+            company_id,
+            row["id"],
+        )
+
+
+    def payroll_incentive_plan_delete(
+        self,
+        company_id:int,
+        plan_id:int,
+    )->bool:
+        schema=self.company_schema(company_id)
+
+        used=self.fetch_one(f"""
+            SELECT EXISTS(
+                SELECT 1
+                FROM {schema}.payroll_incentive_assignments
+                WHERE company_id=%s
+                AND incentive_plan_id=%s
+            ) AS used;
+        """,(
+            int(company_id),
+            int(plan_id),
+        ))
+
+        if used and used.get("used"):
+            raise ValueError(
+                "Deactivate the incentive plan instead; "
+                "employee assignments already exist."
+            )
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_incentive_plans
+            WHERE company_id=%s AND id=%s
+            RETURNING id;
+        """,(
+            int(company_id),
+            int(plan_id),
+        ))
+
+        return bool(row)
+
+
+    def payroll_incentive_rules_list(
+        self,
+        company_id:int,
+        plan_id:int,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_incentive_rules
+            WHERE company_id=%s
+            AND incentive_plan_id=%s
+            ORDER BY
+                display_order,
+                from_percentage,
+                id;
+        """,(
+            int(company_id),
+            int(plan_id),
+        ))
+
+
+    def payroll_incentive_rule_save(
+        self,
+        company_id:int,
+        plan_id:int,
+        body:dict,
+        rule_id:int|None=None,
+    )->dict:
+        company_id=int(company_id)
+        plan_id=int(plan_id)
+        schema=self.company_schema(company_id)
+
+        plan=self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_incentive_plans
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,plan_id))
+
+        if not plan:
+            raise ValueError("Incentive plan not found")
+
+        from_percentage=_payroll_decimal(
+            body.get("from_percentage")
+        )
+
+        to_percentage=(
+            _payroll_decimal(body.get("to_percentage"))
+            if body.get("to_percentage") not in(None,"")
+            else None
+        )
+
+        if from_percentage<0:
+            raise ValueError(
+                "From percentage cannot be negative"
+            )
+
+        if(
+            to_percentage is not None
+            and to_percentage<from_percentage
+        ):
+            raise ValueError(
+                "To percentage cannot be below "
+                "from percentage"
+            )
+
+        method=str(
+            body.get("reward_method")
+            or "fixed_amount"
+        ).strip().lower()
+
+        if method not in{
+            "fixed_amount",
+            "percentage_basic",
+            "percentage_gross",
+            "percentage_target",
+        }:
+            raise ValueError("Invalid reward method")
+
+        reward_value=_payroll_decimal(
+            body.get("reward_value")
+        )
+
+        if reward_value<0:
+            raise ValueError(
+                "Reward value cannot be negative"
+            )
+
+        order=int(body.get("display_order") or 1)
+
+        if rule_id:
+            row=self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_rules
+                SET
+                    from_percentage=%s,
+                    to_percentage=%s,
+                    reward_method=%s,
+                    reward_value=%s,
+                    display_order=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND incentive_plan_id=%s
+                AND id=%s
+                RETURNING *;
+            """,(
+                from_percentage,
+                to_percentage,
+                method,
+                reward_value,
+                order,
+                company_id,
+                plan_id,
+                int(rule_id),
+            ))
+
+            if not row:
+                raise ValueError(
+                    "Incentive rule not found"
+                )
+
+            return row
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_incentive_rules(
+                company_id,
+                incentive_plan_id,
+                from_percentage,
+                to_percentage,
+                reward_method,
+                reward_value,
+                display_order
+            )
+            VALUES(%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """,(
+            company_id,
+            plan_id,
+            from_percentage,
+            to_percentage,
+            method,
+            reward_value,
+            order,
+        ))
+
+
+    def payroll_incentive_rule_delete(
+        self,
+        company_id:int,
+        plan_id:int,
+        rule_id:int,
+    )->bool:
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_incentive_rules
+            WHERE company_id=%s
+            AND incentive_plan_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            int(company_id),
+            int(plan_id),
+            int(rule_id),
+        ))
+
+        return bool(row)
+
+
+    def payroll_incentive_assignments_list(
+        self,
+        company_id:int,
+        *,
+        plan_id:int|None=None,
+        employee_id:int|None=None,
+        active_only:bool=False,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+        params=[int(company_id)]
+        where=[]
+
+        if plan_id:
+            where.append("a.incentive_plan_id=%s")
+            params.append(int(plan_id))
+
+        if employee_id:
+            where.append("a.employee_id=%s")
+            params.append(int(employee_id))
+
+        if active_only:
+            where.append("a.is_active=TRUE")
+
+        extra=(
+            "AND "+" AND ".join(where)
+            if where else ""
+        )
+
+        return self.fetch_all(f"""
+            SELECT
+                a.*,
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.metric_name,
+                p.payout_basis,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name
+            FROM {schema}.payroll_incentive_assignments a
+            JOIN {schema}.payroll_incentive_plans p
+            ON p.company_id=a.company_id
+            AND p.id=a.incentive_plan_id
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=a.company_id
+            AND e.id=a.employee_id
+            WHERE a.company_id=%s
+            {extra}
+            ORDER BY
+                p.code,
+                e.employee_no,
+                a.effective_from DESC;
+        """,tuple(params))
+
+
+    def payroll_incentive_assignment_save(
+        self,
+        company_id:int,
+        body:dict,
+        user_id=None,
+        assignment_id:int|None=None,
+    )->dict:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        plan_id=int(body.get("incentive_plan_id") or 0)
+        employee_id=int(body.get("employee_id") or 0)
+
+        if not plan_id:
+            raise ValueError(
+                "incentive_plan_id is required"
+            )
+
+        if not employee_id:
+            raise ValueError("employee_id is required")
+
+        effective_from=body.get("effective_from")
+
+        if not effective_from:
+            raise ValueError(
+                "effective_from is required"
+            )
+
+        target=_payroll_decimal(
+            body.get("target_value")
+        )
+
+        if target<0:
+            raise ValueError(
+                "Target value cannot be negative"
+            )
+
+        plan=self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_incentive_plans
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,plan_id))
+
+        if not plan:
+            raise ValueError("Incentive plan not found")
+
+        employee=self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(company_id,employee_id))
+
+        if not employee:
+            raise ValueError("Payroll employee not found")
+
+        params=(
+            plan_id,
+            employee_id,
+            target,
+            effective_from,
+            body.get("effective_to") or None,
+            bool(body.get("is_active",True)),
+            str(body.get("notes") or "").strip()
+            or None,
+        )
+
+        if assignment_id:
+            row=self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_assignments
+                SET
+                    incentive_plan_id=%s,
+                    employee_id=%s,
+                    target_value=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    is_active=%s,
+                    notes=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                *params,
+                user_id,
+                company_id,
+                int(assignment_id),
+            ))
+
+            if not row:
+                raise ValueError(
+                    "Incentive assignment not found"
+                )
+
+            return row
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_incentive_assignments(
+                company_id,
+                incentive_plan_id,
+                employee_id,
+                target_value,
+                effective_from,
+                effective_to,
+                is_active,
+                notes,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s
+            )
+            RETURNING *;
+        """,(
+            company_id,
+            *params,
+            user_id,
+            user_id,
+        ))
+
+
+    def payroll_incentive_assignment_delete(
+        self,
+        company_id:int,
+        assignment_id:int,
+    )->bool:
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_incentive_assignments
+            WHERE company_id=%s AND id=%s
+            RETURNING id;
+        """,(
+            int(company_id),
+            int(assignment_id),
+        ))
+
+        return bool(row)
+
+    def payroll_run_audit_add(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        action:str,
+        *,
+        from_status=None,
+        to_status=None,
+        message=None,
+        metadata=None,
+        user_id=None,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_run_audit(
+                company_id,
+                payroll_run_id,
+                action,
+                from_status,
+                to_status,
+                message,
+                metadata,
+                user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s::jsonb,%s
+            )
+            RETURNING *;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+            str(action),
+            from_status,
+            to_status,
+            message,
+            json.dumps(metadata or {}),
+            user_id,
+        ))
+
+
+    def payroll_run_audit_history(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_run_audit
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            ORDER BY created_at DESC,id DESC;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+        ))
+
+
+    def payroll_run_is_editable(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->dict:
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(payroll_run_id),
+        ))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        submitted=(
+            run.get("status")=="calculated"
+            and bool(run.get("submitted_at"))
+        )
+
+        editable=(
+            run.get("status") in(
+                "draft",
+                "calculated",
+            )
+            and not submitted
+        )
+
+        return{
+            "run_id":int(payroll_run_id),
+            "status":run.get("status"),
+            "submitted":submitted,
+            "editable":editable,
+            "reason":(
+                None
+                if editable
+                else (
+                    "Payroll run is submitted"
+                    if submitted
+                    else (
+                        f"Payroll run is "
+                        f"{run.get('status')}"
+                    )
+                )
+            ),
+        }
+
+
+    def payroll_run_submit(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"]=="posted":
+            raise ValueError(
+                "Posted payroll cannot be submitted"
+            )
+
+        if run["status"]=="approved":
+            raise ValueError(
+                "Payroll run is already approved"
+            )
+
+        if run["status"]!="calculated":
+            raise ValueError(
+                "Calculate payroll before submitting it"
+            )
+
+        validation=self.payroll_run_validation(
+            company_id,
+            payroll_run_id,
+        )
+
+        errors=validation.get("errors") or []
+
+        if errors:
+            raise ValueError(
+                "Payroll cannot be submitted: "
+                +"; ".join(
+                    item["message"]
+                    for item in errors
+                )
+            )
+
+        row=self.fetch_one(f"""
+            UPDATE {schema}.payroll_runs
+            SET
+                submitted_by_user_id=%s,
+                submitted_at=NOW(),
+                returned_by_user_id=NULL,
+                returned_at=NULL,
+                return_reason=NULL
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """,(
+            user_id,
+            company_id,
+            payroll_run_id,
+        ))
+
+        self.payroll_run_audit_add(
+            company_id,
+            payroll_run_id,
+            "submit",
+            from_status=run.get("status"),
+            to_status="calculated",
+            message="Payroll submitted for approval",
+            user_id=user_id,
+        )
+
+        return row
+
+
+    def payroll_run_approve(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"]=="approved":
+            raise ValueError(
+                "Payroll run is already approved"
+            )
+
+        if run["status"]=="posted":
+            raise ValueError(
+                "Posted payroll cannot be approved"
+            )
+
+        if run["status"]!="calculated":
+            raise ValueError(
+                "Only calculated payroll can be approved"
+            )
+
+        if not run.get("submitted_at"):
+            raise ValueError(
+                "Submit payroll for approval first"
+            )
+
+        validation=self.payroll_run_validation(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not validation["summary"].get(
+            "ready_to_approve"
+        ):
+            messages=[
+                item["message"]
+                for item in validation.get("errors") or []
+            ]
+
+            raise ValueError(
+                "Payroll cannot be approved"
+                +(
+                    ": "+"; ".join(messages)
+                    if messages else ""
+                )
+            )
+
+        row=self.fetch_one(f"""
+            UPDATE {schema}.payroll_runs
+            SET
+                status='approved',
+                approved_by_user_id=%s,
+                approved_at=NOW(),
+                returned_by_user_id=NULL,
+                returned_at=NULL,
+                return_reason=NULL
+            WHERE company_id=%s
+            AND id=%s
+            AND status='calculated'
+            RETURNING *;
+        """,(
+            user_id,
+            company_id,
+            payroll_run_id,
+        ))
+
+        if not row:
+            raise ValueError(
+                "Payroll run approval failed"
+            )
+
+        self.execute_sql(f"""
+            UPDATE {schema}.payroll_run_employees
+            SET status='approved'
+            WHERE company_id=%s
+            AND payroll_run_id=%s;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        return self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+
+    def payroll_run_return_to_draft(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        body:dict|None=None,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+        body=body or {}
+
+        run=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] in("posted","reversed"):
+            raise ValueError(
+                "Posted or reversed payroll cannot "
+                "be returned to draft"
+            )
+
+        if run["status"] not in(
+            "calculated",
+            "approved",
+        ):
+            raise ValueError(
+                "Only calculated or approved payroll "
+                "can be returned to draft"
+            )
+
+        reason=str(
+            body.get("reason") or ""
+        ).strip()
+
+        if not reason:
+            raise ValueError(
+                "A return reason is required"
+            )
+
+        row=self.fetch_one(f"""
+            UPDATE {schema}.payroll_runs
+            SET
+                status='draft',
+                submitted_by_user_id=NULL,
+                submitted_at=NULL,
+                approved_by_user_id=NULL,
+                approved_at=NULL,
+                returned_by_user_id=%s,
+                returned_at=NOW(),
+                return_reason=%s
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """,(
+            user_id,
+            reason,
+            company_id,
+            payroll_run_id,
+        ))
+
+        self.execute_sql(f"""
+            UPDATE {schema}.payroll_run_employees
+            SET status='draft'
+            WHERE company_id=%s
+            AND payroll_run_id=%s;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        self.payroll_run_audit_add(
+            company_id,
+            payroll_run_id,
+            "return_to_draft",
+            from_status=run.get("status"),
+            to_status="draft",
+            message=reason,
+            metadata={
+                "return_reason":reason,
+            },
+            user_id=user_id,
+        )
+
+        return row
+
+    def payroll_run_post(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"]=="posted":
+            raise ValueError(
+                "Payroll run is already posted"
+            )
+
+        if run["status"]!="approved":
+            raise ValueError(
+                "Payroll run must be approved "
+                "before posting"
+            )
+
+        validation=self.payroll_run_validation(
+            company_id,
+            payroll_run_id,
+        )
+
+        if not validation["summary"].get(
+            "ready_to_post"
+        ):
+            errors=validation.get("errors") or []
+
+            raise ValueError(
+                "Payroll is not ready to post"
+                +(
+                    ": "+"; ".join(
+                        item["message"]
+                        for item in errors
+                    )
+                    if errors else ""
+                )
+            )
+
+        preview=self.payroll_run_journal_preview(
+            company_id,
+            payroll_run_id,
+        )
 
         if not preview.get("ready_to_post"):
             raise ValueError(
-                "Payroll journal preview is not ready to post. "
-                f"Missing mappings: {preview.get('missing_mappings')}. "
-                f"Invalid accounts: {preview.get('invalid_accounts')}. "
-                f"Difference: {preview.get('difference')}"
+                "Payroll journal preview is not "
+                "ready to post"
             )
 
-        journal_lines = [
+        journal_lines=[
             {
-                "account_code": ln["account_code"],
-                "description": ln["description"],
-                "debit": ln["debit"],
-                "credit": ln["credit"],
+                "account_code":line["account_code"],
+                "description":line["description"],
+                "debit":line["debit"],
+                "credit":line["credit"],
             }
-            for ln in preview["lines"]
+            for line in preview["lines"]
         ]
 
-        journal_id = self.post_journal(company_id, {
-            "date": str(run["payment_date"]),
-            "ref": f"PAYROLL-RUN-{payroll_run_id}",
-            "description": f"Payroll run {run['run_no']}",
-            "source": "payroll_run",
-            "source_id": int(payroll_run_id),
-            "currency": run.get("currency") or "USD",
-            "gross_amount": preview["debits"],
-            "net_amount": preview["debits"],
-            "vat_amount": 0,
-            "lines": journal_lines,
-            "created_by_user_id": user_id,
-            "prepared_by_user_id": user_id,
-            "module_name": "payroll",
-        })
+        journal_id=self.post_journal(
+            company_id,
+            {
+                "date":str(run["payment_date"]),
+                "ref":
+                    f"PAYROLL-RUN-{payroll_run_id}",
+                "description":
+                    f"Payroll run {run['run_no']}",
+                "source":"payroll_run",
+                "source_id":payroll_run_id,
+                "currency":
+                    run.get("currency") or "USD",
+                "gross_amount":preview["debits"],
+                "net_amount":preview["debits"],
+                "vat_amount":0,
+                "lines":journal_lines,
+                "created_by_user_id":user_id,
+                "prepared_by_user_id":user_id,
+                "module_name":"payroll",
+            },
+        )
 
-        out = self.fetch_one(f"""
+        out=self.fetch_one(f"""
             UPDATE {schema}.payroll_runs
-            SET status='posted',
-                posted_journal_id=%s,
-                posted_at=now()
-            WHERE company_id=%s AND id=%s
-            RETURNING *;
-        """, (int(journal_id), int(company_id), int(payroll_run_id)))
-
-        self.execute_sql(f"""
-            UPDATE {schema}.payroll_defined_contribution_runs
-            SET status='posted',
+            SET
+                status='posted',
                 posted_journal_id=%s,
                 posted_at=NOW()
             WHERE company_id=%s
-              AND payroll_run_id=%s
-              AND status IN('calculated','approved');
+            AND id=%s
+            AND status='approved'
+            RETURNING *;
         """,(
-            int(journal_id),int(company_id),int(payroll_run_id),
+            int(journal_id),
+            company_id,
+            payroll_run_id,
         ))
-        
-        return {
-            "run": out,
-            "journal_id": int(journal_id),
-            "journal_preview": preview,
-        }
+
+        if not out:
+            raise ValueError(
+                "Payroll posting status update failed"
+            )
+
+        self.execute_sql(f"""
+            UPDATE {schema}.payroll_run_employees
+            SET status='posted'
+            WHERE company_id=%s
+            AND payroll_run_id=%s;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        self.execute_sql(f"""
+            UPDATE {schema}.payroll_defined_contribution_runs
+            SET status='posted'
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND status<>'posted';
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        self.payroll_run_audit_add(
+            company_id,
+            payroll_run_id,
+            "approve",
+            from_status=run.get("status"),
+            to_status="approved",
+            message="Payroll run approved",
+            user_id=user_id,
+        )
+
+        self.payroll_run_audit_add(
+            company_id,
+            payroll_run_id,
+            "post",
+            from_status="approved",
+            to_status="posted",
+            message=(
+                f"Payroll posted to journal "
+                f"{journal_id}"
+            ),
+            metadata={
+                "journal_id":int(journal_id),
+                "debits":str(preview.get("debits") or 0),
+                "credits":str(preview.get("credits") or 0),
+            },
+            user_id=user_id,
+        )
+
+        return self.payroll_run_get(
+            company_id,
+            payroll_run_id,
+        )
 
     def payroll_run_journal_preview(self, company_id: int, payroll_run_id: int) -> dict:
         company_id = int(company_id)
@@ -100531,6 +107628,31 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             else None
         )
 
+        proration_method = str(
+            data.get("proration_method")
+            or "working_days"
+        ).strip().lower()
+
+        valid_proration_methods = {
+            "working_days",
+            "calendar_days",
+            "fixed_30_days",
+            "scheduled_hours",
+            "actual_hours",
+            "no_proration",
+        }
+
+        if proration_method not in valid_proration_methods:
+            raise ValueError("Invalid proration_method")
+
+        hours_per_day = float(
+            data.get("hours_per_day") or 8
+        )
+
+        attendance_required = bool(
+            data.get("attendance_required", False)
+        )
+
         items = data.get("items") or []
 
         if not isinstance(items, list):
@@ -100548,13 +107670,17 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     rate,
                     tax_treatment,
                     manual_paye_amount,
+                    proration_method,
+                    hours_per_day,
+                    attendance_required,
                     effective_from,
                     is_active
                 )
-            VALUES (
-                %s,%s,%s,%s,%s,
-                %s,%s,%s,%s,%s,TRUE
-            )
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,TRUE
+                )
             ON CONFLICT (
                 company_id,
                 employee_id,
@@ -100582,6 +107708,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 manual_paye_amount =
                     EXCLUDED.manual_paye_amount,
 
+                proration_method =
+                    EXCLUDED.proration_method,
+
+                hours_per_day =
+                    EXCLUDED.hours_per_day,
+
+                attendance_required =
+                    EXCLUDED.attendance_required,
+
                 is_active = TRUE,
                 updated_at = NOW()
             RETURNING *;
@@ -100595,6 +107730,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             rate,
             tax_treatment,
             manual_paye_amount,
+            proration_method,
+            hours_per_day,
+            attendance_required,
             effective_from,
         ))
 

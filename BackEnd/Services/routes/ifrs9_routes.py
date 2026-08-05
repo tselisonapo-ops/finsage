@@ -324,24 +324,90 @@ def api_ifrs9_coa_mappings(company_id: int):
         return _opt()
 
     user = _ifrs9_user()
-    deny = _deny_if_wrong_company(user, company_id, db_service=db_service)
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
     if deny:
         return deny
 
     try:
         if request.method == "GET":
-            items = db_service.ifrs9_get_account_mappings(company_id)
-            return jsonify({"ok": True, "items": items}), 200
+            items = db_service.ifrs9_get_account_mappings(
+                company_id
+            )
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
 
         payload = request.get_json(silent=True) or {}
-        item = db_service.ifrs9_upsert_account_mapping(company_id, payload)
-        return jsonify({"ok": True, "item": item}), 200
+        payload["created_by"] = user.get("user_id")
 
-    except Exception as e:
-        current_app.logger.exception("ifrs9_coa_mappings failed")
-        return _json_error(str(e), 400)
+        item = db_service.ifrs9_upsert_account_mapping(
+            company_id,
+            payload,
+        )
 
+        readiness = db_service.ifrs9_coa_readiness(
+            company_id
+        )
 
+        return jsonify({
+            "ok": True,
+            "item": item,
+            "readiness": readiness,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_coa_mappings failed"
+        )
+        return _json_error(str(error), 400)
+    
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/runs/<int:run_id>/reverse",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_reverse_ecl_run(company_id: int, run_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.ifrs9_reverse_ecl_run(
+            company_id,
+            run_id,
+            reason=payload.get("reason"),
+            reversal_date=payload.get("reversal_date"),
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_reverse_ecl_run failed"
+        )
+
+        return _json_error(str(error), 400)
+    
 @bp_ifrs9.route(
     "/api/companies/<int:company_id>/ifrs9/ecl/preview-journal",
     methods=["POST", "OPTIONS"],
@@ -597,3 +663,434 @@ def api_ifrs9_calculate_ecl(company_id: int):
         current_app.logger.exception("ifrs9_calculate_ecl failed")
         return _json_error(str(e), 400)
     
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/writeoffs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_writeoffs(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = db_service.ifrs9_list_writeoffs(
+                company_id,
+                status=request.args.get("status"),
+                customer_id=request.args.get("customer_id"),
+            )
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        item = db_service.ifrs9_create_writeoff(
+            company_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_writeoffs failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/writeoffs/<int:writeoff_id>/preview-journal",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_writeoff_preview(
+    company_id: int,
+    writeoff_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        preview = db_service.ifrs9_preview_writeoff_journal(
+            company_id,
+            writeoff_id,
+        )
+
+        return jsonify({
+            "ok": True,
+            "preview": preview,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_writeoff_preview failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/writeoffs/<int:writeoff_id>/recoveries/<int:recovery_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_writeoff_recovery(
+    company_id: int,
+    writeoff_id: int,
+    recovery_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_post_writeoff_recovery(
+            company_id,
+            writeoff_id,
+            recovery_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_post_writeoff_recovery failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/writeoffs/<int:writeoff_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_writeoff(
+    company_id: int,
+    writeoff_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_post_writeoff(
+            company_id,
+            writeoff_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_post_writeoff failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/writeoffs/<int:writeoff_id>/recoveries",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_writeoff_recoveries(
+    company_id: int,
+    writeoff_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        item = db_service.ifrs9_create_writeoff_recovery(
+            company_id,
+            writeoff_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_writeoff_recoveries failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/reconciliation",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_ecl_reconciliation(company_id: int):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_ecl_reconciliation(
+            company_id,
+            from_date=request.args.get("from"),
+            to_date=request.args.get("to"),
+            model_id=request.args.get("model_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_ecl_reconciliation failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/reconciliation/snapshot",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_ecl_reconciliation_snapshot(
+    company_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        item = (
+            db_service
+            .ifrs9_save_ecl_reconciliation_snapshot(
+                company_id,
+                payload,
+                user_id=user.get("user_id"),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_ecl_reconciliation_snapshot failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/models/<int:model_id>",
+    methods=["GET", "PATCH", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_get_ecl_model(
+    company_id: int,
+    model_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            result = db_service.ifrs9_get_ecl_model(
+                company_id,
+                model_id,
+            )
+
+            if not result:
+                return _json_error(
+                    "IFRS 9 ECL model not found",
+                    404,
+                )
+
+            return jsonify({
+                "ok": True,
+                **result,
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        item = db_service.ifrs9_update_ecl_model(
+            company_id,
+            model_id,
+            payload,
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_ecl_model failed"
+        )
+
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/models/<int:model_id>/activate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_activate_ecl_model(
+    company_id: int,
+    model_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        item = db_service.ifrs9_activate_ecl_model(
+            company_id,
+            model_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_activate_ecl_model failed"
+        )
+
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/models/<int:model_id>/deactivate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_deactivate_ecl_model(
+    company_id: int,
+    model_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        item = db_service.ifrs9_deactivate_ecl_model(
+            company_id,
+            model_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_deactivate_ecl_model failed"
+        )
+
+        return _json_error(str(error), 400)
+

@@ -1450,6 +1450,31 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
 
+    runEligibility:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/eligibility`,
+
+    runValidation:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/validation`,
+
+    runEmployeeValidation:(
+      companyId,
+      runId,
+      employeeId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/employees/`+
+      `${encodeURIComponent(employeeId)}/validation`,
+      
+    runAudit:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/audit`,
+
     initialPreview: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
 
@@ -1509,6 +1534,9 @@ const ENDPOINTS = {
     postEclRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/post`,
   
+    reverseEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/reverse`,
+
     syncTradeReceivables: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/sync/trade-receivables`,
 
@@ -1529,6 +1557,45 @@ const ENDPOINTS = {
 
     eclCalculate: companyId =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/calculate`,
+  
+    writeoffs: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs`,
+
+    writeoff: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}`,
+
+    writeoffPreview: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/preview-journal`,
+
+    postWriteoff: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}/post`,
+
+    writeoffRecoveries: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}/recoveries`,
+  
+    eclReconciliation: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.from) query.set("from", params.from);
+      if (params.to) query.set("to", params.to);
+      if (params.model_id) query.set("model_id", params.model_id);
+
+      const suffix = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/reconciliation${suffix ? `?${suffix}` : ""}`;
+    },
+
+    eclReconciliationSnapshot: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/reconciliation/snapshot`,
+      
+    updateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}`,
+
+    activateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}/activate`,
+
+    deactivateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}/deactivate`,  
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -1645,6 +1712,125 @@ const ENDPOINTS = {
     calculateRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/calculate`,
 
+    submitRun:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/submit`,
+
+    approveRun:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/approve`,
+
+    returnRunToDraft:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/return-to-draft`,
+
+    runAttendance:(
+      companyId,
+      runId,
+      employeeId=""
+    )=>{
+      const params=new URLSearchParams();
+
+      if(employeeId){
+        params.set("employee_id",String(employeeId));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/runs/`+
+        `${encodeURIComponent(runId)}/attendance`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    runAttendanceBulk:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/bulk`,
+
+    generateRunAttendance:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/generate`,
+
+    runAttendanceSummary:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance-summary`,
+
+    runAttendanceRecord:(
+      companyId,
+      runId,
+      attendanceId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/`+
+      `${encodeURIComponent(attendanceId)}`,
+      
+    runPeriodInputs:(
+      companyId,
+      runId,
+      {
+        employeeId="",
+        status="",
+      }={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(employeeId){
+        params.set(
+          "employee_id",
+          String(employeeId)
+        );
+      }
+
+      if(status){
+        params.set("status",String(status));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/runs/`+
+        `${encodeURIComponent(runId)}/period-inputs`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    runPeriodInput:(
+      companyId,
+      runId,
+      inputId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-inputs/`+
+      `${encodeURIComponent(inputId)}`,
+
+    runPeriodInputAction:(
+      companyId,
+      runId,
+      inputId,
+      action
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-inputs/`+
+      `${encodeURIComponent(inputId)}/`+
+      `${encodeURIComponent(action)}`,
+
+    runPeriodInputSummary:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-input-summary`,
+      
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/post`,
 
@@ -2116,6 +2302,55 @@ const ENDPOINTS = {
 
     reverseLongTermBenefits:(companyId,runId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/reverse`,
+
+    incentivePlans:(companyId,activeOnly=false)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans`+
+      `${activeOnly?"?active_only=true":""}`,
+
+    incentivePlan:(companyId,planId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}`,
+
+    incentiveRules:(companyId,planId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}/rules`,
+
+    incentiveRule:(companyId,planId,ruleId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}/rules/`+
+      `${encodeURIComponent(ruleId)}`,
+
+    incentiveAssignments:(
+      companyId,
+      {planId="",employeeId=""}={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(planId)params.set("plan_id",String(planId));
+      if(employeeId){
+        params.set("employee_id",String(employeeId));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `incentives/assignments`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    incentiveAssignment:(companyId,assignmentId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/assignments/`+
+      `${encodeURIComponent(assignmentId)}`,
 
     taxTables: {
       regimes: (companyId) =>
@@ -6741,6 +6976,17 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "💎", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
         { name: "IAS 12 Deferred Tax", screen: "deferred-tax", icon: "🏛️", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports", "can_edit_tax_settings"] },
+        {
+          name: "IAS 41 Agriculture",
+          screen: "ias41",
+          icon: "🌾",
+          minRole: "assistant",
+          permissionAny: [
+            "can_post_journals",
+            "can_prepare_financials",
+            "can_view_reports"
+          ],
+        },
       ],
     },
 
@@ -8549,6 +8795,15 @@ const SCREEN_POLICY = {
       "can_post_journals"
     ],
   },
+  ias41: {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_post_journals",
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+  },
 };
 
 
@@ -9944,6 +10199,8 @@ async function switchScreen(name) {
   const isDataMigrationWorkflow =
     name === "data-migration";    
 
+  const isIAS41Workflow =
+    name === "ias41";
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -10001,6 +10258,7 @@ async function switchScreen(name) {
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
   else if (isDeferredTaxWorkflow) base = "deferred-tax";
+  else if (isIAS41Workflow) base = "ias41";
   else if (isDataMigrationWorkflow) base = "data-migration";
   else base = name.split("-")[0];
 
@@ -10036,6 +10294,17 @@ async function switchScreen(name) {
     }
 
     window.bindDataMigrationScreen?.();
+    return;
+  }
+
+  if (base === "ias41") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[IAS41] company load failed:", e);
+    }
+
+    await window.bindIAS41Screen?.();
     return;
   }
 
@@ -10545,6 +10814,7 @@ async function switchScreen(name) {
     payroll: "Payroll",
     budgeting: "Planning & Performance",
     "deferred-tax": "IAS 12 Deferred Tax",
+    ias41: "IAS 41 Agriculture",
     inventory: "Inventory & Services",
     customers: "Customers",
     vendors: "Vendors",
@@ -12781,7 +13051,20 @@ window.loadCompanyProfile = loadCompanyProfile;
   }
 
 const INDUSTRY_CATALOG = {
-  "Agriculture": [],
+  "Agriculture": [
+    "Crop Farming",
+    "Livestock Farming",
+    "Mixed Farming",
+    "Dairy Farming",
+    "Poultry Farming",
+    "Horticulture",
+    "Fruit Farming",
+    "Forestry & Plantations",
+    "Aquaculture",
+    "Beekeeping",
+    "Game & Wildlife Farming",
+    "Agricultural Support Services"
+  ],
 
   "Automotive Services": [
     "Auto Repair Workshop",
@@ -34790,11 +35073,20 @@ window.postTerm = async function postTerm() {
     const d = new Date(raw);
     return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const esc = v => window.escapeHtml ? escapeHtml(String(v ?? "")) :
-    String(v ?? "").replace(/[&<>"']/g, c => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;",
-      '"': "&quot;", "'": "&#039;"
-    }[c]));
+
+  const esc = value => {
+    const text = String(value ?? "");
+
+    return typeof window.escapeHtml === "function"
+      ? window.escapeHtml(text)
+      : text.replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        }[char]));
+  };
 
   const currency = () =>
     state.lease?.currency ||
@@ -58364,7 +58656,19 @@ async function saveEditModal() {
     bound: false,
     runs: [],
     selectedRun: null,
-    journalPreview: null,
+    journalPreview:null,
+    runEligibility:null,
+    attendance:[],
+    attendance:[],
+    attendanceSummary:null,
+    periodInputs:[],
+    periodInputSummary:null,
+    runValidation:null,
+    runAudit:[],
+    runEligibility:null,
+    incentivePlans:[],
+    selectedIncentivePlan:null,
+    incentiveAssignments:[],
 
     setup: {
       departments: [],
@@ -61510,16 +61814,28 @@ async function saveEditModal() {
       return;
     }
 
-    await apiFetch(
-      ENDPOINTS.payroll.calculateBonusAccrual(cid(),runId),
-      {method:"POST",body:"{}"}
-    );
+    try{
+      showPayrollStatus("Calculating bonus accrual...","info");
 
-    await openPayrollBonusRun(runId);
-    await loadPayrollBonusWorkspace();
-    await loadPayrollEmployeeBenefitsWorkspace();
-    showPayrollStatus("Bonus accrual calculated.","success");
+      await apiFetch(
+        ENDPOINTS.payroll.calculateBonusAccrual(cid(),runId),
+        {method:"POST",body:"{}"}
+      );
+
+      await openPayrollBonusRun(runId);
+      await loadPayrollBonusWorkspace();
+      await loadPayrollEmployeeBenefitsWorkspace();
+
+      showPayrollStatus("Bonus accrual calculated.","success");
+    }catch(error){
+      showPayrollStatus(
+        error?.message || "Bonus accrual could not be calculated.",
+        "error"
+      );
+      console.error("Bonus accrual calculation failed:",error);
+    }
   }
+
   async function previewPayrollBonusRun(value=null){
     const runId=payrollSelectedBonusRunId(value);
 
@@ -62705,29 +63021,68 @@ async function saveEditModal() {
     showPayrollStatus("Payroll run created.", "success");
   }
 
-  function switchPayrollRunTab(tab) {
+  function switchPayrollRunTab(tab){
     document
       .querySelectorAll("[data-payroll-run-tab]")
-      .forEach(btn => {
+      .forEach(btn=>{
         btn.classList.toggle(
           "active",
-          btn.dataset.payrollRunTab === tab
+          btn.dataset.payrollRunTab===tab
         );
       });
 
-    ["overview", "employees", "journal", "posting"]
-      .forEach(name => {
-        $(`payrollRunPanel${cap(name)}`)
-          ?.classList.toggle("hidden", name !== tab);
-      });
+    [
+      "overview",
+      "employees",
+      "attendance",
+      "inputs",
+      "validation",
+      "journal",
+      "posting",
+      "audit",
+    ].forEach(name=>{
+      $(`payrollRunPanel${cap(name)}`)
+        ?.classList.toggle(
+          "hidden",
+          name!==tab
+        );
+    });
 
-    if (
-      tab === "journal" &&
-      payrollState.selectedRun?.id
-    ) {
-      loadInlinePayrollJournal().catch(error => {
-        showPayrollStatus(error.message, "error");
-      });
+    const fail=(error,message)=>{
+      showPayrollStatus(
+        error?.message||message,
+        "error"
+      );
+    };
+
+    if(tab==="attendance"){
+      loadPayrollRunAttendance().catch(error=>
+        fail(error,"Attendance could not be loaded.")
+      );
+    }
+
+    if(tab==="inputs"){
+      loadPayrollRunPeriodInputs().catch(error=>
+        fail(error,"Payroll inputs could not be loaded.")
+      );
+    }
+
+    if(tab==="validation"){
+      loadPayrollRunValidation().catch(error=>
+        fail(error,"Validation could not be loaded.")
+      );
+    }
+
+    if(tab==="journal"){
+      loadInlinePayrollJournal().catch(error=>
+        fail(error,"Journal preview could not be loaded.")
+      );
+    }
+
+    if(tab==="audit"){
+      loadPayrollRunAudit().catch(error=>
+        fail(error,"Audit history could not be loaded.")
+      );
     }
   }
  
@@ -63049,27 +63404,61 @@ async function saveEditModal() {
     }
 
     /* ── 3. Run checks ── */
-    const checks = [
-      { label: "Employees included",   ok: (run.employees || []).length > 0 },
-      { label: "Gross pay calculated",  ok: Number(run.gross_pay || 0) > 0 },
-      { label: "Net pay calculated",
-        ok: (run.employees || []).length > 0 &&
-              Number(run.net_pay || 0) > 0 },
-      { label: "Journal posted",        ok: !!run.posted_journal_id },
+    const checks=[
+      {
+        label:"Employees included",
+        ok:(run.employees||[]).length>0,
+      },
+      {
+        label:"Payroll calculated",
+        ok:[
+          "calculated",
+          "approved",
+          "posted",
+        ].includes(status),
+      },
+      {
+        label:"Payroll approved",
+        ok:["approved","posted"].includes(
+          status
+        ),
+      },
+      {
+        label:"Journal posted",
+        ok:Boolean(run.posted_journal_id),
+      },
     ];
 
-    const checksEl = $("payrollRunChecks");
-    if (checksEl) {
-      checksEl.innerHTML = `
+    const checksEl=$("payrollRunChecks");
+
+    if(checksEl){
+      checksEl.innerHTML=`
         <div class="payroll-run-checks">
-          ${checks.map(c => `
-            <div class="payroll-check-item ${c.ok ? "ok" : "fail"}">
-              <span class="check-icon">${c.ok ? "&#10003;" : "&#10005;"}</span>
-              ${esc(c.label)}
+          ${checks.map(check=>`
+            <div class="payroll-check-item ${
+              check.ok?"ok":"fail"
+            }">
+              <span class="check-icon">
+                ${check.ok?"&#10003;":"&#10005;"}
+              </span>
+              ${esc(check.label)}
             </div>
           `).join("")}
         </div>
-      `;
+
+        <button
+          type="button"
+          id="payrollOpenValidationBtn"
+          class="payroll-link"
+        >
+          Open full validation
+        </button>`;
+
+      $("payrollOpenValidationBtn")
+        ?.addEventListener(
+          "click",
+          ()=>switchPayrollRunTab("validation")
+        );
     }
   }
 
@@ -63257,41 +63646,275 @@ async function saveEditModal() {
     });
   }
 
-  function renderPayrollPostingControls(run) {
-    const status = String(run?.status || "draft").toLowerCase();
-    const isPosted = status === "posted";
-    const canPreview = ["calculated", "approved", "posted"]
-      .includes(status);
-    const canPost = ["calculated", "approved"]
-      .includes(status);
+  function renderPayrollPostingControls(run){
+    const status=String(
+      run?.status||"draft"
+    ).toLowerCase();
 
-    if ($("payrollCalculateRunBtn")) {
-      $("payrollCalculateRunBtn").disabled = isPosted;
-    }
+    const isDraft=status==="draft";
+    const isCalculated=status==="calculated";
+    const isSubmitted=(
+      isCalculated&&Boolean(run.submitted_at)
+    );
+    const isApproved=status==="approved";
+    const isPosted=status==="posted";
+    const isReversed=status==="reversed";
 
-    if ($("payrollPreviewJournalBtn")) {
-      $("payrollPreviewJournalBtn").disabled = !canPreview;
-    }
+    const validation=
+      payrollState.runValidation?.summary||{};
 
-    if ($("payrollPostRunBtn")) {
-      $("payrollPostRunBtn").disabled = !canPost;
-      $("payrollPostRunBtn").classList.toggle(
+    const setButton=(
+      id,
+      visible,
+      disabled=false
+    )=>{
+      const button=$(id);
+      if(!button)return;
+
+      button.classList.toggle(
         "hidden",
-        isPosted
+        !visible
       );
-    }
+      button.disabled=Boolean(disabled);
+    };
 
-    $("payrollReverseRunBtn")
-      ?.classList.toggle("hidden", !isPosted);
+    setButton(
+      "payrollCalculateRunBtn",
+      isDraft||isCalculated,
+      isSubmitted||isPosted||isReversed
+    );
+
+    setButton(
+      "payrollSubmitRunBtn",
+      isCalculated&&!isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollApproveRunBtn",
+      isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollReturnRunBtn",
+      isCalculated||isApproved,
+      false
+    );
+
+    setButton(
+      "payrollPreviewJournalBtn",
+      isCalculated||isApproved||isPosted,
+      false
+    );
+
+    setButton(
+      "payrollPostRunBtn",
+      isApproved,
+      !validation.ready_to_post
+    );
+
+    setButton(
+      "payrollReverseRunBtn",
+      isPosted,
+      false
+    );
+
+    let message="";
+
+    if(isDraft){
+      message=(
+        "Complete attendance and inputs, "
+        +"then calculate payroll."
+      );
+    }else if(isCalculated&&!isSubmitted){
+      message=(
+        "Review validation and submit payroll "
+        +"for approval."
+      );
+    }else if(isSubmitted){
+      message=(
+        "Payroll is awaiting approval."
+      );
+    }else if(isApproved){
+      message=(
+        "Payroll is approved and ready "
+        +"for journal posting."
+      );
+    }else if(isPosted){
+      message=(
+        `Payroll was posted to journal #`+
+        `${run.posted_journal_id||"—"}.`
+      );
+    }else if(isReversed){
+      message="Payroll posting was reversed.";
+    }
 
     setTxt(
       "payrollPostingMessage",
-      isPosted
-        ? `Payroll was posted to journal #${run.posted_journal_id || "—"}.`
-        : status === "draft"
-          ? "Calculate the payroll run before previewing or posting the journal."
-          : "Review the journal preview before posting payroll."
+      message
     );
+  }
+
+  async function loadPayrollRunEligibility(runId){
+    if(!runId)return null;
+
+    try{
+      const res=await apiFetch(
+        ENDPOINTS.payroll.runEligibility(cid(),runId)
+      );
+
+      payrollState.runEligibility=res?.data||null;
+      renderPayrollRunEligibility();
+      return payrollState.runEligibility;
+    }catch(error){
+      payrollState.runEligibility=null;
+      renderPayrollRunEligibility(error?.message);
+      return null;
+    }
+  }
+
+  function payrollProrationLabel(value){
+    return({
+      working_days:"Working days",
+      calendar_days:"Calendar days",
+      fixed_30_days:"Fixed 30 days",
+      scheduled_hours:"Scheduled hours",
+      actual_hours:"Actual hours",
+      no_proration:"No proration",
+    })[value]||cap(String(value||"working_days")
+      .replaceAll("_"," "));
+  }
+
+  function renderPayrollRunEligibility(error=""){
+    const el=$("payrollRunChecks");
+    if(!el)return;
+
+    if(error){
+      el.innerHTML=`
+        <div class="notice error">
+          ${esc(error)}
+        </div>`;
+      return;
+    }
+
+    const data=payrollState.runEligibility;
+    const summary=data?.summary||{};
+    const items=data?.items||[];
+
+    if(!data){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          Eligibility checks have not been loaded.
+        </p>`;
+      return;
+    }
+
+    const issues=[
+      ...(data.errors||[]).map(message=>({
+        type:"error",
+        message,
+      })),
+      ...(data.warnings||[]).map(message=>({
+        type:"warning",
+        message,
+      })),
+    ];
+
+    el.innerHTML=`
+      <div class="payroll-eligibility-summary">
+        <div>
+          <span>Candidates</span>
+          <strong>${Number(summary.candidate_count||0)}</strong>
+        </div>
+        <div>
+          <span>Eligible</span>
+          <strong>${Number(summary.eligible_count||0)}</strong>
+        </div>
+        <div>
+          <span>Errors</span>
+          <strong>${Number(summary.error_count||0)}</strong>
+        </div>
+        <div>
+          <span>Warnings</span>
+          <strong>${Number(summary.warning_count||0)}</strong>
+        </div>
+      </div>
+
+      ${issues.length?`
+        <div class="payroll-run-check-list">
+          ${issues.map(x=>`
+            <div class="notice ${esc(x.type)}">
+              ${esc(x.message)}
+            </div>
+          `).join("")}
+        </div>
+      `:`
+        <div class="notice success">
+          Employee eligibility checks passed.
+        </div>
+      `}
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Eligible period</th>
+              <th>Basis</th>
+              <th>Days</th>
+              <th>Factor</th>
+              <th>Estimated basic</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length?items.map(x=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(x.employee_no||"")} —
+                    ${esc(x.employee_name||"")}
+                  </strong>
+                  ${x.error?`
+                    <div class="payroll-muted">
+                      ${esc(x.error)}
+                    </div>
+                  `:""}
+                </td>
+                <td>
+                  ${esc(String(x.eligible_from||"—"))}
+                  –
+                  ${esc(String(x.eligible_to||"—"))}
+                </td>
+                <td>
+                  ${esc(payrollProrationLabel(
+                    x.proration_method
+                  ))}
+                </td>
+                <td>
+                  ${Number(x.eligible_days||0)}
+                  /
+                  ${Number(x.scheduled_days||0)}
+                </td>
+                <td>
+                  ${(
+                    Number(x.proration_factor||0)*100
+                  ).toFixed(2)}%
+                </td>
+                <td class="num">
+                  ${money(x.prorated_basic_amount)}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="6">
+                  No employees overlap this payroll period.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>`;
   }
 
   async function openPayrollRun(runId) {
@@ -63308,6 +63931,7 @@ async function saveEditModal() {
 
     payrollState.selectedRun = run;
 
+    await loadPayrollRunEligibility(runId);
     $("payrollRunDetail")?.classList.remove("hidden");
 
     setTxt(
@@ -63355,6 +63979,11 @@ async function saveEditModal() {
     renderPayrollRunStatus(run);
     renderPayrollPostingControls(run);
 
+    await Promise.all([
+      loadPayrollRunEligibility(runId),
+      loadPayrollRunValidation(),
+    ]);
+
     const journalLink = $("payrollRunJournalLink");
     const noJournal = $("payrollRunNoJournal");
 
@@ -63381,42 +64010,1558 @@ async function saveEditModal() {
     });
   }
 
-  function renderPayrollRunEmployees(run) {
-    const el = $("payrollRunEmployeesList");
-    if (!el) return;
+  function renderPayrollRunEmployees(run){
+    const el=$("payrollRunEmployeesList");
+    if(!el)return;
 
-    const items = run?.employees || [];
+    const items=run?.employees||[];
 
-    if (!items.length) {
-      el.innerHTML = `<p class="payroll-muted">No employees calculated yet.</p>`;
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees calculated yet.
+        </p>`;
       return;
     }
 
-    el.innerHTML = items.map(e => `
-      <div class="payroll-mini-row payroll-mini-row-5">
-        <strong>${esc(e.employee_no || "")} — ${esc(e.first_name || "")} ${esc(e.last_name || "")}</strong>
-        <span>Gross: ${money(e.gross_pay)}</span>
-        <span>Deductions: ${money(e.total_deductions)}</span>
-        <span>Employer: ${money(e.employer_contributions)}</span>
-        <span>Net: ${money(e.net_pay)}</span>
-      </div>
-    `).join("");
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Eligibility</th>
+              <th>Proration</th>
+              <th>Basic</th>
+              <th>Gross</th>
+              <th>Deductions</th>
+              <th>Employer</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.first_name||"")}
+                    ${esc(item.last_name||"")}
+                  </strong>
+
+                  <div class="payroll-muted">
+                    ${esc(
+                      item.calculation_message||
+                      cap(
+                        item.calculation_status||
+                        item.status||
+                        "calculated"
+                      )
+                    )}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(String(
+                    item.eligible_from||"—"
+                  ).slice(0,10))}
+                  –
+                  ${esc(String(
+                    item.eligible_to||"—"
+                  ).slice(0,10))}
+
+                  <div class="payroll-muted">
+                    ${Number(
+                      item.eligible_days||0
+                    )} of
+                    ${Number(
+                      item.scheduled_days||0
+                    )} days
+                  </div>
+                </td>
+
+                <td>
+                  ${(
+                    Number(
+                      item.proration_factor||0
+                    )*100
+                  ).toFixed(2)}%
+
+                  <div class="payroll-muted">
+                    ${esc(
+                      payrollProrationLabel(
+                        item.proration_method
+                      )
+                    )}
+                  </div>
+                </td>
+
+                <td class="num">
+                  ${money(item.basic_pay)}
+                </td>
+
+                <td class="num">
+                  ${money(item.gross_pay)}
+                </td>
+
+                <td class="num">
+                  ${money(item.total_deductions)}
+                </td>
+
+                <td class="num">
+                  ${money(
+                    item.employer_contributions
+                  )}
+                </td>
+
+                <td class="num">
+                  <strong>
+                    ${money(item.net_pay)}
+                  </strong>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
   }
 
-  async function calculateSelectedPayrollRun() {
-    const companyId = cid();
-    const runId = payrollState.selectedRun?.id;
-    if (!runId) throw new Error("Select a payroll run first.");
+  async function loadPayrollRunAttendance(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
 
-    const res = await apiFetch(ENDPOINTS.payroll.calculateRun(companyId, runId), {
-      method: "POST",
-      body: JSON.stringify({}),
+    const [rows,summary]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.runAttendance(
+          cid(),
+          runId
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.runAttendanceSummary(
+          cid(),
+          runId
+        )
+      ),
+    ]);
+
+    payrollState.attendance=rows?.items||[];
+    payrollState.attendanceSummary=
+      summary?.data||null;
+
+    renderPayrollRunAttendance();
+  }
+
+  function renderPayrollRunAttendance(){
+    const el=$("payrollAttendanceList");
+    const summaryEl=$("payrollAttendanceSummary");
+    const items=payrollState.attendance||[];
+    const summary=
+      payrollState.attendanceSummary||{};
+    const totals=summary.totals||{};
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Employees</span>
+          <strong>${Number(totals.employees||0)}</strong>
+        </div>
+        <div>
+          <span>Worked Hours</span>
+          <strong>${Number(
+            totals.worked_hours||0
+          ).toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Overtime</span>
+          <strong>${Number(
+            totals.overtime_hours||0
+          ).toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Unapproved</span>
+          <strong>${Number(
+            totals.unapproved_count||0
+          )}</strong>
+        </div>`;
+    }
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No attendance has been captured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Employee</th>
+              <th>Type</th>
+              <th>Scheduled</th>
+              <th>Worked</th>
+              <th>Overtime</th>
+              <th>Unpaid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(x=>`
+              <tr>
+                <td>${esc(String(
+                  x.attendance_date||""
+                ).slice(0,10))}</td>
+                <td>
+                  <strong>
+                    ${esc(x.employee_no||"")} —
+                    ${esc(x.employee_name||"")}
+                  </strong>
+                </td>
+                <td>
+                  ${esc(cap(String(
+                    x.attendance_type||""
+                  ).replaceAll("_"," ")))}
+                </td>
+                <td>${Number(
+                  x.scheduled_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.worked_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.overtime_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.unpaid_hours||0
+                ).toFixed(2)}</td>
+                <td>
+                  <span class="payroll-pill">
+                    ${x.approved
+                      ?"Approved"
+                      :"Draft"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-edit-attendance="${x.id}"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-delete-attendance="${x.id}"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-attendance]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(x=>
+          Number(x.id)===
+          Number(btn.dataset.editAttendance)
+        );
+
+        editPayrollAttendance(item);
+      });
     });
 
-    payrollState.selectedRun = res?.data;
-    await loadPayrollRuns();
-    await openPayrollRun(runId);
-    showPayrollStatus("Payroll run calculated.", "success");
+    el.querySelectorAll(
+      "[data-delete-attendance]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollAttendance(
+          Number(btn.dataset.deleteAttendance)
+        );
+      });
+    });
+  }
+
+  async function editPayrollAttendance(item={}){
+    const run=payrollState.selectedRun;
+    if(!run?.id){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const employees=(
+      payrollState.employees||[]
+    ).filter(employee=>
+      String(employee.employment_status||"")
+        .toLowerCase()!=="inactive"
+    );
+
+    const x=await payrollForm(
+      item.id
+        ?"Edit attendance"
+        :"New attendance",
+      [
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          required:true,
+          value:item.employee_id||"",
+          options:employees.map(employee=>[
+            employee.id,
+            `${employee.employee_no} — `+
+            `${employee.first_name} `+
+            `${employee.last_name}`,
+          ]),
+        },
+        {
+          name:"attendance_date",
+          label:"Date",
+          type:"date",
+          required:true,
+          value:String(
+            item.attendance_date||
+            run.period_start||
+            ""
+          ).slice(0,10),
+        },
+        {
+          name:"attendance_type",
+          label:"Attendance type",
+          type:"select",
+          value:item.attendance_type||"present",
+          options:[
+            ["present","Present"],
+            ["partial_day","Partial day"],
+            ["absent","Absent"],
+            ["paid_leave","Paid leave"],
+            ["unpaid_leave","Unpaid leave"],
+            ["sick_leave","Sick leave"],
+            ["public_holiday","Public holiday"],
+            ["rest_day","Rest day"],
+          ],
+        },
+        {
+          name:"scheduled_hours",
+          label:"Scheduled hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.scheduled_hours??8,
+        },
+        {
+          name:"worked_hours",
+          label:"Worked hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.worked_hours??8,
+        },
+        {
+          name:"overtime_hours",
+          label:"Overtime hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.overtime_hours??0,
+        },
+        {
+          name:"unpaid_hours",
+          label:"Unpaid hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.unpaid_hours??0,
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:item.notes||"",
+        },
+        {
+          name:"approved",
+          label:"Approved",
+          type:"checkbox",
+          value:Boolean(item.approved),
+        },
+      ]
+    );
+
+    if(!x)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.runAttendance(
+        cid(),
+        run.id
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(run.id);
+
+    showPayrollStatus(
+      "Attendance saved.",
+      "success"
+    );
+  }
+
+  async function generatePayrollAttendance(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const x=await payrollForm(
+      "Generate attendance schedule",
+      [
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          value:"",
+          placeholder:"All employees",
+          options:(payrollState.employees||[])
+            .map(employee=>[
+              employee.id,
+              `${employee.employee_no} — `+
+              `${employee.first_name} `+
+              `${employee.last_name}`,
+            ]),
+        },
+        {
+          name:"hours_per_day",
+          label:"Hours per working day",
+          type:"number",
+          step:"0.25",
+          min:"0.25",
+          value:8,
+        },
+        {
+          name:"approved",
+          label:"Approve generated attendance",
+          type:"checkbox",
+          value:false,
+        },
+      ]
+    );
+
+    if(!x)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.generateRunAttendance(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Attendance schedule generated.",
+      "success"
+    );
+  }
+
+  async function deletePayrollAttendance(id){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!id)return;
+
+    if(!window.confirm(
+      "Delete this attendance record?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.runAttendanceRecord(
+        cid(),
+        runId,
+        id
+      ),
+      {method:"DELETE"}
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Attendance record deleted.",
+      "success"
+    );
+  }
+
+  function payrollPeriodInputItems(type){
+    const setup=payrollState.setup||{};
+
+    if(type==="earning"){
+      return setup.earning_types||[];
+    }
+
+    if(type==="deduction"){
+      return setup.deduction_types||[];
+    }
+
+    if(type==="employer_contribution"){
+      return setup.contribution_types||[];
+    }
+
+    return[];
+  }
+
+  function payrollInputTypeLabel(type){
+    return({
+      earning:"Earning",
+      deduction:"Deduction",
+      employer_contribution:
+        "Employer contribution",
+    })[type]||cap(String(type||"")
+      .replaceAll("_"," "));
+  }
+
+  async function loadPayrollRunPeriodInputs(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
+
+    const employeeId=
+      $("payrollPeriodInputEmployeeFilter")
+        ?.value||"";
+
+    const status=
+      $("payrollPeriodInputStatusFilter")
+        ?.value||"";
+
+    const [rows,summary]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.runPeriodInputs(
+          cid(),
+          runId,
+          {employeeId,status}
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.runPeriodInputSummary(
+          cid(),
+          runId
+        )
+      ),
+    ]);
+
+    payrollState.periodInputs=rows?.items||[];
+    payrollState.periodInputSummary=
+      summary?.data||null;
+
+    fillPayrollPeriodInputEmployeeFilter();
+    renderPayrollRunPeriodInputs();
+  }
+
+  function fillPayrollPeriodInputEmployeeFilter(){
+    const select=$(
+      "payrollPeriodInputEmployeeFilter"
+    );
+
+    if(!select)return;
+
+    const current=select.value;
+    const employees=payrollState.employees||[];
+
+    select.innerHTML=`
+      <option value="">All employees</option>
+      ${employees.map(employee=>`
+        <option value="${employee.id}">
+          ${esc(employee.employee_no||"")} —
+          ${esc(employee.first_name||"")}
+          ${esc(employee.last_name||"")}
+        </option>
+      `).join("")}`;
+
+    select.value=current;
+  }
+
+  function renderPayrollRunPeriodInputs(){
+    const el=$("payrollPeriodInputList");
+    const summaryEl=$("payrollPeriodInputSummary");
+    const items=payrollState.periodInputs||[];
+    const totals=
+      payrollState.periodInputSummary?.totals||{};
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Approved Earnings</span>
+          <strong>
+            ${money(totals.earnings)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Approved Deductions</span>
+          <strong>
+            ${money(totals.deductions)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Employer Contributions</span>
+          <strong>
+            ${money(
+              totals.employer_contributions
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Draft Inputs</span>
+          <strong>
+            ${Number(totals.draft||0)}
+          </strong>
+        </div>`;
+    }
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No payroll inputs have been captured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Input</th>
+              <th>Source</th>
+              <th>Quantity</th>
+              <th>Rate</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.employee_name||"")}
+                  </strong>
+                </td>
+
+                <td>
+                  <strong>
+                    ${esc(item.description||"")}
+                  </strong>
+
+                  <div class="payroll-muted">
+                    ${esc(payrollInputTypeLabel(
+                      item.input_type
+                    ))}
+                    ${item.taxable?" · Taxable":""}
+                    ${item.pensionable
+                      ?" · Pensionable"
+                      :""}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(cap(String(
+                    item.source_module||"manual"
+                  ).replaceAll("_"," ")))}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.quantity||0
+                  ).toFixed(2)}
+                </td>
+
+                <td>
+                  ${money(item.rate)}
+                </td>
+
+                <td class="num">
+                  ${money(item.amount)}
+                </td>
+
+                <td>
+                  <span class="payroll-pill">
+                    ${esc(cap(item.status||"draft"))}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-edit-period-input="${item.id}"
+                  >
+                    Edit
+                  </button>
+
+                  ${item.status!=="approved"?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-approve-period-input="${item.id}"
+                    >
+                      Approve
+                    </button>
+                  `:`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-draft-period-input="${item.id}"
+                    >
+                      Return to Draft
+                    </button>
+                  `}
+
+                  ${!["cancelled","rejected"].includes(
+                    item.status
+                  )?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-cancel-period-input="${item.id}"
+                    >
+                      Cancel
+                    </button>
+                  `:""}
+
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-delete-period-input="${item.id}"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(row=>
+          Number(row.id)===
+          Number(btn.dataset.editPeriodInput)
+        );
+
+        editPayrollPeriodInput(item);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-approve-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.approvePeriodInput),
+          "approve"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-draft-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.draftPeriodInput),
+          "return-to-draft"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-cancel-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.cancelPeriodInput),
+          "cancel"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-delete-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollPeriodInput(
+          Number(btn.dataset.deletePeriodInput)
+        );
+      });
+    });
+  }
+
+  async function editPayrollPeriodInput(item={}){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const employees=payrollState.employees||[];
+
+    const initialType=
+      item.input_type||"earning";
+
+    const fields=[
+      {
+        name:"employee_id",
+        label:"Employee",
+        type:"select",
+        required:true,
+        value:item.employee_id||"",
+        options:employees.map(employee=>[
+          employee.id,
+          `${employee.employee_no} — `+
+          `${employee.first_name} `+
+          `${employee.last_name}`,
+        ]),
+      },
+      {
+        name:"input_type",
+        label:"Input type",
+        type:"select",
+        required:true,
+        value:initialType,
+        options:[
+          ["earning","Earning"],
+          ["deduction","Deduction"],
+          [
+            "employer_contribution",
+            "Employer contribution",
+          ],
+        ],
+        onChange:(value,form)=>{
+          const select=form.elements.item_id;
+          const items=payrollPeriodInputItems(value);
+
+          if(!select)return;
+
+          select.innerHTML=`
+            <option value="">
+              Select payroll item…
+            </option>
+            ${items.map(row=>`
+              <option value="${row.id}">
+                ${esc(row.name||row.code||"")}
+              </option>
+            `).join("")}`;
+        },
+      },
+      {
+        name:"item_id",
+        label:"Payroll item",
+        type:"select",
+        value:item.item_id||"",
+        placeholder:"Select payroll item…",
+        options:payrollPeriodInputItems(
+          initialType
+        ).map(row=>[
+          row.id,
+          row.name||row.code,
+        ]),
+      },
+      {
+        name:"description",
+        label:"Description",
+        type:"text",
+        required:true,
+        value:item.description||"",
+      },
+      {
+        name:"quantity",
+        label:"Quantity",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.quantity??1,
+      },
+      {
+        name:"rate",
+        label:"Rate",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.rate??0,
+      },
+      {
+        name:"amount",
+        label:"Amount",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.amount??0,
+      },
+      {
+        name:"source_module",
+        label:"Source",
+        type:"select",
+        value:item.source_module||"manual",
+        options:[
+          ["manual","Manual"],
+          ["attendance","Attendance"],
+          ["leave","Leave"],
+          ["performance","Performance"],
+          ["commission","Commission"],
+          ["production","Production"],
+          ["timesheet","Timesheet"],
+          ["system","System"],
+        ],
+      },
+      {
+        name:"taxable",
+        label:"Taxable",
+        type:"checkbox",
+        value:Boolean(item.taxable),
+      },
+      {
+        name:"pensionable",
+        label:"Pensionable",
+        type:"checkbox",
+        value:Boolean(item.pensionable),
+      },
+      {
+        name:"notes",
+        label:"Notes",
+        type:"textarea",
+        value:item.notes||"",
+      },
+      {
+        name:"status",
+        label:"Status",
+        type:"select",
+        value:item.status||"draft",
+        options:[
+          ["draft","Draft"],
+          ["approved","Approved"],
+        ],
+      },
+    ];
+
+    const values=await payrollForm(
+      item.id
+        ?"Edit payroll input"
+        :"New payroll input",
+      fields
+    );
+
+    if(!values)return;
+
+    const selected=payrollPeriodInputItems(
+      values.input_type
+    ).find(row=>
+      Number(row.id)===Number(values.item_id)
+    );
+
+    values.item_id=values.item_id
+      ?Number(values.item_id)
+      :null;
+
+    values.code=selected?.code||item.code||null;
+    values.quantity=Number(values.quantity||0);
+    values.rate=Number(values.rate||0);
+    values.amount=Number(values.amount||0);
+
+    const endpoint=item.id
+      ?ENDPOINTS.payroll.runPeriodInput(
+          cid(),
+          runId,
+          item.id
+        )
+      :ENDPOINTS.payroll.runPeriodInputs(
+          cid(),
+          runId
+        );
+
+    await apiFetch(endpoint,{
+      method:item.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollRunPeriodInputs();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Payroll input saved.",
+      "success"
+    );
+  }
+
+  async function setPayrollPeriodInputStatus(
+    inputId,
+    action
+  ){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!inputId)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.runPeriodInputAction(
+        cid(),
+        runId,
+        inputId,
+        action
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await loadPayrollRunPeriodInputs();
+
+    showPayrollStatus(
+      action==="approve"
+        ?"Payroll input approved."
+        :action==="return-to-draft"
+          ?"Payroll input returned to draft."
+          :"Payroll input cancelled.",
+      "success"
+    );
+  }
+
+  async function deletePayrollPeriodInput(inputId){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!inputId)return;
+
+    if(!window.confirm(
+      "Delete this payroll input?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.runPeriodInput(
+        cid(),
+        runId,
+        inputId
+      ),
+      {method:"DELETE"}
+    );
+
+    await loadPayrollRunPeriodInputs();
+
+    showPayrollStatus(
+      "Payroll input deleted.",
+      "success"
+    );
+  }
+
+  async function loadPayrollRunValidation(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return null;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runValidation(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.runValidation=res?.data||null;
+    renderPayrollRunValidation();
+
+    return payrollState.runValidation;
+  }
+
+  function payrollValidationItems(
+    items,
+    emptyMessage
+  ){
+    if(!items?.length){
+      return`
+        <div class="notice success">
+          ${esc(emptyMessage)}
+        </div>`;
+    }
+
+    return`
+      <div class="payroll-validation-list">
+        ${items.map(item=>`
+          <div class="notice ${esc(
+            item.severity||"info"
+          )}">
+            <strong>
+              ${esc(String(
+                item.code||""
+              ).replaceAll("_"," "))}
+            </strong>
+            <div>${esc(item.message||"")}</div>
+          </div>
+        `).join("")}
+      </div>`;
+  }
+
+  function renderPayrollRunValidation(){
+    const data=payrollState.runValidation||{};
+    const summary=data.summary||{};
+
+    const summaryEl=$("payrollValidationSummary");
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Employees</span>
+          <strong>
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Errors</span>
+          <strong>
+            ${Number(summary.error_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Warnings</span>
+          <strong>
+            ${Number(summary.warning_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Information</span>
+          <strong>
+            ${Number(
+              summary.information_count||0
+            )}
+          </strong>
+        </div>`;
+    }
+
+    const readiness=$(
+      "payrollValidationReadiness"
+    );
+
+    if(readiness){
+      const checks=[
+        {
+          label:"Ready to calculate",
+          ok:Boolean(
+            summary.ready_to_calculate
+          ),
+        },
+        {
+          label:"Ready to approve",
+          ok:Boolean(
+            summary.ready_to_approve
+          ),
+        },
+        {
+          label:"Ready to post",
+          ok:Boolean(
+            summary.ready_to_post
+          ),
+        },
+      ];
+
+      readiness.innerHTML=`
+        <div class="payroll-run-checks">
+          ${checks.map(check=>`
+            <div class="payroll-check-item ${
+              check.ok?"ok":"fail"
+            }">
+              <span class="check-icon">
+                ${check.ok?"&#10003;":"&#10005;"}
+              </span>
+              ${esc(check.label)}
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if($("payrollValidationErrors")){
+      $("payrollValidationErrors").innerHTML=
+        payrollValidationItems(
+          data.errors||[],
+          "No validation errors."
+        );
+    }
+
+    if($("payrollValidationWarnings")){
+      $("payrollValidationWarnings").innerHTML=
+        payrollValidationItems(
+          data.warnings||[],
+          "No validation warnings."
+        );
+    }
+
+    if($("payrollValidationInformation")){
+      $("payrollValidationInformation").innerHTML=
+        payrollValidationItems(
+          data.information||[],
+          "No additional information."
+        );
+    }
+
+    renderPayrollEmployeeValidation(
+      data.employees||[]
+    );
+
+    renderPayrollValidationControls();
+  }
+
+  function renderPayrollEmployeeValidation(items){
+    const el=$("payrollEmployeeValidationList");
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees were found for validation.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Errors</th>
+              <th>Warnings</th>
+              <th>Ready</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(
+                      item.employee?.employee_no||""
+                    )} —
+                    ${esc(
+                      item.employee?.employee_name||""
+                    )}
+                  </strong>
+                </td>
+
+                <td>
+                  ${Number(
+                    item.summary?.error_count||0
+                  )}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.summary?.warning_count||0
+                  )}
+                </td>
+
+                <td>
+                  <span class="payroll-pill">
+                    ${item.summary?.ready
+                      ?"Ready"
+                      :"Needs attention"}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-view-employee-validation="${
+                      item.employee?.id||""
+                    }"
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-view-employee-validation]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        showPayrollEmployeeValidation(
+          Number(
+            btn.dataset.viewEmployeeValidation
+          )
+        );
+      });
+    });
+  }
+
+  async function showPayrollEmployeeValidation(
+    employeeId
+  ){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!employeeId)return;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runEmployeeValidation(
+        cid(),
+        runId,
+        employeeId
+      )
+    );
+
+    const data=res?.data||{};
+    const employee=data.employee||{};
+
+    const values=await payrollForm(
+      `${employee.employee_no||""} — `+
+      `${employee.employee_name||""}`,
+      [
+        {
+          name:"validation_result",
+          label:"Validation",
+          type:"textarea",
+          readonly:true,
+          backendGenerated:true,
+          value:(data.issues||[])
+            .map(item=>
+              `[${String(
+                item.severity||"info"
+              ).toUpperCase()}] ${item.message}`
+            )
+            .join("\n")
+            ||"No validation issues.",
+        },
+      ],
+      {
+        validation_result:
+          (data.issues||[])
+            .map(item=>
+              `[${String(
+                item.severity||"info"
+              ).toUpperCase()}] ${item.message}`
+            )
+            .join("\n")
+            ||"No validation issues.",
+      }
+    );
+
+    return values;
+  }
+
+  function renderPayrollValidationControls(){
+    const data=payrollState.runValidation||{};
+    const summary=data.summary||{};
+    const status=String(
+      payrollState.selectedRun?.status||"draft"
+    ).toLowerCase();
+
+    const calculate=$("payrollCalculateRunBtn");
+    const post=$("payrollPostRunBtn");
+
+    if(calculate){
+      calculate.disabled=(
+        ["posted","cancelled"].includes(status)
+        ||!summary.ready_to_calculate
+      );
+    }
+
+    if(post){
+      post.disabled=!summary.ready_to_post;
+    }
+  }
+
+  async function loadPayrollRunAudit(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runAudit(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.runAudit=res?.items||[];
+    renderPayrollRunAudit();
+  }
+
+  function renderPayrollRunAudit(){
+    const el=$("payrollRunAuditList");
+    const items=payrollState.runAudit||[];
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No payroll audit entries yet.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Action</th>
+              <th>Status Change</th>
+              <th>Message</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  ${esc(String(
+                    item.created_at||""
+                  ).replace("T"," ").slice(0,19))}
+                </td>
+
+                <td>
+                  <strong>
+                    ${esc(cap(String(
+                      item.action||""
+                    ).replaceAll("_"," ")))}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(item.from_status||"—")}
+                  →
+                  ${esc(item.to_status||"—")}
+                </td>
+
+                <td>
+                  ${esc(item.message||"—")}
+                </td>
+
+                <td>
+                  ${esc(String(item.user_id||"System"))}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  async function calculateSelectedPayrollRun(){
+    const companyId=cid();
+    const runId=payrollState.selectedRun?.id;
+    const button=$("payrollCalculateRunBtn");
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    try{
+      if(button){
+        button.disabled=true;
+        button.dataset.originalText||=
+          button.textContent;
+        button.textContent="Calculating…";
+      }
+
+      showPayrollStatus(
+        "Calculating payroll…",
+        "info"
+      );
+
+      const res=await apiFetch(
+        ENDPOINTS.payroll.calculateRun(
+          companyId,
+          runId
+        ),
+        {
+          method:"POST",
+          body:"{}",
+        }
+      );
+
+      payrollState.selectedRun=res?.data||null;
+
+      await Promise.all([
+        loadPayrollRuns(),
+        loadPayrollRunEligibility(runId),
+      ]);
+
+      await openPayrollRun(runId);
+
+      const count=Number(
+        res?.data?.calculated_employee_count||0
+      );
+      const skipped=
+        res?.data?.skipped_employees||[];
+
+      let message=
+        `Payroll calculated for ${count} employee`+
+        `${count===1?"":"s"}.`;
+
+      if(skipped.length){
+        message+=
+          ` ${skipped.length} employee`+
+          `${skipped.length===1?" was":"s were"}`+
+          " skipped.";
+      }
+
+      showPayrollStatus(message,"success");
+      return res?.data;
+
+    }catch(error){
+      showPayrollStatus(
+        error?.message||
+        "Payroll could not be calculated.",
+        "error"
+      );
+
+      throw error;
+
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.textContent=
+          button.dataset.originalText||
+          "Calculate";
+      }
+    }
   }
 
   async function previewSelectedPayrollJournal() {
@@ -63429,6 +65574,145 @@ async function saveEditModal() {
 
     renderPayrollJournalPreview(payrollState.journalPreview);
     $("payrollJournalPreviewModal")?.classList.remove("hidden");
+  }
+
+  async function refreshSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return null;
+
+    await openPayrollRun(runId);
+    await loadPayrollRuns();
+
+    return payrollState.selectedRun;
+  }
+
+  async function submitSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    showPayrollStatus(
+      "Submitting payroll for approval…",
+      "info"
+    );
+
+    await apiFetch(
+      ENDPOINTS.payroll.submitRun(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll submitted for approval.",
+      "success"
+    );
+  }
+
+  async function approveSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    const validation=
+      payrollState.runValidation
+      ||await loadPayrollRunValidation();
+
+    if(!validation?.summary?.ready_to_approve){
+      throw new Error(
+        "Resolve payroll validation errors "
+        +"before approval."
+      );
+    }
+
+    if(!window.confirm(
+      "Approve this payroll run? "
+      +"Attendance and payroll inputs will "
+      +"be locked."
+    )){
+      return;
+    }
+
+    showPayrollStatus(
+      "Approving payroll…",
+      "info"
+    );
+
+    await apiFetch(
+      ENDPOINTS.payroll.approveRun(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll approved.",
+      "success"
+    );
+  }
+
+  async function returnSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    const values=await payrollForm(
+      "Return Payroll to Draft",
+      [
+        {
+          name:"reason",
+          label:"Reason",
+          type:"textarea",
+          required:true,
+          placeholder:
+            "Explain what must be corrected…",
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.returnRunToDraft(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(values),
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll returned to draft.",
+      "success"
+    );
   }
 
   async function postSelectedPayrollRun() {
@@ -63566,79 +65850,86 @@ async function saveEditModal() {
     }
   }
 
-  async function savePayrollEmployeePaySetup() {
-    const companyId = cid();
-
-    const employeeId = Number(
-      $("payrollPaySetupEmployeeId")?.value || 0
+  async function savePayrollEmployeePaySetup(){
+    const companyId=cid();
+    const employeeId=Number(
+      $("payrollPaySetupEmployeeId")?.value||0
     );
 
-    if (!employeeId) {
+    if(!employeeId){
       throw new Error("Select an employee.");
     }
 
-    const payBasis =
-      $("payrollPayBasis")?.value || "monthly";
+    const payBasis=
+      $("payrollPayBasis")?.value||"monthly";
 
-    const selectedItems =
+    const selectedItems=
       collectPayrollPaySetupItems();
 
     validatePayrollPaySetupItems(selectedItems);
 
-    const payload = {
-      employee_id: employeeId,
+    const effectiveFrom=
+      $("payrollPaySetupEffectiveFrom")?.value||"";
 
-      pay_basis: payBasis,
+    if(!effectiveFrom){
+      throw new Error("Effective from date is required.");
+    }
 
-      basic_earning_type_id:
-        Number(
-          $("payrollBasicEarningTypeId")?.value || 0
-        ) || null,
+    const payload={
+      employee_id:employeeId,
+      pay_basis:payBasis,
 
-      fixed_basic_amount:
-        payBasis === "monthly"
-          ? Number(
-              $("payrollPayBasicAmount")?.value || 0
-            )
-          : 0,
+      basic_earning_type_id:Number(
+        $("payrollBasicEarningTypeId")?.value||0
+      )||null,
 
-      standard_quantity:
-        ["hourly", "daily", "quantity"].includes(
-          payBasis
-        )
-          ? Number(
-              $("payrollPayStandardQuantity")
-                ?.value || 0
-            )
-          : null,
+      fixed_basic_amount:payBasis==="monthly"
+        ?Number($("payrollPayBasicAmount")?.value||0)
+        :0,
 
-      rate:
-        ["hourly", "daily", "quantity"].includes(
-          payBasis
-        )
-          ? Number(
-              $("payrollPayRate")?.value || 0
-            )
-          : null,
+      standard_quantity:[
+        "hourly",
+        "daily",
+        "quantity",
+      ].includes(payBasis)
+        ?Number(
+            $("payrollPayStandardQuantity")?.value||0
+          )
+        :null,
+
+      rate:[
+        "hourly",
+        "daily",
+        "quantity",
+      ].includes(payBasis)
+        ?Number($("payrollPayRate")?.value||0)
+        :null,
 
       tax_treatment:
-        $("payrollPayTaxTreatment")?.value ||
+        $("payrollPayTaxTreatment")?.value||
         "standard",
 
       manual_paye_amount:
-        $("payrollPayTaxTreatment")?.value ===
-        "manual"
-          ? Number(
-              $("payrollManualPayeAmount")
-                ?.value || 0
+        $("payrollPayTaxTreatment")?.value==="manual"
+          ?Number(
+              $("payrollManualPayeAmount")?.value||0
             )
-          : null,
+          :null,
 
-      effective_from:
-        $("payrollPaySetupEffectiveFrom")
-          ?.value || null,
+      proration_method:
+        $("payrollPayProrationMethod")?.value||
+        "working_days",
 
-      items: selectedItems,
+      hours_per_day:Number(
+        $("payrollPayHoursPerDay")?.value||8
+      ),
+
+      attendance_required:Boolean(
+        $("payrollPayAttendanceRequired")?.checked
+      ),
+
+      effective_from:effectiveFrom,
+      items:selectedItems,
     };
 
     await apiFetch(
@@ -63647,10 +65938,12 @@ async function saveEditModal() {
         employeeId
       ),
       {
-        method: "POST",
-        body: JSON.stringify(payload),
+        method:"POST",
+        body:JSON.stringify(payload),
       }
     );
+
+    await loadPayrollEmployeePaySetup(employeeId);
 
     showPayrollStatus(
       "Employee pay setup saved.",
@@ -67157,54 +69450,77 @@ async function saveEditModal() {
     }).join("");
   }
 
-  async function loadPayrollEmployeePaySetup(employeeId) {
-    const companyId = cid();
-
-    const res = await apiFetch(
+  async function loadPayrollEmployeePaySetup(employeeId){
+    const res=await apiFetch(
       ENDPOINTS.payroll.employeePaySetup(
-        companyId,
+        cid(),
         employeeId
       )
     );
 
-    const setup = res?.data || null;
+    const setup=res?.data||null;
 
-    payrollState.selectedPaySetupEmployee =
-      setup;
-
+    payrollState.selectedPaySetupEmployee=setup;
     clearPayrollPaySetupSelections();
 
-    if (!setup?.id) {
+    if(!setup?.id){
+      if($("payrollPayBasis")){
+        $("payrollPayBasis").value="monthly";
+      }
+
+      if($("payrollPayProrationMethod")){
+        $("payrollPayProrationMethod").value=
+          "working_days";
+      }
+
+      if($("payrollPayHoursPerDay")){
+        $("payrollPayHoursPerDay").value="8";
+      }
+
+      if($("payrollPayAttendanceRequired")){
+        $("payrollPayAttendanceRequired").checked=false;
+      }
+
       updatePayrollPayBasisFields();
       updatePayrollPayeFields();
+      renderPayrollPayslipPreview();
       return;
     }
 
-    $("payrollPayBasis").value =
-      setup.pay_basis || "monthly";
+    $("payrollPayBasis").value=
+      setup.pay_basis||"monthly";
 
-    $("payrollBasicEarningTypeId").value =
-      setup.basic_earning_type_id || "";
+    $("payrollBasicEarningTypeId").value=
+      setup.basic_earning_type_id||"";
 
-    $("payrollPayBasicAmount").value =
-      setup.fixed_basic_amount || "";
+    $("payrollPayBasicAmount").value=
+      setup.fixed_basic_amount||"";
 
-    $("payrollPayStandardQuantity").value =
-      setup.standard_quantity || "";
+    $("payrollPayStandardQuantity").value=
+      setup.standard_quantity||"";
 
-    $("payrollPayRate").value =
-      setup.rate || "";
+    $("payrollPayRate").value=
+      setup.rate||"";
 
-    $("payrollPayTaxTreatment").value =
-      setup.tax_treatment || "standard";
+    $("payrollPayTaxTreatment").value=
+      setup.tax_treatment||"standard";
 
-    $("payrollManualPayeAmount").value =
-      setup.manual_paye_amount || "";
+    $("payrollManualPayeAmount").value=
+      setup.manual_paye_amount||"";
 
-    $("payrollPaySetupEffectiveFrom").value =
-      setup.effective_from || "";
+    $("payrollPaySetupEffectiveFrom").value=
+      String(setup.effective_from||"").slice(0,10);
 
-    for (const item of setup.items || []) {
+    $("payrollPayProrationMethod").value=
+      setup.proration_method||"working_days";
+
+    $("payrollPayHoursPerDay").value=
+      setup.hours_per_day||8;
+
+    $("payrollPayAttendanceRequired").checked=
+      Boolean(setup.attendance_required);
+
+    for(const item of setup.items||[]){
       applyPayrollPaySetupItem(item);
     }
 
@@ -67464,7 +69780,14 @@ async function saveEditModal() {
           "error"
         );
       });
-
+    }else if(tab==="incentives"){
+      loadPayrollIncentivesWorkspace().catch(error=>{
+        showPayrollStatus(
+          error?.message||
+          "Incentives could not be loaded.",
+          "error"
+        );
+      });
     } else if (tab === "reports") {
       loadPayrollReports().catch(error => {
         console.error("Payroll reports failed:", error);
@@ -67589,6 +69912,738 @@ async function saveEditModal() {
       description: "Payroll control accounts reconciled to the general ledger.",
     },
   ];
+
+  async function loadPayrollIncentivesWorkspace(){
+    const [plans,assignments]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.incentivePlans(cid())
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.incentiveAssignments(cid())
+      ),
+    ]);
+
+    payrollState.incentivePlans=plans?.items||[];
+    payrollState.incentiveAssignments=
+      assignments?.items||[];
+
+    renderPayrollIncentivePlans();
+    renderPayrollIncentiveAssignments();
+  }
+
+  function payrollRewardMethodLabel(value){
+    return({
+      fixed_amount:"Fixed amount",
+      percentage_basic:"% of basic pay",
+      percentage_gross:"% of gross pay",
+      percentage_target:"% of target value",
+    })[value]||cap(String(value||"")
+      .replaceAll("_"," "));
+  }
+
+  function renderPayrollIncentivePlans(){
+    const el=$("payrollIncentivePlansList");
+    const plans=payrollState.incentivePlans||[];
+
+    if(!el)return;
+
+    if(!plans.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No incentive plans configured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Metric</th>
+              <th>Frequency</th>
+              <th>Payout Basis</th>
+              <th>Rules</th>
+              <th>Employees</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${plans.map(plan=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(plan.code)} — ${esc(plan.name)}
+                  </strong>
+                </td>
+                <td>${esc(plan.metric_name||"—")}</td>
+                <td>
+                  ${esc(cap(plan.frequency||"monthly"))}
+                </td>
+                <td>
+                  ${esc(payrollRewardMethodLabel(
+                    plan.payout_basis
+                  ))}
+                </td>
+                <td>${Number(plan.rule_count||0)}</td>
+                <td>
+                  ${Number(
+                    plan.active_assignment_count||0
+                  )}
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${plan.is_active?"Active":"Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-open-incentive-plan="${plan.id}"
+                  >
+                    Open
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-open-incentive-plan]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        openPayrollIncentivePlan(
+          Number(btn.dataset.openIncentivePlan)
+        );
+      });
+    });
+  }
+
+  async function editPayrollIncentivePlan(plan={}){
+    const values=await payrollForm(
+      plan.id
+        ?"Edit Incentive Plan"
+        :"New Incentive Plan",
+      [
+        {
+          name:"code",
+          label:"Code",
+          type:"text",
+          required:true,
+          value:plan.code||"",
+        },
+        {
+          name:"name",
+          label:"Name",
+          type:"text",
+          required:true,
+          value:plan.name||"",
+        },
+        {
+          name:"description",
+          label:"Description",
+          type:"textarea",
+          value:plan.description||"",
+        },
+        {
+          name:"frequency",
+          label:"Frequency",
+          type:"select",
+          value:plan.frequency||"monthly",
+          options:[
+            ["weekly","Weekly"],
+            ["fortnightly","Fortnightly"],
+            ["monthly","Monthly"],
+            ["quarterly","Quarterly"],
+            ["annual","Annual"],
+          ],
+        },
+        {
+          name:"metric_name",
+          label:"Performance Metric",
+          type:"text",
+          required:true,
+          value:plan.metric_name||"",
+          placeholder:
+            "Sales, production units, quality score…",
+        },
+        {
+          name:"payout_basis",
+          label:"Default Payout Basis",
+          type:"select",
+          value:plan.payout_basis||"fixed_amount",
+          options:[
+            ["fixed_amount","Fixed amount"],
+            ["percentage_basic","% of basic pay"],
+            ["percentage_gross","% of gross pay"],
+            [
+              "percentage_target",
+              "% of target value",
+            ],
+          ],
+        },
+        {
+          name:"effective_from",
+          label:"Effective From",
+          type:"date",
+          value:String(
+            plan.effective_from||""
+          ).slice(0,10),
+        },
+        {
+          name:"effective_to",
+          label:"Effective To",
+          type:"date",
+          value:String(
+            plan.effective_to||""
+          ).slice(0,10),
+        },
+        {
+          name:"taxable",
+          label:"Taxable",
+          type:"checkbox",
+          value:plan.id
+            ?Boolean(plan.taxable)
+            :true,
+        },
+        {
+          name:"pensionable",
+          label:"Pensionable",
+          type:"checkbox",
+          value:Boolean(plan.pensionable),
+        },
+        {
+          name:"is_active",
+          label:"Active",
+          type:"checkbox",
+          value:plan.id
+            ?Boolean(plan.is_active)
+            :true,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    const endpoint=plan.id
+      ?ENDPOINTS.payroll.incentivePlan(
+          cid(),
+          plan.id
+        )
+      :ENDPOINTS.payroll.incentivePlans(
+          cid()
+        );
+
+    await apiFetch(endpoint,{
+      method:plan.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive plan saved.",
+      "success"
+    );
+  }
+
+  async function openPayrollIncentivePlan(planId){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.incentivePlan(
+        cid(),
+        planId
+      )
+    );
+
+    payrollState.selectedIncentivePlan=
+      res?.data||null;
+
+    renderPayrollIncentivePlanDetail();
+  }
+
+  function renderPayrollIncentivePlanDetail(){
+    const el=$("payrollIncentivePlanDetail");
+    const plan=payrollState.selectedIncentivePlan;
+
+    if(!el||!plan)return;
+
+    const rules=plan.rules||[];
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>
+              ${esc(plan.code)} — ${esc(plan.name)}
+            </h3>
+            <p class="payroll-muted">
+              ${esc(plan.description||plan.metric_name||"")}
+            </p>
+          </div>
+
+          <div class="payroll-run-actions">
+            <button
+              id="payrollEditIncentivePlanBtn"
+              type="button"
+              class="payroll-secondary dark"
+            >
+              Edit Plan
+            </button>
+
+            <button
+              id="payrollNewIncentiveRuleBtn"
+              type="button"
+              class="payroll-primary"
+            >
+              + Target Range
+            </button>
+          </div>
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Achievement Range</th>
+                <th>Reward Method</th>
+                <th>Reward Value</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rules.length?rules.map(rule=>`
+                <tr>
+                  <td>
+                    ${Number(
+                      rule.from_percentage||0
+                    ).toFixed(2)}%
+                    –
+                    ${rule.to_percentage==null
+                      ?"No maximum"
+                      :`${Number(
+                          rule.to_percentage
+                        ).toFixed(2)}%`}
+                  </td>
+                  <td>
+                    ${esc(payrollRewardMethodLabel(
+                      rule.reward_method
+                    ))}
+                  </td>
+                  <td>
+                    ${Number(
+                      rule.reward_value||0
+                    ).toFixed(2)}
+                  </td>
+                  <td>
+                    <button
+                      class="payroll-link"
+                      data-edit-incentive-rule="${rule.id}"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="payroll-link"
+                      data-delete-incentive-rule="${rule.id}"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="4">
+                    No target ranges configured.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    $("payrollEditIncentivePlanBtn")
+      ?.addEventListener(
+        "click",
+        ()=>editPayrollIncentivePlan(plan)
+      );
+
+    $("payrollNewIncentiveRuleBtn")
+      ?.addEventListener(
+        "click",
+        ()=>editPayrollIncentiveRule()
+      );
+
+    el.querySelectorAll(
+      "[data-edit-incentive-rule]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const rule=rules.find(x=>
+          Number(x.id)===
+          Number(btn.dataset.editIncentiveRule)
+        );
+
+        editPayrollIncentiveRule(rule);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-delete-incentive-rule]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollIncentiveRule(
+          Number(btn.dataset.deleteIncentiveRule)
+        );
+      });
+    });
+  }
+
+  async function editPayrollIncentiveRule(rule={}){
+    const plan=payrollState.selectedIncentivePlan;
+    if(!plan?.id)return;
+
+    const values=await payrollForm(
+      rule.id
+        ?"Edit Target Range"
+        :"New Target Range",
+      [
+        {
+          name:"from_percentage",
+          label:"From Achievement %",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:rule.from_percentage??0,
+        },
+        {
+          name:"to_percentage",
+          label:"To Achievement %",
+          type:"number",
+          min:0,
+          step:"0.01",
+          value:rule.to_percentage??"",
+          placeholder:"Leave blank for no maximum",
+        },
+        {
+          name:"reward_method",
+          label:"Reward Method",
+          type:"select",
+          value:rule.reward_method||
+            plan.payout_basis||
+            "fixed_amount",
+          options:[
+            ["fixed_amount","Fixed amount"],
+            ["percentage_basic","% of basic pay"],
+            ["percentage_gross","% of gross pay"],
+            [
+              "percentage_target",
+              "% of target value",
+            ],
+          ],
+        },
+        {
+          name:"reward_value",
+          label:"Reward Value",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:rule.reward_value??0,
+        },
+        {
+          name:"display_order",
+          label:"Display Order",
+          type:"number",
+          min:1,
+          step:1,
+          value:rule.display_order??1,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    values.from_percentage=Number(
+      values.from_percentage||0
+    );
+    values.to_percentage=
+      values.to_percentage===""
+        ?null
+        :Number(values.to_percentage);
+    values.reward_value=Number(
+      values.reward_value||0
+    );
+    values.display_order=Number(
+      values.display_order||1
+    );
+
+    const endpoint=rule.id
+      ?ENDPOINTS.payroll.incentiveRule(
+          cid(),
+          plan.id,
+          rule.id
+        )
+      :ENDPOINTS.payroll.incentiveRules(
+          cid(),
+          plan.id
+        );
+
+    await apiFetch(endpoint,{
+      method:rule.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await openPayrollIncentivePlan(plan.id);
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive target range saved.",
+      "success"
+    );
+  }
+
+  async function deletePayrollIncentiveRule(ruleId){
+    const plan=payrollState.selectedIncentivePlan;
+
+    if(!plan?.id||!ruleId)return;
+
+    if(!window.confirm(
+      "Delete this target range?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.incentiveRule(
+        cid(),
+        plan.id,
+        ruleId
+      ),
+      {method:"DELETE"}
+    );
+
+    await openPayrollIncentivePlan(plan.id);
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive target range deleted.",
+      "success"
+    );
+  }
+
+  function renderPayrollIncentiveAssignments(){
+    const el=$("payrollIncentiveAssignmentsList");
+    const items=payrollState.incentiveAssignments||[];
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees assigned to incentive plans.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Plan</th>
+              <th>Target</th>
+              <th>Effective Period</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.employee_name||"")}
+                  </strong>
+                </td>
+                <td>
+                  ${esc(item.plan_code||"")} —
+                  ${esc(item.plan_name||"")}
+                </td>
+                <td>
+                  ${Number(
+                    item.target_value||0
+                  ).toFixed(2)}
+                </td>
+                <td>
+                  ${esc(String(
+                    item.effective_from||""
+                  ).slice(0,10))}
+                  –
+                  ${item.effective_to
+                    ?esc(String(
+                        item.effective_to
+                      ).slice(0,10))
+                    :"Open"}
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${item.is_active?"Active":"Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    class="payroll-link"
+                    data-edit-incentive-assignment="${item.id}"
+                  >
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-incentive-assignment]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(x=>
+          Number(x.id)===
+          Number(
+            btn.dataset.editIncentiveAssignment
+          )
+        );
+
+        editPayrollIncentiveAssignment(item);
+      });
+    });
+  }
+
+  async function editPayrollIncentiveAssignment(
+    assignment={}
+  ){
+    const plans=(payrollState.incentivePlans||[])
+      .filter(plan=>plan.is_active!==false);
+
+    const employees=payrollState.employees||[];
+
+    const values=await payrollForm(
+      assignment.id
+        ?"Edit Incentive Assignment"
+        :"New Incentive Assignment",
+      [
+        {
+          name:"incentive_plan_id",
+          label:"Incentive Plan",
+          type:"select",
+          required:true,
+          value:assignment.incentive_plan_id||"",
+          options:plans.map(plan=>[
+            plan.id,
+            `${plan.code} — ${plan.name}`,
+          ]),
+        },
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          required:true,
+          value:assignment.employee_id||"",
+          options:employees.map(employee=>[
+            employee.id,
+            `${employee.employee_no} — `+
+            `${employee.first_name} `+
+            `${employee.last_name}`,
+          ]),
+        },
+        {
+          name:"target_value",
+          label:"Target Value",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:assignment.target_value??0,
+        },
+        {
+          name:"effective_from",
+          label:"Effective From",
+          type:"date",
+          required:true,
+          value:String(
+            assignment.effective_from||
+            new Date().toISOString().slice(0,10)
+          ).slice(0,10),
+        },
+        {
+          name:"effective_to",
+          label:"Effective To",
+          type:"date",
+          value:String(
+            assignment.effective_to||""
+          ).slice(0,10),
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:assignment.notes||"",
+        },
+        {
+          name:"is_active",
+          label:"Active",
+          type:"checkbox",
+          value:assignment.id
+            ?Boolean(assignment.is_active)
+            :true,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    values.incentive_plan_id=Number(
+      values.incentive_plan_id
+    );
+    values.employee_id=Number(
+      values.employee_id
+    );
+    values.target_value=Number(
+      values.target_value||0
+    );
+
+    const endpoint=assignment.id
+      ?ENDPOINTS.payroll.incentiveAssignment(
+          cid(),
+          assignment.id
+        )
+      :ENDPOINTS.payroll.incentiveAssignments(
+          cid()
+        );
+
+    await apiFetch(endpoint,{
+      method:assignment.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive assignment saved.",
+      "success"
+    );
+  }
 
   function payrollReportItems(response) {
     if (Array.isArray(response)) return response;
@@ -69644,6 +72699,46 @@ async function saveEditModal() {
       }
     );
 
+    $("payrollNewAttendanceBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollAttendance()
+        )
+      );
+
+    $("payrollGenerateAttendanceBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          generatePayrollAttendance
+        )
+      );
+
+    $("payrollNewPeriodInputBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollPeriodInput()
+        )
+      );
+
+    $("payrollPeriodInputEmployeeFilter")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollRunPeriodInputs
+        )
+      );
+
+    $("payrollPeriodInputStatusFilter")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollRunPeriodInputs
+        )
+      );
+      
     $("payrollLeavePolicyProvisionRequired")?.addEventListener(
       "change",
       togglePayrollLeaveProvisionAccounts
@@ -69652,6 +72747,54 @@ async function saveEditModal() {
     document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
       btn.addEventListener("click",closePayrollLeavePolicyModal)
     );
+
+    $("payrollRefreshValidationBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunValidation
+        )
+      );
+
+    $("payrollSubmitRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          submitSelectedPayrollRun
+        )
+      );
+
+    $("payrollApproveRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          approveSelectedPayrollRun
+        )
+      );
+
+    $("payrollReturnRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          returnSelectedPayrollRun
+        )
+      );
+
+    $("payrollNewIncentivePlanBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollIncentivePlan()
+        )
+      );
+
+    $("payrollNewIncentiveAssignmentBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollIncentiveAssignment()
+        )
+      );
 
     $("payrollLeavePolicyModal")?.addEventListener("click",e=>{
       if(e.target===e.currentTarget)closePayrollLeavePolicyModal();
@@ -69852,6 +72995,14 @@ async function saveEditModal() {
       updatePayrollPayeFields
     );
 
+    $("payrollRefreshAuditBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunAudit
+        )
+      );
+
     updatePayrollPayBasisFields();
     updatePayrollPayeFields();
 
@@ -69878,17 +73029,20 @@ async function saveEditModal() {
         );
       });
       
-    [
-      "payrollPaySetupEmployeeId",
-      "payrollPayBasis",
-      "payrollBasicEarningTypeId",
-      "payrollPayBasicAmount",
-      "payrollPayStandardQuantity",
-      "payrollPayRate",
-      "payrollPayTaxTreatment",
-      "payrollManualPayeAmount",
-      "payrollPaySetupEffectiveFrom",
-    ].forEach(id => {
+      [
+        "payrollPaySetupEmployeeId",
+        "payrollPayBasis",
+        "payrollBasicEarningTypeId",
+        "payrollPayBasicAmount",
+        "payrollPayStandardQuantity",
+        "payrollPayRate",
+        "payrollPayTaxTreatment",
+        "payrollManualPayeAmount",
+        "payrollPaySetupEffectiveFrom",
+        "payrollPayProrationMethod",
+        "payrollPayHoursPerDay",
+        "payrollPayAttendanceRequired",
+      ].forEach(id=>{
       $(id)?.addEventListener(
         "input",
         renderPayrollPayslipPreview
@@ -72548,6 +75702,8 @@ async function saveEditModal() {
     calculation: null,
     selectedModelId: null,
     previewRunId: null,
+    writeoffs: [],
+    reconciliation: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -72586,6 +75742,7 @@ async function saveEditModal() {
         apiFetch(ENDPOINTS.ifrs9.eclModels(companyId)),
         apiFetch(ENDPOINTS.ifrs9.arExposure(companyId)),
         apiFetch(ENDPOINTS.ifrs9.coaReadiness(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.writeoffs(companyId))
       ]);
 
       IFRS9.instruments = inst.items || [];
@@ -72593,6 +75750,7 @@ async function saveEditModal() {
       IFRS9.eclModels = models.items || [];
       IFRS9.arExposure = exposure.items || [];
       IFRS9.readiness = readiness;
+      IFRS9.writeoffs = writeoffs.items || [];
 
       renderInstruments();
       renderRuns();
@@ -72600,6 +75758,8 @@ async function saveEditModal() {
       renderArExposure();
       renderModelOptions();
       renderReadiness();
+      applyIfrs9ReadinessControls();
+      renderWriteoffs();
       setMsg("");
     } catch (error) {
       setMsg(error.message || "Failed to load IFRS 9 data.");
@@ -72716,8 +75876,43 @@ async function saveEditModal() {
                   <td>${label(row.status)}</td>
                   <td>${row.journal_id || "—"}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" data-ifrs9-view-run="${row.id}">View</button>
-                    ${row.status === "draft" ? `<button class="btn btn-primary btn-sm" data-ifrs9-preview-run="${row.id}">Preview</button>` : ""}
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-view-run="${row.id}"
+                    >
+                      View
+                    </button>
+
+                    ${
+                      row.status === "draft"
+                        ? `
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm"
+                            data-ifrs9-preview-run="${row.id}"
+                          >
+                            Preview
+                          </button>
+                        `
+                        : ""
+                    }
+
+                    ${
+                      row.status === "posted" &&
+                      row.journal_id &&
+                      !row.reversal_journal_id
+                        ? `
+                          <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            data-ifrs9-reverse-run="${row.id}"
+                          >
+                            Reverse
+                          </button>
+                        `
+                        : ""
+                    }
                   </td>
                 </tr>
               `;
@@ -72733,7 +75928,9 @@ async function saveEditModal() {
     if (!el) return;
 
     if (!IFRS9.eclModels.length) {
-      el.innerHTML = `<p class="muted">No ECL models yet.</p>`;
+      el.innerHTML = `
+        <p class="muted">No ECL models yet.</p>
+      `;
       return;
     }
 
@@ -72741,23 +75938,168 @@ async function saveEditModal() {
       <div class="table-responsive">
         <table>
           <thead>
-            <tr><th>Model</th><th>Type</th><th>Applies To</th><th>Basis</th><th>Active</th><th></th></tr>
+            <tr>
+              <th>Model</th>
+              <th>Method</th>
+              <th>Effective From</th>
+              <th>Review Date</th>
+              <th>Status</th>
+              <th>Version</th>
+              <th></th>
+            </tr>
           </thead>
+
           <tbody>
             ${IFRS9.eclModels.map(row => `
               <tr>
-                <td>${row.model_name || "—"}</td>
-                <td>${label(row.model_type)}</td>
-                <td>${label(row.applies_to)}</td>
-                <td>${label(row.basis)}</td>
-                <td>${row.is_active ? "Yes" : "No"}</td>
-                <td><button class="btn btn-secondary btn-sm" data-ifrs9-configure-model="${row.id}">Configure Matrix</button></td>
+                <td>
+                  <strong>${esc(row.model_name || "—")}</strong>
+                  <div class="muted" style="font-size:12px;">
+                    ${esc(row.model_owner || "No model owner")}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(label(row.basis))}
+                </td>
+
+                <td>
+                  ${dateText(row.effective_from)}
+                </td>
+
+                <td>
+                  ${dateText(row.review_date)}
+                </td>
+
+                <td>
+                  <span class="pill ${
+                    row.is_active ? "success" : "warning"
+                  }">
+                    ${
+                      row.is_active
+                        ? "Active"
+                        : esc(label(row.approval_status || "Draft"))
+                    }
+                  </span>
+                </td>
+
+                <td>
+                  ${esc(row.version_no || 1)}
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-configure-model="${row.id}"
+                  >
+                    Configure Matrix
+                  </button>
+
+                  ${
+                    row.is_active
+                      ? `
+                        <button
+                          type="button"
+                          class="btn btn-danger btn-sm"
+                          data-ifrs9-deactivate-model="${row.id}"
+                        >
+                          Deactivate
+                        </button>
+                      `
+                      : `
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-activate-model="${row.id}"
+                        >
+                          Activate
+                        </button>
+                      `
+                  }
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
     `;
+  }
+
+  async function activateIfrs9Model(modelId) {
+    const model = IFRS9.eclModels.find(
+      row => Number(row.id) === Number(modelId)
+    );
+
+    if (!model) {
+      return setMsg("ECL model not found.");
+    }
+
+    if (!confirm(
+      `Activate "${model.model_name}"?\n\n` +
+      "The provision matrix will become available for ECL runs."
+    )) return;
+
+    setMsg("Activating ECL model...");
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.activateEclModel(
+          cid(),
+          modelId,
+        ),
+        {
+          method: "POST",
+          body: "{}",
+        }
+      );
+
+      await loadAll();
+      setMsg("ECL model activated.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to activate ECL model."
+      );
+    }
+  }
+
+  async function deactivateIfrs9Model(modelId) {
+    const model = IFRS9.eclModels.find(
+      row => Number(row.id) === Number(modelId)
+    );
+
+    if (!model) {
+      return setMsg("ECL model not found.");
+    }
+
+    if (!confirm(
+      `Deactivate "${model.model_name}"?\n\n` +
+      "It will no longer be available for new ECL calculations."
+    )) return;
+
+    setMsg("Deactivating ECL model...");
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.deactivateEclModel(
+          cid(),
+          modelId,
+        ),
+        {
+          method: "POST",
+          body: "{}",
+        }
+      );
+
+      await loadAll();
+      setMsg("ECL model deactivated.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to deactivate ECL model."
+      );
+    }
   }
 
   function renderModelOptions() {
@@ -72765,38 +76107,921 @@ async function saveEditModal() {
     if (!select) return;
 
     const current = select.value;
-    const models = IFRS9.eclModels.filter(row => row.is_active && row.applies_to === "trade_receivable");
+    const reportingDate =
+      $("ifrs9EclReportingDate")?.value || "";
+
+    const models = IFRS9.eclModels.filter(row => {
+      if (!row.is_active) return false;
+      if (row.approval_status !== "approved") return false;
+      if (row.model_type !== "simplified") return false;
+      if (row.applies_to !== "trade_receivable") return false;
+      if (row.basis !== "provision_matrix") return false;
+
+      if (
+        reportingDate &&
+        row.effective_from &&
+        reportingDate < String(row.effective_from).slice(0, 10)
+      ) {
+        return false;
+      }
+
+      if (
+        reportingDate &&
+        row.effective_to &&
+        reportingDate > String(row.effective_to).slice(0, 10)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
 
     select.innerHTML = `<option value="">Select an ECL model</option>${models.map(row => `<option value="${row.id}">${row.model_name}</option>`).join("")}`;
     if (models.some(row => String(row.id) === current)) select.value = current;
+  }
+
+  function ifrs9PostingAccounts(kind = "all") {
+    const source =
+      window.COA_CACHE ||
+      window.COMPANY_COA ||
+      window.CHART_OF_ACCOUNTS ||
+      [];
+
+    const accounts = (Array.isArray(source) ? source : [])
+      .map(account => ({
+        ...account,
+
+        code: String(
+          account.code ||
+          account.account_code ||
+          account.template_code ||
+          ""
+        ).trim(),
+
+        name: String(
+          account.name ||
+          account.account_name ||
+          account.description ||
+          ""
+        ).trim(),
+
+        posting: account.posting === undefined
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.posting).toLowerCase()
+            ),
+
+        active: account.is_active === undefined
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.is_active).toLowerCase()
+            ),
+      }))
+      .filter(account =>
+        account.code &&
+        account.name &&
+        account.posting &&
+        account.active
+      );
+
+    const filtered = accounts.filter(account => {
+      const text = [
+        account.section,
+        account.category,
+        account.role,
+        account.name,
+      ].join(" ").toLowerCase();
+
+      if (kind === "all") return true;
+
+      if (kind === "asset") {
+        return /asset|receivable|debtor|allowance|impairment/.test(text);
+      }
+
+      if (kind === "liability") {
+        return /liabil|payable|creditor|loan/.test(text);
+      }
+
+      if (kind === "expense") {
+        return /expense|loss|cost|impairment|bad debt/.test(text);
+      }
+
+      if (kind === "income") {
+        return /income|revenue|gain|interest received/.test(text);
+      }
+
+      if (kind === "income_expense") {
+        return /income|revenue|gain|expense|loss/.test(text);
+      }
+
+      if (kind === "oci") {
+        return /other comprehensive|\boci\b|reserve|equity/.test(text);
+      }
+
+      return true;
+    });
+
+    return (filtered.length ? filtered : accounts)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+
+  function ifrs9AccountOptions(row) {
+    const selected = String(row.account_code || "");
+
+    const accounts = ifrs9PostingAccounts(
+      row.account_kind || "all"
+    );
+
+    return `
+      <option value="">Select account…</option>
+
+      ${accounts.map(account => `
+        <option
+          value="${esc(account.code)}"
+          title="${esc(account.code)}"
+          ${String(account.code) === selected ? "selected" : ""}
+        >
+          ${esc(account.name)}
+        </option>
+      `).join("")}
+    `;
+  }
+
+
+  function ifrs9PhaseLabel(phase) {
+    const labels = {
+      ecl: "ECL",
+      fair_value: "Fair Value",
+      amortised_cost: "Amortised Cost",
+      derecognition: "Derecognition",
+    };
+
+    return labels[phase] || label(phase);
   }
 
   function renderReadiness() {
     const el = $("ifrs9AccountReadiness");
     if (!el) return;
 
-    const rows = IFRS9.readiness?.items || [];
+    const readiness = IFRS9.readiness || {};
+    const rows = readiness.items || [];
+    const accountCount = ifrs9PostingAccounts().length;
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <p class="muted">
+          IFRS 9 account requirements could not be loaded.
+        </p>
+      `;
+      return;
+    }
 
     el.innerHTML = `
-      <div class="status-banner ${IFRS9.readiness?.ready ? "success" : "warning"}">
-        ${IFRS9.readiness?.ready ? "IFRS 9 account setup is ready." : `${IFRS9.readiness?.missing?.length || 0} account mappings are missing.`}
+      <div class="status-banner ${
+        readiness.ready ? "success" : "warning"
+      }">
+        ${
+          readiness.ready
+            ? "All IFRS 9 posting accounts are configured."
+            : `${readiness.missing?.length || 0} IFRS 9 account mappings are missing or invalid.`
+        }
       </div>
 
-      <div class="table-responsive">
+      ${
+        readiness.ecl_ready
+          ? `
+            <div
+              class="status-banner success"
+              style="margin-top:8px;"
+            >
+              Trade receivables ECL posting is ready.
+            </div>
+          `
+          : `
+            <div
+              class="status-banner warning"
+              style="margin-top:8px;"
+            >
+              ECL posting requires the impairment-loss and
+              trade-receivables allowance accounts.
+            </div>
+          `
+      }
+
+      ${
+        !accountCount
+          ? `
+            <div
+              class="status-banner warning"
+              style="margin-top:8px;"
+            >
+              No posting accounts are available in the
+              chart-of-accounts cache.
+            </div>
+          `
+          : ""
+      }
+
+      <div class="table-responsive" style="margin-top:12px;">
         <table>
-          <thead><tr><th>Purpose</th><th>Account</th><th>Status</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Purpose</th>
+              <th>Workflow</th>
+              <th>Posting Account</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
           <tbody>
             ${rows.map(row => `
+              <tr data-ifrs9-mapping-row="${esc(row.mapping_key)}">
+                <td>
+                  <strong>
+                    ${esc(row.label || label(row.mapping_key))}
+                  </strong>
+
+                  <div class="muted" style="font-size:12px;">
+                    ${esc(row.description || "")}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(ifrs9PhaseLabel(row.phase))}
+                </td>
+
+                <td style="min-width:280px;">
+                  <select
+                    data-ifrs9-mapping-select="${esc(row.mapping_key)}"
+                    ${accountCount ? "" : "disabled"}
+                  >
+                    ${ifrs9AccountOptions(row)}
+                  </select>
+                </td>
+
+                <td>
+                  <span class="pill ${
+                    row.ok ? "success" : "warning"
+                  }">
+                    ${row.ok ? "Ready" : "Missing"}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-save-mapping="${esc(row.mapping_key)}"
+                    ${accountCount ? "" : "disabled"}
+                  >
+                    Save
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="screen-actions" style="margin-top:12px;">
+        <button
+          id="ifrs9SaveAllMappingsBtn"
+          type="button"
+          class="btn btn-primary"
+          ${accountCount ? "" : "disabled"}
+        >
+          Save All Mappings
+        </button>
+
+        <button
+          id="ifrs9ReloadReadinessBtn"
+          type="button"
+          class="btn btn-secondary"
+        >
+          Reload Readiness
+        </button>
+      </div>
+    `;
+  }
+
+  async function reloadIfrs9Readiness() {
+    const companyId = cid();
+    if (!companyId) return;
+
+    try {
+      IFRS9.readiness = await apiFetch(
+        ENDPOINTS.ifrs9.coaReadiness(companyId)
+      );
+
+      renderReadiness();
+      setMsg("");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to reload IFRS 9 account readiness."
+      );
+    }
+    renderReadiness();
+  }
+
+  function renderWriteoffs() {
+    const el = $("ifrs9WriteoffList");
+    if (!el) return;
+
+    if (!IFRS9.writeoffs.length) {
+      el.innerHTML = `
+        <p class="muted">No receivable write-offs recorded.</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Invoice</th>
+              <th>Write-Off</th>
+              <th>Allowance Used</th>
+              <th>Additional Loss</th>
+              <th>Recovered</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${IFRS9.writeoffs.map(row => `
               <tr>
-                <td>${label(row.mapping_key)}</td>
-                <td>${row.account?.posting_code || row.account_code || "Not mapped"}</td>
-                <td>${row.ok ? "Ready" : "Missing"}</td>
+                <td>${dateText(row.writeoff_date)}</td>
+                <td>${esc(row.customer_name || "—")}</td>
+                <td>${esc(row.invoice_number || row.invoice_id || "—")}</td>
+                <td>${money(row.writeoff_amount)}</td>
+                <td>${money(row.allowance_used)}</td>
+                <td>${money(row.additional_loss)}</td>
+                <td>${money(row.recovered_amount)}</td>
+                <td>${esc(label(row.status))}</td>
+                <td>
+                  ${
+                    row.status === "draft" ||
+                    row.status === "approved"
+                      ? `
+                        <button
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-post-writeoff="${row.id}"
+                        >
+                          Post
+                        </button>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    row.status === "posted" &&
+                    Number(row.recovered_amount || 0) <
+                    Number(row.writeoff_amount || 0)
+                      ? `
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          data-ifrs9-recover-writeoff="${row.id}"
+                        >
+                          Record Recovery
+                        </button>
+                      `
+                      : ""
+                  }
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
     `;
+  }
+
+  function renderWriteoffs() {
+    const el = $("ifrs9WriteoffList");
+    if (!el) return;
+
+    if (!IFRS9.writeoffs.length) {
+      el.innerHTML = `
+        <p class="muted">No receivable write-offs recorded.</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Invoice</th>
+              <th>Write-Off</th>
+              <th>Allowance Used</th>
+              <th>Additional Loss</th>
+              <th>Recovered</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${IFRS9.writeoffs.map(row => `
+              <tr>
+                <td>${dateText(row.writeoff_date)}</td>
+                <td>${esc(row.customer_name || "—")}</td>
+                <td>${esc(row.invoice_number || row.invoice_id || "—")}</td>
+                <td>${money(row.writeoff_amount)}</td>
+                <td>${money(row.allowance_used)}</td>
+                <td>${money(row.additional_loss)}</td>
+                <td>${money(row.recovered_amount)}</td>
+                <td>${esc(label(row.status))}</td>
+                <td>
+                  ${
+                    row.status === "draft" ||
+                    row.status === "approved"
+                      ? `
+                        <button
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-post-writeoff="${row.id}"
+                        >
+                          Post
+                        </button>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    row.status === "posted" &&
+                    Number(row.recovered_amount || 0) <
+                    Number(row.writeoff_amount || 0)
+                      ? `
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          data-ifrs9-recover-writeoff="${row.id}"
+                        >
+                          Record Recovery
+                        </button>
+                      `
+                      : ""
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function loadIfrs9Reconciliation() {
+    const from = $("ifrs9ReconciliationFrom")?.value;
+    const to = $("ifrs9ReconciliationTo")?.value;
+    const button = $("ifrs9LoadReconciliationBtn");
+
+    if (!from || !to) {
+      return alert(
+        "Select the reconciliation start and end dates."
+      );
+    }
+
+    if (from > to) {
+      return alert(
+        "The start date cannot be later than the end date."
+      );
+    }
+
+    const originalText =
+      button?.textContent || "Load Reconciliation";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Loading...";
+    }
+
+    setMsg("Loading ECL allowance reconciliation...");
+
+    try {
+      IFRS9.reconciliation = await apiFetch(
+        ENDPOINTS.ifrs9.eclReconciliation(
+          cid(),
+          { from, to }
+        )
+      );
+
+      renderIfrs9Reconciliation();
+
+      const saveButton =
+        $("ifrs9SaveReconciliationSnapshotBtn");
+
+      if (saveButton) {
+        saveButton.disabled = false;
+      }
+
+      setMsg(
+        IFRS9.reconciliation.balanced
+          ? "ECL allowance reconciliation completed."
+          : "ECL reconciliation loaded with a difference."
+      );
+    } catch (error) {
+      IFRS9.reconciliation = null;
+
+      $("ifrs9ReconciliationBody").innerHTML = "";
+
+      const saveButton =
+        $("ifrs9SaveReconciliationSnapshotBtn");
+
+      if (saveButton) {
+        saveButton.disabled = true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to load ECL reconciliation."
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  function renderIfrs9Reconciliation() {
+    const el = $("ifrs9ReconciliationBody");
+    const data = IFRS9.reconciliation;
+
+    if (!el) return;
+
+    if (!data?.summary) {
+      el.innerHTML = `
+        <p class="muted">
+          Load a reporting period to view the reconciliation.
+        </p>
+      `;
+      return;
+    }
+
+    const s = data.summary;
+
+    el.innerHTML = `
+      <div class="status-banner ${
+        data.balanced ? "success" : "warning"
+      }">
+        ${
+          data.balanced
+            ? "The calculated allowance agrees to the general ledger."
+            : `The reconciliation differs from the ledger by ${money(s.reconciliation_difference)}.`
+        }
+      </div>
+
+      <div class="form-grid" style="margin-top:12px;">
+        <div>
+          <b>Opening Allowance</b>
+          <p>${money(s.opening_allowance)}</p>
+        </div>
+
+        <div>
+          <b>ECL Charges</b>
+          <p>${money(s.ecl_charges)}</p>
+        </div>
+
+        <div>
+          <b>ECL Reversals</b>
+          <p>(${money(s.ecl_reversals)})</p>
+        </div>
+
+        <div>
+          <b>Allowance Used on Write-Offs</b>
+          <p>
+            (${money(s.allowance_used_on_writeoffs)})
+          </p>
+        </div>
+
+        <div>
+          <b>Calculated Closing Allowance</b>
+          <p>${money(s.calculated_closing_allowance)}</p>
+        </div>
+
+        <div>
+          <b>Ledger Closing Allowance</b>
+          <p>${money(s.ledger_closing_allowance)}</p>
+        </div>
+      </div>
+
+      <div class="table-responsive" style="margin-top:16px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Allowance Reconciliation</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr>
+              <td>Opening loss allowance</td>
+              <td>${money(s.opening_allowance)}</td>
+            </tr>
+
+            <tr>
+              <td>ECL impairment raised</td>
+              <td>${money(s.ecl_charges)}</td>
+            </tr>
+
+            <tr>
+              <td>ECL impairment reversed</td>
+              <td>(${money(s.ecl_reversals)})</td>
+            </tr>
+
+            <tr>
+              <td>Allowance used on write-offs</td>
+              <td>
+                (${money(s.allowance_used_on_writeoffs)})
+              </td>
+            </tr>
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th>Closing loss allowance</th>
+              <th>${money(s.calculated_closing_allowance)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h4 style="margin-top:18px;">ECL Movements</h4>
+
+      ${
+        data.runs?.length
+          ? `
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Model</th>
+                    <th>Exposure</th>
+                    <th>Charge</th>
+                    <th>Reversal</th>
+                    <th>Closing ECL</th>
+                    <th>Journal</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${data.runs.map(row => `
+                    <tr>
+                      <td>${dateText(row.reporting_date)}</td>
+                      <td>${esc(row.model_name || "—")}</td>
+                      <td>${money(row.total_exposure)}</td>
+                      <td>${money(row.charge)}</td>
+                      <td>${money(row.reversal)}</td>
+                      <td>${money(row.closing_ecl)}</td>
+                      <td>${esc(row.journal_id || "—")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `<p class="muted">No posted ECL runs in this period.</p>`
+      }
+
+      <h4 style="margin-top:18px;">Write-Offs and Recoveries</h4>
+
+      <div class="form-grid">
+        <div>
+          <b>Gross Write-Offs</b>
+          <p>${money(s.gross_writeoffs)}</p>
+        </div>
+
+        <div>
+          <b>Additional Write-Off Loss</b>
+          <p>${money(s.additional_writeoff_loss)}</p>
+        </div>
+
+        <div>
+          <b>Recoveries</b>
+          <p>${money(s.recoveries)}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  async function saveIfrs9ReconciliationSnapshot() {
+    const from = $("ifrs9ReconciliationFrom")?.value;
+    const to = $("ifrs9ReconciliationTo")?.value;
+    const year = Number(
+      $("ifrs9ReconciliationYear")?.value || 0
+    );
+
+    if (!IFRS9.reconciliation) {
+      return alert(
+        "Load the ECL reconciliation before saving."
+      );
+    }
+
+    if (!from || !to) {
+      return alert("Select the reporting period.");
+    }
+
+    if (!year) {
+      return alert("Enter the financial year.");
+    }
+
+    const button =
+      $("ifrs9SaveReconciliationSnapshotBtn");
+
+    const originalText =
+      button?.textContent || "Save Snapshot";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.eclReconciliationSnapshot(
+          cid()
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            from,
+            to,
+            financial_year: year,
+          }),
+        }
+      );
+
+      setMsg(
+        `IFRS 9 ECL snapshot saved for financial year ${year}.`
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to save IFRS 9 reconciliation snapshot."
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+
+  async function saveIfrs9Mapping(mappingKey, options = {}) {
+    const select = document.querySelector(
+      `[data-ifrs9-mapping-select="${CSS.escape(mappingKey)}"]`
+    );
+
+    const accountCode = select?.value || "";
+
+    if (!accountCode) {
+      if (!options.silent) {
+        alert(`Select an account for ${label(mappingKey)}.`);
+      }
+      return false;
+    }
+
+    const button = document.querySelector(
+      `[data-ifrs9-save-mapping="${CSS.escape(mappingKey)}"]`
+    );
+
+    const originalText = button?.textContent || "Save";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.coaMappings(cid()),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mapping_key: mappingKey,
+            account_code: accountCode,
+            description: label(mappingKey),
+          }),
+        }
+      );
+
+      if (result.readiness) {
+        IFRS9.readiness = result.readiness;
+      }
+
+      if (!options.deferRender) {
+        renderReadiness();
+      }
+
+      if (!options.silent) {
+        setMsg(`${label(mappingKey)} mapping saved.`);
+      }
+
+      return true;
+    } catch (error) {
+      if (!options.silent) {
+        setMsg(
+          error.message ||
+          `Failed to save ${label(mappingKey)} mapping.`
+        );
+      }
+
+      return false;
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+
+  async function saveAllIfrs9Mappings() {
+    const button = $("ifrs9SaveAllMappingsBtn");
+    const selects = [
+      ...document.querySelectorAll(
+        "[data-ifrs9-mapping-select]"
+      ),
+    ];
+
+    const selected = selects
+      .map(select => ({
+        mappingKey: select.dataset.ifrs9MappingSelect,
+        accountCode: select.value,
+      }))
+      .filter(row => row.accountCode);
+
+    if (!selected.length) {
+      return alert("Select at least one IFRS 9 account.");
+    }
+
+    const missingSelections = selects.filter(
+      select => !select.value
+    );
+
+    if (missingSelections.length) {
+      const proceed = confirm(
+        `${missingSelections.length} mappings are still blank. ` +
+        "Save the selected mappings only?"
+      );
+
+      if (!proceed) return;
+    }
+
+    const originalText = button?.textContent || "Save All Mappings";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    setMsg("Saving IFRS 9 account mappings...");
+
+    try {
+      let saved = 0;
+      const failed = [];
+
+      for (const row of selected) {
+        const ok = await saveIfrs9Mapping(
+          row.mappingKey,
+          {
+            silent: true,
+            deferRender: true,
+          }
+        );
+
+        if (ok) saved++;
+        else failed.push(row.mappingKey);
+      }
+
+      await reloadIfrs9Readiness();
+
+      if (failed.length) {
+        setMsg(
+          `${saved} mappings saved. ${failed.length} mappings failed.`
+        );
+      } else {
+        setMsg(`${saved} IFRS 9 account mappings saved.`);
+      }
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
   }
 
   async function discoverFinancialInstruments() {
@@ -72825,10 +77050,16 @@ async function saveEditModal() {
 
     const payload = {
       model_name: $("ifrs9ModelName")?.value.trim(),
-      model_type: $("ifrs9ModelType")?.value || "simplified",
-      applies_to: $("ifrs9ModelAppliesTo")?.value || "trade_receivable",
-      basis: $("ifrs9ModelBasis")?.value || "provision_matrix",
-      is_active: true,
+      model_type: "simplified",
+      applies_to: "trade_receivable",
+      basis: "provision_matrix",
+      effective_from:
+        $("ifrs9ModelEffectiveFrom")?.value || null,
+      review_date:
+        $("ifrs9ModelReviewDate")?.value || null,
+      model_owner:
+        $("ifrs9ModelOwner")?.value.trim() || null,
+      is_active: false,
     };
 
     if (!payload.model_name) return alert("Model name is required.");
@@ -72839,6 +77070,10 @@ async function saveEditModal() {
       await loadAll();
       await configureModel(result.item.id);
       setMsg("ECL model created. Configure its provision matrix below.");
+      $("ifrs9ModelName").value = "";
+      $("ifrs9ModelEffectiveFrom").value = "";
+      $("ifrs9ModelReviewDate").value = "";
+      $("ifrs9ModelOwner").value = "";
     } catch (error) {
       setMsg(error.message || "Failed to create ECL model.");
     }
@@ -72897,8 +77132,62 @@ async function saveEditModal() {
     `;
   }
 
+  function applyIfrs9ReadinessControls() {
+    const ready = Boolean(IFRS9.readiness?.ecl_ready);
+    const calculateBtn = $("ifrs9CalculateEclBtn");
+
+    if (calculateBtn) {
+      calculateBtn.disabled = !ready;
+      calculateBtn.title = ready
+        ? ""
+        : "Configure the required ECL posting accounts first.";
+    }
+  }
+
   function addBand() {
     $("ifrs9BandRows")?.insertAdjacentHTML("beforeend", bandRow());
+  }
+
+  function validateBands(bands) {
+    if (!bands.length) return "At least one ageing band is required.";
+
+    const rows = [...bands].sort((a, b) => a.days_from - b.days_from);
+    const names = new Set();
+
+    for (const row of rows) {
+      const key = row.band_label.toLowerCase();
+
+      if (!row.band_label) return "Every ageing band requires a name.";
+      if (names.has(key)) return `Duplicate ageing band: ${row.band_label}.`;
+      if (!Number.isInteger(row.days_from) || row.days_from < 0)
+        return `${row.band_label}: Days From must be zero or greater.`;
+      if (row.days_to !== null && (!Number.isInteger(row.days_to) || row.days_to < row.days_from))
+        return `${row.band_label}: Days To cannot be less than Days From.`;
+      if (!Number.isFinite(row.loss_rate) || row.loss_rate < 0 || row.loss_rate > 1)
+        return `${row.band_label}: loss rate must be between 0% and 100%.`;
+
+      names.add(key);
+    }
+
+    if (rows[0].days_from !== 0) return "The first ageing band must start at day 0.";
+
+    const openBands = rows.filter(row => row.days_to === null);
+    if (openBands.length !== 1) return "Exactly one open-ended ageing band is required.";
+    if (rows.at(-1).days_to !== null) return "The final ageing band must be open-ended.";
+
+    for (let i = 0; i < rows.length - 1; i++) {
+      const current = rows[i];
+      const next = rows[i + 1];
+
+      if (current.days_to === null)
+        return "Only the final ageing band may be open-ended.";
+      if (next.days_from <= current.days_to)
+        return `Bands ${current.band_label} and ${next.band_label} overlap.`;
+      if (next.days_from !== current.days_to + 1)
+        return `There is a gap between ${current.band_label} and ${next.band_label}.`;
+    }
+
+    return "";
   }
 
   async function saveBands() {
@@ -72911,9 +77200,8 @@ async function saveEditModal() {
       loss_rate: Number(row.querySelector("[data-band-rate]").value || 0) / 100,
     }));
 
-    if (!bands.length) return alert("At least one ageing band is required.");
-    if (bands.some(row => !row.band_label)) return alert("Every ageing band requires a name.");
-    if (bands.some(row => row.days_to !== null && row.days_to < row.days_from)) return alert("Days To cannot be less than Days From.");
+    const validationError = validateBands(bands);
+    if (validationError) return alert(validationError);
 
     try {
       await apiFetch(ENDPOINTS.ifrs9.eclBands(cid(), IFRS9.selectedModelId), {
@@ -72934,6 +77222,17 @@ async function saveEditModal() {
 
     if (!reportingDate) return alert("Reporting date is required.");
     if (!modelId) return alert("Select an ECL model.");
+
+    if (!IFRS9.readiness?.ecl_ready) {
+      showTab("accounts");
+
+      setMsg(
+        "Configure the ECL impairment-loss and " +
+        "trade-receivables allowance accounts before calculating ECL."
+      );
+
+      return;
+    }
 
     setMsg("Calculating expected credit loss...");
 
@@ -73084,6 +77383,25 @@ async function saveEditModal() {
           <div><b>Total ECL</b><p>${money(run.total_ecl)}</p></div>
           <div><b>Movement</b><p>${money(meta.movement_ecl)}</p></div>
           <div><b>Status</b><p>${label(run.status)}</p></div>
+          <div>
+            <b>Posting Journal</b>
+            <p>${esc(run.journal_id || "—")}</p>
+          </div>
+
+          <div>
+            <b>Reversal Journal</b>
+            <p>${esc(run.reversal_journal_id || "—")}</p>
+          </div>
+
+          <div>
+            <b>Reversed At</b>
+            <p>${dateText(run.reversed_at)}</p>
+          </div>
+
+          <div>
+            <b>Reversal Reason</b>
+            <p>${esc(run.reversal_reason || "—")}</p>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -73278,6 +77596,85 @@ async function saveEditModal() {
     }
   }
 
+  async function reverseEclRun(runId) {
+    const run = IFRS9.eclRuns.find(
+      item => Number(item.id) === Number(runId)
+    );
+
+    if (!run) {
+      return setMsg("ECL run not found.");
+    }
+
+    if (run.status !== "posted") {
+      return setMsg("Only posted ECL runs can be reversed.");
+    }
+
+    if (run.reversal_journal_id) {
+      return setMsg("This ECL run has already been reversed.");
+    }
+
+    const reason = prompt(
+      "Enter the reason for reversing this ECL run:"
+    )?.trim();
+
+    if (!reason) return;
+
+    const confirmed = confirm(
+      `Reverse ECL run ${runId}?\n\n` +
+      `Reporting date: ${dateText(run.reporting_date)}\n` +
+      `Journal: ${run.journal_id || "—"}\n` +
+      `Reason: ${reason}\n\n` +
+      "A reversing journal will be posted."
+    );
+
+    if (!confirmed) return;
+
+    const button = document.querySelector(
+      `[data-ifrs9-reverse-run="${CSS.escape(String(runId))}"]`
+    );
+
+    const originalText = button?.textContent || "Reverse";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Reversing...";
+    }
+
+    setMsg(`Reversing ECL run ${runId}...`);
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.reverseEclRun(cid(), runId),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason,
+            reversal_date: new Date()
+              .toISOString()
+              .slice(0, 10),
+          }),
+        }
+      );
+
+      await loadAll();
+
+      setMsg(
+        `ECL run ${runId} reversed. ` +
+        `Reversal journal: ${result.reversal_journal_id}.`
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        `Failed to reverse ECL run ${runId}.`
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
   window.bindIFRS9Screen = async function bindIFRS9Screen() {
     if (!IFRS9.bound) {
       IFRS9.bound = true;
@@ -73295,10 +77692,57 @@ async function saveEditModal() {
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);
       $("ifrs9InstrumentCloseBtn")?.addEventListener("click", closeInstrumentModal);
       $("ifrs9InstrumentCancelBtn")?.addEventListener("click", closeInstrumentModal);
+      $("ifrs9EclReportingDate")?.addEventListener(
+        "change",
+        renderModelOptions
+      );
+      const today = new Date();
+      const year = today.getFullYear();
+
+      if ($("ifrs9ReconciliationTo")) {
+        $("ifrs9ReconciliationTo").value ||= today
+          .toISOString()
+          .slice(0, 10);
+      }
+
+      if ($("ifrs9ReconciliationFrom")) {
+        $("ifrs9ReconciliationFrom").value ||=
+          `${year}-01-01`;
+      }
+
+      if ($("ifrs9ReconciliationYear")) {
+        $("ifrs9ReconciliationYear").value ||= year;
+      }
 
       document.addEventListener("click", async event => {
         const tab = event.target.closest("[data-ifrs9-tab]");
         if (tab) return showTab(tab.dataset.ifrs9Tab);
+
+        const saveMapping = event.target.closest(
+          "[data-ifrs9-save-mapping]"
+        );
+
+        if (saveMapping) {
+          return saveIfrs9Mapping(
+            saveMapping.dataset.ifrs9SaveMapping
+          );
+        }
+
+        const saveAllMappings = event.target.closest(
+          "#ifrs9SaveAllMappingsBtn"
+        );
+
+        if (saveAllMappings) {
+          return saveAllIfrs9Mappings();
+        }
+
+        const reloadReadiness = event.target.closest(
+          "#ifrs9ReloadReadinessBtn"
+        );
+
+        if (reloadReadiness) {
+          return reloadIfrs9Readiness();
+        }
 
         const model = event.target.closest("[data-ifrs9-configure-model]");
         if (model) return configureModel(Number(model.dataset.ifrs9ConfigureModel));
@@ -73317,6 +77761,55 @@ async function saveEditModal() {
 
         const preview = event.target.closest("[data-ifrs9-preview-run]");
         if (preview) return previewRun(Number(preview.dataset.ifrs9PreviewRun));
+      
+        const reverseRun = event.target.closest(
+          "[data-ifrs9-reverse-run]"
+        );
+
+        if (reverseRun) {
+          return reverseEclRun(
+            Number(reverseRun.dataset.ifrs9ReverseRun)
+          );
+        }    
+        if (event.target.closest("#ifrs9NewWriteoffBtn")) {
+          return createIfrs9Writeoff();
+        }
+
+        const postWriteoff = event.target.closest(
+          "[data-ifrs9-post-writeoff]"
+        );
+
+        if (postWriteoff) {
+          return postIfrs9Writeoff(
+            Number(postWriteoff.dataset.ifrs9PostWriteoff)
+          );
+        }
+
+        const recoverWriteoff = event.target.closest(
+          "[data-ifrs9-recover-writeoff]"
+        );
+
+        if (recoverWriteoff) {
+          return recoverIfrs9Writeoff(
+            Number(recoverWriteoff.dataset.ifrs9RecoverWriteoff)
+          );
+        }
+
+        if (
+          event.target.closest(
+            "#ifrs9LoadReconciliationBtn"
+          )
+        ) {
+          return loadIfrs9Reconciliation();
+        }
+
+        if (
+          event.target.closest(
+            "#ifrs9SaveReconciliationSnapshotBtn"
+          )
+        ) {
+          return saveIfrs9ReconciliationSnapshot();
+        }
       });
     }
 

@@ -50,6 +50,12 @@ INDUSTRY_ALIASES = {
 
     "cleaning services": "Cleaning Services",
     "cleaning": "Cleaning Services",
+
+    "agriculture": "Agriculture",
+    "agricultural": "Agriculture",
+    "agricultural services": "Agriculture",
+    "farming": "Agriculture",
+    "farm": "Agriculture",
 }
 
 
@@ -88,6 +94,99 @@ SUB_INDUSTRY_ALIASES = {
 
     "architecture": "Architecture",
     "architectural services": "Architecture",
+
+    # Crop farming
+    "cropfarming": "Crop Farming",
+    "crop farming": "Crop Farming",
+    "crop_farming": "Crop Farming",
+    "crop production": "Crop Farming",
+    "field crops": "Crop Farming",
+    "grain farming": "Crop Farming",
+
+    # Livestock farming
+    "livestockfarming": "Livestock Farming",
+    "livestock farming": "Livestock Farming",
+    "livestock_farming": "Livestock Farming",
+    "livestock": "Livestock Farming",
+    "cattle farming": "Livestock Farming",
+    "sheep farming": "Livestock Farming",
+    "goat farming": "Livestock Farming",
+    "pig farming": "Livestock Farming",
+
+    # Mixed farming
+    "mixedfarming": "Mixed Farming",
+    "mixed farming": "Mixed Farming",
+    "mixed_farming": "Mixed Farming",
+    "crop and livestock": "Mixed Farming",
+    "crop livestock farming": "Mixed Farming",
+
+    # Dairy
+    "dairyfarming": "Dairy Farming",
+    "dairy farming": "Dairy Farming",
+    "dairy_farming": "Dairy Farming",
+    "dairy": "Dairy Farming",
+    "milk production": "Dairy Farming",
+
+    # Poultry
+    "poultryfarming": "Poultry Farming",
+    "poultry farming": "Poultry Farming",
+    "poultry_farming": "Poultry Farming",
+    "poultry": "Poultry Farming",
+    "broiler farming": "Poultry Farming",
+    "egg production": "Poultry Farming",
+
+    # Horticulture
+    "horticulture": "Horticulture",
+    "horticultural farming": "Horticulture",
+    "vegetable farming": "Horticulture",
+    "flower farming": "Horticulture",
+    "nursery": "Horticulture",
+    "greenhouse farming": "Horticulture",
+
+    # Fruit
+    "fruitfarming": "Fruit Farming",
+    "fruit farming": "Fruit Farming",
+    "fruit_farming": "Fruit Farming",
+    "orchard farming": "Fruit Farming",
+    "orchards": "Fruit Farming",
+    "vineyard": "Fruit Farming",
+    "viticulture": "Fruit Farming",
+
+    # Forestry
+    "forestryplantations": "Forestry & Plantations",
+    "forestry & plantations": "Forestry & Plantations",
+    "forestry and plantations": "Forestry & Plantations",
+    "forestry_plantations": "Forestry & Plantations",
+    "forestry": "Forestry & Plantations",
+    "plantation": "Forestry & Plantations",
+    "timber plantation": "Forestry & Plantations",
+
+    # Aquaculture
+    "aquaculture": "Aquaculture",
+    "fish farming": "Aquaculture",
+    "fishfarming": "Aquaculture",
+    "fish_farming": "Aquaculture",
+
+    # Beekeeping
+    "beekeeping": "Beekeeping",
+    "bee keeping": "Beekeeping",
+    "bee_keeping": "Beekeeping",
+    "apiculture": "Beekeeping",
+
+    # Game and wildlife
+    "gamewildlifefarming": "Game & Wildlife Farming",
+    "game & wildlife farming": "Game & Wildlife Farming",
+    "game and wildlife farming": "Game & Wildlife Farming",
+    "game_wildlife_farming": "Game & Wildlife Farming",
+    "game farming": "Game & Wildlife Farming",
+    "wildlife farming": "Game & Wildlife Farming",
+
+    # Agricultural support
+    "agriculturalsupportservices": "Agricultural Support Services",
+    "agricultural support services": "Agricultural Support Services",
+    "agricultural_support_services": "Agricultural Support Services",
+    "farm support services": "Agricultural Support Services",
+    "contract farming": "Agricultural Support Services",
 
     "graphicdesign": "Graphic Design",
     "graphic design": "Graphic Design",
@@ -291,6 +390,19 @@ PROJECT_MATERIAL_SUB_INDUSTRIES = {
     "commercial_cleaning",
     "industrial_cleaning",
     "pest_control",
+
+    "crop_farming",
+    "livestock_farming",
+    "mixed_farming",
+    "dairy_farming",
+    "poultry_farming",
+    "horticulture",
+    "fruit_farming",
+    "forestry_and_plantations",
+    "aquaculture",
+    "beekeeping",
+    "game_and_wildlife_farming",
+    "agricultural_support_services",
 }
 
 
@@ -431,6 +543,28 @@ def project_work_unit_label(
 ) -> str:
     _, _, ind_slug, sub_slug = normalize_industry_pair(industry, sub_industry)
 
+    # Agriculture
+    agriculture_labels = {
+        "crop_farming": "Crop / Field / Season",
+        "livestock_farming": "Herd / Flock / Batch",
+        "mixed_farming": "Farm Activity / Batch",
+        "dairy_farming": "Herd / Production Cycle",
+        "poultry_farming": "Flock / Production Batch",
+        "horticulture": "Crop Block / Growing Cycle",
+        "fruit_farming": "Orchard / Block / Season",
+        "forestry_and_plantations": "Plantation / Compartment",
+        "aquaculture": "Pond / Tank / Stock Batch",
+        "beekeeping": "Apiary / Colony",
+        "game_and_wildlife_farming": "Herd / Camp / Population",
+        "agricultural_support_services": "Farm Job / Contract",
+    }
+
+    if sub_slug in agriculture_labels:
+        return agriculture_labels[sub_slug]
+
+    if ind_slug == "agriculture":
+        return "Farm Activity / Batch"
+    
     # Sub-industry specific labels first
     if sub_slug in {"repair_workshop", "vehicle_repairs", "panel_beating"}:
         return "Job Card / Work Order"

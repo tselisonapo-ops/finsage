@@ -3217,6 +3217,42 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-eligibility-summary{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:12px;
+}
+
+.payroll-eligibility-summary>div{
+  padding:10px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:10px;
+}
+
+.payroll-eligibility-summary span{
+  display:block;
+  font-size:12px;
+  opacity:.7;
+}
+
+.payroll-eligibility-summary strong{
+  display:block;
+  margin-top:4px;
+  font-size:18px;
+}
+
+.payroll-run-check-list{
+  display:grid;
+  gap:8px;
+  margin-bottom:12px;
+}
+
+@media(max-width:760px){
+  .payroll-eligibility-summary{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
 .payroll-modal{
   position:fixed;
   inset:0;
@@ -11612,6 +11648,91 @@ tbody tr:hover {
               <h3>ECL Runs</h3>
               <div id="ifrs9EclRunList"></div>
             </div>
+
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>Receivable Write-Offs</h3>
+                  <p class="muted">
+                    Write off receivables where there is no reasonable expectation of recovery.
+                  </p>
+                </div>
+
+                <button
+                  id="ifrs9NewWriteoffBtn"
+                  type="button"
+                  class="btn btn-primary"
+                >
+                  New Write-Off
+                </button>
+              </div>
+
+              <div id="ifrs9WriteoffList"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>ECL Allowance Reconciliation</h3>
+                  <p class="muted">
+                    Reconcile the opening loss allowance, impairment movements,
+                    write-offs and closing allowance.
+                  </p>
+                </div>
+
+                <div class="screen-actions">
+                  <button
+                    id="ifrs9LoadReconciliationBtn"
+                    type="button"
+                    class="btn btn-secondary"
+                  >
+                    Load Reconciliation
+                  </button>
+
+                  <button
+                    id="ifrs9SaveReconciliationSnapshotBtn"
+                    type="button"
+                    class="btn btn-primary"
+                    disabled
+                  >
+                    Save Snapshot
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  From
+                  <input
+                    id="ifrs9ReconciliationFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  To
+                  <input
+                    id="ifrs9ReconciliationTo"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Financial Year
+                  <input
+                    id="ifrs9ReconciliationYear"
+                    type="number"
+                    min="2000"
+                    max="2200"
+                  >
+                </label>
+              </div>
+
+              <div
+                id="ifrs9ReconciliationBody"
+                style="margin-top:16px;"
+              ></div>
+            </div>
           </div>
 
           <div id="ifrs9TabEclModels" class="ifrs9-tab-panel hidden">
@@ -11627,29 +11748,80 @@ tbody tr:hover {
                 <label>
                   Model Type
                   <select id="ifrs9ModelType">
-                    <option value="simplified">Simplified</option>
-                    <option value="general">General</option>
-                    <option value="manual">Manual</option>
+                    <option value="simplified">
+                      Simplified
+                    </option>
+
+                    <option value="general" disabled>
+                      General — Phase 2
+                    </option>
+
+                    <option value="manual" disabled>
+                      Manual — Phase 2
+                    </option>
                   </select>
                 </label>
 
                 <label>
                   Applies To
                   <select id="ifrs9ModelAppliesTo">
-                    <option value="trade_receivable">Trade Receivables</option>
-                    <option value="loan_receivable">Loan Receivables</option>
-                    <option value="deposit_asset">Deposit Assets</option>
-                    <option value="other_financial_asset">Other Financial Assets</option>
+                    <option value="trade_receivable">
+                      Trade Receivables
+                    </option>
+
+                    <option value="loan_receivable" disabled>
+                      Loan Receivables — Phase 2
+                    </option>
+
+                    <option value="deposit_asset" disabled>
+                      Deposit Assets — Phase 2
+                    </option>
+
+                    <option value="other_financial_asset" disabled>
+                      Other Financial Assets — Phase 2
+                    </option>
                   </select>
                 </label>
 
                 <label>
                   Basis
                   <select id="ifrs9ModelBasis">
-                    <option value="provision_matrix">Provision Matrix</option>
-                    <option value="pd_lgd_ead">PD / LGD / EAD</option>
-                    <option value="manual">Manual</option>
+                    <option value="provision_matrix">
+                      Provision Matrix
+                    </option>
+
+                    <option value="pd_lgd_ead" disabled>
+                      PD / LGD / EAD — Phase 2
+                    </option>
+
+                    <option value="manual" disabled>
+                      Manual — Phase 2
+                    </option>
                   </select>
+                </label>
+
+                <label>
+                  Effective From
+                  <input
+                    id="ifrs9ModelEffectiveFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Review Date
+                  <input
+                    id="ifrs9ModelReviewDate"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Model Owner
+                  <input
+                    id="ifrs9ModelOwner"
+                    placeholder="Finance Manager"
+                  >
                 </label>
               </div>
 
@@ -11713,22 +11885,6 @@ tbody tr:hover {
 
             <div class="modal-footer">
               <button id="ifrs9InstrumentCancelBtn" class="btn btn-secondary">Close</button>
-            </div>
-          </div>
-        </div>
-
-        <div id="ifrs9JournalPreviewModal" class="modal hidden">
-          <div class="modal-content wide">
-            <div class="modal-header">
-              <h2>Journal Preview</h2>
-              <button id="ifrs9PreviewCloseBtn" class="btn btn-light">×</button>
-            </div>
-
-            <div id="ifrs9PreviewBody"></div>
-
-            <div class="modal-footer">
-              <button id="ifrs9PreviewPostBtn" class="btn btn-primary">Post Journal</button>
-              <button id="ifrs9PreviewCancelBtn" class="btn btn-secondary">Cancel</button>
             </div>
           </div>
         </div>
@@ -16520,6 +16676,63 @@ tbody tr:hover {
           </div>
         </section>
 
+          <!-- =========================================================
+              IAS 41 AGRICULTURE
+          ========================================================== -->
+          <section id="screen-ias41" class="screen hidden">
+            <div id="ias41App" class="space-y-4">
+
+              <div class="card p-4">
+                <div class="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-2xl">🌾</span>
+
+                      <div>
+                        <h2 class="text-xl font-bold">IAS 41 Agriculture</h2>
+
+                        <p class="text-sm text-slate-500 mt-1">
+                          Biological assets, agricultural produce, fair-value
+                          measurement, harvest and disclosures.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span id="ias41CompanyBadge" class="pill">
+                      No company selected
+                    </span>
+
+                    <span id="ias41SetupBadge" class="pill">
+                      Setup not checked
+                    </span>
+
+                    <button
+                      id="ias41RefreshBtn"
+                      type="button"
+                      class="btn"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card p-3 overflow-x-auto">
+                <div
+                  id="ias41Tabs"
+                  class="flex items-center gap-2 min-w-max"
+                  role="tablist"
+                  aria-label="IAS 41 workspaces"
+                ></div>
+              </div>
+
+              <div id="ias41Workspace" class="min-h-[420px]"></div>
+
+            </div>
+          </section>
+
         <!-- Account Settings -->
         <section id="screen-account-settings" class="screen hidden">
           <div class="max-w-4xl mx-auto p-6">
@@ -17722,9 +17935,9 @@ tbody tr:hover {
             <button data-payroll-tab="calendars">Calendars</button>
             <button data-payroll-tab="runs">Runs</button>
             <button data-payroll-tab="employee-benefits">Employee Benefits</button>
+            <button data-payroll-tab="incentives">Incentives</button>
             <button data-payroll-tab="reports">Reports</button>
             <button data-payroll-tab="settings">Settings</button>
-            
           </div>
 
           <div id="payrollTabOverview" class="payroll-panel">
@@ -18029,6 +18242,27 @@ tbody tr:hover {
 
                 <button
                   type="button"
+                  data-payroll-run-tab="attendance"
+                >
+                  Attendance
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="inputs"
+                >
+                  Inputs
+                </button>                
+              
+                <button
+                  type="button"
+                  data-payroll-run-tab="validation"
+                >
+                  Validation
+                </button>
+                
+                <button
+                  type="button"
                   data-payroll-run-tab="journal"
                 >
                   Journal
@@ -18039,6 +18273,13 @@ tbody tr:hover {
                   data-payroll-run-tab="posting"
                 >
                   Posting
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="audit"
+                >
+                  Audit
                 </button>
               </div>
 
@@ -18073,6 +18314,145 @@ tbody tr:hover {
                 </div>
 
                 <div id="payrollRunEmployeesList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelAttendance"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Attendance</h3>
+                    <p class="payroll-muted">
+                      Capture work, absence, leave and unpaid time
+                      for this payroll period.
+                    </p>
+                  </div>
+
+                  <div class="payroll-run-actions">
+                    <button
+                      id="payrollGenerateAttendanceBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Generate Schedule
+                    </button>
+
+                    <button
+                      id="payrollNewAttendanceBtn"
+                      type="button"
+                      class="payroll-primary"
+                    >
+                      + Attendance
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  id="payrollAttendanceSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollAttendanceList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelInputs"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Inputs</h3>
+                    <p class="payroll-muted">
+                      Capture once-off earnings, deductions and
+                      employer contributions for this run.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollNewPeriodInputBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    + Payroll Input
+                  </button>
+                </div>
+
+                <div
+                  id="payrollPeriodInputFilters"
+                  class="payroll-filters"
+                >
+                  <select id="payrollPeriodInputEmployeeFilter">
+                    <option value="">All employees</option>
+                  </select>
+
+                  <select id="payrollPeriodInputStatusFilter">
+                    <option value="">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div
+                  id="payrollPeriodInputSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollPeriodInputList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelValidation"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Validation</h3>
+                    <p class="payroll-muted">
+                      Review errors, warnings and information before
+                      approving or posting payroll.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshValidationBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Validation
+                  </button>
+                </div>
+
+                <div
+                  id="payrollValidationSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollValidationReadiness"></div>
+
+                <div class="payroll-run-overview-grid">
+                  <div class="payroll-run-info-card">
+                    <h4>Errors</h4>
+                    <div id="payrollValidationErrors"></div>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Warnings</h4>
+                    <div id="payrollValidationWarnings"></div>
+                  </div>
+                </div>
+
+                <div class="payroll-run-info-card">
+                  <h4>Information</h4>
+                  <div id="payrollValidationInformation"></div>
+                </div>
+
+                <div class="payroll-run-info-card">
+                  <h4>Employee Validation</h4>
+                  <div id="payrollEmployeeValidationList"></div>
+                </div>
               </div>
 
               <div
@@ -18121,6 +18501,30 @@ tbody tr:hover {
                     </button>
 
                     <button
+                      id="payrollSubmitRunBtn"
+                      type="button"
+                      class="payroll-secondary dark hidden"
+                    >
+                      Submit for Approval
+                    </button>
+
+                    <button
+                      id="payrollApproveRunBtn"
+                      type="button"
+                      class="payroll-primary hidden"
+                    >
+                      Approve Payroll
+                    </button>
+
+                    <button
+                      id="payrollReturnRunBtn"
+                      type="button"
+                      class="payroll-secondary hidden"
+                    >
+                      Return to Draft
+                    </button>
+
+                    <button
                       id="payrollPreviewJournalBtn"
                       type="button"
                       class="payroll-secondary dark"
@@ -18146,6 +18550,97 @@ tbody tr:hover {
                   </div>
                 </div>
               </div>
+
+              <div
+                id="payrollRunPanelAudit"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Audit History</h3>
+                    <p class="payroll-muted">
+                      Calculation, approval, posting and correction
+                      history for this payroll run.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshAuditBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Audit
+                  </button>
+                </div>
+
+                <div id="payrollRunAuditList"></div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="payrollTabIncentives"
+            class="payroll-panel hidden"
+          >
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Performance Incentives</h3>
+                <p class="payroll-muted">
+                  Configure incentive plans, target ranges and
+                  employee assignments.
+                </p>
+              </div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Incentive Plans</h3>
+                  <p class="payroll-muted">
+                    Define the metric and general payout basis.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentivePlanBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Incentive Plan
+                </button>
+              </div>
+
+              <div id="payrollIncentivePlansList"></div>
+              <div id="payrollIncentivePlanDetail"></div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Employee Assignments</h3>
+                  <p class="payroll-muted">
+                    Assign employees to plans and set their targets.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentiveAssignmentBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Assignment
+                </button>
+              </div>
+
+              <div id="payrollIncentiveAssignmentsList"></div>
             </div>
           </div>
 
@@ -18695,6 +19190,37 @@ tbody tr:hover {
                       <label>
                         Effective From
                         <input id="payrollPaySetupEffectiveFrom" type="date">
+                      </label>
+
+                      <label>
+                        Proration Method
+                        <select id="payrollPayProrationMethod">
+                          <option value="working_days">Working days</option>
+                          <option value="calendar_days">Calendar days</option>
+                          <option value="fixed_30_days">Fixed 30 days</option>
+                          <option value="scheduled_hours">Scheduled hours</option>
+                          <option value="actual_hours">Actual hours</option>
+                          <option value="no_proration">No proration</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Normal Hours Per Day
+                        <input
+                          id="payrollPayHoursPerDay"
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          value="8"
+                        >
+                      </label>
+
+                      <label class="payroll-check-label">
+                        <input
+                          id="payrollPayAttendanceRequired"
+                          type="checkbox"
+                        >
+                        Attendance required before payroll calculation
                       </label>
                     </div>
                   </div>
@@ -22824,6 +23350,7 @@ tbody tr:hover {
 <link rel="stylesheet" href="./assets/hostMount.css" />
 <script type="module" src="./assets/hostMount.js"></script>
 <script src="/dashboard.js?v=20260805c" defer></script>
+<script src="/ias41.js"></script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {

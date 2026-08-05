@@ -598,7 +598,701 @@ def api_payroll_run_get(company_id: int, run_id: int):
         current_app.logger.exception("payroll_run_get failed")
         return jsonify({"ok": False, "error": str(e)}), 400
 
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/attendance",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_attendance(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
 
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            employee_id=request.args.get("employee_id")
+
+            items=db_service.payroll_attendance_list(
+                company_id,
+                run_id,
+                int(employee_id)
+                if employee_id else None,
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_attendance_upsert(
+            company_id,
+            run_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll attendance failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/attendance/bulk",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_attendance_bulk(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        items=db_service.payroll_attendance_bulk_save(
+            company_id,
+            run_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "items":items,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll attendance bulk save failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/attendance/generate",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_attendance_generate(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_attendance_generate(
+            company_id,
+            run_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll attendance generation failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/attendance-summary",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_attendance_summary(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_attendance_summary(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll attendance summary failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/attendance/<int:attendance_id>",
+    methods=["DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_attendance_delete(
+    company_id:int,
+    run_id:int,
+    attendance_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        deleted=db_service.payroll_attendance_delete(
+            company_id,
+            run_id,
+            attendance_id,
+        )
+
+        if not deleted:
+            return jsonify({
+                "ok":False,
+                "error":"Attendance record not found",
+            }),404
+
+        return jsonify({
+            "ok":True,
+            "deleted":True,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll attendance delete failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/eligibility",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_eligibility(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_run_eligibility(
+            company_id,
+            run_id,
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run eligibility failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/period-inputs",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_period_inputs(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            employee_id=request.args.get("employee_id")
+            status=request.args.get("status")
+
+            items=db_service.payroll_period_inputs_list(
+                company_id,
+                run_id,
+                int(employee_id)
+                if employee_id else None,
+                status or None,
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_period_input_save(
+            company_id,
+            run_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll period inputs failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/period-inputs/<int:input_id>",
+    methods=["GET","PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_period_input(
+    company_id:int,
+    run_id:int,
+    input_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            out=db_service.payroll_period_input_get(
+                company_id,
+                run_id,
+                input_id,
+            )
+
+            if not out:
+                return jsonify({
+                    "ok":False,
+                    "error":"Payroll period input not found",
+                }),404
+
+            return jsonify({
+                "ok":True,
+                "data":out,
+            }),200
+
+        if request.method=="DELETE":
+            deleted=db_service.payroll_period_input_delete(
+                company_id,
+                run_id,
+                input_id,
+            )
+
+            if not deleted:
+                return jsonify({
+                    "ok":False,
+                    "error":"Payroll period input not found",
+                }),404
+
+            return jsonify({
+                "ok":True,
+                "deleted":True,
+            }),200
+
+        out=db_service.payroll_period_input_save(
+            company_id,
+            run_id,
+            _payroll_body(),
+            _jwt_user_id(),
+            input_id=input_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll period input failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/period-inputs/"
+    "<int:input_id>/<action>",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_period_input_action(
+    company_id:int,
+    run_id:int,
+    input_id:int,
+    action:str,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    statuses={
+        "approve":"approved",
+        "return-to-draft":"draft",
+        "reject":"rejected",
+        "cancel":"cancelled",
+    }
+
+    if action not in statuses:
+        return jsonify({
+            "ok":False,
+            "error":"Unsupported period input action",
+        }),404
+
+    try:
+        out=db_service.payroll_period_input_set_status(
+            company_id,
+            run_id,
+            input_id,
+            statuses[action],
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll period input action failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/period-input-summary",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_period_input_summary(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_period_input_summary(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll period input summary failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/validation",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_validation(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_run_validation(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run validation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/employees/"
+    "<int:employee_id>/validation",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_employee_validation(
+    company_id:int,
+    run_id:int,
+    employee_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_employee_validation(
+            company_id,
+            run_id,
+            employee_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll employee validation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/submit",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_submit(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_run_submit(
+            company_id,
+            run_id,
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run submit failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/approve",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_approve(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id=_jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok":False,
+            "error":"AUTH|missing_user_id",
+        }),401
+
+    try:
+        out=db_service.payroll_run_approve(
+            company_id,
+            run_id,
+            user_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run approval failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/return-to-draft",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_return_to_draft(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id=_jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok":False,
+            "error":"AUTH|missing_user_id",
+        }),401
+
+    try:
+        out=db_service.payroll_run_return_to_draft(
+            company_id,
+            run_id,
+            _payroll_body(),
+            user_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll return to draft failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/runs/<int:run_id>/calculate", methods=["POST", "OPTIONS"])
 @require_auth
 def api_payroll_run_calculate(company_id: int, run_id: int):
@@ -1895,4 +2589,387 @@ def api_payroll_tax_year_clone(company_id: int, year_id: int):
             "api_payroll_tax_year_clone failed"
         )
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/audit",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_audit(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        items=db_service.payroll_run_audit_history(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "items":items,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run audit failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/plans",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_plans(company_id:int):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            active_only=(
+                request.args.get("active_only")
+                in("1","true","yes")
+            )
+
+            items=db_service.payroll_incentive_plans_list(
+                company_id,
+                active_only,
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_incentive_plan_save(
+            company_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive plans failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/plans/<int:plan_id>",
+    methods=["GET","PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_plan(
+    company_id:int,
+    plan_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            out=db_service.payroll_incentive_plan_get(
+                company_id,
+                plan_id,
+            )
+
+            if not out:
+                return jsonify({
+                    "ok":False,
+                    "error":"Incentive plan not found",
+                }),404
+
+            return jsonify({
+                "ok":True,
+                "data":out,
+            }),200
+
+        if request.method=="DELETE":
+            deleted=(
+                db_service.payroll_incentive_plan_delete(
+                    company_id,
+                    plan_id,
+                )
+            )
+
+            return jsonify({
+                "ok":True,
+                "deleted":deleted,
+            }),200
+
+        out=db_service.payroll_incentive_plan_save(
+            company_id,
+            _payroll_body(),
+            _jwt_user_id(),
+            plan_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive plan failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/plans/<int:plan_id>/rules",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_rules(
+    company_id:int,
+    plan_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            items=db_service.payroll_incentive_rules_list(
+                company_id,
+                plan_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_incentive_rule_save(
+            company_id,
+            plan_id,
+            _payroll_body(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive rules failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/plans/<int:plan_id>/rules/"
+    "<int:rule_id>",
+    methods=["PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_rule(
+    company_id:int,
+    plan_id:int,
+    rule_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="DELETE":
+            deleted=(
+                db_service.payroll_incentive_rule_delete(
+                    company_id,
+                    plan_id,
+                    rule_id,
+                )
+            )
+
+            return jsonify({
+                "ok":True,
+                "deleted":deleted,
+            }),200
+
+        out=db_service.payroll_incentive_rule_save(
+            company_id,
+            plan_id,
+            _payroll_body(),
+            rule_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive rule failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/assignments",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_assignments(
+    company_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            plan_id=request.args.get("plan_id")
+            employee_id=request.args.get("employee_id")
+
+            items=(
+                db_service
+                .payroll_incentive_assignments_list(
+                    company_id,
+                    plan_id=int(plan_id)
+                    if plan_id else None,
+                    employee_id=int(employee_id)
+                    if employee_id else None,
+                )
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=(
+            db_service
+            .payroll_incentive_assignment_save(
+                company_id,
+                _payroll_body(),
+                _jwt_user_id(),
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive assignments failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/assignments/<int:assignment_id>",
+    methods=["PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_assignment(
+    company_id:int,
+    assignment_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="DELETE":
+            deleted=(
+                db_service
+                .payroll_incentive_assignment_delete(
+                    company_id,
+                    assignment_id,
+                )
+            )
+
+            return jsonify({
+                "ok":True,
+                "deleted":deleted,
+            }),200
+
+        out=(
+            db_service
+            .payroll_incentive_assignment_save(
+                company_id,
+                _payroll_body(),
+                _jwt_user_id(),
+                assignment_id,
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive assignment failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
 
