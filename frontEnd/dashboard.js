@@ -34701,7 +34701,9 @@ window.postTerm = async function postTerm() {
   window.closeLeaseWizard = closeDrawer;
 
   navBtn?.addEventListener("click", () => {
-    const companyId = window.getActiveCompanyId?.();
+    const companyId =
+      window.getActiveCompanyId?.() ||
+      localStorage.getItem("company_id");
 
     if (!companyId) {
       alert("Select a company first.");
@@ -34723,6 +34725,7 @@ window.postTerm = async function postTerm() {
 
   window.addEventListener("message", async (event) => {
     if (event.origin !== origin) return;
+    if (event.source !== frame.contentWindow) return;
 
     const data = event.data || {};
 
