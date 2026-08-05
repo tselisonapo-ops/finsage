@@ -10876,38 +10876,47 @@ function openLeaseWizard(ctx = {}) {
 
   window.__LEASE_WIZARD_ACTIVE_CONTEXT__ = payload;
 
-  const sendContext = () =>
-    frame.contentWindow?.postMessage(payload, origin);
+  const sendContext = () => {
+    if (!frame.contentWindow) return;
+
+    frame.contentWindow.postMessage(payload, origin);
+    console.log("[LEASE HOST] context sent", payload);
+  };
+
+  const sendAfterLoad = () => {
+    frame.dataset.loaded = "1";
+
+    // Send more than once so React has time to attach its message listener.
+    sendContext();
+    setTimeout(sendContext, 150);
+    setTimeout(sendContext, 500);
+  };
 
   drawer.classList.remove("hidden");
   drawer.style.display = "";
   drawer.style.pointerEvents = "";
   drawer.classList.add("active");
 
-  if (frame.src !== url) {
+  const currentUrl = frame.getAttribute("src") || "";
+  const alreadyLoaded =
+    frame.dataset.loaded === "1" ||
+    frame.contentDocument?.readyState === "complete";
+
+  if (!currentUrl || frame.src !== url) {
     frame.dataset.loaded = "0";
-
-    frame.addEventListener(
-      "load",
-      () => {
-        frame.dataset.loaded = "1";
-        setTimeout(sendContext, 150);
-      },
-      { once: true }
-    );
-
+    frame.addEventListener("load", sendAfterLoad, { once: true });
     frame.src = url;
-  } else if (frame.dataset.loaded === "1") {
-    sendContext();
+  } else if (alreadyLoaded) {
+    sendAfterLoad();
   } else {
-    frame.addEventListener(
-      "load",
-      () => {
-        frame.dataset.loaded = "1";
-        setTimeout(sendContext, 150);
-      },
-      { once: true }
-    );
+    frame.addEventListener("load", sendAfterLoad, { once: true });
+
+    // Prevent waiting forever when the iframe loaded before this listener.
+    setTimeout(() => {
+      if (frame.contentDocument?.readyState === "complete") {
+        sendAfterLoad();
+      }
+    }, 100);
   }
 }
 
