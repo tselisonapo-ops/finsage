@@ -3217,6 +3217,63 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-modal{
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:rgba(15,23,42,.58);
+  backdrop-filter:blur(3px);
+  overflow:auto;
+}
+
+.payroll-modal.hidden{
+  display:none!important;
+}
+
+.payroll-modal-card{
+  width:min(920px,100%);
+  max-height:calc(100vh - 48px);
+  overflow:auto;
+  background:#fff;
+  border:1px solid #dbe4ef;
+  border-radius:18px;
+  box-shadow:0 24px 70px rgba(15,23,42,.28);
+}
+
+.payroll-modal-card>.payroll-card-head{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 22px;
+  background:#fff;
+  border-bottom:1px solid #e5eaf1;
+}
+
+.payroll-modal-card>.payroll-card-head h3,
+.payroll-modal-card>.payroll-card-head p{
+  margin:0;
+}
+
+.payroll-modal-card>.payroll-card-head p{
+  margin-top:4px;
+}
+
+.payroll-modal-card [data-close-leave-policy]{
+  cursor:pointer;
+}
+
+body.payroll-modal-open{
+  overflow:hidden;
+}
+
 .payroll-setup-tabs,
 .payroll-run-tabs {
   display: flex;
@@ -5046,6 +5103,156 @@ select:focus {
   }
 }
 
+/* Dynamic payroll forms */
+.payroll-modal{
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:rgba(15,23,42,.58);
+  backdrop-filter:blur(3px);
+  overflow:auto;
+}
+
+.payroll-modal-card{
+  width:min(920px,100%);
+  max-height:calc(100vh - 48px);
+  overflow:auto;
+  background:#fff;
+  border:1px solid #dbe4ef;
+  border-radius:18px;
+  box-shadow:0 24px 70px rgba(15,23,42,.28);
+}
+
+.payroll-modal-card>.payroll-card-head{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 22px;
+  background:#fff;
+  border-bottom:1px solid #e5eaf1;
+}
+
+.payroll-modal-card>.payroll-card-head h3{
+  margin:0;
+}
+
+.payroll-modal-card [data-close]{
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  padding:0;
+  border:0;
+  border-radius:9px;
+  background:#eef2f7;
+  color:#334155;
+  font-size:22px;
+  cursor:pointer;
+}
+
+.payroll-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:16px;
+  padding:22px;
+}
+
+.payroll-form-grid>label:not(.payroll-check){
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  min-width:0;
+  color:#334155;
+  font-size:13px;
+  font-weight:600;
+}
+
+.payroll-form-grid input,
+.payroll-form-grid select,
+.payroll-form-grid textarea{
+  width:100%;
+  min-width:0;
+  height:42px;
+  padding:0 12px;
+  border:1px solid #cbd5e1;
+  border-radius:9px;
+  background:#fff;
+  color:#0f172a;
+  font:inherit;
+  outline:none;
+}
+
+.payroll-form-grid textarea{
+  min-height:96px;
+  height:auto;
+  padding:11px 12px;
+  resize:vertical;
+}
+
+.payroll-form-grid input:focus,
+.payroll-form-grid select:focus,
+.payroll-form-grid textarea:focus{
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37,99,235,.12);
+}
+
+.payroll-form-grid .payroll-check{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-height:42px;
+  padding:10px 12px;
+  border:1px solid #dbe4ef;
+  border-radius:9px;
+  background:#f8fafc;
+  color:#334155;
+  font-size:13px;
+  font-weight:600;
+}
+
+.payroll-form-grid .payroll-check input{
+  width:16px;
+  height:16px;
+  margin:0;
+}
+
+.payroll-modal-actions{
+  grid-column:1/-1;
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding-top:16px;
+  border-top:1px solid #e5eaf1;
+}
+
+body.payroll-modal-open{
+  overflow:hidden;
+}
+
+@media(max-width:720px){
+  .payroll-modal{
+    align-items:flex-start;
+    padding:12px;
+  }
+
+  .payroll-modal-card{
+    max-height:calc(100vh - 24px);
+    border-radius:13px;
+  }
+
+  .payroll-form-grid{
+    grid-template-columns:1fr;
+    padding:16px;
+  }
+}
 /* =========================================================
    FIXED ASSET MODALS — MOBILE LANDSCAPE
    ========================================================= */
@@ -8783,6 +8990,126 @@ tbody tr:hover {
 @media(max-width:1200px){#lsmDashboardMetrics{grid-template-columns:repeat(2,minmax(160px,1fr))}}
 @media(max-width:700px){#lsmDashboardMetrics{grid-template-columns:1fr}}
 
+.lsm-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lsm-btn-danger {
+  color: #fff !important;
+  background: #b42318 !important;
+  border-color: #b42318 !important;
+}
+
+.lsm-btn-danger:hover {
+  background: #912018 !important;
+  border-color: #912018 !important;
+}
+
+.lsm-mini-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lsm-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dfe7ef;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.lsm-mini-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.lsm-mini-row strong {
+  color: #0f2743;
+}
+
+.lsm-mini-row span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.lsm-timeline {
+  display: grid;
+}
+
+.lsm-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  padding-bottom: 18px;
+}
+
+.lsm-timeline-item::before {
+  position: absolute;
+  top: 14px;
+  bottom: 0;
+  left: 7px;
+  width: 2px;
+  background: #dce7ea;
+  content: "";
+}
+
+.lsm-timeline-item:last-child::before {
+  display: none;
+}
+
+.lsm-timeline-item i {
+  width: 16px;
+  height: 16px;
+  border: 4px solid #dff5f1;
+  border-radius: 50%;
+  background: #087f73;
+}
+
+.lsm-timeline-item div {
+  display: grid;
+  gap: 3px;
+}
+
+.lsm-timeline-item span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.lsm-timeline-item p {
+  margin: 0;
+  color: #475569;
+}
+
+.lsm-field textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+@media (max-width: 800px) {
+  .lsm-action-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .lsm-mini-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lsm-mini-row .lsm-btn {
+    width: 100%;
+  }
+}
+
+.lsm-wide-table {
+  min-width: 1900px;
+}
   </style>
 
 </head>
@@ -9978,9 +10305,17 @@ tbody tr:hover {
                   <button id="lsmEditLeaseBtn" type="button" class="lsm-btn lsm-btn-secondary" disabled>
                     Edit lease
                   </button>
+                  <button id="lsmRecalculateBtn" type="button" class="lsm-btn lsm-btn-secondary" disabled>
+                    Recalculate schedule
+                  </button>
+                  <button id="lsmSchedulesBtn" type="button" class="lsm-btn lsm-btn-secondary">View schedule</button>
+                  <button id="lsmBillingBtn" type="button" class="lsm-btn lsm-btn-secondary">Billing & receipts</button>
+                  <button id="lsmHistoryBtn" type="button" class="lsm-btn lsm-btn-secondary">History</button>
+                  <button id="lsmModifyBtn" type="button" class="lsm-btn lsm-btn-secondary">Modify lease</button>
+                  <button id="lsmTerminateBtn" type="button" class="lsm-btn lsm-btn-danger">Terminate lease</button>
 
                   <button id="lsmInvoiceThroughBtn" type="button" class="lsm-btn lsm-btn-secondary" disabled>
-                    Create invoices through date
+                    Create next invoice
                   </button>
 
                   <button id="lsmPostThroughBtn" type="button" class="lsm-btn lsm-btn-success" disabled>
@@ -10158,6 +10493,289 @@ tbody tr:hover {
                 </div>
               </section>
             </div>
+
+            <!-- SCHEDULE PAGE -->
+            <div id="lsmScheduleView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button data-lsm-back type="button" class="lsm-btn lsm-btn-secondary">Back to lease</button>
+                <div class="lsm-workspace-actions">
+                  <button id="lsmExpandScheduleBtn" type="button" class="lsm-btn lsm-btn-secondary">Expand full schedule</button>
+                  <button id="lsmRefreshScheduleBtn" type="button" class="lsm-btn lsm-btn-secondary">Refresh</button>
+                </div>
+              </section>
+
+              <section id="lsmCurrentSchedulePanel" class="lsm-card">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Current measurement period</span>
+                    <h3 id="lsmCurrentScheduleTitle">Amortisation schedule</h3>
+                    <p id="lsmFullScheduleMeta">—</p>
+                  </div>
+                  <span id="lsmFullScheduleBadge" class="lsm-badge">0 periods</span>
+                </div>
+
+                <div class="lsm-table-wrap">
+                  <table class="lsm-table lsm-wide-table">
+                    <thead>
+                      <tr>
+                        <th>Period</th><th>Start</th><th>End</th><th>Payment</th><th>Due</th>
+                        <th class="num">Opening investment</th><th class="num">Finance income</th>
+                        <th class="num">Principal</th><th class="num">Rental net</th><th class="num">VAT</th>
+                        <th class="num">Rental gross</th><th class="num">Closing investment</th>
+                        <th class="num">Current</th><th class="num">Non-current</th>
+                        <th>Invoice</th><th>Accounting</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lsmFullScheduleBody"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <!-- BILLING PAGE -->
+            <div id="lsmBillingView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button data-lsm-back type="button" class="lsm-btn lsm-btn-secondary">Back to lease</button>
+                <div class="lsm-workspace-actions">
+                  <button id="lsmExpandBillingBtn" type="button" class="lsm-btn lsm-btn-secondary">Expand all billing periods</button>
+                  <button id="lsmRefreshBillingBtn" type="button" class="lsm-btn lsm-btn-secondary">Refresh</button>
+                </div>
+              </section>
+
+              <section id="lsmBillingMetrics" class="lsm-metrics"></section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div>
+                    <span class="lsm-section-label">Current unbilled period</span>
+                    <h3>Scheduled rental and invoice status</h3>
+                    <p>The current unbilled period is shown first. Expand to view the full billing schedule.</p>
+                  </div>
+                <span id="lsmBillingCountBadge" class="lsm-badge">0 records</span>
+                </div>
+
+                <div class="lsm-table-wrap">
+                  <table class="lsm-table">
+                    <thead>
+                      <tr>
+                        <th>Period</th><th>Invoice</th><th>Invoice date</th><th>Due date</th>
+                        <th class="num">Net</th><th class="num">VAT</th><th class="num">Gross</th>
+                        <th class="num">Received</th><th class="num">Outstanding</th><th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lsmBillingBody"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div><span class="lsm-section-label">Cash collection</span><h3>Receipt allocations</h3><p>Customer payments allocated to this lease and its invoices.</p></div>
+                  <span id="lsmReceiptCountBadge" class="lsm-badge">0 receipts</span>
+                </div>
+
+                <div class="lsm-table-wrap">
+                  <table class="lsm-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th><th>Receipt reference</th><th>Invoice</th><th>Rental period</th>
+                        <th>Bank account</th><th class="num">Received</th><th class="num">Allocated</th>
+                        <th class="num">Unallocated</th><th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lsmReceiptsBody"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <!-- HISTORY PAGE -->
+            <div id="lsmHistoryView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button data-lsm-back type="button" class="lsm-btn lsm-btn-secondary">Back to lease</button>
+                <button id="lsmRefreshHistoryBtn" type="button" class="lsm-btn lsm-btn-secondary">Refresh</button>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div><span class="lsm-section-label">Audit trail</span><h3>Lease history</h3><p>Lease lifecycle events and journals in chronological order.</p></div>
+                  <span id="lsmHistoryCountBadge" class="lsm-badge">0 events</span>
+                </div>
+                <div id="lsmHistoryTimeline" class="lsm-timeline"></div>
+              </section>
+            </div>
+
+            <!-- MODIFICATION PAGE -->
+            <div id="lsmModificationView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button data-lsm-back type="button" class="lsm-btn lsm-btn-secondary">Back to lease</button>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div><span class="lsm-section-label">Lease modification</span><h3>Change agreed lease terms</h3><p>Use this after commencement when the parties agree to amend the contract.</p></div>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field"><span>Effective date</span><input id="lsmModDate" type="date"></label>
+                  <label class="lsm-field"><span>Type</span><select id="lsmModType"><option value="amount">Rental amount</option><option value="term">Lease term</option><option value="rate">Discount rate</option><option value="mixed">Mixed change</option></select></label>
+                  <label class="lsm-field"><span>New rental amount</span><input id="lsmModAmount" type="number" min="0" step="0.01"></label>
+                  <label class="lsm-field"><span>New end date</span><input id="lsmModEnd" type="date"></label>
+                  <label class="lsm-field"><span>New rate (%)</span><input id="lsmModRate" type="number" min="0" step="0.0001"></label>
+                  <label class="lsm-field lsm-field-wide"><span>Reason</span><textarea id="lsmModReason" rows="3"></textarea></label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button id="lsmCreateModificationBtn" type="button" class="lsm-btn">Preview and create modification</button>
+                </div>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head"><div><span class="lsm-section-label">Modification history</span><h3>Previous modifications</h3></div></div>
+                <div id="lsmModificationList" class="lsm-mini-list"></div>
+              </section>
+            </div>
+
+            <!-- TERMINATION PAGE -->
+            <div id="lsmTerminationView" class="hidden">
+              <section class="lsm-workspace-toolbar">
+                <button data-lsm-back type="button" class="lsm-btn lsm-btn-secondary">Back to lease</button>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head">
+                  <div><span class="lsm-section-label">Lease termination</span><h3>Terminate the lease</h3><p>Stop future accounting and recognise the termination settlement and gain or loss.</p></div>
+                </div>
+
+                <div class="lsm-edit-grid">
+                  <label class="lsm-field"><span>Termination date</span><input id="lsmTermDate" type="date"></label>
+                  <label class="lsm-field"><span>Type</span><select id="lsmTermType"><option value="full">Full termination</option><option value="partial">Partial termination</option></select></label>
+                  <label class="lsm-field"><span>Settlement amount</span><input id="lsmTermSettlement" type="number" min="0" step="0.01"></label>
+                  <label class="lsm-field lsm-field-wide"><span>Reason</span><textarea id="lsmTermReason" rows="3"></textarea></label>
+                </div>
+
+                <div class="lsm-edit-actions">
+                  <button id="lsmCreateTerminationBtn" type="button" class="lsm-btn lsm-btn-danger">Preview and create termination</button>
+                </div>
+              </section>
+
+              <section class="lsm-card">
+                <div class="lsm-card-head"><div><span class="lsm-section-label">Termination history</span><h3>Previous terminations</h3></div></div>
+                <div id="lsmTerminationList" class="lsm-mini-list"></div>
+              </section>
+            </div>            
+          </div>
+        </section>
+
+        <!-- =========================================================
+            DATA MIGRATION WORKSPACE
+            Paste inside dashboard.html with the other <section class="screen"> blocks
+        ========================================================= -->
+        <section id="screen-data-migration" class="screen hidden">
+          <style>
+            #screen-data-migration{--mw-bg:#f6f8fc;--mw-card:#fff;--mw-border:#dfe5ef;--mw-text:#182230;--mw-muted:#667085;--mw-primary:#3157d5;--mw-success:#198754;--mw-warn:#b7791f;--mw-danger:#c0392b;background:var(--mw-bg);min-height:100%;padding:20px;color:var(--mw-text)}
+            #screen-data-migration *{box-sizing:border-box}
+            .mw-shell{max-width:1500px;margin:auto}
+            .mw-header,.mw-toolbar,.mw-card,.mw-panel,.mw-footer{background:var(--mw-card);border:1px solid var(--mw-border);border-radius:14px}
+            .mw-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:20px}
+            .mw-title{margin:0;font-size:24px}.mw-subtitle{margin:6px 0 0;color:var(--mw-muted)}
+            .mw-header-actions,.mw-inline,.mw-footer-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+            .mw-btn{border:1px solid var(--mw-border);background:#fff;color:var(--mw-text);padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:600}
+            .mw-btn:hover{background:#f3f5f9}.mw-btn.primary{background:var(--mw-primary);border-color:var(--mw-primary);color:#fff}
+            .mw-btn.success{background:var(--mw-success);border-color:var(--mw-success);color:#fff}.mw-btn.danger{color:var(--mw-danger);border-color:#efc4bf}
+            .mw-btn:disabled{opacity:.45;cursor:not-allowed}
+            .mw-toolbar{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:14px;margin-top:14px;padding:16px}
+            .mw-field label{display:block;font-size:12px;color:var(--mw-muted);margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+            .mw-input,.mw-select{width:100%;border:1px solid var(--mw-border);background:#fff;border-radius:8px;padding:10px 12px;color:var(--mw-text)}
+            .mw-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:14px}
+            .mw-stat{background:#fff;border:1px solid var(--mw-border);border-radius:12px;padding:15px}.mw-stat span{display:block;color:var(--mw-muted);font-size:12px}.mw-stat strong{display:block;font-size:22px;margin-top:5px}
+            .mw-stepper{display:flex;gap:8px;overflow:auto;padding:14px 2px 4px;margin-top:10px}
+            .mw-step{min-width:135px;border:1px solid var(--mw-border);background:#fff;border-radius:10px;padding:11px;text-align:left;cursor:pointer}
+            .mw-step small{display:block;color:var(--mw-muted);margin-bottom:4px}.mw-step.active{border-color:var(--mw-primary);box-shadow:0 0 0 2px rgba(49,87,213,.12)}.mw-step.done{border-color:#a8d5bc}
+            .mw-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px;margin-top:14px}
+            .mw-panel{padding:18px;min-height:520px}.mw-side{display:flex;flex-direction:column;gap:14px}
+            .mw-card{padding:16px}.mw-card h3,.mw-panel h2{margin:0 0 8px}.mw-muted{color:var(--mw-muted)}.mw-small{font-size:12px}
+            .mw-dropzone{border:2px dashed #b7c2d6;border-radius:14px;padding:44px 18px;text-align:center;background:#fbfcff;cursor:pointer}.mw-dropzone.drag{border-color:var(--mw-primary);background:#f1f4ff}
+            .mw-table-wrap{overflow:auto;border:1px solid var(--mw-border);border-radius:10px}.mw-table{width:100%;border-collapse:collapse;min-width:760px}.mw-table th,.mw-table td{padding:11px 12px;border-bottom:1px solid var(--mw-border);text-align:left;vertical-align:middle}.mw-table th{background:#f8fafc;font-size:12px;color:var(--mw-muted);text-transform:uppercase}.mw-table tr:last-child td{border-bottom:0}
+            .mw-badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#eef2f7}.mw-badge.ok{background:#e8f6ee;color:#146c43}.mw-badge.warn{background:#fff3cd;color:#8a6110}.mw-badge.error{background:#fdecec;color:#a02a20}.mw-badge.info{background:#eaf0ff;color:#284db8}
+            .mw-progress{height:9px;background:#edf0f5;border-radius:999px;overflow:hidden}.mw-progress>span{display:block;height:100%;background:var(--mw-primary);width:0}
+            .mw-list{display:flex;flex-direction:column;gap:9px}.mw-list-item{border:1px solid var(--mw-border);border-radius:9px;padding:10px;background:#fff}
+            .mw-empty{padding:50px 20px;text-align:center;color:var(--mw-muted)}
+            .mw-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.mw-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+            .mw-check{display:flex;gap:8px;align-items:center}.mw-check input{width:16px;height:16px}
+            .mw-footer{margin-top:14px;padding:14px 16px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+            .mw-alert{border:1px solid var(--mw-border);border-left:4px solid var(--mw-primary);border-radius:9px;padding:12px;background:#fff}.mw-alert.warn{border-left-color:var(--mw-warn)}.mw-alert.error{border-left-color:var(--mw-danger)}.mw-alert.ok{border-left-color:var(--mw-success)}
+            .mw-log{max-height:240px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#121826;color:#d7deea;border-radius:9px;padding:12px}.mw-log div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+            @media(max-width:1100px){.mw-toolbar{grid-template-columns:1fr 1fr}.mw-summary{grid-template-columns:repeat(3,1fr)}.mw-layout{grid-template-columns:1fr}.mw-side{display:grid;grid-template-columns:1fr 1fr}}
+            @media(max-width:700px){#screen-data-migration{padding:10px}.mw-header,.mw-footer{flex-direction:column}.mw-toolbar,.mw-grid-2,.mw-grid-3,.mw-side{grid-template-columns:1fr}.mw-summary{grid-template-columns:1fr 1fr}}
+          </style>
+
+          <div class="mw-shell" id="migrationWorkspace">
+            <div class="mw-header">
+              <div>
+                <h1 class="mw-title">Data Migration Workspace</h1>
+                <p class="mw-subtitle">Import, map, validate, stage and reconcile accounting data before committing it to FinSage.</p>
+              </div>
+              <div class="mw-header-actions">
+                <button class="mw-btn" data-mw-action="save-project">Save project</button>
+                <button class="mw-btn primary" data-mw-action="new-project">New migration</button>
+              </div>
+            </div>
+
+            <div class="mw-toolbar">
+              <div class="mw-field"><label>Migration project</label><select id="mwProjectSelect" class="mw-select"></select></div>
+              <div class="mw-field"><label>Source system</label><select id="mwSourceSystem" class="mw-select">
+                <option>Sage Pastel</option><option>QuickBooks</option><option>Xero</option><option>Excel / CSV</option><option>SQL database</option><option>Other</option>
+              </select></div>
+              <div class="mw-field"><label>Cutover date</label><input id="mwCutoverDate" class="mw-input" type="date" value="2026-07-31"></div>
+              <div class="mw-field"><label>Migration depth</label><select id="mwMigrationDepth" class="mw-select">
+                <option value="opening">Opening balances only</option><option value="current">Current financial year</option><option value="two-years">Two years</option><option value="full">Full history</option>
+              </select></div>
+            </div>
+
+            <div class="mw-summary">
+              <div class="mw-stat"><span>Project status</span><strong id="mwStatus">Draft</strong></div>
+              <div class="mw-stat"><span>Files received</span><strong id="mwFileCount">0</strong></div>
+              <div class="mw-stat"><span>Records detected</span><strong id="mwRecordCount">0</strong></div>
+              <div class="mw-stat"><span>Blocking errors</span><strong id="mwErrorCount">0</strong></div>
+              <div class="mw-stat"><span>Reconciliation</span><strong id="mwReconStatus">Not run</strong></div>
+            </div>
+
+            <div id="mwStepper" class="mw-stepper"></div>
+
+            <div class="mw-layout">
+              <main class="mw-panel">
+                <div id="mwMain"></div>
+              </main>
+
+              <aside class="mw-side">
+                <div class="mw-card">
+                  <h3>Project readiness</h3>
+                  <div class="mw-progress"><span id="mwReadinessBar"></span></div>
+                  <p id="mwReadinessText" class="mw-muted mw-small">0% complete</p>
+                </div>
+
+                <div class="mw-card">
+                  <h3>Blocking controls</h3>
+                  <div id="mwControls" class="mw-list"></div>
+                </div>
+
+                <div class="mw-card">
+                  <h3>Activity log</h3>
+                  <div id="mwActivity" class="mw-log"></div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="mw-footer">
+              <div class="mw-muted mw-small" id="mwFooterHint">Complete the current phase before continuing.</div>
+              <div class="mw-footer-actions">
+                <button class="mw-btn" data-mw-action="previous">Previous</button>
+                <button class="mw-btn primary" data-mw-action="next">Next phase</button>
+              </div>
+            </div>
+
+            <input id="mwFileInput" type="file" multiple hidden accept=".csv,.xlsx,.xls,.json,.xml,.sql,.txt">
           </div>
         </section>
 
@@ -10221,7 +10839,11 @@ tbody tr:hover {
                 <span class="text-xs font-medium text-slate-500">Statements Notes</span>
 
                 <select id="notesPack" class="px-3 py-2 border rounded text-sm">
-                  <option value="ifrs16">IFRS 16 Lease disclosures</option>
+                  <optgroup label="IFRS 16 Leases">
+                    <option value="ifrs16_lessee">Lessee disclosures</option>
+                    <option value="ifrs16_lessor">Lessor disclosures</option>
+                  </optgroup>
+
                   <option value="ias16_ppe">IAS 16 PPE disclosures</option>
                   <option value="ifrs15_revenue">IFRS 15 Revenue disclosures</option>
                   <option value="ias40_ip">IAS 40 — Investment Property</option>
@@ -10250,7 +10872,10 @@ tbody tr:hover {
                 <div class="flex flex-wrap gap-2 items-center">
                   <select id="fsNoteKey" class="px-3 py-2 border rounded text-sm">
                     <option value="ias16_ppe_policy">IAS 16 PPE policy note</option>
-                    <option value="ifrs16_lease_policy">IFRS 16 lease policy note</option>
+                    <optgroup label="IFRS 16 Leases">
+                      <option value="ifrs16_lease_policy">Lessee lease policy note</option>
+                      <option value="ifrs16_lessor_lease_policy">Lessor lease policy note</option>
+                    </optgroup>
                     <option value="ifrs15_revenue_policy">IFRS 15 revenue policy note</option>
                     <option value="ifrs15_revenue_disclosure">IFRS 15 revenue disclosure note</option>
                     <option value="ias40_ip_policy">IAS 40 — Investment property policy</option>
@@ -11906,11 +12531,15 @@ tbody tr:hover {
                 </div>
 
                 <div>
-                  <label class="text-xs text-slate-600">Revenue account *</label>
+                  <label id="invAccountLabel" class="text-xs text-slate-600">
+                    Revenue account *
+                  </label>
+
                   <select id="invRevenueAccount" class="w-full border rounded px-3 py-2 text-xs">
                     <option value="">Loading…</option>
                   </select>
-                  <p class="mt-1 text-[11px] text-slate-400">
+
+                  <p id="invAccountHelp" class="mt-1 text-[11px] text-slate-400">
                     Used as the default revenue account for new invoice lines.
                   </p>
                 </div>
@@ -11954,7 +12583,7 @@ tbody tr:hover {
                       <th class="px-2 py-2 text-left inv-item-col inv-item-col--normal">Item/Service</th>
                       <th class="px-2 py-2 text-left inv-desc-col inv-desc-col--normal">Description</th>
                       <th class="px-2 py-2 text-left inv-obligation-col">Obligation</th>
-                      <th class="px-2 py-2 text-left w-[14%]">Revenue</th>
+                      <th id="invAccountColumnLabel" class="px-2 py-2 text-left w-[14%]">Revenue</th>
                       <th class="px-2 py-2 text-right w-[7%]">Qty</th>
                       <th class="px-2 py-2 text-right w-[10%]">Unit Price</th>
                       <th class="px-2 py-2 text-right w-[10%] vat-col">VAT Code</th>
@@ -17580,8 +18209,15 @@ tbody tr:hover {
                 data-payroll-benefit-tab="leave">Leave Accruals</button>
               <button type="button"
                 data-payroll-benefit-tab="bonuses">Bonuses</button>
+              <button type="button" data-payroll-benefit-tab="plans">Benefit Plans</button>
               <button type="button"
                 data-payroll-benefit-tab="actuarial">Actuarial Valuations</button>
+              <button type="button" data-payroll-benefit-tab="long-term">
+                Long-Term Benefits
+              </button>
+              <button type="button" data-payroll-benefit-tab="termination">
+                Termination Benefits
+              </button>
               <button type="button"
                 data-payroll-benefit-tab="disclosures">Disclosures</button>
               <button type="button"
@@ -17597,8 +18233,18 @@ tbody tr:hover {
             <div id="payrollBenefitPanelBonuses"
               class="payroll-benefit-panel hidden"></div>
 
+            <div id="payrollBenefitPanelPlans" class="payroll-benefit-panel hidden"></div>
+
             <div id="payrollBenefitPanelActuarial"
               class="payroll-benefit-panel hidden"></div>
+
+            <div id="payrollBenefitPanelLongTerm"
+                class="payroll-benefit-panel hidden"></div>
+
+            <div
+              id="payrollBenefitPanelTermination"
+              class="payroll-benefit-panel hidden"
+            ></div>
 
             <div id="payrollBenefitPanelDisclosures"
               class="payroll-benefit-panel hidden"></div>
@@ -17610,7 +18256,7 @@ tbody tr:hover {
                 <div class="form-grid">
                   <label>
                     Reporting currency
-                    <input id="payrollBenefitCurrency">
+                    <input id="payrollBenefitCurrency" readonly>
                   </label>
                   <label>
                     Default daily-rate basis
@@ -17640,22 +18286,24 @@ tbody tr:hover {
             </div>
           </div>
 
-          <div id="payrollLeavePolicyModal" class="modal hidden">
-            <div class="modal-card large">
-              <div class="modal-head">
+          <div id="payrollLeavePolicyModal" class="payroll-modal hidden">
+            <div class="payroll-modal-card" role="dialog" aria-modal="true"
+                aria-labelledby="payrollLeavePolicyModalTitle">
+
+              <div class="payroll-card-head">
                 <div>
-                  <h3>Leave Accrual Policy</h3>
-                  <p class="payroll-muted">
-                    Configure the IAS 19 leave obligation.
-                  </p>
+                  <h3 id="payrollLeavePolicyModalTitle">Leave Accrual Policy</h3>
+                  <p class="payroll-muted">Configure the IAS 19 leave obligation.</p>
                 </div>
+
                 <button id="payrollLeavePolicyCloseBtn"
-                  class="icon-btn" type="button">×</button>
+                  type="button" data-close-leave-policy
+                  aria-label="Close">×</button>
               </div>
 
               <input id="payrollLeavePolicyId" type="hidden">
 
-              <div class="form-grid">
+              <div class="payroll-form-grid">
                 <label>
                   Policy name
                   <input id="payrollLeavePolicyName">
@@ -17663,7 +18311,9 @@ tbody tr:hover {
 
                 <label>
                   Leave type
-                  <select id="payrollLeavePolicyTypeId"></select>
+                  <select id="payrollLeavePolicyTypeId">
+                    <option value="">Select leave type…</option>
+                  </select>
                 </label>
 
                 <label>
@@ -17699,32 +18349,41 @@ tbody tr:hover {
 
                 <label>
                   Expense account
-                  <select id="payrollLeavePolicyExpenseAccount"></select>
+                  <select id="payrollLeavePolicyExpenseAccount">
+                    <option value="">Select expense account…</option>
+                  </select>
                 </label>
 
                 <label>
                   Liability account
-                  <select id="payrollLeavePolicyLiabilityAccount"></select>
+                  <select id="payrollLeavePolicyLiabilityAccount">
+                    <option value="">Select liability account…</option>
+                  </select>
                 </label>
 
-                <label class="payroll-check-label">
-                  <input id="payrollLeavePolicyVesting"
-                    type="checkbox">
-                  Vesting entitlement
+                <label class="payroll-check">
+                  <input id="payrollLeavePolicyVesting" type="checkbox">
+                  <span>Vesting entitlement</span>
                 </label>
 
-                <label class="payroll-check-label">
+                <label class="payroll-check">
                   <input id="payrollLeavePolicyProvisionRequired"
                     type="checkbox" checked>
-                  Recognise provision
+                  <span>Recognise provision</span>
                 </label>
-              </div>
 
-              <div class="payroll-modal-footer">
-                <button id="payrollLeavePolicySaveBtn"
-                  type="button" class="payroll-primary">
-                  Save Policy
-                </button>
+                <div class="payroll-modal-actions">
+                  <button type="button"
+                    class="payroll-secondary dark"
+                    data-close-leave-policy>
+                    Cancel
+                  </button>
+
+                  <button id="payrollLeavePolicySaveBtn"
+                    type="button" class="payroll-primary">
+                    Save Policy
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -22164,7 +22823,7 @@ tbody tr:hover {
 <script src="config.js"></script>
 <link rel="stylesheet" href="./dist/assets/hostMount.css" />
 <script type="module" src="./dist/assets/hostMount.js"></script>
-<script src="/dashboard.js?v=20260724b" defer></script>
+<script src="/dashboard.js?v=20260805a" defer></script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
