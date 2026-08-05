@@ -142,10 +142,20 @@ def api_ifrs9_create_eir(company_id: int, instrument_id: int):
     if deny:
         return deny
 
+    payload = request.get_json(silent=True) or {}
+
     try:
-        payload = request.get_json(silent=True) or {}
-        item = db_service.ifrs9_create_eir_terms(company_id, instrument_id, payload)
-        return jsonify({"ok": True, "item": item}), 201
+        result = db_service.ifrs9_create_eir_terms(
+            company_id,
+            instrument_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
 
     except Exception as e:
         current_app.logger.exception("ifrs9_create_eir failed")
@@ -258,9 +268,18 @@ def api_ifrs9_modifications(company_id: int, instrument_id: int):
         payload = request.get_json(silent=True) or {}
         payload["created_by"] = user.get("user_id")
 
-        item = db_service.ifrs9_create_modification(company_id, instrument_id, payload)
-        return jsonify({"ok": True, "item": item}), 201
+        item = db_service.ifrs9_create_modification(
+            company_id,
+            instrument_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
 
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 201
+    
     except Exception as e:
         current_app.logger.exception("ifrs9_modifications failed")
         return _json_error(str(e), 400)
@@ -1068,3 +1087,390 @@ def api_ifrs9_deactivate_ecl_model(
 
         return _json_error(str(error), 400)
 
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/instruments/<int:instrument_id>/eir/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_calculate_eir(
+    company_id: int,
+    instrument_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.ifrs9_calculate_eir(
+            company_id,
+            instrument_id,
+            payload,
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_calculate_eir failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/instruments/<int:instrument_id>/amortised-cost/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_calculate_amortised_cost(
+    company_id: int,
+    instrument_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(silent=True) or {}
+
+        result = db_service.ifrs9_calculate_amortised_cost(
+            company_id,
+            instrument_id,
+            payload,
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_calculate_amortised_cost failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/instruments/<int:instrument_id>/amortised-cost/runs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_amortised_cost_runs(
+    company_id: int,
+    instrument_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = (
+                db_service
+                .ifrs9_list_amortised_cost_runs(
+                    company_id,
+                    instrument_id,
+                )
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        payload = request.get_json(silent=True) or {}
+
+        item = db_service.ifrs9_create_amortised_cost_run(
+            company_id,
+            instrument_id,
+            payload,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_amortised_cost_runs failed"
+        )
+        return _json_error(str(error), 400)
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/amortised-cost/runs/<int:run_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_amortised_cost_run(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        item = db_service.ifrs9_get_amortised_cost_run(
+            company_id,
+            run_id,
+        )
+
+        if not item:
+            return _json_error(
+                "IFRS 9 amortised-cost run not found",
+                404,
+            )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_amortised_cost_run failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/amortised-cost/runs/<int:run_id>/preview-journal",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_amortised_cost_preview(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        preview = (
+            db_service
+            .ifrs9_preview_amortised_cost_journal(
+                company_id,
+                run_id,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "preview": preview,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_amortised_cost_preview failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/amortised-cost/runs/<int:run_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_amortised_cost_run(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        result = (
+            db_service
+            .ifrs9_post_amortised_cost_run(
+                company_id,
+                run_id,
+                user_id=user.get("user_id"),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_post_amortised_cost_run failed"
+        )
+        return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/modifications/<int:modification_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_modification(
+    company_id: int,
+    modification_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        item = db_service.ifrs9_get_modification(
+            company_id,
+            modification_id,
+        )
+
+        if not item:
+            return _json_error(
+                "IFRS 9 modification not found",
+                404,
+            )
+
+        return jsonify({
+            "ok": True,
+            "item": item,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_modification failed"
+        )
+        return _json_error(str(error), 400)
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/modifications/<int:modification_id>/preview-journal",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_modification_preview(
+    company_id: int,
+    modification_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        preview = (
+            db_service
+            .ifrs9_preview_modification_journal(
+                company_id,
+                modification_id,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "preview": preview,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_modification_preview failed"
+        )
+        return _json_error(str(error), 400)
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/modifications/<int:modification_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_modification(
+    company_id: int,
+    modification_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ifrs9_post_modification(
+            company_id,
+            modification_id,
+            user_id=user.get("user_id"),
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_post_modification failed"
+        )
+        return _json_error(str(error), 400)

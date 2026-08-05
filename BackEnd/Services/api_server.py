@@ -222,7 +222,8 @@ from BackEnd.Services.routes.forecast_routes import forecast_bp
 from BackEnd.Services.routes.deferred_tax_routes import deferred_tax_bp
 from BackEnd.Services.routes.payroll_employee_benefits_routes import payroll_employee_benefits_bp
 from BackEnd.Services.lessor_lease_routes import lessor_bp
-
+from BackEnd.Services.routes.data_migration_routes import data_migration_bp
+from BackEnd.Services.routes.ias41_routes import ias41_bp
 
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
@@ -368,6 +369,8 @@ app.register_blueprint(forecast_bp)
 app.register_blueprint(deferred_tax_bp)
 app.register_blueprint(payroll_employee_benefits_bp)
 app.register_blueprint(lessor_bp)
+app.register_blueprint(data_migration_bp)
+app.register_blueprint(ias41_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

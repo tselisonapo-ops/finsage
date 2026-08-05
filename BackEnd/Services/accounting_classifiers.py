@@ -822,6 +822,415 @@ def _coa_role_from_text(
         "right-of-use", "right of use", "rou", "ifrs 16", "lease amort"
     ))
 
+    # ----------------------------
+    # IAS 41 Agriculture
+    # Must run before generic inventory, sales, fair-value and PPE rules
+    # ----------------------------
+
+    is_income = (
+        "income" in sec
+        or "revenue" in sec
+        or "income" in cat
+        or "revenue" in cat
+    )
+
+    is_ias41 = (standard or "").strip().upper() == "IAS 41"
+    is_ias2 = (standard or "").strip().upper() == "IAS 2"
+
+    # Biological assets
+    if is_asset:
+        if has_any(
+            "biological asset",
+            "biological assets",
+            "growing crops",
+            "growing horticultural crops",
+            "growing fruit",
+            "livestock - biological assets",
+            "livestock biological assets",
+            "livestock - mixed farming",
+            "dairy herd - biological assets",
+            "dairy herd biological assets",
+            "poultry flocks - biological assets",
+            "poultry flocks biological assets",
+            "timber biological assets",
+            "aquaculture biological assets",
+            "bee colonies - biological assets",
+            "bee colonies biological assets",
+            "game and wildlife biological assets",
+        ):
+            if has_any(
+                "non-current biological asset",
+                "non current biological asset",
+                "biological assets - non-current",
+                "biological assets non-current",
+                "biological assets noncurrent",
+            ):
+                return "ias41_biological_asset_noncurrent"
+
+            if has_any(
+                "growing crop",
+                "growing crops",
+                "crop farming",
+                "crop operations",
+            ):
+                return "ias41_biological_asset_crops"
+
+            if has_any(
+                "dairy herd",
+                "dairy animals",
+            ):
+                return "ias41_biological_asset_dairy"
+
+            if has_any(
+                "poultry flock",
+                "broiler",
+                "layer",
+            ):
+                return "ias41_biological_asset_poultry"
+
+            if has_any(
+                "timber biological",
+                "trees and timber",
+                "plantation",
+                "forestry",
+            ):
+                return "ias41_biological_asset_forestry"
+
+            if has_any(
+                "aquaculture biological",
+                "aquaculture stock",
+                "fish and other aquatic",
+            ):
+                return "ias41_biological_asset_aquaculture"
+
+            if has_any(
+                "bee colonies",
+                "bee colony",
+            ):
+                return "ias41_biological_asset_beekeeping"
+
+            if has_any(
+                "game and wildlife biological",
+                "wildlife biological",
+            ):
+                return "ias41_biological_asset_wildlife"
+
+            if has_any(
+                "livestock",
+                "animal",
+            ):
+                return "ias41_biological_asset_livestock"
+
+            return "ias41_biological_asset_current"
+
+        # Agricultural produce transferred to IAS 2 after harvest
+        if is_ias2 and has_any(
+            "agricultural produce inventory",
+            "crop inventory",
+            "crop produce inventory",
+            "milk and dairy produce inventory",
+            "eggs and poultry produce inventory",
+            "nursery and horticultural produce inventory",
+            "harvested fruit inventory",
+            "harvested timber inventory",
+            "harvested aquaculture produce inventory",
+            "honey and apiary produce inventory",
+            "harvested produce",
+            "produce inventory",
+        ):
+            if has_any("milk", "dairy"):
+                return "ias41_produce_inventory_dairy"
+
+            if has_any("egg", "poultry"):
+                return "ias41_produce_inventory_poultry"
+
+            if has_any("fruit"):
+                return "ias41_produce_inventory_fruit"
+
+            if has_any("timber", "forestry"):
+                return "ias41_produce_inventory_forestry"
+
+            if has_any("aquaculture", "fish", "aquatic"):
+                return "ias41_produce_inventory_aquaculture"
+
+            if has_any("honey", "apiary"):
+                return "ias41_produce_inventory_beekeeping"
+
+            if has_any(
+                "crop",
+                "horticultural",
+                "nursery",
+            ):
+                return "ias41_produce_inventory_crops"
+
+            return "ias41_agricultural_produce_inventory"
+
+        if has_any(
+            "agricultural government grant receivable",
+            "agriculture government grant receivable",
+            "ias 41 grant receivable",
+        ):
+            return "ias41_government_grant_receivable"
+
+    # IAS 41 fair-value and grant income
+    if is_income:
+        if has_any(
+            "fair value gain on biological assets",
+            "biological asset fair value gain",
+            "gain on fair value of biological assets",
+            "gain from changes in fair value less costs to sell",
+        ):
+            return "ias41_fair_value_gain"
+
+        if has_any(
+            "agricultural government grant income",
+            "agriculture government grant income",
+            "ias 41 government grant income",
+            "agricultural grant income",
+        ):
+            return "ias41_government_grant_income"
+
+        # Sub-industry produce and biological-asset sales
+        if has_any(
+            "crop produce sales",
+            "mixed farming crop sales",
+        ):
+            return "ias41_crop_sales"
+
+        if has_any(
+            "livestock sales",
+            "mixed farming livestock sales",
+            "dairy livestock and cull sales",
+        ):
+            return "ias41_livestock_sales"
+
+        if has_any(
+            "milk and dairy produce sales",
+        ):
+            return "ias41_dairy_produce_sales"
+
+        if has_any(
+            "egg sales",
+            "poultry and broiler sales",
+        ):
+            return "ias41_poultry_sales"
+
+        if has_any(
+            "horticultural produce sales",
+        ):
+            return "ias41_horticulture_sales"
+
+        if has_any(
+            "fruit sales",
+        ):
+            return "ias41_fruit_sales"
+
+        if has_any(
+            "timber and forestry produce sales",
+        ):
+            return "ias41_forestry_sales"
+
+        if has_any(
+            "aquaculture produce sales",
+        ):
+            return "ias41_aquaculture_sales"
+
+        if has_any(
+            "honey and apiary produce sales",
+        ):
+            return "ias41_beekeeping_sales"
+
+        if has_any(
+            "game and wildlife sales",
+            "wildlife produce and agricultural income",
+        ):
+            return "ias41_wildlife_sales"
+
+        if has_any(
+            "agricultural support service revenue",
+            "contract harvesting revenue",
+        ):
+            return "ias41_support_service_revenue"
+
+        if has_any(
+            "produce sales",
+            "farmgate revenue",
+            "agricultural produce sales",
+        ):
+            return "ias41_agricultural_sales"
+
+    # IAS 41 losses and direct agricultural costs
+    if is_expense or "adjustment" in sec:
+        if has_any(
+            "fair value loss on biological assets",
+            "biological asset fair value loss",
+            "loss on fair value of biological assets",
+            "loss from changes in fair value less costs to sell",
+        ):
+            return "ias41_fair_value_loss"
+
+        if has_any(
+            "costs to sell biological assets",
+            "cost to sell biological assets",
+            "costs to sell agricultural produce",
+            "incremental costs to sell",
+        ):
+            return "ias41_costs_to_sell"
+
+        if has_any(
+            "mortality and biological loss",
+            "mortality loss",
+            "biological loss",
+            "livestock mortality",
+            "poultry mortality",
+            "aquaculture mortality",
+        ):
+            return "ias41_mortality_loss"
+
+        if has_any(
+            "harvest revaluation",
+            "ias 41 valuation and harvest adjustment",
+            "biological asset valuation adjustment",
+        ):
+            return "ias41_valuation_adjustment"
+
+        # Crop farming
+        if has_any(
+            "seeds and planting materials",
+            "mixed farming crop inputs",
+            "horticultural seeds and seedlings",
+            "orchard inputs",
+        ):
+            return "ias41_seed_planting_cost"
+
+        if has_any(
+            "fertiliser and soil treatments",
+            "growing media and fertiliser",
+            "orchard fertiliser and soil treatments",
+            "fertilizer expense",
+            "agricultural inputs expense",
+        ):
+            return "ias41_fertiliser_input_cost"
+
+        if has_any(
+            "crop protection chemicals",
+            "horticultural crop protection",
+            "orchard pest and disease control",
+        ):
+            return "ias41_crop_protection_cost"
+
+        if has_any(
+            "crop irrigation and water costs",
+            "greenhouse and irrigation costs",
+            "orchard irrigation costs",
+        ):
+            return "ias41_irrigation_cost"
+
+        # Livestock, dairy, poultry, wildlife and aquaculture
+        if has_any(
+            "livestock feed",
+            "mixed farming animal feed",
+            "dairy feed and supplements",
+            "poultry feed",
+            "aquaculture feed",
+            "bee feed and colony treatments",
+            "wildlife feed and supplements",
+        ):
+            return "ias41_feed_cost"
+
+        if has_any(
+            "livestock breeding costs",
+            "dairy veterinary and breeding costs",
+            "mixed farming veterinary and breeding costs",
+            "colony replacement and queen costs",
+        ):
+            return "ias41_breeding_cost"
+
+        if has_any(
+            "livestock veterinary and medicine costs",
+            "poultry vaccination and veterinary costs",
+            "aquaculture disease control",
+            "wildlife veterinary and conservation costs",
+            "veterinary costs",
+        ):
+            return "ias41_veterinary_health_cost"
+
+        if has_any(
+            "livestock transport and handling",
+            "wildlife capture and relocation costs",
+        ):
+            return "ias41_biological_asset_handling_cost"
+
+        # Dairy and poultry
+        if has_any(
+            "milking and dairy consumables",
+        ):
+            return "ias41_dairy_production_cost"
+
+        if has_any(
+            "poultry bedding and consumables",
+        ):
+            return "ias41_poultry_production_cost"
+
+        # Forestry
+        if has_any(
+            "plantation establishment costs",
+        ):
+            return "ias41_plantation_establishment_cost"
+
+        if has_any(
+            "silviculture and plantation maintenance",
+        ):
+            return "ias41_silviculture_cost"
+
+        if has_any(
+            "forestry fire and pest control",
+        ):
+            return "ias41_forestry_protection_cost"
+
+        if has_any(
+            "timber harvesting and extraction costs",
+        ):
+            return "ias41_harvesting_cost"
+
+        # Aquaculture
+        if has_any(
+            "water treatment and testing",
+        ):
+            return "ias41_aquaculture_water_cost"
+
+        if has_any(
+            "hatchery and stocking costs",
+        ):
+            return "ias41_hatchery_stocking_cost"
+
+        # Beekeeping
+        if has_any(
+            "hive maintenance and apiary supplies",
+        ):
+            return "ias41_apiary_operating_cost"
+
+        # Agricultural support services
+        if has_any(
+            "agricultural service consumables",
+        ):
+            return "ias41_support_consumables_cost"
+
+        if has_any(
+            "agricultural machinery operating costs",
+        ):
+            return "ias41_machinery_operating_cost"
+
+        if has_any(
+            "agricultural contract labour",
+        ):
+            return "ias41_contract_labour_cost"
+
+        if has_any(
+            "subcontracted agricultural services",
+        ):
+            return "ias41_subcontracted_service_cost"
+        
     is_accum = any(k in text for k in (
         "accumulated depreciation",
         "accum depreciation",
@@ -900,6 +1309,13 @@ def _coa_role_from_text(
             "stationery",
             "crop inventory",
             "produce inventory",
+            "agricultural produce inventory",
+            "harvested fruit inventory",
+            "harvested timber inventory",
+            "aquaculture produce inventory",
+            "honey and apiary produce inventory",
+            "milk and dairy produce inventory",
+            "eggs and poultry produce inventory",
             "ore stockpiles",
             "refined metal inventory",
             "food inventory",

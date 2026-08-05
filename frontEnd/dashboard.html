@@ -3217,6 +3217,117 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-final-payslip{
+  max-width:950px;
+  margin:16px auto 0;
+  padding:24px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:14px;
+  background:#fff;
+}
+
+.payroll-final-payslip-head{
+  display:flex;
+  justify-content:space-between;
+  gap:24px;
+  padding-bottom:16px;
+  border-bottom:2px solid #1f2937;
+}
+
+.payroll-final-payslip-head h2{
+  margin:0 0 6px;
+}
+
+.payroll-final-payslip-head p{
+  margin:3px 0;
+  font-size:12px;
+}
+
+.payroll-final-payslip-title{
+  display:grid;
+  gap:4px;
+  text-align:right;
+}
+
+.payroll-final-payslip-title strong{
+  font-size:24px;
+}
+
+.payroll-final-payslip-meta,
+.payroll-final-payslip-foot{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+
+.payroll-final-payslip-meta>div,
+.payroll-final-payslip-foot>div{
+  padding:10px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:8px;
+}
+
+.payroll-final-payslip-meta span,
+.payroll-final-payslip-foot span{
+  display:block;
+  font-size:11px;
+  opacity:.65;
+}
+
+.payroll-final-payslip-meta strong,
+.payroll-final-payslip-foot strong{
+  display:block;
+  margin-top:4px;
+}
+
+.payroll-final-payslip-meta small{
+  display:block;
+  margin-top:3px;
+  opacity:.65;
+}
+
+.payroll-final-payslip-section{
+  margin-top:18px;
+}
+
+.payroll-final-payslip-section h3{
+  margin:0 0 8px;
+  font-size:14px;
+}
+
+.payroll-final-payslip-net{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:14px;
+  margin-top:18px;
+  padding:16px;
+  border-radius:10px;
+  background:#172033;
+  color:#fff;
+}
+
+.payroll-final-payslip-net strong{
+  font-size:25px;
+}
+
+@media(max-width:760px){
+  .payroll-final-payslip-head{
+    display:block;
+  }
+
+  .payroll-final-payslip-title{
+    margin-top:12px;
+    text-align:left;
+  }
+
+  .payroll-final-payslip-meta,
+  .payroll-final-payslip-foot{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
 .payroll-eligibility-summary{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
@@ -10759,14 +10870,42 @@ tbody tr:hover {
             </div>
 
             <div class="mw-toolbar">
-              <div class="mw-field"><label>Migration project</label><select id="mwProjectSelect" class="mw-select"></select></div>
-              <div class="mw-field"><label>Source system</label><select id="mwSourceSystem" class="mw-select">
-                <option>Sage Pastel</option><option>QuickBooks</option><option>Xero</option><option>Excel / CSV</option><option>SQL database</option><option>Other</option>
-              </select></div>
-              <div class="mw-field"><label>Cutover date</label><input id="mwCutoverDate" class="mw-input" type="date" value="2026-07-31"></div>
-              <div class="mw-field"><label>Migration depth</label><select id="mwMigrationDepth" class="mw-select">
-                <option value="opening">Opening balances only</option><option value="current">Current financial year</option><option value="two-years">Two years</option><option value="full">Full history</option>
-              </select></div>
+              <div class="mw-field">
+                <label>Migration project</label>
+                <select id="mwProjectSelect" class="mw-select"></select>
+              </div>
+
+              <div class="mw-field">
+                <label>Source system</label>
+                <select id="mwSourceSystem" class="mw-select">
+                  <option value="sage_pastel">Sage Pastel</option>
+                  <option value="sage_business_cloud">Sage Business Cloud</option>
+                  <option value="quickbooks">QuickBooks</option>
+                  <option value="xero">Xero</option>
+                  <option value="excel_csv">Excel / CSV</option>
+                  <option value="sql_database">SQL database</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div class="mw-field">
+                <label>Cutover date</label>
+                <input
+                  id="mwCutoverDate"
+                  class="mw-input"
+                  type="date"
+                >
+              </div>
+
+              <div class="mw-field">
+                <label>Migration depth</label>
+                <select id="mwMigrationDepth" class="mw-select">
+                  <option value="opening">Opening balances only</option>
+                  <option value="current_year">Current financial year</option>
+                  <option value="two_years">Two years</option>
+                  <option value="full_history">Full history</option>
+                </select>
+              </div>
             </div>
 
             <div class="mw-summary">
@@ -16676,62 +16815,68 @@ tbody tr:hover {
           </div>
         </section>
 
-          <!-- =========================================================
-              IAS 41 AGRICULTURE
-          ========================================================== -->
-          <section id="screen-ias41" class="screen hidden">
-            <div id="ias41App" class="space-y-4">
+        <!-- =========================================================
+            IAS 41 AGRICULTURE
+        ========================================================== -->
+        <section id="screen-ias41" class="screen hidden">
+          <div id="ias41App" class="space-y-4">
 
-              <div class="card p-4">
-                <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="card p-4">
+              <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">🌾</span>
+
                   <div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-2xl">🌾</span>
+                    <h2 class="text-xl font-bold">
+                      IAS 41 Agriculture
+                    </h2>
 
-                      <div>
-                        <h2 class="text-xl font-bold">IAS 41 Agriculture</h2>
-
-                        <p class="text-sm text-slate-500 mt-1">
-                          Biological assets, agricultural produce, fair-value
-                          measurement, harvest and disclosures.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span id="ias41CompanyBadge" class="pill">
-                      No company selected
-                    </span>
-
-                    <span id="ias41SetupBadge" class="pill">
-                      Setup not checked
-                    </span>
-
-                    <button
-                      id="ias41RefreshBtn"
-                      type="button"
-                      class="btn"
-                    >
-                      Refresh
-                    </button>
+                    <p class="text-sm text-slate-500 mt-1">
+                      Biological assets, agricultural produce,
+                      fair-value measurement, harvest and disclosures.
+                    </p>
                   </div>
                 </div>
+
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span id="ias41CompanyBadge" class="pill">
+                    No company selected
+                  </span>
+
+                  <span id="ias41SetupBadge" class="pill">
+                    Setup not checked
+                  </span>
+
+                  <button
+                    id="ias41RefreshBtn"
+                    type="button"
+                    class="btn"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
-
-              <div class="card p-3 overflow-x-auto">
-                <div
-                  id="ias41Tabs"
-                  class="flex items-center gap-2 min-w-max"
-                  role="tablist"
-                  aria-label="IAS 41 workspaces"
-                ></div>
-              </div>
-
-              <div id="ias41Workspace" class="min-h-[420px]"></div>
-
             </div>
-          </section>
+
+            <div class="card p-3 overflow-x-auto">
+              <div
+                id="ias41Tabs"
+                class="flex items-center gap-2 min-w-max"
+                role="tablist"
+                aria-label="IAS 41 workspaces"
+              ></div>
+            </div>
+
+            <div id="ias41Workspace" class="min-h-[420px]"></div>
+
+            <div
+              id="ias41ModalHost"
+              class="fixed inset-0 z-[120] hidden"
+              aria-hidden="true"
+            ></div>
+
+          </div>
+        </section>
 
         <!-- Account Settings -->
         <section id="screen-account-settings" class="screen hidden">
@@ -18263,6 +18408,13 @@ tbody tr:hover {
                 
                 <button
                   type="button"
+                  data-payroll-run-tab="payslips"
+                >
+                  Payslips
+                </button>
+
+                <button
+                  type="button"
                   data-payroll-run-tab="journal"
                 >
                   Journal
@@ -18456,6 +18608,44 @@ tbody tr:hover {
               </div>
 
               <div
+                id="payrollRunPanelPayslips"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payslips</h3>
+                    <p class="payroll-muted">
+                      Review and print employee payslips generated from
+                      this payroll calculation.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshPayslipsBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Payslips
+                  </button>
+                </div>
+
+                <div class="payroll-filters">
+                  <input
+                    id="payrollPayslipSearch"
+                    type="search"
+                    placeholder="Search employee…"
+                  >
+
+                  <select id="payrollPayslipDepartmentFilter">
+                    <option value="">All departments</option>
+                  </select>
+                </div>
+
+                <div id="payrollPayslipList"></div>
+                <div id="payrollPayslipDetail"></div>
+              </div>
+
+              <div
                 id="payrollRunPanelJournal"
                 class="payroll-run-panel hidden"
               >
@@ -18641,6 +18831,55 @@ tbody tr:hover {
               </div>
 
               <div id="payrollIncentiveAssignmentsList"></div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Performance Evaluations</h3>
+                  <p class="payroll-muted">
+                    Capture actual performance, calculate incentives
+                    and approve monthly results.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentiveEvaluationBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Evaluation
+                </button>
+              </div>
+
+              <div class="payroll-filters">
+                <select id="payrollIncentiveEvaluationPlanFilter">
+                  <option value="">All plans</option>
+                </select>
+
+                <select id="payrollIncentiveEvaluationStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="approved">Approved</option>
+                  <option value="paid">Paid</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+
+                <input
+                  id="payrollIncentiveEvaluationFrom"
+                  type="date"
+                  aria-label="Evaluation date from"
+                >
+
+                <input
+                  id="payrollIncentiveEvaluationTo"
+                  type="date"
+                  aria-label="Evaluation date to"
+                >
+              </div>
+
+              <div id="payrollIncentiveEvaluationsList"></div>
             </div>
           </div>
 
@@ -23349,8 +23588,9 @@ tbody tr:hover {
 <script src="config.js"></script>
 <link rel="stylesheet" href="./assets/hostMount.css" />
 <script type="module" src="./assets/hostMount.js"></script>
-<script src="/dashboard.js?v=20260805c" defer></script>
+<script src="/dashboard.js?v=20260806a" defer></script>
 <script src="/ias41.js"></script>
+<script src="/js/data-migration.js"></script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {

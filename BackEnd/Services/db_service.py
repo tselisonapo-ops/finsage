@@ -2943,7 +2943,7 @@ class DatabaseService:
                     raise
 
             print("[MASTER-DDL] base tables done, calling initialize_public_schema()")
-            self.initialize_public_schema()
+            #self.initialize_public_schema()
             print("[MASTER-DDL] initialize_public_schema() done")
 
 
@@ -6359,6 +6359,1376 @@ class DatabaseService:
         self.ensure_company_account_settings_defaults(company_id)
         # 3) Optional: seed COA from pool once (your pool-first seeding)
         # initialize_coa(db_service=self, company_id=company_id, industry=..., sub_industry=...)
+  
+    IAS41_MIGRATION_VERSION = 1
+    def ensure_company_biological_assets(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> None:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        ddl = f"""
+        -- =====================================================
+        -- IAS 41 AGRICULTURE
+        -- Phase 1A: Master data and integration foundation
+        -- =====================================================
+
+        -- =====================================================
+        -- 1. MODULE SETTINGS
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_settings (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            module_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+
+            default_currency_code VARCHAR(10),
+            default_quantity_unit VARCHAR(30),
+            default_weight_unit VARCHAR(30),
+            default_area_unit VARCHAR(30),
+
+            default_measurement_basis VARCHAR(50)
+                NOT NULL DEFAULT 'fair_value_less_costs_to_sell',
+
+            valuation_approval_required BOOLEAN NOT NULL DEFAULT TRUE,
+            journal_approval_required BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_negative_quantities BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_manual_fair_value_override BOOLEAN NOT NULL DEFAULT FALSE,
+
+            quantity_precision INTEGER NOT NULL DEFAULT 2,
+            monetary_precision INTEGER NOT NULL DEFAULT 2,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_settings_company_uniq
+                UNIQUE (company_id),
+
+            CONSTRAINT ias41_settings_measurement_chk
+                CHECK (
+                    default_measurement_basis IN (
+                        'fair_value_less_costs_to_sell',
+                        'cost_when_fair_value_unreliable'
+                    )
+                ),
+
+            CONSTRAINT ias41_settings_quantity_precision_chk
+                CHECK (quantity_precision BETWEEN 0 AND 6),
+
+            CONSTRAINT ias41_settings_monetary_precision_chk
+                CHECK (monetary_precision BETWEEN 0 AND 6)
+        );
+
+        -- =====================================================
+        -- 2. ACCOUNT MAPPINGS
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_account_mappings (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            role_code VARCHAR(120) NOT NULL,
+            account_code VARCHAR(100) NOT NULL,
+
+            mapping_scope VARCHAR(30) NOT NULL DEFAULT 'company',
+
+            asset_class_id INTEGER,
+            product_id INTEGER,
+
+            description TEXT,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_system_default BOOLEAN NOT NULL DEFAULT FALSE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_account_mapping_scope_chk
+                CHECK (
+                    mapping_scope IN (
+                        'company',
+                        'asset_class',
+                        'product'
+                    )
+                )
+        );
+
+        -- =====================================================
+        -- 3. AGRICULTURAL LOCATIONS
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_locations (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            location_code VARCHAR(50) NOT NULL,
+            location_name VARCHAR(200) NOT NULL,
+
+            location_type VARCHAR(50) NOT NULL DEFAULT 'farm',
+            parent_location_id INTEGER,
+
+            description TEXT,
+
+            address_line_1 TEXT,
+            address_line_2 TEXT,
+            city VARCHAR(100),
+            district VARCHAR(100),
+            province_state VARCHAR(100),
+            country_code VARCHAR(10),
+
+            latitude NUMERIC(12,8),
+            longitude NUMERIC(12,8),
+
+            area_value NUMERIC(20,6),
+            area_unit VARCHAR(30),
+
+            responsible_user_id INTEGER,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_locations_company_code_uniq
+                UNIQUE (company_id, location_code),
+
+            CONSTRAINT ias41_locations_type_chk
+                CHECK (
+                    location_type IN (
+                        'farm',
+                        'field',
+                        'crop_block',
+                        'orchard',
+                        'plantation',
+                        'camp',
+                        'paddock',
+                        'barn',
+                        'stable',
+                        'poultry_house',
+                        'greenhouse',
+                        'nursery',
+                        'pond',
+                        'tank',
+                        'hatchery',
+                        'apiary',
+                        'warehouse',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ias41_locations_area_chk
+                CHECK (
+                    area_value IS NULL
+                    OR area_value >= 0
+                ),
+
+            CONSTRAINT ias41_locations_parent_fk
+                FOREIGN KEY (parent_location_id)
+                REFERENCES {schema}.ias41_locations(id)
+                ON DELETE SET NULL
+        );
+
+        -- =====================================================
+        -- 4. AGRICULTURAL SEASONS
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_seasons (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            season_code VARCHAR(50) NOT NULL,
+            season_name VARCHAR(200) NOT NULL,
+
+            season_type VARCHAR(50) NOT NULL DEFAULT 'general',
+
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+
+            status VARCHAR(30) NOT NULL DEFAULT 'planned',
+
+            description TEXT,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_seasons_company_code_uniq
+                UNIQUE (company_id, season_code),
+
+            CONSTRAINT ias41_seasons_dates_chk
+                CHECK (end_date >= start_date),
+
+            CONSTRAINT ias41_seasons_type_chk
+                CHECK (
+                    season_type IN (
+                        'general',
+                        'planting',
+                        'growing',
+                        'breeding',
+                        'production',
+                        'harvesting',
+                        'financial'
+                    )
+                ),
+
+            CONSTRAINT ias41_seasons_status_chk
+                CHECK (
+                    status IN (
+                        'planned',
+                        'open',
+                        'closed',
+                        'cancelled'
+                    )
+                )
+        );
+
+        -- =====================================================
+        -- 5. BIOLOGICAL ASSET CLASSES
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_asset_classes (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            class_code VARCHAR(50) NOT NULL,
+            class_name VARCHAR(200) NOT NULL,
+
+            asset_nature VARCHAR(30) NOT NULL,
+            agricultural_activity VARCHAR(60),
+
+            asset_purpose VARCHAR(40) NOT NULL DEFAULT 'consumable',
+            current_noncurrent VARCHAR(20) NOT NULL DEFAULT 'current',
+
+            default_quantity_unit VARCHAR(30),
+            default_weight_unit VARCHAR(30),
+            default_area_unit VARCHAR(30),
+
+            measurement_basis VARCHAR(50)
+                NOT NULL DEFAULT 'fair_value_less_costs_to_sell',
+
+            is_bearer_plant BOOLEAN NOT NULL DEFAULT FALSE,
+            produce_within_ias41 BOOLEAN NOT NULL DEFAULT TRUE,
+
+            track_individually BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_batch_tracking BOOLEAN NOT NULL DEFAULT TRUE,
+
+            biological_asset_account_code VARCHAR(100),
+            produce_inventory_account_code VARCHAR(100),
+
+            fair_value_gain_account_code VARCHAR(100),
+            fair_value_loss_account_code VARCHAR(100),
+
+            costs_to_sell_account_code VARCHAR(100),
+            mortality_loss_account_code VARCHAR(100),
+
+            grant_receivable_account_code VARCHAR(100),
+            grant_income_account_code VARCHAR(100),
+
+            description TEXT,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_asset_classes_company_code_uniq
+                UNIQUE (company_id, class_code),
+
+            CONSTRAINT ias41_asset_classes_nature_chk
+                CHECK (
+                    asset_nature IN (
+                        'animal',
+                        'plant',
+                        'aquatic',
+                        'insect',
+                        'wildlife',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ias41_asset_classes_purpose_chk
+                CHECK (
+                    asset_purpose IN (
+                        'consumable',
+                        'bearer_animal',
+                        'bearer_plant',
+                        'dual_purpose',
+                        'produce'
+                    )
+                ),
+
+            CONSTRAINT ias41_asset_classes_classification_chk
+                CHECK (
+                    current_noncurrent IN (
+                        'current',
+                        'noncurrent'
+                    )
+                ),
+
+            CONSTRAINT ias41_asset_classes_measurement_chk
+                CHECK (
+                    measurement_basis IN (
+                        'fair_value_less_costs_to_sell',
+                        'cost_when_fair_value_unreliable'
+                    )
+                )
+        );
+
+        -- =====================================================
+        -- 6. AGRICULTURAL PRODUCTS
+        -- Connects IAS 41 harvest output to existing inventory.
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_products (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            product_code VARCHAR(50) NOT NULL,
+            product_name VARCHAR(200) NOT NULL,
+
+            asset_class_id INTEGER,
+
+            product_type VARCHAR(40)
+                NOT NULL DEFAULT 'agricultural_produce',
+
+            quantity_unit VARCHAR(30),
+            weight_unit VARCHAR(30),
+
+            inventory_item_id INTEGER,
+
+            inventory_account_code VARCHAR(100),
+            sales_account_code VARCHAR(100),
+            cost_of_sales_account_code VARCHAR(100),
+
+            harvest_measurement_basis VARCHAR(50)
+                NOT NULL DEFAULT 'fair_value_less_costs_to_sell',
+
+            description TEXT,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_products_company_code_uniq
+                UNIQUE (company_id, product_code),
+
+            CONSTRAINT ias41_products_type_chk
+                CHECK (
+                    product_type IN (
+                        'agricultural_produce',
+                        'processed_product',
+                        'by_product',
+                        'service',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ias41_products_measurement_chk
+                CHECK (
+                    harvest_measurement_basis IN (
+                        'fair_value_less_costs_to_sell',
+                        'manual_value'
+                    )
+                ),
+
+            CONSTRAINT ias41_products_asset_class_fk
+                FOREIGN KEY (asset_class_id)
+                REFERENCES {schema}.ias41_asset_classes(id)
+                ON DELETE SET NULL
+        );
+
+        -- =====================================================
+        -- 7. BIOLOGICAL ASSET BATCHES
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_batches (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            batch_code VARCHAR(80) NOT NULL,
+            batch_name VARCHAR(200),
+
+            asset_class_id INTEGER NOT NULL,
+            location_id INTEGER,
+            season_id INTEGER,
+
+            batch_type VARCHAR(40) NOT NULL DEFAULT 'population',
+
+            start_date DATE,
+            expected_harvest_date DATE,
+            actual_close_date DATE,
+
+            opening_quantity NUMERIC(20,6) NOT NULL DEFAULT 0,
+            current_quantity NUMERIC(20,6) NOT NULL DEFAULT 0,
+
+            quantity_unit VARCHAR(30),
+
+            opening_weight NUMERIC(20,6),
+            current_weight NUMERIC(20,6),
+            weight_unit VARCHAR(30),
+
+            opening_fair_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+            opening_costs_to_sell NUMERIC(20,2) NOT NULL DEFAULT 0,
+            opening_carrying_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            current_fair_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+            current_costs_to_sell NUMERIC(20,2) NOT NULL DEFAULT 0,
+            current_carrying_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            opening_journal_id INTEGER,
+
+            status VARCHAR(30) NOT NULL DEFAULT 'active',
+
+            source_type VARCHAR(40),
+            source_reference VARCHAR(100),
+
+            description TEXT,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_batches_company_code_uniq
+                UNIQUE (company_id, batch_code),
+
+            CONSTRAINT ias41_batches_type_chk
+                CHECK (
+                    batch_type IN (
+                        'herd',
+                        'flock',
+                        'crop_block',
+                        'plantation',
+                        'orchard',
+                        'aquaculture_stock',
+                        'colony',
+                        'wildlife_population',
+                        'population',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ias41_batches_status_chk
+                CHECK (
+                    status IN (
+                        'planned',
+                        'active',
+                        'immature',
+                        'mature',
+                        'harvested',
+                        'sold',
+                        'transferred',
+                        'closed',
+                        'cancelled'
+                    )
+                ),
+
+            CONSTRAINT ias41_batches_quantity_chk
+                CHECK (
+                    opening_quantity >= 0
+                    AND current_quantity >= 0
+                ),
+
+            CONSTRAINT ias41_batches_values_chk
+                CHECK (
+                    opening_fair_value >= 0
+                    AND opening_costs_to_sell >= 0
+                    AND opening_carrying_amount >= 0
+                    AND current_fair_value >= 0
+                    AND current_costs_to_sell >= 0
+                    AND current_carrying_amount >= 0
+                ),
+
+            CONSTRAINT ias41_batches_asset_class_fk
+                FOREIGN KEY (asset_class_id)
+                REFERENCES {schema}.ias41_asset_classes(id)
+                ON DELETE RESTRICT,
+
+            CONSTRAINT ias41_batches_location_fk
+                FOREIGN KEY (location_id)
+                REFERENCES {schema}.ias41_locations(id)
+                ON DELETE SET NULL,
+
+            CONSTRAINT ias41_batches_season_fk
+                FOREIGN KEY (season_id)
+                REFERENCES {schema}.ias41_seasons(id)
+                ON DELETE SET NULL
+        );
+
+        -- =====================================================
+        -- 8. INDIVIDUAL BIOLOGICAL ASSETS
+        -- =====================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ias41_biological_assets (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER NOT NULL,
+
+            asset_number VARCHAR(80) NOT NULL,
+            asset_name VARCHAR(200),
+
+            asset_class_id INTEGER NOT NULL,
+            batch_id INTEGER,
+            location_id INTEGER,
+
+            identification_type VARCHAR(40),
+            identification_value VARCHAR(100),
+
+            biological_sex VARCHAR(20),
+
+            birth_or_planting_date DATE,
+            acquisition_date DATE,
+
+            maturity_date DATE,
+            expected_harvest_date DATE,
+
+            quantity NUMERIC(20,6) NOT NULL DEFAULT 1,
+            quantity_unit VARCHAR(30),
+
+            current_weight NUMERIC(20,6),
+            weight_unit VARCHAR(30),
+
+            status VARCHAR(30) NOT NULL DEFAULT 'active',
+
+            ownership_status VARCHAR(30) NOT NULL DEFAULT 'owned',
+
+            source_type VARCHAR(40),
+            source_reference VARCHAR(100),
+
+            opening_journal_id INTEGER,
+
+            initial_fair_value NUMERIC(20,2),
+            initial_costs_to_sell NUMERIC(20,2),
+            initial_carrying_amount NUMERIC(20,2),
+
+            current_fair_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+            current_costs_to_sell NUMERIC(20,2) NOT NULL DEFAULT 0,
+            current_carrying_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            last_valuation_date DATE,
+            last_valuation_run_id INTEGER,
+
+            description TEXT,
+
+            metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            created_by_user_id INTEGER,
+
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by_user_id INTEGER,
+
+            CONSTRAINT ias41_biological_assets_company_number_uniq
+                UNIQUE (company_id, asset_number),
+
+            CONSTRAINT ias41_biological_assets_status_chk
+                CHECK (
+                    status IN (
+                        'planned',
+                        'active',
+                        'immature',
+                        'mature',
+                        'harvested',
+                        'sold',
+                        'transferred',
+                        'deceased',
+                        'disposed',
+                        'closed',
+                        'cancelled'
+                    )
+                ),
+
+            CONSTRAINT ias41_biological_assets_sex_chk
+                CHECK (
+                    biological_sex IS NULL
+                    OR biological_sex IN (
+                        'male',
+                        'female',
+                        'mixed',
+                        'not_applicable',
+                        'unknown'
+                    )
+                ),
+
+            CONSTRAINT ias41_biological_assets_ownership_chk
+                CHECK (
+                    ownership_status IN (
+                        'owned',
+                        'leased',
+                        'managed_for_third_party',
+                        'joint_operation',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ias41_biological_assets_quantity_chk
+                CHECK (quantity >= 0),
+
+            CONSTRAINT ias41_biological_assets_values_chk
+                CHECK (
+                    COALESCE(initial_fair_value, 0) >= 0
+                    AND COALESCE(initial_costs_to_sell, 0) >= 0
+                    AND COALESCE(initial_carrying_amount, 0) >= 0
+                    AND current_fair_value >= 0
+                    AND current_costs_to_sell >= 0
+                    AND current_carrying_amount >= 0
+                ),
+
+            CONSTRAINT ias41_biological_assets_asset_class_fk
+                FOREIGN KEY (asset_class_id)
+                REFERENCES {schema}.ias41_asset_classes(id)
+                ON DELETE RESTRICT,
+
+            CONSTRAINT ias41_biological_assets_batch_fk
+                FOREIGN KEY (batch_id)
+                REFERENCES {schema}.ias41_batches(id)
+                ON DELETE SET NULL,
+
+            CONSTRAINT ias41_biological_assets_location_fk
+                FOREIGN KEY (location_id)
+                REFERENCES {schema}.ias41_locations(id)
+                ON DELETE SET NULL
+        );
+
+        -- =====================================================
+        -- 9. INTERNAL IAS 41 FOREIGN KEYS
+        -- PostgreSQL 9.6-safe idempotent creation.
+        -- =====================================================
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'ias41_account_mappings_asset_class_fk'
+                AND conrelid =
+                    '{schema}.ias41_account_mappings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.ias41_account_mappings
+                    ADD CONSTRAINT ias41_account_mappings_asset_class_fk
+                    FOREIGN KEY (asset_class_id)
+                    REFERENCES {schema}.ias41_asset_classes(id)
+                    ON DELETE CASCADE;
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'ias41_account_mappings_product_fk'
+                AND conrelid =
+                    '{schema}.ias41_account_mappings'::regclass
+            ) THEN
+                ALTER TABLE {schema}.ias41_account_mappings
+                    ADD CONSTRAINT ias41_account_mappings_product_fk
+                    FOREIGN KEY (product_id)
+                    REFERENCES {schema}.ias41_products(id)
+                    ON DELETE CASCADE;
+            END IF;
+        END
+        $$;
+
+        -- =====================================================
+        -- 10. CONDITIONAL CONNECTION TO EXISTING MODULE TABLES
+        --
+        -- These foreign keys are added only when the target
+        -- table exists. This prevents bootstrap order failures.
+        -- =====================================================
+
+        DO $$
+        BEGIN
+            -- Existing inventory item mapping
+            IF TO_REGCLASS('{schema}.inventory_items') IS NOT NULL
+            AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'ias41_products_inventory_item_fk'
+                    AND conrelid =
+                        '{schema}.ias41_products'::regclass
+            )
+            THEN
+                ALTER TABLE {schema}.ias41_products
+                    ADD CONSTRAINT ias41_products_inventory_item_fk
+                    FOREIGN KEY (inventory_item_id)
+                    REFERENCES {schema}.inventory_items(id)
+                    ON DELETE SET NULL;
+            END IF;
+
+            -- Opening journal for batches
+            IF TO_REGCLASS('{schema}.journals') IS NOT NULL
+            AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'ias41_batches_opening_journal_fk'
+                    AND conrelid =
+                        '{schema}.ias41_batches'::regclass
+            )
+            THEN
+                ALTER TABLE {schema}.ias41_batches
+                    ADD CONSTRAINT ias41_batches_opening_journal_fk
+                    FOREIGN KEY (opening_journal_id)
+                    REFERENCES {schema}.journals(id)
+                    ON DELETE SET NULL;
+            END IF;
+
+            -- Opening journal for individual biological assets
+            IF TO_REGCLASS('{schema}.journals') IS NOT NULL
+            AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'ias41_assets_opening_journal_fk'
+                    AND conrelid =
+                        '{schema}.ias41_biological_assets'::regclass
+            )
+            THEN
+                ALTER TABLE {schema}.ias41_biological_assets
+                    ADD CONSTRAINT ias41_assets_opening_journal_fk
+                    FOREIGN KEY (opening_journal_id)
+                    REFERENCES {schema}.journals(id)
+                    ON DELETE SET NULL;
+            END IF;
+        END
+        $$;
+
+        -- =====================================================
+        -- 11. INDEXES
+        -- =====================================================
+
+        CREATE INDEX IF NOT EXISTS ias41_account_mappings_company_idx
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_account_mappings_role_idx
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                role_code,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_account_mappings_class_idx
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                asset_class_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_account_mappings_product_idx
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                product_id
+            );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            ias41_account_mappings_company_role_uniq
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                role_code
+            )
+            WHERE mapping_scope = 'company'
+            AND is_active = TRUE;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            ias41_account_mappings_class_role_uniq
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                asset_class_id,
+                role_code
+            )
+            WHERE mapping_scope = 'asset_class'
+            AND is_active = TRUE;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            ias41_account_mappings_product_role_uniq
+            ON {schema}.ias41_account_mappings (
+                company_id,
+                product_id,
+                role_code
+            )
+            WHERE mapping_scope = 'product'
+            AND is_active = TRUE;
+
+        CREATE INDEX IF NOT EXISTS ias41_locations_company_idx
+            ON {schema}.ias41_locations (
+                company_id,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_locations_parent_idx
+            ON {schema}.ias41_locations (
+                parent_location_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_seasons_company_idx
+            ON {schema}.ias41_seasons (
+                company_id,
+                status,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_seasons_dates_idx
+            ON {schema}.ias41_seasons (
+                company_id,
+                start_date,
+                end_date
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_asset_classes_company_idx
+            ON {schema}.ias41_asset_classes (
+                company_id,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_asset_classes_nature_idx
+            ON {schema}.ias41_asset_classes (
+                company_id,
+                asset_nature,
+                asset_purpose
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_products_company_idx
+            ON {schema}.ias41_products (
+                company_id,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_products_class_idx
+            ON {schema}.ias41_products (
+                company_id,
+                asset_class_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_products_inventory_item_idx
+            ON {schema}.ias41_products (
+                company_id,
+                inventory_item_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_batches_company_idx
+            ON {schema}.ias41_batches (
+                company_id,
+                status,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_batches_class_idx
+            ON {schema}.ias41_batches (
+                company_id,
+                asset_class_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_batches_location_idx
+            ON {schema}.ias41_batches (
+                company_id,
+                location_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_batches_season_idx
+            ON {schema}.ias41_batches (
+                company_id,
+                season_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_batches_opening_journal_idx
+            ON {schema}.ias41_batches (
+                company_id,
+                opening_journal_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_biological_assets_company_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                status,
+                is_active
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_biological_assets_class_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                asset_class_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_biological_assets_batch_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                batch_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_biological_assets_location_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                location_id
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_assets_identification_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                identification_value
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_assets_valuation_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                last_valuation_date
+            );
+
+        CREATE INDEX IF NOT EXISTS ias41_assets_opening_journal_idx
+            ON {schema}.ias41_biological_assets (
+                company_id,
+                opening_journal_id
+            );
+
+        -- =====================================================
+        -- 12. DEFAULT COMPANY SETTINGS
+        -- =====================================================
+
+        INSERT INTO {schema}.ias41_settings (
+            company_id,
+            module_enabled,
+            default_measurement_basis,
+            valuation_approval_required,
+            journal_approval_required,
+            settings_json,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            {company_id},
+            TRUE,
+            'fair_value_less_costs_to_sell',
+            TRUE,
+            TRUE,
+            '{{}}'::jsonb,
+            NOW(),
+            NOW()
+        )
+        ON CONFLICT (company_id)
+        DO NOTHING;
+        """
+
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+            migration_key=f"{schema}:ias41_biological_assets",
+            migration_version=self.IAS41_MIGRATION_VERSION,
+        )
+
+    MIGRATION_WORKSPACE_MIGRATION_VERSION = 1
+    def ensure_schema_migration(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> None:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        ddl = f"""
+        CREATE TABLE IF NOT EXISTS {schema}.migration_projects (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+
+            reference VARCHAR(80) NOT NULL,
+            name VARCHAR(220) NOT NULL,
+            description TEXT,
+
+            status VARCHAR(30) NOT NULL DEFAULT 'draft',
+            migration_mode VARCHAR(30) NOT NULL DEFAULT 'opening',
+            import_mode VARCHAR(30) NOT NULL DEFAULT 'create_only',
+
+            financial_year_start DATE,
+            cutover_date DATE NOT NULL,
+
+            default_currency VARCHAR(10),
+            source_timezone VARCHAR(80),
+            source_country_code VARCHAR(10),
+            source_tax_regime VARCHAR(80),
+
+            source_system_code VARCHAR(80),
+            source_system_name VARCHAR(160),
+            source_system_version VARCHAR(80),
+            source_format VARCHAR(40) NOT NULL DEFAULT 'excel_csv',
+
+            date_format VARCHAR(30) NOT NULL DEFAULT 'YYYY-MM-DD',
+            decimal_separator VARCHAR(5) NOT NULL DEFAULT '.',
+            thousands_separator VARCHAR(5) NOT NULL DEFAULT ',',
+            debit_credit_convention VARCHAR(50)
+                NOT NULL DEFAULT 'separate_columns',
+
+            project_owner_user_id BIGINT,
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+
+            configuration_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            started_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_migration_projects_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'configured',
+                        'files_uploaded',
+                        'detected',
+                        'mapped',
+                        'validated',
+                        'previewed',
+                        'staged',
+                        'reconciled',
+                        'approved',
+                        'committing',
+                        'committed',
+                        'failed',
+                        'rolled_back',
+                        'cancelled'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_projects_mode
+                CHECK (
+                    migration_mode IN (
+                        'opening',
+                        'current_year',
+                        'two_years',
+                        'full_history'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_projects_import_mode
+                CHECK (
+                    import_mode IN (
+                        'create_only',
+                        'update_only',
+                        'create_or_update',
+                        'replace_batch'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_projects_source_format
+                CHECK (
+                    source_format IN (
+                        'excel_csv',
+                        'accounting_export',
+                        'json',
+                        'xml',
+                        'sql_extract',
+                        'opening_balances',
+                        'manual_template',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_projects_debit_credit
+                CHECK (
+                    debit_credit_convention IN (
+                        'separate_columns',
+                        'signed_amount',
+                        'transaction_type_amount',
+                        'account_normal_balance'
+                    )
+                ),
+
+            CONSTRAINT uq_migration_projects_reference
+                UNIQUE (company_id, reference),
+
+            CONSTRAINT uq_migration_projects_name
+                UNIQUE (company_id, name)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_source_profiles (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+
+            code VARCHAR(80) NOT NULL,
+            name VARCHAR(160) NOT NULL,
+            description TEXT,
+
+            source_system_code VARCHAR(80) NOT NULL,
+            source_system_name VARCHAR(160) NOT NULL,
+            source_system_version VARCHAR(80),
+
+            source_format VARCHAR(40) NOT NULL DEFAULT 'excel_csv',
+            country_code VARCHAR(10),
+            tax_regime VARCHAR(80),
+            default_currency VARCHAR(10),
+            source_timezone VARCHAR(80),
+
+            date_format VARCHAR(30) NOT NULL DEFAULT 'YYYY-MM-DD',
+            decimal_separator VARCHAR(5) NOT NULL DEFAULT '.',
+            thousands_separator VARCHAR(5) NOT NULL DEFAULT ',',
+            debit_credit_convention VARCHAR(50)
+                NOT NULL DEFAULT 'separate_columns',
+
+            file_name_patterns_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            sheet_name_patterns_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            column_aliases_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            detection_rules_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            transformation_defaults_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            is_system BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_migration_source_profiles_source_format
+                CHECK (
+                    source_format IN (
+                        'excel_csv',
+                        'accounting_export',
+                        'json',
+                        'xml',
+                        'sql_extract',
+                        'opening_balances',
+                        'manual_template',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_source_profiles_debit_credit
+                CHECK (
+                    debit_credit_convention IN (
+                        'separate_columns',
+                        'signed_amount',
+                        'transaction_type_amount',
+                        'account_normal_balance'
+                    )
+                ),
+
+            CONSTRAINT uq_migration_source_profiles_code
+                UNIQUE (company_id, code)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_project_sources (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+
+            source_profile_id BIGINT,
+
+            source_system_code VARCHAR(80),
+            source_system_name VARCHAR(160),
+            source_system_version VARCHAR(80),
+            source_format VARCHAR(40) NOT NULL DEFAULT 'excel_csv',
+
+            country_code VARCHAR(10),
+            tax_regime VARCHAR(80),
+            default_currency VARCHAR(10),
+            source_timezone VARCHAR(80),
+
+            date_format VARCHAR(30) NOT NULL DEFAULT 'YYYY-MM-DD',
+            decimal_separator VARCHAR(5) NOT NULL DEFAULT '.',
+            thousands_separator VARCHAR(5) NOT NULL DEFAULT ',',
+            debit_credit_convention VARCHAR(50)
+                NOT NULL DEFAULT 'separate_columns',
+
+            connection_type VARCHAR(30) NOT NULL DEFAULT 'file_upload',
+            connection_name VARCHAR(160),
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            credentials_reference VARCHAR(255),
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_project_sources_project
+                FOREIGN KEY (project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_project_sources_profile
+                FOREIGN KEY (source_profile_id)
+                REFERENCES {schema}.migration_source_profiles(id)
+                ON DELETE SET NULL,
+
+            CONSTRAINT ck_migration_project_sources_source_format
+                CHECK (
+                    source_format IN (
+                        'excel_csv',
+                        'accounting_export',
+                        'json',
+                        'xml',
+                        'sql_extract',
+                        'opening_balances',
+                        'manual_template',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_project_sources_connection_type
+                CHECK (
+                    connection_type IN (
+                        'file_upload',
+                        'database_extract',
+                        'api_export',
+                        'manual_template',
+                        'other'
+                    )
+                ),
+
+            CONSTRAINT ck_migration_project_sources_debit_credit
+                CHECK (
+                    debit_credit_convention IN (
+                        'separate_columns',
+                        'signed_amount',
+                        'transaction_type_amount',
+                        'account_normal_balance'
+                    )
+                ),
+
+            CONSTRAINT uq_migration_project_sources_name
+                UNIQUE (company_id, project_id, connection_name)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_project_status_history (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+
+            previous_status VARCHAR(30),
+            new_status VARCHAR(30) NOT NULL,
+
+            reason TEXT,
+            details_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            changed_by_user_id BIGINT,
+            changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_status_history_project
+                FOREIGN KEY (project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_projects_company_status
+            ON {schema}.migration_projects (
+                company_id,
+                status
+            );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_projects_company_cutover
+            ON {schema}.migration_projects (
+                company_id,
+                cutover_date DESC
+            );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_projects_company_created
+            ON {schema}.migration_projects (
+                company_id,
+                created_at DESC
+            );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_projects_owner
+            ON {schema}.migration_projects (
+                company_id,
+                project_owner_user_id
+            );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_source_profiles_company_active
+            ON {schema}.migration_source_profiles (
+                company_id,
+                is_active,
+                source_system_code
+            );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_project_sources_project
+            ON {schema}.migration_project_sources (
+                company_id,
+                project_id,
+                is_active
+            );
+
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_migration_project_primary_source
+            ON {schema}.migration_project_sources (
+                company_id,
+                project_id
+            )
+            WHERE is_primary = TRUE
+            AND is_active = TRUE;
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_status_history_project
+            ON {schema}.migration_project_status_history (
+                company_id,
+                project_id,
+                changed_at DESC
+            );
+        """
+
+        self.execute_ddl(
+            ddl,
+            cur=cur,
+            migration_key=f"{schema}:migration_workspace",
+            migration_version=self.MIGRATION_WORKSPACE_MIGRATION_VERSION,
+        )
+
     PAYROLL_MIGRATION_VERSION=2
 
     def ensure_company_payroll(
@@ -7614,6 +8984,127 @@ class DatabaseService:
             company_id,
             employee_id,
             is_active
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_incentive_evaluations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            incentive_assignment_id BIGINT NOT NULL,
+            incentive_plan_id BIGINT NOT NULL,
+            employee_id INT NOT NULL,
+            payroll_run_id BIGINT,
+
+            evaluation_period_start DATE NOT NULL,
+            evaluation_period_end DATE NOT NULL,
+
+            target_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+            actual_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+            achievement_percentage NUMERIC(12,4)
+                NOT NULL DEFAULT 0,
+
+            matched_rule_id BIGINT,
+            reward_method TEXT,
+            reward_value NUMERIC(18,4) NOT NULL DEFAULT 0,
+            base_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            calculated_incentive NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            adjustment_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+            final_incentive NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            notes TEXT,
+            adjustment_reason TEXT,
+
+            submitted_by_user_id BIGINT,
+            submitted_at TIMESTAMPTZ,
+            approved_by_user_id BIGINT,
+            approved_at TIMESTAMPTZ,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT {schema}_incentive_eval_assignment_fk
+                FOREIGN KEY(incentive_assignment_id)
+                REFERENCES {schema}.payroll_incentive_assignments(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_incentive_eval_plan_fk
+                FOREIGN KEY(incentive_plan_id)
+                REFERENCES {schema}.payroll_incentive_plans(id)
+                ON DELETE RESTRICT,
+
+            CONSTRAINT {schema}_incentive_eval_employee_fk
+                FOREIGN KEY(employee_id)
+                REFERENCES {schema}.payroll_employees(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT {schema}_incentive_eval_rule_fk
+                FOREIGN KEY(matched_rule_id)
+                REFERENCES {schema}.payroll_incentive_rules(id)
+                ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_incentive_eval_run_fk
+                FOREIGN KEY(payroll_run_id)
+                REFERENCES {schema}.payroll_runs(id)
+                ON DELETE SET NULL,
+
+            CONSTRAINT {schema}_incentive_eval_dates_ck
+                CHECK(
+                    evaluation_period_end
+                    >=evaluation_period_start
+                ),
+
+            CONSTRAINT {schema}_incentive_eval_status_ck
+                CHECK(
+                    status IN(
+                        'draft',
+                        'submitted',
+                        'approved',
+                        'paid',
+                        'cancelled'
+                    )
+                ),
+
+            CONSTRAINT {schema}_incentive_eval_reward_ck
+                CHECK(
+                    reward_method IS NULL
+                    OR reward_method IN(
+                        'fixed_amount',
+                        'percentage_basic',
+                        'percentage_gross',
+                        'percentage_target'
+                    )
+                ),
+
+            CONSTRAINT {schema}_incentive_eval_uk
+                UNIQUE(
+                    company_id,
+                    incentive_assignment_id,
+                    evaluation_period_start,
+                    evaluation_period_end
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_incentive_eval_period_idx
+        ON {schema}.payroll_incentive_evaluations(
+            company_id,
+            evaluation_period_start,
+            evaluation_period_end,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS
+            {schema}_incentive_eval_employee_idx
+        ON {schema}.payroll_incentive_evaluations(
+            company_id,
+            employee_id,
+            status
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.performance_plans (
@@ -27778,6 +29269,31 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_eir_instr_idx
         ON {schema}.ifrs9_effective_interest_terms(company_id, instrument_id, effective_date DESC);
 
+        ALTER TABLE {schema}.ifrs9_effective_interest_terms
+        ADD COLUMN IF NOT EXISTS initial_principal NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS initial_carrying_amount NUMERIC(18,2),
+        ADD COLUMN IF NOT EXISTS maturity_date DATE,
+        ADD COLUMN IF NOT EXISTS payment_frequency TEXT,
+        ADD COLUMN IF NOT EXISTS periods_per_year INT,
+        ADD COLUMN IF NOT EXISTS total_periods INT,
+        ADD COLUMN IF NOT EXISTS cashflows_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS calculated_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS calculated_by INT,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        UPDATE {schema}.ifrs9_effective_interest_terms
+        SET initial_principal=COALESCE(initial_principal,0),
+            initial_carrying_amount=COALESCE(initial_carrying_amount,0),
+            cashflows_json=COALESCE(cashflows_json,'[]'::jsonb),
+            updated_at=COALESCE(updated_at,NOW());
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_eir_active_date_uq
+        ON {schema}.ifrs9_effective_interest_terms(
+            company_id,
+            instrument_id,
+            effective_date
+        );
+
         DO $$
         BEGIN
             IF NOT EXISTS (
@@ -27797,6 +29313,55 @@ class DatabaseService:
             END IF;
         END $$;
 
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='{schema}_ifrs9_eir_valid_ck'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_effective_interest_terms
+                    ADD CONSTRAINT %I CHECK (
+                        contractual_rate >= 0
+                        AND effective_interest_rate > -1
+                        AND transaction_costs >= 0
+                        AND fees_received >= 0
+                        AND fees_paid >= 0
+                        AND premium_amount >= 0
+                        AND discount_amount >= 0
+                        AND COALESCE(initial_principal,0) >= 0
+                        AND COALESCE(initial_carrying_amount,0) >= 0
+                        AND (
+                            payment_frequency IS NULL
+                            OR payment_frequency IN (
+                                ''monthly'',
+                                ''quarterly'',
+                                ''semi_annual'',
+                                ''annual'',
+                                ''irregular''
+                            )
+                        )
+                        AND (
+                            periods_per_year IS NULL
+                            OR periods_per_year > 0
+                        )
+                        AND (
+                            total_periods IS NULL
+                            OR total_periods > 0
+                        )
+                        AND calculation_method IN (
+                            ''system'',
+                            ''manual''
+                        )
+                    )',
+                    '{schema}',
+                    '{schema}_ifrs9_eir_valid_ck'
+                );
+            END IF;
+        END $$;
 
         -- 4) Period amortised cost runs
         CREATE TABLE IF NOT EXISTS {schema}.ifrs9_amortised_cost_runs (
@@ -27825,11 +29390,48 @@ class DatabaseService:
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
+        ALTER TABLE {schema}.ifrs9_amortised_cost_runs
+        ADD COLUMN IF NOT EXISTS effective_interest_rate NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS day_count INT,
+        ADD COLUMN IF NOT EXISTS day_count_basis TEXT NOT NULL DEFAULT 'actual_365',
+        ADD COLUMN IF NOT EXISTS contractual_cashflow NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS reversal_journal_id INT,
+        ADD COLUMN IF NOT EXISTS posted_by INT,
+        ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS reversed_by INT,
+        ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS reversal_reason TEXT,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        UPDATE {schema}.ifrs9_amortised_cost_runs
+        SET contractual_cashflow=COALESCE(contractual_cashflow,0),
+            day_count_basis=COALESCE(
+                NULLIF(day_count_basis,''),
+                'actual_365'
+            ),
+            updated_at=COALESCE(updated_at,NOW());
+
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_runs_instr_idx
         ON {schema}.ifrs9_amortised_cost_runs(company_id, instrument_id, period_end DESC);
 
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_runs_journal_idx
         ON {schema}.ifrs9_amortised_cost_runs(journal_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_amort_run_period_uq
+        ON {schema}.ifrs9_amortised_cost_runs(
+            company_id,
+            instrument_id,
+            period_start,
+            period_end
+        )
+        WHERE status IN ('draft','posted');
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_amort_run_status_idx
+        ON {schema}.ifrs9_amortised_cost_runs(
+            company_id,
+            status,
+            period_end DESC
+        );
 
         DO $$
         BEGIN
@@ -27866,6 +29468,48 @@ class DatabaseService:
             END IF;
         END $$;
 
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='{schema}_ifrs9_amort_run_valid_ck'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_amortised_cost_runs
+                    ADD CONSTRAINT %I CHECK (
+                        period_end >= period_start
+                        AND opening_carrying_amount >= 0
+                        AND interest_income >= 0
+                        AND interest_expense >= 0
+                        AND cash_received >= 0
+                        AND cash_paid >= 0
+                        AND fees_amortised >= 0
+                        AND closing_carrying_amount >= 0
+                        AND contractual_cashflow >= 0
+                        AND (
+                            day_count IS NULL
+                            OR day_count >= 0
+                        )
+                        AND day_count_basis IN (
+                            ''actual_365'',
+                            ''actual_360'',
+                            ''30_360''
+                        )
+                        AND status IN (
+                            ''draft'',
+                            ''posted'',
+                            ''reversed'',
+                            ''void''
+                        )
+                    )',
+                    '{schema}',
+                    '{schema}_ifrs9_amort_run_valid_ck'
+                );
+            END IF;
+        END $$;
 
         -- 5) ECL model profiles
         CREATE TABLE IF NOT EXISTS {schema}.ifrs9_ecl_models (
@@ -28242,8 +29886,92 @@ class DatabaseService:
             meta_json JSONB NOT NULL DEFAULT '{{}}'::jsonb
         );
 
+        ALTER TABLE {schema}.ifrs9_modifications
+        ADD COLUMN IF NOT EXISTS original_effective_interest_rate NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS revised_contractual_rate NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS revised_maturity_date DATE,
+        ADD COLUMN IF NOT EXISTS revised_cashflows_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS percentage_change NUMERIC(12,6),
+        ADD COLUMN IF NOT EXISTS journal_status TEXT NOT NULL DEFAULT 'draft',
+        ADD COLUMN IF NOT EXISTS posted_by INT,
+        ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS reversal_journal_id INT,
+        ADD COLUMN IF NOT EXISTS reversed_by INT,
+        ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS reversal_reason TEXT,
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        UPDATE {schema}.ifrs9_modifications
+        SET revised_cashflows_json=COALESCE(
+                revised_cashflows_json,
+                '[]'::jsonb
+            ),
+            journal_status=COALESCE(
+                NULLIF(journal_status,''),
+                'draft'
+            ),
+            updated_at=COALESCE(updated_at,NOW());
+
         CREATE INDEX IF NOT EXISTS {schema}_ifrs9_mod_instr_idx
         ON {schema}.ifrs9_modifications(company_id, instrument_id, modification_date DESC);
+
+        CREATE INDEX IF NOT EXISTS {schema}_ifrs9_modification_status_idx
+        ON {schema}.ifrs9_modifications(
+            company_id,
+            journal_status,
+            modification_date DESC
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_ifrs9_modification_active_date_uq
+        ON {schema}.ifrs9_modifications(
+            company_id,
+            instrument_id,
+            modification_date
+        )
+        WHERE journal_status IN ('draft','posted');
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='{schema}_ifrs9_modification_valid_ck'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_modifications
+                    ADD CONSTRAINT %I CHECK (
+                        old_carrying_amount >= 0
+                        AND revised_cashflow_pv >= 0
+                        AND (
+                            original_effective_interest_rate IS NULL
+                            OR original_effective_interest_rate > -1
+                        )
+                        AND (
+                            percentage_change IS NULL
+                            OR percentage_change >= 0
+                        )
+                        AND modification_type IN (
+                            ''cashflow_change'',
+                            ''rate_change'',
+                            ''term_extension'',
+                            ''term_reduction'',
+                            ''payment_deferral'',
+                            ''other''
+                        )
+                        AND journal_status IN (
+                            ''draft'',
+                            ''posted'',
+                            ''reversed'',
+                            ''void''
+                        )
+                    )',
+                    '{schema}',
+                    '{schema}_ifrs9_modification_valid_ck'
+                );
+            END IF;
+        END $$;
 
         DO $$
         BEGIN
@@ -29631,6 +31359,26 @@ class DatabaseService:
                     cur=cur,
                 )
 
+                print(
+                    f"RUNNING MIGRATION "
+                    f"{schema}:migration "
+                    f"v{self.MIGRATION_WORKSPACE_MIGRATION_VERSION}"
+                )
+                self.ensure_schema_migration(
+                    int(company_id),
+                    cur=cur,
+                )
+
+                print(
+                    f"RUNNING MIGRATION "
+                    f"{schema}:ias41 "
+                    f"V{self.IAS41_MIGRATION_VERSION}"
+                )
+                self.ensure_company_biological_assets(
+                    int(company_id),
+                    cur=cur
+                )
+                
                 print(f"RUNNING SAFE TENANT SYNC {schema}")
                 self.sync_existing_company_schema(
                     cur=cur,
@@ -94640,61 +96388,423 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
 
-    def ifrs9_create_eir_terms(self, company_id: int, instrument_id: int, payload: dict):
+    def ifrs9_create_eir_terms(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
+        method = str(
+            payload.get("calculation_method") or "system"
+        ).strip()
 
-        sql = f"""
-            INSERT INTO {schema}.ifrs9_effective_interest_terms (
+        if method not in {"system", "manual"}:
+            raise ValueError(
+                "calculation_method must be system or manual"
+            )
+
+        if method == "system":
+            calculation = self.ifrs9_calculate_eir(
                 company_id,
                 instrument_id,
-                effective_date,
-                contractual_rate,
-                effective_interest_rate,
-                transaction_costs,
-                fees_received,
-                fees_paid,
-                premium_amount,
-                discount_amount,
-                calculation_method,
-                notes,
-                meta_json
+                payload,
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
-            RETURNING *
-        """
+            effective_rate = calculation["annual_eir"]
+            initial_carrying = calculation[
+                "initial_carrying_amount"
+            ]
+            periods_per_year = calculation[
+                "periods_per_year"
+            ]
+            total_periods = calculation["total_periods"]
+        else:
+            calculation = None
+            effective_rate = float(
+                payload.get("effective_interest_rate") or 0
+            )
+            initial_carrying = self._money2(
+                payload.get("initial_carrying_amount")
+            )
+            periods_per_year = int(
+                payload.get("periods_per_year") or 1
+            )
+            total_periods = int(
+                payload.get("total_periods") or 1
+            )
 
-        item = self.execute_sql(sql, (
-            int(company_id),
-            int(instrument_id),
-            payload.get("effective_date") or date.today().isoformat(),
-            payload.get("contractual_rate") or 0,
-            payload.get("effective_interest_rate") or 0,
-            self._num(payload.get("transaction_costs")),
-            self._num(payload.get("fees_received")),
-            self._num(payload.get("fees_paid")),
-            self._num(payload.get("premium_amount")),
-            self._num(payload.get("discount_amount")),
-            payload.get("calculation_method") or "system",
-            payload.get("notes"),
-            payload.get("meta_json"),
-        ), fetchone=True)
+            if effective_rate <= -1:
+                raise ValueError(
+                    "Manual effective interest rate is invalid"
+                )
 
-        self.execute_sql(f"""
-            UPDATE {schema}.ifrs9_financial_instruments
-            SET effective_interest_rate = %s,
-                contractual_interest_rate = %s,
-                updated_at = NOW()
-            WHERE company_id = %s
-            AND id = %s
+            if initial_carrying <= 0:
+                raise ValueError(
+                    "Manual initial carrying amount is required"
+                )
+
+        effective_date = (
+            payload.get("effective_date")
+            or date.today().isoformat()
+        )
+
+        with self.transaction() as (conn, cur):
+            cur.execute(f"""
+                INSERT INTO {schema}.ifrs9_effective_interest_terms (
+                    company_id,
+                    instrument_id,
+                    effective_date,
+                    contractual_rate,
+                    effective_interest_rate,
+                    transaction_costs,
+                    fees_received,
+                    fees_paid,
+                    premium_amount,
+                    discount_amount,
+                    calculation_method,
+                    notes,
+                    initial_principal,
+                    initial_carrying_amount,
+                    maturity_date,
+                    payment_frequency,
+                    periods_per_year,
+                    total_periods,
+                    cashflows_json,
+                    calculated_at,
+                    calculated_by,
+                    created_at,
+                    updated_at,
+                    meta_json
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,
+                    %s::jsonb,NOW(),%s,NOW(),NOW(),%s::jsonb
+                )
+                ON CONFLICT (
+                    company_id,
+                    instrument_id,
+                    effective_date
+                )
+                DO UPDATE SET
+                    contractual_rate=EXCLUDED.contractual_rate,
+                    effective_interest_rate=
+                        EXCLUDED.effective_interest_rate,
+                    transaction_costs=EXCLUDED.transaction_costs,
+                    fees_received=EXCLUDED.fees_received,
+                    fees_paid=EXCLUDED.fees_paid,
+                    premium_amount=EXCLUDED.premium_amount,
+                    discount_amount=EXCLUDED.discount_amount,
+                    calculation_method=
+                        EXCLUDED.calculation_method,
+                    notes=EXCLUDED.notes,
+                    initial_principal=
+                        EXCLUDED.initial_principal,
+                    initial_carrying_amount=
+                        EXCLUDED.initial_carrying_amount,
+                    maturity_date=EXCLUDED.maturity_date,
+                    payment_frequency=
+                        EXCLUDED.payment_frequency,
+                    periods_per_year=
+                        EXCLUDED.periods_per_year,
+                    total_periods=EXCLUDED.total_periods,
+                    cashflows_json=EXCLUDED.cashflows_json,
+                    calculated_at=NOW(),
+                    calculated_by=EXCLUDED.calculated_by,
+                    updated_at=NOW(),
+                    meta_json=EXCLUDED.meta_json
+                RETURNING *
+            """, (
+                int(company_id),
+                int(instrument_id),
+                effective_date,
+                payload.get("contractual_rate") or 0,
+                effective_rate,
+                self._money2(payload.get("transaction_costs")),
+                self._money2(payload.get("fees_received")),
+                self._money2(payload.get("fees_paid")),
+                self._money2(payload.get("premium_amount")),
+                self._money2(payload.get("discount_amount")),
+                method,
+                payload.get("notes"),
+                self._money2(
+                    payload.get(
+                        "initial_principal",
+                        calculation["initial_principal"]
+                        if calculation else 0,
+                    )
+                ),
+                initial_carrying,
+                payload.get("maturity_date"),
+                payload.get("payment_frequency") or "annual",
+                periods_per_year,
+                total_periods,
+                json.dumps(
+                    payload.get("cashflows") or [],
+                    default=str,
+                ),
+                user_id,
+                json.dumps({
+                    "calculation": calculation,
+                }, default=str),
+            ))
+
+            item = cur.fetchone()
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_financial_instruments
+                SET effective_interest_rate=%s,
+                    contractual_interest_rate=%s,
+                    carrying_amount=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *
+            """, (
+                effective_rate,
+                payload.get("contractual_rate") or 0,
+                initial_carrying,
+                int(company_id),
+                int(instrument_id),
+            ))
+
+            instrument = cur.fetchone()
+
+        return {
+            "item": item,
+            "instrument": instrument,
+            "calculation": calculation,
+        }
+
+    def _ifrs9_npv(self, rate, initial_amount, cashflows):
+        return -float(initial_amount) + sum(
+            float(row["amount"]) / ((1.0 + rate) ** int(row["period_no"]))
+            for row in cashflows
+        )
+
+
+    def _ifrs9_solve_eir(self, initial_amount, cashflows):
+        initial_amount = float(initial_amount or 0)
+
+        if initial_amount <= 0:
+            raise ValueError(
+                "Initial carrying amount must be greater than zero"
+            )
+
+        rows = sorted(
+            [
+                {
+                    "period_no": int(row.get("period_no") or 0),
+                    "amount": float(row.get("amount") or 0),
+                    "payment_date": row.get("payment_date"),
+                }
+                for row in cashflows or []
+            ],
+            key=lambda row: row["period_no"],
+        )
+
+        if not rows:
+            raise ValueError(
+                "At least one contractual cash flow is required"
+            )
+
+        if any(row["period_no"] <= 0 for row in rows):
+            raise ValueError(
+                "Every cash flow period must be greater than zero"
+            )
+
+        if any(row["amount"] < 0 for row in rows):
+            raise ValueError(
+                "Contractual cash-flow amounts cannot be negative"
+            )
+
+        if sum(row["amount"] for row in rows) <= 0:
+            raise ValueError(
+                "Total contractual cash flows must be greater than zero"
+            )
+
+        low, high = -0.999999, 1.0
+        low_npv = self._ifrs9_npv(
+            low,
+            initial_amount,
+            rows,
+        )
+        high_npv = self._ifrs9_npv(
+            high,
+            initial_amount,
+            rows,
+        )
+
+        while low_npv * high_npv > 0 and high < 1000:
+            high *= 2
+            high_npv = self._ifrs9_npv(
+                high,
+                initial_amount,
+                rows,
+            )
+
+        if low_npv * high_npv > 0:
+            raise ValueError(
+                "An effective interest rate could not be calculated "
+                "from the supplied cash flows"
+            )
+
+        for _ in range(200):
+            mid = (low + high) / 2
+            mid_npv = self._ifrs9_npv(
+                mid,
+                initial_amount,
+                rows,
+            )
+
+            if abs(mid_npv) < 0.0000001:
+                return mid
+
+            if low_npv * mid_npv <= 0:
+                high = mid
+            else:
+                low = mid
+                low_npv = mid_npv
+
+        return (low + high) / 2
+
+    def ifrs9_calculate_eir(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id=%s
+            AND id=%s
         """, (
-            payload.get("effective_interest_rate") or 0,
-            payload.get("contractual_rate") or 0,
             int(company_id),
             int(instrument_id),
         ))
 
-        return item
+        if not instrument:
+            raise ValueError("IFRS 9 instrument not found")
 
+        if instrument.get("measurement_category") != "amortised_cost":
+            raise ValueError(
+                "Effective interest applies only to instruments "
+                "measured at amortised cost"
+            )
+
+        if instrument.get("status") != "active":
+            raise ValueError(
+                "Effective interest can only be calculated "
+                "for active instruments"
+            )
+
+        frequency = str(
+            payload.get("payment_frequency") or "monthly"
+        ).strip()
+
+        frequency_periods = {
+            "monthly": 12,
+            "quarterly": 4,
+            "semi_annual": 2,
+            "annual": 1,
+            "irregular": 1,
+        }
+
+        if frequency not in frequency_periods:
+            raise ValueError("Invalid payment frequency")
+
+        periods_per_year = int(
+            payload.get("periods_per_year")
+            or frequency_periods[frequency]
+        )
+
+        principal = self._money2(
+            payload.get(
+                "initial_principal",
+                instrument.get("original_amount"),
+            )
+        )
+
+        transaction_costs = self._money2(
+            payload.get("transaction_costs")
+        )
+        fees_received = self._money2(
+            payload.get("fees_received")
+        )
+        fees_paid = self._money2(
+            payload.get("fees_paid")
+        )
+        premium = self._money2(
+            payload.get("premium_amount")
+        )
+        discount = self._money2(
+            payload.get("discount_amount")
+        )
+
+        asset_types = {
+            "loan_receivable",
+            "staff_loan",
+            "director_loan",
+            "deposit_asset",
+            "bond",
+            "note_receivable",
+            "other_financial_asset",
+        }
+
+        is_asset = instrument.get("instrument_type") in asset_types
+
+        if is_asset:
+            initial_carrying = self._money2(
+                principal
+                + transaction_costs
+                + fees_paid
+                + premium
+                - fees_received
+                - discount
+            )
+        else:
+            initial_carrying = self._money2(
+                principal
+                - transaction_costs
+                - fees_paid
+                - premium
+                + fees_received
+                + discount
+            )
+
+        if initial_carrying <= 0:
+            raise ValueError(
+                "Calculated initial carrying amount must be greater than zero"
+            )
+
+        cashflows = payload.get("cashflows") or []
+        periodic_rate = self._ifrs9_solve_eir(
+            initial_carrying,
+            cashflows,
+        )
+
+        annual_rate = (
+            (1.0 + periodic_rate) ** periods_per_year
+        ) - 1.0
+
+        return {
+            "instrument_id": int(instrument_id),
+            "instrument_type": instrument.get("instrument_type"),
+            "initial_principal": float(principal),
+            "initial_carrying_amount": float(initial_carrying),
+            "periodic_eir": periodic_rate,
+            "annual_eir": annual_rate,
+            "annual_eir_percent": annual_rate * 100,
+            "periods_per_year": periods_per_year,
+            "payment_frequency": frequency,
+            "total_periods": len(cashflows),
+            "cashflows": cashflows,
+        }
 
     def ifrs9_list_ecl_models(self, company_id: int):
         schema = self.company_schema(company_id)
@@ -95258,8 +97368,50 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         return self.fetch_all(sql, (int(company_id),))
 
 
-    def ifrs9_create_modification(self, company_id: int, instrument_id: int, payload: dict):
+    def ifrs9_create_modification(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
         schema = self.company_schema(company_id)
+
+        reason = str(
+            payload.get("reason") or ""
+        ).strip()
+
+        if not reason:
+            raise ValueError("Modification reason is required")
+
+        result = self.ifrs9_calculate_modification(
+            company_id,
+            instrument_id,
+            payload,
+        )
+
+        duplicate = self.fetch_one(f"""
+            SELECT id, journal_status
+            FROM {schema}.ifrs9_modifications
+            WHERE company_id=%s
+            AND instrument_id=%s
+            AND modification_date=%s::date
+            AND journal_status IN ('draft','posted')
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(instrument_id),
+            result["modification_date"],
+        ))
+
+        if duplicate:
+            raise ValueError(
+                f"An active modification already exists on this date "
+                f"(modification {duplicate['id']}, "
+                f"status {duplicate['journal_status']})"
+            )
 
         return self.execute_sql(f"""
             INSERT INTO {schema}.ifrs9_modifications (
@@ -95272,41 +97424,455 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 modification_gain_loss,
                 substantial_modification,
                 derecognition_required,
+                original_effective_interest_rate,
+                revised_contractual_rate,
+                revised_maturity_date,
+                revised_cashflows_json,
+                percentage_change,
+                journal_status,
                 journal_id,
                 reason,
                 created_by,
+                created_at,
+                updated_at,
                 meta_json
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s::jsonb, '{{}}'::jsonb))
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s::jsonb,%s,'draft',NULL,%s,%s,
+                NOW(),NOW(),%s::jsonb
+            )
             RETURNING *
         """, (
             int(company_id),
             int(instrument_id),
-            payload.get("modification_date") or date.today().isoformat(),
-            payload.get("modification_type") or "cashflow_change",
-            self._num(payload.get("old_carrying_amount")),
-            self._num(payload.get("revised_cashflow_pv")),
-            self._num(payload.get("modification_gain_loss")),
-            bool(payload.get("substantial_modification", False)),
-            bool(payload.get("derecognition_required", False)),
-            payload.get("journal_id"),
-            payload.get("reason"),
-            payload.get("created_by"),
-            payload.get("meta_json"),
+            result["modification_date"],
+            payload.get("modification_type")
+            or "cashflow_change",
+            result["old_carrying_amount"],
+            result["revised_cashflow_pv"],
+            result["modification_gain_loss"],
+            result["substantial_modification"],
+            result["derecognition_required"],
+            result["original_effective_interest_rate"],
+            payload.get("revised_contractual_rate"),
+            payload.get("revised_maturity_date"),
+            json.dumps(
+                payload.get("revised_cashflows") or [],
+                default=str,
+            ),
+            result["percentage_change"],
+            reason,
+            user_id,
+            json.dumps({
+                "calculation": result,
+                "substantial_threshold":
+                    payload.get(
+                        "substantial_threshold",
+                        0.10,
+                    ),
+            }, default=str),
         ), fetchone=True)
 
-
-    def ifrs9_list_modifications(self, company_id: int, instrument_id: int):
+    def ifrs9_list_modifications(
+        self,
+        company_id: int,
+        instrument_id: int,
+    ):
         schema = self.company_schema(company_id)
 
         return self.fetch_all(f"""
-            SELECT *
-            FROM {schema}.ifrs9_modifications
-            WHERE company_id = %s
-            AND instrument_id = %s
-            ORDER BY modification_date DESC, id DESC
-        """, (int(company_id), int(instrument_id)))
+            SELECT
+                m.*,
+                fi.instrument_name,
+                fi.instrument_type,
+                fi.currency
+            FROM {schema}.ifrs9_modifications m
+            JOIN {schema}.ifrs9_financial_instruments fi
+            ON fi.company_id=m.company_id
+            AND fi.id=m.instrument_id
+            WHERE m.company_id=%s
+            AND m.instrument_id=%s
+            ORDER BY m.modification_date DESC, m.id DESC
+        """, (
+            int(company_id),
+            int(instrument_id),
+        ))
 
+    def ifrs9_get_modification(
+        self,
+        company_id: int,
+        modification_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                m.*,
+                fi.instrument_name,
+                fi.instrument_type,
+                fi.currency,
+                fi.carrying_amount AS current_carrying_amount
+            FROM {schema}.ifrs9_modifications m
+            JOIN {schema}.ifrs9_financial_instruments fi
+            ON fi.company_id=m.company_id
+            AND fi.id=m.instrument_id
+            WHERE m.company_id=%s
+            AND m.id=%s
+        """, (
+            int(company_id),
+            int(modification_id),
+        ))
+
+    def ifrs9_preview_modification_journal(
+        self,
+        company_id: int,
+        modification_id: int,
+    ):
+        item = self.ifrs9_get_modification(
+            company_id,
+            modification_id,
+        )
+
+        if not item:
+            raise ValueError(
+                "IFRS 9 modification not found"
+            )
+
+        if item.get("journal_status") != "draft":
+            raise ValueError(
+                f"Only draft modifications may be previewed. "
+                f"Current status: {item.get('journal_status')}"
+            )
+
+        if item.get("derecognition_required"):
+            raise ValueError(
+                "This is a substantial modification and must "
+                "be processed through derecognition"
+            )
+
+        asset_types = {
+            "trade_receivable",
+            "loan_receivable",
+            "staff_loan",
+            "director_loan",
+            "deposit_asset",
+            "investment",
+            "bond",
+            "note_receivable",
+            "other_financial_asset",
+        }
+
+        is_asset = (
+            item.get("instrument_type")
+            in asset_types
+        )
+
+        old_amount = self._money2(
+            item.get("old_carrying_amount")
+        )
+
+        revised_pv = self._money2(
+            item.get("revised_cashflow_pv")
+        )
+
+        change = self._money2(
+            revised_pv - old_amount
+        )
+
+        if is_asset:
+            instrument_code = self.ifrs9_resolve_account(
+                company_id,
+                "financial_asset_amortised_cost",
+            )
+        else:
+            instrument_code = self.ifrs9_resolve_account(
+                company_id,
+                "financial_liability_amortised_cost",
+            )
+
+        lines = []
+
+        if is_asset:
+            if change > 0:
+                # Increase asset = debit asset, credit gain.
+                gain_code = self.ifrs9_resolve_account(
+                    company_id,
+                    "modification_gain",
+                )
+
+                lines = [
+                    {
+                        "account_code": instrument_code,
+                        "description": (
+                            f"Increase modified carrying amount: "
+                            f"{item.get('instrument_name')}"
+                        ),
+                        "debit": change,
+                        "credit": 0,
+                    },
+                    {
+                        "account_code": gain_code,
+                        "description": (
+                            "Financial-asset modification gain"
+                        ),
+                        "debit": 0,
+                        "credit": change,
+                    },
+                ]
+            elif change < 0:
+                amount = abs(change)
+
+                loss_code = self.ifrs9_resolve_account(
+                    company_id,
+                    "modification_loss",
+                )
+
+                lines = [
+                    {
+                        "account_code": loss_code,
+                        "description": (
+                            "Financial-asset modification loss"
+                        ),
+                        "debit": amount,
+                        "credit": 0,
+                    },
+                    {
+                        "account_code": instrument_code,
+                        "description": (
+                            f"Reduce modified carrying amount: "
+                            f"{item.get('instrument_name')}"
+                        ),
+                        "debit": 0,
+                        "credit": amount,
+                    },
+                ]
+        else:
+            if change > 0:
+                # Increase liability = debit loss, credit liability.
+                loss_code = self.ifrs9_resolve_account(
+                    company_id,
+                    "modification_loss",
+                )
+
+                lines = [
+                    {
+                        "account_code": loss_code,
+                        "description": (
+                            "Financial-liability modification loss"
+                        ),
+                        "debit": change,
+                        "credit": 0,
+                    },
+                    {
+                        "account_code": instrument_code,
+                        "description": (
+                            f"Increase modified liability: "
+                            f"{item.get('instrument_name')}"
+                        ),
+                        "debit": 0,
+                        "credit": change,
+                    },
+                ]
+            elif change < 0:
+                amount = abs(change)
+
+                gain_code = self.ifrs9_resolve_account(
+                    company_id,
+                    "modification_gain",
+                )
+
+                lines = [
+                    {
+                        "account_code": instrument_code,
+                        "description": (
+                            f"Reduce modified liability: "
+                            f"{item.get('instrument_name')}"
+                        ),
+                        "debit": amount,
+                        "credit": 0,
+                    },
+                    {
+                        "account_code": gain_code,
+                        "description": (
+                            "Financial-liability modification gain"
+                        ),
+                        "debit": 0,
+                        "credit": amount,
+                    },
+                ]
+
+        if not lines:
+            raise ValueError(
+                "The modification does not produce a carrying-value change"
+            )
+
+        amount = abs(change)
+
+        return {
+            "modification": item,
+            "date": item["modification_date"],
+            "ref": f"IFRS9-MOD-{modification_id}",
+            "description": (
+                f"IFRS 9 modification – "
+                f"{item.get('instrument_name')}"
+            ),
+            "currency": (
+                item.get("currency")
+                or self.company_currency(company_id)
+            ),
+            "gross_amount": float(amount),
+            "net_amount": float(amount),
+            "dr_total": float(amount),
+            "cr_total": float(amount),
+            "lines": lines,
+        }
+
+    def ifrs9_post_modification(
+        self,
+        company_id: int,
+        modification_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            item = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.ifrs9_modifications
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(modification_id),
+            ), cur=cur)
+
+            if not item:
+                raise ValueError(
+                    "IFRS 9 modification not found"
+                )
+
+            if item.get("journal_status") != "draft":
+                raise ValueError(
+                    f"Only draft modifications may be posted. "
+                    f"Current status: {item.get('journal_status')}"
+                )
+
+            if item.get("journal_id"):
+                raise ValueError(
+                    f"Modification already has journal "
+                    f"{item['journal_id']}"
+                )
+
+            if item.get("derecognition_required"):
+                raise ValueError(
+                    "Substantial modification requires derecognition"
+                )
+
+            preview = self.ifrs9_preview_modification_journal(
+                company_id,
+                modification_id,
+            )
+
+            entry = {
+                "date": preview["date"],
+                "ref": preview["ref"],
+                "description": preview["description"],
+                "gross_amount": preview["gross_amount"],
+                "net_amount": preview["net_amount"],
+                "vat_amount": 0,
+                "currency": preview["currency"],
+                "source": "ifrs9_modification",
+                "source_id": int(modification_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": [
+                    {
+                        **line,
+                        "line_no": index,
+                        "source": "ifrs9_modification",
+                        "source_id": int(modification_id),
+                    }
+                    for index, line in enumerate(
+                        preview["lines"],
+                        start=1,
+                    )
+                ],
+            }
+
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_modifications
+                SET journal_status='posted',
+                    journal_id=%s,
+                    posted_by=%s,
+                    posted_at=NOW(),
+                    updated_at=NOW(),
+                    meta_json=COALESCE(
+                        meta_json,
+                        '{{}}'::jsonb
+                    ) || jsonb_build_object(
+                        'posted_at', NOW(),
+                        'posted_by', %s,
+                        'journal_preview', %s::jsonb
+                    )
+                WHERE company_id=%s
+                AND id=%s
+                AND journal_status='draft'
+                AND journal_id IS NULL
+                RETURNING *
+            """, (
+                int(journal_id),
+                user_id,
+                user_id,
+                json.dumps(preview, default=str),
+                int(company_id),
+                int(modification_id),
+            ))
+
+            posted = cur.fetchone()
+
+            if not posted:
+                raise ValueError(
+                    "Modification changed before posting completed"
+                )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_financial_instruments
+                SET carrying_amount=%s,
+                    contractual_interest_rate=COALESCE(
+                        %s,
+                        contractual_interest_rate
+                    ),
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *
+            """, (
+                item["revised_cashflow_pv"],
+                item.get("revised_contractual_rate"),
+                int(company_id),
+                int(item["instrument_id"]),
+            ))
+
+            instrument = cur.fetchone()
+
+        return {
+            "modification": posted,
+            "instrument": instrument,
+            "journal_id": journal_id,
+            "preview": preview,
+        }
+        
     def ifrs9_get_account_mappings(self, company_id: int):
         schema = self.company_schema(company_id)
 
@@ -98217,6 +100783,924 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 "trade_payables": payables or [],
                 "bank_accounts": banks or [],
             },
+        }
+
+    def _ifrs9_day_fraction(
+        self,
+        period_start,
+        period_end,
+        basis="actual_365",
+    ):
+        start = (
+            period_start
+            if isinstance(period_start, date)
+            else date.fromisoformat(str(period_start))
+        )
+
+        end = (
+            period_end
+            if isinstance(period_end, date)
+            else date.fromisoformat(str(period_end))
+        )
+
+        if end < start:
+            raise ValueError(
+                "period_end cannot be earlier than period_start"
+            )
+
+        if basis == "actual_360":
+            days = (end - start).days + 1
+            return days, Decimal(days) / Decimal("360")
+
+        if basis == "30_360":
+            d1 = min(start.day, 30)
+            d2 = min(end.day, 30)
+
+            days = (
+                (end.year - start.year) * 360
+                + (end.month - start.month) * 30
+                + d2
+                - d1
+            )
+
+            days = max(days, 0)
+            return days, Decimal(days) / Decimal("360")
+
+        days = (end - start).days + 1
+        return days, Decimal(days) / Decimal("365")
+
+    def ifrs9_latest_eir_terms(
+        self,
+        company_id: int,
+        instrument_id: int,
+        as_at=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        where = [
+            "company_id=%s",
+            "instrument_id=%s",
+        ]
+
+        params = [
+            int(company_id),
+            int(instrument_id),
+        ]
+
+        if as_at:
+            where.append("effective_date<=%s::date")
+            params.append(as_at)
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_effective_interest_terms
+            WHERE {" AND ".join(where)}
+            ORDER BY effective_date DESC, id DESC
+            LIMIT 1
+        """, tuple(params))
+
+    def ifrs9_list_amortised_cost_runs(
+        self,
+        company_id: int,
+        instrument_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.ifrs9_amortised_cost_runs
+            WHERE company_id=%s
+            AND instrument_id=%s
+            ORDER BY period_end DESC, id DESC
+        """, (
+            int(company_id),
+            int(instrument_id),
+        ))
+
+    def ifrs9_calculate_amortised_cost(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id=%s
+            AND id=%s
+        """, (
+            int(company_id),
+            int(instrument_id),
+        ))
+
+        if not instrument:
+            raise ValueError("IFRS 9 instrument not found")
+
+        if instrument.get("measurement_category") != "amortised_cost":
+            raise ValueError(
+                "Instrument is not measured at amortised cost"
+            )
+
+        if instrument.get("status") != "active":
+            raise ValueError(
+                "Only active instruments may be subsequently measured"
+            )
+
+        period_start = payload.get("period_start")
+        period_end = payload.get("period_end")
+
+        if not period_start or not period_end:
+            raise ValueError(
+                "period_start and period_end are required"
+            )
+
+        basis = str(
+            payload.get("day_count_basis") or "actual_365"
+        ).strip()
+
+        if basis not in {
+            "actual_365",
+            "actual_360",
+            "30_360",
+        }:
+            raise ValueError("Invalid day-count basis")
+
+        eir = self.ifrs9_latest_eir_terms(
+            company_id,
+            instrument_id,
+            as_at=period_end,
+        )
+
+        if not eir:
+            raise ValueError(
+                "Effective-interest terms must be configured first"
+            )
+
+        previous = self.fetch_one(f"""
+            SELECT closing_carrying_amount, period_end
+            FROM {schema}.ifrs9_amortised_cost_runs
+            WHERE company_id=%s
+            AND instrument_id=%s
+            AND status='posted'
+            AND period_end<%s::date
+            ORDER BY period_end DESC, id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(instrument_id),
+            period_start,
+        ))
+
+        opening = self._money2(
+            previous.get("closing_carrying_amount")
+            if previous
+            else (
+                eir.get("initial_carrying_amount")
+                or instrument.get("carrying_amount")
+            )
+        )
+
+        if opening <= 0:
+            raise ValueError(
+                "Opening carrying amount must be greater than zero"
+            )
+
+        annual_eir = Decimal(
+            str(eir.get("effective_interest_rate") or 0)
+        )
+
+        days, fraction = self._ifrs9_day_fraction(
+            period_start,
+            period_end,
+            basis,
+        )
+
+        effective_interest = self._money2(
+            opening * annual_eir * fraction
+        )
+
+        asset_types = {
+            "trade_receivable",
+            "loan_receivable",
+            "staff_loan",
+            "director_loan",
+            "deposit_asset",
+            "investment",
+            "bond",
+            "note_receivable",
+            "other_financial_asset",
+        }
+
+        is_asset = (
+            instrument.get("instrument_type")
+            in asset_types
+        )
+
+        cash_received = self._money2(
+            payload.get("cash_received")
+        )
+
+        cash_paid = self._money2(
+            payload.get("cash_paid")
+        )
+
+        if is_asset:
+            if cash_paid > 0:
+                raise ValueError(
+                    "cash_paid is not valid for a financial asset"
+                )
+
+            interest_income = effective_interest
+            interest_expense = self._money2(0)
+
+            closing = self._money2(
+                opening
+                + interest_income
+                - cash_received
+            )
+        else:
+            if cash_received > 0:
+                raise ValueError(
+                    "cash_received is not valid for a financial liability"
+                )
+
+            interest_income = self._money2(0)
+            interest_expense = effective_interest
+
+            closing = self._money2(
+                opening
+                + interest_expense
+                - cash_paid
+            )
+
+        if closing < 0:
+            raise ValueError(
+                "Contractual cash flow exceeds the carrying amount"
+            )
+
+        return {
+            "instrument_id": int(instrument_id),
+            "instrument_name": instrument.get("instrument_name"),
+            "instrument_type": instrument.get("instrument_type"),
+            "is_asset": is_asset,
+            "period_start": str(period_start),
+            "period_end": str(period_end),
+            "day_count": days,
+            "day_count_basis": basis,
+            "day_fraction": float(fraction),
+            "effective_interest_rate": float(annual_eir),
+            "opening_carrying_amount": float(opening),
+            "interest_income": float(interest_income),
+            "interest_expense": float(interest_expense),
+            "cash_received": float(cash_received),
+            "cash_paid": float(cash_paid),
+            "contractual_cashflow": float(
+                cash_received if is_asset else cash_paid
+            ),
+            "closing_carrying_amount": float(closing),
+            "currency": (
+                instrument.get("currency")
+                or self.company_currency(company_id)
+            ),
+        }
+
+    def ifrs9_create_amortised_cost_run(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        result = self.ifrs9_calculate_amortised_cost(
+            company_id,
+            instrument_id,
+            payload,
+        )
+
+        existing = self.fetch_one(f"""
+            SELECT id, status
+            FROM {schema}.ifrs9_amortised_cost_runs
+            WHERE company_id=%s
+            AND instrument_id=%s
+            AND period_start=%s::date
+            AND period_end=%s::date
+            AND status IN ('draft','posted')
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(instrument_id),
+            result["period_start"],
+            result["period_end"],
+        ))
+
+        if existing:
+            raise ValueError(
+                f"An amortised-cost run already exists for this period "
+                f"(run {existing['id']}, status {existing['status']})"
+            )
+
+        return self.execute_sql(f"""
+            INSERT INTO {schema}.ifrs9_amortised_cost_runs (
+                company_id,
+                instrument_id,
+                run_date,
+                period_start,
+                period_end,
+                opening_carrying_amount,
+                interest_income,
+                interest_expense,
+                cash_received,
+                cash_paid,
+                fees_amortised,
+                closing_carrying_amount,
+                effective_interest_rate,
+                day_count,
+                day_count_basis,
+                contractual_cashflow,
+                status,
+                created_by,
+                created_at,
+                updated_at,
+                meta_json
+            )
+            VALUES (
+                %s,%s,CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s,
+                0,%s,%s,%s,%s,%s,'draft',%s,NOW(),NOW(),
+                %s::jsonb
+            )
+            RETURNING *
+        """, (
+            int(company_id),
+            int(instrument_id),
+            result["period_start"],
+            result["period_end"],
+            result["opening_carrying_amount"],
+            result["interest_income"],
+            result["interest_expense"],
+            result["cash_received"],
+            result["cash_paid"],
+            result["closing_carrying_amount"],
+            result["effective_interest_rate"],
+            result["day_count"],
+            result["day_count_basis"],
+            result["contractual_cashflow"],
+            user_id,
+            json.dumps(
+                {"calculation": result},
+                default=str,
+            ),
+        ), fetchone=True)
+
+    def ifrs9_get_amortised_cost_run(
+        self,
+        company_id: int,
+        run_id: int,
+    ):
+        schema = self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                r.*,
+                fi.instrument_name,
+                fi.instrument_type,
+                fi.currency
+            FROM {schema}.ifrs9_amortised_cost_runs r
+            JOIN {schema}.ifrs9_financial_instruments fi
+            ON fi.company_id=r.company_id
+            AND fi.id=r.instrument_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+        """, (
+            int(company_id),
+            int(run_id),
+        ))
+
+    def ifrs9_preview_amortised_cost_journal(
+        self,
+        company_id: int,
+        run_id: int,
+    ):
+        run = self.ifrs9_get_amortised_cost_run(
+            company_id,
+            run_id,
+        )
+
+        if not run:
+            raise ValueError(
+                "IFRS 9 amortised-cost run not found"
+            )
+
+        if run.get("status") != "draft":
+            raise ValueError(
+                f"Only draft runs may be previewed. "
+                f"Current status: {run.get('status')}"
+            )
+
+        asset_types = {
+            "trade_receivable",
+            "loan_receivable",
+            "staff_loan",
+            "director_loan",
+            "deposit_asset",
+            "investment",
+            "bond",
+            "note_receivable",
+            "other_financial_asset",
+        }
+
+        is_asset = run.get("instrument_type") in asset_types
+
+        if is_asset:
+            amount = self._money2(
+                run.get("interest_income")
+            )
+
+            instrument_code = self.ifrs9_resolve_account(
+                company_id,
+                "financial_asset_amortised_cost",
+            )
+
+            interest_code = self.ifrs9_resolve_account(
+                company_id,
+                "interest_income_amortised_cost",
+            )
+
+            lines = [
+                {
+                    "account_code": instrument_code,
+                    "description": (
+                        f"Effective interest accrued: "
+                        f"{run.get('instrument_name')}"
+                    ),
+                    "debit": amount,
+                    "credit": 0,
+                },
+                {
+                    "account_code": interest_code,
+                    "description": (
+                        f"Effective-interest income: "
+                        f"{run.get('instrument_name')}"
+                    ),
+                    "debit": 0,
+                    "credit": amount,
+                },
+            ]
+        else:
+            amount = self._money2(
+                run.get("interest_expense")
+            )
+
+            instrument_code = self.ifrs9_resolve_account(
+                company_id,
+                "financial_liability_amortised_cost",
+            )
+
+            interest_code = self.ifrs9_resolve_account(
+                company_id,
+                "interest_expense_amortised_cost",
+            )
+
+            lines = [
+                {
+                    "account_code": interest_code,
+                    "description": (
+                        f"Effective-interest expense: "
+                        f"{run.get('instrument_name')}"
+                    ),
+                    "debit": amount,
+                    "credit": 0,
+                },
+                {
+                    "account_code": instrument_code,
+                    "description": (
+                        f"Interest accrued on liability: "
+                        f"{run.get('instrument_name')}"
+                    ),
+                    "debit": 0,
+                    "credit": amount,
+                },
+            ]
+
+        return {
+            "run": run,
+            "date": run["period_end"],
+            "ref": f"IFRS9-AC-{run_id}",
+            "description": (
+                f"IFRS 9 effective interest – "
+                f"{run.get('instrument_name')}"
+            ),
+            "currency": (
+                run.get("currency")
+                or self.company_currency(company_id)
+            ),
+            "gross_amount": float(amount),
+            "net_amount": float(amount),
+            "dr_total": float(amount),
+            "cr_total": float(amount),
+            "lines": lines,
+        }
+
+    def _ifrs9_cashflow_pv(
+        self,
+        cashflows,
+        *,
+        discount_rate,
+        valuation_date,
+        day_basis=365,
+    ):
+        valuation = (
+            valuation_date
+            if isinstance(valuation_date, date)
+            else date.fromisoformat(str(valuation_date))
+        )
+
+        rate = Decimal(str(discount_rate or 0))
+
+        if rate <= Decimal("-1"):
+            raise ValueError("Discount rate is invalid")
+
+        if day_basis not in {360, 365}:
+            raise ValueError("day_basis must be 360 or 365")
+
+        cleaned = []
+        total = Decimal("0")
+
+        for raw in cashflows or []:
+            payment_date = raw.get("payment_date")
+            amount = self._money2(raw.get("amount"))
+
+            if not payment_date:
+                raise ValueError(
+                    "Every revised cash flow requires a payment date"
+                )
+
+            payment = (
+                payment_date
+                if isinstance(payment_date, date)
+                else date.fromisoformat(str(payment_date))
+            )
+
+            if payment < valuation:
+                raise ValueError(
+                    "Revised cash-flow dates cannot precede "
+                    "the modification date"
+                )
+
+            if amount < 0:
+                raise ValueError(
+                    "Revised cash-flow amounts cannot be negative"
+                )
+
+            days = (payment - valuation).days
+            years = Decimal(days) / Decimal(str(day_basis))
+
+            present_value = (
+                amount
+                / (
+                    (Decimal("1") + rate)
+                    ** years
+                )
+            )
+
+            total += present_value
+
+            cleaned.append({
+                "payment_date": str(payment),
+                "amount": float(amount),
+                "days_from_modification": days,
+                "present_value": float(
+                    self._money2(present_value)
+                ),
+            })
+
+        if not cleaned:
+            raise ValueError(
+                "At least one revised contractual cash flow is required"
+            )
+
+        return self._money2(total), cleaned
+
+    def ifrs9_calculate_modification(
+        self,
+        company_id: int,
+        instrument_id: int,
+        payload: dict,
+    ):
+        schema = self.company_schema(company_id)
+
+        instrument = self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.ifrs9_financial_instruments
+            WHERE company_id=%s
+            AND id=%s
+        """, (
+            int(company_id),
+            int(instrument_id),
+        ))
+
+        if not instrument:
+            raise ValueError("IFRS 9 instrument not found")
+
+        if instrument.get("measurement_category") != "amortised_cost":
+            raise ValueError(
+                "Only amortised-cost instruments can use "
+                "this modification workflow"
+            )
+
+        if instrument.get("status") != "active":
+            raise ValueError(
+                "Only active financial instruments may be modified"
+            )
+
+        modification_date = (
+            payload.get("modification_date")
+            or date.today().isoformat()
+        )
+
+        eir = self.ifrs9_latest_eir_terms(
+            company_id,
+            instrument_id,
+            as_at=modification_date,
+        )
+
+        if not eir:
+            raise ValueError(
+                "Effective-interest terms must be configured first"
+            )
+
+        latest_run = self.fetch_one(f"""
+            SELECT closing_carrying_amount
+            FROM {schema}.ifrs9_amortised_cost_runs
+            WHERE company_id=%s
+            AND instrument_id=%s
+            AND status='posted'
+            AND period_end<=%s::date
+            ORDER BY period_end DESC, id DESC
+            LIMIT 1
+        """, (
+            int(company_id),
+            int(instrument_id),
+            modification_date,
+        ))
+
+        old_carrying = self._money2(
+            latest_run.get("closing_carrying_amount")
+            if latest_run
+            else instrument.get("carrying_amount")
+        )
+
+        if old_carrying <= 0:
+            raise ValueError(
+                "The instrument has no carrying amount to modify"
+            )
+
+        original_eir = Decimal(
+            str(eir.get("effective_interest_rate") or 0)
+        )
+
+        revised_cashflows = payload.get(
+            "revised_cashflows"
+        ) or []
+
+        revised_pv, discounted_rows = (
+            self._ifrs9_cashflow_pv(
+                revised_cashflows,
+                discount_rate=original_eir,
+                valuation_date=modification_date,
+                day_basis=int(
+                    payload.get("day_basis") or 365
+                ),
+            )
+        )
+
+        difference = self._money2(
+            revised_pv - old_carrying
+        )
+
+        percentage_change = (
+            abs(difference) / old_carrying
+            if old_carrying
+            else Decimal("0")
+        )
+
+        threshold = Decimal(
+            str(
+                payload.get(
+                    "substantial_threshold",
+                    "0.10",
+                )
+            )
+        )
+
+        force_substantial = bool(
+            payload.get("force_substantial", False)
+        )
+
+        substantial = (
+            force_substantial
+            or percentage_change >= threshold
+        )
+
+        asset_types = {
+            "trade_receivable",
+            "loan_receivable",
+            "staff_loan",
+            "director_loan",
+            "deposit_asset",
+            "investment",
+            "bond",
+            "note_receivable",
+            "other_financial_asset",
+        }
+
+        is_asset = (
+            instrument.get("instrument_type")
+            in asset_types
+        )
+
+        if substantial:
+            gain_loss = self._money2(0)
+        elif is_asset:
+            # Asset carrying value increases = loss.
+            gain_loss = self._money2(
+                old_carrying - revised_pv
+            )
+        else:
+            # Liability carrying value decreases = gain.
+            gain_loss = self._money2(
+                old_carrying - revised_pv
+            )
+
+        return {
+            "instrument_id": int(instrument_id),
+            "instrument_name": instrument.get(
+                "instrument_name"
+            ),
+            "instrument_type": instrument.get(
+                "instrument_type"
+            ),
+            "is_asset": is_asset,
+            "modification_date": str(modification_date),
+            "old_carrying_amount": float(old_carrying),
+            "original_effective_interest_rate": float(
+                original_eir
+            ),
+            "revised_cashflow_pv": float(revised_pv),
+            "carrying_amount_change": float(difference),
+            "modification_gain_loss": float(gain_loss),
+            "percentage_change": float(
+                percentage_change
+            ),
+            "percentage_change_percent": float(
+                percentage_change * Decimal("100")
+            ),
+            "substantial_threshold": float(threshold),
+            "substantial_modification": substantial,
+            "derecognition_required": substantial,
+            "revised_cashflows": discounted_rows,
+            "currency": (
+                instrument.get("currency")
+                or self.company_currency(company_id)
+            ),
+        }
+
+    def ifrs9_post_amortised_cost_run(
+        self,
+        company_id: int,
+        run_id: int,
+        *,
+        user_id=None,
+    ):
+        schema = self.company_schema(company_id)
+
+        with self.transaction() as (conn, cur):
+            run = self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.ifrs9_amortised_cost_runs
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE
+            """, (
+                int(company_id),
+                int(run_id),
+            ), cur=cur)
+
+            if not run:
+                raise ValueError(
+                    "IFRS 9 amortised-cost run not found"
+                )
+
+            if run.get("status") != "draft":
+                raise ValueError(
+                    f"Only draft runs may be posted. "
+                    f"Current status: {run.get('status')}"
+                )
+
+            if run.get("journal_id"):
+                raise ValueError(
+                    f"Run already has journal {run['journal_id']}"
+                )
+
+            preview = self.ifrs9_preview_amortised_cost_journal(
+                company_id,
+                run_id,
+            )
+
+            entry = {
+                "date": preview["date"],
+                "ref": preview["ref"],
+                "description": preview["description"],
+                "gross_amount": preview["gross_amount"],
+                "net_amount": preview["net_amount"],
+                "vat_amount": 0,
+                "currency": preview["currency"],
+                "source": "ifrs9_amortised_cost",
+                "source_id": int(run_id),
+                "module_name": "ifrs9",
+                "created_by_user_id": user_id,
+                "prepared_by_user_id": user_id,
+                "lines": [
+                    {
+                        **line,
+                        "line_no": index,
+                        "source": "ifrs9_amortised_cost",
+                        "source_id": int(run_id),
+                    }
+                    for index, line in enumerate(
+                        preview["lines"],
+                        start=1,
+                    )
+                ],
+            }
+
+            journal_id = self.post_journal(
+                company_id,
+                entry,
+                cur=cur,
+                conn=conn,
+            )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_amortised_cost_runs
+                SET status='posted',
+                    journal_id=%s,
+                    posted_by=%s,
+                    posted_at=NOW(),
+                    updated_at=NOW(),
+                    meta_json=COALESCE(
+                        meta_json,
+                        '{{}}'::jsonb
+                    ) || jsonb_build_object(
+                        'posted_at', NOW(),
+                        'posted_by', %s,
+                        'journal_preview', %s::jsonb
+                    )
+                WHERE company_id=%s
+                AND id=%s
+                AND status='draft'
+                AND journal_id IS NULL
+                RETURNING *
+            """, (
+                int(journal_id),
+                user_id,
+                user_id,
+                json.dumps(preview, default=str),
+                int(company_id),
+                int(run_id),
+            ))
+
+            posted = cur.fetchone()
+
+            if not posted:
+                raise ValueError(
+                    "Run changed before posting completed"
+                )
+
+            cur.execute(f"""
+                UPDATE {schema}.ifrs9_financial_instruments
+                SET carrying_amount=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *
+            """, (
+                run["closing_carrying_amount"],
+                int(company_id),
+                int(run["instrument_id"]),
+            ))
+
+            instrument = cur.fetchone()
+
+        return {
+            "run": posted,
+            "instrument": instrument,
+            "journal_id": journal_id,
+            "preview": preview,
         }
 
     def forecast_list_budgets(self, company_id: int, status: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -104853,6 +108337,411 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ORDER BY r.period_start DESC, r.id DESC;
         """, (int(company_id),))
 
+    def payroll_payslip_payload(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int,
+    )->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        employee_id=int(employee_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT
+                r.*,
+                c.frequency
+            FROM {schema}.payroll_runs r
+            JOIN {schema}.payroll_pay_calendars c
+            ON c.company_id=r.company_id
+            AND c.id=r.pay_calendar_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+            LIMIT 1;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] not in(
+            "calculated",
+            "approved",
+            "posted",
+            "reversed",
+        ):
+            raise ValueError(
+                "Calculate payroll before generating payslips"
+            )
+
+        employee=self.fetch_one(f"""
+            SELECT
+                re.*,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                e.email,
+                e.phone,
+                e.id_number,
+                e.passport_number,
+                e.tax_number,
+                e.department_id,
+                e.position_id,
+                d.name AS department_name,
+                p.title AS position_title
+            FROM {schema}.payroll_run_employees re
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=re.company_id
+            AND e.id=re.employee_id
+            LEFT JOIN {schema}.payroll_departments d
+            ON d.company_id=e.company_id
+            AND d.id=e.department_id
+            LEFT JOIN {schema}.payroll_positions p
+            ON p.company_id=e.company_id
+            AND p.id=e.position_id
+            WHERE re.company_id=%s
+            AND re.payroll_run_id=%s
+            AND re.employee_id=%s
+            LIMIT 1;
+        """,(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        ))
+
+        if not employee:
+            raise ValueError(
+                "Employee was not calculated in this payroll run"
+            )
+
+        lines=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_run_lines
+            WHERE company_id=%s
+            AND payroll_run_id=%s
+            AND run_employee_id=%s
+            ORDER BY
+                CASE line_type
+                    WHEN 'earning' THEN 1
+                    WHEN 'benefit' THEN 2
+                    WHEN 'deduction' THEN 3
+                    WHEN 'tax' THEN 4
+                    WHEN 'employer_contribution' THEN 5
+                    ELSE 6
+                END,
+                id;
+        """,(
+            company_id,
+            payroll_run_id,
+            int(employee["id"]),
+        ))
+
+        bank=self.fetch_one(f"""
+            SELECT
+                bank_name,
+                branch_code,
+                account_number,
+                account_type,
+                account_holder_name
+            FROM {schema}.payroll_employee_bank_accounts
+            WHERE company_id=%s
+            AND employee_id=%s
+            ORDER BY is_primary DESC,id DESC
+            LIMIT 1;
+        """,(
+            company_id,
+            employee_id,
+        )) or {}
+
+        company=self.fetch_one("""
+            SELECT *
+            FROM public.companies
+            WHERE id=%s
+            LIMIT 1;
+        """,(company_id,)) or {}
+
+        earnings=[]
+        benefits=[]
+        deductions=[]
+        taxes=[]
+        employer_contributions=[]
+
+        for line in lines:
+            item={
+                "id":line["id"],
+                "line_type":line.get("line_type"),
+                "code":line.get("code"),
+                "description":
+                    line.get("description")
+                    or line.get("code")
+                    or line.get("line_type"),
+                "quantity":line.get("quantity"),
+                "rate":line.get("rate"),
+                "percentage":line.get("percentage"),
+                "amount":_payroll_money(
+                    line.get("amount")
+                ),
+                "taxable":bool(line.get("taxable")),
+                "pensionable":bool(
+                    line.get("pensionable")
+                ),
+                "source_type":line.get("source_type"),
+            }
+
+            line_type=line.get("line_type")
+
+            if line_type=="earning":
+                earnings.append(item)
+            elif line_type=="benefit":
+                benefits.append(item)
+            elif line_type=="deduction":
+                deductions.append(item)
+            elif line_type=="tax":
+                taxes.append(item)
+            elif line_type=="employer_contribution":
+                employer_contributions.append(item)
+
+        employee_deductions=sum(
+            (
+                _payroll_decimal(x["amount"])
+                for x in deductions
+            ),
+            Decimal("0"),
+        )
+
+        tax_total=sum(
+            (
+                _payroll_decimal(x["amount"])
+                for x in taxes
+            ),
+            Decimal("0"),
+        )
+
+        employer_total=sum(
+            (
+                _payroll_decimal(x["amount"])
+                for x in employer_contributions
+            ),
+            Decimal("0"),
+        )
+
+        return{
+            "company":{
+                "id":company_id,
+                "name":
+                    company.get("name")
+                    or company.get("company_name")
+                    or "Company",
+                "registration_number":
+                    company.get("registration_number")
+                    or company.get("company_reg_no"),
+                "tax_number":
+                    company.get("tax_number"),
+                "vat_number":
+                    company.get("vat_number")
+                    or company.get("vat"),
+                "address":
+                    company.get("billing_address")
+                    or company.get("address"),
+                "phone":company.get("phone"),
+                "email":company.get("email"),
+                "logo_url":
+                    company.get("logo_url")
+                    or company.get("logo"),
+            },
+            "run":{
+                "id":run["id"],
+                "run_no":run.get("run_no"),
+                "status":run.get("status"),
+                "frequency":run.get("frequency"),
+                "period_start":run.get("period_start"),
+                "period_end":run.get("period_end"),
+                "payment_date":run.get("payment_date"),
+                "currency":
+                    run.get("currency")
+                    or company.get("currency")
+                    or "LSL",
+                "posted_journal_id":
+                    run.get("posted_journal_id"),
+            },
+            "employee":{
+                "id":employee_id,
+                "run_employee_id":employee["id"],
+                "employee_no":employee.get("employee_no"),
+                "first_name":employee.get("first_name"),
+                "last_name":employee.get("last_name"),
+                "employee_name":" ".join(filter(None,[
+                    employee.get("first_name"),
+                    employee.get("last_name"),
+                ])),
+                "email":employee.get("email"),
+                "phone":employee.get("phone"),
+                "id_number":employee.get("id_number"),
+                "passport_number":
+                    employee.get("passport_number"),
+                "tax_number":employee.get("tax_number"),
+                "department_name":
+                    employee.get("department_name"),
+                "position_title":
+                    employee.get("position_title"),
+                "bank":bank,
+            },
+            "eligibility":{
+                "eligible_from":
+                    employee.get("eligible_from"),
+                "eligible_to":
+                    employee.get("eligible_to"),
+                "scheduled_days":
+                    employee.get("scheduled_days") or 0,
+                "eligible_days":
+                    employee.get("eligible_days") or 0,
+                "worked_days":
+                    employee.get("worked_days") or 0,
+                "paid_leave_days":
+                    employee.get("paid_leave_days") or 0,
+                "unpaid_days":
+                    employee.get("unpaid_days") or 0,
+                "scheduled_hours":
+                    employee.get("scheduled_hours") or 0,
+                "worked_hours":
+                    employee.get("worked_hours") or 0,
+                "unpaid_hours":
+                    employee.get("unpaid_hours") or 0,
+                "proration_method":
+                    employee.get("proration_method"),
+                "proration_factor":
+                    employee.get("proration_factor") or 0,
+            },
+            "earnings":earnings,
+            "benefits":benefits,
+            "deductions":deductions,
+            "taxes":taxes,
+            "employer_contributions":
+                employer_contributions,
+            "totals":{
+                "basic_pay":_payroll_money(
+                    employee.get("basic_pay")
+                ),
+                "gross_pay":_payroll_money(
+                    employee.get("gross_pay")
+                ),
+                "taxable_income":_payroll_money(
+                    employee.get("taxable_income")
+                ),
+                "employee_deductions":
+                    _payroll_money(employee_deductions),
+                "tax":_payroll_money(tax_total),
+                "total_deductions":_payroll_money(
+                    employee.get("total_deductions")
+                ),
+                "net_pay":_payroll_money(
+                    employee.get("net_pay")
+                ),
+                "employer_contributions":
+                    _payroll_money(employer_total),
+                "employer_cost":_payroll_money(
+                    employee.get("employer_cost")
+                ),
+            },
+            "tax":{
+                "authority_code":
+                    employee.get("tax_authority_code"),
+                "tax_year_label":
+                    employee.get("tax_year_label"),
+            },
+            "calculation":{
+                "status":
+                    employee.get("calculation_status")
+                    or employee.get("status"),
+                "message":
+                    employee.get("calculation_message"),
+            },
+        }
+
+
+    def payroll_payslips_list(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+    )->list[dict]:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
+
+        run=self.fetch_one(f"""
+            SELECT id,status
+            FROM {schema}.payroll_runs
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+        if not run:
+            raise ValueError("Payroll run not found")
+
+        if run["status"] not in(
+            "calculated",
+            "approved",
+            "posted",
+            "reversed",
+        ):
+            return[]
+
+        return self.fetch_all(f"""
+            SELECT
+                re.id AS run_employee_id,
+                re.employee_id,
+                re.basic_pay,
+                re.gross_pay,
+                re.total_deductions,
+                re.net_pay,
+                re.employer_contributions,
+                re.calculation_status,
+                re.eligible_from,
+                re.eligible_to,
+                re.proration_factor,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                e.email,
+                d.name AS department_name,
+                p.title AS position_title
+            FROM {schema}.payroll_run_employees re
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=re.company_id
+            AND e.id=re.employee_id
+            LEFT JOIN {schema}.payroll_departments d
+            ON d.company_id=e.company_id
+            AND d.id=e.department_id
+            LEFT JOIN {schema}.payroll_positions p
+            ON p.company_id=e.company_id
+            AND p.id=e.position_id
+            WHERE re.company_id=%s
+            AND re.payroll_run_id=%s
+            ORDER BY e.employee_no;
+        """,(
+            company_id,
+            payroll_run_id,
+        ))
+
+
+    def payroll_payslip_get(
+        self,
+        company_id:int,
+        payroll_run_id:int,
+        employee_id:int,
+    )->dict:
+        return self.payroll_payslip_payload(
+            company_id,
+            payroll_run_id,
+            employee_id,
+        )
+
     def _payroll_validation_item(
         self,
         severity:str,
@@ -106066,6 +109955,1173 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ))
 
         return bool(row)
+
+    def payroll_incentive_evaluations_list(
+        self,
+        company_id:int,
+        *,
+        employee_id:int|None=None,
+        plan_id:int|None=None,
+        status:str|None=None,
+        date_from=None,
+        date_to=None,
+    )->list[dict]:
+        schema=self.company_schema(company_id)
+        params=[int(company_id)]
+        where=[]
+
+        if employee_id:
+            where.append("v.employee_id=%s")
+            params.append(int(employee_id))
+
+        if plan_id:
+            where.append("v.incentive_plan_id=%s")
+            params.append(int(plan_id))
+
+        if status:
+            where.append("v.status=%s")
+            params.append(str(status).strip().lower())
+
+        if date_from:
+            where.append("v.evaluation_period_end>=%s")
+            params.append(date_from)
+
+        if date_to:
+            where.append("v.evaluation_period_start<=%s")
+            params.append(date_to)
+
+        extra=(
+            "AND "+" AND ".join(where)
+            if where else ""
+        )
+
+        return self.fetch_all(f"""
+            SELECT
+                v.*,
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.metric_name,
+                p.taxable,
+                p.pensionable,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name,
+                a.effective_from AS assignment_from,
+                a.effective_to AS assignment_to,
+                r.from_percentage,
+                r.to_percentage
+            FROM {schema}.payroll_incentive_evaluations v
+            JOIN {schema}.payroll_incentive_plans p
+            ON p.company_id=v.company_id
+            AND p.id=v.incentive_plan_id
+            JOIN {schema}.payroll_incentive_assignments a
+            ON a.company_id=v.company_id
+            AND a.id=v.incentive_assignment_id
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=v.company_id
+            AND e.id=v.employee_id
+            LEFT JOIN {schema}.payroll_incentive_rules r
+            ON r.company_id=v.company_id
+            AND r.id=v.matched_rule_id
+            WHERE v.company_id=%s
+            {extra}
+            ORDER BY
+                v.evaluation_period_end DESC,
+                e.employee_no,
+                v.id DESC;
+        """,tuple(params))
+
+
+    def payroll_incentive_evaluation_get(
+        self,
+        company_id:int,
+        evaluation_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                v.*,
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.metric_name,
+                p.taxable,
+                p.pensionable,
+                e.employee_no,
+                e.first_name,
+                e.last_name,
+                CONCAT_WS(
+                    ' ',
+                    e.first_name,
+                    e.last_name
+                ) AS employee_name,
+                a.target_value AS assigned_target,
+                r.from_percentage,
+                r.to_percentage
+            FROM {schema}.payroll_incentive_evaluations v
+            JOIN {schema}.payroll_incentive_plans p
+            ON p.company_id=v.company_id
+            AND p.id=v.incentive_plan_id
+            JOIN {schema}.payroll_incentive_assignments a
+            ON a.company_id=v.company_id
+            AND a.id=v.incentive_assignment_id
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=v.company_id
+            AND e.id=v.employee_id
+            LEFT JOIN {schema}.payroll_incentive_rules r
+            ON r.company_id=v.company_id
+            AND r.id=v.matched_rule_id
+            WHERE v.company_id=%s
+            AND v.id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(evaluation_id),
+        ))
+
+
+    def _payroll_incentive_assignment_get(
+        self,
+        company_id:int,
+        assignment_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT
+                a.*,
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.payout_basis,
+                p.taxable,
+                p.pensionable,
+                p.metric_name,
+                e.employee_no,
+                e.first_name,
+                e.last_name
+            FROM {schema}.payroll_incentive_assignments a
+            JOIN {schema}.payroll_incentive_plans p
+            ON p.company_id=a.company_id
+            AND p.id=a.incentive_plan_id
+            JOIN {schema}.payroll_employees e
+            ON e.company_id=a.company_id
+            AND e.id=a.employee_id
+            WHERE a.company_id=%s
+            AND a.id=%s
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(assignment_id),
+        ))
+
+
+    def payroll_incentive_evaluation_save(
+        self,
+        company_id:int,
+        body:dict,
+        user_id=None,
+        evaluation_id:int|None=None,
+    )->dict:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        assignment_id=int(
+            body.get("incentive_assignment_id") or 0
+        )
+
+        if not assignment_id:
+            raise ValueError(
+                "incentive_assignment_id is required"
+            )
+
+        assignment=self._payroll_incentive_assignment_get(
+            company_id,
+            assignment_id,
+        )
+
+        if not assignment:
+            raise ValueError(
+                "Incentive assignment not found"
+            )
+
+        if not assignment.get("is_active"):
+            raise ValueError(
+                "Incentive assignment is inactive"
+            )
+
+        period_start=body.get("evaluation_period_start")
+        period_end=body.get("evaluation_period_end")
+
+        if not period_start or not period_end:
+            raise ValueError(
+                "Evaluation period dates are required"
+            )
+
+        start=date.fromisoformat(str(period_start))
+        end=date.fromisoformat(str(period_end))
+
+        if end<start:
+            raise ValueError(
+                "Evaluation period end cannot be "
+                "before its start"
+            )
+
+        assignment_from=assignment["effective_from"]
+        assignment_to=assignment.get("effective_to")
+
+        if end<assignment_from:
+            raise ValueError(
+                "Evaluation period falls before the "
+                "assignment effective date"
+            )
+
+        if assignment_to and start>assignment_to:
+            raise ValueError(
+                "Evaluation period falls after the "
+                "assignment end date"
+            )
+
+        target=_payroll_decimal(
+            body.get("target_value")
+            if body.get("target_value") not in(None,"")
+            else assignment.get("target_value")
+        )
+
+        actual=_payroll_decimal(
+            body.get("actual_value")
+        )
+
+        if target<0 or actual<0:
+            raise ValueError(
+                "Target and actual values cannot be negative"
+            )
+
+        payroll_run_id=(
+            int(body["payroll_run_id"])
+            if body.get("payroll_run_id") not in(None,"")
+            else None
+        )
+
+        adjustment=_payroll_money(
+            body.get("adjustment_amount")
+        )
+
+        adjustment_reason=str(
+            body.get("adjustment_reason") or ""
+        ).strip() or None
+
+        if adjustment!=0 and not adjustment_reason:
+            raise ValueError(
+                "An adjustment reason is required"
+            )
+
+        notes=str(
+            body.get("notes") or ""
+        ).strip() or None
+
+        if evaluation_id:
+            existing=self.payroll_incentive_evaluation_get(
+                company_id,
+                evaluation_id,
+            )
+
+            if not existing:
+                raise ValueError(
+                    "Incentive evaluation not found"
+                )
+
+            if existing["status"] in(
+                "approved",
+                "paid",
+                "cancelled",
+            ):
+                raise ValueError(
+                    f"{existing['status'].title()} "
+                    "evaluation cannot be edited"
+                )
+
+            row=self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_evaluations
+                SET
+                    incentive_assignment_id=%s,
+                    incentive_plan_id=%s,
+                    employee_id=%s,
+                    payroll_run_id=%s,
+                    evaluation_period_start=%s,
+                    evaluation_period_end=%s,
+                    target_value=%s,
+                    actual_value=%s,
+                    adjustment_amount=%s,
+                    adjustment_reason=%s,
+                    notes=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *;
+            """,(
+                assignment_id,
+                assignment["incentive_plan_id"],
+                assignment["employee_id"],
+                payroll_run_id,
+                period_start,
+                period_end,
+                target,
+                actual,
+                adjustment,
+                adjustment_reason,
+                notes,
+                user_id,
+                company_id,
+                int(evaluation_id),
+            ))
+
+            return self.payroll_incentive_evaluation_get(
+                company_id,
+                row["id"],
+            )
+
+        row=self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_incentive_evaluations(
+                company_id,
+                incentive_assignment_id,
+                incentive_plan_id,
+                employee_id,
+                payroll_run_id,
+                evaluation_period_start,
+                evaluation_period_end,
+                target_value,
+                actual_value,
+                adjustment_amount,
+                adjustment_reason,
+                notes,
+                created_by_user_id,
+                updated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING *;
+        """,(
+            company_id,
+            assignment_id,
+            assignment["incentive_plan_id"],
+            assignment["employee_id"],
+            payroll_run_id,
+            period_start,
+            period_end,
+            target,
+            actual,
+            adjustment,
+            adjustment_reason,
+            notes,
+            user_id,
+            user_id,
+        ))
+
+        return self.payroll_incentive_evaluation_get(
+            company_id,
+            row["id"],
+        )
+
+
+    def _payroll_incentive_find_rule(
+        self,
+        company_id:int,
+        plan_id:int,
+        achievement,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_incentive_rules
+            WHERE company_id=%s
+            AND incentive_plan_id=%s
+            AND from_percentage<=%s
+            AND(
+                to_percentage IS NULL
+                OR to_percentage>=%s
+            )
+            ORDER BY
+                from_percentage DESC,
+                display_order,
+                id
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(plan_id),
+            achievement,
+            achievement,
+        ))
+
+
+    def _payroll_incentive_base_amount(
+        self,
+        company_id:int,
+        evaluation:dict,
+        reward_method:str,
+    )->Decimal:
+        schema=self.company_schema(company_id)
+
+        if reward_method=="percentage_target":
+            return _payroll_money(
+                evaluation.get("target_value")
+            )
+
+        payroll_run_id=evaluation.get("payroll_run_id")
+
+        if payroll_run_id:
+            run_employee=self.fetch_one(f"""
+                SELECT basic_pay,gross_pay
+                FROM {schema}.payroll_run_employees
+                WHERE company_id=%s
+                AND payroll_run_id=%s
+                AND employee_id=%s
+                LIMIT 1;
+            """,(
+                int(company_id),
+                int(payroll_run_id),
+                int(evaluation["employee_id"]),
+            ))
+
+            if run_employee:
+                if reward_method=="percentage_gross":
+                    return _payroll_money(
+                        run_employee.get("gross_pay")
+                    )
+
+                return _payroll_money(
+                    run_employee.get("basic_pay")
+                )
+
+        setup=self.payroll_employee_pay_setup_for_period(
+            company_id,
+            evaluation["employee_id"],
+            evaluation["evaluation_period_end"],
+        )
+
+        if not setup:
+            raise ValueError(
+                "No effective remuneration setup was found "
+                "for the employee"
+            )
+
+        if reward_method=="percentage_gross":
+            raise ValueError(
+                "Select a calculated payroll run when using "
+                "percentage of gross pay"
+            )
+
+        return _payroll_money(
+            setup.get("fixed_basic_amount")
+        )
+
+
+    def payroll_incentive_evaluation_calculate(
+        self,
+        company_id:int,
+        evaluation_id:int,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        evaluation_id=int(evaluation_id)
+        schema=self.company_schema(company_id)
+
+        evaluation=self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if not evaluation:
+            raise ValueError(
+                "Incentive evaluation not found"
+            )
+
+        if evaluation["status"] in(
+            "approved",
+            "paid",
+            "cancelled",
+        ):
+            raise ValueError(
+                f"{evaluation['status'].title()} evaluation "
+                "cannot be recalculated"
+            )
+
+        target=_payroll_decimal(
+            evaluation.get("target_value")
+        )
+        actual=_payroll_decimal(
+            evaluation.get("actual_value")
+        )
+
+        achievement=(
+            actual/target*Decimal("100")
+            if target>0 else Decimal("0")
+        )
+        achievement=achievement.quantize(
+            Decimal("0.0001")
+        )
+
+        rule=self._payroll_incentive_find_rule(
+            company_id,
+            evaluation["incentive_plan_id"],
+            achievement,
+        )
+
+        reward_method=(
+            rule.get("reward_method")
+            if rule else None
+        )
+        reward_value=(
+            _payroll_decimal(rule.get("reward_value"))
+            if rule else Decimal("0")
+        )
+
+        base_amount=Decimal("0.00")
+        calculated=Decimal("0.00")
+
+        if rule:
+            if reward_method=="fixed_amount":
+                calculated=_payroll_money(reward_value)
+
+            else:
+                base_amount=self._payroll_incentive_base_amount(
+                    company_id,
+                    evaluation,
+                    reward_method,
+                )
+
+                calculated=_payroll_money(
+                    base_amount
+                    *reward_value
+                    /Decimal("100")
+                )
+
+        adjustment=_payroll_money(
+            evaluation.get("adjustment_amount")
+        )
+        final=max(
+            calculated+adjustment,
+            Decimal("0.00"),
+        )
+        final=_payroll_money(final)
+
+        self.fetch_one(f"""
+            UPDATE {schema}.payroll_incentive_evaluations
+            SET
+                achievement_percentage=%s,
+                matched_rule_id=%s,
+                reward_method=%s,
+                reward_value=%s,
+                base_amount=%s,
+                calculated_incentive=%s,
+                final_incentive=%s,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+        """,(
+            achievement,
+            rule.get("id") if rule else None,
+            reward_method,
+            reward_value,
+            base_amount,
+            calculated,
+            final,
+            user_id,
+            company_id,
+            evaluation_id,
+        ))
+
+        return self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+
+    def payroll_incentive_evaluation_set_status(
+        self,
+        company_id:int,
+        evaluation_id:int,
+        action:str,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        evaluation_id=int(evaluation_id)
+        schema=self.company_schema(company_id)
+
+        evaluation=self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if not evaluation:
+            raise ValueError(
+                "Incentive evaluation not found"
+            )
+
+        action=str(action or "").strip().lower()
+        current=evaluation["status"]
+
+        if action=="submit":
+            if current!="draft":
+                raise ValueError(
+                    "Only draft evaluations can be submitted"
+                )
+
+            if evaluation.get("matched_rule_id") is None:
+                raise ValueError(
+                    "Calculate the evaluation before submission"
+                )
+
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_evaluations
+                SET
+                    status='submitted',
+                    submitted_by_user_id=%s,
+                    submitted_at=NOW(),
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                user_id,
+                user_id,
+                company_id,
+                evaluation_id,
+            ))
+
+        if action=="approve":
+            if current!="submitted":
+                raise ValueError(
+                    "Only submitted evaluations "
+                    "can be approved"
+                )
+
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_evaluations
+                SET
+                    status='approved',
+                    approved_by_user_id=%s,
+                    approved_at=NOW(),
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                user_id,
+                user_id,
+                company_id,
+                evaluation_id,
+            ))
+
+        if action=="return-to-draft":
+            if current not in("submitted","approved"):
+                raise ValueError(
+                    "Only submitted or approved evaluations "
+                    "can be returned to draft"
+                )
+
+            if current=="approved":
+                used=self.fetch_one(f"""
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM {schema}.payroll_period_inputs
+                        WHERE company_id=%s
+                        AND source_module='performance'
+                        AND source_record_id=%s
+                        AND status<>'cancelled'
+                    ) AS used;
+                """,(
+                    company_id,
+                    evaluation_id,
+                ))
+
+                if used and used.get("used"):
+                    raise ValueError(
+                        "Remove the evaluation from payroll "
+                        "before returning it to draft"
+                    )
+
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_evaluations
+                SET
+                    status='draft',
+                    submitted_by_user_id=NULL,
+                    submitted_at=NULL,
+                    approved_by_user_id=NULL,
+                    approved_at=NULL,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                user_id,
+                company_id,
+                evaluation_id,
+            ))
+
+        if action=="cancel":
+            if current=="paid":
+                raise ValueError(
+                    "Paid evaluations cannot be cancelled"
+                )
+
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_incentive_evaluations
+                SET
+                    status='cancelled',
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s AND id=%s
+                RETURNING *;
+            """,(
+                user_id,
+                company_id,
+                evaluation_id,
+            ))
+
+        raise ValueError(
+            "Unsupported incentive evaluation action"
+        )
+
+
+    def payroll_incentive_evaluation_delete(
+        self,
+        company_id:int,
+        evaluation_id:int,
+    )->bool:
+        company_id=int(company_id)
+        evaluation_id=int(evaluation_id)
+        schema=self.company_schema(company_id)
+
+        evaluation=self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if not evaluation:
+            return False
+
+        if evaluation["status"]!="draft":
+            raise ValueError(
+                "Only draft evaluations can be deleted"
+            )
+
+        row=self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_incentive_evaluations
+            WHERE company_id=%s AND id=%s
+            RETURNING id;
+        """,(
+            company_id,
+            evaluation_id,
+        ))
+
+        return bool(row)
+
+    def payroll_incentive_payroll_input_get(
+        self,
+        company_id:int,
+        evaluation_id:int,
+    )->dict|None:
+        schema=self.company_schema(company_id)
+
+        return self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_period_inputs
+            WHERE company_id=%s
+            AND source_module='performance'
+            AND source_record_id=%s
+            AND status<>'cancelled'
+            ORDER BY id DESC
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(evaluation_id),
+        ))
+
+
+    def payroll_incentive_push_to_run(
+        self,
+        company_id:int,
+        evaluation_id:int,
+        body:dict|None=None,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        evaluation_id=int(evaluation_id)
+        body=body or {}
+        schema=self.company_schema(company_id)
+
+        evaluation=self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if not evaluation:
+            raise ValueError(
+                "Incentive evaluation not found"
+            )
+
+        if evaluation["status"]!="approved":
+            raise ValueError(
+                "Only approved incentive evaluations "
+                "can be added to payroll"
+            )
+
+        payroll_run_id=int(
+            body.get("payroll_run_id")
+            or evaluation.get("payroll_run_id")
+            or 0
+        )
+
+        if not payroll_run_id:
+            raise ValueError(
+                "Select the payroll run that will pay "
+                "this incentive"
+            )
+
+        run=self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        employee_id=int(evaluation["employee_id"])
+
+        employee=self.fetch_one(f"""
+            SELECT id,employee_no,start_date,termination_date
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+        """,(
+            company_id,
+            employee_id,
+        ))
+
+        if not employee:
+            raise ValueError("Payroll employee not found")
+
+        if employee["start_date"]>run["period_end"]:
+            raise ValueError(
+                "Employee starts after the selected "
+                "payroll period"
+            )
+
+        if(
+            employee.get("termination_date")
+            and employee["termination_date"]
+            <run["period_start"]
+        ):
+            raise ValueError(
+                "Employee terminated before the selected "
+                "payroll period"
+            )
+
+        amount=_payroll_money(
+            evaluation.get("final_incentive")
+        )
+
+        if amount<=0:
+            raise ValueError(
+                "The approved incentive amount must "
+                "be greater than zero"
+            )
+
+        existing=self.payroll_incentive_payroll_input_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if existing:
+            if int(existing["payroll_run_id"])!=payroll_run_id:
+                old_run=self.fetch_one(f"""
+                    SELECT status,submitted_at
+                    FROM {schema}.payroll_runs
+                    WHERE company_id=%s
+                    AND id=%s
+                    LIMIT 1;
+                """,(
+                    company_id,
+                    int(existing["payroll_run_id"]),
+                ))
+
+                if(
+                    old_run
+                    and(
+                        old_run.get("status") in(
+                            "approved",
+                            "posted",
+                            "reversed",
+                        )
+                        or old_run.get("submitted_at")
+                    )
+                ):
+                    raise ValueError(
+                        "The existing incentive payroll input "
+                        "belongs to a locked payroll run"
+                    )
+
+            row=self.fetch_one(f"""
+                UPDATE {schema}.payroll_period_inputs
+                SET
+                    payroll_run_id=%s,
+                    employee_id=%s,
+                    input_type='earning',
+                    item_type='earning',
+                    item_id=%s,
+                    code=%s,
+                    description=%s,
+                    quantity=1,
+                    rate=%s,
+                    percentage=NULL,
+                    amount=%s,
+                    taxable=%s,
+                    pensionable=%s,
+                    source_module='performance',
+                    source_record_id=%s,
+                    source='system',
+                    status='approved',
+                    notes=%s,
+                    approved_by_user_id=%s,
+                    approved_at=NOW(),
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                RETURNING *;
+            """,(
+                payroll_run_id,
+                employee_id,
+                body.get("earning_type_id"),
+                body.get("code")
+                or "PERFORMANCE_INCENTIVE",
+                body.get("description")
+                or (
+                    f"{evaluation.get('plan_name')} "
+                    f"Performance Incentive"
+                ),
+                amount,
+                amount,
+                bool(evaluation.get("taxable",True)),
+                bool(evaluation.get("pensionable",False)),
+                evaluation_id,
+                str(body.get("notes") or "").strip()
+                or (
+                    f"Performance period "
+                    f"{evaluation['evaluation_period_start']} "
+                    f"to {evaluation['evaluation_period_end']}"
+                ),
+                user_id,
+                company_id,
+                int(existing["id"]),
+            ))
+
+        else:
+            row=self.fetch_one(f"""
+                INSERT INTO {schema}.payroll_period_inputs(
+                    company_id,
+                    payroll_run_id,
+                    employee_id,
+                    input_type,
+                    item_type,
+                    item_id,
+                    code,
+                    description,
+                    quantity,
+                    rate,
+                    percentage,
+                    amount,
+                    taxable,
+                    pensionable,
+                    affects_leave,
+                    affects_overtime,
+                    effective_from,
+                    effective_to,
+                    notes,
+                    source_module,
+                    source_record_id,
+                    source,
+                    status,
+                    created_by_user_id,
+                    approved_by_user_id,
+                    approved_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    'earning','earning',
+                    %s,%s,%s,
+                    1,%s,NULL,%s,
+                    %s,%s,
+                    FALSE,FALSE,
+                    %s,%s,%s,
+                    'performance',%s,
+                    'system','approved',
+                    %s,%s,NOW()
+                )
+                RETURNING *;
+            """,(
+                company_id,
+                payroll_run_id,
+                employee_id,
+                body.get("earning_type_id"),
+                body.get("code")
+                or "PERFORMANCE_INCENTIVE",
+                body.get("description")
+                or (
+                    f"{evaluation.get('plan_name')} "
+                    f"Performance Incentive"
+                ),
+                amount,
+                amount,
+                bool(evaluation.get("taxable",True)),
+                bool(evaluation.get("pensionable",False)),
+                evaluation["evaluation_period_start"],
+                evaluation["evaluation_period_end"],
+                str(body.get("notes") or "").strip()
+                or (
+                    f"Performance period "
+                    f"{evaluation['evaluation_period_start']} "
+                    f"to {evaluation['evaluation_period_end']}"
+                ),
+                evaluation_id,
+                user_id,
+                user_id,
+            ))
+
+        self.fetch_one(f"""
+            UPDATE {schema}.payroll_incentive_evaluations
+            SET
+                payroll_run_id=%s,
+                status='paid',
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            payroll_run_id,
+            user_id,
+            company_id,
+            evaluation_id,
+        ))
+
+        return{
+            "evaluation":
+                self.payroll_incentive_evaluation_get(
+                    company_id,
+                    evaluation_id,
+                ),
+            "payroll_input":row,
+            "payroll_run_id":payroll_run_id,
+        }
+
+
+    def payroll_incentive_remove_from_run(
+        self,
+        company_id:int,
+        evaluation_id:int,
+        user_id=None,
+    )->dict:
+        company_id=int(company_id)
+        evaluation_id=int(evaluation_id)
+        schema=self.company_schema(company_id)
+
+        evaluation=self.payroll_incentive_evaluation_get(
+            company_id,
+            evaluation_id,
+        )
+
+        if not evaluation:
+            raise ValueError(
+                "Incentive evaluation not found"
+            )
+
+        payroll_input=(
+            self.payroll_incentive_payroll_input_get(
+                company_id,
+                evaluation_id,
+            )
+        )
+
+        if not payroll_input:
+            if evaluation["status"]=="paid":
+                self.fetch_one(f"""
+                    UPDATE {schema}.payroll_incentive_evaluations
+                    SET
+                        status='approved',
+                        payroll_run_id=NULL,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE company_id=%s
+                    AND id=%s
+                    RETURNING id;
+                """,(
+                    user_id,
+                    company_id,
+                    evaluation_id,
+                ))
+
+            return{
+                "removed":False,
+                "evaluation":
+                    self.payroll_incentive_evaluation_get(
+                        company_id,
+                        evaluation_id,
+                    ),
+            }
+
+        payroll_run_id=int(
+            payroll_input["payroll_run_id"]
+        )
+
+        self.payroll_assert_run_editable(
+            company_id,
+            payroll_run_id,
+        )
+
+        self.fetch_one(f"""
+            DELETE FROM {schema}.payroll_period_inputs
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            company_id,
+            int(payroll_input["id"]),
+        ))
+
+        self.fetch_one(f"""
+            UPDATE {schema}.payroll_incentive_evaluations
+            SET
+                status='approved',
+                payroll_run_id=NULL,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING id;
+        """,(
+            user_id,
+            company_id,
+            evaluation_id,
+        ))
+
+        return{
+            "removed":True,
+            "payroll_run_id":payroll_run_id,
+            "evaluation":
+                self.payroll_incentive_evaluation_get(
+                    company_id,
+                    evaluation_id,
+                ),
+        }
 
     def payroll_run_audit_add(
         self,
@@ -115261,6 +120317,4170 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "notes": notes,
         }
 
+    def _migration_json(self, value, default=None):
+        if value is None:
+            value = default if default is not None else {}
+
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except Exception:
+                return default if default is not None else {}
+
+        return value
+
+
+    def _migration_json_dump(self, value, default=None) -> str:
+        if value is None:
+            value = default if default is not None else {}
+
+        return json.dumps(
+            value,
+            default=str,
+            separators=(",", ":"),
+        )
+
+
+    def migration_next_reference(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> str:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+        year = date.today().year
+        prefix = f"MIG-{year}-"
+
+        sql = f"""
+            SELECT COALESCE(
+                MAX(
+                    CASE
+                        WHEN reference ~ %s
+                        THEN NULLIF(
+                            regexp_replace(reference, '^.*-', ''),
+                            ''
+                        )::INT
+                        ELSE 0
+                    END
+                ),
+                0
+            ) + 1
+            FROM {schema}.migration_projects
+            WHERE company_id=%s
+            AND reference LIKE %s
+        """
+
+        sequence = self.fetch_val(
+            sql,
+            (
+                rf"^MIG-{year}-[0-9]+$",
+                company_id,
+                f"{prefix}%",
+            ),
+            cur=cur,
+        )
+
+        return f"{prefix}{int(sequence or 1):04d}"
+
+    def _migration_project_validate(
+        self,
+        data: dict,
+        *,
+        existing: dict | None = None,
+    ) -> dict:
+        data = data or {}
+        existing = existing or {}
+
+        def pick(*keys, default=None):
+            for key in keys:
+                if key in data:
+                    return data.get(key)
+
+            for key in keys:
+                if key in existing:
+                    return existing.get(key)
+
+            return default
+
+        name = str(
+            pick(
+                "name",
+                default="",
+            )
+            or ""
+        ).strip()
+
+        description = str(
+            pick(
+                "description",
+                default="",
+            )
+            or ""
+        ).strip()
+
+        financial_year_start = pick(
+            "financial_year_start",
+            "financialYearStart",
+        )
+
+        cutover_date = pick(
+            "cutover_date",
+            "cutoverDate",
+        )
+
+        default_currency = str(
+            pick(
+                "default_currency",
+                "defaultCurrency",
+                default="",
+            )
+            or ""
+        ).strip().upper()
+
+        source_system_code = str(
+            pick(
+                "source_system_code",
+                "sourceSystemCode",
+                default="",
+            )
+            or ""
+        ).strip()
+
+        source_system_name = str(
+            pick(
+                "source_system_name",
+                "sourceSystem",
+                default="",
+            )
+            or ""
+        ).strip()
+
+        source_format = str(
+            pick(
+                "source_format",
+                "sourceFormat",
+                default="",
+            )
+            or ""
+        ).strip().lower()
+
+        date_format = str(
+            pick(
+                "date_format",
+                "dateFormat",
+                default="",
+            )
+            or ""
+        ).strip()
+
+        missing = []
+
+        if not name:
+            missing.append("name")
+
+        if not description:
+            missing.append("description")
+
+        if not financial_year_start:
+            missing.append("financial_year_start")
+
+        if not cutover_date:
+            missing.append("cutover_date")
+
+        if not default_currency:
+            missing.append("default_currency")
+
+        if not source_system_code:
+            missing.append("source_system_code")
+
+        if not source_system_name:
+            missing.append("source_system_name")
+
+        if not source_format:
+            missing.append("source_format")
+
+        if not date_format:
+            missing.append("date_format")
+
+        if missing:
+            raise ValueError(
+                "Missing required migration project fields: "
+                + ", ".join(missing)
+            )
+
+        try:
+            financial_year_start_value = (
+                financial_year_start
+                if isinstance(financial_year_start, date)
+                else date.fromisoformat(
+                    str(financial_year_start)[:10]
+                )
+            )
+        except Exception:
+            raise ValueError(
+                "financial_year_start must be a valid ISO date."
+            )
+
+        try:
+            cutover_date_value = (
+                cutover_date
+                if isinstance(cutover_date, date)
+                else date.fromisoformat(
+                    str(cutover_date)[:10]
+                )
+            )
+        except Exception:
+            raise ValueError(
+                "cutover_date must be a valid ISO date."
+            )
+
+        if cutover_date_value < financial_year_start_value:
+            raise ValueError(
+                "Cutover date cannot be before the "
+                "financial year start."
+            )
+
+        if len(default_currency) != 3:
+            raise ValueError(
+                "Default currency must be a three-letter code."
+            )
+
+        return {
+            "name": name,
+            "description": description,
+            "financial_year_start":
+                financial_year_start_value,
+            "cutover_date": cutover_date_value,
+            "default_currency":
+                default_currency,
+            "source_system_code":
+                source_system_code,
+            "source_system_name":
+                source_system_name,
+            "source_format":
+                source_format,
+            "date_format":
+                date_format,
+        }
+
+    def migration_projects_list(
+        self,
+        company_id: int,
+        *,
+        status: str | None = None,
+        search: str | None = None,
+        limit: int = 200,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+        limit = max(1, min(int(limit or 200), 500))
+
+        where = ["p.company_id=%s"]
+        params: list = [company_id]
+
+        status = str(status or "").strip().lower()
+        if status:
+            where.append("LOWER(COALESCE(p.status,''))=%s")
+            params.append(status)
+
+        search = str(search or "").strip()
+        if search:
+            where.append(
+                """
+                (
+                    p.reference ILIKE %s
+                    OR p.name ILIKE %s
+                    OR COALESCE(p.description,'') ILIKE %s
+                    OR COALESCE(p.source_system_name,'') ILIKE %s
+                )
+                """
+            )
+            pattern = f"%{search}%"
+            params.extend([
+                pattern,
+                pattern,
+                pattern,
+                pattern,
+            ])
+
+        params.append(limit)
+
+        sql = f"""
+            SELECT
+                p.id,
+                p.company_id,
+                p.reference,
+                p.name,
+                p.description,
+                p.status,
+                p.migration_mode,
+                p.import_mode,
+                p.financial_year_start,
+                p.cutover_date,
+                p.default_currency,
+                p.source_timezone,
+                p.source_country_code,
+                p.source_tax_regime,
+                p.source_system_code,
+                p.source_system_name,
+                p.source_system_version,
+                p.source_format,
+                p.date_format,
+                p.decimal_separator,
+                p.thousands_separator,
+                p.debit_credit_convention,
+                p.project_owner_user_id,
+                p.started_at,
+                p.completed_at,
+                p.cancelled_at,
+                p.created_at,
+                p.updated_at,
+
+                COALESCE(src.source_count, 0)::INT AS source_count,
+
+                src.primary_source_id,
+                src.primary_source_name,
+                src.primary_source_format
+
+            FROM {schema}.migration_projects p
+
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) AS source_count,
+
+                    MAX(s.id) FILTER (
+                        WHERE s.is_primary=TRUE
+                        AND s.is_active=TRUE
+                    ) AS primary_source_id,
+
+                    MAX(s.source_system_name) FILTER (
+                        WHERE s.is_primary=TRUE
+                        AND s.is_active=TRUE
+                    ) AS primary_source_name,
+
+                    MAX(s.source_format) FILTER (
+                        WHERE s.is_primary=TRUE
+                        AND s.is_active=TRUE
+                    ) AS primary_source_format
+
+                FROM {schema}.migration_project_sources s
+                WHERE s.company_id=p.company_id
+                AND s.project_id=p.id
+                AND s.is_active=TRUE
+            ) src ON TRUE
+
+            WHERE {" AND ".join(where)}
+
+            ORDER BY
+                CASE
+                    WHEN p.status='draft' THEN 0
+                    WHEN p.status='configured' THEN 1
+                    WHEN p.status='committed' THEN 3
+                    ELSE 2
+                END,
+                p.updated_at DESC,
+                p.id DESC
+
+            LIMIT %s
+        """
+
+        return self.fetch_all(
+            sql,
+            tuple(params),
+            cur=cur,
+        ) or []
+
+
+    def migration_project_get(
+        self,
+        company_id: int,
+        project_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        company_id = int(company_id)
+        project_id = int(project_id)
+        schema = self.company_schema(company_id)
+
+        project = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.migration_projects
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        if not project:
+            return None
+
+        source = self.migration_project_source_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+        history = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                previous_status,
+                new_status,
+                reason,
+                details_json,
+                changed_by_user_id,
+                changed_at
+            FROM {schema}.migration_project_status_history
+            WHERE company_id=%s
+            AND project_id=%s
+            ORDER BY changed_at DESC, id DESC
+            LIMIT 50
+            """,
+            (
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        ) or []
+
+        project["configuration_json"] = self._migration_json(
+            project.get("configuration_json"),
+            {},
+        )
+
+        project["metadata_json"] = self._migration_json(
+            project.get("metadata_json"),
+            {},
+        )
+
+        project["source"] = source
+        project["status_history"] = history
+
+        return project
+
+
+    def migration_project_create(
+        self,
+        company_id: int,
+        data: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+        data = data or {}
+        validated = self._migration_project_validate(
+            data,
+        )
+        name = validated["name"]
+        description = validated["description"]
+        financial_year_start = (
+            validated["financial_year_start"]
+        )
+        cutover_date = validated["cutover_date"]
+        default_currency = (
+            validated["default_currency"]
+        )
+        reference = str(
+            data.get("reference")
+            or ""
+        ).strip()
+
+        if not reference:
+            reference = self.migration_next_reference(
+                company_id,
+                cur=cur,
+            )
+
+        cutover_date = (
+            data.get("cutover_date")
+            or data.get("cutoverDate")
+            or date.today().isoformat()
+        )
+
+        migration_mode = str(
+            data.get("migration_mode")
+            or data.get("migrationMode")
+            or data.get("depth")
+            or "opening"
+        ).strip().lower()
+
+        mode_aliases = {
+            "current": "current_year",
+            "two-years": "two_years",
+            "full": "full_history",
+        }
+
+        migration_mode = mode_aliases.get(
+            migration_mode,
+            migration_mode,
+        )
+
+        import_mode = str(
+            data.get("import_mode")
+            or data.get("importMode")
+            or "create_only"
+        ).strip().lower()
+
+        source_system_code = (
+            validated["source_system_code"]
+        )
+
+        source_system_name = (
+            validated["source_system_name"]
+        )
+
+        source_format = validated["source_format"]
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.migration_projects (
+                company_id,
+                reference,
+                name,
+                description,
+                status,
+                migration_mode,
+                import_mode,
+                financial_year_start,
+                cutover_date,
+                default_currency,
+                source_timezone,
+                source_country_code,
+                source_tax_regime,
+                source_system_code,
+                source_system_name,
+                source_system_version,
+                source_format,
+                date_format,
+                decimal_separator,
+                thousands_separator,
+                debit_credit_convention,
+                project_owner_user_id,
+                created_by_user_id,
+                updated_by_user_id,
+                configuration_json,
+                metadata_json,
+                started_at,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                %s,%s,%s,%s,
+                'draft',
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s::jsonb,
+                %s::jsonb,
+                NOW(),
+                NOW(),
+                NOW()
+            )
+            RETURNING *
+            """,
+            (
+                company_id,
+                reference,
+                name,
+                description,
+                migration_mode,
+                import_mode,
+                financial_year_start,
+                cutover_date,
+                default_currency,
+                data.get("source_timezone")
+                or data.get("sourceTimezone"),
+                data.get("source_country_code")
+                or data.get("sourceCountryCode"),
+                data.get("source_tax_regime")
+                or data.get("sourceTaxRegime"),
+                source_system_code,
+                source_system_name,
+                data.get("source_system_version")
+                or data.get("sourceSystemVersion"),
+                source_format,
+                data.get("date_format")
+                or data.get("dateFormat")
+                or "YYYY-MM-DD",
+                data.get("decimal_separator")
+                or data.get("decimalSeparator")
+                or ".",
+                data.get("thousands_separator")
+                or data.get("thousandsSeparator")
+                or ",",
+                data.get("debit_credit_convention")
+                or data.get("debitCreditConvention")
+                or "separate_columns",
+                user_id,
+                user_id,
+                user_id,
+                self._migration_json_dump(
+                    data.get("configuration_json")
+                    or data.get("configuration"),
+                    {},
+                ),
+                self._migration_json_dump(
+                    data.get("metadata_json")
+                    or data.get("metadata"),
+                    {},
+                ),
+            ),
+            cur=cur,
+        )
+
+        project_id = int(row["id"])
+
+        self.migration_project_source_save(
+            company_id,
+            project_id,
+            {
+                **data,
+                "source_system_code": source_system_code,
+                "source_system_name": source_system_name,
+                "source_format": source_format,
+                "is_primary": True,
+            },
+            user_id=user_id,
+            cur=cur,
+        )
+
+        self.execute_sql(
+            f"""
+            INSERT INTO {schema}.migration_project_status_history (
+                company_id,
+                project_id,
+                previous_status,
+                new_status,
+                reason,
+                details_json,
+                changed_by_user_id,
+                changed_at
+            )
+            VALUES (
+                %s,%s,NULL,'draft',
+                'Migration project created',
+                '{{}}'::jsonb,
+                %s,
+                NOW()
+            )
+            """,
+            (
+                company_id,
+                project_id,
+                user_id,
+            ),
+            cur=cur,
+        )
+
+        return self.migration_project_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+
+    def migration_project_update(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        project_id = int(project_id)
+        schema = self.company_schema(company_id)
+        data = data or {}
+
+        existing = self.migration_project_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+        if not existing:
+            raise ValueError("Migration project not found.")
+
+        validated = self._migration_project_validate(
+            data,
+            existing=existing,
+        )
+
+        if existing.get("status") in {
+            "committing",
+            "committed",
+            "rolled_back",
+            "cancelled",
+        }:
+            raise ValueError(
+                f"Migration project cannot be edited while "
+                f"its status is {existing.get('status')}."
+            )
+
+        migration_mode = str(
+            data.get("migration_mode")
+            or data.get("migrationMode")
+            or data.get("depth")
+            or existing.get("migration_mode")
+            or "opening"
+        ).strip().lower()
+
+        mode_aliases = {
+            "current": "current_year",
+            "two-years": "two_years",
+            "full": "full_history",
+        }
+
+        migration_mode = mode_aliases.get(
+            migration_mode,
+            migration_mode,
+        )
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.migration_projects
+            SET
+                reference=%s,
+                name=%s,
+                description=%s,
+                migration_mode=%s,
+                import_mode=%s,
+                financial_year_start=%s,
+                cutover_date=%s,
+                default_currency=%s,
+                source_timezone=%s,
+                source_country_code=%s,
+                source_tax_regime=%s,
+                source_system_code=%s,
+                source_system_name=%s,
+                source_system_version=%s,
+                source_format=%s,
+                date_format=%s,
+                decimal_separator=%s,
+                thousands_separator=%s,
+                debit_credit_convention=%s,
+                project_owner_user_id=%s,
+                configuration_json=%s::jsonb,
+                metadata_json=%s::jsonb,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *
+            """,
+            (
+                str(
+                    data.get("reference")
+                    or existing.get("reference")
+                    or ""
+                ).strip(),
+
+                str(
+                    data.get("name")
+                    or existing.get("name")
+                    or ""
+                ).strip(),
+
+                data.get(
+                    "description",
+                    existing.get("description"),
+                ),
+
+                migration_mode,
+
+                data.get("import_mode")
+                or data.get("importMode")
+                or existing.get("import_mode")
+                or "create_only",
+
+                data.get("financial_year_start")
+                or data.get("financialYearStart")
+                or existing.get("financial_year_start"),
+
+                data.get("cutover_date")
+                or data.get("cutoverDate")
+                or existing.get("cutover_date"),
+
+                data.get("default_currency")
+                or data.get("defaultCurrency")
+                or existing.get("default_currency"),
+
+                data.get("source_timezone")
+                or data.get("sourceTimezone")
+                or existing.get("source_timezone"),
+
+                data.get("source_country_code")
+                or data.get("sourceCountryCode")
+                or existing.get("source_country_code"),
+
+                data.get("source_tax_regime")
+                or data.get("sourceTaxRegime")
+                or existing.get("source_tax_regime"),
+
+                data.get("source_system_code")
+                or data.get("sourceSystemCode")
+                or existing.get("source_system_code"),
+
+                data.get("source_system_name")
+                or data.get("sourceSystem")
+                or existing.get("source_system_name"),
+
+                data.get("source_system_version")
+                or data.get("sourceSystemVersion")
+                or existing.get("source_system_version"),
+
+                data.get("source_format")
+                or data.get("sourceFormat")
+                or existing.get("source_format")
+                or "excel_csv",
+
+                data.get("date_format")
+                or data.get("dateFormat")
+                or existing.get("date_format")
+                or "YYYY-MM-DD",
+
+                data.get("decimal_separator")
+                or data.get("decimalSeparator")
+                or existing.get("decimal_separator")
+                or ".",
+
+                data.get("thousands_separator")
+                or data.get("thousandsSeparator")
+                or existing.get("thousands_separator")
+                or ",",
+
+                data.get("debit_credit_convention")
+                or data.get("debitCreditConvention")
+                or existing.get("debit_credit_convention")
+                or "separate_columns",
+
+                data.get("project_owner_user_id")
+                or data.get("projectOwnerUserId")
+                or existing.get("project_owner_user_id")
+                or user_id,
+
+                self._migration_json_dump(
+                    data.get(
+                        "configuration_json",
+                        data.get(
+                            "configuration",
+                            existing.get("configuration_json") or {},
+                        ),
+                    ),
+                    {},
+                ),
+
+                self._migration_json_dump(
+                    data.get(
+                        "metadata_json",
+                        data.get(
+                            "metadata",
+                            existing.get("metadata_json") or {},
+                        ),
+                    ),
+                    {},
+                ),
+
+                user_id,
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            raise ValueError("Migration project could not be updated.")
+
+        source_payload = data.get("source")
+
+        if isinstance(source_payload, dict):
+            self.migration_project_source_save(
+                company_id,
+                project_id,
+                source_payload,
+                user_id=user_id,
+                cur=cur,
+            )
+        else:
+            self.migration_project_source_save(
+                company_id,
+                project_id,
+                data,
+                user_id=user_id,
+                cur=cur,
+            )
+
+        return self.migration_project_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+
+    def migration_project_status_set(
+        self,
+        company_id: int,
+        project_id: int,
+        new_status: str,
+        *,
+        reason: str | None = None,
+        details: dict | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        project_id = int(project_id)
+        schema = self.company_schema(company_id)
+        new_status = str(new_status or "").strip().lower()
+
+        allowed = {
+            "draft",
+            "configured",
+            "files_uploaded",
+            "detected",
+            "mapped",
+            "validated",
+            "previewed",
+            "staged",
+            "reconciled",
+            "approved",
+            "committing",
+            "committed",
+            "failed",
+            "rolled_back",
+            "cancelled",
+        }
+
+        if new_status not in allowed:
+            raise ValueError(
+                f"Unsupported migration status: {new_status}"
+            )
+
+        project = self.fetch_one(
+            f"""
+            SELECT id, status
+            FROM {schema}.migration_projects
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        previous_status = str(
+            project.get("status")
+            or "draft"
+        ).lower()
+
+        if previous_status == new_status:
+            return self.migration_project_get(
+                company_id,
+                project_id,
+                cur=cur,
+            )
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.migration_projects
+            SET
+                status=%s,
+
+                completed_at=CASE
+                    WHEN %s='committed'
+                    THEN COALESCE(completed_at, NOW())
+                    ELSE completed_at
+                END,
+
+                cancelled_at=CASE
+                    WHEN %s='cancelled'
+                    THEN COALESCE(cancelled_at, NOW())
+                    ELSE cancelled_at
+                END,
+
+                updated_by_user_id=%s,
+                updated_at=NOW()
+
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                new_status,
+                new_status,
+                new_status,
+                user_id,
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        self.execute_sql(
+            f"""
+            INSERT INTO {schema}.migration_project_status_history (
+                company_id,
+                project_id,
+                previous_status,
+                new_status,
+                reason,
+                details_json,
+                changed_by_user_id,
+                changed_at
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s::jsonb,%s,NOW()
+            )
+            """,
+            (
+                company_id,
+                project_id,
+                previous_status,
+                new_status,
+                reason,
+                self._migration_json_dump(details, {}),
+                user_id,
+            ),
+            cur=cur,
+        )
+
+        return self.migration_project_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+
+    def migration_project_source_get(
+        self,
+        company_id: int,
+        project_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        company_id = int(company_id)
+        project_id = int(project_id)
+        schema = self.company_schema(company_id)
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                s.*,
+                p.code AS source_profile_code,
+                p.name AS source_profile_name
+            FROM {schema}.migration_project_sources s
+            LEFT JOIN {schema}.migration_source_profiles p
+            ON p.company_id=s.company_id
+            AND p.id=s.source_profile_id
+            WHERE s.company_id=%s
+            AND s.project_id=%s
+            AND s.is_active=TRUE
+            ORDER BY
+                s.is_primary DESC,
+                s.id ASC
+            LIMIT 1
+            """,
+            (
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        if not row:
+            return None
+
+        row["settings_json"] = self._migration_json(
+            row.get("settings_json"),
+            {},
+        )
+
+        row["metadata_json"] = self._migration_json(
+            row.get("metadata_json"),
+            {},
+        )
+
+        return row
+
+
+    def migration_project_source_save(
+        self,
+        company_id: int,
+        project_id: int,
+        data: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        project_id = int(project_id)
+        schema = self.company_schema(company_id)
+        data = data or {}
+
+        project = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.migration_projects
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        existing = self.migration_project_source_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+        source_system_name = str(
+            data.get("source_system_name")
+            or data.get("sourceSystem")
+            or project.get("source_system_name")
+            or "Excel / CSV"
+        ).strip()
+
+        source_system_code = str(
+            data.get("source_system_code")
+            or data.get("sourceSystemCode")
+            or project.get("source_system_code")
+            or self._migration_slug(source_system_name)
+        ).strip()
+
+        source_format = str(
+            data.get("source_format")
+            or data.get("sourceFormat")
+            or project.get("source_format")
+            or "excel_csv"
+        ).strip().lower()
+
+        profile_id = (
+            data.get("source_profile_id")
+            or data.get("sourceProfileId")
+        )
+
+        if existing:
+            source_id = int(existing["id"])
+
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.migration_project_sources
+                SET
+                    source_profile_id=%s,
+                    source_system_code=%s,
+                    source_system_name=%s,
+                    source_system_version=%s,
+                    source_format=%s,
+                    country_code=%s,
+                    tax_regime=%s,
+                    default_currency=%s,
+                    source_timezone=%s,
+                    date_format=%s,
+                    decimal_separator=%s,
+                    thousands_separator=%s,
+                    debit_credit_convention=%s,
+                    connection_type=%s,
+                    connection_name=%s,
+                    settings_json=%s::jsonb,
+                    credentials_reference=%s,
+                    metadata_json=%s::jsonb,
+                    is_primary=TRUE,
+                    is_active=TRUE,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND project_id=%s
+                AND id=%s
+                RETURNING *
+                """,
+                (
+                    profile_id
+                    or existing.get("source_profile_id"),
+
+                    source_system_code,
+                    source_system_name,
+
+                    data.get("source_system_version")
+                    or data.get("sourceSystemVersion")
+                    or existing.get("source_system_version"),
+
+                    source_format,
+
+                    data.get("country_code")
+                    or data.get("sourceCountryCode")
+                    or existing.get("country_code"),
+
+                    data.get("tax_regime")
+                    or data.get("sourceTaxRegime")
+                    or existing.get("tax_regime"),
+
+                    data.get("default_currency")
+                    or data.get("defaultCurrency")
+                    or existing.get("default_currency"),
+
+                    data.get("source_timezone")
+                    or data.get("sourceTimezone")
+                    or existing.get("source_timezone"),
+
+                    data.get("date_format")
+                    or data.get("dateFormat")
+                    or existing.get("date_format")
+                    or "YYYY-MM-DD",
+
+                    data.get("decimal_separator")
+                    or data.get("decimalSeparator")
+                    or existing.get("decimal_separator")
+                    or ".",
+
+                    data.get("thousands_separator")
+                    or data.get("thousandsSeparator")
+                    or existing.get("thousands_separator")
+                    or ",",
+
+                    data.get("debit_credit_convention")
+                    or data.get("debitCreditConvention")
+                    or existing.get("debit_credit_convention")
+                    or "separate_columns",
+
+                    data.get("connection_type")
+                    or data.get("connectionType")
+                    or existing.get("connection_type")
+                    or "file_upload",
+
+                    data.get("connection_name")
+                    or data.get("connectionName")
+                    or existing.get("connection_name")
+                    or "Primary migration source",
+
+                    self._migration_json_dump(
+                        data.get(
+                            "settings_json",
+                            data.get(
+                                "settings",
+                                existing.get("settings_json") or {},
+                            ),
+                        ),
+                        {},
+                    ),
+
+                    data.get("credentials_reference")
+                    or data.get("credentialsReference")
+                    or existing.get("credentials_reference"),
+
+                    self._migration_json_dump(
+                        data.get(
+                            "metadata_json",
+                            data.get(
+                                "metadata",
+                                existing.get("metadata_json") or {},
+                            ),
+                        ),
+                        {},
+                    ),
+
+                    user_id,
+                    company_id,
+                    project_id,
+                    source_id,
+                ),
+                cur=cur,
+            )
+
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.migration_project_sources (
+                    company_id,
+                    project_id,
+                    source_profile_id,
+                    source_system_code,
+                    source_system_name,
+                    source_system_version,
+                    source_format,
+                    country_code,
+                    tax_regime,
+                    default_currency,
+                    source_timezone,
+                    date_format,
+                    decimal_separator,
+                    thousands_separator,
+                    debit_credit_convention,
+                    connection_type,
+                    connection_name,
+                    settings_json,
+                    credentials_reference,
+                    metadata_json,
+                    is_primary,
+                    is_active,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s::jsonb,%s,%s::jsonb,
+                    TRUE,TRUE,%s,%s,NOW(),NOW()
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                    project_id,
+                    profile_id,
+                    source_system_code,
+                    source_system_name,
+                    data.get("source_system_version")
+                    or data.get("sourceSystemVersion"),
+                    source_format,
+                    data.get("country_code")
+                    or data.get("sourceCountryCode"),
+                    data.get("tax_regime")
+                    or data.get("sourceTaxRegime"),
+                    data.get("default_currency")
+                    or data.get("defaultCurrency"),
+                    data.get("source_timezone")
+                    or data.get("sourceTimezone"),
+                    data.get("date_format")
+                    or data.get("dateFormat")
+                    or "YYYY-MM-DD",
+                    data.get("decimal_separator")
+                    or data.get("decimalSeparator")
+                    or ".",
+                    data.get("thousands_separator")
+                    or data.get("thousandsSeparator")
+                    or ",",
+                    data.get("debit_credit_convention")
+                    or data.get("debitCreditConvention")
+                    or "separate_columns",
+                    data.get("connection_type")
+                    or data.get("connectionType")
+                    or "file_upload",
+                    data.get("connection_name")
+                    or data.get("connectionName")
+                    or "Primary migration source",
+                    self._migration_json_dump(
+                        data.get("settings_json")
+                        or data.get("settings"),
+                        {},
+                    ),
+                    data.get("credentials_reference")
+                    or data.get("credentialsReference"),
+                    self._migration_json_dump(
+                        data.get("metadata_json")
+                        or data.get("metadata"),
+                        {},
+                    ),
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        self.execute_sql(
+            f"""
+            UPDATE {schema}.migration_projects
+            SET
+                source_system_code=%s,
+                source_system_name=%s,
+                source_system_version=%s,
+                source_format=%s,
+                source_country_code=%s,
+                source_tax_regime=%s,
+                default_currency=%s,
+                source_timezone=%s,
+                date_format=%s,
+                decimal_separator=%s,
+                thousands_separator=%s,
+                debit_credit_convention=%s,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            """,
+            (
+                source_system_code,
+                source_system_name,
+                data.get("source_system_version")
+                or data.get("sourceSystemVersion")
+                or project.get("source_system_version"),
+                source_format,
+                data.get("country_code")
+                or data.get("sourceCountryCode")
+                or project.get("source_country_code"),
+                data.get("tax_regime")
+                or data.get("sourceTaxRegime")
+                or project.get("source_tax_regime"),
+                data.get("default_currency")
+                or data.get("defaultCurrency")
+                or project.get("default_currency"),
+                data.get("source_timezone")
+                or data.get("sourceTimezone")
+                or project.get("source_timezone"),
+                data.get("date_format")
+                or data.get("dateFormat")
+                or project.get("date_format")
+                or "YYYY-MM-DD",
+                data.get("decimal_separator")
+                or data.get("decimalSeparator")
+                or project.get("decimal_separator")
+                or ".",
+                data.get("thousands_separator")
+                or data.get("thousandsSeparator")
+                or project.get("thousands_separator")
+                or ",",
+                data.get("debit_credit_convention")
+                or data.get("debitCreditConvention")
+                or project.get("debit_credit_convention")
+                or "separate_columns",
+                user_id,
+                company_id,
+                project_id,
+            ),
+            cur=cur,
+        )
+
+        return self.migration_project_source_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+
+    def migration_source_profiles_list(
+        self,
+        company_id: int,
+        *,
+        include_inactive: bool = False,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        where = ["company_id=%s"]
+        params: list = [company_id]
+
+        if not include_inactive:
+            where.append("is_active=TRUE")
+
+        rows = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.migration_source_profiles
+            WHERE {" AND ".join(where)}
+            ORDER BY
+                is_system DESC,
+                name ASC,
+                id ASC
+            """,
+            tuple(params),
+            cur=cur,
+        ) or []
+
+        for row in rows:
+            for field, default in (
+                ("file_name_patterns_json", []),
+                ("sheet_name_patterns_json", {}),
+                ("column_aliases_json", {}),
+                ("detection_rules_json", {}),
+                ("transformation_defaults_json", {}),
+                ("metadata_json", {}),
+            ):
+                row[field] = self._migration_json(
+                    row.get(field),
+                    default,
+                )
+
+        return rows
+
+
+    def migration_project_cancel(
+        self,
+        company_id: int,
+        project_id: int,
+        *,
+        reason: str | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        project = self.migration_project_get(
+            company_id,
+            project_id,
+            cur=cur,
+        )
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        if project.get("status") in {
+            "committing",
+            "committed",
+            "rolled_back",
+        }:
+            raise ValueError(
+                f"Migration project cannot be cancelled while "
+                f"its status is {project.get('status')}."
+            )
+
+        return self.migration_project_status_set(
+            company_id,
+            project_id,
+            "cancelled",
+            reason=reason or "Migration project cancelled",
+            user_id=user_id,
+            cur=cur,
+        )
+
+
+    def _migration_slug(self, value: str) -> str:
+        value = str(value or "").strip().lower()
+
+        value = "".join(
+            character
+            if character.isalnum()
+            else "_"
+            for character in value
+        )
+
+        while "__" in value:
+            value = value.replace("__", "_")
+
+        return value.strip("_") or "generic"
+
+    # ============================================================
+    # IAS 41 AGRICULTURE
+    # Phase 1: Settings, mappings and master data
+    # ============================================================
+
+    IAS41_COMPANY_MAPPING_ROLES = (
+        "ias41_biological_asset_current",
+        "ias41_biological_asset_noncurrent",
+        "ias41_agricultural_produce_inventory",
+        "ias41_fair_value_gain",
+        "ias41_fair_value_loss",
+        "ias41_costs_to_sell",
+        "ias41_mortality_loss",
+        "ias41_government_grant_receivable",
+        "ias41_government_grant_income",
+        "ias41_agricultural_sales",
+        "cash_bank",
+        "ap",
+        "ar",
+    )
+
+    IAS41_MAPPING_SCOPES = {
+        "company",
+        "asset_class",
+        "product",
+    }
+
+
+    def _ias41_json_value(self, value: Any) -> str:
+        if value in (None, ""):
+            value = {}
+
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                value = {}
+
+        if not isinstance(value, (dict, list)):
+            value = {}
+
+        return json.dumps(value, default=str)
+
+
+    def _ias41_serialise(self, row: Any) -> dict | None:
+        if row is None:
+            return None
+
+        out = dict(row)
+
+        for key, value in list(out.items()):
+            if isinstance(value, Decimal):
+                out[key] = float(value)
+            elif isinstance(value, (date, datetime)):
+                out[key] = value.isoformat()
+            elif isinstance(value, str) and key in {
+                "metadata",
+                "settings_json",
+            }:
+                try:
+                    out[key] = json.loads(value)
+                except Exception:
+                    pass
+
+        return out
+
+
+    def _ias41_serialise_many(self, rows: list | None) -> list[dict]:
+        return [
+            self._ias41_serialise(row)
+            for row in (rows or [])
+            if row is not None
+        ]
+
+
+    def _ias41_company_guard(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> str:
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        self.ensure_company_biological_assets(
+            company_id,
+            cur=cur,
+        )
+
+        return schema
+
+
+    def _ias41_required_text(
+        self,
+        payload: dict,
+        key: str,
+        label: str,
+    ) -> str:
+        value = str(payload.get(key) or "").strip()
+
+        if not value:
+            raise ValueError(f"{label} is required.")
+
+        return value
+
+
+    def _ias41_optional_int(
+        self,
+        value: Any,
+    ) -> int | None:
+        if value in (None, ""):
+            return None
+
+        return int(value)
+
+
+    def _ias41_optional_float(
+        self,
+        value: Any,
+    ) -> float | None:
+        if value in (None, ""):
+            return None
+
+        return float(value)
+
+
+    def _ias41_bool(
+        self,
+        value: Any,
+        default: bool = False,
+    ) -> bool:
+        if value is None:
+            return bool(default)
+
+        if isinstance(value, bool):
+            return value
+
+        return str(value).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+
+    def _ias41_find_company_account(
+        self,
+        company_id: int,
+        account_code: str | None,
+        *,
+        cur=None,
+    ) -> dict | None:
+        if not account_code:
+            return None
+
+        schema = self.company_schema(int(company_id))
+
+        row = self.fetch_one(
+            f"""
+            SELECT
+                id,
+                company_id,
+                code,
+                name,
+                section,
+                category,
+                subcategory,
+                posting,
+                is_active,
+                role
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND code = %s
+            LIMIT 1
+            """,
+            (
+                int(company_id),
+                str(account_code).strip(),
+            ),
+            cur=cur,
+        )
+
+        return self._ias41_serialise(row)
+
+
+    def _ias41_validate_account_code(
+        self,
+        company_id: int,
+        account_code: str | None,
+        *,
+        required: bool = False,
+        cur=None,
+    ) -> dict | None:
+        code = str(account_code or "").strip()
+
+        if not code:
+            if required:
+                raise ValueError("Account is required.")
+            return None
+
+        account = self._ias41_find_company_account(
+            int(company_id),
+            code,
+            cur=cur,
+        )
+
+        if not account:
+            raise ValueError(
+                f"Account '{code}' does not exist in the company Chart of Accounts."
+            )
+
+        if account.get("posting") is False:
+            raise ValueError(
+                f"Account '{code}' is not a posting account."
+            )
+
+        if account.get("is_active") is False:
+            raise ValueError(
+                f"Account '{code}' is inactive."
+            )
+
+        return account
+
+    def ias41_dashboard(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        counts = self.fetch_one(
+            f"""
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_asset_classes
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS asset_class_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_products
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS product_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_locations
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS location_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_batches
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS batch_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_biological_assets
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS biological_asset_count,
+
+                (
+                    SELECT COALESCE(
+                        SUM(current_carrying_amount),
+                        0
+                    )
+                    FROM {schema}.ias41_batches
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                )
+                +
+                (
+                    SELECT COALESCE(
+                        SUM(current_carrying_amount),
+                        0
+                    )
+                    FROM {schema}.ias41_biological_assets
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS carrying_amount,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ias41_account_mappings
+                    WHERE company_id = %s
+                    AND is_active = TRUE
+                ) AS mapping_count
+            """,
+            (
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+                company_id,
+            ),
+            cur=cur,
+        ) or {}
+
+        settings = self.ias41_settings_get(
+            company_id,
+            cur=cur,
+        )
+
+        missing_roles = self.ias41_mapping_validate(
+            company_id,
+            cur=cur,
+        )
+
+        return {
+            "company_id": company_id,
+            "settings": settings,
+            "counts": self._ias41_serialise(counts) or {},
+            "mapping_validation": missing_roles,
+        }
+
+
+    def ias41_setup_payload(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        return {
+            "dashboard": self.ias41_dashboard(
+                company_id,
+                cur=cur,
+            ),
+            "settings": self.ias41_settings_get(
+                company_id,
+                cur=cur,
+            ),
+            "mappings": self.ias41_account_mappings_list(
+                company_id,
+                cur=cur,
+            ),
+            "coa": self.ias41_posting_accounts(
+                company_id,
+                cur=cur,
+            ),
+            "asset_classes": self.ias41_asset_classes_list(
+                company_id,
+                active_only=False,
+                cur=cur,
+            ),
+            "products": self.ias41_products_list(
+                company_id,
+                active_only=False,
+                cur=cur,
+            ),
+            "locations": self.ias41_locations_list(
+                company_id,
+                active_only=False,
+                cur=cur,
+            ),
+            "seasons": self.ias41_seasons_list(
+                company_id,
+                active_only=False,
+                cur=cur,
+            ),
+        }
+
+    def ias41_settings_get(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ias41_settings
+            WHERE company_id = %s
+            LIMIT 1
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        if row:
+            return self._ias41_serialise(row) or {}
+
+        self.execute_sql(
+            f"""
+            INSERT INTO {schema}.ias41_settings (
+                company_id,
+                module_enabled,
+                default_measurement_basis,
+                valuation_approval_required,
+                journal_approval_required,
+                settings_json,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                %s,
+                TRUE,
+                'fair_value_less_costs_to_sell',
+                TRUE,
+                TRUE,
+                '{{}}'::jsonb,
+                NOW(),
+                NOW()
+            )
+            ON CONFLICT (company_id)
+            DO NOTHING
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        row = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ias41_settings
+            WHERE company_id = %s
+            LIMIT 1
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_settings_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        payload = payload or {}
+
+        measurement = str(
+            payload.get("default_measurement_basis")
+            or "fair_value_less_costs_to_sell"
+        ).strip()
+
+        if measurement not in {
+            "fair_value_less_costs_to_sell",
+            "cost_when_fair_value_unreliable",
+        }:
+            raise ValueError("Invalid default measurement basis.")
+
+        quantity_precision = int(
+            payload.get("quantity_precision", 2)
+        )
+        monetary_precision = int(
+            payload.get("monetary_precision", 2)
+        )
+
+        if not 0 <= quantity_precision <= 6:
+            raise ValueError(
+                "Quantity precision must be between 0 and 6."
+            )
+
+        if not 0 <= monetary_precision <= 6:
+            raise ValueError(
+                "Monetary precision must be between 0 and 6."
+            )
+
+        row = self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ias41_settings (
+                company_id,
+                module_enabled,
+                default_currency_code,
+                default_quantity_unit,
+                default_weight_unit,
+                default_area_unit,
+                default_measurement_basis,
+                valuation_approval_required,
+                journal_approval_required,
+                allow_negative_quantities,
+                allow_manual_fair_value_override,
+                quantity_precision,
+                monetary_precision,
+                settings_json,
+                created_at,
+                created_by_user_id,
+                updated_at,
+                updated_by_user_id
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
+                %s::jsonb,
+                NOW(), %s, NOW(), %s
+            )
+            ON CONFLICT (company_id)
+            DO UPDATE SET
+                module_enabled = EXCLUDED.module_enabled,
+                default_currency_code =
+                    EXCLUDED.default_currency_code,
+                default_quantity_unit =
+                    EXCLUDED.default_quantity_unit,
+                default_weight_unit =
+                    EXCLUDED.default_weight_unit,
+                default_area_unit =
+                    EXCLUDED.default_area_unit,
+                default_measurement_basis =
+                    EXCLUDED.default_measurement_basis,
+                valuation_approval_required =
+                    EXCLUDED.valuation_approval_required,
+                journal_approval_required =
+                    EXCLUDED.journal_approval_required,
+                allow_negative_quantities =
+                    EXCLUDED.allow_negative_quantities,
+                allow_manual_fair_value_override =
+                    EXCLUDED.allow_manual_fair_value_override,
+                quantity_precision =
+                    EXCLUDED.quantity_precision,
+                monetary_precision =
+                    EXCLUDED.monetary_precision,
+                settings_json =
+                    EXCLUDED.settings_json,
+                updated_at = NOW(),
+                updated_by_user_id =
+                    EXCLUDED.updated_by_user_id
+            RETURNING *
+            """,
+            (
+                company_id,
+                self._ias41_bool(
+                    payload.get("module_enabled"),
+                    True,
+                ),
+                str(
+                    payload.get("default_currency_code")
+                    or ""
+                ).strip() or None,
+                str(
+                    payload.get("default_quantity_unit")
+                    or ""
+                ).strip() or None,
+                str(
+                    payload.get("default_weight_unit")
+                    or ""
+                ).strip() or None,
+                str(
+                    payload.get("default_area_unit")
+                    or ""
+                ).strip() or None,
+                measurement,
+                self._ias41_bool(
+                    payload.get(
+                        "valuation_approval_required"
+                    ),
+                    True,
+                ),
+                self._ias41_bool(
+                    payload.get(
+                        "journal_approval_required"
+                    ),
+                    True,
+                ),
+                self._ias41_bool(
+                    payload.get("allow_negative_quantities"),
+                    False,
+                ),
+                self._ias41_bool(
+                    payload.get(
+                        "allow_manual_fair_value_override"
+                    ),
+                    False,
+                ),
+                quantity_precision,
+                monetary_precision,
+                self._ias41_json_value(
+                    payload.get("settings_json")
+                ),
+                user_id,
+                user_id,
+            ),
+            cur=cur,
+        )
+
+        return self._ias41_serialise(row) or {}
+
+    def ias41_posting_accounts(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                company_id,
+                code,
+                name,
+                section,
+                category,
+                subcategory,
+                posting,
+                is_active,
+                role
+            FROM {schema}.coa
+            WHERE company_id = %s
+            AND COALESCE(posting, TRUE) = TRUE
+            AND COALESCE(is_active, TRUE) = TRUE
+            ORDER BY
+                section,
+                category,
+                name,
+                code
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_account_mappings_list(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                m.*,
+                c.name AS account_name,
+                c.section AS account_section,
+                c.category AS account_category,
+                ac.class_code,
+                ac.class_name,
+                p.product_code,
+                p.product_name
+            FROM {schema}.ias41_account_mappings m
+            LEFT JOIN {schema}.coa c
+            ON c.company_id = m.company_id
+            AND c.code = m.account_code
+            LEFT JOIN {schema}.ias41_asset_classes ac
+            ON ac.company_id = m.company_id
+            AND ac.id = m.asset_class_id
+            LEFT JOIN {schema}.ias41_products p
+            ON p.company_id = m.company_id
+            AND p.id = m.product_id
+            WHERE m.company_id = %s
+            ORDER BY
+                m.mapping_scope,
+                m.role_code,
+                m.id
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_account_mapping_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        mapping_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        payload = payload or {}
+
+        role_code = self._ias41_required_text(
+            payload,
+            "role_code",
+            "Role",
+        )
+
+        account_code = self._ias41_required_text(
+            payload,
+            "account_code",
+            "Account",
+        )
+
+        mapping_scope = str(
+            payload.get("mapping_scope")
+            or "company"
+        ).strip().lower()
+
+        if mapping_scope not in self.IAS41_MAPPING_SCOPES:
+            raise ValueError("Invalid mapping scope.")
+
+        asset_class_id = self._ias41_optional_int(
+            payload.get("asset_class_id")
+        )
+        product_id = self._ias41_optional_int(
+            payload.get("product_id")
+        )
+
+        if mapping_scope == "company":
+            asset_class_id = None
+            product_id = None
+
+        elif mapping_scope == "asset_class":
+            if not asset_class_id:
+                raise ValueError(
+                    "Asset class is required for an asset-class mapping."
+                )
+            product_id = None
+
+        elif mapping_scope == "product":
+            if not product_id:
+                raise ValueError(
+                    "Product is required for a product mapping."
+                )
+            asset_class_id = None
+
+        self._ias41_validate_account_code(
+            company_id,
+            account_code,
+            required=True,
+            cur=cur,
+        )
+
+        if asset_class_id:
+            exists = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.ias41_asset_classes
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    asset_class_id,
+                ),
+                cur=cur,
+            )
+
+            if not exists:
+                raise ValueError("Asset class was not found.")
+
+        if product_id:
+            exists = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.ias41_products
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    company_id,
+                    product_id,
+                ),
+                cur=cur,
+            )
+
+            if not exists:
+                raise ValueError("Product was not found.")
+
+        if mapping_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_account_mappings
+                SET
+                    role_code = %s,
+                    account_code = %s,
+                    mapping_scope = %s,
+                    asset_class_id = %s,
+                    product_id = %s,
+                    description = %s,
+                    is_active = %s,
+                    is_system_default = %s,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                (
+                    role_code,
+                    account_code,
+                    mapping_scope,
+                    asset_class_id,
+                    product_id,
+                    str(
+                        payload.get("description")
+                        or ""
+                    ).strip() or None,
+                    self._ias41_bool(
+                        payload.get("is_active"),
+                        True,
+                    ),
+                    self._ias41_bool(
+                        payload.get("is_system_default"),
+                        False,
+                    ),
+                    user_id,
+                    company_id,
+                    int(mapping_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_account_mappings (
+                    company_id,
+                    role_code,
+                    account_code,
+                    mapping_scope,
+                    asset_class_id,
+                    product_id,
+                    description,
+                    is_active,
+                    is_system_default,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                    role_code,
+                    account_code,
+                    mapping_scope,
+                    asset_class_id,
+                    product_id,
+                    str(
+                        payload.get("description")
+                        or ""
+                    ).strip() or None,
+                    self._ias41_bool(
+                        payload.get("is_active"),
+                        True,
+                    ),
+                    self._ias41_bool(
+                        payload.get("is_system_default"),
+                        False,
+                    ),
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Account mapping was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_account_mapping_delete(
+        self,
+        company_id: int,
+        mapping_id: int,
+        *,
+        cur=None,
+    ) -> bool:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        row = self.fetch_one(
+            f"""
+            DELETE FROM {schema}.ias41_account_mappings
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                company_id,
+                int(mapping_id),
+            ),
+            cur=cur,
+        )
+
+        return bool(row)
+
+
+    def ias41_mapping_validate(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        mappings = self.fetch_all(
+            f"""
+            SELECT
+                m.role_code,
+                m.account_code,
+                m.mapping_scope,
+                c.id AS account_id,
+                c.name AS account_name,
+                c.posting,
+                c.is_active
+            FROM {schema}.ias41_account_mappings m
+            LEFT JOIN {schema}.coa c
+            ON c.company_id = m.company_id
+            AND c.code = m.account_code
+            WHERE m.company_id = %s
+            AND m.mapping_scope = 'company'
+            AND m.is_active = TRUE
+            """,
+            (company_id,),
+            cur=cur,
+        ) or []
+
+        by_role = {
+            str(row.get("role_code") or ""): row
+            for row in mappings
+        }
+
+        required_roles = [
+            "ias41_biological_asset_current",
+            "ias41_agricultural_produce_inventory",
+            "ias41_fair_value_gain",
+            "ias41_fair_value_loss",
+            "ias41_costs_to_sell",
+            "ias41_mortality_loss",
+        ]
+
+        missing = []
+        invalid = []
+
+        for role_code in required_roles:
+            row = by_role.get(role_code)
+
+            if not row:
+                missing.append(role_code)
+                continue
+
+            if (
+                not row.get("account_id")
+                or row.get("posting") is False
+                or row.get("is_active") is False
+            ):
+                invalid.append({
+                    "role_code": role_code,
+                    "account_code": row.get("account_code"),
+                    "reason": "Account is missing, inactive or non-posting.",
+                })
+
+        return {
+            "ready": not missing and not invalid,
+            "required_roles": required_roles,
+            "missing_roles": missing,
+            "invalid_accounts": invalid,
+            "mapped_role_count": len(by_role),
+        }
+
+    def _ias41_get_row(
+        self,
+        company_id: int,
+        table_name: str,
+        record_id: int,
+        *,
+        joins_sql: str = "",
+        select_sql: str = "t.*",
+        cur=None,
+    ) -> dict | None:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        row = self.fetch_one(
+            f"""
+            SELECT {select_sql}
+            FROM {schema}.{table_name} t
+            {joins_sql}
+            WHERE t.company_id = %s
+            AND t.id = %s
+            LIMIT 1
+            """,
+            (
+                company_id,
+                int(record_id),
+            ),
+            cur=cur,
+        )
+
+        return self._ias41_serialise(row)
+
+
+    def _ias41_soft_delete(
+        self,
+        company_id: int,
+        table_name: str,
+        record_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        row = self.fetch_one(
+            f"""
+            UPDATE {schema}.{table_name}
+            SET
+                is_active = FALSE,
+                updated_at = NOW(),
+                updated_by_user_id = %s
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING id
+            """,
+            (
+                user_id,
+                company_id,
+                int(record_id),
+            ),
+            cur=cur,
+        )
+
+        return bool(row)
+
+    def ias41_locations_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND l.is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                l.*,
+                p.location_code AS parent_location_code,
+                p.location_name AS parent_location_name
+            FROM {schema}.ias41_locations l
+            LEFT JOIN {schema}.ias41_locations p
+            ON p.company_id = l.company_id
+            AND p.id = l.parent_location_id
+            WHERE l.company_id = %s
+            {active_sql}
+            ORDER BY
+                l.location_name,
+                l.location_code
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_location_get(
+        self,
+        company_id: int,
+        location_id: int,
+        *,
+        cur=None,
+    ) -> dict | None:
+        return self._ias41_get_row(
+            company_id,
+            "ias41_locations",
+            location_id,
+            cur=cur,
+        )
+
+
+    def ias41_location_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        location_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        location_code = self._ias41_required_text(
+            payload,
+            "location_code",
+            "Location code",
+        )
+        location_name = self._ias41_required_text(
+            payload,
+            "location_name",
+            "Location name",
+        )
+
+        location_type = str(
+            payload.get("location_type")
+            or "farm"
+        ).strip().lower()
+
+        valid_types = {
+            "farm",
+            "field",
+            "crop_block",
+            "orchard",
+            "plantation",
+            "camp",
+            "paddock",
+            "barn",
+            "stable",
+            "poultry_house",
+            "greenhouse",
+            "nursery",
+            "pond",
+            "tank",
+            "hatchery",
+            "apiary",
+            "warehouse",
+            "other",
+        }
+
+        if location_type not in valid_types:
+            raise ValueError("Invalid agricultural location type.")
+
+        parent_location_id = self._ias41_optional_int(
+            payload.get("parent_location_id")
+        )
+
+        if (
+            location_id
+            and parent_location_id == int(location_id)
+        ):
+            raise ValueError(
+                "A location cannot be its own parent."
+            )
+
+        params = (
+            location_code,
+            location_name,
+            location_type,
+            parent_location_id,
+            str(payload.get("description") or "").strip() or None,
+            str(payload.get("address_line_1") or "").strip() or None,
+            str(payload.get("address_line_2") or "").strip() or None,
+            str(payload.get("city") or "").strip() or None,
+            str(payload.get("district") or "").strip() or None,
+            str(payload.get("province_state") or "").strip() or None,
+            str(payload.get("country_code") or "").strip() or None,
+            self._ias41_optional_float(payload.get("latitude")),
+            self._ias41_optional_float(payload.get("longitude")),
+            self._ias41_optional_float(payload.get("area_value")),
+            str(payload.get("area_unit") or "").strip() or None,
+            self._ias41_optional_int(
+                payload.get("responsible_user_id")
+            ),
+            self._ias41_bool(payload.get("is_active"), True),
+            self._ias41_json_value(payload.get("metadata")),
+        )
+
+        if location_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_locations
+                SET
+                    location_code = %s,
+                    location_name = %s,
+                    location_type = %s,
+                    parent_location_id = %s,
+                    description = %s,
+                    address_line_1 = %s,
+                    address_line_2 = %s,
+                    city = %s,
+                    district = %s,
+                    province_state = %s,
+                    country_code = %s,
+                    latitude = %s,
+                    longitude = %s,
+                    area_value = %s,
+                    area_unit = %s,
+                    responsible_user_id = %s,
+                    is_active = %s,
+                    metadata = %s::jsonb,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                params + (
+                    user_id,
+                    company_id,
+                    int(location_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_locations (
+                    company_id,
+                    location_code,
+                    location_name,
+                    location_type,
+                    parent_location_id,
+                    description,
+                    address_line_1,
+                    address_line_2,
+                    city,
+                    district,
+                    province_state,
+                    country_code,
+                    latitude,
+                    longitude,
+                    area_value,
+                    area_unit,
+                    responsible_user_id,
+                    is_active,
+                    metadata,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s::jsonb,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + params + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Agricultural location was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_location_delete(
+        self,
+        company_id: int,
+        location_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_locations",
+            location_id,
+            user_id=user_id,
+            cur=cur,
+        )
+
+    def ias41_seasons_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ias41_seasons
+            WHERE company_id = %s
+            {active_sql}
+            ORDER BY
+                start_date DESC,
+                season_name
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_season_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        season_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        season_code = self._ias41_required_text(
+            payload,
+            "season_code",
+            "Season code",
+        )
+        season_name = self._ias41_required_text(
+            payload,
+            "season_name",
+            "Season name",
+        )
+
+        start_date = payload.get("start_date")
+        end_date = payload.get("end_date")
+
+        if not start_date or not end_date:
+            raise ValueError(
+                "Season start and end dates are required."
+            )
+
+        season_type = str(
+            payload.get("season_type")
+            or "general"
+        ).strip().lower()
+
+        status = str(
+            payload.get("status")
+            or "planned"
+        ).strip().lower()
+
+        values = (
+            season_code,
+            season_name,
+            season_type,
+            start_date,
+            end_date,
+            status,
+            str(payload.get("description") or "").strip() or None,
+            self._ias41_bool(payload.get("is_active"), True),
+            self._ias41_json_value(payload.get("metadata")),
+        )
+
+        if season_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_seasons
+                SET
+                    season_code = %s,
+                    season_name = %s,
+                    season_type = %s,
+                    start_date = %s,
+                    end_date = %s,
+                    status = %s,
+                    description = %s,
+                    is_active = %s,
+                    metadata = %s::jsonb,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                values + (
+                    user_id,
+                    company_id,
+                    int(season_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_seasons (
+                    company_id,
+                    season_code,
+                    season_name,
+                    season_type,
+                    start_date,
+                    end_date,
+                    status,
+                    description,
+                    is_active,
+                    metadata,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s::jsonb,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + values + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Agricultural season was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_season_delete(
+        self,
+        company_id: int,
+        season_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_seasons",
+            season_id,
+            user_id=user_id,
+            cur=cur,
+        )
+
+    def ias41_asset_classes_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ias41_asset_classes
+            WHERE company_id = %s
+            {active_sql}
+            ORDER BY
+                class_name,
+                class_code
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_asset_class_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        asset_class_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        class_code = self._ias41_required_text(
+            payload,
+            "class_code",
+            "Class code",
+        )
+        class_name = self._ias41_required_text(
+            payload,
+            "class_name",
+            "Class name",
+        )
+        asset_nature = self._ias41_required_text(
+            payload,
+            "asset_nature",
+            "Asset nature",
+        ).lower()
+
+        asset_purpose = str(
+            payload.get("asset_purpose")
+            or "consumable"
+        ).strip().lower()
+
+        classification = str(
+            payload.get("current_noncurrent")
+            or "current"
+        ).strip().lower()
+
+        measurement_basis = str(
+            payload.get("measurement_basis")
+            or "fair_value_less_costs_to_sell"
+        ).strip().lower()
+
+        account_fields = [
+            "biological_asset_account_code",
+            "produce_inventory_account_code",
+            "fair_value_gain_account_code",
+            "fair_value_loss_account_code",
+            "costs_to_sell_account_code",
+            "mortality_loss_account_code",
+            "grant_receivable_account_code",
+            "grant_income_account_code",
+        ]
+
+        account_values = []
+
+        for field in account_fields:
+            code = str(payload.get(field) or "").strip() or None
+
+            if code:
+                self._ias41_validate_account_code(
+                    company_id,
+                    code,
+                    cur=cur,
+                )
+
+            account_values.append(code)
+
+        values = (
+            class_code,
+            class_name,
+            asset_nature,
+            str(
+                payload.get("agricultural_activity")
+                or ""
+            ).strip() or None,
+            asset_purpose,
+            classification,
+            str(
+                payload.get("default_quantity_unit")
+                or ""
+            ).strip() or None,
+            str(
+                payload.get("default_weight_unit")
+                or ""
+            ).strip() or None,
+            str(
+                payload.get("default_area_unit")
+                or ""
+            ).strip() or None,
+            measurement_basis,
+            self._ias41_bool(
+                payload.get("is_bearer_plant"),
+                False,
+            ),
+            self._ias41_bool(
+                payload.get("produce_within_ias41"),
+                True,
+            ),
+            self._ias41_bool(
+                payload.get("track_individually"),
+                False,
+            ),
+            self._ias41_bool(
+                payload.get("allow_batch_tracking"),
+                True,
+            ),
+            *account_values,
+            str(payload.get("description") or "").strip() or None,
+            self._ias41_bool(payload.get("is_active"), True),
+            self._ias41_json_value(payload.get("metadata")),
+        )
+
+        set_sql = """
+            class_code = %s,
+            class_name = %s,
+            asset_nature = %s,
+            agricultural_activity = %s,
+            asset_purpose = %s,
+            current_noncurrent = %s,
+            default_quantity_unit = %s,
+            default_weight_unit = %s,
+            default_area_unit = %s,
+            measurement_basis = %s,
+            is_bearer_plant = %s,
+            produce_within_ias41 = %s,
+            track_individually = %s,
+            allow_batch_tracking = %s,
+            biological_asset_account_code = %s,
+            produce_inventory_account_code = %s,
+            fair_value_gain_account_code = %s,
+            fair_value_loss_account_code = %s,
+            costs_to_sell_account_code = %s,
+            mortality_loss_account_code = %s,
+            grant_receivable_account_code = %s,
+            grant_income_account_code = %s,
+            description = %s,
+            is_active = %s,
+            metadata = %s::jsonb
+        """
+
+        if asset_class_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_asset_classes
+                SET
+                    {set_sql},
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                values + (
+                    user_id,
+                    company_id,
+                    int(asset_class_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_asset_classes (
+                    company_id,
+                    class_code,
+                    class_name,
+                    asset_nature,
+                    agricultural_activity,
+                    asset_purpose,
+                    current_noncurrent,
+                    default_quantity_unit,
+                    default_weight_unit,
+                    default_area_unit,
+                    measurement_basis,
+                    is_bearer_plant,
+                    produce_within_ias41,
+                    track_individually,
+                    allow_batch_tracking,
+                    biological_asset_account_code,
+                    produce_inventory_account_code,
+                    fair_value_gain_account_code,
+                    fair_value_loss_account_code,
+                    costs_to_sell_account_code,
+                    mortality_loss_account_code,
+                    grant_receivable_account_code,
+                    grant_income_account_code,
+                    description,
+                    is_active,
+                    metadata,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s::jsonb,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + values + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Biological asset class was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_asset_class_delete(
+        self,
+        company_id: int,
+        asset_class_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_asset_classes",
+            asset_class_id,
+            user_id=user_id,
+            cur=cur,
+        )
+
+    def ias41_products_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND p.is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                p.*,
+                ac.class_code,
+                ac.class_name,
+                i.name AS inventory_item_name
+            FROM {schema}.ias41_products p
+            LEFT JOIN {schema}.ias41_asset_classes ac
+            ON ac.company_id = p.company_id
+            AND ac.id = p.asset_class_id
+            LEFT JOIN {schema}.inventory_items i
+            ON i.company_id = p.company_id
+            AND i.id = p.inventory_item_id
+            WHERE p.company_id = %s
+            {active_sql}
+            ORDER BY
+                p.product_name,
+                p.product_code
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_inventory_items(
+        self,
+        company_id: int,
+        *,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                id,
+                company_id,
+                sku,
+                name,
+                unit,
+                is_active
+            FROM {schema}.inventory_items
+            WHERE company_id = %s
+            AND COALESCE(is_active, TRUE) = TRUE
+            ORDER BY name, sku
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_product_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        product_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        product_code = self._ias41_required_text(
+            payload,
+            "product_code",
+            "Product code",
+        )
+        product_name = self._ias41_required_text(
+            payload,
+            "product_name",
+            "Product name",
+        )
+
+        asset_class_id = self._ias41_optional_int(
+            payload.get("asset_class_id")
+        )
+
+        inventory_item_id = self._ias41_optional_int(
+            payload.get("inventory_item_id")
+        )
+
+        account_values = []
+
+        for field in (
+            "inventory_account_code",
+            "sales_account_code",
+            "cost_of_sales_account_code",
+        ):
+            code = str(payload.get(field) or "").strip() or None
+
+            if code:
+                self._ias41_validate_account_code(
+                    company_id,
+                    code,
+                    cur=cur,
+                )
+
+            account_values.append(code)
+
+        values = (
+            product_code,
+            product_name,
+            asset_class_id,
+            str(
+                payload.get("product_type")
+                or "agricultural_produce"
+            ).strip().lower(),
+            str(
+                payload.get("quantity_unit")
+                or ""
+            ).strip() or None,
+            str(
+                payload.get("weight_unit")
+                or ""
+            ).strip() or None,
+            inventory_item_id,
+            *account_values,
+            str(
+                payload.get("harvest_measurement_basis")
+                or "fair_value_less_costs_to_sell"
+            ).strip().lower(),
+            str(payload.get("description") or "").strip() or None,
+            self._ias41_bool(payload.get("is_active"), True),
+            self._ias41_json_value(payload.get("metadata")),
+        )
+
+        if product_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_products
+                SET
+                    product_code = %s,
+                    product_name = %s,
+                    asset_class_id = %s,
+                    product_type = %s,
+                    quantity_unit = %s,
+                    weight_unit = %s,
+                    inventory_item_id = %s,
+                    inventory_account_code = %s,
+                    sales_account_code = %s,
+                    cost_of_sales_account_code = %s,
+                    harvest_measurement_basis = %s,
+                    description = %s,
+                    is_active = %s,
+                    metadata = %s::jsonb,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                values + (
+                    user_id,
+                    company_id,
+                    int(product_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_products (
+                    company_id,
+                    product_code,
+                    product_name,
+                    asset_class_id,
+                    product_type,
+                    quantity_unit,
+                    weight_unit,
+                    inventory_item_id,
+                    inventory_account_code,
+                    sales_account_code,
+                    cost_of_sales_account_code,
+                    harvest_measurement_basis,
+                    description,
+                    is_active,
+                    metadata,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s::jsonb,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + values + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Agricultural product was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_product_delete(
+        self,
+        company_id: int,
+        product_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_products",
+            product_id,
+            user_id=user_id,
+            cur=cur,
+        )
+
+    def ias41_batches_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND b.is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                b.*,
+                ac.class_code,
+                ac.class_name,
+                l.location_code,
+                l.location_name,
+                s.season_code,
+                s.season_name
+            FROM {schema}.ias41_batches b
+            JOIN {schema}.ias41_asset_classes ac
+            ON ac.company_id = b.company_id
+            AND ac.id = b.asset_class_id
+            LEFT JOIN {schema}.ias41_locations l
+            ON l.company_id = b.company_id
+            AND l.id = b.location_id
+            LEFT JOIN {schema}.ias41_seasons s
+            ON s.company_id = b.company_id
+            AND s.id = b.season_id
+            WHERE b.company_id = %s
+            {active_sql}
+            ORDER BY
+                b.batch_code,
+                b.id
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_batch_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        batch_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        batch_code = self._ias41_required_text(
+            payload,
+            "batch_code",
+            "Batch code",
+        )
+        asset_class_id = self._ias41_optional_int(
+            payload.get("asset_class_id")
+        )
+
+        if not asset_class_id:
+            raise ValueError("Asset class is required.")
+
+        opening_quantity = float(
+            payload.get("opening_quantity") or 0
+        )
+        current_quantity = float(
+            payload.get(
+                "current_quantity",
+                opening_quantity,
+            )
+            or 0
+        )
+
+        opening_fair_value = float(
+            payload.get("opening_fair_value") or 0
+        )
+        opening_costs_to_sell = float(
+            payload.get("opening_costs_to_sell") or 0
+        )
+        opening_carrying_amount = float(
+            payload.get(
+                "opening_carrying_amount",
+                opening_fair_value - opening_costs_to_sell,
+            )
+            or 0
+        )
+
+        values = (
+            batch_code,
+            str(payload.get("batch_name") or "").strip() or None,
+            asset_class_id,
+            self._ias41_optional_int(payload.get("location_id")),
+            self._ias41_optional_int(payload.get("season_id")),
+            str(
+                payload.get("batch_type")
+                or "population"
+            ).strip().lower(),
+            payload.get("start_date") or None,
+            payload.get("expected_harvest_date") or None,
+            payload.get("actual_close_date") or None,
+            opening_quantity,
+            current_quantity,
+            str(payload.get("quantity_unit") or "").strip() or None,
+            self._ias41_optional_float(payload.get("opening_weight")),
+            self._ias41_optional_float(payload.get("current_weight")),
+            str(payload.get("weight_unit") or "").strip() or None,
+            opening_fair_value,
+            opening_costs_to_sell,
+            opening_carrying_amount,
+            self._ias41_optional_float(
+                payload.get("current_fair_value")
+            ) or opening_fair_value,
+            self._ias41_optional_float(
+                payload.get("current_costs_to_sell")
+            ) or opening_costs_to_sell,
+            self._ias41_optional_float(
+                payload.get("current_carrying_amount")
+            ) or opening_carrying_amount,
+            self._ias41_optional_int(payload.get("opening_journal_id")),
+            str(payload.get("status") or "active").strip().lower(),
+            str(payload.get("source_type") or "").strip() or None,
+            str(payload.get("source_reference") or "").strip() or None,
+            str(payload.get("description") or "").strip() or None,
+            self._ias41_json_value(payload.get("metadata")),
+            self._ias41_bool(payload.get("is_active"), True),
+        )
+
+        if batch_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_batches
+                SET
+                    batch_code = %s,
+                    batch_name = %s,
+                    asset_class_id = %s,
+                    location_id = %s,
+                    season_id = %s,
+                    batch_type = %s,
+                    start_date = %s,
+                    expected_harvest_date = %s,
+                    actual_close_date = %s,
+                    opening_quantity = %s,
+                    current_quantity = %s,
+                    quantity_unit = %s,
+                    opening_weight = %s,
+                    current_weight = %s,
+                    weight_unit = %s,
+                    opening_fair_value = %s,
+                    opening_costs_to_sell = %s,
+                    opening_carrying_amount = %s,
+                    current_fair_value = %s,
+                    current_costs_to_sell = %s,
+                    current_carrying_amount = %s,
+                    opening_journal_id = %s,
+                    status = %s,
+                    source_type = %s,
+                    source_reference = %s,
+                    description = %s,
+                    metadata = %s::jsonb,
+                    is_active = %s,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                values + (
+                    user_id,
+                    company_id,
+                    int(batch_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_batches (
+                    company_id,
+                    batch_code,
+                    batch_name,
+                    asset_class_id,
+                    location_id,
+                    season_id,
+                    batch_type,
+                    start_date,
+                    expected_harvest_date,
+                    actual_close_date,
+                    opening_quantity,
+                    current_quantity,
+                    quantity_unit,
+                    opening_weight,
+                    current_weight,
+                    weight_unit,
+                    opening_fair_value,
+                    opening_costs_to_sell,
+                    opening_carrying_amount,
+                    current_fair_value,
+                    current_costs_to_sell,
+                    current_carrying_amount,
+                    opening_journal_id,
+                    status,
+                    source_type,
+                    source_reference,
+                    description,
+                    metadata,
+                    is_active,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s::jsonb, %s,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + values + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Biological asset batch was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_batch_delete(
+        self,
+        company_id: int,
+        batch_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_batches",
+            batch_id,
+            user_id=user_id,
+            cur=cur,
+        )
+
+    def ias41_biological_assets_list(
+        self,
+        company_id: int,
+        *,
+        active_only: bool = True,
+        cur=None,
+    ) -> list[dict]:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+
+        active_sql = (
+            "AND a.is_active = TRUE"
+            if active_only
+            else ""
+        )
+
+        rows = self.fetch_all(
+            f"""
+            SELECT
+                a.*,
+                ac.class_code,
+                ac.class_name,
+                b.batch_code,
+                b.batch_name,
+                l.location_code,
+                l.location_name
+            FROM {schema}.ias41_biological_assets a
+            JOIN {schema}.ias41_asset_classes ac
+            ON ac.company_id = a.company_id
+            AND ac.id = a.asset_class_id
+            LEFT JOIN {schema}.ias41_batches b
+            ON b.company_id = a.company_id
+            AND b.id = a.batch_id
+            LEFT JOIN {schema}.ias41_locations l
+            ON l.company_id = a.company_id
+            AND l.id = a.location_id
+            WHERE a.company_id = %s
+            {active_sql}
+            ORDER BY
+                a.asset_number,
+                a.id
+            """,
+            (company_id,),
+            cur=cur,
+        )
+
+        return self._ias41_serialise_many(rows)
+
+
+    def ias41_biological_asset_save(
+        self,
+        company_id: int,
+        payload: dict,
+        *,
+        asset_id: int | None = None,
+        user_id: int | None = None,
+        cur=None,
+    ) -> dict:
+        company_id = int(company_id)
+        schema = self._ias41_company_guard(
+            company_id,
+            cur=cur,
+        )
+        payload = payload or {}
+
+        asset_number = self._ias41_required_text(
+            payload,
+            "asset_number",
+            "Asset number",
+        )
+        asset_class_id = self._ias41_optional_int(
+            payload.get("asset_class_id")
+        )
+
+        if not asset_class_id:
+            raise ValueError("Asset class is required.")
+
+        initial_fair_value = self._ias41_optional_float(
+            payload.get("initial_fair_value")
+        )
+        initial_costs_to_sell = self._ias41_optional_float(
+            payload.get("initial_costs_to_sell")
+        )
+
+        if initial_fair_value is None:
+            initial_fair_value = 0.0
+
+        if initial_costs_to_sell is None:
+            initial_costs_to_sell = 0.0
+
+        initial_carrying_amount = self._ias41_optional_float(
+            payload.get("initial_carrying_amount")
+        )
+
+        if initial_carrying_amount is None:
+            initial_carrying_amount = (
+                initial_fair_value
+                - initial_costs_to_sell
+            )
+
+        values = (
+            asset_number,
+            str(payload.get("asset_name") or "").strip() or None,
+            asset_class_id,
+            self._ias41_optional_int(payload.get("batch_id")),
+            self._ias41_optional_int(payload.get("location_id")),
+            str(
+                payload.get("identification_type")
+                or ""
+            ).strip() or None,
+            str(
+                payload.get("identification_value")
+                or ""
+            ).strip() or None,
+            str(
+                payload.get("biological_sex")
+                or ""
+            ).strip().lower() or None,
+            payload.get("birth_or_planting_date") or None,
+            payload.get("acquisition_date") or None,
+            payload.get("maturity_date") or None,
+            payload.get("expected_harvest_date") or None,
+            float(payload.get("quantity") or 1),
+            str(payload.get("quantity_unit") or "").strip() or None,
+            self._ias41_optional_float(payload.get("current_weight")),
+            str(payload.get("weight_unit") or "").strip() or None,
+            str(payload.get("status") or "active").strip().lower(),
+            str(
+                payload.get("ownership_status")
+                or "owned"
+            ).strip().lower(),
+            str(payload.get("source_type") or "").strip() or None,
+            str(payload.get("source_reference") or "").strip() or None,
+            self._ias41_optional_int(payload.get("opening_journal_id")),
+            initial_fair_value,
+            initial_costs_to_sell,
+            initial_carrying_amount,
+            self._ias41_optional_float(
+                payload.get("current_fair_value")
+            ) or initial_fair_value,
+            self._ias41_optional_float(
+                payload.get("current_costs_to_sell")
+            ) or initial_costs_to_sell,
+            self._ias41_optional_float(
+                payload.get("current_carrying_amount")
+            ) or initial_carrying_amount,
+            payload.get("last_valuation_date") or None,
+            self._ias41_optional_int(
+                payload.get("last_valuation_run_id")
+            ),
+            str(payload.get("description") or "").strip() or None,
+            self._ias41_json_value(payload.get("metadata")),
+            self._ias41_bool(payload.get("is_active"), True),
+        )
+
+        if asset_id:
+            row = self.fetch_one(
+                f"""
+                UPDATE {schema}.ias41_biological_assets
+                SET
+                    asset_number = %s,
+                    asset_name = %s,
+                    asset_class_id = %s,
+                    batch_id = %s,
+                    location_id = %s,
+                    identification_type = %s,
+                    identification_value = %s,
+                    biological_sex = %s,
+                    birth_or_planting_date = %s,
+                    acquisition_date = %s,
+                    maturity_date = %s,
+                    expected_harvest_date = %s,
+                    quantity = %s,
+                    quantity_unit = %s,
+                    current_weight = %s,
+                    weight_unit = %s,
+                    status = %s,
+                    ownership_status = %s,
+                    source_type = %s,
+                    source_reference = %s,
+                    opening_journal_id = %s,
+                    initial_fair_value = %s,
+                    initial_costs_to_sell = %s,
+                    initial_carrying_amount = %s,
+                    current_fair_value = %s,
+                    current_costs_to_sell = %s,
+                    current_carrying_amount = %s,
+                    last_valuation_date = %s,
+                    last_valuation_run_id = %s,
+                    description = %s,
+                    metadata = %s::jsonb,
+                    is_active = %s,
+                    updated_at = NOW(),
+                    updated_by_user_id = %s
+                WHERE company_id = %s
+                AND id = %s
+                RETURNING *
+                """,
+                values + (
+                    user_id,
+                    company_id,
+                    int(asset_id),
+                ),
+                cur=cur,
+            )
+        else:
+            row = self.fetch_one(
+                f"""
+                INSERT INTO {schema}.ias41_biological_assets (
+                    company_id,
+                    asset_number,
+                    asset_name,
+                    asset_class_id,
+                    batch_id,
+                    location_id,
+                    identification_type,
+                    identification_value,
+                    biological_sex,
+                    birth_or_planting_date,
+                    acquisition_date,
+                    maturity_date,
+                    expected_harvest_date,
+                    quantity,
+                    quantity_unit,
+                    current_weight,
+                    weight_unit,
+                    status,
+                    ownership_status,
+                    source_type,
+                    source_reference,
+                    opening_journal_id,
+                    initial_fair_value,
+                    initial_costs_to_sell,
+                    initial_carrying_amount,
+                    current_fair_value,
+                    current_costs_to_sell,
+                    current_carrying_amount,
+                    last_valuation_date,
+                    last_valuation_run_id,
+                    description,
+                    metadata,
+                    is_active,
+                    created_at,
+                    created_by_user_id,
+                    updated_at,
+                    updated_by_user_id
+                )
+                VALUES (
+                    %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s::jsonb, %s,
+                    NOW(), %s, NOW(), %s
+                )
+                RETURNING *
+                """,
+                (
+                    company_id,
+                ) + values + (
+                    user_id,
+                    user_id,
+                ),
+                cur=cur,
+            )
+
+        if not row:
+            raise ValueError("Biological asset was not saved.")
+
+        return self._ias41_serialise(row) or {}
+
+
+    def ias41_biological_asset_delete(
+        self,
+        company_id: int,
+        asset_id: int,
+        *,
+        user_id: int | None = None,
+        cur=None,
+    ) -> bool:
+        return self._ias41_soft_delete(
+            company_id,
+            "ias41_biological_assets",
+            asset_id,
+            user_id=user_id,
+            cur=cur,
+        )
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

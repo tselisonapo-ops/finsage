@@ -2930,3 +2930,449 @@ def api_payroll_incentive_assignment(
             "error":str(error),
         }),400
 
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_evaluations(
+    company_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            employee_id=request.args.get("employee_id")
+            plan_id=request.args.get("plan_id")
+            status=request.args.get("status")
+            date_from=request.args.get("date_from")
+            date_to=request.args.get("date_to")
+
+            items=(
+                db_service
+                .payroll_incentive_evaluations_list(
+                    company_id,
+                    employee_id=int(employee_id)
+                    if employee_id else None,
+                    plan_id=int(plan_id)
+                    if plan_id else None,
+                    status=status or None,
+                    date_from=date_from or None,
+                    date_to=date_to or None,
+                )
+            )
+
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=(
+            db_service
+            .payroll_incentive_evaluation_save(
+                company_id,
+                _payroll_body(),
+                _jwt_user_id(),
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive evaluations failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations/<int:evaluation_id>",
+    methods=["GET","PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_evaluation(
+    company_id:int,
+    evaluation_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            out=(
+                db_service
+                .payroll_incentive_evaluation_get(
+                    company_id,
+                    evaluation_id,
+                )
+            )
+
+            if not out:
+                return jsonify({
+                    "ok":False,
+                    "error":
+                        "Incentive evaluation not found",
+                }),404
+
+            return jsonify({
+                "ok":True,
+                "data":out,
+            }),200
+
+        if request.method=="DELETE":
+            deleted=(
+                db_service
+                .payroll_incentive_evaluation_delete(
+                    company_id,
+                    evaluation_id,
+                )
+            )
+
+            if not deleted:
+                return jsonify({
+                    "ok":False,
+                    "error":
+                        "Incentive evaluation not found",
+                }),404
+
+            return jsonify({
+                "ok":True,
+                "deleted":True,
+            }),200
+
+        out=(
+            db_service
+            .payroll_incentive_evaluation_save(
+                company_id,
+                _payroll_body(),
+                _jwt_user_id(),
+                evaluation_id,
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll incentive evaluation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations/<int:evaluation_id>/"
+    "calculate",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_evaluation_calculate(
+    company_id:int,
+    evaluation_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=(
+            db_service
+            .payroll_incentive_evaluation_calculate(
+                company_id,
+                evaluation_id,
+                _jwt_user_id(),
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "incentive evaluation calculation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations/<int:evaluation_id>/"
+    "<action>",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_evaluation_action(
+    company_id:int,
+    evaluation_id:int,
+    action:str,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    allowed={
+        "submit",
+        "approve",
+        "return-to-draft",
+        "cancel",
+    }
+
+    if action not in allowed:
+        return jsonify({
+            "ok":False,
+            "error":
+                "Unsupported incentive evaluation action",
+        }),404
+
+    try:
+        out=(
+            db_service
+            .payroll_incentive_evaluation_set_status(
+                company_id,
+                evaluation_id,
+                action,
+                _jwt_user_id(),
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "incentive evaluation action failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations/<int:evaluation_id>/"
+    "push-to-payroll",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_push_to_payroll(
+    company_id:int,
+    evaluation_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id=_jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok":False,
+            "error":"AUTH|missing_user_id",
+        }),401
+
+    try:
+        out=db_service.payroll_incentive_push_to_run(
+            company_id,
+            evaluation_id,
+            _payroll_body(),
+            user_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "push incentive to payroll failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "incentives/evaluations/<int:evaluation_id>/"
+    "remove-from-payroll",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_incentive_remove_from_payroll(
+    company_id:int,
+    evaluation_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id=_jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok":False,
+            "error":"AUTH|missing_user_id",
+        }),401
+
+    try:
+        out=db_service.payroll_incentive_remove_from_run(
+            company_id,
+            evaluation_id,
+            user_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "remove incentive from payroll failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/payslips",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_payslips(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        items=db_service.payroll_payslips_list(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "items":items,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll payslips list failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/employees/"
+    "<int:employee_id>/payslip",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_employee_payslip(
+    company_id:int,
+    run_id:int,
+    employee_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_payslip_get(
+            company_id,
+            run_id,
+            employee_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except ValueError as error:
+        message=str(error)
+        status=404 if(
+            "not found" in message.lower()
+            or "not calculated" in message.lower()
+        )else 400
+
+        return jsonify({
+            "ok":False,
+            "error":message,
+        }),status
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll employee payslip failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400 
