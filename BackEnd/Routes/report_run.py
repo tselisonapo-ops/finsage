@@ -1,5 +1,6 @@
 
 from flask import Blueprint, current_app, jsonify, request, g
+from datetime import date, datetime
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from BackEnd.Services.auth_middleware import require_auth
@@ -69,6 +70,20 @@ from BackEnd.Services.reporting.disclosure_builders import (
     build_ia_note_export_payload,
     build_ip_disclosure_export_payload,
     build_ia_disclosure_export_payload,
+    build_payroll_employee_cost_note_export_payload,
+    build_payroll_employee_cost_export_payload,
+    build_payroll_leave_liability_note_payload,
+    build_payroll_leave_liability_export_payload,
+    build_payroll_bonus_provision_note_payload,
+    build_payroll_bonus_provision_export_payload,
+    build_payroll_termination_benefits_note_payload,
+    build_payroll_termination_benefits_export_payload,
+    build_ifrs9_disclosure,
+    build_ifrs9_note_export_payload,
+    build_payroll_dc_note_payload,
+    build_payroll_dc_export_payload,
+    build_payroll_db_note_payload,
+    build_payroll_db_export_payload,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -2084,3 +2099,766 @@ def export_ia_disclosure(company_id):
             "error": str(e),
         }), 400
 
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/employee-costs/export",
+    methods=["GET"],
+)
+def export_payroll_employee_cost_disclosure(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "payroll_employee_cost_disclosure",
+    )
+
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=(
+            resolve_company_period(
+                db,
+                company_id,
+                request,
+                mode="range",
+            )
+        )
+
+        if not date_from or not date_to:
+            raise ValueError(
+                "Unable to resolve reporting period"
+            )
+
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be 'pdf' or 'xlsx'"
+            )
+
+        disclosure=(
+            db.build_payroll_employee_cost_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=(
+                db.get_or_build_financial_statement_note(
+                    company_id=company_id,
+                    note_key=
+                        "ias19_employee_cost_disclosure",
+                    period_from=date_from,
+                    period_to=date_to,
+                )
+            )
+
+            export_note=(
+                build_payroll_employee_cost_note_export_payload(
+                    note,
+                    disclosure,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [export_note],
+                filename=
+                    "employee_benefit_expense.pdf",
+            )
+
+        payload=(
+            build_payroll_employee_cost_export_payload(
+                db,
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        payload.setdefault("meta",{})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(
+            payload,
+            "employee_benefit_expense",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "export payroll employee cost "
+            "disclosure failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/leave-liability/export",
+    methods=["GET"],
+)
+def export_payroll_leave_liability(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_leave_liability",
+    )
+
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=(
+            resolve_company_period(
+                db,
+                company_id,
+                request,
+                mode="range",
+            )
+        )
+
+        as_of_str=str(
+            request.args.get("as_of") or ""
+        ).strip()
+
+        as_of=(
+            datetime.strptime(
+                as_of_str,
+                "%Y-%m-%d",
+            ).date()
+            if as_of_str else date_to
+        )
+
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=(
+            db.build_payroll_leave_liability_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=(
+                db.get_or_build_financial_statement_note(
+                    company_id=company_id,
+                    note_key=
+                        "ias19_leave_liability_disclosure",
+                    period_from=date_from,
+                    period_to=date_to,
+                )
+            )
+
+            payload=(
+                build_payroll_leave_liability_note_payload(
+                    note,
+                    disclosure,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [payload],
+                filename="leave_pay_liability.pdf",
+            )
+
+        payload=(
+            build_payroll_leave_liability_export_payload(
+                disclosure
+            )
+        )
+
+        payload.setdefault("meta",{})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(
+            payload,
+            "leave_pay_liability",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "leave liability export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/bonus-provision/export",
+    methods=["GET"],
+)
+def export_payroll_bonus_provision(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_bonus_provision",
+    )
+
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=(
+            resolve_company_period(
+                db,
+                company_id,
+                request,
+                mode="range",
+            )
+        )
+
+        if not date_from or not date_to:
+            raise ValueError(
+                "Unable to resolve reporting period"
+            )
+
+        as_of_raw=str(
+            request.args.get("as_of") or ""
+        ).strip()
+
+        as_of=(
+            datetime.strptime(
+                as_of_raw,
+                "%Y-%m-%d",
+            ).date()
+            if as_of_raw else date_to
+        )
+
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=(
+            db.build_payroll_bonus_provision_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=(
+                db.get_or_build_financial_statement_note(
+                    company_id=company_id,
+                    note_key=
+                        "ias19_bonus_provision_disclosure",
+                    period_from=date_from,
+                    period_to=date_to,
+                )
+            )
+
+            payload=(
+                build_payroll_bonus_provision_note_payload(
+                    note,
+                    disclosure,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [payload],
+                filename="bonus_provision.pdf",
+            )
+
+        payload=(
+            build_payroll_bonus_provision_export_payload(
+                disclosure
+            )
+        )
+
+        payload.setdefault("meta",{})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(
+            payload,
+            "bonus_provision",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "bonus provision export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/termination-benefits/export",
+    methods=["GET"],
+)
+def export_payroll_termination_benefits(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_termination_benefits",
+    )
+
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=(
+            resolve_company_period(
+                db,
+                company_id,
+                request,
+                mode="range",
+            )
+        )
+
+        if not date_from or not date_to:
+            raise ValueError(
+                "Unable to resolve reporting period"
+            )
+
+        as_of_raw=str(
+            request.args.get("as_of") or ""
+        ).strip()
+
+        as_of=(
+            datetime.strptime(
+                as_of_raw,
+                "%Y-%m-%d",
+            ).date()
+            if as_of_raw else date_to
+        )
+
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=(
+            db
+            .build_payroll_termination_benefits_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=(
+                db.get_or_build_financial_statement_note(
+                    company_id=company_id,
+                    note_key=
+                        "ias19_termination_benefits_disclosure",
+                    period_from=date_from,
+                    period_to=date_to,
+                )
+            )
+
+            payload=(
+                build_payroll_termination_benefits_note_payload(
+                    note,
+                    disclosure,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [payload],
+                filename=
+                    "termination_benefits.pdf",
+            )
+
+        payload=(
+            build_payroll_termination_benefits_export_payload(
+                disclosure
+            )
+        )
+
+        payload.setdefault("meta",{})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(
+            payload,
+            "termination_benefits",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "termination benefits export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    
+@report_bp.route(
+    "/api/companies/<int:company_id>/reports/ifrs9-disclosure",
+    methods=["GET"],
+)
+@require_auth
+def run_ifrs9_disclosure(company_id):
+    deny = _deny_report_access(company_id)
+
+    if deny:
+        return deny
+
+    try:
+        db, date_from, date_to, meta = (
+            _resolve_range(company_id)
+        )
+
+        as_of_raw = (
+            request.args.get("as_of") or ""
+        ).strip()
+
+        as_of = (
+            date.fromisoformat(as_of_raw)
+            if as_of_raw
+            else date_to
+        )
+
+        payload = build_ifrs9_disclosure(
+            db,
+            company_id,
+            date_from,
+            date_to,
+            as_of=as_of,
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+
+        return jsonify({
+            "ok": True,
+            **payload,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "run_ifrs9_disclosure failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/reports/ifrs9-disclosure/export",
+    methods=["GET"],
+)
+def export_ifrs9_disclosure(company_id):
+    deny = _deny_report_export_access(
+        company_id,
+        "ifrs9_disclosure",
+    )
+
+    if deny:
+        return deny
+
+    try:
+        db, date_from, date_to, meta = (
+            _resolve_range(company_id)
+        )
+
+        payload = (
+            build_ifrs9_note_export_payload(
+                db,
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        payload.setdefault("meta", {})
+        payload["meta"].update(meta or {})
+        payload["meta"].update({
+            "statement":
+                "ifrs9_disclosure",
+            "report_name":
+                "Financial Instruments Disclosure",
+            "standard": "IFRS 9",
+            "period": {
+                "from":
+                    date_from.isoformat(),
+                "to":
+                    date_to.isoformat(),
+            },
+        })
+
+        return _export_statement_payload(
+            payload,
+            "ifrs9_financial_instruments",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "export_ifrs9_disclosure failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": str(error),
+        }), 400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/defined-contribution/export",
+    methods=["GET"],
+)
+def export_payroll_defined_contribution(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_defined_contribution",
+    )
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+        date_from,date_to,meta=resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+        if fmt=="excel":
+            fmt="xlsx"
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=(
+            db.build_payroll_defined_contribution_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key=
+                    "ias19_defined_contribution_disclosure",
+                period_from=date_from,
+                period_to=date_to,
+            )
+            payload=build_payroll_dc_note_payload(
+                note,
+                disclosure,
+            )
+            return export_fs_notes_pdf(
+                [payload],
+                filename=
+                    "defined_contribution_plans.pdf",
+            )
+
+        payload=build_payroll_dc_export_payload(
+            disclosure
+        )
+        return _export_statement_payload(
+            payload,
+            "defined_contribution_plans",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "defined-contribution export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/defined-benefit/export",
+    methods=["GET"],
+)
+def export_payroll_defined_benefit(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_defined_benefit",
+    )
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+        date_from,date_to,meta=resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+        as_of_raw=str(
+            request.args.get("as_of") or ""
+        ).strip()
+        as_of=(
+            datetime.strptime(
+                as_of_raw,
+                "%Y-%m-%d",
+            ).date()
+            if as_of_raw else date_to
+        )
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+        if fmt=="excel":
+            fmt="xlsx"
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=(
+            db.build_payroll_defined_benefit_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key=
+                    "ias19_defined_benefit_disclosure",
+                period_from=date_from,
+                period_to=date_to,
+            )
+            payload=build_payroll_db_note_payload(
+                note,
+                disclosure,
+            )
+            return export_fs_notes_pdf(
+                [payload],
+                filename="defined_benefit_plans.pdf",
+            )
+
+        payload=build_payroll_db_export_payload(
+            disclosure
+        )
+        return _export_statement_payload(
+            payload,
+            "defined_benefit_plans",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "defined-benefit export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/returns/<int:return_id>/export",
+    methods=["GET"],
+)
+def export_payroll_statutory_return(
+    company_id:int,
+    return_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "payroll_statutory_return",
+    )
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+        payload=db.payroll_statutory_return_export_payload(
+            company_id,
+            return_id,
+        )
+
+        return _export_statement_payload(
+            payload,
+            f"statutory_return_{return_id}",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "statutory return export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400

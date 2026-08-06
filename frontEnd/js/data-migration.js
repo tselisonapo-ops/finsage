@@ -34,6 +34,19 @@
       0
     );
 
+  function resolveCurrency(currency) {
+    return (
+      String(currency || "").trim().toUpperCase() ||
+      String(window.CURRENT_CURRENCY || "").trim().toUpperCase() ||
+      String(window.CURRENT_COMPANY?.currency || "").trim().toUpperCase() ||
+      String(document.getElementById("invCurrency")?.value || "").trim().toUpperCase() ||
+      String(document.getElementById("billCurrency")?.value || "").trim().toUpperCase() ||
+      "USD"
+    );
+  }
+
+  window.resolveCurrency = resolveCurrency;
+
   const sourceSystems = [
     {
       code: "sage_pastel",
@@ -101,16 +114,36 @@
     project: null,
     activity: [],
     error: "",
-    };
+
+    scope: {
+      migration_mode: "opening",
+      selected_count: 0,
+      entities: [],
+    },
+
+    scopeLoaded: false,
+    scopeDirty: false,
+    scopeSaving: false,
+
+    files: [],
+    datasets: [],
+
+    filesLoaded: false,
+    filesUploading: false,
+    datasetSavingId: null,
+
+    dragActive: false,
+    detection:{datasets:[],record_count:0,detected_count:0},
+    detectionLoaded:false,
+    detecting:false,
+  };
 
   function defaultProject() {
     const today = new Date()
       .toISOString()
       .slice(0, 10);
 
-    const currency =
-      window.CURRENT_COMPANY?.currency ||
-      "ZAR";
+    const currency = window.resolveCurrency?.() || "USD";
 
     return {
       id: null,
@@ -308,6 +341,40 @@
       root.addEventListener("click", handleClick);
       root.addEventListener("change", handleChange);
       root.addEventListener("input", handleInput);
+
+      const fileInput =
+        $("#mwFileInput");
+
+      fileInput?.addEventListener(
+        "change",
+        event => {
+          uploadFiles(
+            event.target.files
+          );
+
+          event.target.value = "";
+        }
+      );
+
+      root.addEventListener(
+        "dragenter",
+        handleDragEnter
+      );
+
+      root.addEventListener(
+        "dragover",
+        handleDragOver
+      );
+
+      root.addEventListener(
+        "dragleave",
+        handleDragLeave
+      );
+
+      root.addEventListener(
+        "drop",
+        handleDrop
+      );
     }
 
     if (!state.loaded && !state.initialising) {
@@ -458,7 +525,24 @@
         response?.project
       );
 
+      await loadScope(
+        state.project.id,
+        {
+          renderAfter: false,
+        }
+      );
+
+      await loadFiles(
+        state.project.id,
+        {
+          renderAfter: false,
+        }
+      );
+
+      await loadDetection(state.project.id,{renderAfter:false}); 
+
       state.dirty = false;
+      state.scopeDirty = false;
 
       log(
         `Loaded ${state.project.name}`
@@ -479,36 +563,933 @@
     }
   }
 
-  function handleClick(event) {
-    const stepButton = event.target.closest(
-      "[data-mw-step]"
-    );
+  async function loadFiles(
+    projectId,
+    {
+      renderAfter = true,
+    } = {}
+  ) {
+    const cid = companyId();
+    const id = Number(projectId);
 
-    if (stepButton) {
-      return go(
-        stepButton.dataset.mwStep
+    if (!cid || !id) {
+      state.files = [];
+      state.datasets = [];
+      state.filesLoaded = false;
+
+      if (renderAfter) render();
+      return;
+    }
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.migrations.projectFiles(
+          cid,
+          id
+        )
+      );
+
+      state.files =
+        response?.files || [];
+
+      state.datasets =
+        state.files.flatMap(
+          file =>
+            (file.datasets || []).map(
+              dataset => ({
+                ...dataset,
+                source_file_name:
+                  dataset.source_file_name ||
+                  file.original_name,
+              })
+            )
+        );
+
+      state.filesLoaded = true;
+
+    } catch (error) {
+      state.error = errorMessage(error);
+
+      console.error(
+        "[DataMigration] loadFiles failed",
+        error
       );
     }
 
-    const actionButton = event.target.closest(
-      "[data-mw-action]"
+    if (renderAfter) render();
+  }
+
+  async function uploadFiles(
+    fileList
+  ) {
+    const files = [
+      ...(fileList || []),
+    ];
+
+    if (!state.project?.id) {
+      notify(
+        "Save the migration project before uploading files."
+      );
+      return;
+    }
+
+    if (!files.length) return;
+
+    const allowed = new Set([
+      "csv",
+      "xlsx",
+      "xls",
+      "json",
+      "xml",
+      "sql",
+      "txt",
+    ]);
+
+    const invalid = files.find(file => {
+      const extension = String(
+        file.name || ""
+      )
+        .split(".")
+        .pop()
+        .toLowerCase();
+
+      return !allowed.has(extension);
+    });
+
+    if (invalid) {
+      notify(
+        `Unsupported file type: ${invalid.name}`
+      );
+      return;
+    }
+
+    const formData = new FormData();
+
+    files.forEach(file => {
+      formData.append(
+        "files",
+        file,
+        file.name
+      );
+    });
+
+    state.filesUploading = true;
+    state.error = "";
+    render();
+
+    try {
+      await apiFetch(
+        ENDPOINTS.migrations.projectFiles(
+          companyId(),
+          state.project.id
+        ),
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      await loadFiles(
+        state.project.id,
+        {
+          renderAfter: false,
+        }
+      );
+
+      state.project.status =
+        "files_uploaded";
+
+      log(
+        `Uploaded ${files.length} migration file(s)`
+      );
+
+      notify(
+        `${files.length} migration file(s) uploaded.`
+      );
+
+    } catch (error) {
+      state.error = errorMessage(error);
+
+      console.error(
+        "[DataMigration] uploadFiles failed",
+        error
+      );
+
+      notify(state.error);
+
+    } finally {
+      state.filesUploading = false;
+      render();
+    }
+  }
+
+  function updateDatasetLocal(datasetId,field,value){
+    const update=list=>{
+      const dataset=(list||[]).find(item=>Number(item.id)===Number(datasetId));
+      if(!dataset)return;
+      dataset[field]=value;
+      dataset._dirty=true;
+    };
+
+    update(state.datasets);
+    update(state.detection.datasets);
+    state.files.forEach(file=>update(file.datasets));
+
+    render();
+  }
+
+  async function saveDataset(button){
+    const datasetId=Number(button?.dataset?.mwDatasetId);
+    const dataset=state.datasets.find(item=>Number(item.id)===datasetId)||
+      state.detection.datasets.find(item=>Number(item.id)===datasetId);
+
+    if(!dataset)return;
+
+    if (!dataset.dataset_name?.trim()) {
+      notify(
+        "Dataset name is required."
+      );
+      return;
+    }
+
+    if (
+      Number(dataset.header_row) < 0
+    ) {
+      notify(
+        "Header row cannot be negative."
+      );
+      return;
+    }
+
+    if (
+      Number(dataset.data_start_row) < 1
+    ) {
+      notify(
+        "Data start row must be at least 1."
+      );
+      return;
+    }
+
+    state.datasetSavingId =
+      datasetId;
+
+    render();
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.migrations.projectDataset(
+          companyId(),
+          state.project.id,
+          datasetId
+        ),
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            dataset_name:
+              dataset.dataset_name.trim(),
+
+            entity_code:
+              dataset.entity_code || null,
+
+            header_row:
+              Number(
+                dataset.header_row || 0
+              ),
+
+            data_start_row:
+              Number(
+                dataset.data_start_row || 1
+              ),
+
+            data_end_row:
+              dataset.data_end_row
+                ? Number(
+                    dataset.data_end_row
+                  )
+                : null,
+
+            delimiter:
+              dataset.delimiter ?? null,
+
+            encoding:
+              dataset.encoding ?? null,
+
+            date_format:
+              dataset.date_format || null,
+
+            decimal_separator:
+              dataset.decimal_separator ?? null,
+
+            thousands_separator:
+              dataset.thousands_separator ?? null,
+
+            is_selected:
+              dataset.is_selected !== false,
+
+            settings_json:
+              dataset.settings_json || {},
+
+            metadata_json:
+              dataset.metadata_json || {},
+          }),
+        }
+      );
+
+      const updated=response?.dataset;
+
+      if(updated){
+        const sync=list=>{
+          const row=(list||[]).find(item=>Number(item.id)===datasetId);
+          if(row)Object.assign(row,updated,{_dirty:false});
+        };
+
+        sync(state.datasets);
+        sync(state.detection.datasets);
+        state.files.forEach(file=>sync(file.datasets));
+      }
+
+      log(
+        `Configured dataset ${dataset.dataset_name}`
+      );
+
+      notify(
+        "Dataset configuration saved."
+      );
+
+    } catch (error) {
+      state.error =
+        errorMessage(error);
+
+      notify(state.error);
+
+    } finally {
+      state.datasetSavingId =
+        null;
+
+      render();
+    }
+  }
+
+  function filesView() {
+    if (!state.project?.id) {
+      return `
+        <h2>Source files</h2>
+
+        <div class="mw-alert warn">
+          <strong>Project required:</strong>
+          Save the migration project before uploading files.
+        </div>
+      `;
+    }
+
+    return `
+      <div
+        class="mw-inline"
+        style="justify-content:space-between"
+      >
+        <div>
+          <h2>Source files</h2>
+
+          <p class="mw-muted">
+            Upload accounting exports, migration workbooks
+            and supporting source files.
+          </p>
+        </div>
+
+        <span class="mw-badge info">
+          ${state.files.length}
+          file${state.files.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div
+        class="mw-dropzone ${
+          state.dragActive
+            ? "drag"
+            : ""
+        }"
+        data-mw-action="choose-files"
+        style="margin-top:16px"
+      >
+        <div style="font-size:34px">
+          📤
+        </div>
+
+        <h3>
+          ${
+            state.filesUploading
+              ? "Uploading files…"
+              : "Choose or drop migration files"
+          }
+        </h3>
+
+        <p class="mw-muted">
+          CSV, XLSX, XLS, JSON, XML, SQL or TXT
+        </p>
+
+        <button
+          type="button"
+          class="mw-btn primary"
+          ${
+            state.filesUploading
+              ? "disabled"
+              : ""
+          }
+        >
+          ${
+            state.filesUploading
+              ? "Uploading…"
+              : "Browse files"
+          }
+        </button>
+      </div>
+
+      ${
+        state.files.length
+          ? state.files.map(
+              file =>
+                sourceFileCard(file)
+            ).join("")
+          : `
+            <div class="mw-empty">
+              No source files have been uploaded.
+            </div>
+          `
+      }
+    `;
+  }
+
+  function sourceFileCard(file) {
+    const datasets =
+      file.datasets || [];
+
+    return `
+      <div
+        class="mw-card"
+        style="margin-top:16px"
+      >
+        <div
+          class="mw-inline"
+          style="justify-content:space-between"
+        >
+          <div>
+            <h3>
+              ${esc(file.original_name)}
+            </h3>
+
+            <p class="mw-muted mw-small">
+              ${formatBytes(file.size_bytes)}
+              · ${esc(
+                String(
+                  file.extension || "file"
+                ).toUpperCase()
+              )}
+              · Uploaded
+              ${formatDateTime(
+                file.uploaded_at
+              )}
+            </p>
+          </div>
+
+          <div class="mw-inline">
+            <span class="mw-badge ${
+              file.file_status === "invalid"
+                ? "error"
+                : file.file_status === "detected"
+                  ? "ok"
+                  : "info"
+            }">
+              ${esc(
+                titleCase(
+                  file.file_status
+                )
+              )}
+            </span>
+
+            <button
+              type="button"
+              class="mw-btn danger"
+              data-mw-action="remove-file"
+              data-mw-file-id="${esc(file.id)}"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+
+        ${
+          datasets.length
+            ? datasets.map(
+                dataset =>
+                  datasetConfigurationCard(
+                    dataset
+                  )
+              ).join("")
+            : `
+              <div class="mw-empty">
+                No datasets were created for this file.
+              </div>
+            `
+        }
+      </div>
+    `;
+  }
+
+  function datasetConfigurationCard(
+    dataset
+  ) {
+    const scopeEntities =
+      state.scope.entities.filter(
+        entity =>
+          entity.is_selected
+      );
+
+    return `
+      <div
+        class="mw-list-item"
+        style="margin-top:12px"
+      >
+        <div
+          class="mw-inline"
+          style="justify-content:space-between"
+        >
+          <div>
+            <strong>
+              ${esc(dataset.dataset_name)}
+            </strong>
+
+            <div class="mw-muted mw-small">
+              ${
+                dataset.sheet_name
+                  ? `Worksheet: ${esc(dataset.sheet_name)}`
+                  : esc(
+                      titleCase(
+                        dataset.dataset_type
+                      )
+                    )
+              }
+            </div>
+          </div>
+
+          <span class="mw-badge ${
+            dataset.entity_code
+              ? "ok"
+              : "warn"
+          }">
+            ${
+              dataset.entity_code
+                ? "Configured"
+                : "Entity required"
+            }
+          </span>
+        </div>
+
+        <div
+          class="mw-grid-3"
+          style="margin-top:12px"
+        >
+          ${datasetInput({
+            dataset,
+            field: "dataset_name",
+            label: "Dataset name",
+          })}
+
+          ${datasetSelect({
+            dataset,
+            field: "entity_code",
+            label: "Migration entity",
+            first:
+              "Select migration entity",
+            options:
+              scopeEntities.map(
+                entity => [
+                  entity.code,
+                  entity.label,
+                ]
+              ),
+          })}
+
+          ${datasetInput({
+            dataset,
+            field: "header_row",
+            label: "Header row",
+            type: "number",
+            min: "0",
+          })}
+
+          ${datasetInput({
+            dataset,
+            field: "data_start_row",
+            label: "First data row",
+            type: "number",
+            min: "1",
+          })}
+
+          ${datasetInput({
+            dataset,
+            field: "data_end_row",
+            label: "Last data row",
+            type: "number",
+            min: "1",
+            placeholder: "Automatic",
+          })}
+
+          ${datasetSelect({
+            dataset,
+            field: "encoding",
+            label: "Encoding",
+            first: "Automatic",
+            options: [
+              ["utf-8", "UTF-8"],
+              ["utf-8-sig", "UTF-8 with BOM"],
+              ["windows-1252", "Windows-1252"],
+              ["iso-8859-1", "ISO-8859-1"],
+            ],
+          })}
+
+          ${datasetSelect({
+            dataset,
+            field: "delimiter",
+            label: "Delimiter",
+            first: "Not applicable",
+            options: [
+              [",", "Comma"],
+              [";", "Semicolon"],
+              ["\t", "Tab"],
+              ["|", "Pipe"],
+            ],
+          })}
+
+          ${datasetSelect({
+            dataset,
+            field: "date_format",
+            label: "Date format",
+            first: "Project default",
+            options: [
+              ["YYYY-MM-DD", "YYYY-MM-DD"],
+              ["DD/MM/YYYY", "DD/MM/YYYY"],
+              ["MM/DD/YYYY", "MM/DD/YYYY"],
+              ["DD-MM-YYYY", "DD-MM-YYYY"],
+            ],
+          })}
+
+          <div class="mw-field">
+            <label>Include dataset</label>
+
+            <label class="mw-check">
+              <input
+                type="checkbox"
+                data-mw-dataset-field="is_selected"
+                data-mw-dataset-id="${esc(dataset.id)}"
+                ${
+                  dataset.is_selected !== false
+                    ? "checked"
+                    : ""
+                }
+              >
+
+              <span>
+                Use this dataset
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div
+          class="mw-inline"
+          style="margin-top:12px;justify-content:flex-end"
+        >
+          <button
+            type="button"
+            class="mw-btn primary"
+            data-mw-action="save-dataset"
+            data-mw-dataset-id="${esc(dataset.id)}"
+            ${
+              state.datasetSavingId ===
+              Number(dataset.id)
+                ? "disabled"
+                : ""
+            }
+          >
+            ${
+              state.datasetSavingId ===
+              Number(dataset.id)
+                ? "Saving…"
+                : dataset._dirty
+                  ? "Save dataset"
+                  : "Configured"
+            }
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function datasetInput({
+    dataset,
+    field,
+    label,
+    type = "text",
+    min = "",
+    placeholder = "",
+  }) {
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input
+          class="mw-input"
+          type="${esc(type)}"
+          value="${esc(
+            dataset[field] ?? ""
+          )}"
+          placeholder="${esc(placeholder)}"
+          data-mw-dataset-field="${esc(field)}"
+          data-mw-dataset-id="${esc(dataset.id)}"
+          ${min !== "" ? `min="${esc(min)}"` : ""}
+        >
+      </div>
+    `;
+  }
+
+
+  function datasetSelect({
+    dataset,
+    field,
+    label,
+    options,
+    first = "",
+  }) {
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select
+          class="mw-select"
+          data-mw-dataset-field="${esc(field)}"
+          data-mw-dataset-id="${esc(dataset.id)}"
+        >
+          <option value="">
+            ${esc(first)}
+          </option>
+
+          ${options.map(
+            ([value, optionLabel]) => `
+              <option
+                value="${esc(value)}"
+                ${
+                  String(
+                    dataset[field] ?? ""
+                  ) === String(value)
+                    ? "selected"
+                    : ""
+                }
+              >
+                ${esc(optionLabel)}
+              </option>
+            `
+          ).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(
+      value || 0
     );
 
-    if (!actionButton) return;
+    if (!bytes) return "0 B";
 
-    const action =
-      actionButton.dataset.mwAction;
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
 
-    const actions = {
-      "new-project": newProject,
-      "save-project": saveProject,
-      "cancel-project": cancelProject,
-      "reload-project": reloadCurrentProject,
+    if (bytes < 1024 * 1024) {
+      return `${
+        (bytes / 1024).toFixed(1)
+      } KB`;
+    }
+
+    return `${
+      (
+        bytes /
+        (1024 * 1024)
+      ).toFixed(1)
+    } MB`;
+  }
+
+
+  function formatDateTime(value) {
+    if (!value) return "";
+
+    const parsed = new Date(value);
+
+    if (
+      Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return String(value);
+    }
+
+    return parsed.toLocaleString();
+  }
+
+  async function removeFile(
+    button
+  ) {
+    const fileId = Number(
+      button?.dataset?.mwFileId
+    );
+
+    const file = state.files.find(
+      item =>
+        Number(item.id) === fileId
+    );
+
+    if (!file) return;
+
+    if (
+      !confirm(
+        `Remove "${file.original_name}" from this migration project?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.migrations.projectFile(
+          companyId(),
+          state.project.id,
+          fileId
+        ),
+        {
+          method: "DELETE",
+        }
+      );
+
+      await loadFiles(
+        state.project.id,
+        {
+          renderAfter: false,
+        }
+      );
+
+      log(
+        `Removed ${file.original_name}`
+      );
+
+      render();
+
+    } catch (error) {
+      state.error = errorMessage(error);
+      notify(state.error);
+      render();
+    }
+  }
+
+  function handleDragEnter(event) {
+    if (
+      !event.target.closest(
+        ".mw-dropzone"
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    state.dragActive = true;
+    render();
+  }
+
+
+  function handleDragOver(event) {
+    if (
+      !event.target.closest(
+        ".mw-dropzone"
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect =
+      "copy";
+  }
+
+
+  function handleDragLeave(event) {
+    if (
+      !event.target.closest(
+        ".mw-dropzone"
+      )
+    ) {
+      return;
+    }
+
+    const dropzone =
+      event.target.closest(
+        ".mw-dropzone"
+      );
+
+    if (
+      dropzone.contains(
+        event.relatedTarget
+      )
+    ) {
+      return;
+    }
+
+    state.dragActive = false;
+    render();
+  }
+
+
+  function handleDrop(event) {
+    if (
+      !event.target.closest(
+        ".mw-dropzone"
+      )
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+
+    state.dragActive = false;
+
+    uploadFiles(
+      event.dataTransfer.files
+    );
+  }
+
+  function handleClick(event){
+    const stepButton=event.target.closest("[data-mw-step]");
+    if(stepButton)return go(stepButton.dataset.mwStep);
+
+    const actionButton=event.target.closest("[data-mw-action]");
+    if(!actionButton)return;
+
+    const action=actionButton.dataset.mwAction;
+    const actions={
+      "new-project":newProject,
+      "save-project":saveProject,
+      "cancel-project":cancelProject,
+      "reload-project":reloadCurrentProject,
+      "save-scope":saveScope,
+      "select-recommended-scope":selectRecommendedScope,
+      "clear-optional-scope":clearOptionalScope,
+      "choose-files":()=>$("#mwFileInput")?.click(),
+      "remove-file":removeFile,
+      "save-dataset":saveDataset,
+      "run-detection":runDetection,
       previous,
       next,
     };
 
-    actions[action]?.();
+    actions[action]?.(actionButton);
   }
 
   function handleChange(event) {
@@ -570,6 +1551,43 @@
         element.dataset.mwSourceField,
         element.value
       );
+    }
+
+    if(element.matches("[data-mw-scope-entity]")){
+      toggleScopeEntity(element.dataset.mwScopeEntity,element.checked);
+      return;
+    }
+
+    if(element.matches("[data-mw-scope-history]")){
+      updateScopeEntity(element.dataset.mwScopeHistory,"history_mode",element.value);
+      return;
+    }
+
+    if(element.matches("[data-mw-scope-import]")){
+      updateScopeEntity(element.dataset.mwScopeImport,"import_mode",element.value);
+      return;
+    }
+    if (
+      element.matches(
+        "[data-mw-dataset-field]"
+      )
+    ) {
+      const datasetId = Number(
+        element.dataset.mwDatasetId
+      );
+
+      const field =
+        element.dataset.mwDatasetField;
+
+      updateDatasetLocal(
+        datasetId,
+        field,
+        element.type === "checkbox"
+          ? element.checked
+          : element.value
+      );
+
+      return;
     }
   }
 
@@ -746,8 +1764,855 @@
     state.error = "";
     state.dirty = true;
 
+    state.scope = {
+      migration_mode: "opening",
+      selected_count: 0,
+      entities: [],
+    };
+
+    state.scopeLoaded = false;
+    state.scopeDirty = false;
+    state.files = [];
+    state.datasets = [];
+    state.filesLoaded = false;
+    state.filesUploading = false;
+    state.datasetSavingId = null;
+    state.dragActive = false;
+    state.detection={datasets:[],record_count:0,detected_count:0};
+    state.detectionLoaded=false;
+    state.detecting=false;
     log("New migration project prepared");
     render();
+  }
+
+  async function loadScope(
+    projectId,
+    {
+      renderAfter = true,
+    } = {}
+  ) {
+    const cid = companyId();
+    const id = Number(projectId);
+
+    if (!cid || !id) {
+      state.scope = {
+        migration_mode:
+          state.project?.migration_mode ||
+          "opening",
+        selected_count: 0,
+        entities: [],
+      };
+
+      state.scopeLoaded = false;
+      state.scopeDirty = false;
+
+      if (renderAfter) render();
+      return;
+    }
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.migrations.projectScope(
+          cid,
+          id
+        )
+      );
+
+      state.scope = response?.scope || {
+        migration_mode:
+          state.project?.migration_mode ||
+          "opening",
+        selected_count: 0,
+        entities: [],
+      };
+
+      state.scopeLoaded = true;
+      state.scopeDirty = false;
+
+    } catch (error) {
+      state.error = errorMessage(error);
+
+      console.error(
+        "[DataMigration] loadScope failed",
+        error
+      );
+    }
+
+    if (renderAfter) render();
+  }
+
+  function scopeEntity(code) {
+    return state.scope.entities.find(
+      entity => entity.code === code
+    );
+  }
+
+  async function loadDetection(projectId,{renderAfter=true}={}){
+    if(!projectId){state.detection={datasets:[],record_count:0,detected_count:0};state.detectionLoaded=false;if(renderAfter)render();return}
+    try{
+      const response=await apiFetch(ENDPOINTS.migrations.projectDetection(companyId(),projectId));
+      state.detection=response?.detection||{datasets:[],record_count:0,detected_count:0};
+      state.detectionLoaded=true;
+    }catch(error){state.error=errorMessage(error)}
+    if(renderAfter)render();
+  }
+
+  async function runDetection(){
+    if(!state.project?.id||!state.files.length)return notify("Upload source files first.");
+    state.detecting=true;state.error="";render();
+    try{
+      await apiFetch(ENDPOINTS.migrations.projectDetection(companyId(),state.project.id),{method:"POST",body:"{}"});
+      await loadFiles(state.project.id,{renderAfter:false});
+      await loadDetection(state.project.id,{renderAfter:false});
+      state.project.status="detected";
+      log(`Detection completed for ${state.detection.detected_count} dataset(s)`);
+    }catch(error){state.error=errorMessage(error);notify(state.error)}
+    finally{state.detecting=false;render()}
+  }
+
+  function detectionView(){
+    const datasets=state.detection.datasets||[];
+    return `
+      ${heading("File and entity detection","Inspect worksheets, headers, columns, samples and probable FinSage entities.",
+        `<button class="mw-btn primary" data-mw-action="run-detection" ${state.detecting?"disabled":""}>${state.detecting?"Detecting…":"Run detection"}</button>`)}
+      ${datasets.length?datasets.map(detectionDatasetCard).join(""):`<div class="mw-empty">Run detection after configuring source files.</div>`}
+    `;
+  }
+
+  function detectionDatasetCard(dataset){
+    const candidates=dataset.candidates||[];
+    const sampleRows=dataset.sample_rows||[];
+
+    return `
+      <div class="mw-card" style="margin-top:16px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <h3>${esc(dataset.dataset_name)}</h3>
+            <p class="mw-muted mw-small">
+              ${esc(dataset.source_file_name||"")} ·
+              ${Number(dataset.record_count||0).toLocaleString()} records ·
+              ${dataset.column_count||0} columns
+            </p>
+          </div>
+
+          <span class="mw-badge ${dataset.entity_code?"ok":"warn"}">
+            ${dataset.entity_code?esc(dataset.entity_label||dataset.entity_code):"Entity not detected"}
+          </span>
+        </div>
+
+        <div class="mw-grid-2" style="margin-top:12px">
+          <div class="mw-field">
+            <label>Detected entity</label>
+            ${datasetEntitySelect(dataset)}
+          </div>
+
+          <div class="mw-field">
+            <label>Confidence</label>
+            <input class="mw-input" readonly value="${Number(dataset.detection_confidence||0).toFixed(1)}%">
+          </div>
+        </div>
+
+        ${table(
+          ["Column","Detected type","Samples"],
+          (dataset.columns||[]).map(column=>[
+            esc(column.source_name),
+            esc(column.detected_type||"text"),
+            esc((column.sample_values_json||[]).join(", "))
+          ]),
+          "No columns detected."
+        )}
+
+        ${sampleRows.length?`
+          <details style="margin-top:12px">
+            <summary class="mw-btn">Preview sample rows</summary>
+            <pre class="mw-log" style="margin-top:10px">${esc(JSON.stringify(sampleRows,null,2))}</pre>
+          </details>
+        `:""}
+
+        ${candidates.length?`
+          <p class="mw-muted mw-small" style="margin-top:10px">
+            Other suggestions:
+            ${candidates.slice(1,4).map(item=>
+              `${esc(item.entity_code)} (${Number(item.confidence).toFixed(0)}%)`
+            ).join(", ")||"None"}
+          </p>
+        `:""}
+
+        <div class="mw-inline" style="justify-content:flex-end;margin-top:12px">
+          <button
+            type="button"
+            class="mw-btn primary"
+            data-mw-action="save-dataset"
+            data-mw-dataset-id="${esc(dataset.id)}"
+            ${state.datasetSavingId===Number(dataset.id)?"disabled":""}
+          >
+            ${state.datasetSavingId===Number(dataset.id)
+              ?"Saving…"
+              :dataset._dirty
+                ?"Save detection override"
+                :"Detection confirmed"}
+          </button>
+        </div>
+      </div>
+    `;
+}
+
+  function datasetEntitySelect(dataset){
+    const entities=state.scope.entities.filter(entity=>entity.is_selected);
+    return `<select class="mw-select" data-mw-dataset-field="entity_code" data-mw-dataset-id="${esc(dataset.id)}">
+      <option value="">Select entity</option>
+      ${entities.map(entity=>`<option value="${esc(entity.code)}" ${dataset.entity_code===entity.code?"selected":""}>${esc(entity.label)}</option>`).join("")}
+    </select>`;
+  }
+
+  function requiredDependencies(code) {
+    const entity = scopeEntity(code);
+
+    return (
+      entity?.dependencies || []
+    )
+      .filter(
+        dependency =>
+          dependency.type === "required"
+      )
+      .map(
+        dependency => dependency.code
+      );
+  }
+
+
+  function dependencyClosure(codes) {
+    const selected = new Set(codes);
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+
+      [...selected].forEach(code => {
+        requiredDependencies(code)
+          .forEach(dependencyCode => {
+            if (!selected.has(dependencyCode)) {
+              selected.add(dependencyCode);
+              changed = true;
+            }
+          });
+      });
+    }
+
+    return selected;
+  }
+
+
+  function toggleScopeEntity(
+    code,
+    selected
+  ) {
+    const entity = scopeEntity(code);
+
+    if (!entity) return;
+
+    if (
+      !selected &&
+      entity.is_required
+    ) {
+      notify(
+        `${entity.label} is required and cannot be removed.`
+      );
+
+      render();
+      return;
+    }
+
+    entity.is_selected = selected;
+    entity.selection_source = "manual";
+
+    if (selected) {
+      const closure = dependencyClosure([
+        code,
+      ]);
+
+      closure.forEach(dependencyCode => {
+        const dependency =
+          scopeEntity(dependencyCode);
+
+        if (
+          dependency &&
+          !dependency.is_selected
+        ) {
+          dependency.is_selected = true;
+          dependency.selection_source =
+            dependency.is_required
+              ? "system"
+              : "dependency";
+        }
+      });
+    } else {
+      const dependent = state.scope.entities.find(
+        candidate =>
+          candidate.is_selected &&
+          requiredDependencies(
+            candidate.code
+          ).includes(code)
+      );
+
+      if (dependent) {
+        entity.is_selected = true;
+
+        notify(
+          `${entity.label} is required by ${dependent.label}.`
+        );
+
+        render();
+        return;
+      }
+    }
+
+    recalculateScope();
+  }
+
+
+  function updateScopeEntity(
+    code,
+    field,
+    value
+  ) {
+    const entity = scopeEntity(code);
+
+    if (!entity) return;
+
+    entity[field] = value;
+    entity.selection_source =
+      entity.selection_source || "manual";
+
+    recalculateScope();
+  }
+
+
+  function recalculateScope() {
+    state.scope.selected_count =
+      state.scope.entities.filter(
+        entity => entity.is_selected
+      ).length;
+
+    state.scopeDirty = true;
+    render();
+  }
+
+
+  function selectRecommendedScope() {
+    const recommended = new Set([
+      "currencies",
+      "tax_codes",
+      "chart_of_accounts",
+      "payment_terms",
+      "bank_accounts",
+      "customers",
+      "sales_invoices",
+      "customer_receipts",
+      "customer_allocations",
+      "vendors",
+      "supplier_bills",
+      "supplier_payments",
+      "supplier_allocations",
+      "opening_trial_balance",
+      "products",
+      "inventory_opening",
+      "asset_classes",
+      "fixed_assets",
+    ]);
+
+    const closure = dependencyClosure(
+      recommended
+    );
+
+    state.scope.entities.forEach(entity => {
+      entity.is_selected =
+        closure.has(entity.code) ||
+        entity.is_required;
+
+      entity.selection_source =
+        entity.is_required
+          ? "system"
+          : entity.is_selected
+            ? "default"
+            : "manual";
+    });
+
+    recalculateScope();
+  }
+
+
+  function clearOptionalScope() {
+    state.scope.entities.forEach(entity => {
+      entity.is_selected =
+        Boolean(entity.is_required);
+
+      entity.selection_source =
+        entity.is_required
+          ? "system"
+          : "manual";
+    });
+
+    const closure = dependencyClosure(
+      state.scope.entities
+        .filter(entity => entity.is_selected)
+        .map(entity => entity.code)
+    );
+
+    state.scope.entities.forEach(entity => {
+      if (closure.has(entity.code)) {
+        entity.is_selected = true;
+
+        if (!entity.is_required) {
+          entity.selection_source =
+            "dependency";
+        }
+      }
+    });
+
+    recalculateScope();
+  }
+
+  async function saveScope() {
+    if (
+      state.scopeSaving ||
+      !state.project?.id
+    ) {
+      if (!state.project?.id) {
+        notify(
+          "Save the migration project before saving its scope."
+        );
+      }
+
+      return;
+    }
+
+    const selected = state.scope.entities.filter(
+      entity => entity.is_selected
+    );
+
+    if (!selected.length) {
+      notify(
+        "Select at least one migration entity."
+      );
+      return;
+    }
+
+    state.scopeSaving = true;
+    state.error = "";
+    render();
+
+    try {
+      const response = await apiFetch(
+        ENDPOINTS.migrations.projectScope(
+          companyId(),
+          state.project.id
+        ),
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            entities:
+              state.scope.entities.map(
+                entity => ({
+                  code: entity.code,
+                  is_selected:
+                    Boolean(
+                      entity.is_selected
+                    ),
+                  history_mode:
+                    entity.history_mode,
+                  import_mode:
+                    entity.import_mode,
+                  source_dataset_name:
+                    entity.source_dataset_name ||
+                    null,
+                  settings_json:
+                    entity.settings_json || {},
+                  metadata_json:
+                    entity.metadata_json || {},
+                })
+              ),
+          }),
+        }
+      );
+
+      state.scope = response?.scope || state.scope;
+      state.scopeDirty = false;
+
+      if (
+        state.project.status === "draft"
+      ) {
+        state.project.status =
+          "configured";
+      }
+
+      await refreshProjects(
+        state.project.id
+      );
+
+      log(
+        `Saved migration scope with ${state.scope.selected_count} selected entities`
+      );
+
+      notify(
+        "Migration scope saved."
+      );
+
+    } catch (error) {
+      state.error = errorMessage(error);
+
+      console.error(
+        "[DataMigration] saveScope failed",
+        error
+      );
+
+      notify(state.error);
+
+    } finally {
+      state.scopeSaving = false;
+      render();
+    }
+  }
+
+  function scopeView() {
+    if (!state.project?.id) {
+      return `
+        <h2>Migration scope</h2>
+
+        <div class="mw-alert warn">
+          <strong>Project required:</strong>
+          Save the migration project before selecting
+          migration entities.
+        </div>
+      `;
+    }
+
+    if (!state.scopeLoaded) {
+      return `
+        <div class="mw-empty">
+          Loading migration scope…
+        </div>
+      `;
+    }
+
+    const groups = {};
+
+    state.scope.entities.forEach(entity => {
+      const key = entity.group_code;
+
+      if (!groups[key]) {
+        groups[key] = {
+          name: entity.group_name,
+          entities: [],
+        };
+      }
+
+      groups[key].entities.push(entity);
+    });
+
+    return `
+      <div
+        class="mw-inline"
+        style="justify-content:space-between"
+      >
+        <div>
+          <h2>Migration scope</h2>
+
+          <p class="mw-muted">
+            Select the records to migrate.
+            Required dependencies are selected automatically.
+          </p>
+        </div>
+
+        <div class="mw-inline">
+          <button
+            type="button"
+            class="mw-btn"
+            data-mw-action="clear-optional-scope"
+          >
+            Clear optional
+          </button>
+
+          <button
+            type="button"
+            class="mw-btn"
+            data-mw-action="select-recommended-scope"
+          >
+            Select recommended
+          </button>
+
+          <button
+            type="button"
+            class="mw-btn primary"
+            data-mw-action="save-scope"
+            ${
+              state.scopeSaving
+                ? "disabled"
+                : ""
+            }
+          >
+            ${
+              state.scopeSaving
+                ? "Saving…"
+                : state.scopeDirty
+                  ? "Save scope"
+                  : "Scope saved"
+            }
+          </button>
+        </div>
+      </div>
+
+      <div
+        class="mw-alert ${
+          state.scope.selected_count
+            ? "ok"
+            : "warn"
+        }"
+        style="margin-top:14px"
+      >
+        <strong>
+          ${state.scope.selected_count}
+          migration entities selected.
+        </strong>
+
+        Required dependencies will be included
+        automatically when the scope is saved.
+      </div>
+
+      ${Object.values(groups).map(group => `
+        <div style="margin-top:20px">
+          <h3>${esc(group.name)}</h3>
+
+          <div class="mw-grid-2">
+            ${group.entities.map(
+              entity =>
+                scopeEntityCard(entity)
+            ).join("")}
+          </div>
+        </div>
+      `).join("")}
+    `;
+  }
+
+  function scopeEntityCard(entity) {
+    const requiredDependenciesList =
+      (entity.dependencies || []).filter(
+        dependency =>
+          dependency.type === "required"
+      );
+
+    const recommendedDependenciesList =
+      (entity.dependencies || []).filter(
+        dependency =>
+          dependency.type === "recommended"
+      );
+
+    const disabled =
+      entity.is_required ||
+      entity.selection_source === "system";
+
+    return `
+      <div class="mw-card">
+        <div
+          class="mw-inline"
+          style="justify-content:space-between"
+        >
+          <label class="mw-check">
+            <input
+              type="checkbox"
+              data-mw-scope-entity="${esc(entity.code)}"
+              ${
+                entity.is_selected
+                  ? "checked"
+                  : ""
+              }
+              ${disabled ? "disabled" : ""}
+            >
+
+            <span>
+              <strong>${esc(entity.label)}</strong>
+
+              ${
+                entity.is_required
+                  ? `
+                    <span class="mw-badge info">
+                      Required
+                    </span>
+                  `
+                  : entity.selection_source === "dependency"
+                    ? `
+                      <span class="mw-badge warn">
+                        Dependency
+                      </span>
+                    `
+                    : ""
+              }
+            </span>
+          </label>
+        </div>
+
+        <p class="mw-muted mw-small">
+          ${esc(entity.description || "")}
+        </p>
+
+        <div class="mw-grid-2">
+          <div class="mw-field">
+            <label>History</label>
+
+            <select
+              class="mw-select"
+              data-mw-scope-history="${esc(entity.code)}"
+              ${
+                entity.is_selected
+                  ? ""
+                  : "disabled"
+              }
+            >
+              ${scopeHistoryOptions(entity)}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Import mode</label>
+
+            <select
+              class="mw-select"
+              data-mw-scope-import="${esc(entity.code)}"
+              ${
+                entity.is_selected
+                  ? ""
+                  : "disabled"
+              }
+            >
+              ${[
+                [
+                  "create_only",
+                  "Create only",
+                ],
+                [
+                  "update_only",
+                  "Update only",
+                ],
+                [
+                  "create_or_update",
+                  "Create or update",
+                ],
+                [
+                  "replace_batch",
+                  "Replace batch",
+                ],
+              ].map(([value, label]) => `
+                <option
+                  value="${value}"
+                  ${
+                    entity.import_mode === value
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  ${label}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+        </div>
+
+        ${
+          requiredDependenciesList.length
+            ? `
+              <div
+                class="mw-alert warn"
+                style="margin-top:12px"
+              >
+                <strong>Requires:</strong>
+                ${requiredDependenciesList.map(
+                  dependency => {
+                    const target =
+                      scopeEntity(
+                        dependency.code
+                      );
+
+                    return esc(
+                      target?.label ||
+                      dependency.code
+                    );
+                  }
+                ).join(", ")}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          recommendedDependenciesList.length
+            ? `
+              <p
+                class="mw-muted mw-small"
+                style="margin-top:10px"
+              >
+                Recommended:
+                ${recommendedDependenciesList.map(
+                  dependency => {
+                    const target =
+                      scopeEntity(
+                        dependency.code
+                      );
+
+                    return esc(
+                      target?.label ||
+                      dependency.code
+                    );
+                  }
+                ).join(", ")}
+              </p>
+            `
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  function scopeHistoryOptions(entity) {
+    const options = [
+      [
+        "opening",
+        "Opening balances",
+        entity.supports_opening,
+      ],
+      [
+        "current_year",
+        "Current financial year",
+        entity.supports_current_year,
+      ],
+      [
+        "two_years",
+        "Two years",
+        entity.supports_two_years,
+      ],
+      [
+        "full_history",
+        "Full history",
+        entity.supports_full_history,
+      ],
+    ];
+
+    return options
+      .filter(([, , supported]) =>
+        Boolean(supported)
+      )
+      .map(([value, label]) => `
+        <option
+          value="${value}"
+          ${
+            entity.history_mode === value
+              ? "selected"
+              : ""
+          }
+        >
+          ${label}
+        </option>
+      `)
+      .join("");
   }
 
   async function saveProject() {
@@ -897,6 +2762,13 @@
         response?.project
       );
 
+      await loadScope(
+        state.project.id,
+        {
+          renderAfter: false,
+        }
+      );
+
       await refreshProjects(
         state.project.id
       );
@@ -959,9 +2831,9 @@
       cutover_date:
         project.cutover_date,
 
-      default_currency: String(
-        project.default_currency || ""
-      ).trim().toUpperCase() || null,
+      default_currency: window.resolveCurrency?.(
+        project.default_currency
+      ) || "USD",
 
       source_timezone:
         project.source_timezone || null,
@@ -1037,10 +2909,10 @@
           project.source_tax_regime ||
           null,
 
-        default_currency:
+        default_currency: window.resolveCurrency?.(
           source.default_currency ||
-          project.default_currency ||
-          null,
+          project.default_currency
+        ) || "USD",
 
         source_timezone:
           source.source_timezone ||
@@ -1240,34 +3112,14 @@
     }
   }
 
-  function renderSummary() {
-    const project =
-      state.project || defaultProject();
+  function renderSummary(){
+    const project=state.project||defaultProject();
 
-    setText(
-      "mwStatus",
-      titleCase(project.status || "draft")
-    );
-
-    setText(
-      "mwFileCount",
-      "0"
-    );
-
-    setText(
-      "mwRecordCount",
-      "0"
-    );
-
-    setText(
-      "mwErrorCount",
-      "0"
-    );
-
-    setText(
-      "mwReconStatus",
-      "Not run"
-    );
+    setText("mwStatus",titleCase(project.status||"draft"));
+    setText("mwFileCount",String(state.files.length));
+    setText("mwRecordCount",Number(state.detection.record_count||0).toLocaleString());
+    setText("mwErrorCount","0");
+    setText("mwReconStatus","Not run");
   }
 
   function renderStepper() {
@@ -1346,9 +3198,9 @@
     const views = {
       project: projectView,
       source: sourceView,
-      scope: futureView,
-      files: futureView,
-      detect: futureView,
+      scope: scopeView,
+      files: filesView,
+      detect: detectionView,
       mapping: futureView,
       accounts: futureView,
       validate: futureView,
@@ -1737,10 +3589,41 @@
       String(project.default_currency || "").trim()
     );
 
-    const checks = [
+    const scopeConfigured = Boolean(
+      state.project?.id &&
+      state.scopeLoaded &&
+      state.scope.selected_count > 0 &&
+      !state.scopeDirty
+    );
+
+    const filesUploaded = Boolean(
+      state.filesLoaded &&
+      state.files.length > 0
+    );
+
+    const datasetsConfigured = Boolean(
+      state.datasets.length > 0 &&
+      state.datasets
+        .filter(dataset => dataset.is_selected !== false)
+        .every(dataset => Boolean(dataset.entity_code) && !dataset._dirty)
+    );
+
+    const detectionComplete=Boolean(
+      state.detectionLoaded &&
+      state.detection.detected_count>0 &&
+      (state.detection.datasets||[])
+        .filter(dataset=>dataset.is_selected!==false)
+        .every(dataset=>dataset.entity_code&&!dataset._dirty)
+    );
+
+    const checks=[
       projectSaved,
       projectConfigured,
       sourceConfigured,
+      scopeConfigured,
+      filesUploaded,
+      datasetsConfigured,
+      detectionComplete,
     ];
 
     const percentage = Math.round(
@@ -1759,28 +3642,22 @@
 
     setText(
       "mwReadinessText",
-      `${percentage}% of Phase 1 complete`
+      `${percentage}% of project setup complete`
     );
+
 
     const controls =
       $("#mwControls");
 
     if (controls) {
-      controls.innerHTML = [
-        control(
-          "Project saved",
-          projectSaved
-        ),
-
-        control(
-          "Project configured",
-          projectConfigured
-        ),
-
-        control(
-          "Source configured",
-          sourceConfigured
-        ),
+      controls.innerHTML=[
+        control("Project saved",projectSaved),
+        control("Project configured",projectConfigured),
+        control("Source configured",sourceConfigured),
+        control("Migration scope saved",scopeConfigured),
+        control("Source files uploaded",filesUploaded),
+        control("Datasets configured",datasetsConfigured),
+        control("Source detection completed",detectionComplete),
       ].join("");
     }
 
@@ -1904,31 +3781,62 @@
     }
   }
 
-  function next() {
-    const index =
-      steps.findIndex(
-        ([id]) =>
-          id === state.activeStep
-      );
+  function next(){
+    const index=steps.findIndex(([id])=>id===state.activeStep);
+    if(index<0||index>=steps.length-1)return;
 
-    if (
-      index >= 0 &&
-      index < steps.length - 1
-    ) {
-      if (
-        index < 2 &&
-        !state.project?.id
-      ) {
-        notify(
-          "Save the migration project before continuing."
-        );
+    if(state.activeStep==="project"&&(!state.project?.id||state.dirty)){
+      notify("Save the migration project before continuing.");
+      return;
+    }
+
+    if(state.activeStep==="source"&&(!state.project?.id||state.dirty)){
+      notify("Save the source configuration before continuing.");
+      return;
+    }
+
+    if(state.activeStep==="scope"&&(
+      !state.scopeLoaded||
+      !state.scope.selected_count||
+      state.scopeDirty
+    )){
+      notify("Select and save the migration scope before continuing.");
+      return;
+    }
+
+    if(state.activeStep==="files"){
+      if(!state.files.length){
+        notify("Upload at least one migration source file before continuing.");
         return;
       }
 
-      go(
-        steps[index + 1][0]
-      );
+      const incomplete=state.datasets
+        .filter(dataset=>dataset.is_selected!==false)
+        .find(dataset=>!dataset.entity_code||dataset._dirty);
+
+      if(incomplete){
+        notify(`Configure and save the dataset "${incomplete.dataset_name}" before continuing.`);
+        return;
+      }
     }
+
+    if(state.activeStep==="detect"){
+      if(!state.detection.detected_count){
+        notify("Run source detection before continuing.");
+        return;
+      }
+
+      const unresolved=(state.detection.datasets||[])
+        .filter(dataset=>dataset.is_selected!==false)
+        .find(dataset=>!dataset.entity_code||dataset._dirty);
+
+      if(unresolved){
+        notify(`Select and save an entity for "${unresolved.dataset_name}" before continuing.`);
+        return;
+      }
+    }
+
+    go(steps[index+1][0]);
   }
 
   function inputField({
@@ -2038,6 +3946,7 @@
       );
   }
 
+  
   window.bindDataMigrationScreen =
     bindDataMigrationScreen;
 

@@ -1529,6 +1529,2140 @@ def build_revenue_note_export_payload(policy_note, disclosure_data):
         "sections": sections,
     }
 
+def build_payroll_employee_cost_note_export_payload(
+    note,
+    disclosure,
+):
+    note=note or {}
+    disclosure=disclosure or {}
+
+    sections_data=disclosure.get("sections") or {}
+    summary=disclosure.get("summary") or {}
+    totals=disclosure.get("totals") or {}
+
+    sections=[]
+
+    earnings=(
+        sections_data.get("earnings") or {}
+    ).get("rows") or []
+
+    if earnings:
+        rows=[
+            {
+                "label":
+                    row.get("label")
+                    or row.get("code")
+                    or "Employee cost",
+                "values":{
+                    "amount":_money(
+                        row.get("amount")
+                    ),
+                },
+                "row_type":
+                    row.get("row_type")
+                    or "normal",
+            }
+            for row in earnings
+        ]
+
+        rows.append({
+            "label":"Short-term employee benefits",
+            "values":{
+                "amount":_money(
+                    totals.get(
+                        "short_term_employee_benefits"
+                    )
+                ),
+            },
+            "row_type":"subtotal",
+        })
+
+        sections.append({
+            "title":"Short-term employee benefits",
+            "rows":rows,
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        })
+
+    contributions=(
+        sections_data.get(
+            "employer_contributions"
+        ) or {}
+    ).get("rows") or []
+
+    if contributions:
+        rows=[
+            {
+                "label":
+                    row.get("label")
+                    or row.get("code")
+                    or "Employer contribution",
+                "values":{
+                    "amount":_money(
+                        row.get("amount")
+                    ),
+                },
+                "row_type":"normal",
+            }
+            for row in contributions
+        ]
+
+        rows.append({
+            "label":"Employer contributions",
+            "values":{
+                "amount":_money(
+                    totals.get(
+                        "employer_contributions"
+                    )
+                ),
+            },
+            "row_type":"subtotal",
+        })
+
+        sections.append({
+            "title":"Employer contributions",
+            "rows":rows,
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        })
+
+    departments=(
+        sections_data.get(
+            "department_analysis"
+        ) or {}
+    ).get("rows") or []
+
+    if departments:
+        sections.append({
+            "title":"Employee costs by department",
+            "rows":[{
+                "label":
+                    row.get("department")
+                    or "Unassigned",
+                "values":{
+                    "gross_pay":_money(
+                        row.get("gross_pay")
+                    ),
+                    "employer_contributions":
+                        _money(row.get(
+                            "employer_contributions"
+                        )),
+                    "total_employee_cost":
+                        _money(row.get(
+                            "total_employee_cost"
+                        )),
+                },
+                "row_type":"normal",
+            } for row in departments],
+            "amount_keys":[
+                "gross_pay",
+                "employer_contributions",
+                "total_employee_cost",
+            ],
+            "amount_labels":{
+                "gross_pay":"Gross pay",
+                "employer_contributions":
+                    "Employer contributions",
+                "total_employee_cost":
+                    "Total employee cost",
+            },
+        })
+
+    sections.append({
+        "title":"Employee benefit expense",
+        "rows":[
+            {
+                "label":
+                    "Short-term employee benefits",
+                "values":{
+                    "amount":_money(
+                        totals.get(
+                            "short_term_employee_benefits"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Employer contributions",
+                "values":{
+                    "amount":_money(
+                        totals.get(
+                            "employer_contributions"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":
+                    "Total employee benefit expense",
+                "values":{
+                    "amount":_money(
+                        totals.get(
+                            "employee_benefit_expense"
+                        )
+                    ),
+                },
+                "row_type":"total",
+            },
+        ],
+        "amount_keys":["amount"],
+        "amount_labels":{
+            "amount":"Current period",
+        },
+    })
+
+    return{
+        "title":
+            note.get("note_title")
+            or disclosure.get("title")
+            or "Employee benefit expense",
+
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+
+        "sections":sections,
+
+        "meta":{
+            **(disclosure.get("meta") or {}),
+            "employee_count":int(
+                summary.get("employee_count") or 0
+            ),
+            "payroll_run_count":int(
+                summary.get("payroll_run_count") or 0
+            ),
+        },
+    }
+
+def build_payroll_bonus_provision_note_payload(
+    note,
+    disclosure,
+):
+    note=note or {}
+    disclosure=disclosure or {}
+    movement=disclosure.get("movement") or {}
+    sections_data=disclosure.get("sections") or {}
+
+    sections=[{
+        "title":"Bonus provision reconciliation",
+        "rows":[
+            {
+                "label":"Opening provision",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "opening_provision"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Current-period charge",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "current_period_charge"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Amounts paid",
+                "values":{
+                    "amount":-_money(
+                        movement.get("amount_paid")
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Amounts reversed",
+                "values":{
+                    "amount":-_money(
+                        movement.get(
+                            "amount_reversed"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Other adjustments",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "adjustment_amount"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Closing bonus provision",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "closing_provision"
+                        )
+                    ),
+                },
+                "row_type":"total",
+            },
+        ],
+        "amount_keys":["amount"],
+        "amount_labels":{
+            "amount":"Current period",
+        },
+    }]
+
+    schemes=(
+        sections_data.get("by_scheme") or {}
+    ).get("rows") or []
+
+    if schemes:
+        sections.append({
+            "title":"Bonus provision by scheme",
+            "rows":[{
+                "label":
+                    row.get("scheme_name")
+                    or row.get("scheme_code")
+                    or "Bonus scheme",
+                "values":{
+                    "employee_count":
+                        row.get("employee_count") or 0,
+                    "eligible_remuneration":_money(
+                        row.get(
+                            "eligible_remuneration"
+                        )
+                    ),
+                    "provision_amount":_money(
+                        row.get("provision_amount")
+                    ),
+                },
+                "row_type":"normal",
+            } for row in schemes],
+            "amount_keys":[
+                "employee_count",
+                "eligible_remuneration",
+                "provision_amount",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "eligible_remuneration":
+                    "Eligible remuneration",
+                "provision_amount":"Provision",
+            },
+        })
+
+    departments=(
+        sections_data.get("by_department") or {}
+    ).get("rows") or []
+
+    if departments:
+        sections.append({
+            "title":"Bonus provision by department",
+            "rows":[{
+                "label":
+                    row.get("department")
+                    or "Unassigned",
+                "values":{
+                    "employee_count":
+                        row.get("employee_count") or 0,
+                    "eligible_remuneration":_money(
+                        row.get(
+                            "eligible_remuneration"
+                        )
+                    ),
+                    "provision_amount":_money(
+                        row.get("provision_amount")
+                    ),
+                },
+                "row_type":"normal",
+            } for row in departments],
+            "amount_keys":[
+                "employee_count",
+                "eligible_remuneration",
+                "provision_amount",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "eligible_remuneration":
+                    "Eligible remuneration",
+                "provision_amount":"Provision",
+            },
+        })
+
+    return{
+        "title":
+            note.get("note_title")
+            or disclosure.get("title")
+            or "Bonus provision",
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+        "sections":sections,
+        "meta":disclosure.get("meta") or {},
+    }
+
+def build_payroll_bonus_provision_export_payload(
+    disclosure,
+):
+    disclosure=disclosure or {}
+    movement=disclosure.get("movement") or {}
+    sections=disclosure.get("sections") or {}
+
+    return{
+        "meta":{
+            **(disclosure.get("meta") or {}),
+            "report_key":"ias19_bonus_provision",
+        },
+        "title":"Bonus provision",
+        "sections":[
+            {
+                "title":"Bonus provision reconciliation",
+                "rows":[
+                    {
+                        "label":"Opening provision",
+                        "amount":_money(
+                            movement.get(
+                                "opening_provision"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Current-period charge",
+                        "amount":_money(
+                            movement.get(
+                                "current_period_charge"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Amounts paid",
+                        "amount":-_money(
+                            movement.get(
+                                "amount_paid"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Amounts reversed",
+                        "amount":-_money(
+                            movement.get(
+                                "amount_reversed"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Other adjustments",
+                        "amount":_money(
+                            movement.get(
+                                "adjustment_amount"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Closing provision",
+                        "amount":_money(
+                            movement.get(
+                                "closing_provision"
+                            )
+                        ),
+                    },
+                ],
+                "amount_keys":["amount"],
+                "amount_labels":{
+                    "amount":"Current period",
+                },
+            },
+            {
+                "title":"Bonus provision by scheme",
+                "rows":(
+                    sections.get("by_scheme") or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "employee_count",
+                    "eligible_remuneration",
+                    "provision_amount",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "eligible_remuneration":
+                        "Eligible remuneration",
+                    "provision_amount":"Provision",
+                },
+            },
+            {
+                "title":"Bonus provision by department",
+                "rows":(
+                    sections.get(
+                        "by_department"
+                    ) or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "employee_count",
+                    "eligible_remuneration",
+                    "provision_amount",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "eligible_remuneration":
+                        "Eligible remuneration",
+                    "provision_amount":"Provision",
+                },
+            },
+        ],
+        "totals":disclosure.get("totals") or {},
+        "disclosure":disclosure,
+    }
+
+def build_payroll_employee_cost_export_payload(
+    db,
+    company_id:int,
+    date_from,
+    date_to,
+):
+    disclosure=(
+        db.build_payroll_employee_cost_disclosure(
+            company_id,
+            date_from,
+            date_to,
+        )
+    )
+
+    sections_data=disclosure.get("sections") or {}
+    totals=disclosure.get("totals") or {}
+
+    rows=[]
+
+    for row in(
+        sections_data.get("earnings") or {}
+    ).get("rows") or []:
+        rows.append({
+            "label":row.get("label"),
+            "category":"Short-term benefits",
+            "values":{
+                "amount":_money(
+                    row.get("amount")
+                ),
+            },
+            "row_type":"normal",
+        })
+
+    for row in(
+        sections_data.get(
+            "employer_contributions"
+        ) or {}
+    ).get("rows") or []:
+        rows.append({
+            "label":row.get("label"),
+            "category":
+                "Employer contributions",
+            "values":{
+                "amount":_money(
+                    row.get("amount")
+                ),
+            },
+            "row_type":"normal",
+        })
+
+    rows.extend([
+        {
+            "label":"Short-term employee benefits",
+            "category":"Total",
+            "values":{
+                "amount":_money(
+                    totals.get(
+                        "short_term_employee_benefits"
+                    )
+                ),
+            },
+            "row_type":"subtotal",
+        },
+        {
+            "label":"Employer contributions",
+            "category":"Total",
+            "values":{
+                "amount":_money(
+                    totals.get(
+                        "employer_contributions"
+                    )
+                ),
+            },
+            "row_type":"subtotal",
+        },
+        {
+            "label":"Employee benefit expense",
+            "category":"Total",
+            "values":{
+                "amount":_money(
+                    totals.get(
+                        "employee_benefit_expense"
+                    )
+                ),
+            },
+            "row_type":"total",
+        },
+    ])
+
+    return{
+        "meta":{
+            **(disclosure.get("meta") or {}),
+            "title":"Employee benefit expense",
+            "report_key":
+                "payroll_employee_cost_disclosure",
+            "company_id":int(company_id),
+        },
+
+        "title":"Employee benefit expense",
+
+        "columns":[
+            {
+                "key":"label",
+                "label":"Description",
+            },
+            {
+                "key":"amount",
+                "label":"Current period",
+            },
+        ],
+
+        "sections":[
+            {
+                "title":"Employee benefit expense",
+                "rows":rows,
+                "amount_keys":["amount"],
+                "amount_labels":{
+                    "amount":"Current period",
+                },
+            },
+        ],
+
+        "rows":rows,
+        "totals":{
+            "employee_benefit_expense":
+                _money(totals.get(
+                    "employee_benefit_expense"
+                )),
+        },
+
+        "disclosure":disclosure,
+    }
+
+def build_payroll_termination_benefits_note_payload(
+    note,
+    disclosure,
+):
+    note=note or {}
+    disclosure=disclosure or {}
+    movement=disclosure.get("movement") or {}
+    section_data=disclosure.get("sections") or {}
+
+    sections=[{
+        "title":"Termination benefit reconciliation",
+        "rows":[
+            {
+                "label":"Opening obligation",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "opening_obligation"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Current-period charge",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "current_period_charge"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Benefits paid",
+                "values":{
+                    "amount":-_money(
+                        movement.get("benefits_paid")
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Amounts reversed",
+                "values":{
+                    "amount":-_money(
+                        movement.get(
+                            "amount_reversed"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Other adjustments",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "adjustment_amount"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":
+                    "Closing termination benefit obligation",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "closing_obligation"
+                        )
+                    ),
+                },
+                "row_type":"total",
+            },
+        ],
+        "amount_keys":["amount"],
+        "amount_labels":{
+            "amount":"Current period",
+        },
+    }]
+
+    benefit_types=(
+        section_data.get("by_benefit_type") or {}
+    ).get("rows") or []
+
+    if benefit_types:
+        sections.append({
+            "title":"Termination benefits by type",
+            "rows":[{
+                "label":
+                    row.get("benefit_type")
+                    or "Termination benefit",
+                "values":{
+                    "employee_count":
+                        row.get("employee_count") or 0,
+                    "gross_benefit_amount":_money(
+                        row.get(
+                            "gross_benefit_amount"
+                        )
+                    ),
+                    "amount_paid":_money(
+                        row.get("amount_paid")
+                    ),
+                    "outstanding_obligation":_money(
+                        row.get(
+                            "outstanding_obligation"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            } for row in benefit_types],
+            "amount_keys":[
+                "employee_count",
+                "gross_benefit_amount",
+                "amount_paid",
+                "outstanding_obligation",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "gross_benefit_amount":
+                    "Gross benefit",
+                "amount_paid":"Paid",
+                "outstanding_obligation":
+                    "Outstanding",
+            },
+        })
+
+    departments=(
+        section_data.get("by_department") or {}
+    ).get("rows") or []
+
+    if departments:
+        sections.append({
+            "title":
+                "Termination benefits by department",
+            "rows":[{
+                "label":
+                    row.get("department")
+                    or "Unassigned",
+                "values":{
+                    "employee_count":
+                        row.get("employee_count") or 0,
+                    "gross_benefit_amount":_money(
+                        row.get(
+                            "gross_benefit_amount"
+                        )
+                    ),
+                    "amount_paid":_money(
+                        row.get("amount_paid")
+                    ),
+                    "outstanding_obligation":_money(
+                        row.get(
+                            "outstanding_obligation"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            } for row in departments],
+            "amount_keys":[
+                "employee_count",
+                "gross_benefit_amount",
+                "amount_paid",
+                "outstanding_obligation",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "gross_benefit_amount":
+                    "Gross benefit",
+                "amount_paid":"Paid",
+                "outstanding_obligation":
+                    "Outstanding",
+            },
+        })
+
+    return{
+        "title":
+            note.get("note_title")
+            or disclosure.get("title")
+            or "Termination benefits",
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+        "sections":sections,
+        "meta":disclosure.get("meta") or {},
+    }
+
+def build_payroll_termination_benefits_export_payload(
+    disclosure,
+):
+    disclosure=disclosure or {}
+    movement=disclosure.get("movement") or {}
+    sections=disclosure.get("sections") or {}
+
+    return{
+        "meta":{
+            **(disclosure.get("meta") or {}),
+            "report_key":
+                "ias19_termination_benefits",
+        },
+        "title":"Termination benefits",
+        "sections":[
+            {
+                "title":
+                    "Termination benefit reconciliation",
+                "rows":[
+                    {
+                        "label":"Opening obligation",
+                        "amount":_money(
+                            movement.get(
+                                "opening_obligation"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Current-period charge",
+                        "amount":_money(
+                            movement.get(
+                                "current_period_charge"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Benefits paid",
+                        "amount":-_money(
+                            movement.get(
+                                "benefits_paid"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Amounts reversed",
+                        "amount":-_money(
+                            movement.get(
+                                "amount_reversed"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Other adjustments",
+                        "amount":_money(
+                            movement.get(
+                                "adjustment_amount"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Closing obligation",
+                        "amount":_money(
+                            movement.get(
+                                "closing_obligation"
+                            )
+                        ),
+                    },
+                ],
+                "amount_keys":["amount"],
+                "amount_labels":{
+                    "amount":"Current period",
+                },
+            },
+            {
+                "title":"Termination benefits by type",
+                "rows":(
+                    sections.get(
+                        "by_benefit_type"
+                    ) or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "employee_count",
+                    "gross_benefit_amount",
+                    "amount_paid",
+                    "outstanding_obligation",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "gross_benefit_amount":
+                        "Gross benefit",
+                    "amount_paid":"Paid",
+                    "outstanding_obligation":
+                        "Outstanding",
+                },
+            },
+            {
+                "title":
+                    "Termination benefits by department",
+                "rows":(
+                    sections.get(
+                        "by_department"
+                    ) or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "employee_count",
+                    "gross_benefit_amount",
+                    "amount_paid",
+                    "outstanding_obligation",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "gross_benefit_amount":
+                        "Gross benefit",
+                    "amount_paid":"Paid",
+                    "outstanding_obligation":
+                        "Outstanding",
+                },
+            },
+        ],
+        "totals":disclosure.get("totals") or {},
+        "disclosure":disclosure,
+    }
+
+def _benefit_note_payload(
+    note,
+    disclosure,
+    sections,
+):
+    return{
+        "title":
+            note.get("note_title")
+            or disclosure.get("title")
+            or "Employee benefits",
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+        "sections":sections,
+        "meta":disclosure.get("meta") or {},
+    }
+
+
+def build_payroll_dc_note_payload(
+    note,
+    disclosure,
+):
+    d=disclosure or {}
+    sections=d.get("sections") or {}
+    totals=d.get("totals") or {}
+
+    plan_rows=[{
+        "label":
+            row.get("plan_name")
+            or row.get("plan_code")
+            or "Plan",
+        "values":{
+            "employee_count":
+                row.get("employee_count") or 0,
+            "pensionable_remuneration":_money(
+                row.get("pensionable_remuneration")
+            ),
+            "employee_contribution":_money(
+                row.get("employee_contribution")
+            ),
+            "employer_contribution":_money(
+                row.get("employer_contribution")
+            ),
+            "total_contribution":_money(
+                row.get("total_contribution")
+            ),
+        },
+        "row_type":"normal",
+    } for row in(
+        sections.get("by_plan") or {}
+    ).get("rows") or []]
+
+    plan_rows.append({
+        "label":"Total contributions",
+        "values":{
+            "employee_count":None,
+            "pensionable_remuneration":None,
+            "employee_contribution":_money(
+                totals.get("employee_contributions")
+            ),
+            "employer_contribution":_money(
+                totals.get("employer_contributions")
+            ),
+            "total_contribution":_money(
+                totals.get("contributions_payable")
+            ),
+        },
+        "row_type":"total",
+    })
+
+    return _benefit_note_payload(
+        note,
+        d,
+        [{
+            "title":
+                "Defined-contribution plans",
+            "rows":plan_rows,
+            "amount_keys":[
+                "employee_count",
+                "pensionable_remuneration",
+                "employee_contribution",
+                "employer_contribution",
+                "total_contribution",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "pensionable_remuneration":
+                    "Pensionable remuneration",
+                "employee_contribution":
+                    "Employee contribution",
+                "employer_contribution":
+                    "Employer contribution",
+                "total_contribution":
+                    "Total contribution",
+            },
+        }],
+    )
+
+
+def build_payroll_dc_export_payload(disclosure):
+    d=disclosure or {}
+
+    return{
+        "meta":{
+            **(d.get("meta") or {}),
+            "report_key":
+                "ias19_defined_contribution",
+        },
+        "title":"Defined-contribution plans",
+        "sections":[
+            {
+                "title":"Contributions by plan",
+                "rows":(
+                    d.get("sections",{})
+                    .get("by_plan",{})
+                    .get("rows",[])
+                ),
+                "amount_keys":[
+                    "employee_count",
+                    "pensionable_remuneration",
+                    "employee_contribution",
+                    "employer_contribution",
+                    "total_contribution",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "pensionable_remuneration":
+                        "Pensionable remuneration",
+                    "employee_contribution":
+                        "Employee contribution",
+                    "employer_contribution":
+                        "Employer contribution",
+                    "total_contribution":
+                        "Total contribution",
+                },
+            },
+            {
+                "title":"Contributions by department",
+                "rows":(
+                    d.get("sections",{})
+                    .get("by_department",{})
+                    .get("rows",[])
+                ),
+                "amount_keys":[
+                    "employee_count",
+                    "pensionable_remuneration",
+                    "employee_contribution",
+                    "employer_contribution",
+                    "total_contribution",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "pensionable_remuneration":
+                        "Pensionable remuneration",
+                    "employee_contribution":
+                        "Employee contribution",
+                    "employer_contribution":
+                        "Employer contribution",
+                    "total_contribution":
+                        "Total contribution",
+                },
+            },
+        ],
+        "totals":d.get("totals") or {},
+        "disclosure":d,
+    }
+
+
+def build_payroll_db_note_payload(
+    note,
+    disclosure,
+):
+    d=disclosure or {}
+    movement=d.get("movement") or {}
+    dbo=movement.get("dbo") or {}
+    assets=movement.get("plan_assets") or {}
+
+    sections=[
+        {
+            "title":
+                "Defined-benefit obligation reconciliation",
+            "rows":[
+                {
+                    "label":"Opening obligation",
+                    "values":{
+                        "amount":_money(
+                            dbo.get("opening_dbo")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Current service cost",
+                    "values":{
+                        "amount":_money(
+                            dbo.get(
+                                "current_service_cost"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Past service cost",
+                    "values":{
+                        "amount":_money(
+                            dbo.get(
+                                "past_service_cost"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Interest cost",
+                    "values":{
+                        "amount":_money(
+                            dbo.get("interest_cost")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Benefits paid",
+                    "values":{
+                        "amount":-_money(
+                            dbo.get("benefits_paid")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Settlements",
+                    "values":{
+                        "amount":-_money(
+                            dbo.get("settlements")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Curtailments",
+                    "values":{
+                        "amount":-_money(
+                            dbo.get("curtailments")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Actuarial gain/(loss)",
+                    "values":{
+                        "amount":_money(
+                            dbo.get(
+                                "actuarial_gain_loss"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Closing obligation",
+                    "values":{
+                        "amount":_money(
+                            dbo.get("closing_dbo")
+                        ),
+                    },
+                    "row_type":"total",
+                },
+            ],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        },
+        {
+            "title":"Plan asset reconciliation",
+            "rows":[
+                {
+                    "label":"Opening plan assets",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "opening_plan_assets"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Interest income",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "interest_income"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Employer contributions",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "employer_contributions"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Employee contributions",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "employee_contributions"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":
+                        "Return excluding interest",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "return_excluding_interest"
+                            )
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Benefits paid",
+                    "values":{
+                        "amount":-_money(
+                            assets.get("benefits_paid")
+                        ),
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Closing plan assets",
+                    "values":{
+                        "amount":_money(
+                            assets.get(
+                                "closing_plan_assets"
+                            )
+                        ),
+                    },
+                    "row_type":"total",
+                },
+            ],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        },
+    ]
+
+    return _benefit_note_payload(
+        note,
+        d,
+        sections,
+    )
+
+
+def build_payroll_db_export_payload(disclosure):
+    d=disclosure or {}
+    note=build_payroll_db_note_payload({},d)
+
+    return{
+        "meta":{
+            **(d.get("meta") or {}),
+            "report_key":
+                "ias19_defined_benefit",
+        },
+        "title":"Defined-benefit plans",
+        "sections":[
+            *note.get("sections",[]),
+            {
+                "title":"Defined-benefit plans",
+                "rows":(
+                    d.get("sections",{})
+                    .get("plans",{})
+                    .get("rows",[])
+                ),
+                "amount_keys":[
+                    "active_members",
+                    "closing_dbo",
+                    "closing_plan_assets",
+                    "net_defined_benefit_liability",
+                    "net_defined_benefit_asset",
+                    "profit_or_loss_amount",
+                    "oci_remeasurement_amount",
+                ],
+                "amount_labels":{
+                    "active_members":"Members",
+                    "closing_dbo":"DBO",
+                    "closing_plan_assets":
+                        "Plan assets",
+                    "net_defined_benefit_liability":
+                        "Net liability",
+                    "net_defined_benefit_asset":
+                        "Net asset",
+                    "profit_or_loss_amount":
+                        "Profit or loss",
+                    "oci_remeasurement_amount":
+                        "OCI",
+                },
+            },
+            {
+                "title":
+                    "Significant actuarial assumptions",
+                "rows":(
+                    d.get("sections",{})
+                    .get("assumptions",{})
+                    .get("rows",[])
+                ),
+                "amount_keys":[
+                    "numeric_value",
+                ],
+                "amount_labels":{
+                    "numeric_value":"Value",
+                },
+            },
+        ],
+        "totals":d.get("totals") or {},
+        "disclosure":d,
+    }
+def build_ifrs9_disclosure(
+    db,
+    company_id: int,
+    date_from: date,
+    date_to: date,
+    *,
+    as_of: date | None = None,
+) -> Dict[str, Any]:
+    as_of = as_of or date_to
+
+    ctx = (
+        db.get_company_context(company_id)
+        if hasattr(
+            db,
+            "get_company_context",
+        )
+        else {}
+    ) or {}
+
+    strict = (
+        db.get_ifrs9_disclosure_strict(
+            company_id,
+            from_date=date_from,
+            to_date=date_to,
+            as_of=as_of,
+            include_closed=True,
+        )
+    )
+
+    classification = (
+        strict.get("classification") or {}
+    )
+
+    receivables = (
+        strict.get("trade_receivables") or {}
+    )
+
+    reconciliation = (
+        strict.get("ecl_reconciliation")
+        or {}
+    )
+
+    effective_interest = (
+        strict.get("effective_interest")
+        or {}
+    )
+
+    modifications = (
+        strict.get("modifications") or {}
+    )
+
+    derecognitions = (
+        strict.get("derecognitions") or {}
+    )
+
+    fair_value = (
+        strict.get("fair_value") or {}
+    )
+
+    def row(
+        label,
+        amount=0,
+        row_type="normal",
+    ):
+        return {
+            "label": label,
+            "values": {
+                "amount": _money(amount),
+            },
+            "row_type": row_type,
+        }
+
+    classification_rows = [
+        row(
+            "Financial assets at amortised cost",
+            classification.get(
+                "amortised_cost_assets"
+            ),
+        ),
+        row(
+            "Financial assets at FVOCI",
+            classification.get(
+                "fvoci_assets"
+            ),
+        ),
+        row(
+            "Financial assets at FVPL",
+            classification.get(
+                "fvpl_assets"
+            ),
+        ),
+        row(
+            "Financial liabilities at amortised cost",
+            classification.get(
+                "amortised_cost_liabilities"
+            ),
+        ),
+        row(
+            "Financial liabilities at FVPL",
+            classification.get(
+                "fvpl_liabilities"
+            ),
+        ),
+        row(
+            "Unclassified financial instruments",
+            classification.get(
+                "unclassified"
+            ),
+        ),
+    ]
+
+    receivable_rows = [
+        row(
+            "Gross trade receivables",
+            receivables.get("gross"),
+        ),
+        row(
+            "Loss allowance",
+            -abs(
+                _money(
+                    receivables.get(
+                        "loss_allowance"
+                    )
+                )
+            ),
+        ),
+        row(
+            "Net trade receivables",
+            receivables.get("net"),
+            "total",
+        ),
+    ]
+
+    ageing = (
+        receivables.get("ageing") or {}
+    )
+
+    ageing_rows = [
+        row(
+            "Current",
+            ageing.get("current"),
+        ),
+        row(
+            "1–30 days past due",
+            ageing.get("days_1_30"),
+        ),
+        row(
+            "31–60 days past due",
+            ageing.get("days_31_60"),
+        ),
+        row(
+            "61–90 days past due",
+            ageing.get("days_61_90"),
+        ),
+        row(
+            "91–120 days past due",
+            ageing.get("days_91_120"),
+        ),
+        row(
+            "More than 120 days past due",
+            ageing.get("over_120"),
+        ),
+        row(
+            "Total gross exposure",
+            receivables.get("gross"),
+            "total",
+        ),
+    ]
+
+    ecl_rows = [
+        row(
+            "Opening loss allowance",
+            reconciliation.get(
+                "opening_allowance"
+            ),
+        ),
+        row(
+            "Expected credit losses recognised",
+            reconciliation.get("charges"),
+        ),
+        row(
+            "Expected credit losses reversed",
+            -abs(
+                _money(
+                    reconciliation.get(
+                        "reversals"
+                    )
+                )
+            ),
+        ),
+        row(
+            "Allowance used on write-offs",
+            -abs(
+                _money(
+                    reconciliation.get(
+                        "allowance_used_on_writeoffs"
+                    )
+                )
+            ),
+        ),
+        row(
+            "Closing loss allowance",
+            reconciliation.get(
+                "closing_allowance"
+            ),
+            "total",
+        ),
+    ]
+
+    impairment_rows = [
+        row(
+            "Gross receivables written off",
+            reconciliation.get(
+                "gross_writeoffs"
+            ),
+        ),
+        row(
+            "Additional loss recognised on write-off",
+            reconciliation.get(
+                "additional_writeoff_loss"
+            ),
+        ),
+        row(
+            "Recoveries of amounts previously written off",
+            reconciliation.get(
+                "recoveries"
+            ),
+        ),
+    ]
+
+    interest_rows = [
+        row(
+            "Effective-interest income",
+            effective_interest.get(
+                "interest_income"
+            ),
+        ),
+        row(
+            "Effective-interest expense",
+            effective_interest.get(
+                "interest_expense"
+            ),
+        ),
+    ]
+
+    other_gain_loss_rows = [
+        row(
+            "Modification gains",
+            modifications.get("gains"),
+        ),
+        row(
+            "Modification losses",
+            -abs(
+                _money(
+                    modifications.get("losses")
+                )
+            ),
+        ),
+        row(
+            "Derecognition gains",
+            derecognitions.get("gains"),
+        ),
+        row(
+            "Derecognition losses",
+            -abs(
+                _money(
+                    derecognitions.get("losses")
+                )
+            ),
+        ),
+        row(
+            "FVPL gains",
+            fair_value.get("fvpl_gain"),
+        ),
+        row(
+            "FVPL losses",
+            -abs(
+                _money(
+                    fair_value.get("fvpl_loss")
+                )
+            ),
+        ),
+        row(
+            "FVOCI gains",
+            fair_value.get("fvoci_gain"),
+        ),
+        row(
+            "FVOCI losses",
+            -abs(
+                _money(
+                    fair_value.get("fvoci_loss")
+                )
+            ),
+        ),
+    ]
+
+    hierarchy = (
+        fair_value.get("hierarchy") or {}
+    )
+
+    hierarchy_rows = [
+        row(
+            "Level 1 fair values",
+            hierarchy.get("level_1"),
+        ),
+        row(
+            "Level 2 fair values",
+            hierarchy.get("level_2"),
+        ),
+        row(
+            "Level 3 fair values",
+            hierarchy.get("level_3"),
+        ),
+    ]
+
+    return {
+        "meta": {
+            "company_id": company_id,
+            "company_name": (
+                ctx.get("company_name")
+                or ctx.get("name")
+            ),
+            "currency": (
+                ctx.get("currency")
+                or "USD"
+            ),
+            "statement":
+                "ifrs9_disclosure",
+            "report_name":
+                "Financial Instruments Disclosure",
+            "standard": "IFRS 9",
+            "period": {
+                "from":
+                    date_from.isoformat(),
+                "to":
+                    date_to.isoformat(),
+                "as_of":
+                    as_of.isoformat(),
+            },
+        },
+        "sections": [
+            {
+                "title":
+                    "Financial instruments by measurement category",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Carrying Amount",
+                    }
+                ],
+                "rows": classification_rows,
+            },
+            {
+                "title":
+                    "Trade receivables",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Amount",
+                    }
+                ],
+                "rows": receivable_rows,
+            },
+            {
+                "title":
+                    "Trade receivables ageing",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Gross Exposure",
+                    }
+                ],
+                "rows": ageing_rows,
+            },
+            {
+                "title":
+                    "Loss allowance reconciliation",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Amount",
+                    }
+                ],
+                "rows": ecl_rows,
+            },
+            {
+                "title":
+                    "Write-offs and recoveries",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Amount",
+                    }
+                ],
+                "rows": impairment_rows,
+            },
+            {
+                "title":
+                    "Effective-interest income and expense",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Amount",
+                    }
+                ],
+                "rows": interest_rows,
+            },
+            {
+                "title":
+                    "Fair value, modification and derecognition gains or losses",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Amount",
+                    }
+                ],
+                "rows": other_gain_loss_rows,
+            },
+            {
+                "title":
+                    "Fair-value hierarchy",
+                "columns": [
+                    {
+                        "key": "amount",
+                        "label": "Carrying Amount",
+                    }
+                ],
+                "rows": hierarchy_rows,
+            },
+        ],
+        "source": strict,
+    }
+
+def build_ifrs9_note_export_payload(
+    db,
+    company_id,
+    period_from,
+    period_to,
+    *,
+    cur=None,
+):
+    note = (
+        db.get_or_build_financial_statement_note(
+            company_id,
+            "ifrs9_financial_instruments_policy",
+            period_from,
+            period_to,
+            cur=cur,
+        )
+    )
+
+    disclosure = build_ifrs9_disclosure(
+        db,
+        company_id,
+        period_from,
+        period_to,
+        as_of=period_to,
+    )
+
+    sections = []
+
+    for section in (
+        disclosure.get("sections") or []
+    ):
+        columns = (
+            section.get("columns")
+            or [
+                {
+                    "key": "amount",
+                    "label": "Amount",
+                }
+            ]
+        )
+
+        sections.append({
+            "title":
+                section.get("title") or "",
+            "rows":
+                section.get("rows") or [],
+            "columns": columns,
+            "amount_keys": [
+                column["key"]
+                for column in columns
+                if column.get("key")
+            ],
+            "amount_labels": {
+                column["key"]: (
+                    column.get("label")
+                    or column["key"]
+                )
+                for column in columns
+                if column.get("key")
+            },
+        })
+
+    return {
+        "title": "Financial instruments",
+        "text": (
+            note.get("content_text")
+            or note.get("system_draft")
+            or ""
+        ),
+        "sections": sections,
+    }
+
+def build_payroll_leave_liability_note_payload(
+    note,
+    disclosure,
+):
+    note=note or {}
+    disclosure=disclosure or {}
+    movement=disclosure.get("movement") or {}
+    sections_data=disclosure.get("sections") or {}
+
+    sections=[{
+        "title":"Leave liability reconciliation",
+        "rows":[
+            {
+                "label":"Opening liability",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "opening_liability"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Current service cost",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "current_service_cost"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Leave utilised",
+                "values":{
+                    "amount":-_money(
+                        movement.get(
+                            "leave_taken_amount"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Adjustments",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "adjustment_amount"
+                        )
+                    ),
+                },
+                "row_type":"normal",
+            },
+            {
+                "label":"Closing leave liability",
+                "values":{
+                    "amount":_money(
+                        movement.get(
+                            "closing_liability"
+                        )
+                    ),
+                },
+                "row_type":"total",
+            },
+        ],
+        "amount_keys":["amount"],
+        "amount_labels":{
+            "amount":"Current period",
+        },
+    }]
+
+    leave_types=(
+        sections_data.get("by_leave_type") or {}
+    ).get("rows") or []
+
+    if leave_types:
+        sections.append({
+            "title":"Leave liability by type",
+            "rows":[{
+                "label":
+                    row.get("leave_type") or "Leave",
+                "values":{
+                    "closing_days":
+                        row.get("closing_days") or 0,
+                    "liability_amount":_money(
+                        row.get("liability_amount")
+                    ),
+                },
+                "row_type":"normal",
+            } for row in leave_types],
+            "amount_keys":[
+                "closing_days",
+                "liability_amount",
+            ],
+            "amount_labels":{
+                "closing_days":"Days",
+                "liability_amount":"Liability",
+            },
+        })
+
+    departments=(
+        sections_data.get("by_department") or {}
+    ).get("rows") or []
+
+    if departments:
+        sections.append({
+            "title":"Leave liability by department",
+            "rows":[{
+                "label":
+                    row.get("department")
+                    or "Unassigned",
+                "values":{
+                    "employee_count":
+                        row.get("employee_count") or 0,
+                    "closing_days":
+                        row.get("closing_days") or 0,
+                    "liability_amount":_money(
+                        row.get("liability_amount")
+                    ),
+                },
+                "row_type":"normal",
+            } for row in departments],
+            "amount_keys":[
+                "employee_count",
+                "closing_days",
+                "liability_amount",
+            ],
+            "amount_labels":{
+                "employee_count":"Employees",
+                "closing_days":"Days",
+                "liability_amount":"Liability",
+            },
+        })
+
+    return{
+        "title":
+            note.get("note_title")
+            or disclosure.get("title")
+            or "Leave pay liability",
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+        "sections":sections,
+        "meta":disclosure.get("meta") or {},
+    }
+
+
+def build_payroll_leave_liability_export_payload(
+    disclosure,
+):
+    disclosure=disclosure or {}
+    sections_data=disclosure.get("sections") or {}
+    movement=disclosure.get("movement") or {}
+
+    return{
+        "meta":{
+            **(disclosure.get("meta") or {}),
+            "report_key":"ias19_leave_liability",
+        },
+        "title":"Leave pay liability",
+        "sections":[
+            {
+                "title":"Leave liability reconciliation",
+                "rows":[
+                    {
+                        "label":"Opening liability",
+                        "amount":_money(
+                            movement.get(
+                                "opening_liability"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Current service cost",
+                        "amount":_money(
+                            movement.get(
+                                "current_service_cost"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Leave utilised",
+                        "amount":-_money(
+                            movement.get(
+                                "leave_taken_amount"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Adjustments",
+                        "amount":_money(
+                            movement.get(
+                                "adjustment_amount"
+                            )
+                        ),
+                    },
+                    {
+                        "label":"Closing liability",
+                        "amount":_money(
+                            movement.get(
+                                "closing_liability"
+                            )
+                        ),
+                    },
+                ],
+                "amount_keys":["amount"],
+                "amount_labels":{
+                    "amount":"Current period",
+                },
+            },
+            {
+                "title":"Leave liability by type",
+                "rows":(
+                    sections_data.get(
+                        "by_leave_type"
+                    ) or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "closing_days",
+                    "liability_amount",
+                ],
+                "amount_labels":{
+                    "closing_days":"Days",
+                    "liability_amount":"Liability",
+                },
+            },
+            {
+                "title":"Leave liability by department",
+                "rows":(
+                    sections_data.get(
+                        "by_department"
+                    ) or {}
+                ).get("rows") or [],
+                "amount_keys":[
+                    "employee_count",
+                    "closing_days",
+                    "liability_amount",
+                ],
+                "amount_labels":{
+                    "employee_count":"Employees",
+                    "closing_days":"Days",
+                    "liability_amount":"Liability",
+                },
+            },
+        ],
+        "totals":disclosure.get("totals") or {},
+        "disclosure":disclosure,
+    }
+
 def build_ppe_disclosure_multi_year(
     db,
     company_id: int,

@@ -224,7 +224,9 @@ from BackEnd.Services.routes.payroll_employee_benefits_routes import payroll_emp
 from BackEnd.Services.lessor_lease_routes import lessor_bp
 from BackEnd.Services.routes.data_migration_routes import data_migration_bp
 from BackEnd.Services.routes.ias41_routes import ias41_bp
-
+from BackEnd.Services.routes.payroll_disclosure_routes import (
+    payroll_disclosure_bp,
+)
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -254,9 +256,11 @@ except Exception as e:
 # keep your existing app initialization
 app = Flask(__name__, template_folder=str(TEMPLATE_DIR))
 app.config.from_object(Config)
-
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+app.config["MIGRATION_MAX_FILE_SIZE"] = 50 * 1024 * 1024
 @app.route("/")
 def home():
+    
     return {"ok": True, "message": "FinSage API is live"}
 
 @app.route("/health")
@@ -371,6 +375,7 @@ app.register_blueprint(payroll_employee_benefits_bp)
 app.register_blueprint(lessor_bp)
 app.register_blueprint(data_migration_bp)
 app.register_blueprint(ias41_bp)
+app.register_blueprint(payroll_disclosure_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 

@@ -3376,3 +3376,460 @@ def api_payroll_employee_payslip(
             "ok":False,
             "error":str(error),
         }),400 
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "reports/<report_key>",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_report(
+    company_id:int,
+    report_key:str,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        filters={
+            "run_id":
+                request.args.get("run_id") or None,
+            "department_id":
+                request.args.get("department_id") or None,
+            "employee_id":
+                request.args.get("employee_id") or None,
+            "date_from":
+                request.args.get("date_from") or None,
+            "date_to":
+                request.args.get("date_to") or None,
+        }
+
+        out=db_service.payroll_report_data(
+            company_id,
+            report_key,
+            filters,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll report generation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/reconciliation",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_reconciliation(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_run_reconcile(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run reconciliation failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/reversal-preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_reversal_preview(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_run_reversal_preview(
+            company_id,
+            run_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll reversal preview failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "runs/<int:run_id>/reverse",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_run_reverse(
+    company_id:int,
+    run_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    user_id=_jwt_user_id()
+
+    if not user_id:
+        return jsonify({
+            "ok":False,
+            "error":"AUTH|missing_user_id",
+        }),401
+
+    try:
+        out=db_service.payroll_run_reverse(
+            company_id,
+            run_id,
+            _payroll_body(),
+            user_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll run reversal failed"
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/mappings",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_mappings(company_id:int):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            items=db_service.payroll_statutory_mappings_list(
+                company_id,
+                request.args.get("authority_code"),
+                request.args.get("return_type"),
+            )
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_statutory_mapping_save(
+            company_id,
+            _payroll_body(),
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll statutory mappings failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/mappings/<int:mapping_id>",
+    methods=["PATCH","DELETE","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_mapping(
+    company_id:int,
+    mapping_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="DELETE":
+            deleted=db_service.payroll_statutory_mapping_delete(
+                company_id,
+                mapping_id,
+            )
+            return jsonify({
+                "ok":True,
+                "deleted":deleted,
+            }),200
+
+        out=db_service.payroll_statutory_mapping_save(
+            company_id,
+            _payroll_body(),
+            mapping_id,
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll statutory mapping failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/returns",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_returns(company_id:int):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            items=db_service.payroll_statutory_returns_list(
+                company_id,
+                authority_code=
+                    request.args.get("authority_code"),
+                return_type=
+                    request.args.get("return_type"),
+                status=request.args.get("status"),
+                date_from=request.args.get("date_from"),
+                date_to=request.args.get("date_to"),
+            )
+            return jsonify({
+                "ok":True,
+                "items":items,
+            }),200
+
+        out=db_service.payroll_statutory_return_save(
+            company_id,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll statutory returns failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/returns/<int:return_id>",
+    methods=["GET","PATCH","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_return(
+    company_id:int,
+    return_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        if request.method=="GET":
+            out=db_service.payroll_statutory_return_get(
+                company_id,
+                return_id,
+            )
+            if not out:
+                return jsonify({
+                    "ok":False,
+                    "error":"Statutory return not found",
+                }),404
+        else:
+            out=db_service.payroll_statutory_return_save(
+                company_id,
+                _payroll_body(),
+                _jwt_user_id(),
+                return_id,
+            )
+
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll statutory return failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/returns/<int:return_id>/calculate",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_return_calculate(
+    company_id:int,
+    return_id:int,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_statutory_return_calculate(
+            company_id,
+            return_id,
+            _jwt_user_id(),
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "statutory return calculation failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "statutory/returns/<int:return_id>/<action>",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def api_payroll_statutory_return_action(
+    company_id:int,
+    return_id:int,
+    action:str,
+):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        out=db_service.payroll_statutory_return_action(
+            company_id,
+            return_id,
+            action,
+            _payroll_body(),
+            _jwt_user_id(),
+        )
+        return jsonify({
+            "ok":True,
+            "data":out,
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "statutory return action failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+

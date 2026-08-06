@@ -21,6 +21,23 @@
     inventoryItems: [],
     batches: [],
     biologicalAssets: [],
+
+    acquisitions: [],
+    activeAcquisition: null,
+    acquisitionPreview: null,
+    growthEvents: [],
+    healthEvents: [],
+    activeEvent: null,
+    eventPreview: null,
+    valuations: [],
+    activeValuation: null,
+    valuationPreview: null,
+    harvests: [],
+    activeHarvest: null,
+    harvestPreview: null,
+    grants: [],
+    activeGrant: null,
+    grantPreview: null,
   };
 
   const tabs = [
@@ -108,6 +125,38 @@
     return id == null
       ? api[name](state.companyId)
       : api[name](state.companyId, id);
+  }
+
+  function eventActionUrl(eventId, action) {
+    return window.ENDPOINTS.ias41.eventAction(
+      state.companyId,
+      eventId,
+      action
+    );
+  }
+
+  function valuationActionUrl(id, action) {
+    return window.ENDPOINTS.ias41.valuationAction(
+      state.companyId,
+      id,
+      action
+    );
+  }
+
+  function harvestActionUrl(id, action) {
+    return window.ENDPOINTS.ias41.harvestAction(
+      state.companyId,
+      id,
+      action
+    );
+  }
+
+  function grantActionUrl(id,action) {
+    return window.ENDPOINTS.ias41.grantAction(state.companyId,id,action);
+  }
+
+  function grantReceiptActionUrl(id,action) {
+    return window.ENDPOINTS.ias41.grantReceiptAction(state.companyId,id,action);
   }
 
   async function api(url, options = {}) {
@@ -783,6 +832,12 @@
       products: renderProducts,
       locations: renderLocations,
       batches: renderBatches,
+      acquisition: renderAcquisitions,
+      growth: () => renderEvents("growth"),
+      health: () => renderEvents("health"),
+      valuations: renderValuations,
+      harvest: renderHarvests,
+      "government-grants": renderGovernmentGrants,
       settings: renderSettings,
     };
 
@@ -1536,6 +1591,451 @@
         }
       }
     );
+  
+    $("#ias41NewAcquisitionBtn", host)
+      ?.addEventListener(
+        "click",
+        () => acquisitionModal({})
+      );
+
+    host
+      .querySelectorAll(
+        "[data-ias41-acquisition-open]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          async () => {
+            try {
+              const acquisition =
+                await loadAcquisition(
+                  button.dataset
+                    .ias41AcquisitionOpen
+                );
+
+              if (
+                acquisition.status
+                === "draft"
+              ) {
+                acquisitionModal(
+                  acquisition
+                );
+              } else {
+                await previewAcquisition(
+                  acquisition.id
+                );
+              }
+            } catch (error) {
+              toast(
+                error.message
+                  || "Transaction load failed",
+                "error",
+              );
+            }
+          },
+        );
+      });
+
+    host
+      .querySelectorAll(
+        "[data-ias41-acquisition-preview]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          async () => {
+            try {
+              await previewAcquisition(
+                button.dataset
+                  .ias41AcquisitionPreview
+              );
+            } catch (error) {
+              toast(
+                error.message
+                  || "Preview failed",
+                "error",
+              );
+            }
+          },
+        );
+      });
+
+    host
+      .querySelectorAll(
+        "[data-ias41-acquisition-approve]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          async () => {
+            try {
+              await approveAcquisition(
+                button.dataset
+                  .ias41AcquisitionApprove
+              );
+            } catch (error) {
+              toast(
+                error.message
+                  || "Approval failed",
+                "error",
+              );
+            }
+          },
+        );
+      });
+
+    host
+      .querySelectorAll(
+        "[data-ias41-acquisition-draft]"
+      )
+      .forEach((button) => {
+        button.addEventListener(
+          "click",
+          async () => {
+            try {
+              await returnAcquisitionToDraft(
+                button.dataset
+                  .ias41AcquisitionDraft
+              );
+            } catch (error) {
+              toast(
+                error.message
+                  || "Return to draft failed",
+                "error",
+              );
+            }
+          },
+        );
+      });
+
+    host
+      .querySelectorAll(
+        "[data-ias41-acquisition-post]"
+      )
+      .forEach(function (button) {
+        button.addEventListener(
+          "click",
+          async function () {
+            button.disabled = true;
+
+            try {
+              await postAcquisition(
+                button.getAttribute(
+                  "data-ias41-acquisition-post"
+                )
+              );
+            } catch (error) {
+              console.error(
+                "[IAS41] acquisition posting failed",
+                error
+              );
+
+              toast(
+                error.message ||
+                "IAS 41 posting failed.",
+                "error"
+              );
+            } finally {
+              button.disabled = false;
+            }
+          }
+        );
+      });
+
+    host.querySelectorAll("[data-ias41-new-event]").forEach(button => {
+      button.addEventListener("click", () => {
+        eventModal(button.dataset.ias41NewEvent, {});
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-event-open]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          const row = await loadEvent(button.dataset.ias41EventOpen);
+          if (row.status === "draft") {
+            const group = EVENT_GROUPS.health.includes(row.event_type)
+              ? "health"
+              : "growth";
+            eventModal(group, row);
+          } else {
+            await previewEvent(row.id);
+          }
+        } catch (error) {
+          toast(error.message || "Event load failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-event-preview]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          await previewEvent(button.dataset.ias41EventPreview);
+        } catch (error) {
+          toast(error.message || "Event preview failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-event-approve]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          await approveEvent(button.dataset.ias41EventApprove);
+        } catch (error) {
+          toast(error.message || "Event approval failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-event-post]").forEach(button => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          await postEvent(button.dataset.ias41EventPost);
+        } catch (error) {
+          toast(error.message || "Event posting failed", "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    $("#ias41NewValuationBtn", host)?.addEventListener(
+      "click",
+      () => valuationModal({})
+    );
+
+    host.querySelectorAll("[data-ias41-valuation-open]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          const row = await loadValuation(button.dataset.ias41ValuationOpen);
+
+          if (["draft", "calculated"].includes(row.status)) {
+            valuationModal(row);
+          } else {
+            await previewValuation(row.id);
+          }
+        } catch (error) {
+          toast(error.message || "Valuation load failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-valuation-preview]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          await previewValuation(button.dataset.ias41ValuationPreview);
+        } catch (error) {
+          toast(error.message || "Valuation preview failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-valuation-approve]").forEach(button => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Approve this valuation?")) return;
+
+        try {
+          await valuationAction(button.dataset.ias41ValuationApprove, "approve");
+          toast("IAS 41 valuation approved.");
+        } catch (error) {
+          toast(error.message || "Valuation approval failed", "error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-valuation-post]").forEach(button => {
+      button.addEventListener("click", async () => {
+        if (!confirm("Post this valuation and update carrying amounts?")) return;
+
+        button.disabled = true;
+        try {
+          const data = await valuationAction(
+            button.dataset.ias41ValuationPost,
+            "post"
+          );
+          toast(`Valuation posted. Journal ${data.journal_id} created.`);
+        } catch (error) {
+          toast(error.message || "Valuation posting failed", "error");
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    $("#ias41NewHarvestBtn",host)?.addEventListener(
+      "click",
+      ()=>harvestModal({})
+    );
+
+    host.querySelectorAll(
+      "[data-ias41-harvest-open]"
+    ).forEach(button=>{
+      button.addEventListener("click",async()=>{
+        try {
+          const row=await loadHarvest(
+            button.dataset.ias41HarvestOpen
+          );
+
+          if(["draft","calculated"].includes(row.status)) {
+            harvestModal(row);
+          } else {
+            await previewHarvest(row.id);
+          }
+        } catch(error) {
+          toast(
+            error.message||"Harvest load failed",
+            "error"
+          );
+        }
+      });
+    });
+
+    host.querySelectorAll(
+      "[data-ias41-harvest-preview]"
+    ).forEach(button=>{
+      button.addEventListener("click",async()=>{
+        try {
+          await previewHarvest(
+            button.dataset.ias41HarvestPreview
+          );
+        } catch(error) {
+          toast(
+            error.message||"Harvest preview failed",
+            "error"
+          );
+        }
+      });
+    });
+
+    host.querySelectorAll(
+      "[data-ias41-harvest-approve]"
+    ).forEach(button=>{
+      button.addEventListener("click",async()=>{
+        if(!confirm("Approve this harvest?")) return;
+
+        try {
+          await harvestAction(
+            button.dataset.ias41HarvestApprove,
+            "approve"
+          );
+
+          toast("IAS 41 harvest approved.");
+        } catch(error) {
+          toast(
+            error.message||"Harvest approval failed",
+            "error"
+          );
+        }
+      });
+    });
+
+    host.querySelectorAll(
+      "[data-ias41-harvest-post]"
+    ).forEach(button=>{
+      button.addEventListener("click",async()=>{
+        if(!confirm(
+          "Post this harvest and transfer the produce to IAS 2 inventory?"
+        )) return;
+
+        button.disabled=true;
+
+        try {
+          const data=await harvestAction(
+            button.dataset.ias41HarvestPost,
+            "post"
+          );
+
+          const suffix=data.inventory_movement_id
+            ?` Inventory movement ${data.inventory_movement_id} created.`
+            :" Inventory GL transfer completed.";
+
+          toast(
+            `Harvest posted. Journal ${data.journal_id} created.${suffix}`
+          );
+        } catch(error) {
+          toast(
+            error.message||"Harvest posting failed",
+            "error"
+          );
+        } finally {
+          button.disabled=false;
+        }
+      });
+    });
+
+    $("#ias41NewGrantBtn",host)?.addEventListener(
+      "click",
+      ()=>grantModal({})
+    );
+
+    host.querySelectorAll("[data-ias41-grant-open]").forEach(button=>{
+      button.addEventListener("click",async()=>{
+        try {
+          const row=await loadGrant(button.dataset.ias41GrantOpen);
+
+          if(row.status==="draft") grantModal(row);
+          else if(row.status==="approved") await previewGrant(row.id);
+          else grantReceiptModal(row);
+        } catch(error) {
+          toast(error.message||"Government grant load failed","error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-grant-approve]").forEach(button=>{
+      button.addEventListener("click",async()=>{
+        if(!confirm("Approve this government grant?")) return;
+
+        try {
+          await grantAction(button.dataset.ias41GrantApprove,"approve");
+          toast("Government grant approved.");
+        } catch(error) {
+          toast(error.message||"Grant approval failed","error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-grant-preview]").forEach(button=>{
+      button.addEventListener("click",async()=>{
+        try {
+          await previewGrant(button.dataset.ias41GrantPreview);
+        } catch(error) {
+          toast(error.message||"Grant preview failed","error");
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-grant-recognise]").forEach(button=>{
+      button.addEventListener("click",async()=>{
+        if(!confirm("Recognise this government grant?")) return;
+
+        button.disabled=true;
+
+        try {
+          const data=await grantAction(
+            button.dataset.ias41GrantRecognise,
+            "recognise"
+          );
+
+          toast(`Government grant recognised. Journal ${data.journal_id} created.`);
+        } catch(error) {
+          toast(error.message||"Grant recognition failed","error");
+        } finally {
+          button.disabled=false;
+        }
+      });
+    });
+
+    host.querySelectorAll("[data-ias41-grant-receipt]").forEach(button=>{
+      button.addEventListener("click",async()=>{
+        try {
+          const grant=await loadGrant(button.dataset.ias41GrantReceipt);
+          grantReceiptModal(grant);
+        } catch(error) {
+          toast(error.message||"Grant receipt setup failed","error");
+        }
+      });
+    });
   }
 
   function openTab(tabId) {
@@ -1571,6 +2071,13 @@
         await refresh();
       }
     });
+  }
+
+  async function loadEvents(name, group) {
+    const response = await api(
+      window.ENDPOINTS.ias41.events(state.companyId, { eventGroup: group })
+    );
+    state[name] = response.items || [];
   }
 
   async function loadList(name, endpointName) {
@@ -1613,6 +2120,12 @@
         loadList("inventoryItems", "inventoryItems"),
         loadList("batches", "batches"),
         loadList("biologicalAssets", "biologicalAssets"),
+        loadList("acquisitions", "acquisitions"),
+        loadEvents("growthEvents", "growth"),
+        loadEvents("healthEvents", "health"),
+        loadList("valuations", "valuations"),
+        loadList("harvests","harvests"),
+        loadList("grants","grants"),
       ]);
 
       const validation =
@@ -1633,6 +2146,2569 @@
     } finally {
       state.loading = false;
     }
+  }
+
+  function acquisitionTypeLabel(value) {
+    return String(value || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (char) =>
+        char.toUpperCase()
+      );
+  }
+
+  function statusPill(status) {
+    const text = String(status || "draft");
+
+    return `
+      <span class="pill">
+        ${esc(acquisitionTypeLabel(text))}
+      </span>
+    `;
+  }
+
+  function emptyAcquisitionLine() {
+    return {
+      asset_class_id: "",
+      product_id: "",
+      location_id: "",
+      season_id: "",
+      tracking_method: "batch",
+
+      proposed_batch_code: "",
+      proposed_batch_name: "",
+
+      proposed_asset_number: "",
+      proposed_asset_name: "",
+
+      identification_type: "",
+      identification_value: "",
+      biological_sex: "",
+
+      birth_or_planting_date: "",
+      expected_harvest_date: "",
+      maturity_date: "",
+
+      quantity: 1,
+      quantity_unit: "",
+
+      weight: "",
+      weight_unit: "",
+
+      fair_value_per_unit: 0,
+      gross_fair_value: 0,
+
+      costs_to_sell_per_unit: 0,
+      costs_to_sell_amount: 0,
+
+      carrying_amount: 0,
+      purchase_price: 0,
+      direct_cost_amount: 0,
+
+      biological_asset_account_code: "",
+      fair_value_gain_account_code: "",
+      fair_value_loss_account_code: "",
+      payable_account_code: "",
+      cash_account_code: "",
+
+      description: "",
+    };
+  }
+
+  function acquisitionLineCalculate(line) {
+    const quantity = Number(
+      line.quantity || 0
+    );
+
+    const fairValuePerUnit = Number(
+      line.fair_value_per_unit || 0
+    );
+
+    const costsPerUnit = Number(
+      line.costs_to_sell_per_unit || 0
+    );
+
+    line.gross_fair_value = Number(
+      (
+        quantity
+        * fairValuePerUnit
+      ).toFixed(2)
+    );
+
+    line.costs_to_sell_amount = Number(
+      (
+        quantity
+        * costsPerUnit
+      ).toFixed(2)
+    );
+
+    line.carrying_amount = Number(
+      (
+        line.gross_fair_value
+        - line.costs_to_sell_amount
+      ).toFixed(2)
+    );
+
+    return line;
+  }
+
+  const EVENT_GROUPS = {
+    growth: [
+      "growth_measurement", "quantity_adjustment",
+      "location_transfer", "maturity_change", "general_note"
+    ],
+    health: [
+      "health_inspection", "treatment",
+      "vaccination", "disease", "mortality"
+    ]
+  };
+
+  function eventLabel(value) {
+    return acquisitionTypeLabel(value);
+  }
+
+  function eventTargetLabel(row) {
+    return row.batch_code
+      ? `${row.batch_code} — ${row.batch_name || row.class_name}`
+      : `${row.asset_number} — ${row.asset_name || row.class_name}`;
+  }
+
+  function renderEvents(group) {
+    const items = group === "health" ? state.healthEvents : state.growthEvents;
+    const title = group === "health" ? "Health and Mortality" : "Growth and Transformation";
+    const description = group === "health"
+      ? "Record inspections, treatments, disease incidents, vaccinations and mortality."
+      : "Record growth, quantity, weight, maturity and location changes.";
+
+    const rows = items.map(row => `
+      <tr class="border-b">
+        <td class="p-3">${esc(row.event_number)}</td>
+        <td class="p-3">${esc(eventLabel(row.event_type))}</td>
+        <td class="p-3">${esc(row.event_date)}</td>
+        <td class="p-3">${esc(eventTargetLabel(row))}</td>
+        <td class="p-3 text-right">${money(row.quantity_change)}</td>
+        <td class="p-3">${statusPill(row.status)}</td>
+        <td class="p-3">
+          <div class="flex gap-2 justify-end flex-wrap">
+            <button class="btn" data-ias41-event-open="${row.id}">Open</button>
+            ${row.status === "draft" ? `
+              <button class="btn" data-ias41-event-approve="${row.id}">Approve</button>
+            ` : ""}
+            ${row.status === "approved" ? `
+              <button class="btn" data-ias41-event-preview="${row.id}">Preview</button>
+              <button class="btn" data-ias41-event-post="${row.id}">Post</button>
+            ` : ""}
+          </div>
+        </td>
+      </tr>
+    `);
+
+    return `
+      ${pageHeader(
+        title,
+        description,
+        `<button class="btn" data-ias41-new-event="${group}">New event</button>`
+      )}
+      ${table(
+        ["Event", "Type", "Date", "Target", "Quantity change", "Status", ""],
+        rows,
+        "No biological events found."
+      )}
+    `;
+  }
+
+  function eventModal(group, event) {
+    event = event || {};
+    const types = EVENT_GROUPS[group] || EVENT_GROUPS.growth;
+    const targetType = event.batch_id ? "batch" : (
+      event.biological_asset_id ? "asset" : "batch"
+    );
+
+    function targetOptions(type, selected) {
+      const rows = type === "batch" ? state.batches : state.biologicalAssets;
+      return selectOptions(
+        rows,
+        "id",
+        row => type === "batch"
+          ? `${row.batch_code} — ${row.batch_name || row.class_name}`
+          : `${row.asset_number} — ${row.asset_name || row.class_name}`,
+        selected,
+        `Select ${type}`
+      );
+    }
+
+    openModal(
+      event.id ? "Edit biological event" : "New biological event",
+      `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field("event_number", "Event number", event.event_number || "", {
+            placeholder: "Generated automatically"
+          })}
+
+          ${field("event_type", "Event type", event.event_type || types[0], {
+            required: true,
+            choices: types.map(value => `
+              <option value="${value}" ${event.event_type === value ? "selected" : ""}>
+                ${esc(eventLabel(value))}
+              </option>
+            `).join("")
+          })}
+
+          ${field("event_date", "Event date", event.event_date || new Date().toISOString().slice(0, 10), {
+            type: "date", required: true
+          })}
+
+          ${field("target_type", "Target type", targetType, {
+            choices: `
+              <option value="batch" ${targetType === "batch" ? "selected" : ""}>Batch</option>
+              <option value="asset" ${targetType === "asset" ? "selected" : ""}>Individual asset</option>
+            `
+          })}
+
+          <label class="block md:col-span-2">
+            <span class="text-sm font-medium">Target</span>
+            <select class="input w-full mt-1" name="target_id" id="ias41EventTarget">
+              ${targetOptions(
+                targetType,
+                targetType === "batch" ? event.batch_id : event.biological_asset_id
+              )}
+            </select>
+          </label>
+
+          ${field("quantity_change", "Quantity change", event.quantity_change || 0, {
+            type: "number", step: "0.000001"
+          })}
+
+          ${field("weight_change", "Weight change", event.weight_change || 0, {
+            type: "number", step: "0.000001"
+          })}
+
+          ${field("weight_unit", "Weight unit", event.weight_unit || "")}
+
+          ${field("mortality_quantity", "Mortality quantity", event.mortality_quantity || 0, {
+            type: "number", step: "0.000001"
+          })}
+
+          ${field(
+            "carrying_amount_released",
+            "Carrying amount released",
+            event.carrying_amount_released || 0,
+            { type: "number", step: "0.01" }
+          )}
+
+          ${field("destination_location_id", "Destination location", event.destination_location_id || "", {
+            choices: selectOptions(
+              state.locations,
+              "id",
+              row => `${row.location_code} — ${row.location_name}`,
+              event.destination_location_id,
+              "Select destination"
+            )
+          })}
+
+          ${field("maturity_status_after", "New maturity status", event.maturity_status_after || "", {
+            choices: `
+              <option value="">No change</option>
+              ${["active", "immature", "mature", "harvested", "closed"].map(value => `
+                <option value="${value}" ${event.maturity_status_after === value ? "selected" : ""}>
+                  ${esc(eventLabel(value))}
+                </option>
+              `).join("")}
+            `
+          })}
+
+          ${field("health_status_after", "Health status", event.health_status_after || "", {
+            choices: `
+              <option value="">Not specified</option>
+              ${["healthy", "under_observation", "sick", "recovering", "critical"].map(value => `
+                <option value="${value}" ${event.health_status_after === value ? "selected" : ""}>
+                  ${esc(eventLabel(value))}
+                </option>
+              `).join("")}
+            `
+          })}
+
+          ${field("diagnosis", "Diagnosis", event.diagnosis || "")}
+          ${field("treatment", "Treatment", event.treatment || "")}
+          ${field("medicine", "Medicine", event.medicine || "")}
+          ${field("dosage", "Dosage", event.dosage || "")}
+          ${field("veterinarian", "Veterinarian", event.veterinarian || "")}
+          ${field("next_review_date", "Next review", event.next_review_date || "", {
+            type: "date"
+          })}
+
+          ${field("reference", "Reference", event.reference || "")}
+          ${field("description", "Description", event.description || "", {
+            type: "textarea", col: "md:col-span-3"
+          })}
+        </div>
+      `,
+      async payload => {
+        const targetTypeValue = payload.target_type || "batch";
+        payload.batch_id = targetTypeValue === "batch" ? payload.target_id : null;
+        payload.biological_asset_id = targetTypeValue === "asset" ? payload.target_id : null;
+        delete payload.target_type;
+        delete payload.target_id;
+
+        await api(
+          event.id ? endpoint("event", event.id) : endpoint("events"),
+          {
+            method: event.id ? "PATCH" : "POST",
+            body: JSON.stringify(payload)
+          }
+        );
+
+        await refresh();
+        toast("Biological event saved.");
+      }
+    );
+
+    const typeSelect = $("#ias41Field_target_type");
+    const targetSelect = $("#ias41EventTarget");
+
+    if (typeSelect && targetSelect) {
+      typeSelect.addEventListener("change", () => {
+        targetSelect.innerHTML = targetOptions(typeSelect.value, "");
+      });
+    }
+  }
+
+  async function loadEvent(eventId) {
+    const response = await api(endpoint("event", eventId));
+    return response.data || {};
+  }
+
+  async function eventAction(eventId, action) {
+    const response = await api(eventActionUrl(eventId, action), {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    await refresh();
+    return response.data || {};
+  }
+
+  async function previewEvent(eventId) {
+    const data = await eventAction(eventId, "preview");
+    acquisitionPreviewModal({
+      transaction_number: data.event_number,
+      total_debit: data.total_debit,
+      total_credit: data.total_credit,
+      ready_to_post: data.ready_to_post,
+      journal_lines: data.journal_lines || [],
+      missing_mappings: data.missing_mappings || []
+    });
+  }
+
+  async function approveEvent(eventId) {
+    if (!confirm("Approve this biological event?")) return;
+    await eventAction(eventId, "approve");
+    toast("Biological event approved.");
+  }
+
+  async function postEvent(eventId) {
+    if (!confirm("Post this biological event and update the biological register?")) return;
+    const data = await eventAction(eventId, "post");
+    toast(data.journal_id
+      ? `Event posted. Journal ${data.journal_id} created.`
+      : "Non-financial biological event posted."
+    );
+  }
+
+function renderValuations() {
+  const rows = state.valuations.map(row => `
+    <tr class="border-b">
+      <td class="p-3">${esc(row.run_number)}</td>
+      <td class="p-3">${esc(row.valuation_date)}</td>
+      <td class="p-3">${esc(eventLabel(row.valuation_method))}</td>
+      <td class="p-3">${n(row.line_count)}</td>
+      <td class="p-3 text-right">${money(row.total_previous_carrying_amount)}</td>
+      <td class="p-3 text-right">${money(row.total_new_carrying_amount)}</td>
+      <td class="p-3 text-right">${money(row.total_gain)}</td>
+      <td class="p-3 text-right">${money(row.total_loss)}</td>
+      <td class="p-3">${statusPill(row.status)}</td>
+      <td class="p-3">
+        <div class="flex gap-2 justify-end flex-wrap">
+          <button class="btn" data-ias41-valuation-open="${row.id}">Open</button>
+          ${row.status === "calculated" ? `
+            <button class="btn" data-ias41-valuation-preview="${row.id}">Preview</button>
+            <button class="btn" data-ias41-valuation-approve="${row.id}">Approve</button>
+          ` : ""}
+          ${row.status === "approved" ? `
+            <button class="btn" data-ias41-valuation-preview="${row.id}">Preview</button>
+            <button class="btn" data-ias41-valuation-post="${row.id}">Post</button>
+          ` : ""}
+        </div>
+      </td>
+    </tr>
+  `);
+
+  return `
+    ${pageHeader(
+      "Fair-value Valuations",
+      "Measure biological assets at fair value less costs to sell.",
+      `<button class="btn" id="ias41NewValuationBtn">New valuation</button>`
+    )}
+    ${table(
+      [
+        "Run","Date","Method","Lines","Previous value",
+        "New value","Gain","Loss","Status",""
+      ],
+      rows,
+      "No IAS 41 valuations found."
+    )}
+  `;
+}
+
+function emptyValuationLine() {
+  return {
+    target_type: "batch",
+    target_id: "",
+    fair_value_per_unit: 0,
+    costs_to_sell_per_unit: 0,
+    market_source: "",
+    market_reference: "",
+    observable_input: true,
+    notes: ""
+  };
+}
+
+function valuationModal(run) {
+  run = run || {};
+  let lines = (run.lines && run.lines.length ? run.lines : [
+    emptyValuationLine()
+  ]).map(line => ({
+    ...emptyValuationLine(),
+    ...line,
+    target_type: line.batch_id ? "batch" : (
+      line.biological_asset_id ? "asset" : "batch"
+    ),
+    target_id: line.batch_id || line.biological_asset_id || ""
+  }));
+
+  function targetOptions(line) {
+    const rows = line.target_type === "asset"
+      ? state.biologicalAssets
+      : state.batches;
+
+    return selectOptions(
+      rows,
+      "id",
+      row => line.target_type === "asset"
+        ? `${row.asset_number} — ${row.asset_name || row.class_name}`
+        : `${row.batch_code} — ${row.batch_name || row.class_name}`,
+      line.target_id,
+      "Select target"
+    );
+  }
+
+  function lineHtml(line, index) {
+    return `
+      <div class="card p-4" data-valuation-line="${index}">
+        <div class="flex justify-between">
+          <strong>Line ${index + 1}</strong>
+          <button type="button" class="btn"
+            data-remove-valuation-line="${index}">Remove</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          ${field(`val_${index}_target_type`, "Target type", line.target_type, {
+            choices: `
+              <option value="batch" ${line.target_type === "batch" ? "selected" : ""}>Batch</option>
+              <option value="asset" ${line.target_type === "asset" ? "selected" : ""}>Individual asset</option>
+            `
+          })}
+
+          ${field(`val_${index}_target_id`, "Target", line.target_id, {
+            required: true,
+            choices: targetOptions(line)
+          })}
+
+          ${field(
+            `val_${index}_fair_value_per_unit`,
+            "Fair value per unit",
+            line.fair_value_per_unit || 0,
+            { type: "number", step: "0.000001", required: true }
+          )}
+
+          ${field(
+            `val_${index}_costs_to_sell_per_unit`,
+            "Costs to sell per unit",
+            line.costs_to_sell_per_unit || 0,
+            { type: "number", step: "0.000001" }
+          )}
+
+          ${field(`val_${index}_market_source`, "Market source", line.market_source || "")}
+          ${field(`val_${index}_market_reference`, "Market reference", line.market_reference || "")}
+          ${field(`val_${index}_notes`, "Notes", line.notes || "", {
+            type: "textarea", col: "md:col-span-3"
+          })}
+        </div>
+      </div>
+    `;
+  }
+
+  function body() {
+    return `
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        ${field("run_number", "Run number", run.run_number || "", {
+          placeholder: "Generated automatically"
+        })}
+        ${field("valuation_date", "Valuation date",
+          run.valuation_date || new Date().toISOString().slice(0, 10),
+          { type: "date", required: true }
+        )}
+        ${field("reporting_date", "Reporting date",
+          run.reporting_date || run.valuation_date ||
+          new Date().toISOString().slice(0, 10),
+          { type: "date", required: true }
+        )}
+        ${field("valuation_method", "Method",
+          run.valuation_method || "market_price", {
+            choices: [
+              "market_price","recent_transaction","sector_benchmark",
+              "discounted_cash_flow","cost_approach","manual"
+            ].map(value => `
+              <option value="${value}" ${run.valuation_method === value ? "selected" : ""}>
+                ${esc(eventLabel(value))}
+              </option>
+            `).join("")
+          }
+        )}
+        ${field("currency_code", "Currency",
+          run.currency_code || state.settings.default_currency_code || "USD"
+        )}
+        ${field("reference", "Reference", run.reference || "")}
+        ${field("description", "Description", run.description || "", {
+          type: "textarea", col: "md:col-span-3"
+        })}
+      </div>
+
+      <div class="flex justify-between mt-5">
+        <strong>Valuation lines</strong>
+        <button type="button" class="btn" id="ias41AddValuationLine">
+          Add line
+        </button>
+      </div>
+
+      <div id="ias41ValuationLines" class="space-y-4 mt-3">
+        ${lines.map(lineHtml).join("")}
+      </div>
+    `;
+  }
+
+  openModal(
+    run.id ? "Edit valuation" : "New valuation",
+    body(),
+    async payload => {
+      const form = $("#ias41ModalForm");
+
+      payload.lines = lines.map((line, index) => {
+        const read = name => form.elements[`val_${index}_${name}`]?.value || null;
+        const targetType = read("target_type") || "batch";
+
+        return {
+          batch_id: targetType === "batch" ? read("target_id") : null,
+          biological_asset_id: targetType === "asset" ? read("target_id") : null,
+          fair_value_per_unit: read("fair_value_per_unit"),
+          costs_to_sell_per_unit: read("costs_to_sell_per_unit"),
+          market_source: read("market_source"),
+          market_reference: read("market_reference"),
+          notes: read("notes"),
+          observable_input: true
+        };
+      });
+
+      await api(
+        run.id ? endpoint("valuation", run.id) : endpoint("valuations"),
+        {
+          method: run.id ? "PATCH" : "POST",
+          body: JSON.stringify(payload)
+        }
+      );
+
+      await refresh();
+      toast("IAS 41 valuation saved.");
+    }
+  );
+
+  function rebuild() {
+    const host = $("#ias41ValuationLines");
+    if (!host) return;
+    host.innerHTML = lines.map(lineHtml).join("");
+    bindLines();
+  }
+
+  function bindLines() {
+    document.querySelectorAll("[data-remove-valuation-line]").forEach(button => {
+      button.addEventListener("click", () => {
+        if (lines.length === 1) {
+          toast("At least one valuation line is required.", "warning");
+          return;
+        }
+        lines.splice(Number(button.dataset.removeValuationLine), 1);
+        rebuild();
+      });
+    });
+  }
+
+  $("#ias41AddValuationLine")?.addEventListener("click", () => {
+    lines.push(emptyValuationLine());
+    rebuild();
+  });
+
+  bindLines();
+}
+
+  async function loadValuation(id) {
+    const response = await api(endpoint("valuation", id));
+    return response.data || {};
+  }
+
+  async function valuationAction(id, action) {
+    const response = await api(valuationActionUrl(id, action), {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    await refresh();
+    return response.data || {};
+  }
+
+  async function previewValuation(id) {
+    const data = await valuationAction(id, "preview");
+
+    acquisitionPreviewModal({
+      transaction_number: data.run_number,
+      total_debit: data.total_debit,
+      total_credit: data.total_credit,
+      ready_to_post: data.ready_to_post,
+      journal_lines: data.journal_lines || [],
+      missing_mappings: data.missing_mappings || []
+    });
+  }
+
+  function harvestTargetLabel(row) {
+    return row.batch_code
+      ? `${row.batch_code} — ${row.batch_name || row.class_name}`
+      : `${row.asset_number} — ${row.asset_name || row.class_name}`;
+  }
+
+  function renderHarvests() {
+    const rows=state.harvests.map(row=>`
+      <tr class="border-b">
+        <td class="p-3">${esc(row.harvest_number)}</td>
+        <td class="p-3">${esc(row.harvest_date)}</td>
+        <td class="p-3">${esc(harvestTargetLabel(row))}</td>
+        <td class="p-3">${esc(row.product_name)}</td>
+        <td class="p-3 text-right">${money(row.harvested_quantity)}</td>
+        <td class="p-3 text-right">${money(row.inventory_value)}</td>
+        <td class="p-3 text-right">${money(row.harvest_gain)}</td>
+        <td class="p-3 text-right">${money(row.harvest_loss)}</td>
+        <td class="p-3">${statusPill(row.status)}</td>
+        <td class="p-3">
+          <div class="flex gap-2 justify-end flex-wrap">
+            <button class="btn"
+              data-ias41-harvest-open="${row.id}">
+              Open
+            </button>
+
+            ${row.status==="calculated"?`
+              <button class="btn"
+                data-ias41-harvest-preview="${row.id}">
+                Preview
+              </button>
+
+              <button class="btn"
+                data-ias41-harvest-approve="${row.id}">
+                Approve
+              </button>
+            `:""}
+
+            ${row.status==="approved"?`
+              <button class="btn"
+                data-ias41-harvest-preview="${row.id}">
+                Preview
+              </button>
+
+              <button class="btn"
+                data-ias41-harvest-post="${row.id}">
+                Post
+              </button>
+            `:""}
+          </div>
+        </td>
+      </tr>
+    `);
+
+    return `
+      ${pageHeader(
+        "Harvest",
+        "Measure agricultural produce at fair value less costs to sell and transfer it to IAS 2 inventory.",
+        `<button class="btn" id="ias41NewHarvestBtn">New harvest</button>`
+      )}
+
+      ${table(
+        [
+          "Harvest","Date","Biological source","Product",
+          "Quantity","Inventory value","Gain","Loss","Status",""
+        ],
+        rows,
+        "No IAS 41 harvests found."
+      )}
+    `;
+  }
+
+  function harvestModal(harvest) {
+    harvest=harvest||{};
+
+    const targetType=harvest.batch_id
+      ?"batch"
+      :(harvest.biological_asset_id?"asset":"batch");
+
+    function targetOptions(type,selected) {
+      const rows=type==="asset"
+        ?state.biologicalAssets
+        :state.batches;
+
+      return selectOptions(
+        rows,
+        "id",
+        row=>type==="asset"
+          ?`${row.asset_number} — ${row.asset_name||row.class_name}`
+          :`${row.batch_code} — ${row.batch_name||row.class_name}`,
+        selected,
+        "Select biological source"
+      );
+    }
+
+    openModal(
+      harvest.id?"Edit harvest":"New harvest",
+      `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field(
+            "harvest_number",
+            "Harvest number",
+            harvest.harvest_number||"",
+            {placeholder:"Generated automatically"}
+          )}
+
+          ${field(
+            "harvest_date",
+            "Harvest date",
+            harvest.harvest_date||new Date().toISOString().slice(0,10),
+            {type:"date",required:true}
+          )}
+
+          ${field(
+            "recognition_date",
+            "Recognition date",
+            harvest.recognition_date
+              ||harvest.harvest_date
+              ||new Date().toISOString().slice(0,10),
+            {type:"date",required:true}
+          )}
+
+          ${field(
+            "target_type",
+            "Biological source type",
+            targetType,
+            {
+              choices:`
+                <option value="batch"
+                  ${targetType==="batch"?"selected":""}>
+                  Batch
+                </option>
+                <option value="asset"
+                  ${targetType==="asset"?"selected":""}>
+                  Individual asset
+                </option>
+              `
+            }
+          )}
+
+          <label class="block">
+            <span class="text-sm font-medium">
+              Biological source
+            </span>
+
+            <select
+              class="input w-full mt-1"
+              name="target_id"
+              id="ias41HarvestTarget"
+              required
+            >
+              ${targetOptions(
+                targetType,
+                harvest.batch_id||harvest.biological_asset_id||""
+              )}
+            </select>
+          </label>
+
+          ${field(
+            "product_id",
+            "Agricultural product",
+            harvest.product_id||"",
+            {
+              required:true,
+              choices:selectOptions(
+                state.products,
+                "id",
+                row=>`${row.product_code} — ${row.product_name}`,
+                harvest.product_id,
+                "Select product"
+              )
+            }
+          )}
+
+          ${field(
+            "harvested_quantity",
+            "Harvested quantity",
+            harvest.harvested_quantity||0,
+            {type:"number",step:"0.000001",required:true}
+          )}
+
+          ${field(
+            "quantity_unit",
+            "Quantity unit",
+            harvest.quantity_unit||""
+          )}
+
+          ${field(
+            "harvested_weight",
+            "Harvested weight",
+            harvest.harvested_weight||"",
+            {type:"number",step:"0.000001"}
+          )}
+
+          ${field(
+            "weight_unit",
+            "Weight unit",
+            harvest.weight_unit||""
+          )}
+
+          ${field(
+            "fair_value_per_unit",
+            "Fair value per unit",
+            harvest.fair_value_per_unit||0,
+            {type:"number",step:"0.000001",required:true}
+          )}
+
+          ${field(
+            "costs_to_sell_per_unit",
+            "Costs to sell per unit",
+            harvest.costs_to_sell_per_unit||0,
+            {type:"number",step:"0.000001"}
+          )}
+
+          ${field(
+            "biological_value_released",
+            "Biological value released",
+            harvest.biological_value_released||"",
+            {
+              type:"number",
+              step:"0.01",
+              placeholder:"Calculated automatically"
+            }
+          )}
+
+          ${field(
+            "location_id",
+            "Harvest location",
+            harvest.location_id||"",
+            {
+              choices:selectOptions(
+                state.locations,
+                "id",
+                row=>`${row.location_code} — ${row.location_name}`,
+                harvest.location_id,
+                "Use biological source location"
+              )
+            }
+          )}
+
+          ${field(
+            "season_id",
+            "Season",
+            harvest.season_id||"",
+            {
+              choices:selectOptions(
+                state.seasons,
+                "id",
+                row=>`${row.season_code} — ${row.season_name}`,
+                harvest.season_id,
+                "Select season"
+              )
+            }
+          )}
+
+          ${field(
+            "reference",
+            "Reference",
+            harvest.reference||""
+          )}
+
+          ${field(
+            "description",
+            "Description",
+            harvest.description||"",
+            {type:"textarea",col:"md:col-span-3"}
+          )}
+        </div>
+      `,
+      async payload=>{
+        const type=payload.target_type||"batch";
+
+        payload.batch_id=type==="batch"
+          ?payload.target_id
+          :null;
+
+        payload.biological_asset_id=type==="asset"
+          ?payload.target_id
+          :null;
+
+        delete payload.target_type;
+        delete payload.target_id;
+
+        await api(
+          harvest.id
+            ?endpoint("harvest",harvest.id)
+            :endpoint("harvests"),
+          {
+            method:harvest.id?"PATCH":"POST",
+            body:JSON.stringify(payload)
+          }
+        );
+
+        await refresh();
+        toast("IAS 41 harvest saved.");
+      }
+    );
+
+    const typeSelect=$("#ias41Field_target_type");
+    const targetSelect=$("#ias41HarvestTarget");
+
+    if(typeSelect&&targetSelect) {
+      typeSelect.addEventListener("change",()=>{
+        targetSelect.innerHTML=targetOptions(typeSelect.value,"");
+      });
+    }
+  }
+
+  async function loadHarvest(id) {
+    const response=await api(endpoint("harvest",id));
+    return response.data||{};
+  }
+
+  async function harvestAction(id,action) {
+    const response=await api(
+      harvestActionUrl(id,action),
+      {
+        method:"POST",
+        body:JSON.stringify({})
+      }
+    );
+
+    await refresh();
+    return response.data||{};
+  }
+
+  async function previewHarvest(id) {
+    const data=await harvestAction(id,"preview");
+
+    acquisitionPreviewModal({
+      transaction_number:data.harvest_number,
+      total_debit:data.total_debit,
+      total_credit:data.total_credit,
+      ready_to_post:data.ready_to_post,
+      journal_lines:data.journal_lines||[],
+      missing_mappings:data.missing_mappings||[]
+    });
+  }
+
+  function grantTargetLabel(row) {
+    if(row.batch_code) return `${row.batch_code} — ${row.batch_name||row.class_name}`;
+    if(row.asset_number) return `${row.asset_number} — ${row.asset_name||row.class_name}`;
+    if(row.class_name) return row.class_name;
+    return "General agricultural activity";
+  }
+
+  function renderGovernmentGrants() {
+    const rows=state.grants.map(row=>`
+      <tr class="border-b">
+        <td class="p-3">${esc(row.grant_number)}</td>
+        <td class="p-3">${esc(row.grant_name)}</td>
+        <td class="p-3">${esc(eventLabel(row.grant_type))}</td>
+        <td class="p-3">${esc(grantTargetLabel(row))}</td>
+        <td class="p-3 text-right">${money(row.approved_amount)}</td>
+        <td class="p-3 text-right">${money(row.recognised_amount)}</td>
+        <td class="p-3 text-right">${money(row.received_amount)}</td>
+        <td class="p-3 text-right">${money(row.outstanding_amount)}</td>
+        <td class="p-3">${statusPill(row.status)}</td>
+        <td class="p-3">
+          <div class="flex gap-2 justify-end flex-wrap">
+            <button class="btn" data-ias41-grant-open="${row.id}">Open</button>
+
+            ${row.status==="draft"?`
+              <button class="btn" data-ias41-grant-approve="${row.id}">
+                Approve
+              </button>
+            `:""}
+
+            ${row.status==="approved"?`
+              <button class="btn" data-ias41-grant-preview="${row.id}">
+                Preview
+              </button>
+              <button class="btn" data-ias41-grant-recognise="${row.id}">
+                Recognise
+              </button>
+            `:""}
+
+            ${["recognised","partially_received"].includes(row.status)?`
+              <button class="btn" data-ias41-grant-receipt="${row.id}">
+                Record receipt
+              </button>
+            `:""}
+          </div>
+        </td>
+      </tr>
+    `);
+
+    return `
+      ${pageHeader(
+        "Government Grants",
+        "Recognise conditional and unconditional agricultural grants and record receipts.",
+        `<button class="btn" id="ias41NewGrantBtn">New grant</button>`
+      )}
+
+      ${table(
+        [
+          "Grant","Name","Type","Related activity",
+          "Approved","Recognised","Received","Outstanding","Status",""
+        ],
+        rows,
+        "No IAS 41 government grants found."
+      )}
+    `;
+  }
+
+  function grantModal(grant) {
+    grant=grant||{};
+
+    openModal(
+      grant.id?"Edit government grant":"New government grant",
+      `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field("grant_number","Grant number",grant.grant_number||"",{
+            placeholder:"Generated automatically"
+          })}
+
+          ${field("grant_name","Grant name",grant.grant_name||"",{
+            required:true
+          })}
+
+          ${field("grant_type","Grant type",grant.grant_type||"conditional",{
+            required:true,
+            choices:[
+              "unconditional","conditional","asset_related",
+              "income_related","compensation"
+            ].map(value=>`
+              <option value="${value}" ${grant.grant_type===value?"selected":""}>
+                ${esc(eventLabel(value))}
+              </option>
+            `).join("")
+          })}
+
+          ${field("grantor_name","Grantor",grant.grantor_name||"")}
+          ${field("grantor_reference","Grantor reference",grant.grantor_reference||"")}
+
+          ${field("approved_amount","Approved amount",grant.approved_amount||0,{
+            type:"number",step:"0.01",required:true
+          })}
+
+          ${field(
+            "approval_date",
+            "Approval date",
+            grant.approval_date||new Date().toISOString().slice(0,10),
+            {type:"date"}
+          )}
+
+          ${field("recognition_date","Recognition date",grant.recognition_date||"",{
+            type:"date"
+          })}
+
+          ${field("expected_receipt_date","Expected receipt",grant.expected_receipt_date||"",{
+            type:"date"
+          })}
+
+          ${field("expiry_date","Expiry date",grant.expiry_date||"",{
+            type:"date"
+          })}
+
+          ${field("currency_code","Currency",
+            grant.currency_code||state.settings.default_currency_code||"USD"
+          )}
+
+          ${field("exchange_rate","Exchange rate",grant.exchange_rate||1,{
+            type:"number",step:"0.00000001"
+          })}
+
+          ${field("asset_class_id","Asset class",grant.asset_class_id||"",{
+            choices:selectOptions(
+              state.assetClasses,
+              "id",
+              row=>`${row.class_code} — ${row.class_name}`,
+              grant.asset_class_id,
+              "General grant"
+            )
+          })}
+
+          ${field("batch_id","Batch",grant.batch_id||"",{
+            choices:selectOptions(
+              state.batches,
+              "id",
+              row=>`${row.batch_code} — ${row.batch_name||row.class_name}`,
+              grant.batch_id,
+              "No batch"
+            )
+          })}
+
+          ${field("biological_asset_id","Biological asset",grant.biological_asset_id||"",{
+            choices:selectOptions(
+              state.biologicalAssets,
+              "id",
+              row=>`${row.asset_number} — ${row.asset_name||row.class_name}`,
+              grant.biological_asset_id,
+              "No individual asset"
+            )
+          })}
+
+          ${field("location_id","Location",grant.location_id||"",{
+            choices:selectOptions(
+              state.locations,
+              "id",
+              row=>`${row.location_code} — ${row.location_name}`,
+              grant.location_id,
+              "No location"
+            )
+          })}
+
+          ${field("season_id","Season",grant.season_id||"",{
+            choices:selectOptions(
+              state.seasons,
+              "id",
+              row=>`${row.season_code} — ${row.season_name}`,
+              grant.season_id,
+              "No season"
+            )
+          })}
+
+          <label class="flex items-center gap-2 mt-6">
+            <input
+              type="checkbox"
+              name="conditions_met"
+              ${grant.conditions_met?"checked":""}
+            >
+            <span class="text-sm font-medium">Conditions met</span>
+          </label>
+
+          ${field("conditions_met_date","Conditions met date",grant.conditions_met_date||"",{
+            type:"date"
+          })}
+
+          ${field("conditions_description","Conditions",grant.conditions_description||"",{
+            type:"textarea",col:"md:col-span-3"
+          })}
+
+          ${field("grant_receivable_account_code","Grant receivable account",
+            grant.grant_receivable_account_code||"",{
+              choices:accountOptions(grant.grant_receivable_account_code)
+            }
+          )}
+
+          ${field("grant_income_account_code","Grant income account",
+            grant.grant_income_account_code||"",{
+              choices:accountOptions(grant.grant_income_account_code)
+            }
+          )}
+
+          ${field("cash_account_code","Cash account",grant.cash_account_code||"",{
+            choices:accountOptions(grant.cash_account_code)
+          })}
+
+          ${field("reference","Reference",grant.reference||"")}
+
+          ${field("description","Description",grant.description||"",{
+            type:"textarea",col:"md:col-span-3"
+          })}
+        </div>
+      `,
+      async payload=>{
+        payload.conditions_met=!!payload.conditions_met;
+
+        await api(
+          grant.id?endpoint("grant",grant.id):endpoint("grants"),
+          {
+            method:grant.id?"PATCH":"POST",
+            body:JSON.stringify(payload)
+          }
+        );
+
+        await refresh();
+        toast("IAS 41 government grant saved.");
+      }
+    );
+  }
+
+  function grantReceiptModal(grant) {
+    openModal(
+      `Grant Receipt — ${grant.grant_number}`,
+      `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field("receipt_number","Receipt number","",{
+            placeholder:"Generated automatically"
+          })}
+
+          ${field(
+            "receipt_date",
+            "Receipt date",
+            new Date().toISOString().slice(0,10),
+            {type:"date",required:true}
+          )}
+
+          ${field("amount","Amount",grant.outstanding_amount||0,{
+            type:"number",step:"0.01",required:true
+          })}
+
+          ${field("currency_code","Currency",
+            grant.currency_code||state.settings.default_currency_code||"USD"
+          )}
+
+          ${field("cash_account_code","Cash account",grant.cash_account_code||"",{
+            choices:accountOptions(grant.cash_account_code)
+          })}
+
+          ${field(
+            "grant_receivable_account_code",
+            "Grant receivable account",
+            grant.grant_receivable_account_code||"",
+            {choices:accountOptions(grant.grant_receivable_account_code)}
+          )}
+
+          ${field("reference","Reference","")}
+
+          ${field("description","Description",`Receipt of ${grant.grant_name}`,{
+            type:"textarea",col:"md:col-span-3"
+          })}
+        </div>
+      `,
+      async payload=>{
+        const response=await api(
+          window.ENDPOINTS.ias41.grantReceipts(state.companyId,grant.id),
+          {
+            method:"POST",
+            body:JSON.stringify(payload)
+          }
+        );
+
+        const receipt=response.data||{};
+        const preview=await api(
+          grantReceiptActionUrl(receipt.id,"preview"),
+          {
+            method:"POST",
+            body:JSON.stringify({})
+          }
+        );
+
+        acquisitionPreviewModal({
+          transaction_number:preview.data.receipt_number,
+          total_debit:preview.data.total_debit,
+          total_credit:preview.data.total_credit,
+          ready_to_post:preview.data.ready_to_post,
+          journal_lines:preview.data.journal_lines||[],
+          missing_mappings:preview.data.missing_mappings||[]
+        });
+
+        await refresh();
+        toast("Grant receipt saved. Preview generated.");
+      }
+    );
+  }
+
+  function grantReceiptModal(grant) {
+    openModal(
+      `Grant Receipt — ${grant.grant_number}`,
+      `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field("receipt_number","Receipt number","",{
+            placeholder:"Generated automatically"
+          })}
+
+          ${field(
+            "receipt_date",
+            "Receipt date",
+            new Date().toISOString().slice(0,10),
+            {type:"date",required:true}
+          )}
+
+          ${field("amount","Amount",grant.outstanding_amount||0,{
+            type:"number",step:"0.01",required:true
+          })}
+
+          ${field("currency_code","Currency",
+            grant.currency_code||state.settings.default_currency_code||"USD"
+          )}
+
+          ${field("cash_account_code","Cash account",grant.cash_account_code||"",{
+            choices:accountOptions(grant.cash_account_code)
+          })}
+
+          ${field(
+            "grant_receivable_account_code",
+            "Grant receivable account",
+            grant.grant_receivable_account_code||"",
+            {choices:accountOptions(grant.grant_receivable_account_code)}
+          )}
+
+          ${field("reference","Reference","")}
+
+          ${field("description","Description",`Receipt of ${grant.grant_name}`,{
+            type:"textarea",col:"md:col-span-3"
+          })}
+        </div>
+      `,
+      async payload=>{
+        const response=await api(
+          window.ENDPOINTS.ias41.grantReceipts(state.companyId,grant.id),
+          {
+            method:"POST",
+            body:JSON.stringify(payload)
+          }
+        );
+
+        const receipt=response.data||{};
+        const preview=await api(
+          grantReceiptActionUrl(receipt.id,"preview"),
+          {
+            method:"POST",
+            body:JSON.stringify({})
+          }
+        );
+
+        acquisitionPreviewModal({
+          transaction_number:preview.data.receipt_number,
+          total_debit:preview.data.total_debit,
+          total_credit:preview.data.total_credit,
+          ready_to_post:preview.data.ready_to_post,
+          journal_lines:preview.data.journal_lines||[],
+          missing_mappings:preview.data.missing_mappings||[]
+        });
+
+        await refresh();
+        toast("Grant receipt saved. Preview generated.");
+      }
+    );
+  }
+
+  function renderAcquisitions() {
+    const rows = state.acquisitions.map(
+      (row) => `
+        <tr class="border-b">
+          <td class="p-3">
+            ${esc(row.transaction_number)}
+          </td>
+
+          <td class="p-3">
+            ${esc(
+              acquisitionTypeLabel(
+                row.transaction_type
+              )
+            )}
+          </td>
+
+          <td class="p-3">
+            ${esc(row.transaction_date)}
+          </td>
+
+          <td class="p-3">
+            ${n(row.line_count)}
+          </td>
+
+          <td class="p-3 text-right">
+            ${money(
+              row.line_carrying_amount
+              ?? row.carrying_amount
+            )}
+          </td>
+
+          <td class="p-3">
+            ${statusPill(row.status)}
+          </td>
+
+          <td class="p-3">
+            <div class="flex gap-2 justify-end flex-wrap">
+              <button
+                type="button"
+                class="btn"
+                data-ias41-acquisition-open="${esc(row.id)}"
+              >
+                Open
+              </button>
+
+              ${
+                row.status === "draft"
+                  ? `
+                    <button
+                      type="button"
+                      class="btn"
+                      data-ias41-acquisition-preview="${esc(row.id)}"
+                    >
+                      Preview
+                    </button>
+
+                    <button
+                      type="button"
+                      class="btn"
+                      data-ias41-acquisition-approve="${esc(row.id)}"
+                    >
+                      Approve
+                    </button>
+                  `
+                  : ""
+              }
+
+              ${
+                row.status === "approved"
+                  ? `
+                    <button
+                      type="button"
+                      class="btn"
+                      data-ias41-acquisition-preview="${esc(row.id)}"
+                    >
+                      Preview
+                    </button>
+
+                    <button
+                      type="button"
+                      class="btn"
+                      data-ias41-acquisition-draft="${esc(row.id)}"
+                    >
+                      Return to draft
+                    </button>
+
+                    <button
+                      type="button"
+                      class="btn"
+                      data-ias41-acquisition-post="${esc(row.id)}"
+                    >
+                      Post
+                    </button>
+                  `
+                  : ""
+              }
+            </div>
+          </td>
+        </tr>
+      `
+    );
+
+    return `
+      ${pageHeader(
+        "Acquisitions, Births and Planting",
+        "Capture biological-asset purchases, births, planting, donations, transfers and opening balances.",
+        `
+          <button
+            type="button"
+            class="btn"
+            id="ias41NewAcquisitionBtn"
+          >
+            New transaction
+          </button>
+        `,
+      )}
+
+      ${table(
+        [
+          "Transaction",
+          "Type",
+          "Date",
+          "Lines",
+          "Carrying amount",
+          "Status",
+          "",
+        ],
+        rows,
+        "No IAS 41 acquisition transactions found.",
+      )}
+    `;
+  }
+
+  function acquisitionLineHtml(
+    line,
+    index,
+  ) {
+    return `
+      <div
+        class="card p-4"
+        data-ias41-acquisition-line
+        data-line-index="${index}"
+      >
+        <div class="flex justify-between gap-3">
+          <h4 class="font-bold">
+            Line ${index + 1}
+          </h4>
+
+          <button
+            type="button"
+            class="btn"
+            data-ias41-remove-acquisition-line="${index}"
+          >
+            Remove
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          ${field(
+            `line_${index}_asset_class_id`,
+            "Asset class",
+            line.asset_class_id,
+            {
+              required: true,
+              choices: selectOptions(
+                state.assetClasses,
+                "id",
+                (row) =>
+                  `${row.class_code} — ${row.class_name}`,
+                line.asset_class_id,
+                "Select class",
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_product_id`,
+            "Product",
+            line.product_id,
+            {
+              choices: selectOptions(
+                state.products,
+                "id",
+                (row) =>
+                  `${row.product_code} — ${row.product_name}`,
+                line.product_id,
+                "No product",
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_tracking_method`,
+            "Tracking method",
+            line.tracking_method || "batch",
+            {
+              choices: [
+                "batch",
+                "individual",
+                "both",
+              ].map((value) => `
+                <option
+                  value="${value}"
+                  ${
+                    line.tracking_method === value
+                      ? "selected"
+                      : ""
+                  }
+                >
+                  ${esc(
+                    acquisitionTypeLabel(value)
+                  )}
+                </option>
+              `).join(""),
+            },
+          )}
+
+          ${field(
+            `line_${index}_location_id`,
+            "Location",
+            line.location_id,
+            {
+              choices: selectOptions(
+                state.locations,
+                "id",
+                (row) =>
+                  `${row.location_code} — ${row.location_name}`,
+                line.location_id,
+                "Use header location",
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_season_id`,
+            "Season",
+            line.season_id,
+            {
+              choices: selectOptions(
+                state.seasons,
+                "id",
+                (row) =>
+                  `${row.season_code} — ${row.season_name}`,
+                line.season_id,
+                "Use header season",
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_quantity`,
+            "Quantity",
+            line.quantity ?? 1,
+            {
+              type: "number",
+              step: "0.000001",
+              required: true,
+            },
+          )}
+
+          ${field(
+            `line_${index}_quantity_unit`,
+            "Quantity unit",
+            line.quantity_unit,
+          )}
+
+          ${field(
+            `line_${index}_fair_value_per_unit`,
+            "Fair value per unit",
+            line.fair_value_per_unit ?? 0,
+            {
+              type: "number",
+              step: "0.000001",
+            },
+          )}
+
+          ${field(
+            `line_${index}_costs_to_sell_per_unit`,
+            "Costs to sell per unit",
+            line.costs_to_sell_per_unit ?? 0,
+            {
+              type: "number",
+              step: "0.000001",
+            },
+          )}
+
+          ${field(
+            `line_${index}_gross_fair_value`,
+            "Gross fair value",
+            line.gross_fair_value ?? 0,
+            {
+              type: "number",
+              step: "0.01",
+            },
+          )}
+
+          ${field(
+            `line_${index}_costs_to_sell_amount`,
+            "Costs to sell",
+            line.costs_to_sell_amount ?? 0,
+            {
+              type: "number",
+              step: "0.01",
+            },
+          )}
+
+          ${field(
+            `line_${index}_carrying_amount`,
+            "Carrying amount",
+            line.carrying_amount ?? 0,
+            {
+              type: "number",
+              step: "0.01",
+            },
+          )}
+
+          ${field(
+            `line_${index}_purchase_price`,
+            "Purchase price",
+            line.purchase_price ?? 0,
+            {
+              type: "number",
+              step: "0.01",
+            },
+          )}
+
+          ${field(
+            `line_${index}_direct_cost_amount`,
+            "Direct costs",
+            line.direct_cost_amount ?? 0,
+            {
+              type: "number",
+              step: "0.01",
+            },
+          )}
+
+          ${field(
+            `line_${index}_proposed_batch_code`,
+            "New batch code",
+            line.proposed_batch_code,
+          )}
+
+          ${field(
+            `line_${index}_proposed_batch_name`,
+            "New batch name",
+            line.proposed_batch_name,
+          )}
+
+          ${field(
+            `line_${index}_proposed_asset_number`,
+            "New asset number",
+            line.proposed_asset_number,
+          )}
+
+          ${field(
+            `line_${index}_proposed_asset_name`,
+            "New asset name",
+            line.proposed_asset_name,
+          )}
+
+          ${field(
+            `line_${index}_birth_or_planting_date`,
+            "Birth / planting date",
+            line.birth_or_planting_date,
+            {
+              type: "date",
+            },
+          )}
+
+          ${field(
+            `line_${index}_expected_harvest_date`,
+            "Expected harvest",
+            line.expected_harvest_date,
+            {
+              type: "date",
+            },
+          )}
+
+          ${field(
+            `line_${index}_biological_asset_account_code`,
+            "Biological asset account",
+            line.biological_asset_account_code,
+            {
+              choices: accountOptions(
+                line.biological_asset_account_code
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_fair_value_gain_account_code`,
+            "Fair-value gain account",
+            line.fair_value_gain_account_code,
+            {
+              choices: accountOptions(
+                line.fair_value_gain_account_code
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_fair_value_loss_account_code`,
+            "Fair-value loss account",
+            line.fair_value_loss_account_code,
+            {
+              choices: accountOptions(
+                line.fair_value_loss_account_code
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_payable_account_code`,
+            "Payable account",
+            line.payable_account_code,
+            {
+              choices: accountOptions(
+                line.payable_account_code
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_cash_account_code`,
+            "Cash account",
+            line.cash_account_code,
+            {
+              choices: accountOptions(
+                line.cash_account_code
+              ),
+            },
+          )}
+
+          ${field(
+            `line_${index}_description`,
+            "Line description",
+            line.description,
+            {
+              type: "textarea",
+              col: "md:col-span-3",
+            },
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  function readAcquisitionLines(
+    form,
+    lineCount,
+  ) {
+    const lines = [];
+
+    for (
+      let index = 0;
+      index < lineCount;
+      index += 1
+    ) {
+      const prefix = `line_${index}_`;
+
+      const read = (name) => {
+        const element = form.elements[
+          `${prefix}${name}`
+        ];
+
+        return element
+          ? element.value
+          : null;
+      };
+
+      const line = {
+        asset_class_id:
+          read("asset_class_id"),
+
+        product_id:
+          read("product_id"),
+
+        tracking_method:
+          read("tracking_method")
+          || "batch",
+
+        location_id:
+          read("location_id"),
+
+        season_id:
+          read("season_id"),
+
+        quantity:
+          read("quantity"),
+
+        quantity_unit:
+          read("quantity_unit"),
+
+        fair_value_per_unit:
+          read("fair_value_per_unit"),
+
+        costs_to_sell_per_unit:
+          read("costs_to_sell_per_unit"),
+
+        gross_fair_value:
+          read("gross_fair_value"),
+
+        costs_to_sell_amount:
+          read("costs_to_sell_amount"),
+
+        carrying_amount:
+          read("carrying_amount"),
+
+        purchase_price:
+          read("purchase_price"),
+
+        direct_cost_amount:
+          read("direct_cost_amount"),
+
+        proposed_batch_code:
+          read("proposed_batch_code"),
+
+        proposed_batch_name:
+          read("proposed_batch_name"),
+
+        proposed_asset_number:
+          read("proposed_asset_number"),
+
+        proposed_asset_name:
+          read("proposed_asset_name"),
+
+        birth_or_planting_date:
+          read("birth_or_planting_date"),
+
+        expected_harvest_date:
+          read("expected_harvest_date"),
+
+        biological_asset_account_code:
+          read(
+            "biological_asset_account_code"
+          ),
+
+        fair_value_gain_account_code:
+          read(
+            "fair_value_gain_account_code"
+          ),
+
+        fair_value_loss_account_code:
+          read(
+            "fair_value_loss_account_code"
+          ),
+
+        payable_account_code:
+          read("payable_account_code"),
+
+        cash_account_code:
+          read("cash_account_code"),
+
+        description:
+          read("description"),
+      };
+
+      lines.push(line);
+    }
+
+    return lines;
+  }
+
+  function acquisitionModal(acquisition) {
+    acquisition = acquisition || {};
+
+    var sourceLines =
+      acquisition.lines &&
+      acquisition.lines.length
+        ? acquisition.lines
+        : [emptyAcquisitionLine()];
+
+    var modalLines = sourceLines.map(function (line) {
+      return Object.assign(
+        {},
+        emptyAcquisitionLine(),
+        line || {}
+      );
+    });
+
+    function renderBody() {
+      var today = new Date()
+        .toISOString()
+        .slice(0, 10);
+
+      var transactionDate =
+        acquisition.transaction_date ||
+        today;
+
+      var recognitionDate =
+        acquisition.recognition_date ||
+        transactionDate;
+
+      var currency =
+        acquisition.currency_code ||
+        (
+          state.settings &&
+          state.settings.default_currency_code
+        ) ||
+        (
+          typeof window.resolveCurrency ===
+          "function"
+            ? window.resolveCurrency()
+            : ""
+        ) ||
+        "USD";
+
+      var transactionTypes = [
+        "purchase",
+        "birth",
+        "planting",
+        "donation",
+        "transfer_in",
+        "opening_balance",
+        "other"
+      ];
+
+      var typeOptions = transactionTypes
+        .map(function (value) {
+          var selected =
+            (
+              acquisition.transaction_type ||
+              "purchase"
+            ) === value
+              ? "selected"
+              : "";
+
+          return (
+            '<option value="' +
+            esc(value) +
+            '" ' +
+            selected +
+            ">" +
+            esc(
+              acquisitionTypeLabel(value)
+            ) +
+            "</option>"
+          );
+        })
+        .join("");
+
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${field(
+            "transaction_number",
+            "Transaction number",
+            acquisition.transaction_number || "",
+            {
+              placeholder: "Generated automatically"
+            }
+          )}
+
+          ${field(
+            "transaction_type",
+            "Transaction type",
+            acquisition.transaction_type || "purchase",
+            {
+              required: true,
+              choices: typeOptions
+            }
+          )}
+
+          ${field(
+            "transaction_date",
+            "Transaction date",
+            transactionDate,
+            {
+              type: "date",
+              required: true
+            }
+          )}
+
+          ${field(
+            "recognition_date",
+            "Recognition date",
+            recognitionDate,
+            {
+              type: "date",
+              required: true
+            }
+          )}
+
+          ${field(
+            "destination_location_id",
+            "Destination location",
+            acquisition.destination_location_id || "",
+            {
+              choices: selectOptions(
+                state.locations,
+                "id",
+                function (row) {
+                  return (
+                    row.location_code +
+                    " — " +
+                    row.location_name
+                  );
+                },
+                acquisition.destination_location_id || "",
+                "Select location"
+              )
+            }
+          )}
+
+          ${field(
+            "season_id",
+            "Season",
+            acquisition.season_id || "",
+            {
+              choices: selectOptions(
+                state.seasons,
+                "id",
+                function (row) {
+                  return (
+                    row.season_code +
+                    " — " +
+                    row.season_name
+                  );
+                },
+                acquisition.season_id || "",
+                "Select season"
+              )
+            }
+          )}
+
+          ${field(
+            "currency_code",
+            "Currency",
+            currency
+          )}
+
+          ${field(
+            "exchange_rate",
+            "Exchange rate",
+            acquisition.exchange_rate != null
+              ? acquisition.exchange_rate
+              : 1,
+            {
+              type: "number",
+              step: "0.00000001"
+            }
+          )}
+
+          ${field(
+            "reference",
+            "Reference",
+            acquisition.reference || ""
+          )}
+
+          ${field(
+            "description",
+            "Description",
+            acquisition.description || "",
+            {
+              type: "textarea",
+              col: "md:col-span-3"
+            }
+          )}
+        </div>
+
+        <div class="flex justify-between gap-3 mt-5">
+          <h4 class="font-bold">
+            Transaction lines
+          </h4>
+
+          <button
+            type="button"
+            class="btn"
+            id="ias41AddAcquisitionLineBtn"
+          >
+            Add line
+          </button>
+        </div>
+
+        <div
+          id="ias41AcquisitionLines"
+          class="space-y-4 mt-3"
+        >
+          ${modalLines
+            .map(function (line, index) {
+              return acquisitionLineHtml(
+                line,
+                index
+              );
+            })
+            .join("")}
+        </div>
+      `;
+    }
+
+    openModal(
+      acquisition.id
+        ? "Edit IAS 41 transaction"
+        : "New IAS 41 transaction",
+
+      renderBody(),
+
+      async function (headerPayload) {
+        var form = $(
+          "#ias41ModalForm"
+        );
+
+        if (!form) {
+          throw new Error(
+            "IAS 41 acquisition form was not found."
+          );
+        }
+
+        headerPayload.lines =
+          readAcquisitionLines(
+            form,
+            modalLines.length
+          );
+
+        var url = acquisition.id
+          ? endpoint(
+              "acquisition",
+              acquisition.id
+            )
+          : endpoint("acquisitions");
+
+        var method = acquisition.id
+          ? "PATCH"
+          : "POST";
+
+        await api(url, {
+          method: method,
+          body: JSON.stringify(
+            headerPayload
+          )
+        });
+
+        await refresh();
+
+        toast(
+          "IAS 41 transaction saved."
+        );
+      }
+    );
+
+    function rebuildLines() {
+      var host = $(
+        "#ias41AcquisitionLines"
+      );
+
+      if (!host) {
+        return;
+      }
+
+      host.innerHTML = modalLines
+        .map(function (line, index) {
+          return acquisitionLineHtml(
+            line,
+            index
+          );
+        })
+        .join("");
+
+      bindLineButtons();
+    }
+
+    function bindLineButtons() {
+      var buttons =
+        document.querySelectorAll(
+          "[data-ias41-remove-acquisition-line]"
+        );
+
+      buttons.forEach(function (button) {
+        button.addEventListener(
+          "click",
+          function () {
+            if (
+              modalLines.length === 1
+            ) {
+              toast(
+                "At least one line is required.",
+                "warning"
+              );
+              return;
+            }
+
+            var index = Number(
+              button.getAttribute(
+                "data-ias41-remove-acquisition-line"
+              )
+            );
+
+            if (
+              !Number.isInteger(index) ||
+              index < 0 ||
+              index >= modalLines.length
+            ) {
+              return;
+            }
+
+            modalLines.splice(
+              index,
+              1
+            );
+
+            rebuildLines();
+          }
+        );
+      });
+    }
+
+    var addLineButton = $(
+      "#ias41AddAcquisitionLineBtn"
+    );
+
+    if (addLineButton) {
+      addLineButton.addEventListener(
+        "click",
+        function () {
+          modalLines.push(
+            emptyAcquisitionLine()
+          );
+
+          rebuildLines();
+        }
+      );
+    }
+
+    bindLineButtons();
+  }
+
+
+  function acquisitionPreviewModal(
+    preview,
+  ) {
+    const lines = (
+      preview.journal_lines || []
+    );
+
+    openModal(
+      "IAS 41 Journal Preview",
+      `
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div class="card p-3">
+            <div class="text-xs text-slate-500">
+              Transaction
+            </div>
+            <div class="font-bold">
+              ${esc(
+                preview.transaction_number
+              )}
+            </div>
+          </div>
+
+          <div class="card p-3">
+            <div class="text-xs text-slate-500">
+              Total debit
+            </div>
+            <div class="font-bold">
+              ${money(
+                preview.total_debit
+              )}
+            </div>
+          </div>
+
+          <div class="card p-3">
+            <div class="text-xs text-slate-500">
+              Total credit
+            </div>
+            <div class="font-bold">
+              ${money(
+                preview.total_credit
+              )}
+            </div>
+          </div>
+
+          <div class="card p-3">
+            <div class="text-xs text-slate-500">
+              Status
+            </div>
+            <div class="font-bold">
+              ${
+                preview.ready_to_post
+                  ? "Ready"
+                  : "Incomplete"
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          ${table(
+            [
+              "Account",
+              "Description",
+              "Debit",
+              "Credit",
+              "Resolved from",
+            ],
+            lines.map((line) => `
+              <tr class="border-b">
+                <td class="p-3">
+                  ${esc(
+                    line.account_name
+                    || line.account_code
+                  )}
+                </td>
+
+                <td class="p-3">
+                  ${esc(
+                    line.description
+                  )}
+                </td>
+
+                <td class="p-3 text-right">
+                  ${money(line.debit)}
+                </td>
+
+                <td class="p-3 text-right">
+                  ${money(line.credit)}
+                </td>
+
+                <td class="p-3">
+                  ${esc(
+                    line.resolution_source
+                    || "—"
+                  )}
+                </td>
+              </tr>
+            `),
+            "No journal lines generated.",
+          )}
+        </div>
+
+        ${
+          (
+            preview.missing_mappings
+            || []
+          ).length
+            ? `
+              <div class="card p-4 mt-4">
+                <h4 class="font-bold">
+                  Missing mappings
+                </h4>
+
+                <div class="mt-2 text-sm">
+                  ${
+                    preview.missing_mappings
+                      .map((row) => `
+                        <div>
+                          ${esc(
+                            row.role_code
+                          )}
+                        </div>
+                      `)
+                      .join("")
+                  }
+                </div>
+              </div>
+            `
+            : ""
+        }
+      `,
+      async () => {
+        closeModal();
+      },
+    );
+
+    const form = $(
+      "#ias41ModalForm"
+    );
+
+    if (form) {
+      const saveButton = form.querySelector(
+        'button[type="submit"]'
+      );
+
+      if (saveButton) {
+        saveButton.textContent = "Close";
+      }
+    }
+  }
+
+  async function loadAcquisition(
+    acquisitionId,
+  ) {
+    const response = await api(
+      endpoint(
+        "acquisition",
+        acquisitionId
+      )
+    );
+
+    return response.data || {};
+  }
+
+  async function previewAcquisition(
+    acquisitionId,
+  ) {
+    const response = await api(
+      endpoint(
+        "acquisitionPreview",
+        acquisitionId
+      ),
+      {
+        method: "POST",
+      },
+    );
+
+    state.acquisitionPreview = (
+      response.data || {}
+    );
+
+    acquisitionPreviewModal(
+      state.acquisitionPreview
+    );
+  }
+
+  async function approveAcquisition(
+    acquisitionId,
+  ) {
+    if (
+      !confirm(
+        "Approve this IAS 41 transaction?"
+      )
+    ) {
+      return;
+    }
+
+    await api(
+      endpoint(
+        "acquisitionApprove",
+        acquisitionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    );
+
+    await refresh();
+    toast(
+      "IAS 41 transaction approved."
+    );
+  }
+
+  async function returnAcquisitionToDraft(
+    acquisitionId,
+  ) {
+    if (
+      !confirm(
+        "Return this transaction to draft?"
+      )
+    ) {
+      return;
+    }
+
+    await api(
+      endpoint(
+        "acquisitionReturnToDraft",
+        acquisitionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    );
+
+    await refresh();
+    toast(
+      "Transaction returned to draft."
+    );
+  }
+
+
+  async function postAcquisition(
+    acquisitionId
+  ) {
+    var confirmed = confirm(
+      "Post this IAS 41 transaction and create the biological assets?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    var response = await api(
+      endpoint(
+        "acquisitionPost",
+        acquisitionId
+      ),
+      {
+        method: "POST",
+        body: JSON.stringify({})
+      }
+    );
+
+    var data = response.data || {};
+
+    await refresh();
+
+    toast(
+      "IAS 41 transaction posted. Journal " +
+      String(
+        data.journal_id || ""
+      ) +
+      " created."
+    );
   }
 
   async function bindIAS41Screen() {

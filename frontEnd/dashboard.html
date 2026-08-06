@@ -11023,6 +11023,15 @@ tbody tr:hover {
                   <option value="ifrs15_revenue">IFRS 15 Revenue disclosures</option>
                   <option value="ias40_ip">IAS 40 — Investment Property</option>
                   <option value="ias38_ia">IAS 38 — Intangible Assets</option>
+                  <option value="ifrs9_financial_instruments">IFRS 9 — Financial Instruments</option>
+                  <optgroup label="Employee Benefits">
+                    <option value="ias19_employee_costs">IAS 19 — Employee benefit expense</option>
+                    <option value="ias19_leave_liability_policy">IAS 19 — Leave benefits policy</option>
+                    <option value="ias19_bonus_provision">IAS 19 — Bonus provision</option>
+                    <option value="ias19_termination_benefits">IAS 19 — Termination benefits</option>
+                    <option value="ias19_defined_contribution">IAS 19 — Defined-contribution plans</option>
+                    <option value="ias19_defined_benefit">IAS 19 — Defined-benefit plans</option>
+                  </optgroup>
                 </select>
 
                 <button id="generateNotesBtn"
@@ -11051,12 +11060,27 @@ tbody tr:hover {
                       <option value="ifrs16_lease_policy">Lessee lease policy note</option>
                       <option value="ifrs16_lessor_lease_policy">Lessor lease policy note</option>
                     </optgroup>
+                    <optgroup label="Employee Benefits">
+                      <option value="ias19_employee_cost_policy">IAS 19 — Employee benefits policy</option>
+                      <option value="ias19_leave_liability_policy">IAS 19 — Leave benefits policy</option>
+                      <option value="ias19_leave_liability">IAS 19 — Leave pay liability</option>
+                      <option value="ias19_employee_cost_disclosure">IAS 19 — Employee benefit expense</option>
+                      <option value="ias19_bonus_provision_policy">IAS 19 — Employee bonus policy</option>
+                      <option value="ias19_bonus_provision_disclosure">IAS 19 — Bonus provision</option>
+                      <option value="ias19_termination_benefits_policy">IAS 19 — Termination benefits policy</option>
+                      <option value="ias19_termination_benefits_disclosure">IAS 19 — Termination benefit obligation</option>
+                      <option value="ias19_defined_contribution_policy">IAS 19 — Defined-contribution policy</option>
+                      <option value="ias19_defined_contribution_disclosure">IAS 19 — Defined-contribution plans</option>
+                      <option value="ias19_defined_benefit_policy">IAS 19 — Defined-benefit policy</option>
+                      <option value="ias19_defined_benefit_disclosure">IAS 19 — Defined-benefit plans</option>
+                    </optgroup>
                     <option value="ifrs15_revenue_policy">IFRS 15 revenue policy note</option>
                     <option value="ifrs15_revenue_disclosure">IFRS 15 revenue disclosure note</option>
                     <option value="ias40_ip_policy">IAS 40 — Investment property policy</option>
                     <option value="ias40_ip_disclosure">IAS 40 — Investment property disclosures</option>
                     <option value="ias38_ia_policy">IAS 38 — Intangible assets policy</option>
                     <option value="ias38_ia_disclosure">IAS 38 — Intangible assets disclosures</option>                  
+                    <option value="ifrs9_financial_instruments_policy">IFRS 9 financial instruments policy</option>
                   </select>
 
                   <button id="loadFsNoteBtn" class="btn">Load</button>
@@ -11703,6 +11727,7 @@ tbody tr:hover {
             <button class="tab active" data-ifrs9-tab="register">Register</button>
             <button class="tab" data-ifrs9-tab="ecl-runs">ECL Runs</button>
             <button class="tab" data-ifrs9-tab="ecl-models">ECL Models</button>
+            <button class="tab"data-ifrs9-tab="general-ecl">General ECL</button>
             <button class="tab" data-ifrs9-tab="accounts">Account Setup</button>
           </div>
 
@@ -11985,6 +12010,285 @@ tbody tr:hover {
               <div id="ifrs9BandList"></div>
 
               <button id="ifrs9SaveBandsBtn" class="btn btn-primary">Save Provision Matrix</button>
+            </div>
+          </div>
+
+          <div
+            id="ifrs9TabGeneralEcl"
+            class="ifrs9-tab-panel hidden"
+          >
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>General ECL Models</h3>
+                  <p class="muted">
+                    Stage 1, Stage 2 and Stage 3 ECL models for
+                    loans, deposits, bonds and other financial assets.
+                  </p>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Model Name
+                  <input
+                    id="ifrs9GeneralModelName"
+                    placeholder="Loan Receivables General ECL"
+                  >
+                </label>
+
+                <label>
+                  Model Code
+                  <input
+                    id="ifrs9GeneralModelCode"
+                    placeholder="LOAN-ECL-01"
+                  >
+                </label>
+
+                <label>
+                  Applies To
+                  <select id="ifrs9GeneralModelAppliesTo">
+                    <option value="loan_receivable">
+                      Loan Receivables
+                    </option>
+                    <option value="staff_loan">
+                      Staff Loans
+                    </option>
+                    <option value="director_loan">
+                      Director Loans
+                    </option>
+                    <option value="deposit_asset">
+                      Deposit Assets
+                    </option>
+                    <option value="bond">
+                      Bonds
+                    </option>
+                    <option value="note_receivable">
+                      Notes Receivable
+                    </option>
+                    <option value="other_financial_asset">
+                      Other Financial Assets
+                    </option>
+                    <option value="fvoci_debt">
+                      FVOCI Debt Instruments
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  SICR Method
+                  <select id="ifrs9GeneralSicrMethod">
+                    <option value="combined">Combined</option>
+                    <option value="days_past_due">Days Past Due</option>
+                    <option value="credit_rating">Credit Rating</option>
+                    <option value="pd_change">PD Change</option>
+                    <option value="watchlist">Watchlist</option>
+                  </select>
+                </label>
+
+                <label>
+                  Stage 2 Backstop Days
+                  <input
+                    id="ifrs9GeneralStage2Days"
+                    type="number"
+                    min="0"
+                    value="30"
+                  >
+                </label>
+
+                <label>
+                  Default Days
+                  <input
+                    id="ifrs9GeneralDefaultDays"
+                    type="number"
+                    min="1"
+                    value="90"
+                  >
+                </label>
+
+                <label>
+                  Cure Period Days
+                  <input
+                    id="ifrs9GeneralCureDays"
+                    type="number"
+                    min="0"
+                    value="90"
+                  >
+                </label>
+
+                <label>
+                  Lifetime Horizon Months
+                  <input
+                    id="ifrs9GeneralLifetimeMonths"
+                    type="number"
+                    min="1"
+                    value="120"
+                  >
+                </label>
+
+                <label>
+                  Effective From
+                  <input
+                    id="ifrs9GeneralEffectiveFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Review Date
+                  <input
+                    id="ifrs9GeneralReviewDate"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Model Owner
+                  <input
+                    id="ifrs9GeneralModelOwner"
+                    placeholder="Finance Manager"
+                  >
+                </label>
+              </div>
+
+              <button
+                id="ifrs9CreateGeneralModelBtn"
+                type="button"
+                class="btn btn-primary"
+              >
+                Create General ECL Model
+              </button>
+            </div>
+
+            <div class="card">
+              <h3>General ECL Models</h3>
+              <div id="ifrs9GeneralModelList"></div>
+            </div>
+
+            <div
+              id="ifrs9GeneralModelConfig"
+              class="hidden"
+            >
+              <div class="card">
+                <div class="card-header-row">
+                  <div>
+                    <h3 id="ifrs9GeneralConfigTitle">
+                      General ECL Configuration
+                    </h3>
+                    <p class="muted">
+                      Configure probability-weighted scenarios,
+                      PD curves and LGD assumptions.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="tabs">
+                  <button
+                    type="button"
+                    class="tab active"
+                    data-ifrs9-general-config-tab="scenarios"
+                  >
+                    Scenarios
+                  </button>
+
+                  <button
+                    type="button"
+                    class="tab"
+                    data-ifrs9-general-config-tab="pd-curves"
+                  >
+                    PD Curves
+                  </button>
+
+                  <button
+                    type="button"
+                    class="tab"
+                    data-ifrs9-general-config-tab="lgd"
+                  >
+                    LGD Assumptions
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralScenariosPanel"
+                  class="ifrs9-general-config-panel"
+                >
+                  <div class="card-header-row">
+                    <h4>Economic Scenarios</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-scenario
+                    >
+                      Add Scenario
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralScenarioList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralScenariosBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save Scenarios
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralPdPanel"
+                  class="ifrs9-general-config-panel hidden"
+                >
+                  <div class="card-header-row">
+                    <h4>Probability of Default Curves</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-pd
+                    >
+                      Add PD Row
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralPdList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralPdBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save PD Curves
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralLgdPanel"
+                  class="ifrs9-general-config-panel hidden"
+                >
+                  <div class="card-header-row">
+                    <h4>Loss Given Default Assumptions</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-lgd
+                    >
+                      Add LGD
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralLgdList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralLgdBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save LGD Assumptions
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -18082,6 +18386,7 @@ tbody tr:hover {
             <button data-payroll-tab="employee-benefits">Employee Benefits</button>
             <button data-payroll-tab="incentives">Incentives</button>
             <button data-payroll-tab="reports">Reports</button>
+            <button type="button" data-payroll-tab="statutory">Statutory Returns</button>
             <button data-payroll-tab="settings">Settings</button>
           </div>
 
@@ -18738,6 +19043,28 @@ tbody tr:hover {
                       Reverse Payroll
                     </button>
                   </div>
+                </div>
+
+                <div class="payroll-card">
+                  <div class="payroll-card-head">
+                    <div>
+                      <h3>GL Reconciliation</h3>
+                      <p class="payroll-muted">
+                        Compare the payroll journal preview with the
+                        posted general-ledger journal.
+                      </p>
+                    </div>
+
+                    <button
+                      id="payrollRefreshReconciliationBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Reconcile
+                    </button>
+                  </div>
+
+                  <div id="payrollReconciliationPanel"></div>
                 </div>
               </div>
 
@@ -19937,6 +20264,9 @@ tbody tr:hover {
                     <option value="department-cost">Department Cost</option>
                     <option value="tax-report">Payroll Tax Report</option>
                     <option value="employer-contributions">Employer Contributions</option>
+                    <option value="attendance-report">Attendance Report</option>
+                    <option value="payroll-inputs">Payroll Inputs</option>
+                    <option value="incentive-report">Performance Incentives</option>
                     <option value="leave-liability">Leave Liability</option>
                     <option value="bonus-provision">Bonus Provision</option>
                     <option value="termination-benefits">Termination Benefits</option>
