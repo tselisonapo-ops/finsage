@@ -1,0 +1,57 @@
+﻿============================================================
+POSSIBLE MISSING {schema}. TABLE REFERENCES
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:09:51
+============================================================
+
+------------------------------------------------------------
+Line 52145
+Possible unqualified tenant table: journal
+Suggested form: {schema}.journal
+
+    52142:         Insert journal header inside an existing transaction (uses passed cursor).
+    52143:         Returns journal_id (int).
+    52144: 
+>>  52145:         NOTE: Update journal table name/columns if your schema differs.
+    52146:         """
+    52147:         from decimal import Decimal, ROUND_HALF_UP
+    52148:         from datetime import date as _date
+    52149: 
+    52150:         def money(x) -> float:
+    52151:             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    52152: 
+
+------------------------------------------------------------
+Line 64398
+Possible unqualified tenant table: bills
+Suggested form: {schema}.bills
+
+    64395:                 if paid > money("0.00"):
+    64396:                     raise ValueError("Cannot write-off: bill has allocations. Unallocate first.")
+    64397: 
+>>  64398:                 # 3) Amounts (from bills header)
+    64399:                 gross = money(b.get("total_amount"))
+    64400:                 net   = money(b.get("subtotal_amount"))
+    64401:                 vat   = money(b.get("vat_amount"))
+    64402: 
+    64403:                 if gross <= money("0.00"):
+    64404:                     raise ValueError("Bill total is zero; nothing to write off")
+    64405: 
+
+------------------------------------------------------------
+Line 65620
+Possible unqualified tenant table: journal
+Suggested form: {schema}.journal
+
+    65617:                 raise
+    65618: 
+    65619:     def journal_exists(self, journal_id: int) -> bool:
+>>  65620:         sql = "SELECT 1 FROM journal WHERE id = %s LIMIT 1"
+    65621:         return bool(self.fetch_one(sql, (int(journal_id),)))
+    65622: 
+    65623:     def get_invoice_with_lines(self, company_id: int, invoice_id: int) -> Optional[Dict[str, Any]]:
+    65624:         schema = self.company_schema(company_id)
+    65625: 
+    65626:         header_sql = f"""
+    65627:         SELECT *
+

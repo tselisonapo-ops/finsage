@@ -1,0 +1,48 @@
+﻿============================================================
+VIEW DEFINITIONS REQUIRING REVIEW
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:09:53
+============================================================
+
+------------------------------------------------------------
+Line 23979
+
+    23975:         -- =========================================================
+    23976:         -- PPE MOVEMENTS VIEW
+    23977:         -- Normalises PPE events into one reporting stream
+    23978:         -- =========================================================
+>>  23979:         CREATE OR REPLACE VIEW {schema}.vw_ppe_movements AS
+    23980:         WITH asset_base AS (
+    23981:             SELECT
+    23982:                 a.company_id,
+    23983:                 a.id AS asset_id,
+    23984:                 a.asset_code,
+    23985:                 a.asset_name,
+    23986:                 a.asset_class,
+    23987:                 a.category,
+    23988:                 a.acquisition_date,
+    23989:                 a.available_for_use_date,
+    23990:                 a.measurement_basis,
+    23991:                 a.status AS asset_status,
+
+------------------------------------------------------------
+Line 28392
+
+    28388:         -- 1) Receipt balance view (unallocated amounts)
+    28389:         -- 2) Trigger to prevent allocating above receipt amount
+    28390:         -- ==================================================
+    28391: 
+>>  28392:         CREATE OR REPLACE VIEW {schema}.vw_receipt_balances AS
+    28393:         SELECT
+    28394:             r.company_id,
+    28395:             r.id AS receipt_id,
+    28396:             r.customer_id,
+    28397:             r.amount::numeric(18,2) AS receipt_amount,
+    28398:             COALESCE(SUM(ra.amount),0)::numeric(18,2) AS allocated_amount,
+    28399:             (r.amount - COALESCE(SUM(ra.amount),0))::numeric(18,2) AS unallocated_amount
+    28400:         FROM {schema}.receipts r
+    28401:         LEFT JOIN {schema}.receipt_allocations ra
+    28402:         ON ra.company_id = r.company_id
+    28403:         AND ra.receipt_id = r.id
+    28404:         GROUP BY r.company_id, r.id, r.customer_id, r.amount;
+

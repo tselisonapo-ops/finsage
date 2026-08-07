@@ -1,0 +1,174 @@
+﻿============================================================
+ALL VIEW DEFINITIONS AND CHANGES
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:09:53
+============================================================
+
+------------------------------------------------------------
+Line 23979
+
+    23975:         -- =========================================================
+    23976:         -- PPE MOVEMENTS VIEW
+    23977:         -- Normalises PPE events into one reporting stream
+    23978:         -- =========================================================
+>>  23979:         CREATE OR REPLACE VIEW {schema}.vw_ppe_movements AS
+    23980:         WITH asset_base AS (
+    23981:             SELECT
+    23982:                 a.company_id,
+    23983:                 a.id AS asset_id,
+    23984:                 a.asset_code,
+    23985:                 a.asset_name,
+    23986:                 a.asset_class,
+    23987:                 a.category,
+    23988:                 a.acquisition_date,
+    23989:                 a.available_for_use_date,
+    23990:                 a.measurement_basis,
+    23991:                 a.status AS asset_status,
+
+------------------------------------------------------------
+Line 24531
+
+    24527:         -- =========================================================
+    24528:         -- PPE DISCLOSURE BY CLASS
+    24529:         -- Aggregates normalised movements
+    24530:         -- =========================================================
+>>  24531:         DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class CASCADE;
+    24532: 
+    24533:         CREATE VIEW {schema}.vw_ppe_disclosure_by_class AS
+    24534:         SELECT
+    24535:             m.company_id,
+    24536:             m.asset_class,
+    24537: 
+    24538:             m.movement_type,
+    24539: 
+    24540:             SUM(COALESCE(m.cost_delta,0))::numeric(18,2)                 AS cost_amount,
+    24541:             SUM(COALESCE(m.accum_dep_delta,0))::numeric(18,2)            AS accum_dep_amount,
+    24542:             SUM(COALESCE(m.impairment_delta,0))::numeric(18,2)           AS impairment_amount,
+    24543:             SUM(COALESCE(m.revaluation_reserve_delta,0))::numeric(18,2)  AS reserve_amount,
+
+------------------------------------------------------------
+Line 24533
+
+    24529:         -- Aggregates normalised movements
+    24530:         -- =========================================================
+    24531:         DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class CASCADE;
+    24532: 
+>>  24533:         CREATE VIEW {schema}.vw_ppe_disclosure_by_class AS
+    24534:         SELECT
+    24535:             m.company_id,
+    24536:             m.asset_class,
+    24537: 
+    24538:             m.movement_type,
+    24539: 
+    24540:             SUM(COALESCE(m.cost_delta,0))::numeric(18,2)                 AS cost_amount,
+    24541:             SUM(COALESCE(m.accum_dep_delta,0))::numeric(18,2)            AS accum_dep_amount,
+    24542:             SUM(COALESCE(m.impairment_delta,0))::numeric(18,2)           AS impairment_amount,
+    24543:             SUM(COALESCE(m.revaluation_reserve_delta,0))::numeric(18,2)  AS reserve_amount,
+    24544:             SUM(COALESCE(m.carrying_delta,0))::numeric(18,2)             AS carrying_amount
+    24545: 
+
+------------------------------------------------------------
+Line 28392
+
+    28388:         -- 1) Receipt balance view (unallocated amounts)
+    28389:         -- 2) Trigger to prevent allocating above receipt amount
+    28390:         -- ==================================================
+    28391: 
+>>  28392:         CREATE OR REPLACE VIEW {schema}.vw_receipt_balances AS
+    28393:         SELECT
+    28394:             r.company_id,
+    28395:             r.id AS receipt_id,
+    28396:             r.customer_id,
+    28397:             r.amount::numeric(18,2) AS receipt_amount,
+    28398:             COALESCE(SUM(ra.amount),0)::numeric(18,2) AS allocated_amount,
+    28399:             (r.amount - COALESCE(SUM(ra.amount),0))::numeric(18,2) AS unallocated_amount
+    28400:         FROM {schema}.receipts r
+    28401:         LEFT JOIN {schema}.receipt_allocations ra
+    28402:         ON ra.company_id = r.company_id
+    28403:         AND ra.receipt_id = r.id
+    28404:         GROUP BY r.company_id, r.id, r.customer_id, r.amount;
+
+------------------------------------------------------------
+Line 71868
+
+    71864:         """
+    71865:         schema = self.company_schema(company_id)
+    71866: 
+    71867:         cur.execute(f"""
+>>  71868:             DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class;
+    71869:             DROP VIEW IF EXISTS {schema}.vw_ppe_movements;
+    71870:         """)
+    71871: 
+    71872:         sql = f"""
+    71873:         -- =========================================================
+    71874:         -- PPE MOVEMENTS VIEW
+    71875:         -- Normalises PPE events into one reporting stream
+    71876:         -- =========================================================
+    71877:         CREATE VIEW {schema}.vw_ppe_movements AS
+    71878:         WITH asset_base AS (
+    71879:             SELECT
+    71880:                 a.company_id,
+
+------------------------------------------------------------
+Line 71869
+
+    71865:         schema = self.company_schema(company_id)
+    71866: 
+    71867:         cur.execute(f"""
+    71868:             DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class;
+>>  71869:             DROP VIEW IF EXISTS {schema}.vw_ppe_movements;
+    71870:         """)
+    71871: 
+    71872:         sql = f"""
+    71873:         -- =========================================================
+    71874:         -- PPE MOVEMENTS VIEW
+    71875:         -- Normalises PPE events into one reporting stream
+    71876:         -- =========================================================
+    71877:         CREATE VIEW {schema}.vw_ppe_movements AS
+    71878:         WITH asset_base AS (
+    71879:             SELECT
+    71880:                 a.company_id,
+    71881:                 a.id AS asset_id,
+
+------------------------------------------------------------
+Line 71877
+
+    71873:         -- =========================================================
+    71874:         -- PPE MOVEMENTS VIEW
+    71875:         -- Normalises PPE events into one reporting stream
+    71876:         -- =========================================================
+>>  71877:         CREATE VIEW {schema}.vw_ppe_movements AS
+    71878:         WITH asset_base AS (
+    71879:             SELECT
+    71880:                 a.company_id,
+    71881:                 a.id AS asset_id,
+    71882:                 a.asset_code,
+    71883:                 a.asset_name,
+    71884:                 a.asset_class,
+    71885:                 a.category,
+    71886:                 a.acquisition_date,
+    71887:                 a.available_for_use_date,
+    71888:                 a.measurement_basis,
+    71889:                 a.status AS asset_status,
+
+------------------------------------------------------------
+Line 72484
+
+    72480: 
+    72481:         -- =========================================================
+    72482:         -- PPE DISCLOSURE BY CLASS
+    72483:         -- =========================================================
+>>  72484:         CREATE VIEW {schema}.vw_ppe_disclosure_by_class AS
+    72485:         SELECT
+    72486:             m.company_id,
+    72487:             m.asset_class,
+    72488:             m.movement_type,
+    72489: 
+    72490:             SUM(COALESCE(m.cost_delta,0))::numeric(18,2)                AS cost_amount,
+    72491:             SUM(COALESCE(m.accum_dep_delta,0))::numeric(18,2)           AS accum_dep_amount,
+    72492:             SUM(COALESCE(m.impairment_delta,0))::numeric(18,2)          AS impairment_amount,
+    72493:             SUM(COALESCE(m.revaluation_reserve_delta,0))::numeric(18,2) AS reserve_amount,
+    72494:             SUM(COALESCE(m.carrying_delta,0))::numeric(18,2)            AS carrying_amount
+    72495:         FROM {schema}.vw_ppe_movements m
+    72496:         GROUP BY
+

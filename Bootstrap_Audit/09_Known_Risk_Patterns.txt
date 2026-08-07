@@ -1,0 +1,21 @@
+﻿============================================================
+KNOWN HIGH-RISK BOOTSTRAP PATTERNS
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:10:02
+============================================================
+
+------------------------------------------------------------
+Risk: CREATE VIEW without OR REPLACE
+Line: 24532
+Match: CREATE VIEW {schema}.
+
+------------------------------------------------------------
+Risk: CREATE VIEW without OR REPLACE
+Line: 71877
+Match: CREATE VIEW {schema}.
+
+------------------------------------------------------------
+Risk: CREATE VIEW without OR REPLACE
+Line: 72484
+Match: CREATE VIEW {schema}.
+

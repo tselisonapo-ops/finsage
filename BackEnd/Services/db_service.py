@@ -20484,13 +20484,36 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS component_percentage NUMERIC(5,2) NULL;
 
         -- Migration: Add accounting_standard to assets
-        ALTER TABLE {schema}.assets 
+        ALTER TABLE {schema}.assets
         ADD COLUMN IF NOT EXISTS accounting_standard TEXT NOT NULL DEFAULT 'ias16';
 
-        -- Constraint: only allow known standards
-        ALTER TABLE {schema}.assets 
-        ADD CONSTRAINT chk_accounting_standard 
-        CHECK (accounting_standard IN ('ias16', 'ias40', 'ias38'));
+        DO $chk_accounting_standard$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE c.conname = 'chk_accounting_standard'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.assets
+                    ADD CONSTRAINT chk_accounting_standard
+                    CHECK (
+                        accounting_standard IN (
+                            ''ias16'',
+                            ''ias40'',
+                            ''ias38''
+                        )
+                    )',
+                    '{schema}'
+                );
+            END IF;
+        END $chk_accounting_standard$;
+
+        CREATE INDEX IF NOT EXISTS idx_assets_accounting_standard
+        ON {schema}.assets(company_id, accounting_standard);
 
         -- Add index for filtering
         CREATE INDEX IF NOT EXISTS idx_assets_accounting_standard 
@@ -23161,29 +23184,30 @@ class DatabaseService:
                 )
             )
 
-            -- add_cost must have amount + account codes
             AND (
-                event_type <> 'add_cost'
+                status IN ('draft','void')
+                OR event_type<>'add_cost'
                 OR (
-                COALESCE(amount,0) > 0
-                AND debit_account_code IS NOT NULL AND length(trim(debit_account_code)) > 0
-                AND credit_account_code IS NOT NULL AND length(trim(credit_account_code)) > 0
+                    COALESCE(amount,0)>0
+                    AND NULLIF(TRIM(debit_account_code),'') IS NOT NULL
+                    AND NULLIF(TRIM(credit_account_code),'') IS NOT NULL
                 )
             )
 
-            -- change_estimate must change at least one estimate
             AND (
-                event_type <> 'change_estimate'
+                status IN ('draft','void')
+                OR event_type<>'change_estimate'
                 OR (
-                useful_life_months IS NOT NULL
-                OR residual_value IS NOT NULL
-                OR depreciation_method IS NOT NULL
+                    useful_life_months IS NOT NULL
+                    OR residual_value IS NOT NULL
+                    OR depreciation_method IS NOT NULL
                 )
             )
 
-            -- for ALL the new event types: require meta_json (inputs live here)
+            -- New event types require meta_json once no longer draft
             AND (
-                event_type IN ('add_cost','change_estimate')
+                status IN ('draft','void')
+                OR event_type IN ('add_cost','change_estimate')
                 OR meta_json IS NOT NULL
             )
 
@@ -23976,7 +24000,10 @@ class DatabaseService:
         -- PPE MOVEMENTS VIEW
         -- Normalises PPE events into one reporting stream
         -- =========================================================
-        CREATE OR REPLACE VIEW {schema}.vw_ppe_movements AS
+        DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class CASCADE;
+        DROP VIEW IF EXISTS {schema}.vw_ppe_movements CASCADE;
+
+        CREATE VIEW {schema}.vw_ppe_movements AS
         WITH asset_base AS (
             SELECT
                 a.company_id,
@@ -23990,11 +24017,11 @@ class DatabaseService:
                 a.measurement_basis,
                 a.status AS asset_status,
 
-                COALESCE(a.opening_cost, 0)::numeric(18,2)         AS opening_cost,
-                COALESCE(a.opening_accum_dep, 0)::numeric(18,2)    AS opening_accum_dep,
-                COALESCE(a.opening_impairment, 0)::numeric(18,2)   AS opening_impairment,
-                COALESCE(a.cost, 0)::numeric(18,2)                 AS current_cost,
-                COALESCE(a.residual_value, 0)::numeric(18,2)       AS residual_value
+                COALESCE(a.opening_cost,0)::numeric(18,2)       AS opening_cost,
+                COALESCE(a.opening_accum_dep,0)::numeric(18,2)  AS opening_accum_dep,
+                COALESCE(a.opening_impairment,0)::numeric(18,2) AS opening_impairment,
+                COALESCE(a.cost,0)::numeric(18,2)               AS current_cost,
+                COALESCE(a.residual_value,0)::numeric(18,2)     AS residual_value
             FROM {schema}.assets a
         ),
 
@@ -24069,16 +24096,16 @@ class DatabaseService:
         fallback_acquisition_rows AS (
             SELECT
                 a.company_id,
-                a.id AS asset_id,
+                a.asset_id,
                 a.asset_code,
                 a.asset_name,
                 a.asset_class,
                 a.category,
-                COALESCE(a.available_for_use_date, a.acquisition_date, CURRENT_DATE)::date AS event_date,
+                COALESCE(a.available_for_use_date,a.acquisition_date,CURRENT_DATE)::date AS event_date,
 
                 'addition'::text AS movement_type,
                 'assets_fallback'::text AS source_table,
-                a.id::bigint AS source_id,
+                a.asset_id::bigint AS source_id,
 
                 a.measurement_basis,
                 'Auto-generated from asset master'::text AS narrative,
@@ -24089,17 +24116,17 @@ class DatabaseService:
                 0::numeric(18,2) AS revaluation_reserve_delta,
                 a.current_cost::numeric(18,2) AS carrying_delta
             FROM asset_base a
-            WHERE a.current_cost <> 0
+            WHERE a.current_cost<>0
             AND NOT EXISTS (
                 SELECT 1
                 FROM {schema}.asset_acquisitions ac
-                WHERE ac.asset_id = a.asset_id
-                    AND COALESCE(ac.status,'draft') IN ('posted')
+                WHERE ac.asset_id=a.asset_id
+                    AND COALESCE(ac.status,'draft')='posted'
             )
             AND NOT (
-                a.opening_cost <> 0
-                OR a.opening_accum_dep <> 0
-                OR a.opening_impairment <> 0
+                a.opening_cost<>0
+                OR a.opening_accum_dep<>0
+                OR a.opening_impairment<>0
             )
         ),
 
@@ -24528,6 +24555,8 @@ class DatabaseService:
         -- PPE DISCLOSURE BY CLASS
         -- Aggregates normalised movements
         -- =========================================================
+        DROP VIEW IF EXISTS {schema}.vw_ppe_disclosure_by_class CASCADE;
+
         CREATE VIEW {schema}.vw_ppe_disclosure_by_class AS
         SELECT
             m.company_id,
@@ -28149,15 +28178,15 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS item_code TEXT NULL,     -- sku or service code
         ADD COLUMN IF NOT EXISTS vat_code TEXT NULL;      -- STANDARD / ZERO / EXEMPT / CUSTOM etc
 
-        ALTER TABLE invoice_lines
-        ADD COLUMN source TEXT,
-        ADD COLUMN source_id INT,
-        ADD COLUMN module_name TEXT,
-        ADD COLUMN lessor_lease_id INT,
-        ADD COLUMN lessor_schedule_id INT,
-        ADD COLUMN account_role TEXT,
-        ADD COLUMN account_name TEXT,
-        ADD COLUMN vat_account_code TEXT;
+        ALTER TABLE {schema}.invoice_lines
+        ADD COLUMN IF NOT EXISTS source TEXT,
+        ADD COLUMN IF NOT EXISTS source_id INT,
+        ADD COLUMN IF NOT EXISTS module_name TEXT,
+        ADD COLUMN IF NOT EXISTS lessor_lease_id INT,
+        ADD COLUMN IF NOT EXISTS lessor_schedule_id INT,
+        ADD COLUMN IF NOT EXISTS account_role TEXT,
+        ADD COLUMN IF NOT EXISTS account_name TEXT,
+        ADD COLUMN IF NOT EXISTS vat_account_code TEXT;
 
         CREATE INDEX IF NOT EXISTS {schema}_invoice_lines_item_idx
         ON {schema}.invoice_lines(company_id, item_type, item_id);
@@ -28785,37 +28814,24 @@ class DatabaseService:
         END IF;
         END $ck_lessor_leases_dates$;
 
-        DO $ck_lessor_leases_amounts$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_leases_amounts' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            ALTER TABLE {schema}.lessor_leases
-            DROP CONSTRAINT IF EXISTS ck_lessor_leases_amounts;
+        ALTER TABLE {schema}.lessor_leases
+        DROP CONSTRAINT IF EXISTS ck_lessor_leases_amounts;
 
-            ALTER TABLE {schema}.lessor_leases
-            ADD CONSTRAINT ck_lessor_leases_amounts
-            CHECK (
-                billing_amount >= 0
-                AND vat_rate >= 0
-                AND billing_basis IN ('gross', 'net')
-                AND billing_timing IN ('arrears', 'advance')
-                AND status IN (
-                    'draft',
-                    'active',
-                    'commenced',
-                    'suspended',
-                    'terminated'
-                )
-            );
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_leases_amounts$;
-
+        ALTER TABLE {schema}.lessor_leases
+        ADD CONSTRAINT ck_lessor_leases_amounts
+        CHECK (
+            billing_amount>=0
+            AND vat_rate>=0
+            AND billing_basis IN ('gross','net')
+            AND billing_timing IN ('arrears','advance')
+            AND status IN (
+                'draft',
+                'active',
+                'commenced',
+                'suspended',
+                'terminated'
+            )
+        );
         -- Uniqueness (avoid duplicates per company)
         DO $uq_lessor_leases_contract_no$
         BEGIN
@@ -29625,6 +29641,58 @@ class DatabaseService:
             ON DELETE CASCADE
         );
 
+        ALTER TABLE {schema}.lessor_lease_terminations
+        ADD COLUMN IF NOT EXISTS settlement_gross NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS settlement_net NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS settlement_vat NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(10,6) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS returned_asset_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS net_investment_derecognised NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS accrued_rent_settled NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS deferred_rent_released NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS calculation_payload JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+        ADD COLUMN IF NOT EXISTS settlement_bill_id BIGINT NULL;
+
+        UPDATE {schema}.lessor_lease_terminations
+        SET
+            settlement_gross=CASE
+                WHEN settlement_gross=0 AND COALESCE(settlement_amount,0)<>0
+                THEN settlement_amount
+                ELSE settlement_gross
+            END,
+            settlement_net=CASE
+                WHEN settlement_net=0
+                AND settlement_vat=0
+                AND COALESCE(settlement_amount,0)<>0
+                THEN settlement_amount
+                ELSE settlement_net
+            END,
+            calculation_payload=COALESCE(
+                calculation_payload,
+                preview_json,
+                '{{}}'::jsonb
+            );
+
+        DO $fk_lessor_terms_settlement_bill$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lessor_terms_settlement_bill'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_terminations
+                    ADD CONSTRAINT fk_lessor_terms_settlement_bill
+                    FOREIGN KEY (settlement_bill_id)
+                    REFERENCES %I.lessor_lease_bills(id)
+                    ON DELETE SET NULL',
+                    '{schema}','{schema}'
+                );
+            END IF;
+        END $fk_lessor_terms_settlement_bill$;
+
         -- FKs
         DO $fk_lessor_terms_contract$
         BEGIN
@@ -29640,21 +29708,6 @@ class DatabaseService:
             );
         END IF;
         END $fk_lessor_terms_contract$;
-
-        DO $fk_lessor_terms_bill$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_lessor_terms_bill' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT fk_lessor_terms_bill
-            FOREIGN KEY (bill_id) REFERENCES %I.lessor_lease_bills(id)',
-            '{schema}', '{schema}'
-            );
-        END IF;
-        END $fk_lessor_terms_bill$;
 
         DO $fk_lessor_terms_journal$
         BEGIN
@@ -29672,26 +29725,26 @@ class DatabaseService:
         END $fk_lessor_terms_journal$;
 
         -- Checks
-        DO $ck_lessor_terms_valid$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_terms_valid' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_terminations
-            ADD CONSTRAINT ck_lessor_terms_valid
-            CHECK (
-                termination_date IS NOT NULL
-                AND settlement_gross >= 0 AND settlement_net >= 0 AND settlement_vat >= 0
-                AND (settlement_net + settlement_vat) <= (settlement_gross + 0.02)
-                AND vat_rate >= 0
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-            )',
-            '{schema}'
-            );
-        END IF;
-        END $ck_lessor_terms_valid$;
+        ALTER TABLE {schema}.lessor_lease_terminations
+        DROP CONSTRAINT IF EXISTS ck_lessor_terms_valid;
+
+        ALTER TABLE {schema}.lessor_lease_terminations
+        ADD CONSTRAINT ck_lessor_terms_valid
+        CHECK (
+            termination_date IS NOT NULL
+            AND settlement_amount>=0
+            AND settlement_gross>=0
+            AND settlement_net>=0
+            AND settlement_vat>=0
+            AND vat_rate>=0
+            AND returned_asset_value>=0
+            AND net_investment_derecognised>=0
+            AND accrued_rent_settled>=0
+            AND deferred_rent_released>=0
+            AND ABS((settlement_net+settlement_vat)-settlement_gross)<=0.02
+            AND termination_type IN ('full','partial')
+            AND status IN ('draft','posted','reversed','void')
+        );
 
         -- One termination per contract (non-void)
         DO $uq_lessor_terms_one_per_contract$
@@ -33260,22 +33313,26 @@ class DatabaseService:
             END IF;
         END $$;
 
-        DO $$
+        DO $ifrs9_fv_measurement_valid_ck$
         BEGIN
             IF NOT EXISTS (
                 SELECT 1
                 FROM pg_constraint c
                 JOIN pg_namespace n
                 ON n.oid=c.connamespace
-                WHERE c.conname=
-                    '{schema}_ifrs9_fv_measurement_valid_ck'
+                WHERE c.conname='{schema}_ifrs9_fv_measurement_valid_ck'
                 AND n.nspname='{schema}'
             ) THEN
                 EXECUTE format(
                     'ALTER TABLE %I.ifrs9_fair_value_measurements
-                    ADD CONSTRAINT %I CHECK (
-                        previous_fair_value >= 0
-                        AND current_fair_value >= 0
+                    ADD CONSTRAINT %I
+                    CHECK (
+                        previous_carrying_amount >= 0
+                        AND fair_value >= 0
+                        AND ABS(
+                            fair_value_gain_loss
+                            - (fair_value - previous_carrying_amount)
+                        ) <= 0.02
                         AND fair_value_level IN (
                             ''level_1'',
                             ''level_2'',
@@ -33303,7 +33360,7 @@ class DatabaseService:
                     '{schema}_ifrs9_fv_measurement_valid_ck'
                 );
             END IF;
-        END $$;
+        END $ifrs9_fv_measurement_valid_ck$;
 
         -- 12) IFRS 9 account mapping
         CREATE TABLE IF NOT EXISTS {schema}.ifrs9_account_mappings (
@@ -35107,7 +35164,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=15
+        BOOTSTRAP_MIGRATION_VERSION=22
         AP_MIGRATION_VERSION=2
 
         try:
@@ -47835,89 +47892,67 @@ class DatabaseService:
 
 
     def create_lessor_termination(
-        self,
-        company_id: int,
-        lessor_lease_id: int,
-        payload: dict,
-        preview: dict,
-        *,
-        user_id: int | None = None,
-        cur=None,
+        self,company_id:int,lessor_lease_id:int,payload:dict,preview:dict,
+        *,user_id:int|None=None,cur=None
     ):
-        schema = f"company_{int(company_id)}"
+        schema=f"company_{int(company_id)}"
+        settlement_gross=payload.get("settlement_gross")
+        if settlement_gross is None:
+            settlement_gross=payload.get("settlement_amount") or 0
+
+        settlement_vat=payload.get("settlement_vat") or 0
+        settlement_net=payload.get("settlement_net")
+        if settlement_net is None:
+            settlement_net=settlement_gross-settlement_vat
 
         return self.fetch_one(
             f"""
             INSERT INTO {schema}.lessor_lease_terminations (
-                company_id,
-                lessor_lease_id,
-                termination_date,
-                termination_type,
-                reason,
-                settlement_amount,
-                returned_asset_value,
-                net_investment_derecognised,
-                accrued_rent_settled,
-                deferred_rent_released,
-                gain_loss_amount,
-                calculation_payload,
-                status,
-                created_by_user_id
+                company_id,lessor_lease_id,termination_date,termination_type,reason,
+                settlement_amount,settlement_gross,settlement_net,settlement_vat,vat_rate,
+                returned_asset_value,net_investment_derecognised,
+                accrued_rent_settled,deferred_rent_released,gain_loss_amount,
+                calculation_payload,status,created_by_user_id
             )
             VALUES (
-                %(company_id)s,
-                %(lessor_lease_id)s,
-                %(termination_date)s,
-                %(termination_type)s,
-                %(reason)s,
-                %(settlement_amount)s,
-                %(returned_asset_value)s,
-                %(net_investment_derecognised)s,
-                %(accrued_rent_settled)s,
-                %(deferred_rent_released)s,
-                %(gain_loss_amount)s,
-                %(calculation_payload)s,
-                'draft',
-                %(user_id)s
+                %(company_id)s,%(lessor_lease_id)s,%(termination_date)s,
+                %(termination_type)s,%(reason)s,
+                %(settlement_amount)s,%(settlement_gross)s,%(settlement_net)s,
+                %(settlement_vat)s,%(vat_rate)s,
+                %(returned_asset_value)s,%(net_investment_derecognised)s,
+                %(accrued_rent_settled)s,%(deferred_rent_released)s,
+                %(gain_loss_amount)s,%(calculation_payload)s,'draft',%(user_id)s
             )
             RETURNING *
             """,
             {
-                "company_id": int(company_id),
-                "lessor_lease_id": int(lessor_lease_id),
-                "termination_date": payload["termination_date"],
-                "termination_type": (
-                    payload.get("termination_type")
-                    or "full"
-                ),
-                "reason": payload.get("reason"),
-                "settlement_amount": (
-                    payload.get("settlement_amount") or 0
-                ),
-                "returned_asset_value": (
-                    payload.get("returned_asset_value") or 0
-                ),
-                "net_investment_derecognised": (
-                    preview.get("net_investment_derecognised")
-                    or 0
-                ),
-                "accrued_rent_settled": (
+                "company_id":int(company_id),
+                "lessor_lease_id":int(lessor_lease_id),
+                "termination_date":payload["termination_date"],
+                "termination_type":payload.get("termination_type") or "full",
+                "reason":payload.get("reason"),
+                "settlement_amount":settlement_gross,
+                "settlement_gross":settlement_gross,
+                "settlement_net":settlement_net,
+                "settlement_vat":settlement_vat,
+                "vat_rate":payload.get("vat_rate") or 0,
+                "returned_asset_value":payload.get("returned_asset_value") or 0,
+                "net_investment_derecognised":
+                    preview.get("net_investment_derecognised") or 0,
+                "accrued_rent_settled":
                     preview.get("accrued_rent_settled")
                     or preview.get("accrued_rental_settled")
-                    or 0
-                ),
-                "deferred_rent_released": (
+                    or 0,
+                "deferred_rent_released":
                     preview.get("deferred_rent_released")
                     or preview.get("deferred_rental_released")
-                    or 0
-                ),
-                "gain_loss_amount": (
+                    or 0,
+                "gain_loss_amount":
                     preview.get("gain_loss_amount")
                     if preview.get("gain_loss_amount") is not None
-                    else preview.get("termination_gain_loss", 0)
-                ),
-                "calculation_payload": Json(preview),
-                "user_id": user_id,
+                    else preview.get("termination_gain_loss",0),
+                "calculation_payload":Json(preview),
+                "user_id":user_id,
             },
             cur=cur,
         )

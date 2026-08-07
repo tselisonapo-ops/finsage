@@ -1,0 +1,7 @@
+﻿============================================================
+ALL DROP COLUMN STATEMENTS
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:09:54
+============================================================
+
+No matches found.

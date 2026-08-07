@@ -1,0 +1,774 @@
+﻿============================================================
+LIKELY INVALID EXECUTE format() BLOCKS
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:09:14
+============================================================
+
+------------------------------------------------------------
+Line 22936
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    22933:             JOIN pg_namespace n ON n.oid=c.connamespace
+    22934:             WHERE c.conname = 'ck_asset_usage_valid' AND n.nspname = '{schema}'
+    22935:         ) THEN
+>>  22936:             EXECUTE format($sql$
+    22937:             ALTER TABLE %I.asset_usage
+    22938:             ADD CONSTRAINT ck_asset_usage_valid
+    22939:             CHECK (
+    22940:                 period_end >= period_start
+    22941:                 AND units_used >= 0
+    22942:                 AND status IN ('posted','void')
+    22943:             )
+    22944:             $sql$, '{schema}');
+    22945:         END IF;
+    22946:         END $$;
+    22947: 
+    22948:         -- FK -> assets
+    22949:         DO $$
+    22950:         BEGIN
+    22951:         IF NOT EXISTS (
+
+------------------------------------------------------------
+Line 22956
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    22953:             JOIN pg_namespace n ON n.oid=c.connamespace
+    22954:             WHERE c.conname='fk_asset_usage_asset' AND n.nspname='{schema}'
+    22955:         ) THEN
+>>  22956:             EXECUTE format($sql$
+    22957:             ALTER TABLE %I.asset_usage
+    22958:             ADD CONSTRAINT fk_asset_usage_asset
+    22959:             FOREIGN KEY (asset_id) REFERENCES %I.assets(id)
+    22960:             $sql$, '{schema}', '{schema}');
+    22961:         END IF;
+    22962:         END $$;
+    22963: 
+    22964:         -- One row per asset per period (non-void)
+    22965:         DO $$
+    22966:         BEGIN
+    22967:         IF NOT EXISTS (
+    22968:             SELECT 1 FROM pg_indexes
+    22969:             WHERE schemaname = '{schema}' AND indexname='uq_asset_usage_asset_period'
+    22970:         ) THEN
+    22971:             EXECUTE format($sql$
+
+------------------------------------------------------------
+Line 22971
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    22968:             SELECT 1 FROM pg_indexes
+    22969:             WHERE schemaname = '{schema}' AND indexname='uq_asset_usage_asset_period'
+    22970:         ) THEN
+>>  22971:             EXECUTE format($sql$
+    22972:             CREATE UNIQUE INDEX uq_asset_usage_asset_period
+    22973:             ON %I.asset_usage(asset_id, period_start, period_end)
+    22974:             WHERE status <> 'void'
+    22975:             $sql$, '{schema}');
+    22976:         END IF;
+    22977:         END $$;
+    22978: 
+    22979:         CREATE INDEX IF NOT EXISTS {schema}_asset_usage_asset_idx
+    22980:         ON {schema}.asset_usage(asset_id);
+    22981: 
+    22982:         CREATE INDEX IF NOT EXISTS {schema}_asset_usage_period_end_idx
+    22983:         ON {schema}.asset_usage(period_end);
+    22984: 
+    22985:         -- Optional: company consistency trigger (ONLY if you already have fn_assert_asset_company() in the tenant schema)
+    22986:         DO $$
+
+------------------------------------------------------------
+Line 23001
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    22998:             JOIN pg_namespace n ON n.oid=c.relnamespace
+    22999:             WHERE n.nspname='{schema}' AND t.tgname='tr_asset_usage_assert_company'
+    23000:         ) THEN
+>>  23001:             EXECUTE format($sql$
+    23002:             CREATE TRIGGER tr_asset_usage_assert_company
+    23003:             BEFORE INSERT OR UPDATE OF company_id, asset_id
+    23004:             ON %I.asset_usage
+    23005:             FOR EACH ROW
+    23006:             EXECUTE PROCEDURE %I.fn_assert_asset_company()
+    23007:             $sql$, '{schema}', '{schema}');
+    23008:         END IF;
+    23009:         END $$;
+    23010: 
+    23011:         -- tenant schema: {schema}
+    23012:         CREATE TABLE IF NOT EXISTS {schema}.asset_subsequent_measurements (
+    23013:             id BIGSERIAL PRIMARY KEY,
+    23014:             company_id BIGINT NOT NULL,
+    23015:             asset_id BIGINT NOT NULL,
+    23016: 
+
+------------------------------------------------------------
+Line 23130
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23127:         END IF;
+    23128: 
+    23129:         -- 2) Add updated constraint
+>>  23130:         EXECUTE format($sql$
+    23131:             ALTER TABLE %I.asset_subsequent_measurements
+    23132:             ADD CONSTRAINT ck_asset_subseq_measure_valid
+    23133:             CHECK (
+    23134:             -- enums
+    23135:             event_type IN (
+    23136:                 'add_cost',
+    23137:                 'change_estimate',
+    23138:                 'held_for_sale_classify',
+    23139:                 'held_for_sale_unclassify',
+    23140:                 'impairment_loss',
+    23141:                 'impairment_reversal',
+    23142:                 'revaluation',
+    23143:                 'transfer_ppe_to_ip',
+    23144:                 'transfer_ip_to_ppe'
+    23145:             )
+
+------------------------------------------------------------
+Line 23209
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23206:             JOIN pg_namespace n ON n.oid=c.connamespace
+    23207:             WHERE c.conname='fk_asm_asset' AND n.nspname='{schema}'
+    23208:         ) THEN
+>>  23209:             EXECUTE format($sql$
+    23210:             ALTER TABLE %I.asset_subsequent_measurements
+    23211:             ADD CONSTRAINT fk_asm_asset
+    23212:             FOREIGN KEY (asset_id) REFERENCES %I.assets(id)
+    23213:             $sql$, '{schema}', '{schema}');
+    23214:         END IF;
+    23215:         END $$;
+    23216: 
+    23217:         -- -----------------------------
+    23218:         -- Optional: prevent true duplicates (non-void)
+    23219:         -- NOTE: do NOT include amount/accounts unless you want to block
+    23220:         -- multiple capex lines on same day.
+    23221:         -- This index blocks duplicates of the SAME event_type per asset per date per journal.
+    23222:         -- -----------------------------
+    23223:         DO $$
+    23224:         BEGIN
+
+------------------------------------------------------------
+Line 23229
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23226:             SELECT 1 FROM pg_indexes
+    23227:             WHERE schemaname = '{schema}' AND indexname='uq_asm_posted_once'
+    23228:         ) THEN
+>>  23229:             EXECUTE format($sql$
+    23230:             CREATE UNIQUE INDEX uq_asm_posted_once
+    23231:             ON {schema}.asset_subsequent_measurements(
+    23232:                 asset_id,
+    23233:                 event_date,
+    23234:                 event_type,
+    23235:                 COALESCE(posted_journal_id,0)
+    23236:             )
+    23237:             WHERE status = 'posted';
+    23238:             $sql$, '{schema}');
+    23239:         END IF;
+    23240:         END $$;
+    23241: 
+    23242:         -- -----------------------------
+    23243:         -- Optional: company consistency trigger
+    23244:         -- (ONLY if fn_assert_asset_company() exists in tenant schema)
+
+------------------------------------------------------------
+Line 23261
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23258:             JOIN pg_namespace n ON n.oid=c.relnamespace
+    23259:             WHERE n.nspname='{schema}' AND t.tgname='tr_asm_assert_company'
+    23260:         ) THEN
+>>  23261:             EXECUTE format($sql$
+    23262:             CREATE TRIGGER tr_asm_assert_company
+    23263:             BEFORE INSERT OR UPDATE OF company_id, asset_id
+    23264:             ON %I.asset_subsequent_measurements
+    23265:             FOR EACH ROW
+    23266:             EXECUTE PROCEDURE %I.fn_assert_asset_company()
+    23267:             $sql$, '{schema}', '{schema}');
+    23268:         END IF;
+    23269:         END $$;
+    23270: 
+    23271:         -- tenant schema: {schema}
+    23272:         CREATE TABLE IF NOT EXISTS {schema}.asset_carrying_amount_history (
+    23273:             id BIGSERIAL PRIMARY KEY,
+    23274:             company_id BIGINT NOT NULL,
+    23275:             asset_id BIGINT NOT NULL,
+    23276: 
+
+------------------------------------------------------------
+Line 23319
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23316:         SELECT 1 FROM pg_indexes
+    23317:         WHERE schemaname = '{schema}' AND indexname = 'uq_asset_carrying_hist_asset_asat'
+    23318:         ) THEN
+>>  23319:         EXECUTE format($sql$
+    23320:             CREATE UNIQUE INDEX uq_asset_carrying_hist_asset_asat
+    23321:             ON %I.asset_carrying_amount_history(asset_id, as_at)
+    23322:         $sql$, '{schema}');
+    23323:         END IF;
+    23324:         END $$;
+    23325: 
+    23326:         -- -----------------------------
+    23327:         -- CHECK constraint
+    23328:         -- -----------------------------
+    23329:         DO $$
+    23330:         BEGIN
+    23331:         IF NOT EXISTS (
+    23332:         SELECT 1 FROM pg_constraint c
+    23333:         JOIN pg_namespace n ON n.oid=c.connamespace
+    23334:         WHERE c.conname='ck_asset_carry_hist_valid' AND n.nspname='{schema}'
+
+------------------------------------------------------------
+Line 23336
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23333:         JOIN pg_namespace n ON n.oid=c.connamespace
+    23334:         WHERE c.conname='ck_asset_carry_hist_valid' AND n.nspname='{schema}'
+    23335:         ) THEN
+>>  23336:         EXECUTE format($sql$
+    23337:             ALTER TABLE %I.asset_carrying_amount_history
+    23338:             ADD CONSTRAINT ck_asset_carry_hist_valid
+    23339:             CHECK (
+    23340:                 as_at IS NOT NULL
+    23341: 
+    23342:                 AND source_event IN (
+    23343:                     'opening',
+    23344:                     'acquisition',
+    23345:                     'depreciation',
+    23346:                     'revaluation',
+    23347:                     'impairment',
+    23348: 
+    23349:                     -- Subsequent Measurements
+    23350:                     'add_cost',
+    23351:                     'change_estimate',
+
+------------------------------------------------------------
+Line 23383
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23380:         JOIN pg_namespace n ON n.oid=c.connamespace
+    23381:         WHERE c.conname='fk_asset_carry_hist_asset' AND n.nspname='{schema}'
+    23382:         ) THEN
+>>  23383:         EXECUTE format($sql$
+    23384:             ALTER TABLE %I.asset_carrying_amount_history
+    23385:             ADD CONSTRAINT fk_asset_carry_hist_asset
+    23386:             FOREIGN KEY (asset_id) REFERENCES %I.assets(id)
+    23387:         $sql$, '{schema}', '{schema}');
+    23388:         END IF;
+    23389:         END $$;
+    23390: 
+    23391:         -- -----------------------------
+    23392:         -- Optional: company consistency trigger
+    23393:         -- -----------------------------
+    23394:         DO $$
+    23395:         BEGIN
+    23396:         IF EXISTS (
+    23397:         SELECT 1
+    23398:         FROM pg_proc p
+
+------------------------------------------------------------
+Line 23409
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23406:         JOIN pg_namespace n ON n.oid=c.relnamespace
+    23407:         WHERE n.nspname='{schema}' AND t.tgname='tr_ach_assert_company'
+    23408:         ) THEN
+>>  23409:         EXECUTE format($sql$
+    23410:         CREATE TRIGGER tr_ach_assert_company
+    23411:         BEFORE INSERT OR UPDATE OF company_id, asset_id
+    23412:         ON %I.asset_carrying_amount_history
+    23413:         FOR EACH ROW
+    23414:         EXECUTE PROCEDURE %I.fn_assert_asset_company()
+    23415:         $sql$, '{schema}', '{schema}');
+    23416:         END IF;
+    23417:         END $$;
+    23418: 
+    23419:         -- -----------------------------
+    23420:         -- ASSET POLICIES (tenant schema)
+    23421:         -- -----------------------------
+    23422:         CREATE TABLE IF NOT EXISTS {schema}.asset_policies (
+    23423:             company_id   bigint PRIMARY KEY,
+    23424:             payload_json jsonb NOT NULL DEFAULT '{{}}'::jsonb,
+
+------------------------------------------------------------
+Line 23468
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23465:             SELECT 1 FROM pg_indexes
+    23466:             WHERE schemaname = '{schema}' AND indexname = 'asset_policies_updated_at_idx'
+    23467:         ) THEN
+>>  23468:             EXECUTE format($sql$
+    23469:             CREATE INDEX asset_policies_updated_at_idx
+    23470:             ON %I.asset_policies (updated_at DESC)
+    23471:             $sql$, '{schema}');
+    23472:         END IF;
+    23473:         END $$;
+    23474: 
+    23475:         -- -----------------------------
+    23476:         -- CHECK constraint (optional but good hygiene)
+    23477:         -- ensures payload is always an object, not array/null
+    23478:         -- -----------------------------
+    23479:         DO $$
+    23480:         BEGIN
+    23481:         IF NOT EXISTS (
+    23482:             SELECT 1 FROM pg_constraint c
+    23483:             JOIN pg_namespace n ON n.oid=c.connamespace
+
+------------------------------------------------------------
+Line 23486
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23483:             JOIN pg_namespace n ON n.oid=c.connamespace
+    23484:             WHERE c.conname='ck_asset_policies_payload_object' AND n.nspname='{schema}'
+    23485:         ) THEN
+>>  23486:             EXECUTE format($sql$
+    23487:             ALTER TABLE %I.asset_policies
+    23488:             ADD CONSTRAINT ck_asset_policies_payload_object
+    23489:             CHECK (jsonb_typeof(payload_json) = 'object')
+    23490:             $sql$, '{schema}');
+    23491:         END IF;
+    23492:         END $$;
+    23493: 
+    23494:         -- -----------------------------
+    23495:         -- FK to companies table (ONLY if it exists in tenant schema)
+    23496:         -- (skip safely if you don't have {schema}.companies)
+    23497:         -- -----------------------------
+    23498:         DO $$
+    23499:         BEGIN
+    23500:         IF EXISTS (
+    23501:             SELECT 1
+
+------------------------------------------------------------
+Line 23511
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23508:             JOIN pg_namespace n ON n.oid=c.connamespace
+    23509:             WHERE c.conname='fk_asset_policies_company' AND n.nspname='{schema}'
+    23510:         ) THEN
+>>  23511:             EXECUTE format($sql$
+    23512:             ALTER TABLE %I.asset_policies
+    23513:             ADD CONSTRAINT fk_asset_policies_company
+    23514:             FOREIGN KEY (company_id) REFERENCES %I.companies(id)
+    23515:             ON DELETE CASCADE
+    23516:             $sql$, '{schema}', '{schema}');
+    23517:         END IF;
+    23518:         END $$;
+    23519: 
+    23520:         -- ==================================================
+    23521:         -- ASSET VALUERS MASTER
+    23522:         -- ==================================================
+    23523:         CREATE TABLE IF NOT EXISTS {schema}.asset_valuers (
+    23524:             id BIGSERIAL PRIMARY KEY,
+    23525:             company_id BIGINT NOT NULL,
+    23526: 
+
+------------------------------------------------------------
+Line 23552
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23549:             WHERE c.conname = 'ck_asset_valuers_valid'
+    23550:             AND n.nspname = '{schema}'
+    23551:         ) THEN
+>>  23552:             EXECUTE format($sql$
+    23553:                 ALTER TABLE %I.asset_valuers
+    23554:                 ADD CONSTRAINT ck_asset_valuers_valid
+    23555:                 CHECK (length(btrim(valuer_name)) > 0)
+    23556:             $sql$, '{schema}');
+    23557:         END IF;
+    23558:         END $$;
+    23559: 
+    23560:         DO $$
+    23561:         BEGIN
+    23562:         IF NOT EXISTS (
+    23563:             SELECT 1
+    23564:             FROM pg_indexes
+    23565:             WHERE schemaname = '{schema}'
+    23566:             AND indexname = 'uq_asset_valuers_company_name_firm_reg'
+    23567:         ) THEN
+
+------------------------------------------------------------
+Line 23568
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23565:             WHERE schemaname = '{schema}'
+    23566:             AND indexname = 'uq_asset_valuers_company_name_firm_reg'
+    23567:         ) THEN
+>>  23568:             EXECUTE format($sql$
+    23569:                 CREATE UNIQUE INDEX uq_asset_valuers_company_name_firm_reg
+    23570:                 ON %I.asset_valuers (
+    23571:                     company_id,
+    23572:                     lower(btrim(valuer_name)),
+    23573:                     lower(btrim(coalesce(valuer_firm, ''))),
+    23574:                     lower(btrim(coalesce(registration_no, '')))
+    23575:                 )
+    23576:             $sql$, '{schema}');
+    23577:         END IF;
+    23578:         END $$;
+    23579: 
+    23580:         CREATE INDEX IF NOT EXISTS {schema}_asset_valuers_company_idx
+    23581:         ON {schema}.asset_valuers(company_id);
+    23582: 
+    23583:         CREATE INDEX IF NOT EXISTS {schema}_asset_valuers_name_idx
+
+------------------------------------------------------------
+Line 23641
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23638:             AND table_name = 'asset_revaluation_valuations'
+    23639:             AND column_name = 'valuer_id'
+    23640:         ) THEN
+>>  23641:             EXECUTE format($sql$
+    23642:                 ALTER TABLE %I.asset_revaluation_valuations
+    23643:                 ADD COLUMN valuer_id BIGINT NULL
+    23644:             $sql$, '{schema}');
+    23645:         END IF;
+    23646:         END $$;
+    23647: 
+    23648:         DO $$
+    23649:         BEGIN
+    23650:         IF NOT EXISTS (
+    23651:             SELECT 1
+    23652:             FROM information_schema.columns
+    23653:             WHERE table_schema = '{schema}'
+    23654:             AND table_name = 'asset_revaluation_valuations'
+    23655:             AND column_name = 'valuer_role'
+    23656:         ) THEN
+
+------------------------------------------------------------
+Line 23657
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23654:             AND table_name = 'asset_revaluation_valuations'
+    23655:             AND column_name = 'valuer_role'
+    23656:         ) THEN
+>>  23657:             EXECUTE format($sql$
+    23658:                 ALTER TABLE %I.asset_revaluation_valuations
+    23659:                 ADD COLUMN valuer_role TEXT NULL
+    23660:             $sql$, '{schema}');
+    23661:         END IF;
+    23662:         END $$;
+    23663: 
+    23664:         -- Checks
+    23665:         DO $$
+    23666:         BEGIN
+    23667:         IF NOT EXISTS (
+    23668:             SELECT 1
+    23669:             FROM pg_constraint c
+    23670:             JOIN pg_namespace n ON n.oid = c.connamespace
+    23671:             WHERE c.conname = 'ck_asset_revaluation_valuations_valid'
+    23672:             AND n.nspname = '{schema}'
+
+------------------------------------------------------------
+Line 23674
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23671:             WHERE c.conname = 'ck_asset_revaluation_valuations_valid'
+    23672:             AND n.nspname = '{schema}'
+    23673:         ) THEN
+>>  23674:             EXECUTE format($sql$
+    23675:                 ALTER TABLE %I.asset_revaluation_valuations
+    23676:                 ADD CONSTRAINT ck_asset_revaluation_valuations_valid
+    23677:                 CHECK (
+    23678:                     valuation_date IS NOT NULL
+    23679:                     AND (
+    23680:                         valuation_method IS NULL
+    23681:                         OR valuation_method IN (
+    23682:                             'market',
+    23683:                             'income',
+    23684:                             'cost',
+    23685:                             'depreciated_replacement_cost',
+    23686:                             'indexation',
+    23687:                             'other'
+    23688:                         )
+    23689:                     )
+
+------------------------------------------------------------
+Line 23719
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23716:             WHERE c.conname = 'fk_asset_reval_valuations_asset'
+    23717:             AND n.nspname = '{schema}'
+    23718:         ) THEN
+>>  23719:             EXECUTE format($sql$
+    23720:                 ALTER TABLE %I.asset_revaluation_valuations
+    23721:                 ADD CONSTRAINT fk_asset_reval_valuations_asset
+    23722:                 FOREIGN KEY (asset_id) REFERENCES %I.assets(id)
+    23723:             $sql$, '{schema}', '{schema}');
+    23724:         END IF;
+    23725:         END $$;
+    23726: 
+    23727:         -- FK -> asset_revaluations
+    23728:         DO $$
+    23729:         BEGIN
+    23730:         IF NOT EXISTS (
+    23731:             SELECT 1
+    23732:             FROM pg_constraint c
+    23733:             JOIN pg_namespace n ON n.oid = c.connamespace
+    23734:             WHERE c.conname = 'fk_asset_reval_valuations_revaluation'
+
+------------------------------------------------------------
+Line 23737
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23734:             WHERE c.conname = 'fk_asset_reval_valuations_revaluation'
+    23735:             AND n.nspname = '{schema}'
+    23736:         ) THEN
+>>  23737:             EXECUTE format($sql$
+    23738:                 ALTER TABLE %I.asset_revaluation_valuations
+    23739:                 ADD CONSTRAINT fk_asset_reval_valuations_revaluation
+    23740:                 FOREIGN KEY (revaluation_id) REFERENCES %I.asset_revaluations(id)
+    23741:                 ON DELETE CASCADE
+    23742:             $sql$, '{schema}', '{schema}');
+    23743:         END IF;
+    23744:         END $$;
+    23745: 
+    23746:         -- FK -> asset_valuers
+    23747:         DO $$
+    23748:         BEGIN
+    23749:         IF NOT EXISTS (
+    23750:             SELECT 1
+    23751:             FROM pg_constraint c
+    23752:             JOIN pg_namespace n ON n.oid = c.connamespace
+
+------------------------------------------------------------
+Line 23756
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23753:             WHERE c.conname = 'fk_asset_reval_valuations_valuer'
+    23754:             AND n.nspname = '{schema}'
+    23755:         ) THEN
+>>  23756:             EXECUTE format($sql$
+    23757:                 ALTER TABLE %I.asset_revaluation_valuations
+    23758:                 ADD CONSTRAINT fk_asset_reval_valuations_valuer
+    23759:                 FOREIGN KEY (valuer_id) REFERENCES %I.asset_valuers(id)
+    23760:             $sql$, '{schema}', '{schema}');
+    23761:         END IF;
+    23762:         END $$;
+    23763: 
+    23764:         -- Optional FK -> asset_documents
+    23765:         DO $$
+    23766:         BEGIN
+    23767:         IF EXISTS (
+    23768:             SELECT 1
+    23769:             FROM information_schema.tables
+    23770:             WHERE table_schema = '{schema}'
+    23771:             AND table_name = 'asset_documents'
+
+------------------------------------------------------------
+Line 23780
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23777:             WHERE c.conname = 'fk_asset_reval_valuations_document'
+    23778:             AND n.nspname = '{schema}'
+    23779:         ) THEN
+>>  23780:             EXECUTE format($sql$
+    23781:                 ALTER TABLE %I.asset_revaluation_valuations
+    23782:                 ADD CONSTRAINT fk_asset_reval_valuations_document
+    23783:                 FOREIGN KEY (source_document_id) REFERENCES %I.asset_documents(id)
+    23784:             $sql$, '{schema}', '{schema}');
+    23785:         END IF;
+    23786:         END $$;
+    23787: 
+    23788:         -- Remove old one-row-per-revaluation rule if it already exists from older migrations
+    23789:         DO $$
+    23790:         BEGIN
+    23791:         IF EXISTS (
+    23792:             SELECT 1
+    23793:             FROM pg_indexes
+    23794:             WHERE schemaname = '{schema}'
+    23795:             AND indexname = 'uq_asset_reval_valuations_revaluation_id'
+
+------------------------------------------------------------
+Line 23797
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23794:             WHERE schemaname = '{schema}'
+    23795:             AND indexname = 'uq_asset_reval_valuations_revaluation_id'
+    23796:         ) THEN
+>>  23797:             EXECUTE format($sql$
+    23798:                 DROP INDEX %I.uq_asset_reval_valuations_revaluation_id
+    23799:             $sql$, '{schema}');
+    23800:         END IF;
+    23801:         END $$;
+    23802: 
+    23803:         -- Unique: one same master valuer per revaluation
+    23804:         DO $$
+    23805:         BEGIN
+    23806:         IF NOT EXISTS (
+    23807:             SELECT 1
+    23808:             FROM pg_indexes
+    23809:             WHERE schemaname = '{schema}'
+    23810:             AND indexname = 'uq_asset_reval_vals_revaluation_valuer_id'
+    23811:         ) THEN
+    23812:             EXECUTE format($sql$
+
+------------------------------------------------------------
+Line 23812
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23809:             WHERE schemaname = '{schema}'
+    23810:             AND indexname = 'uq_asset_reval_vals_revaluation_valuer_id'
+    23811:         ) THEN
+>>  23812:             EXECUTE format($sql$
+    23813:                 CREATE UNIQUE INDEX uq_asset_reval_vals_revaluation_valuer_id
+    23814:                 ON %I.asset_revaluation_valuations(revaluation_id, valuer_id)
+    23815:                 WHERE valuer_id IS NOT NULL
+    23816:             $sql$, '{schema}');
+    23817:         END IF;
+    23818:         END $$;
+    23819: 
+    23820:         -- Unique: one same snapshot valuer name/firm per revaluation when no valuer master linked
+    23821:         DO $$
+    23822:         BEGIN
+    23823:         IF NOT EXISTS (
+    23824:             SELECT 1
+    23825:             FROM pg_indexes
+    23826:             WHERE schemaname = '{schema}'
+    23827:             AND indexname = 'uq_asset_reval_vals_revaluation_name_firm'
+
+------------------------------------------------------------
+Line 23829
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23826:             WHERE schemaname = '{schema}'
+    23827:             AND indexname = 'uq_asset_reval_vals_revaluation_name_firm'
+    23828:         ) THEN
+>>  23829:             EXECUTE format($sql$
+    23830:                 CREATE UNIQUE INDEX uq_asset_reval_vals_revaluation_name_firm
+    23831:                 ON %I.asset_revaluation_valuations(
+    23832:                     revaluation_id,
+    23833:                     lower(btrim(coalesce(valuer_name, ''))),
+    23834:                     lower(btrim(coalesce(valuer_firm, '')))
+    23835:                 )
+    23836:                 WHERE valuer_id IS NULL
+    23837:             $sql$, '{schema}');
+    23838:         END IF;
+    23839:         END $$;
+    23840: 
+    23841:         CREATE INDEX IF NOT EXISTS {schema}_asset_reval_valuations_company_idx
+    23842:         ON {schema}.asset_revaluation_valuations(company_id);
+    23843: 
+    23844:         CREATE INDEX IF NOT EXISTS {schema}_asset_reval_valuations_asset_idx
+
+------------------------------------------------------------
+Line 23880
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23877:             WHERE n.nspname = '{schema}'
+    23878:             AND t.tgname = 'tr_asset_reval_valuations_assert_company'
+    23879:         ) THEN
+>>  23880:         EXECUTE format($sql$
+    23881:             CREATE TRIGGER tr_asset_reval_valuations_assert_company
+    23882:             BEFORE INSERT OR UPDATE OF company_id, asset_id
+    23883:             ON %I.asset_revaluation_valuations
+    23884:             FOR EACH ROW
+    23885:             EXECUTE PROCEDURE %I.fn_assert_asset_company()
+    23886:         $sql$, '{schema}', '{schema}');
+    23887:         END IF;
+    23888:         END $$;
+    23889: 
+    23890:         -- Deep consistency across revaluation + valuer
+    23891:         DO $$
+    23892:         BEGIN
+    23893:         IF NOT EXISTS (
+    23894:             SELECT 1
+    23895:             FROM pg_proc p
+
+------------------------------------------------------------
+Line 23900
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23897:             WHERE n.nspname = '{schema}'
+    23898:             AND p.proname = 'fn_assert_asset_reval_valuation_consistency'
+    23899:         ) THEN
+>>  23900:             EXECUTE format($sql$
+    23901:                 CREATE FUNCTION %I.fn_assert_asset_reval_valuation_consistency()
+    23902:                 RETURNS trigger
+    23903:                 LANGUAGE plpgsql
+    23904:                 AS $fn$
+    23905:                 DECLARE
+    23906:                     v_asset_id BIGINT;
+    23907:                     v_company_id BIGINT;
+    23908:                     v_valuer_company_id BIGINT;
+    23909:                 BEGIN
+    23910:                     SELECT r.asset_id, r.company_id
+    23911:                     INTO v_asset_id, v_company_id
+    23912:                     FROM %I.asset_revaluations r
+    23913:                     WHERE r.id = NEW.revaluation_id;
+    23914: 
+    23915:                     IF v_asset_id IS NULL THEN
+
+------------------------------------------------------------
+Line 23965
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    23962:             WHERE n.nspname = '{schema}'
+    23963:             AND t.tgname = 'tr_asset_reval_valuations_consistency'
+    23964:         ) THEN
+>>  23965:         EXECUTE format($sql$
+    23966:             CREATE TRIGGER tr_asset_reval_valuations_consistency
+    23967:             BEFORE INSERT OR UPDATE OF company_id, asset_id, revaluation_id, valuer_id
+    23968:             ON %I.asset_revaluation_valuations
+    23969:             FOR EACH ROW
+    23970:             EXECUTE PROCEDURE %I.fn_assert_asset_reval_valuation_consistency()
+    23971:         $sql$, '{schema}', '{schema}');
+    23972:         END IF;
+    23973:         END $$;
+    23974: 
+    23975:         -- =========================================================
+    23976:         -- PPE MOVEMENTS VIEW
+    23977:         -- Normalises PPE events into one reporting stream
+    23978:         -- =========================================================
+    23979:         CREATE OR REPLACE VIEW {schema}.vw_ppe_movements AS
+    23980:         WITH asset_base AS (
+
+------------------------------------------------------------
+Line 25425
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    25422:                 );
+    25423:             END IF;
+    25424: 
+>>  25425:             EXECUTE format($sql$
+    25426:                 ALTER TABLE %I.loan_payments
+    25427:                 ADD CONSTRAINT %I
+    25428:                 CHECK (
+    25429:                     amount_paid > 0
+    25430:                     AND principal_amount >= 0
+    25431:                     AND interest_amount >= 0
+    25432:                     AND accrued_interest_amount >= 0
+    25433:                     AND fees_amount >= 0
+    25434:                     AND penalties_amount >= 0
+    25435:                     AND COALESCE(allocation_method,'') IN ('schedule_order','manual')
+    25436:                     AND COALESCE(payment_type,'') IN ('standard','prepayment')
+    25437:                     AND COALESCE(status,'') IN ('draft','approved','posted','void','reversed')
+    25438:                 )
+    25439:             $sql$, '{schema}', '{schema}_loan_payments_valid_ck');
+    25440:         END $ck_loan_payments$;
+
+------------------------------------------------------------
+Line 25711
+Status: ERROR: format() appears to receive raw SQL instead of a quoted string.
+
+    25708:                 WHERE schemaname = '{schema}'
+    25709:                 AND indexname = '{schema}_loan_payments_sched_open_uq'
+    25710:             ) THEN
+>>  25711:                 EXECUTE format($sql$
+    25712:                     CREATE UNIQUE INDEX %I
+    25713:                     ON %I.loan_payments(company_id, primary_schedule_id)
+    25714:                     WHERE primary_schedule_id IS NOT NULL
+    25715:                     AND status IN ('draft','approved','posted')
+    25716:                 $sql$, '{schema}_loan_payments_sched_open_uq', '{schema}');
+    25717:             END IF;
+    25718:         END $$;
+    25719: 
+    25720:         -- ==================================================
+    25721:         -- SERVICE ITEMS  (FULL + SAFE EVOLVE)
+    25722:         -- ==================================================
+    25723:         CREATE TABLE IF NOT EXISTS {schema}.service_items (
+    25724:             id SERIAL PRIMARY KEY,
+    25725:             company_id INT NOT NULL DEFAULT {company_id},
+    25726:             code TEXT NOT NULL,
+

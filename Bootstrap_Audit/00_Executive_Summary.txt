@@ -1,0 +1,23 @@
+﻿============================================================
+BOOTSTRAP AUDIT SUMMARY
+Source: .\BackEnd\Services\db_service.py
+Generated: 2026-08-07 01:10:02
+============================================================
+
+Source file: .\BackEnd\Services\db_service.py
+Total source lines: 144758
+
+EXECUTE format() occurrences: 15240
+Likely malformed EXECUTE format() blocks: 768
+Possible unqualified tenant references: 51
+View-related occurrences: 168
+Risky view operations: 42
+DROP COLUMN occurrences: 0
+Constraint occurrences: 25920
+Known risk matches: 15
+
+Start with:
+1. 02_Invalid_EXECUTE_FORMAT.txt
+2. 03_Unqualified_Tenant_Tables.txt
+3. 05_View_Replacement_Risks.txt
+4. 09_Known_Risk_Patterns.txt
