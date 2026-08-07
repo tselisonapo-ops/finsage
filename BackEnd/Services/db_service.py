@@ -35350,84 +35350,30 @@ class DatabaseService:
         AP_MIGRATION_VERSION=2
 
         try:
-            ddl_bootstrap_sql=ddl_bootstrap.format(
-                schema=schema,
-                company_id=int(company_id),
-            )
+            ddl_bootstrap_sql=ddl_bootstrap.format(schema=schema,company_id=int(company_id))
+            ddl_ap_sql=ddl_ap.format(schema=schema,company_id=int(company_id))
         except Exception as error:
-            print("\n[TENANT-FORMAT-FAIL] bootstrap")
-            print("company_id =",company_id,"schema =",schema)
-            print("error =",repr(error))
-            print("[/TENANT-FORMAT-FAIL]\n")
-            raise
-
-        try:
-            ddl_ap_sql=ddl_ap.format(
-                schema=schema,
-                company_id=int(company_id),
-            )
-        except Exception as error:
-            print("\n[TENANT-FORMAT-FAIL] ap")
-            print("company_id =",company_id,"schema =",schema)
+            print(f"\n[TENANT-FORMAT-FAIL] company={company_id} schema={schema}")
             print("error =",repr(error))
             print("[/TENANT-FORMAT-FAIL]\n")
             raise
 
         if int(company_id)==8:
             debug_path="tenant_bootstrap_company_8.sql"
-            with open(debug_path,"w",encoding="utf-8") as file:
-                file.write(ddl_bootstrap_sql)
+            with open(debug_path,"w",encoding="utf-8") as file:file.write(ddl_bootstrap_sql)
             print(f"[BOOT][DEBUG SQL] wrote {debug_path}")
 
         with self._conn_cursor() as (conn,cur):
             try:
-                cur.execute(
-                    "SELECT pg_advisory_xact_lock(%s);",
-                    (int(company_id),),
+                cur.execute("SELECT pg_advisory_xact_lock(%s);",(int(company_id),))
+
+                print(f"CHECKING MIGRATION {schema}:bootstrap v{BOOTSTRAP_MIGRATION_VERSION}")
+                self.execute_ddl(
+                    ddl_bootstrap_sql,
+                    cur=cur,
+                    migration_key=f"{schema}:bootstrap",
+                    migration_version=BOOTSTRAP_MIGRATION_VERSION,
                 )
-
-                for table_name in (
-                    "ifrs9_writeoffs",
-                    "ifrs9_writeoff_recoveries",
-                    "ifrs9_general_ecl_models",
-                    "ifrs9_general_ecl_scenarios",
-                    "ifrs9_general_ecl_pd_curves",
-                    "ifrs9_general_ecl_lgd_assumptions",
-                ):
-                    print(
-                        f"[BOOT][TEMPLATE] {schema}.{table_name}:",
-                        table_name in ddl_bootstrap_sql,
-                    )
-
-                    print(
-                        f"RUNNING MIGRATION {schema}:bootstrap "
-                        f"v{BOOTSTRAP_MIGRATION_VERSION} [DIRECT]"
-                    )
-
-                    debug_lines=ddl_bootstrap_sql.splitlines()
-
-                    try:
-                        cur.execute(ddl_bootstrap_sql)
-                        print(f"[BOOT][DIRECT-DONE] {schema}:bootstrap")
-                    except Exception as error:
-                        print(f"[BOOT][DIRECT-FAIL] {schema}:bootstrap")
-                        print("error =",repr(error))
-
-                        import re
-                        match=re.search(r"LINE\s+(\d+):",str(error))
-
-                        if match:
-                            error_line=int(match.group(1))
-                            start=max(0,error_line-15)
-                            end=min(len(debug_lines),error_line+10)
-
-                            print("\n[BOOT][SQL AROUND ERROR]")
-                            for index in range(start,end):
-                                marker=">>" if index+1==error_line else "  "
-                                print(f"{marker} {index+1}: {debug_lines[index]}")
-                            print("[/BOOT][SQL AROUND ERROR]\n")
-
-                        raise
 
                 cur.execute(
                     """
@@ -35450,10 +35396,7 @@ class DatabaseService:
                 )
                 print("[BOOT][IFRS9 TABLE CHECK]",cur.fetchone())
 
-                print(
-                    f"RUNNING MIGRATION {schema}:ap "
-                    f"v{AP_MIGRATION_VERSION}"
-                )
+                print(f"CHECKING MIGRATION {schema}:ap v{AP_MIGRATION_VERSION}")
                 self.execute_ddl(
                     ddl_ap_sql,
                     cur=cur,
@@ -35461,41 +35404,17 @@ class DatabaseService:
                     migration_version=AP_MIGRATION_VERSION,
                 )
 
-                print(
-                    f"RUNNING MIGRATION {schema}:payroll "
-                    f"v{self.PAYROLL_MIGRATION_VERSION}"
-                )
-                self.ensure_company_payroll(
-                    int(company_id),
-                    cur=cur,
-                )
+                print(f"CHECKING MIGRATION {schema}:payroll v{self.PAYROLL_MIGRATION_VERSION}")
+                self.ensure_company_payroll(int(company_id),cur=cur)
 
-                print(
-                    f"RUNNING MIGRATION {schema}:forecast "
-                    f"v{self.FORECAST_MIGRATION_VERSION}"
-                )
-                self.ensure_company_forecast(
-                    int(company_id),
-                    cur=cur,
-                )
+                print(f"CHECKING MIGRATION {schema}:forecast v{self.FORECAST_MIGRATION_VERSION}")
+                self.ensure_company_forecast(int(company_id),cur=cur)
 
-                print(
-                    f"RUNNING MIGRATION {schema}:migration "
-                    f"v{self.MIGRATION_WORKSPACE_MIGRATION_VERSION}"
-                )
-                self.ensure_schema_migration(
-                    int(company_id),
-                    cur=cur,
-                )
+                print(f"CHECKING MIGRATION {schema}:migration v{self.MIGRATION_WORKSPACE_MIGRATION_VERSION}")
+                self.ensure_schema_migration(int(company_id),cur=cur)
 
-                print(
-                    f"RUNNING MIGRATION {schema}:ias41 "
-                    f"v{self.IAS41_MIGRATION_VERSION}"
-                )
-                self.ensure_company_biological_assets(
-                    int(company_id),
-                    cur=cur,
-                )
+                print(f"CHECKING MIGRATION {schema}:ias41 v{self.IAS41_MIGRATION_VERSION}")
+                self.ensure_company_biological_assets(int(company_id),cur=cur)
 
                 print(f"RUNNING SAFE TENANT SYNC {schema}")
                 self.sync_existing_company_schema(
@@ -35509,12 +35428,8 @@ class DatabaseService:
 
             except Exception as error:
                 import traceback
-
                 conn.rollback()
-                print(
-                    f"\n[BOOT][DDL-ERROR] company={company_id} "
-                    f"schema={schema}"
-                )
+                print(f"\n[BOOT][DDL-ERROR] company={company_id} schema={schema}")
                 print("error =",repr(error))
                 traceback.print_exc()
                 print("[/BOOT][DDL-ERROR]\n")
@@ -98530,69 +98445,663 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         ])
 
-    def create_project(self, company_id: int, data: Dict[str, Any]) -> int:
-        schema = self.company_schema(company_id)
+    def payroll_disclosure_readiness(
+        self,
+        company_id:int,
+        date_from,
+        date_to,
+        *,
+        as_of=None,
+    )->dict:
+        company_id=int(company_id)
+        as_of=as_of or date_to
 
-        def pick(*keys, default=None):
-            for k in keys:
-                v = data.get(k)
-                if v not in (None, ""):
-                    return v
-            return default
+        employee_cost=(
+            self.build_payroll_employee_cost_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
 
-        sql = f"""
-        INSERT INTO {schema}.projects (
-            company_id,
-            project_code,
-            project_name,
-            customer_id,
-            project_type,
+        leave=(
+            self.build_payroll_leave_liability_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        bonus=(
+            self.build_payroll_bonus_provision_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        termination=(
+            self.build_payroll_termination_benefits_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        defined_contribution=(
+            self.build_payroll_defined_contribution_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        defined_benefit=(
+            self.build_payroll_defined_benefit_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        checks=[]
+        warnings=[]
+        errors=[]
+
+        def add_check(
+            key,
+            label,
             status,
-            start_date,
-            expected_end_date,
-            contract_value,
-            budget_value,
-            billing_method,
-            wip_account_code,
-            revenue_account_code,
-            cost_account_code,
-            location,
-            description,
-            notes,
-            meta,
-            created_by
-        )
-        VALUES (
-            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-            %s,%s,%s,%s,%s,%s,%s,%s,%s
-        )
-        RETURNING id;
-        """
+            message,
+            amount=None,
+        ):
+            item={
+                "key":key,
+                "label":label,
+                "status":status,
+                "message":message,
+                "amount":(
+                    float(_payroll_money(amount))
+                    if amount is not None else None
+                ),
+            }
 
-        params = (
-            int(company_id),
-            (pick("project_code", "projectCode", "code") or "").strip(),
-            (pick("project_name", "projectName", "name") or "").strip(),
-            pick("customer_id", "customerId"),
-            pick("project_type", "projectType", default="service"),
-            pick("status", default="draft"),
-            pick("start_date", "startDate"),
-            pick("expected_end_date", "expectedEndDate"),
-            float(pick("contract_value", "contractValue", default=0) or 0),
-            float(pick("budget_value", "budgetValue", default=0) or 0),
-            pick("billing_method", "billingMethod", default="milestone"),
-            pick("wip_account_code", "wipAccountCode"),
-            pick("revenue_account_code", "revenueAccountCode"),
-            pick("cost_account_code", "costAccountCode"),
-            pick("location"),
-            pick("description"),
-            pick("notes"),
-            psycopg2.extras.Json(data.get("meta") or {}),
-            pick("created_by", "createdBy"),
+            checks.append(item)
+
+            if status=="warning":
+                warnings.append(item)
+
+            if status=="error":
+                errors.append(item)
+
+        employee_summary=employee_cost.get("summary") or {}
+        employee_total=(
+            employee_cost.get("totals") or {}
+        ).get("employee_benefit_expense") or 0
+
+        add_check(
+            "posted_payroll",
+            "Posted payroll",
+            (
+                "ready"
+                if int(
+                    employee_summary.get(
+                        "payroll_run_count"
+                    ) or 0
+                )>0
+                else "warning"
+            ),
+            (
+                f"{int(employee_summary.get('payroll_run_count') or 0)} "
+                "posted payroll run(s) were included."
+                if employee_summary.get("payroll_run_count")
+                else (
+                    "No posted payroll runs were found "
+                    "for the reporting period."
+                )
+            ),
+            employee_total,
         )
 
-        row = self.fetch_one(sql, params) or {}
-        return int(row.get("id") or 0)
+        leave_total=(
+            leave.get("totals") or {}
+        ).get("leave_liability") or 0
+
+        add_check(
+            "leave_liability",
+            "Leave liability",
+            "ready" if leave_total else "warning",
+            (
+                "Leave liability was calculated."
+                if leave_total
+                else (
+                    "No leave liability was available "
+                    "at the reporting date."
+                )
+            ),
+            leave_total,
+        )
+
+        bonus_total=(
+            bonus.get("totals") or {}
+        ).get("bonus_provision") or 0
+
+        add_check(
+            "bonus_provision",
+            "Bonus provision",
+            "ready" if bonus_total else "warning",
+            (
+                "Bonus provision was calculated."
+                if bonus_total
+                else (
+                    "No bonus provision was available "
+                    "at the reporting date."
+                )
+            ),
+            bonus_total,
+        )
+
+        termination_total=(
+            termination.get("totals") or {}
+        ).get(
+            "termination_benefit_obligation"
+        ) or 0
+
+        add_check(
+            "termination_benefits",
+            "Termination benefits",
+            "ready" if termination_total else "warning",
+            (
+                "Termination benefit obligations "
+                "were included."
+                if termination_total
+                else (
+                    "No termination benefit obligations "
+                    "were available."
+                )
+            ),
+            termination_total,
+        )
+
+        dc_summary=(
+            defined_contribution.get("summary") or {}
+        )
+        dc_total=(
+            defined_contribution.get("totals") or {}
+        ).get("defined_contribution_expense") or 0
+
+        add_check(
+            "defined_contribution",
+            "Defined-contribution plans",
+            (
+                "ready"
+                if int(dc_summary.get("plan_count") or 0)>0
+                else "warning"
+            ),
+            (
+                f"{int(dc_summary.get('plan_count') or 0)} "
+                "defined-contribution plan(s) were included."
+                if dc_summary.get("plan_count")
+                else (
+                    "No defined-contribution plan runs "
+                    "were found."
+                )
+            ),
+            dc_total,
+        )
+
+        db_summary=defined_benefit.get("summary") or {}
+        db_plans=int(db_summary.get("plan_count") or 0)
+        db_liability=db_summary.get(
+            "net_defined_benefit_liability"
+        ) or 0
+        db_asset=db_summary.get(
+            "net_defined_benefit_asset"
+        ) or 0
+
+        add_check(
+            "defined_benefit",
+            "Defined-benefit plans",
+            "ready" if db_plans else "warning",
+            (
+                f"{db_plans} defined-benefit plan(s) "
+                "were supported by actuarial valuations."
+                if db_plans
+                else (
+                    "No validated actuarial valuation "
+                    "was available."
+                )
+            ),
+            Decimal(str(db_liability))
+            -Decimal(str(db_asset)),
+        )
+
+        payroll_employer_contributions=(
+            employee_cost.get("summary") or {}
+        ).get("employer_contributions") or 0
+
+        dc_employer_contributions=dc_summary.get(
+            "employer_contribution"
+        ) or 0
+
+        contribution_difference=_payroll_money(
+            Decimal(str(payroll_employer_contributions))
+            -Decimal(str(dc_employer_contributions))
+        )
+
+        add_check(
+            "contribution_reconciliation",
+            "Employer-contribution reconciliation",
+            (
+                "ready"
+                if contribution_difference==0
+                else "warning"
+            ),
+            (
+                "Payroll employer contributions agree "
+                "to defined-contribution runs."
+                if contribution_difference==0
+                else (
+                    "Payroll employer contributions differ "
+                    "from defined-contribution runs by "
+                    f"{contribution_difference:,.2f}."
+                )
+            ),
+            contribution_difference,
+        )
+
+        return{
+            "meta":{
+                "company_id":company_id,
+                "period":{
+                    "from":date_from.isoformat(),
+                    "to":date_to.isoformat(),
+                    "as_of":as_of.isoformat(),
+                },
+            },
+            "ready":not errors,
+            "has_warnings":bool(warnings),
+            "check_count":len(checks),
+            "warning_count":len(warnings),
+            "error_count":len(errors),
+            "checks":checks,
+            "warnings":warnings,
+            "errors":errors,
+            "disclosures":{
+                "employee_costs":employee_cost,
+                "leave_liability":leave,
+                "bonus_provision":bonus,
+                "termination_benefits":termination,
+                "defined_contribution":
+                    defined_contribution,
+                "defined_benefit":defined_benefit,
+            },
+        }
+
+    def payroll_disclosure_readiness(
+        self,
+        company_id:int,
+        date_from,
+        date_to,
+        *,
+        as_of=None,
+    )->dict:
+        company_id=int(company_id)
+        as_of=as_of or date_to
+
+        employee_cost=(
+            self.build_payroll_employee_cost_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        leave=(
+            self.build_payroll_leave_liability_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        bonus=(
+            self.build_payroll_bonus_provision_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        termination=(
+            self.build_payroll_termination_benefits_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        defined_contribution=(
+            self.build_payroll_defined_contribution_disclosure(
+                company_id,
+                date_from,
+                date_to,
+            )
+        )
+
+        defined_benefit=(
+            self.build_payroll_defined_benefit_disclosure(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        checks=[]
+        warnings=[]
+        errors=[]
+
+        def add_check(
+            key,
+            label,
+            status,
+            message,
+            amount=None,
+        ):
+            item={
+                "key":key,
+                "label":label,
+                "status":status,
+                "message":message,
+                "amount":(
+                    float(_payroll_money(amount))
+                    if amount is not None else None
+                ),
+            }
+
+            checks.append(item)
+
+            if status=="warning":
+                warnings.append(item)
+
+            if status=="error":
+                errors.append(item)
+
+        employee_summary=employee_cost.get("summary") or {}
+        employee_total=(
+            employee_cost.get("totals") or {}
+        ).get("employee_benefit_expense") or 0
+
+        add_check(
+            "posted_payroll",
+            "Posted payroll",
+            (
+                "ready"
+                if int(
+                    employee_summary.get(
+                        "payroll_run_count"
+                    ) or 0
+                )>0
+                else "warning"
+            ),
+            (
+                f"{int(employee_summary.get('payroll_run_count') or 0)} "
+                "posted payroll run(s) were included."
+                if employee_summary.get("payroll_run_count")
+                else (
+                    "No posted payroll runs were found "
+                    "for the reporting period."
+                )
+            ),
+            employee_total,
+        )
+
+        leave_total=(
+            leave.get("totals") or {}
+        ).get("leave_liability") or 0
+
+        add_check(
+            "leave_liability",
+            "Leave liability",
+            "ready" if leave_total else "warning",
+            (
+                "Leave liability was calculated."
+                if leave_total
+                else (
+                    "No leave liability was available "
+                    "at the reporting date."
+                )
+            ),
+            leave_total,
+        )
+
+        bonus_total=(
+            bonus.get("totals") or {}
+        ).get("bonus_provision") or 0
+
+        add_check(
+            "bonus_provision",
+            "Bonus provision",
+            "ready" if bonus_total else "warning",
+            (
+                "Bonus provision was calculated."
+                if bonus_total
+                else (
+                    "No bonus provision was available "
+                    "at the reporting date."
+                )
+            ),
+            bonus_total,
+        )
+
+        termination_total=(
+            termination.get("totals") or {}
+        ).get(
+            "termination_benefit_obligation"
+        ) or 0
+
+        add_check(
+            "termination_benefits",
+            "Termination benefits",
+            "ready" if termination_total else "warning",
+            (
+                "Termination benefit obligations "
+                "were included."
+                if termination_total
+                else (
+                    "No termination benefit obligations "
+                    "were available."
+                )
+            ),
+            termination_total,
+        )
+
+        dc_summary=(
+            defined_contribution.get("summary") or {}
+        )
+        dc_total=(
+            defined_contribution.get("totals") or {}
+        ).get("defined_contribution_expense") or 0
+
+        add_check(
+            "defined_contribution",
+            "Defined-contribution plans",
+            (
+                "ready"
+                if int(dc_summary.get("plan_count") or 0)>0
+                else "warning"
+            ),
+            (
+                f"{int(dc_summary.get('plan_count') or 0)} "
+                "defined-contribution plan(s) were included."
+                if dc_summary.get("plan_count")
+                else (
+                    "No defined-contribution plan runs "
+                    "were found."
+                )
+            ),
+            dc_total,
+        )
+
+        db_summary=defined_benefit.get("summary") or {}
+        db_plans=int(db_summary.get("plan_count") or 0)
+        db_liability=db_summary.get(
+            "net_defined_benefit_liability"
+        ) or 0
+        db_asset=db_summary.get(
+            "net_defined_benefit_asset"
+        ) or 0
+
+        add_check(
+            "defined_benefit",
+            "Defined-benefit plans",
+            "ready" if db_plans else "warning",
+            (
+                f"{db_plans} defined-benefit plan(s) "
+                "were supported by actuarial valuations."
+                if db_plans
+                else (
+                    "No validated actuarial valuation "
+                    "was available."
+                )
+            ),
+            Decimal(str(db_liability))
+            -Decimal(str(db_asset)),
+        )
+
+        payroll_employer_contributions=(
+            employee_cost.get("summary") or {}
+        ).get("employer_contributions") or 0
+
+        dc_employer_contributions=dc_summary.get(
+            "employer_contribution"
+        ) or 0
+
+        contribution_difference=_payroll_money(
+            Decimal(str(payroll_employer_contributions))
+            -Decimal(str(dc_employer_contributions))
+        )
+
+        add_check(
+            "contribution_reconciliation",
+            "Employer-contribution reconciliation",
+            (
+                "ready"
+                if contribution_difference==0
+                else "warning"
+            ),
+            (
+                "Payroll employer contributions agree "
+                "to defined-contribution runs."
+                if contribution_difference==0
+                else (
+                    "Payroll employer contributions differ "
+                    "from defined-contribution runs by "
+                    f"{contribution_difference:,.2f}."
+                )
+            ),
+            contribution_difference,
+        )
+
+        return{
+            "meta":{
+                "company_id":company_id,
+                "period":{
+                    "from":date_from.isoformat(),
+                    "to":date_to.isoformat(),
+                    "as_of":as_of.isoformat(),
+                },
+            },
+            "ready":not errors,
+            "has_warnings":bool(warnings),
+            "check_count":len(checks),
+            "warning_count":len(warnings),
+            "error_count":len(errors),
+            "checks":checks,
+            "warnings":warnings,
+            "errors":errors,
+            "disclosures":{
+                "employee_costs":employee_cost,
+                "leave_liability":leave,
+                "bonus_provision":bonus,
+                "termination_benefits":termination,
+                "defined_contribution":
+                    defined_contribution,
+                "defined_benefit":defined_benefit,
+            },
+        }
+
+        def create_project(self, company_id: int, data: Dict[str, Any]) -> int:
+            schema = self.company_schema(company_id)
+
+            def pick(*keys, default=None):
+                for k in keys:
+                    v = data.get(k)
+                    if v not in (None, ""):
+                        return v
+                return default
+
+            sql = f"""
+            INSERT INTO {schema}.projects (
+                company_id,
+                project_code,
+                project_name,
+                customer_id,
+                project_type,
+                status,
+                start_date,
+                expected_end_date,
+                contract_value,
+                budget_value,
+                billing_method,
+                wip_account_code,
+                revenue_account_code,
+                cost_account_code,
+                location,
+                description,
+                notes,
+                meta,
+                created_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING id;
+            """
+
+            params = (
+                int(company_id),
+                (pick("project_code", "projectCode", "code") or "").strip(),
+                (pick("project_name", "projectName", "name") or "").strip(),
+                pick("customer_id", "customerId"),
+                pick("project_type", "projectType", default="service"),
+                pick("status", default="draft"),
+                pick("start_date", "startDate"),
+                pick("expected_end_date", "expectedEndDate"),
+                float(pick("contract_value", "contractValue", default=0) or 0),
+                float(pick("budget_value", "budgetValue", default=0) or 0),
+                pick("billing_method", "billingMethod", default="milestone"),
+                pick("wip_account_code", "wipAccountCode"),
+                pick("revenue_account_code", "revenueAccountCode"),
+                pick("cost_account_code", "costAccountCode"),
+                pick("location"),
+                pick("description"),
+                pick("notes"),
+                psycopg2.extras.Json(data.get("meta") or {}),
+                pick("created_by", "createdBy"),
+            )
+
+            row = self.fetch_one(sql, params) or {}
+            return int(row.get("id") or 0)
 
     def list_projects(
         self,
