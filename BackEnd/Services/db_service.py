@@ -2929,6 +2929,188 @@ class DatabaseService:
             notes = EXCLUDED.notes,
             is_active = TRUE,
             updated_at = NOW();
+
+        CREATE TABLE IF NOT EXISTS public.lease_tax_treatment_rules (
+            id SERIAL PRIMARY KEY,
+
+            tax_authority_id INT NOT NULL
+                REFERENCES public.tax_authorities(id),
+
+            rule_code TEXT NOT NULL,
+            rule_name TEXT NOT NULL,
+
+            lease_role TEXT NOT NULL DEFAULT 'lessee',
+
+            deduction_basis TEXT NOT NULL,
+            deduction_percent NUMERIC(7,4) NOT NULL DEFAULT 100,
+
+            rou_tax_base_method TEXT NOT NULL,
+            liability_tax_base_method TEXT NOT NULL,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            requires_review BOOLEAN NOT NULL DEFAULT FALSE,
+
+            effective_from DATE NOT NULL,
+            effective_to DATE NULL,
+
+            jurisdiction_reference TEXT NULL,
+            notes TEXT NULL,
+
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_lease_tax_rule
+            UNIQUE (
+                tax_authority_id,
+                rule_code,
+                effective_from
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_role
+            CHECK (
+                lease_role IN (
+                    'lessee',
+                    'lessor_operating',
+                    'lessor_finance'
+                )
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_deduction_basis
+            CHECK (
+                deduction_basis IN (
+                    'lease_payments',
+                    'rou_asset',
+                    'none',
+                    'manual',
+                    'requires_review'
+                )
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_rou_method
+            CHECK (
+                rou_tax_base_method IN (
+                    'zero',
+                    'tax_wdv',
+                    'same_as_carrying',
+                    'manual',
+                    'requires_review'
+                )
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_liability_method
+            CHECK (
+                liability_tax_base_method IN (
+                    'carrying_less_future_deductions',
+                    'zero',
+                    'same_as_carrying',
+                    'manual',
+                    'requires_review'
+                )
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_percent
+            CHECK (
+                deduction_percent >= 0
+                AND deduction_percent <= 100
+            ),
+
+            CONSTRAINT ck_lease_tax_rule_dates
+            CHECK (
+                effective_to IS NULL
+                OR effective_to >= effective_from
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS lease_tax_rules_authority_idx
+        ON public.lease_tax_treatment_rules(
+            tax_authority_id,
+            is_active,
+            lease_role
+        );
+
+        INSERT INTO public.lease_tax_treatment_rules (
+            tax_authority_id,
+            rule_code,
+            rule_name,
+            lease_role,
+            deduction_basis,
+            deduction_percent,
+            rou_tax_base_method,
+            liability_tax_base_method,
+            is_default,
+            requires_review,
+            effective_from,
+            jurisdiction_reference,
+            notes,
+            is_active
+        )
+        SELECT
+            ta.id,
+            seed.rule_code,
+            seed.rule_name,
+            'lessee',
+            'requires_review',
+            100.0000,
+            'requires_review',
+            'requires_review',
+            TRUE,
+            TRUE,
+            DATE '1900-01-01',
+            seed.jurisdiction_reference,
+            seed.notes,
+            TRUE
+        FROM public.tax_authorities ta
+        JOIN (
+            VALUES
+                (
+                    'RSL',
+                    'RSL_LESSEE_DEFAULT_REVIEW',
+                    'RSL lessee lease tax treatment — review required',
+                    'Lesotho Income Tax legislation and applicable lease agreement',
+                    'Confirm whether deductions arise from lease rentals, a qualifying tax asset, hire-purchase treatment, or another statutory basis before deferred tax is recognised.'
+                ),
+                (
+                    'SARS',
+                    'SARS_LESSEE_DEFAULT_REVIEW',
+                    'SARS lessee lease tax treatment — review required',
+                    'South African Income Tax Act and applicable lease provisions',
+                    'Confirm whether the agreement is an ordinary lease, finance arrangement, instalment credit agreement, leasehold improvement arrangement, or another tax classification.'
+                ),
+                (
+                    'BURS',
+                    'BURS_LESSEE_DEFAULT_REVIEW',
+                    'BURS lessee lease tax treatment — review required',
+                    'Botswana Income Tax legislation and applicable lease agreement',
+                    'Confirm whether deductions arise from lease rentals, capital allowances, finance arrangement treatment, or another statutory basis before deferred tax is recognised.'
+                )
+        ) AS seed (
+            authority_code,
+            rule_code,
+            rule_name,
+            jurisdiction_reference,
+            notes
+        )
+        ON UPPER(ta.code)=seed.authority_code
+        ON CONFLICT (
+            tax_authority_id,
+            rule_code,
+            effective_from
+        )
+        DO UPDATE SET
+            rule_name=EXCLUDED.rule_name,
+            lease_role=EXCLUDED.lease_role,
+            deduction_basis=EXCLUDED.deduction_basis,
+            deduction_percent=EXCLUDED.deduction_percent,
+            rou_tax_base_method=EXCLUDED.rou_tax_base_method,
+            liability_tax_base_method=EXCLUDED.liability_tax_base_method,
+            is_default=EXCLUDED.is_default,
+            requires_review=EXCLUDED.requires_review,
+            jurisdiction_reference=EXCLUDED.jurisdiction_reference,
+            notes=EXCLUDED.notes,
+            is_active=TRUE,
+            updated_at=NOW();
          """
         statements = [s.strip() for s in sqlparse.split(ddl) if s.strip()]
 
@@ -19008,6 +19190,25 @@ class DatabaseService:
         ALTER TABLE {schema}.leases
         ADD COLUMN IF NOT EXISTS tax_treatment_rule_id INT NULL;
 
+        -- ==================================================
+        -- Lease -> Lessor link (requires {schema}.lessors)
+        -- ==================================================
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS lessor_id INT;
+
+        -- ==================================================
+        -- IAS 12 tax treatment for lessee leases
+        -- ==================================================
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS tax_deduction_basis TEXT NULL,
+        ADD COLUMN IF NOT EXISTS tax_deduction_percent NUMERIC(7,4)
+            NOT NULL DEFAULT 100,
+        ADD COLUMN IF NOT EXISTS rou_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS liability_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_notes TEXT NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
+
         DO $fk_leases_tax_treatment_rule$
         BEGIN
             IF NOT EXISTS (
@@ -19116,25 +19317,6 @@ class DatabaseService:
                 );
             END IF;
         END $idx_leases_bank_account_code$;
-
-        -- ==================================================
-        -- Lease -> Lessor link (requires {schema}.lessors)
-        -- ==================================================
-        ALTER TABLE {schema}.leases
-        ADD COLUMN IF NOT EXISTS lessor_id INT;
-
-        -- ==================================================
-        -- IAS 12 tax treatment for lessee leases
-        -- ==================================================
-        ALTER TABLE {schema}.leases
-        ADD COLUMN IF NOT EXISTS tax_deduction_basis TEXT NULL,
-        ADD COLUMN IF NOT EXISTS tax_deduction_percent NUMERIC(7,4)
-            NOT NULL DEFAULT 100,
-        ADD COLUMN IF NOT EXISTS rou_tax_base_override NUMERIC(18,2) NULL,
-        ADD COLUMN IF NOT EXISTS liability_tax_base_override NUMERIC(18,2) NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_notes TEXT NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
 
         DO $ck_leases_tax_deduction_basis$
         BEGIN
@@ -35164,7 +35346,7 @@ class DatabaseService:
         END IF;
         END $fk_vpa_bill_company$;                
         """
-        BOOTSTRAP_MIGRATION_VERSION=22
+        BOOTSTRAP_MIGRATION_VERSION=25
         AP_MIGRATION_VERSION=2
 
         try:
@@ -104995,7 +105177,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 w.journal_id,
                 w.reason,
                 c.name AS customer_name,
-                i.invoice_number
+                i.number AS invoice_number
             FROM {schema}.ifrs9_writeoffs w
             LEFT JOIN {schema}.customers c
             ON c.company_id = w.company_id
@@ -105506,35 +105688,35 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             params.append(int(customer_id))
 
         return self.fetch_all(f"""
-            SELECT
-                w.*,
-                c.name AS customer_name,
-                i.invoice_number,
-                fi.instrument_name,
-                COALESCE(r.recovery_total, 0) AS posted_recovery_total
-            FROM {schema}.ifrs9_writeoffs w
-            LEFT JOIN {schema}.customers c
+        SELECT
+            w.*,
+            c.name AS customer_name,
+            i.number AS invoice_number,
+            fi.instrument_name,
+            COALESCE(r.recovery_total,0) AS posted_recovery_total
+        FROM {schema}.ifrs9_writeoffs w
+        LEFT JOIN {schema}.customers c
             ON c.company_id=w.company_id
-            AND c.id=w.customer_id
-            LEFT JOIN {schema}.invoices i
+        AND c.id=w.customer_id
+        LEFT JOIN {schema}.invoices i
             ON i.company_id=w.company_id
-            AND i.id=w.invoice_id
-            LEFT JOIN {schema}.ifrs9_financial_instruments fi
+        AND i.id=w.invoice_id
+        LEFT JOIN {schema}.ifrs9_financial_instruments fi
             ON fi.company_id=w.company_id
-            AND fi.id=w.instrument_id
-            LEFT JOIN (
-                SELECT
-                    company_id,
-                    writeoff_id,
-                    SUM(recovery_amount) AS recovery_total
-                FROM {schema}.ifrs9_writeoff_recoveries
-                WHERE status='posted'
-                GROUP BY company_id, writeoff_id
-            ) r
+        AND fi.id=w.instrument_id
+        LEFT JOIN (
+            SELECT
+                company_id,
+                writeoff_id,
+                SUM(recovery_amount) AS recovery_total
+            FROM {schema}.ifrs9_writeoff_recoveries
+            WHERE status='posted'
+            GROUP BY company_id,writeoff_id
+        ) r
             ON r.company_id=w.company_id
-            AND r.writeoff_id=w.id
-            WHERE {" AND ".join(where)}
-            ORDER BY w.writeoff_date DESC, w.id DESC
+        AND r.writeoff_id=w.id
+        WHERE w.company_id=%s
+        ORDER BY w.writeoff_date DESC,w.id DESC;
         """, tuple(params))
 
     def ifrs9_calculate_writeoff(
@@ -105849,7 +106031,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         item = self.fetch_one(f"""
             SELECT
                 w.*,
-                i.invoice_number,
+                i.number AS invoice_number,,
                 c.name AS customer_name
             FROM {schema}.ifrs9_writeoffs w
             LEFT JOIN {schema}.invoices i
