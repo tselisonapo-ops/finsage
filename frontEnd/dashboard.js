@@ -60054,22 +60054,21 @@ async function saveEditModal() {
   const $ = (id) => document.getElementById(id);
   const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const payrollState = {
-    settings: null,
-    schedule: null,
-    calendars: [],
-    employees: [],
-    taxAuthorities: [],
-    selectedEmployee: null,
-    selectedPaySetupEmployee: null,
-    bound: false,
-    runs: [],
-    selectedRun: null,
+  const payrollState={
+    settings:null,
+    schedule:null,
+    calendars:[],
+    employees:[],
+    taxAuthorities:[],
+    selectedEmployee:null,
+    selectedPaySetupEmployee:null,
+    bound:false,
+    runs:[],
+    selectedRun:null,
     journalPreview:null,
     runReconciliation:null,
     reversalPreview:null,
     runEligibility:null,
-    attendance:[],
     attendance:[],
     attendanceSummary:null,
     periodInputs:[],
@@ -60078,22 +60077,21 @@ async function saveEditModal() {
     runAudit:[],
     payslips:[],
     selectedPayslip:null,
-    runEligibility:null,
     incentivePlans:[],
     selectedIncentivePlan:null,
     incentiveAssignments:[],
     incentiveEvaluations:[],
     selectedIncentiveEvaluation:null,
 
-    setup: {
-      departments: [],
-      positions: [],
-      earning_types: [],
-      deduction_types: [],
-      contribution_types: [],
-      benefit_types: [],
-      leave_types: [],
-      gl_mappings: [],
+    setup:{
+      departments:[],
+      positions:[],
+      earning_types:[],
+      deduction_types:[],
+      contribution_types:[],
+      benefit_types:[],
+      leave_types:[],
+      gl_mappings:[],
     },
 
     statutory:{
@@ -60101,7 +60099,7 @@ async function saveEditModal() {
       returns:[],
       selectedReturn:null,
     },
-  }
+  };
 
   payrollState.employeeBenefits = payrollState.employeeBenefits || {
     reportingDate: new Date().toISOString().slice(0, 10),
@@ -72123,184 +72121,132 @@ async function saveEditModal() {
     });
   }
 
-  function switchPayrollTab(tab, options = {}) {
-    const {
-      scroll = true,
-    } = options;
-
-    const validTabs = new Set([
-      "overview",
-      "employees",
-      "calendars",
-      "runs",
-      "employee-benefits",
-      "reports",
-      "tax-admin",
-      "settings",
+  function switchPayrollTab(tab,options={}){
+    const {scroll=true}=options;
+    const validTabs=new Set([
+      "overview","tax-admin","employees","calendars","runs",
+      "employee-benefits","incentives","reports","statutory","settings",
     ]);
 
-    if (!validTabs.has(tab)) {
-      console.warn("Unknown payroll tab:", tab);
-      tab = "overview";
+    if(!validTabs.has(tab)){
+      console.warn("Unknown payroll tab:",tab);
+      tab="overview";
     }
 
-    const isDashboard = tab === "overview";
-
-    const heroActions =
-      document.querySelector(
-        "#screen-payroll .payroll-hero-actions"
-      );
-
-    heroActions?.classList.toggle(
-      "hidden",
-      !isDashboard
-    );
-
-    const mainTabs =
-      document.querySelector(
-        "#screen-payroll .payroll-tabs"
-      );
-
-    const hero =
-      document.querySelector(
-        "#screen-payroll .payroll-hero"
-      );
-
-    hero?.classList.toggle(
-      "payroll-compact-hero",
-      !isDashboard
-    );
-
-    /*
-    * Dashboard:
-    *   show the top payroll navigation.
-    *
-    * Other workspaces:
-    *   hide the top navigation and use the Back button.
-    */
-    mainTabs?.classList.toggle(
-      "payroll-main-nav-hidden",
-      !isDashboard
-    );
-
-    document
-      .querySelectorAll(
-        "#screen-payroll [data-payroll-tab]"
-      )
-      .forEach(button => {
-        button.classList.toggle(
-          "active",
-          button.dataset.payrollTab === tab
-        );
-      });
-
-    const panelMap = {
-      overview: "payrollTabOverview",
-      employees: "payrollTabEmployees",
-      calendars: "payrollTabCalendars",
-      runs: "payrollTabRuns",
-
-      "employee-benefits":
-        "payrollTabEmployeeBenefits",
-
-      reports: "payrollTabReports",
-      "tax-admin": "payrollTabTaxAdmin",
-      settings: "payrollTabSettings",
+    const isDashboard=tab==="overview";
+    const panelMap={
+      overview:"payrollTabOverview",
+      "tax-admin":"payrollTabTaxAdmin",
+      employees:"payrollTabEmployees",
+      calendars:"payrollTabCalendars",
+      runs:"payrollTabRuns",
+      "employee-benefits":"payrollTabEmployeeBenefits",
+      incentives:"payrollTabIncentives",
+      reports:"payrollTabReports",
+      statutory:"payrollTabStatutory",
+      settings:"payrollTabSettings",
     };
 
-    Object.entries(panelMap).forEach(
-      ([name, panelId]) => {
-        $(panelId)?.classList.toggle(
-          "hidden",
-          name !== tab
-        );
-      }
+    const heroActions=document.querySelector(
+      "#screen-payroll .payroll-hero-actions"
+    );
+    const mainTabs=document.querySelector(
+      "#screen-payroll .payroll-tabs"
+    );
+    const hero=document.querySelector(
+      "#screen-payroll .payroll-hero"
+    );
+    const shell=document.querySelector(
+      "#screen-payroll .payroll-shell"
     );
 
-    /*
-    * Make the selected workspace move upward.
-    */
+    heroActions?.classList.toggle("hidden",!isDashboard);
+    mainTabs?.classList.toggle("payroll-main-nav-hidden",!isDashboard);
+    hero?.classList.toggle("payroll-compact-hero",!isDashboard);
+    shell?.classList.toggle("payroll-workspace-open",!isDashboard);
+
     document
-      .querySelector(
-        "#screen-payroll .payroll-shell"
-      )
-      ?.classList.toggle(
-        "payroll-workspace-open",
-        !isDashboard
+      .querySelectorAll("#screen-payroll [data-payroll-tab]")
+      .forEach(button=>
+        button.classList.toggle(
+          "active",
+          button.dataset.payrollTab===tab
+        )
       );
 
-    if (tab === "employees") {
+    Object.entries(panelMap).forEach(([name,panelId])=>
+      $(panelId)?.classList.toggle("hidden",name!==tab)
+    );
+
+    if(tab==="employees"){
       renderPayrollEmployees();
-
-    } else if (tab === "calendars") {
-      loadPayrollCalendars();
-
-    } else if (tab === "runs") {
-      loadPayrollRuns();
-
-    } else if (tab === "employee-benefits") {
+    }else if(tab==="calendars"){
+      loadPayrollCalendars().catch(error=>
+        showPayrollStatus(error?.message||"Calendars could not be loaded.","error")
+      );
+    }else if(tab==="runs"){
+      loadPayrollRuns().catch(error=>
+        showPayrollStatus(error?.message||"Payroll runs could not be loaded.","error")
+      );
+    }else if(tab==="employee-benefits"){
       switchPayrollBenefitTab(
-        payrollState.employeeBenefits?.activeTab ||
-        "overview"
-      ).catch(error => {
-        console.error(
-          "Failed to load employee benefits:",
-          error
-        );
-
-        showPayrollStatus?.(
-          error.message ||
-          "Failed to load employee benefits.",
+        payrollState.employeeBenefits?.activeTab||"overview"
+      ).catch(error=>
+        showPayrollStatus(
+          error?.message||"Employee benefits could not be loaded.",
           "error"
-        );
-      });
+        )
+      );
     }else if(tab==="incentives"){
       loadPayrollIncentivesWorkspace().catch(error=>{
+        console.error("Payroll incentives failed:",error);
         showPayrollStatus(
-          error?.message||
-          "Incentives could not be loaded.",
+          error?.message||"Incentives could not be loaded.",
           "error"
         );
       });
-    } else if (tab === "reports") {
-      loadPayrollReports().catch(error => {
-        console.error("Payroll reports failed:", error);
-
-        showPayrollStatus?.(
-          error.message || "Failed to load payroll reports.",
+    }else if(tab==="reports"){
+      loadPayrollReports().catch(error=>{
+        console.error("Payroll reports failed:",error);
+        showPayrollStatus(
+          error?.message||"Payroll reports could not be loaded.",
           "error"
         );
       });
-
-    } else if (tab === "tax-admin") {
-      taxAdminInit();
-
-    } else if (tab === "settings") {
-      loadPayrollSettings?.();
-    }
-
-    if(tab==="statutory"){
+    }else if(tab==="tax-admin"){
+      Promise.resolve(taxAdminInit()).catch(error=>
+        showPayrollStatus(
+          error?.message||"Tax tables could not be loaded.",
+          "error"
+        )
+      );
+    }else if(tab==="statutory"){
       loadPayrollStatutoryWorkspace().catch(error=>
         showPayrollStatus(
-          error.message||
-          "Statutory returns could not be loaded.",
+          error?.message||"Statutory returns could not be loaded.",
+          "error"
+        )
+      );
+    }else if(tab==="settings"){
+      Promise.resolve(loadPayrollSettings?.()).catch(error=>
+        showPayrollStatus(
+          error?.message||"Payroll settings could not be loaded.",
           "error"
         )
       );
     }
 
-    if (scroll) {
-      const target =
-        isDashboard
-          ? $("payrollTabOverview")
-          : $(panelMap[tab]);
+    if(scroll){
+      const target=isDashboard
+        ?$("payrollTabOverview")
+        :$(panelMap[tab]);
 
-      requestAnimationFrame(() => {
+      requestAnimationFrame(()=>
         target?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
+          behavior:"smooth",
+          block:"start",
+        })
+      );
     }
   }
 
@@ -72556,15 +72502,19 @@ async function saveEditModal() {
         </table>
       </div>`;
 
-    el.querySelectorAll(
-      "[data-open-incentive-plan]"
-    ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        openPayrollIncentivePlan(
-          Number(btn.dataset.openIncentivePlan)
-        );
-      });
-    });
+    el.querySelectorAll("[data-edit-incentive-assignment]").forEach(btn=>
+      btn.addEventListener(
+        "click",
+        runPayrollAction(()=>{
+          const item=items.find(row=>
+            Number(row.id)===
+            Number(btn.dataset.editIncentiveAssignment)
+          );
+
+          return editPayrollIncentiveAssignment(item||{});
+        })
+      )
+    );
   }
 
   async function editPayrollIncentivePlan(plan={}){
@@ -73327,17 +73277,16 @@ async function saveEditModal() {
         </table>
       </div>`;
 
-    el.querySelectorAll(
-      "[data-open-incentive-evaluation]"
-    ).forEach(btn=>{
-      btn.addEventListener("click",()=>{
-        openPayrollIncentiveEvaluation(
-          Number(
-            btn.dataset.openIncentiveEvaluation
+    el.querySelectorAll("[data-open-incentive-evaluation]").forEach(btn=>
+      btn.addEventListener(
+        "click",
+        runPayrollAction(()=>
+          openPayrollIncentiveEvaluation(
+            Number(btn.dataset.openIncentiveEvaluation)
           )
-        );
-      });
-    });
+        )
+      )
+    );
     el.querySelectorAll(
       "[data-push-incentive-evaluation]"
     ).forEach(btn=>{
@@ -73558,8 +73507,7 @@ async function saveEditModal() {
     await loadPayrollIncentivesWorkspace();
 
     showPayrollStatus(
-      "Approved incentive added to payroll. "+
-      "Recalculate the payroll run to include it.",
+      "Performance evaluation saved and calculated.",
       "success"
     );
   }
@@ -76683,17 +76631,6 @@ async function saveEditModal() {
     document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn => {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
-      
-    document.addEventListener("click", function (event) {
-      const backButton = event.target.closest(
-        "[data-payroll-back-dashboard]"
-      );
-
-      if (!backButton) return;
-
-      event.preventDefault();
-      switchPayrollTab("overview");
-    });
 
     document
       .querySelectorAll("[data-payroll-benefit-tab]")
@@ -77311,7 +77248,8 @@ async function saveEditModal() {
     );
 
     $("payrollCalendarsGenerateBtn")?.addEventListener(
-      "click", () => runPayrollAction(generatePayrollPeriods)
+      "click",
+      runPayrollAction(generatePayrollPeriods)
     );
 
     $("payrollAddDepartmentBtn")?.addEventListener(

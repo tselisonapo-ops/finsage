@@ -6726,7 +6726,227 @@ body.payroll-modal-open{
 .hidden {
   display: none !important;
 }
+/* =========================================================
+   PAYROLL INCENTIVES WORKSPACE
+   ========================================================= */
 
+#payrollTabIncentives{
+  display:grid;
+  gap:18px;
+}
+
+#payrollTabIncentives.hidden{
+  display:none!important;
+}
+
+#payrollTabIncentives>.payroll-section-navigation{
+  display:flex;
+  align-items:flex-start;
+  gap:18px;
+  padding:18px 20px;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  background:linear-gradient(135deg,#fff 0%,#f8fbff 100%);
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+
+#payrollTabIncentives>.payroll-section-navigation h3{
+  margin:0 0 4px;
+  color:#0f2f50;
+  font-size:20px;
+  font-weight:800;
+}
+
+#payrollTabIncentives>.payroll-section-navigation p{
+  margin:0;
+}
+
+#payrollTabIncentives>.payroll-card{
+  margin:0;
+  overflow:hidden;
+  border:1px solid #e1e8f0;
+  border-radius:15px;
+  background:#fff;
+  box-shadow:0 10px 28px rgba(15,42,67,.045);
+}
+
+#payrollTabIncentives>.payroll-card>.payroll-card-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding-bottom:16px;
+  margin-bottom:16px;
+  border-bottom:1px solid #edf1f5;
+}
+
+#payrollTabIncentives .payroll-card-head h3{
+  margin:0 0 5px;
+  color:#102a43;
+  font-size:16px;
+  font-weight:800;
+}
+
+#payrollTabIncentives .payroll-card-head p{
+  margin:0;
+}
+
+#payrollTabIncentives .payroll-filters{
+  display:grid;
+  grid-template-columns:
+    minmax(180px,1.2fr)
+    minmax(150px,.8fr)
+    minmax(150px,.8fr)
+    minmax(150px,.8fr);
+  gap:12px;
+  padding:14px;
+  margin-bottom:16px;
+  border:1px solid #e5ebf2;
+  border-radius:12px;
+  background:#f8fafc;
+}
+
+#payrollTabIncentives .payroll-filters select,
+#payrollTabIncentives .payroll-filters input{
+  width:100%;
+  min-width:0;
+  min-height:40px;
+  padding:9px 11px;
+  border:1px solid #d7e0ea;
+  border-radius:9px;
+  background:#fff;
+  color:#243b53;
+  font:inherit;
+  outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+
+#payrollTabIncentives .payroll-filters select:focus,
+#payrollTabIncentives .payroll-filters input:focus{
+  border-color:#2d6cdf;
+  box-shadow:0 0 0 3px rgba(45,108,223,.12);
+}
+
+#payrollTabIncentives .payroll-table-wrap{
+  overflow-x:auto;
+  overflow-y:hidden;
+  border:1px solid #e5eaf0;
+  border-radius:11px;
+}
+
+#payrollTabIncentives .payroll-preview-table{
+  min-width:820px;
+}
+
+#payrollTabIncentives .payroll-preview-table th{
+  background:#f4f7fb;
+  color:#53657a;
+}
+
+#payrollTabIncentives .payroll-preview-table td{
+  vertical-align:middle;
+}
+
+#payrollTabIncentives .payroll-preview-table td:first-child strong{
+  font-family:inherit;
+  letter-spacing:normal;
+}
+
+#payrollTabIncentives .payroll-preview-table td:last-child{
+  white-space:nowrap;
+}
+
+#payrollTabIncentives .payroll-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:30px;
+  margin:2px;
+  padding:5px 9px;
+  border:1px solid #d8e3ee;
+  border-radius:7px;
+  background:#fff;
+  color:#075f9d;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:800;
+  text-decoration:none;
+  transition:background .15s,border-color .15s,transform .1s;
+}
+
+#payrollTabIncentives .payroll-link:hover{
+  border-color:#91b5d2;
+  background:#f0f7fc;
+}
+
+#payrollTabIncentives .payroll-link:active{
+  transform:translateY(1px);
+}
+
+#payrollTabIncentives .payroll-pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:72px;
+  min-height:25px;
+  padding:4px 9px;
+  border-radius:999px;
+  background:#edf4ff;
+  color:#145da0;
+  font-size:10px;
+  font-weight:800;
+  text-transform:capitalize;
+}
+
+#payrollIncentivePlanDetail:empty{
+  display:none;
+}
+
+#payrollIncentivePlanDetail:not(:empty){
+  margin-top:18px;
+  padding-top:18px;
+  border-top:1px solid #edf1f5;
+}
+
+#payrollIncentivePlanDetail>.payroll-card{
+  margin:0;
+  border:1px solid #dfe8f2;
+  border-radius:12px;
+  background:#fbfdff;
+  box-shadow:none;
+}
+
+#payrollTabIncentives .payroll-muted:only-child{
+  margin:0;
+  padding:24px;
+  border:1px dashed #ccd8e5;
+  border-radius:10px;
+  background:#fafcff;
+  color:#8291a3;
+  text-align:center;
+}
+
+@media(max-width:1000px){
+  #payrollTabIncentives .payroll-filters{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:650px){
+  #payrollTabIncentives>.payroll-section-navigation,
+  #payrollTabIncentives>.payroll-card>.payroll-card-head{
+    flex-direction:column;
+  }
+
+  #payrollTabIncentives .payroll-filters{
+    grid-template-columns:1fr;
+  }
+
+  #payrollTabIncentives .payroll-primary,
+  #payrollTabIncentives .payroll-secondary{
+    width:100%;
+  }
+}
 /* =========================================================
    IAS 12 DEFERRED TAX SCREEN
    Consolidated responsive styling
@@ -23918,7 +24138,7 @@ tbody tr:hover {
 <script src="config.js"></script>
 <link rel="stylesheet" href="./assets/hostMount.css" />
 <script type="module" src="./assets/hostMount.js"></script>
-<script src="/dashboard.js?v=20260807a" defer></script>
+<script src="/dashboard.js?v=20260807b" defer></script>
 <script src="/ias41.js"></script>
 <script src="/js/data-migration.js"></script>
 

@@ -5392,6 +5392,25 @@
         ALTER TABLE company_8.leases
         ADD COLUMN IF NOT EXISTS tax_treatment_rule_id INT NULL;
 
+        -- ==================================================
+        -- Lease -> Lessor link (requires company_8.lessors)
+        -- ==================================================
+        ALTER TABLE company_8.leases
+        ADD COLUMN IF NOT EXISTS lessor_id INT;
+
+        -- ==================================================
+        -- IAS 12 tax treatment for lessee leases
+        -- ==================================================
+        ALTER TABLE company_8.leases
+        ADD COLUMN IF NOT EXISTS tax_deduction_basis TEXT NULL,
+        ADD COLUMN IF NOT EXISTS tax_deduction_percent NUMERIC(7,4)
+            NOT NULL DEFAULT 100,
+        ADD COLUMN IF NOT EXISTS rou_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS liability_tax_base_override NUMERIC(18,2) NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_notes TEXT NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
+        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
+
         DO $fk_leases_tax_treatment_rule$
         BEGIN
             IF NOT EXISTS (
@@ -5500,25 +5519,6 @@
                 );
             END IF;
         END $idx_leases_bank_account_code$;
-
-        -- ==================================================
-        -- Lease -> Lessor link (requires company_8.lessors)
-        -- ==================================================
-        ALTER TABLE company_8.leases
-        ADD COLUMN IF NOT EXISTS lessor_id INT;
-
-        -- ==================================================
-        -- IAS 12 tax treatment for lessee leases
-        -- ==================================================
-        ALTER TABLE company_8.leases
-        ADD COLUMN IF NOT EXISTS tax_deduction_basis TEXT NULL,
-        ADD COLUMN IF NOT EXISTS tax_deduction_percent NUMERIC(7,4)
-            NOT NULL DEFAULT 100,
-        ADD COLUMN IF NOT EXISTS rou_tax_base_override NUMERIC(18,2) NULL,
-        ADD COLUMN IF NOT EXISTS liability_tax_base_override NUMERIC(18,2) NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_notes TEXT NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
-        ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
 
         DO $ck_leases_tax_deduction_basis$
         BEGIN
