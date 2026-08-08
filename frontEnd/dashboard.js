@@ -13567,86 +13567,99 @@ function toIsoDateOnly(value) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-window.bindCompanyLogoUploader = function bindCompanyLogoUploader(companyId) {
-  const btn = document.getElementById("btnUploadLogo");
-  const file = document.getElementById("cpLogoFile");
-  const msg  = document.getElementById("cpLogoMsg");
-  const prev = document.getElementById("cpLogoPreview");
-  const fb   = document.getElementById("cpLogoFallback");
-  const hiddenUrl = document.getElementById("cpLogoUrl");
-  const btnRemove = document.getElementById("btnRemoveLogo");
+window.bindCompanyLogoUploader=function bindCompanyLogoUploader(companyId){
+  const btn=document.getElementById("btnUploadLogo");
+  const file=document.getElementById("cpLogoFile");
+  const msg=document.getElementById("cpLogoMsg");
+  const prev=document.getElementById("cpLogoPreview");
+  const fb=document.getElementById("cpLogoFallback");
+  const hiddenUrl=document.getElementById("cpLogoUrl");
+  const btnRemove=document.getElementById("btnRemoveLogo");
 
-  if (!btn || !file) return;
-  if (btn.dataset.bound === "1") return; // prevent double binding
-  btn.dataset.bound = "1";
+  if(!btn||!file) return;
+  if(btn.dataset.bound==="1") return;
+  btn.dataset.bound="1";
 
-  const setPreview = (url) => {
-    if (hiddenUrl) hiddenUrl.value = url || "";
-    if (prev && url) {
-      prev.src = url;
+  const bustCache=url=>{
+    if(!url) return "";
+    try{
+      const u=new URL(url,window.location.origin);
+      u.searchParams.set("t",Date.now());
+      return u.pathname+u.search+u.hash;
+    }catch{
+      return `${url}${url.includes("?")?"&":"?"}t=${Date.now()}`;
+    }
+  };
+
+  const setPreview=url=>{
+    if(hiddenUrl) hiddenUrl.value=url||"";
+
+    if(prev&&url){
+      prev.src=bustCache(url);
       prev.classList.remove("hidden");
       fb?.classList.add("hidden");
-    } else {
-      prev?.classList.add("hidden");
+    }else{
+      if(prev){
+        prev.removeAttribute("src");
+        prev.classList.add("hidden");
+      }
       fb?.classList.remove("hidden");
     }
   };
 
-  btn.addEventListener("click", () => file.click());
+  btn.addEventListener("click",()=>file.click());
 
-  file.addEventListener("change", async () => {
-    const f = file.files?.[0];
-    if (!f) return;
+  file.addEventListener("change",async()=>{
+    const f=file.files?.[0];
+    if(!f) return;
 
-    msg && (msg.textContent = "Uploading…");
+    msg&&(msg.textContent="Uploading…");
 
-    try {
-      const fd = new FormData();
-      fd.append("logo", f);
+    try{
+      const fd=new FormData();
+      fd.append("logo",f);
 
-      const res = await apiFetch(ENDPOINTS.companyLogo(companyId), {
-        method: "POST",
-        body: fd,
+      const res=await apiFetch(ENDPOINTS.companyLogo(companyId),{
+        method:"POST",
+        body:fd
       });
 
-      // bust cache
-      const url = (res.logo_url || "").trim();
-      const cacheBusted = url ? `${url}?t=${Date.now()}` : "";
-      setPreview(cacheBusted);
+      const url=(res?.logo_url||"").trim();
+      setPreview(url);
 
-      // also update CURRENT_COMPANY if present
-      if (typeof CURRENT_COMPANY !== "undefined" && CURRENT_COMPANY) {
-        CURRENT_COMPANY.logo_url = url;
-      }
+      if(typeof CURRENT_COMPANY!=="undefined"&&CURRENT_COMPANY)
+        CURRENT_COMPANY.logo_url=url;
 
-      msg && (msg.textContent = "Logo uploaded");
-    } catch (e) {
-      console.error("Logo upload failed:", e);
-      msg && (msg.textContent = e?.message || "Upload failed");
-    } finally {
-      file.value = "";
+      msg&&(msg.textContent="Logo uploaded");
+    }catch(e){
+      console.error("Logo upload failed:",e);
+      msg&&(msg.textContent=e?.message||"Upload failed");
+    }finally{
+      file.value="";
     }
   });
 
-  if (btnRemove) {
-    btnRemove.addEventListener("click", async () => {
-      msg && (msg.textContent = "Removing…");
-      try {
-        await apiFetch(ENDPOINTS.companyLogo(companyId), { method: "DELETE" });
+  if(btnRemove){
+    btnRemove.addEventListener("click",async()=>{
+      msg&&(msg.textContent="Removing…");
+
+      try{
+        await apiFetch(ENDPOINTS.companyLogo(companyId),{method:"DELETE"});
         setPreview("");
-        if (typeof CURRENT_COMPANY !== "undefined" && CURRENT_COMPANY) {
-          CURRENT_COMPANY.logo_url = null;
-        }
-        msg && (msg.textContent = "Removed");
-      } catch (e) {
-        msg && (msg.textContent = e?.message || "Failed to remove");
+
+        if(typeof CURRENT_COMPANY!=="undefined"&&CURRENT_COMPANY)
+          CURRENT_COMPANY.logo_url=null;
+
+        msg&&(msg.textContent="Removed");
+      }catch(e){
+        console.error("Logo remove failed:",e);
+        msg&&(msg.textContent=e?.message||"Failed to remove");
       }
     });
   }
 
-  // if company already loaded
-  const existing = (window.CURRENT_COMPANY?.logo_url || "").trim();
-  if (existing) setPreview(`${existing}?t=${Date.now()}`);
+  const existing=(window.CURRENT_COMPANY?.logo_url||"").trim();
+  if(existing) setPreview(existing);
 };
 
 function hydrateMyCompanyView(company) {

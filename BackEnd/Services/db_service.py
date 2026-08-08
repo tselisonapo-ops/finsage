@@ -2995,6 +2995,10 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pin_hash TEXT,
         ADD COLUMN IF NOT EXISTS pos_display_name TEXT;
 
+            ALTER TABLE public.company_users
+                ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE; 
+
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS pos_access_code TEXT;
 
@@ -15626,8 +15630,8 @@ class DatabaseService:
         -- ---------------------------------------------------------
         -- PRODUCT ACCESS
         -- ---------------------------------------------------------
-
         ALTER TABLE public.company_users
+            ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{}'::jsonb,
             ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE;
 
         -- Existing company owners automatically receive FinFlow.
@@ -15644,8 +15648,8 @@ class DatabaseService:
         WHERE c.id=cu.company_id
         AND c.owner_user_id=cu.user_id;
 
-        -- Existing non-owner users retain FinSage but don't automatically
-        -- receive FinFlow.
+        -- Existing non-owner users retain FinSage but don't
+        -- automatically receive FinFlow.
         UPDATE public.company_users
         SET product_access =
             jsonb_build_object(
