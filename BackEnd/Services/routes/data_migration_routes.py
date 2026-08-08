@@ -1062,4 +1062,611 @@ def migration_detection(company_id:int,project_id:int):
         return jsonify({"ok":True,"detection":_json_safe(result)}),200
     except ValueError as error:return jsonify({"ok":False,"error":str(error)}),400
     except Exception as error:return _error("Migration detection failed",error,status=500)
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/field-mappings",methods=["GET","OPTIONS"])
+@require_auth
+def migration_field_mappings(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_field_mappings_get(company_id,project_id)
+        return jsonify({"ok":True,"field_mappings":_json_safe(result)}),200
+    except ValueError as error:return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:return _error("Migration field mapping retrieval failed",error,status=500)
+
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/field-mappings",methods=["PUT","OPTIONS"])
+@require_auth
+def migration_dataset_field_mappings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_field_mapping_save(
+                    company_id,project_id,dataset_id,body.get("mappings") or [],
+                    user_id=_user_id(),cur=cur
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return jsonify({"ok":True,"dataset":_json_safe(result)}),200
+    except ValueError as error:return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:return _error("Migration field mapping save failed",error,status=500)
+
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/field-mappings/auto",methods=["POST","OPTIONS"])
+@require_auth
+def migration_dataset_field_mapping_auto(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_field_mapping_auto(company_id,project_id,dataset_id,user_id=_user_id(),cur=cur)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return jsonify({"ok":True,"dataset":_json_safe(result)}),200
+    except ValueError as error:return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:return _error("Automatic field mapping failed",error,status=500)
+
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/field-mappings/reset",methods=["DELETE","OPTIONS"])
+@require_auth
+def migration_dataset_field_mapping_reset(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_field_mapping_reset(company_id,project_id,dataset_id,cur=cur)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return jsonify({"ok":True,"dataset":_json_safe(result)}),200
+    except Exception as error:return _error("Field mapping reset failed",error,status=500)
+
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/field-mappings/copy",methods=["POST","OPTIONS"])
+@require_auth
+def migration_field_mapping_copy(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+        source_id=int(body.get("source_dataset_id") or 0)
+        target_id=int(body.get("target_dataset_id") or 0)
+        if not source_id or not target_id:return jsonify({"ok":False,"error":"source_dataset_id and target_dataset_id are required"}),400
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_field_mapping_copy(
+                    company_id,project_id,source_id,target_id,user_id=_user_id(),cur=cur
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return jsonify({"ok":True,"dataset":_json_safe(result)}),200
+    except ValueError as error:return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:return _error("Field mapping copy failed",error,status=500)
+
+
+@data_migration_bp.route("/api/companies/<int:company_id>/migrations/projects/<int:project_id>/field-mappings/validate",methods=["POST","OPTIONS"])
+@require_auth
+def migration_field_mapping_validation(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_field_mapping_validate(company_id,project_id)
+        return jsonify({"ok":True,"validation":_json_safe(result)}),200
+    except Exception as error:return _error("Field mapping validation failed",error,status=500) 
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/reference-mappings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_reference_mappings(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_reference_mapping_get(company_id,project_id)
+            return jsonify({"ok":True,"reference_mappings":_json_safe(result)}),200
+
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_reference_mapping_save(
+                    company_id,
+                    project_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({"ok":True,"reference_mappings":_json_safe(result)}),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Migration reference mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/reference-mappings/scan",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def migration_reference_mapping_scan(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                scan=db_service.migration_reference_scan(
+                    company_id,
+                    project_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+
+                result=db_service.migration_reference_mapping_get(
+                    company_id,
+                    project_id,
+                    cur=cur,
+                )
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "scan":_json_safe(scan),
+            "reference_mappings":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Migration reference scan failed",error,status=500)
+        
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/reference-mappings/auto",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def migration_reference_mapping_auto(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_reference_auto(
+                    company_id,
+                    project_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reference_mappings":_json_safe(result),
+        }),200
+
+    except Exception as error:
+        return _error("Automatic reference mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/reference-mappings/validate",
+    methods=["POST","OPTIONS"],
+)
+@require_auth
+def migration_reference_mapping_validation(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_reference_mapping_validate(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "validation":_json_safe(result),
+        }),200
+
+    except Exception as error:
+        return _error("Reference mapping validation failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/reference-mappings/reset",
+    methods=["DELETE","OPTIONS"],
+)
+@require_auth
+def migration_reference_mapping_reset(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_reference_mapping_reset(
+                    company_id,
+                    project_id,
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reference_mappings":_json_safe(result),
+        }),200
+
+    except Exception as error:
+        return _error("Reference mapping reset failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/ppe",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_ppe(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_ppe_datasets(company_id,project_id)
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error("PPE migration retrieval failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/ppe/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_ppe_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_ppe_settings_get(
+                company_id,project_id,dataset_id
+            )
+            return jsonify({"ok":True,"settings":_json_safe(result)}),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_ppe_settings_save(
+                    company_id,project_id,dataset_id,_body(),
+                    user_id=_user_id(),cur=cur
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({"ok":True,"settings":_json_safe(result)}),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("PPE migration settings failed",error,status=500)
     
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/ppe/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_ppe_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_ppe_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("PPE migration mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/ppe/classes",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_ppe_class_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+        mappings=body.get("mappings") or []
+
+        if not isinstance(mappings,list):
+            return jsonify({"ok":False,"error":"mappings must be a list"}),400
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                for mapping in mappings:
+                    db_service.migration_ppe_class_save(
+                        company_id,project_id,dataset_id,mapping,
+                        user_id=_user_id(),cur=cur
+                    )
+
+                result=db_service.migration_ppe_mapping_get(
+                    company_id,project_id,dataset_id,cur=cur
+                )
+
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("PPE class mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/ppe/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_ppe_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_ppe_payload_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("PPE migration preview failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/leases",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_leases(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        rows=db_service.migration_lease_datasets(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(rows),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Lease migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/leases/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_lease_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_lease_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(result),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_lease_settings_save(
+                    company_id,project_id,dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("Lease migration settings failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/leases/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_lease_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_lease_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("Lease migration mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/leases/references",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_lease_references(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_lease_reference_save(
+                    company_id,project_id,dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "references":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("Lease reference mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/leases/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_lease_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_lease_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+    except Exception as error:
+        return _error("Lease migration preview failed",error,status=500)

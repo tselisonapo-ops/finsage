@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g, current_app, make_response
 from BackEnd.Services.auth_middleware import _corsify, require_auth
 from .invoice_routes import _deny_if_wrong_company
 from BackEnd.Services.db_service import db_service
-
+from BackEnd.Services.period_core import resolve_company_period
 payroll_bp = Blueprint("payroll", __name__)
 
 
@@ -3833,3 +3833,50 @@ def api_payroll_statutory_return_action(
             "error":str(error),
         }),400
 
+@payroll_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "close-out",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def api_payroll_close_out(company_id:int):
+    if request.method=="OPTIONS":
+        return _corsify(make_response("",204))
+
+    deny=_payroll_company_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        date_from,date_to,meta=resolve_company_period(
+            db_service,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        readiness=db_service.payroll_disclosure_readiness(
+            company_id,
+            date_from,
+            date_to,
+            as_of=date_to,
+        )
+
+        return jsonify({
+            "ok":True,
+            "meta":meta or {},
+            "data":{
+                key:value
+                for key,value in readiness.items()
+                if key!="disclosures"
+            },
+        }),200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "payroll close-out failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400

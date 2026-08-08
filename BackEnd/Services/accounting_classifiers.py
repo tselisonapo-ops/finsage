@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict, List
+
 import re
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, TYPE_CHECKING
 
 # ============================================================
 # Module constants / helpers
@@ -44,6 +45,45 @@ def _make_reporting_code(bucket: str, n: int) -> str:
     return f"{bucket}_{n}"
 
 
+def _parse_reporting_code(code: str) -> Tuple[Optional[str], Optional[int]]:
+    """
+    Parse codes like PL_OPEX_6001 -> ("PL_OPEX", 6001)
+    """
+    if not code:
+        return (None, None)
+    m = re.match(r"^([A-Z_]+)_(\d+)$", str(code).strip())
+    if not m:
+        return (None, None)
+    return (m.group(1), int(m.group(2)))
+
+def _allocate_reporting_code(
+    bucket: str,
+    used_codes: set[str],
+    preferred_numeric: Optional[int] = None,
+) -> tuple[str, int]:
+    base = BUCKET_BASE.get(bucket)
+    if base is None:
+        raise ValueError(f"Unsupported reporting bucket: {bucket}")
+
+    used_numeric = set()
+
+    for code in used_codes:
+        fam, num = _parse_reporting_code(str(code))
+        if fam == bucket and num is not None:
+            used_numeric.add(int(num))
+
+    if preferred_numeric is not None:
+        n = int(preferred_numeric)
+
+        if base <= n < base + 1000 and n not in used_numeric:
+            return _make_reporting_code(bucket, n), n
+
+    n = base
+
+    while n in used_numeric:
+        n += 1
+
+    return _make_reporting_code(bucket, n), n
 # ============================================================
 # Text + basic field accessors
 # ============================================================

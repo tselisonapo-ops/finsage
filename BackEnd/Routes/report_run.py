@@ -84,6 +84,10 @@ from BackEnd.Services.reporting.disclosure_builders import (
     build_payroll_dc_export_payload,
     build_payroll_db_note_payload,
     build_payroll_db_export_payload,
+    build_payroll_employee_benefits_pack_note_payload,
+    build_payroll_employee_benefits_pack_export_payload,
+    build_ias41_note_export_payload,
+    build_ias41_disclosure_export_payload,
 )
 
 report_bp = Blueprint("report_bp", __name__)
@@ -2862,3 +2866,210 @@ def export_payroll_statutory_return(
             "ok":False,
             "error":str(error),
         }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/"
+    "payroll/employee-benefits-pack/export",
+    methods=["GET"],
+)
+def export_payroll_employee_benefits_pack(
+    company_id:int,
+):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias19_employee_benefits_pack",
+    )
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        if not date_from or not date_to:
+            raise ValueError(
+                "Unable to resolve reporting period"
+            )
+
+        as_of_raw=str(
+            request.args.get("as_of") or ""
+        ).strip()
+
+        as_of=(
+            datetime.strptime(
+                as_of_raw,
+                "%Y-%m-%d",
+            ).date()
+            if as_of_raw else date_to
+        )
+
+        fmt=str(
+            request.args.get("format") or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"xlsx","pdf"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        pack=db.build_payroll_employee_benefits_pack(
+            company_id,
+            date_from,
+            date_to,
+            as_of=as_of,
+        )
+
+        pack.setdefault("meta",{})
+        pack["meta"].update(meta or {})
+
+        if fmt=="pdf":
+            note=db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key=
+                    "ias19_employee_benefits_pack",
+                period_from=date_from,
+                period_to=date_to,
+            )
+
+            payload=(
+                build_payroll_employee_benefits_pack_note_payload(
+                    note,
+                    pack,
+                )
+            )
+
+            return export_fs_notes_pdf(
+                [payload],
+                filename=
+                    "employee_benefits_disclosure.pdf",
+            )
+
+        payload=(
+            build_payroll_employee_benefits_pack_export_payload(
+                pack
+            )
+        )
+
+        return _export_statement_payload(
+            payload,
+            "employee_benefits_disclosure",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "employee benefits pack export failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+@report_bp.route(
+    "/api/companies/<int:company_id>/disclosures/ias41/export",
+    methods=["GET"],
+)
+def export_ias41_disclosure(company_id:int):
+    deny=_deny_report_export_access(
+        company_id,
+        "ias41_disclosure",
+    )
+    if deny:
+        return deny
+
+    try:
+        db=_get_db()
+
+        date_from,date_to,meta=resolve_company_period(
+            db,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        fmt=str(
+            request.args.get("format")
+            or "xlsx"
+        ).strip().lower()
+
+        if fmt=="excel":
+            fmt="xlsx"
+
+        if fmt not in{"pdf","xlsx"}:
+            raise ValueError(
+                "format must be pdf or xlsx"
+            )
+
+        disclosure=db.ias41_disclosure_report(
+            company_id,
+            date_from=date_from,
+            date_to=date_to,
+            as_of=date_to,
+        )
+
+        disclosure.setdefault("meta",{})
+        disclosure["meta"].update({
+            **(meta or {}),
+            "company_id":company_id,
+            "standard":"IAS 41",
+            "statement":
+                "financial_statement_notes",
+            "period":{
+                "from":date_from.isoformat(),
+                "to":date_to.isoformat(),
+                "as_of":date_to.isoformat(),
+            },
+        })
+
+        if fmt=="pdf":
+            note=db.get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key=
+                    "ias41_agriculture_disclosure",
+                period_from=date_from,
+                period_to=date_to,
+            )
+
+            payload=build_ias41_note_export_payload(
+                note,
+                disclosure,
+            )
+
+            return export_fs_notes_pdf(
+                [payload],
+                filename=
+                    "ias41_agriculture_disclosure.pdf",
+            )
+
+        payload=build_ias41_disclosure_export_payload(
+            disclosure
+        )
+
+        payload.setdefault("meta",{})
+        payload["meta"].update(meta or {})
+
+        return _export_statement_payload(
+            payload,
+            "ias41_agriculture_disclosure",
+        )
+
+    except Exception as error:
+        current_app.logger.exception(
+            "IAS 41 disclosure export failed "
+            "company_id=%s",
+            company_id,
+        )
+
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+    

@@ -1837,3 +1837,127 @@ def ias41_grant_receipt_action(company_id,receipt_id,action):
         return jsonify({"ok":True,"data":actions[action]()}),200
     except Exception as error:
         return _error(f"IAS 41 grant receipt {action} failed",error)
+
+@ias41_bp.route(
+    "/api/companies/<int:company_id>/ias41/reports",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def ias41_report_runs(company_id):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        items=db_service.ias41_report_runs_list(
+            company_id,
+            report_key=request.args.get("report_key"),
+        )
+        return jsonify({
+            "ok":True,
+            "items":items,
+            "count":len(items),
+        }),200
+    except Exception as error:
+        return _error("IAS 41 report history failed",error)
+
+
+@ias41_bp.route(
+    "/api/companies/<int:company_id>/ias41/reports/<report_key>",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def ias41_report(company_id,report_key):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        body=_body() if request.method=="POST" else {}
+
+        filters={
+            "date_from":
+                body.get("date_from")
+                or request.args.get("date_from"),
+
+            "date_to":
+                body.get("date_to")
+                or request.args.get("date_to"),
+
+            "as_of":
+                body.get("as_of")
+                or request.args.get("as_of"),
+        }
+
+        optional_fields=(
+            "asset_class_id",
+            "location_id",
+            "product_id",
+            "status",
+            "event_type",
+        )
+
+        for key in optional_fields:
+            value=body.get(key) or request.args.get(key)
+            if value not in (None,""):
+                filters[key]=value
+
+        filters={
+            key:value
+            for key,value in filters.items()
+            if value not in (None,"")
+        }
+
+        save_snapshot=(
+            request.method=="POST"
+            and bool(body.get("save_snapshot"))
+        )
+
+        data=db_service.ias41_report_build(
+            company_id,
+            report_key,
+            filters=filters,
+            save_snapshot=save_snapshot,
+            user_id=_user_id(),
+        )
+
+        return jsonify({
+            "ok":True,
+            "data":data,
+        }),200
+    except Exception as error:
+        return _error(f"IAS 41 {report_key} report failed",error)
+
+
+@ias41_bp.route(
+    "/api/companies/<int:company_id>/ias41/report-runs/<int:report_run_id>",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def ias41_report_run(company_id,report_run_id):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:
+        return deny
+
+    try:
+        data=db_service.ias41_report_run_get(
+            company_id,
+            report_run_id,
+        )
+
+        return (
+            jsonify({"ok":True,"data":data}),200
+        ) if data else (
+            jsonify({"error":"IAS 41 report snapshot not found"}),404
+        )
+    except Exception as error:
+        return _error("IAS 41 report snapshot failed",error)

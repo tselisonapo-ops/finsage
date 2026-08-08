@@ -655,3 +655,100 @@ def payroll_defined_benefit_disclosure(
             "ok":False,
             "error":"Internal server error",
         }),500
+
+@payroll_disclosure_bp.route(
+    "/api/companies/<int:company_id>/payroll/"
+    "disclosures/employee-benefits-pack",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def payroll_employee_benefits_pack(
+    company_id:int,
+):
+    if request.method=="OPTIONS":
+        return("",204)
+
+    try:
+        date_from,date_to,meta=resolve_company_period(
+            db_service,
+            company_id,
+            request,
+            mode="range",
+        )
+
+        if not date_from or not date_to:
+            raise ValueError(
+                "Unable to resolve reporting period"
+            )
+
+        as_of=_date_arg("as_of",date_to)
+
+        pack=(
+            db_service
+            .build_payroll_employee_benefits_pack(
+                company_id,
+                date_from,
+                date_to,
+                as_of=as_of,
+            )
+        )
+
+        note=(
+            db_service
+            .get_or_build_financial_statement_note(
+                company_id=company_id,
+                note_key=
+                    "ias19_employee_benefits_pack",
+                period_from=date_from,
+                period_to=date_to,
+            )
+        )
+
+        return jsonify({
+            "ok":True,
+            "route_version":
+                "payroll_employee_benefits_pack_v1",
+            "meta":{
+                **(meta or {}),
+                **(pack.get("meta") or {}),
+            },
+            "note":{
+                "note_key":
+                    "ias19_employee_benefits_pack",
+                "note_title":
+                    note.get("note_title"),
+                "content_text":
+                    note.get("content_text"),
+                "system_draft":
+                    note.get("system_draft"),
+                "source":note.get("source"),
+                "is_custom":bool(
+                    note.get("is_custom")
+                ),
+                "is_outdated":bool(
+                    note.get("is_outdated")
+                ),
+            },
+            "pack":pack,
+            "summary":
+                pack.get("summary") or {},
+            "sections":
+                pack.get("sections") or {},
+            "readiness":
+                pack.get("readiness") or {},
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception:
+        current_app.logger.exception(
+            "employee benefits pack failed"
+        )
+        return jsonify({
+            "ok":False,
+            "error":"Internal server error",
+        }),500

@@ -136,6 +136,51 @@
     detection:{datasets:[],record_count:0,detected_count:0},
     detectionLoaded:false,
     detecting:false,
+
+    fieldMappings:{datasets:[],dataset_count:0,complete_count:0,required_unmapped_count:0,duplicate_count:0},
+    fieldMappingsLoaded:false,
+    mappingDatasetId:null,
+    mappingSaving:false,
+    mappingAutoRunning:false,
+    mappingValidating:false,
+
+    referenceMappings:{
+      groups:[],
+      reference_count:0,
+      group_count:0,
+      unresolved_count:0,
+      pending_count:0,
+      complete_count:0,
+    },
+    referenceMappingsLoaded:false,
+    referenceMappingType:null,
+    referenceMappingDirty:false,
+    referenceScanning:false,
+    referenceAutoRunning:false,
+    referenceSaving:false,
+    referenceValidating:false,
+
+    ppe:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    ppeLoaded:false,
+    ppeSaving:false,
+    ppePreviewLoading:false,
+
+    leases:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    leasesLoaded:false,
+    leaseSaving:false,
+    leasePreviewLoading:false,
   };
 
   function defaultProject() {
@@ -539,8 +584,12 @@
         }
       );
 
-      await loadDetection(state.project.id,{renderAfter:false}); 
-
+      await loadDetection(state.project.id,{renderAfter:false});
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+      await loadReferenceMappings(state.project.id,{renderAfter:false});
+      await loadPpeMapping(state.project.id,{renderAfter:false});
+      await loadPpeMapping(state.project.id,{renderAfter:false});
+      await loadLeaseMapping(state.project.id,{renderAfter:false});
       state.dirty = false;
       state.scopeDirty = false;
 
@@ -745,92 +794,43 @@
 
     if(!dataset)return;
 
-    if (!dataset.dataset_name?.trim()) {
-      notify(
-        "Dataset name is required."
-      );
+    if(!dataset.dataset_name?.trim()){
+      notify("Dataset name is required.");
       return;
     }
 
-    if (
-      Number(dataset.header_row) < 0
-    ) {
-      notify(
-        "Header row cannot be negative."
-      );
+    if(Number(dataset.header_row)<0){
+      notify("Header row cannot be negative.");
       return;
     }
 
-    if (
-      Number(dataset.data_start_row) < 1
-    ) {
-      notify(
-        "Data start row must be at least 1."
-      );
+    if(Number(dataset.data_start_row)<1){
+      notify("Data start row must be at least 1.");
       return;
     }
 
-    state.datasetSavingId =
-      datasetId;
-
+    state.datasetSavingId=datasetId;
     render();
 
-    try {
-      const response = await apiFetch(
-        ENDPOINTS.migrations.projectDataset(
-          companyId(),
-          state.project.id,
-          datasetId
-        ),
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.projectDataset(companyId(),state.project.id,datasetId),
         {
-          method: "PATCH",
-          body: JSON.stringify({
-            dataset_name:
-              dataset.dataset_name.trim(),
-
-            entity_code:
-              dataset.entity_code || null,
-
-            header_row:
-              Number(
-                dataset.header_row || 0
-              ),
-
-            data_start_row:
-              Number(
-                dataset.data_start_row || 1
-              ),
-
-            data_end_row:
-              dataset.data_end_row
-                ? Number(
-                    dataset.data_end_row
-                  )
-                : null,
-
-            delimiter:
-              dataset.delimiter ?? null,
-
-            encoding:
-              dataset.encoding ?? null,
-
-            date_format:
-              dataset.date_format || null,
-
-            decimal_separator:
-              dataset.decimal_separator ?? null,
-
-            thousands_separator:
-              dataset.thousands_separator ?? null,
-
-            is_selected:
-              dataset.is_selected !== false,
-
-            settings_json:
-              dataset.settings_json || {},
-
-            metadata_json:
-              dataset.metadata_json || {},
+          method:"PATCH",
+          body:JSON.stringify({
+            dataset_name:dataset.dataset_name.trim(),
+            entity_code:dataset.entity_code||null,
+            header_row:Number(dataset.header_row||0),
+            data_start_row:Number(dataset.data_start_row||1),
+            data_end_row:dataset.data_end_row?Number(dataset.data_end_row):null,
+            delimiter:dataset.delimiter??null,
+            encoding:dataset.encoding??null,
+            date_format:dataset.date_format||null,
+            decimal_separator:dataset.decimal_separator??null,
+            thousands_separator:dataset.thousands_separator??null,
+            is_selected:dataset.is_selected!==false,
+            settings_json:dataset.settings_json||{},
+            metadata_json:dataset.metadata_json||{},
           }),
         }
       );
@@ -848,24 +848,19 @@
         state.files.forEach(file=>sync(file.datasets));
       }
 
-      log(
-        `Configured dataset ${dataset.dataset_name}`
-      );
+      await loadDetection(state.project.id,{renderAfter:false});
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+      await loadPpeMapping(state.project.id,{renderAfter:false});
 
-      notify(
-        "Dataset configuration saved."
-      );
+      log(`Configured dataset ${dataset.dataset_name}`);
+      notify("Dataset configuration saved.");
 
-    } catch (error) {
-      state.error =
-        errorMessage(error);
-
+    }catch(error){
+      state.error=errorMessage(error);
       notify(state.error);
 
-    } finally {
-      state.datasetSavingId =
-        null;
-
+    }finally{
+      state.datasetSavingId=null;
       render();
     }
   }
@@ -1485,6 +1480,24 @@
       "remove-file":removeFile,
       "save-dataset":saveDataset,
       "run-detection":runDetection,
+      "auto-map-fields":autoMapFields,
+      "save-field-mappings":saveFieldMappings,
+      "reset-field-mappings":resetFieldMappings,
+      "validate-field-mappings":validateFieldMappings,
+      "copy-field-mappings":copyFieldMappings,
+      "scan-reference-mappings":scanReferenceMappings,
+      "auto-reference-mappings":autoReferenceMappings,
+      "save-reference-mappings":saveReferenceMappings,
+      "validate-reference-mappings":validateReferenceMappings,
+      "reset-reference-mappings":resetReferenceMappings,
+
+      "save-ppe-settings":savePpeSettings,
+      "save-ppe-mapping":savePpeMapping,
+      "preview-ppe":previewPpe,
+
+      "save-lease-settings":saveLeaseSettings,
+      "save-lease-references":saveLeaseReferences,
+      "preview-leases":previewLeaseMigration,
       previous,
       next,
     };
@@ -1567,6 +1580,121 @@
       updateScopeEntity(element.dataset.mwScopeImport,"import_mode",element.value);
       return;
     }
+
+    if(element.id==="mwMappingDataset"){
+      state.mappingDatasetId=Number(element.value)||null;
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-map-target]")){
+      updateFieldMapping(Number(element.dataset.mwMapTarget),"target_field_code",element.value);
+      return;
+    }
+
+    if(element.matches("[data-mw-map-transform]")){
+      updateFieldMapping(Number(element.dataset.mwMapTransform),"transformation",element.value);
+      return;
+    }
+
+    if(element.matches("[data-mw-map-ignore]")){
+      updateFieldMapping(Number(element.dataset.mwMapIgnore),"mapping_status",element.checked?"ignored":"unmapped");
+      return;
+    }
+
+    if(element.id==="mwReferenceMappingType"){
+      state.referenceMappingType=element.value;
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-reference-target]")){
+      updateReferenceTarget(
+        element.dataset.mwReferenceType,
+        element.dataset.mwReferenceValue,
+        element.value
+      );
+      return;
+    }
+
+    if(element.matches("[data-mw-reference-action]")){
+      updateReferenceAction(
+        element.dataset.mwReferenceType,
+        element.dataset.mwReferenceValue,
+        element.value
+      );
+      return;
+    }
+
+    if(element.id==="mwPpeDataset"){
+      loadPpeDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-ppe-setting]")){
+      if(state.ppe.settings){
+        const field=element.dataset.mwPpeSetting;
+        state.ppe.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-ppe-class-field]")){
+      const sourceClass=element.dataset.mwPpeSourceClass;
+      const field=element.dataset.mwPpeClassField;
+
+      const row=(state.ppe.mapping?.mappings||[]).find(
+        item=>String(item.source_class)===String(sourceClass)
+      );
+
+      if(row){
+        row[field]=element.value;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwLeaseDataset"){
+      loadLeaseDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-lease-setting]")){
+      if(state.leases.settings){
+        const field=element.dataset.mwLeaseSetting;
+
+        state.leases.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-lease-reference]")){
+      const type=element.dataset.mwLeaseReference;
+      const sourceValue=element.dataset.mwLeaseSource;
+
+      const group=state.leases.mapping?.references?.[type];
+      const row=group?.rows?.find(
+        item=>String(item.source_value)===String(sourceValue)
+      );
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+
     if (
       element.matches(
         "[data-mw-dataset-field]"
@@ -1781,6 +1909,51 @@
     state.detection={datasets:[],record_count:0,detected_count:0};
     state.detectionLoaded=false;
     state.detecting=false;
+
+    state.fieldMappings={datasets:[],dataset_count:0,complete_count:0,required_unmapped_count:0,duplicate_count:0};
+    state.fieldMappingsLoaded=false;
+    state.mappingDatasetId=null;
+    state.mappingSaving=false;
+    state.mappingAutoRunning=false;
+    state.mappingValidating=false;
+
+    state.referenceMappings={
+      groups:[],
+      reference_count:0,
+      group_count:0,
+      unresolved_count:0,
+      pending_count:0,
+      complete_count:0,
+    };
+    state.referenceMappingsLoaded=false;
+    state.referenceMappingType=null;
+    state.referenceMappingDirty=false;
+    state.referenceScanning=false;
+    state.referenceAutoRunning=false;
+    state.referenceSaving=false;
+    state.referenceValidating=false;
+
+    state.ppe={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.ppeLoaded=false;
+    state.ppeSaving=false;
+    state.ppePreviewLoading=false;
+
+    state.leases={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.leasesLoaded=false;
+    state.leaseSaving=false;
+    state.leasePreviewLoading=false;
     log("New migration project prepared");
     render();
   }
@@ -1864,10 +2037,23 @@
       await apiFetch(ENDPOINTS.migrations.projectDetection(companyId(),state.project.id),{method:"POST",body:"{}"});
       await loadFiles(state.project.id,{renderAfter:false});
       await loadDetection(state.project.id,{renderAfter:false});
+      await loadFieldMappings(state.project.id,{renderAfter:false});
       state.project.status="detected";
       log(`Detection completed for ${state.detection.detected_count} dataset(s)`);
     }catch(error){state.error=errorMessage(error);notify(state.error)}
     finally{state.detecting=false;render()}
+  }
+
+  function heading(title,subtitle="",actions=""){
+    return `
+      <div class="mw-inline mw-heading" style="justify-content:space-between;align-items:flex-start;gap:16px">
+        <div>
+          <h2>${esc(title)}</h2>
+          ${subtitle?`<p class="mw-muted">${esc(subtitle)}</p>`:""}
+        </div>
+        ${actions?`<div class="mw-inline mw-heading-actions">${actions}</div>`:""}
+      </div>
+    `;
   }
 
   function detectionView(){
@@ -1955,7 +2141,7 @@
         </div>
       </div>
     `;
-}
+  }
 
   function datasetEntitySelect(dataset){
     const entities=state.scope.entities.filter(entity=>entity.is_selected);
@@ -2002,6 +2188,2127 @@
     return selected;
   }
 
+  async function loadFieldMappings(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.fieldMappings={datasets:[],dataset_count:0,complete_count:0,required_unmapped_count:0,duplicate_count:0};
+      state.fieldMappingsLoaded=false;
+      state.mappingDatasetId=null;
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(ENDPOINTS.migrations.fieldMappings(companyId(),projectId));
+      state.fieldMappings=response?.field_mappings||{datasets:[],dataset_count:0,complete_count:0,required_unmapped_count:0,duplicate_count:0};
+      state.fieldMappingsLoaded=true;
+
+      const datasets=state.fieldMappings.datasets||[];
+      if(!datasets.some(dataset=>Number(dataset.dataset_id)===Number(state.mappingDatasetId))){
+        state.mappingDatasetId=datasets[0]?.dataset_id||null;
+      }
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadFieldMappings failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  function currentMappingDataset(){
+    return (state.fieldMappings.datasets||[]).find(dataset=>Number(dataset.dataset_id)===Number(state.mappingDatasetId))||null;
+  }
+
+  function updateFieldMapping(columnId,field,value){
+    const dataset=currentMappingDataset();
+    const row=dataset?.rows?.find(item=>Number(item.column_id)===Number(columnId));
+    if(!row)return;
+
+    row[field]=value;
+    row._dirty=true;
+
+    if(field==="target_field_code"){
+      row.mapping_status=value?"mapped":"unmapped";
+      row.mapping_method="manual";
+      row.is_approved=Boolean(value);
+    }
+
+    if(field==="mapping_status"&&value==="ignored"){
+      row.target_field_code=null;
+      row.mapping_method="manual";
+      row.is_approved=true;
+    }
+
+    recalculateFieldMappingDataset(dataset);
+    render();
+  }
+
+  function recalculateFieldMappingDataset(dataset){
+    if(!dataset)return;
+
+    const mappedTargets=new Set(
+      (dataset.rows||[])
+        .filter(row=>row.mapping_status==="mapped"&&row.target_field_code)
+        .map(row=>row.target_field_code)
+    );
+
+    dataset.required_unmapped=(dataset.targets||[])
+      .filter(target=>target.is_required&&!mappedTargets.has(target.field_code));
+
+    dataset.required_unmapped_count=dataset.required_unmapped.length;
+
+    dataset.duplicate_targets=(dataset.targets||[])
+      .filter(target=>!target.allow_duplicate_mapping)
+      .filter(target=>(dataset.rows||[])
+        .filter(row=>row.mapping_status==="mapped"&&row.target_field_code===target.field_code).length>1)
+      .map(target=>target.field_code);
+
+    dataset.is_complete=!dataset.required_unmapped_count&&!dataset.duplicate_targets.length&&Boolean(dataset.rows?.length);
+  }
+
+  async function autoMapFields(){
+    const dataset=currentMappingDataset();
+    if(!dataset)return notify("Select a dataset first.");
+
+    state.mappingAutoRunning=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.autoDatasetFieldMappings(companyId(),state.project.id,dataset.dataset_id),
+        {method:"POST",body:"{}"}
+      );
+
+      const updated=response?.dataset;
+      const index=(state.fieldMappings.datasets||[]).findIndex(item=>Number(item.dataset_id)===Number(dataset.dataset_id));
+      if(updated&&index>=0)state.fieldMappings.datasets[index]=updated;
+
+      log(`Auto-mapped fields for ${dataset.dataset_name}`);
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }finally{
+      state.mappingAutoRunning=false;
+      render();
+    }
+  }
+
+  async function saveFieldMappings(){
+    const dataset=currentMappingDataset();
+    if(!dataset)return notify("Select a dataset first.");
+
+    const duplicates=dataset.duplicate_targets||[];
+    if(duplicates.length)return notify(`Resolve duplicate mappings first: ${duplicates.join(", ")}.`);
+
+    state.mappingSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.datasetFieldMappings(companyId(),state.project.id,dataset.dataset_id),
+        {
+          method:"PUT",
+          body:JSON.stringify({
+            mappings:(dataset.rows||[]).map(row=>({
+              column_id:row.column_id,
+              target_field_code:row.target_field_code||null,
+              mapping_status:row.mapping_status||"unmapped",
+              confidence:Number(row.confidence||0),
+              transformation:row.transformation||"none",
+              default_value:row.default_value??null,
+              transformation_json:row.transformation_json||{},
+              is_approved:row.mapping_status!=="unmapped",
+              notes:row.notes||null,
+            }))
+          })
+        }
+      );
+
+      const updated=response?.dataset;
+      const index=(state.fieldMappings.datasets||[]).findIndex(item=>Number(item.dataset_id)===Number(dataset.dataset_id));
+      if(updated&&index>=0)state.fieldMappings.datasets[index]=updated;
+
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+      log(`Saved field mapping for ${dataset.dataset_name}`);
+      notify("Field mapping saved.");
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }finally{
+      state.mappingSaving=false;
+      render();
+    }
+  }
+
+  async function resetFieldMappings(){
+    const dataset=currentMappingDataset();
+    if(!dataset)return;
+    if(!confirm(`Reset all field mappings for "${dataset.dataset_name}"?`))return;
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.resetDatasetFieldMappings(companyId(),state.project.id,dataset.dataset_id),
+        {method:"DELETE"}
+      );
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+      log(`Reset field mappings for ${dataset.dataset_name}`);
+      render();
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+  }
+
+
+  async function validateFieldMappings(){
+    state.mappingValidating=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.validateFieldMappings(companyId(),state.project.id),
+        {method:"POST",body:"{}"}
+      );
+
+      const validation=response?.validation;
+      if(validation?.valid){
+        notify("All field mappings are valid.");
+        log("Field mapping validation passed");
+      }else{
+        const issue=validation?.issues?.[0];
+        notify(issue?.message||"Field mapping validation failed.");
+      }
+
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }finally{
+      state.mappingValidating=false;
+      render();
+    }
+  }
+
+  async function copyFieldMappings(){
+    const target=currentMappingDataset();
+    if(!target)return;
+
+    const compatible=(state.fieldMappings.datasets||[])
+      .filter(dataset=>dataset.dataset_id!==target.dataset_id&&dataset.entity_code===target.entity_code);
+
+    if(!compatible.length)return notify("No other dataset with the same entity is available.");
+
+    const sourceId=Number(prompt(
+      `Copy mapping from dataset ID:\n${compatible.map(dataset=>`${dataset.dataset_id} — ${dataset.dataset_name}`).join("\n")}`
+    ));
+
+    if(!compatible.some(dataset=>Number(dataset.dataset_id)===sourceId))return notify("Invalid source dataset.");
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.copyFieldMappings(companyId(),state.project.id),
+        {method:"POST",body:JSON.stringify({source_dataset_id:sourceId,target_dataset_id:target.dataset_id})}
+      );
+
+      await loadFieldMappings(state.project.id,{renderAfter:false});
+      notify("Field mapping copied.");
+      render();
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+  }
+
+  function fieldMappingView(){
+    const datasets=state.fieldMappings.datasets||[];
+
+    if(!state.fieldMappingsLoaded){
+      return `<div class="mw-empty">Loading field mappings…</div>`;
+    }
+
+    if(!datasets.length){
+      return `
+        <h2>Field Mapping</h2>
+        <div class="mw-alert warn">
+          Run source detection and assign entities before field mapping.
+        </div>
+      `;
+    }
+
+    const dataset=currentMappingDataset()||datasets[0];
+
+    return `
+      ${heading(
+        "Field Mapping",
+        "Map source columns to FinSage migration fields before account and reference mapping.",
+        `
+          <button class="mw-btn" data-mw-action="copy-field-mappings">Copy mapping</button>
+          <button class="mw-btn danger" data-mw-action="reset-field-mappings">Reset</button>
+          <button class="mw-btn" data-mw-action="validate-field-mappings" ${state.mappingValidating?"disabled":""}>
+            ${state.mappingValidating?"Validating…":"Validate"}
+          </button>
+          <button class="mw-btn" data-mw-action="auto-map-fields" ${state.mappingAutoRunning?"disabled":""}>
+            ${state.mappingAutoRunning?"Mapping…":"Auto map"}
+          </button>
+          <button class="mw-btn primary" data-mw-action="save-field-mappings" ${state.mappingSaving?"disabled":""}>
+            ${state.mappingSaving?"Saving…":"Save mapping"}
+          </button>
+        `
+      )}
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        <div class="mw-field">
+          <label>Dataset</label>
+          <select id="mwMappingDataset" class="mw-select">
+            ${datasets.map(item=>`
+              <option value="${item.dataset_id}" ${Number(item.dataset_id)===Number(dataset.dataset_id)?"selected":""}>
+                ${esc(item.dataset_name)} — ${esc(item.entity_label||item.entity_code)}
+              </option>
+            `).join("")}
+          </select>
+        </div>
+
+        <div class="mw-stat">
+          <span>Required fields</span>
+          <strong>${dataset.required_count||0}</strong>
+        </div>
+
+        <div class="mw-stat">
+          <span>Required unmapped</span>
+          <strong>${dataset.required_unmapped_count||0}</strong>
+        </div>
+      </div>
+
+      ${fieldMappingStatus(dataset)}
+      ${fieldMappingTable(dataset)}
+    `;
+  }
+
+  function fieldMappingStatus(dataset){
+    if(dataset.duplicate_targets?.length){
+      return `
+        <div class="mw-alert error" style="margin-top:14px">
+          <strong>Duplicate target mappings:</strong>
+          ${esc(dataset.duplicate_targets.join(", "))}
+        </div>
+      `;
+    }
+
+    if(dataset.required_unmapped_count){
+      return `
+        <div class="mw-alert warn" style="margin-top:14px">
+          <strong>${dataset.required_unmapped_count} required field(s) still unmapped:</strong>
+          ${dataset.required_unmapped.map(field=>esc(field.label)).join(", ")}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-alert ok" style="margin-top:14px">
+        <strong>Required field mapping complete.</strong>
+        Optional source columns can still be mapped or ignored.
+      </div>
+    `;
+  }
+
+  function fieldMappingTable(dataset){
+    const targets=dataset.targets||[];
+
+    return table(
+      ["Source Column","Detected Type","Sample","FinSage Field","Transform","Confidence","Ignore"],
+      (dataset.rows||[]).map(row=>[
+        `<strong>${esc(row.source_name)}</strong>`,
+        badge(titleCase(row.detected_type||"text"),"info"),
+        esc((row.samples||[]).slice(0,2).join(", ")),
+        fieldTargetSelect(row,targets),
+        fieldTransformSelect(row),
+        badge(`${Number(row.confidence||0).toFixed(0)}%`,Number(row.confidence||0)>=85?"ok":Number(row.confidence||0)>=60?"warn":""),
+        `<input type="checkbox" data-mw-map-ignore="${row.column_id}" ${row.mapping_status==="ignored"?"checked":""}>`
+      ]),
+      "No source columns were detected."
+    );
+  }
+
+  function fieldTargetSelect(row,targets){
+    if(row.mapping_status==="ignored")return `<span class="mw-muted">Ignored</span>`;
+
+    return `
+      <select class="mw-select" data-mw-map-target="${row.column_id}">
+        <option value="">Select field</option>
+        ${targets.map(target=>`
+          <option value="${esc(target.field_code)}" ${row.target_field_code===target.field_code?"selected":""}>
+            ${esc(target.label)}${target.is_required?" *":""}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function fieldTransformSelect(row){
+    const options=[
+      ["none","None"],["trim","Trim spaces"],["uppercase","Uppercase"],["lowercase","Lowercase"],
+      ["parse_number","Parse number"],["parse_date","Parse date"],["reverse_sign","Reverse sign"],
+      ["absolute","Absolute value"],["use_default","Use default"]
+    ];
+
+    return `
+      <select class="mw-select" data-mw-map-transform="${row.column_id}" ${row.mapping_status==="ignored"?"disabled":""}>
+        ${options.map(([value,label])=>`
+          <option value="${value}" ${(row.transformation||"none")===value?"selected":""}>${label}</option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  async function loadReferenceMappings(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.referenceMappings={
+        groups:[],
+        reference_count:0,
+        group_count:0,
+        unresolved_count:0,
+        pending_count:0,
+        complete_count:0,
+      };
+      state.referenceMappingsLoaded=false;
+      state.referenceMappingType=null;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.referenceMappings(companyId(),projectId)
+      );
+
+      state.referenceMappings=response?.reference_mappings||{
+        groups:[],
+        reference_count:0,
+        group_count:0,
+        unresolved_count:0,
+        pending_count:0,
+        complete_count:0,
+      };
+
+      state.referenceMappingsLoaded=true;
+
+      const groups=state.referenceMappings.groups||[];
+
+      if(!groups.some(group=>group.reference_type===state.referenceMappingType)){
+        state.referenceMappingType=groups[0]?.reference_type||null;
+      }
+
+      state.referenceMappingDirty=false;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadReferenceMappings failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  function currentReferenceGroup(){
+    return (state.referenceMappings.groups||[]).find(
+      group=>group.reference_type===state.referenceMappingType
+    )||null;
+  }
+
+  function updateReferenceTarget(referenceType,sourceValue,targetId){
+    const group=(state.referenceMappings.groups||[]).find(
+      item=>item.reference_type===referenceType
+    );
+
+    const row=group?.rows?.find(
+      item=>String(item.source_value)===String(sourceValue)
+    );
+
+    if(!row)return;
+
+    const target=(group.targets||[]).find(
+      item=>Number(item.id)===Number(targetId)
+    );
+
+    row.target_id=target?.id||null;
+    row.target_code=target?.code||null;
+    row.target_label=target?.label||null;
+    row.mapping_action=target?"map":"create";
+    row.mapping_method="manual";
+    row.is_approved=Boolean(target);
+    row._dirty=true;
+
+    state.referenceMappingDirty=true;
+    recalculateReferenceMappings();
+    render();
+  }
+
+  function updateReferenceAction(referenceType,sourceValue,action){
+    const group=(state.referenceMappings.groups||[]).find(
+      item=>item.reference_type===referenceType
+    );
+
+    const row=group?.rows?.find(
+      item=>String(item.source_value)===String(sourceValue)
+    );
+
+    if(!row)return;
+
+    row.mapping_action=action;
+    row.mapping_method="manual";
+    row._dirty=true;
+
+    if(action!=="map"){
+      row.target_id=null;
+      row.target_code=null;
+      row.target_label=null;
+      row.is_approved=true;
+    }else{
+      row.is_approved=Boolean(row.target_id);
+    }
+
+    state.referenceMappingDirty=true;
+    recalculateReferenceMappings();
+    render();
+  }
+
+  function recalculateReferenceMappings(){
+    const groups=state.referenceMappings.groups||[];
+
+    groups.forEach(group=>{
+      group.unresolved_count=(group.rows||[]).filter(
+        row=>row.mapping_action==="map"&&!row.target_id
+      ).length;
+
+      group.pending_count=(group.rows||[]).filter(
+        row=>!row.is_approved
+      ).length;
+
+      group.is_complete=!group.unresolved_count&&!group.pending_count;
+    });
+
+    state.referenceMappings.reference_count=groups.reduce(
+      (sum,group)=>sum+(group.rows||[]).length,
+      0
+    );
+
+    state.referenceMappings.group_count=groups.length;
+
+    state.referenceMappings.unresolved_count=groups.reduce(
+      (sum,group)=>sum+group.unresolved_count,
+      0
+    );
+
+    state.referenceMappings.pending_count=groups.reduce(
+      (sum,group)=>sum+group.pending_count,
+      0
+    );
+
+    state.referenceMappings.complete_count=groups.filter(
+      group=>group.is_complete
+    ).length;
+  }
+
+  function recalculateReferenceMappings(){
+    const groups=state.referenceMappings.groups||[];
+
+    groups.forEach(group=>{
+      group.unresolved_count=(group.rows||[]).filter(
+        row=>row.mapping_action==="map"&&!row.target_id
+      ).length;
+
+      group.pending_count=(group.rows||[]).filter(
+        row=>!row.is_approved
+      ).length;
+
+      group.is_complete=!group.unresolved_count&&!group.pending_count;
+    });
+
+    state.referenceMappings.reference_count=groups.reduce(
+      (sum,group)=>sum+(group.rows||[]).length,
+      0
+    );
+
+    state.referenceMappings.group_count=groups.length;
+
+    state.referenceMappings.unresolved_count=groups.reduce(
+      (sum,group)=>sum+group.unresolved_count,
+      0
+    );
+
+    state.referenceMappings.pending_count=groups.reduce(
+      (sum,group)=>sum+group.pending_count,
+      0
+    );
+
+    state.referenceMappings.complete_count=groups.filter(
+      group=>group.is_complete
+    ).length;
+  }
+
+  async function scanReferenceMappings(){
+    if(!state.project?.id)return;
+
+    state.referenceScanning=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.scanReferenceMappings(
+          companyId(),
+          state.project.id
+        ),
+        {method:"POST",body:"{}"}
+      );
+
+      state.referenceMappings=response?.reference_mappings||state.referenceMappings;
+      state.referenceMappingsLoaded=true;
+
+      const groups=state.referenceMappings.groups||[];
+
+      if(!groups.some(group=>group.reference_type===state.referenceMappingType)){
+        state.referenceMappingType=groups[0]?.reference_type||null;
+      }
+
+      state.referenceMappingDirty=false;
+
+      log(`Scanned ${state.referenceMappings.reference_count||0} reference values`);
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.referenceScanning=false;
+      render();
+    }
+  }
+
+  async function autoReferenceMappings(){
+    if(!state.referenceMappings.reference_count){
+      return notify("Scan reference values before running automatic matching.");
+    }
+
+    state.referenceAutoRunning=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.autoReferenceMappings(
+          companyId(),
+          state.project.id
+        ),
+        {method:"POST",body:"{}"}
+      );
+
+      state.referenceMappings=response?.reference_mappings||state.referenceMappings;
+      state.referenceMappingDirty=false;
+
+      log("Automatic reference matching completed");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.referenceAutoRunning=false;
+      render();
+    }
+  }
+
+  async function saveReferenceMappings(){
+    const groups=state.referenceMappings.groups||[];
+    const mappings=[];
+
+    for(const group of groups){
+      for(const row of group.rows||[]){
+        if(row.mapping_action==="map"&&!row.target_id){
+          notify(`Select a target for "${row.source_value}".`);
+          state.referenceMappingType=group.reference_type;
+          render();
+          return;
+        }
+
+        mappings.push({
+          reference_type:group.reference_type,
+          source_value:row.source_value,
+          source_label:row.source_label,
+          target_id:row.target_id||null,
+          target_code:row.target_code||null,
+          target_label:row.target_label||null,
+          mapping_action:row.mapping_action||"create",
+          confidence:Number(row.confidence||0),
+          notes:row.notes||null,
+        });
+      }
+    }
+
+    state.referenceSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.referenceMappings(
+          companyId(),
+          state.project.id
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      state.referenceMappings=response?.reference_mappings||state.referenceMappings;
+      state.referenceMappingDirty=false;
+
+      log("Reference mappings saved");
+      notify("Reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.referenceSaving=false;
+      render();
+    }
+  }
+
+  async function validateReferenceMappings(){
+    state.referenceValidating=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.validateReferenceMappings(
+          companyId(),
+          state.project.id
+        ),
+        {method:"POST",body:"{}"}
+      );
+
+      const validation=response?.validation;
+
+      if(validation?.valid){
+        notify("Reference mappings are valid.");
+        log("Reference mapping validation passed");
+      }else{
+        const issue=validation?.issues?.[0];
+        notify(issue?.message||"Reference mapping validation failed.");
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.referenceValidating=false;
+      render();
+    }
+  }
+
+  async function resetReferenceMappings(){
+    if(!confirm("Reset all account and reference mappings for this migration project?"))return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.resetReferenceMappings(
+          companyId(),
+          state.project.id
+        ),
+        {method:"DELETE"}
+      );
+
+      state.referenceMappings=response?.reference_mappings||state.referenceMappings;
+      state.referenceMappingDirty=false;
+
+      notify("Reference mappings reset.");
+      render();
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+  }
+
+  function referenceMappingView(){
+    const groups=state.referenceMappings.groups||[];
+
+    if(!state.referenceMappingsLoaded){
+      return `<div class="mw-empty">Loading account and reference mappings…</div>`;
+    }
+
+    if(!state.referenceMappings.reference_count){
+      return `
+        ${heading(
+          "Account and Reference Mapping",
+          "Scan mapped source fields for accounts, customers, vendors, products and other references.",
+          `
+            <button class="mw-btn primary" data-mw-action="scan-reference-mappings" ${state.referenceScanning?"disabled":""}>
+              ${state.referenceScanning?"Scanning…":"Scan references"}
+            </button>
+          `
+        )}
+
+        <div class="mw-empty">
+          No reference values have been scanned yet.
+        </div>
+      `;
+    }
+
+    const group=currentReferenceGroup()||groups[0];
+
+    return `
+      ${heading(
+        "Account and Reference Mapping",
+        "Match source accounting references to existing FinSage records or mark them for creation.",
+        `
+          <button class="mw-btn" data-mw-action="scan-reference-mappings" ${state.referenceScanning?"disabled":""}>
+            ${state.referenceScanning?"Scanning…":"Rescan"}
+          </button>
+
+          <button class="mw-btn" data-mw-action="auto-reference-mappings" ${state.referenceAutoRunning?"disabled":""}>
+            ${state.referenceAutoRunning?"Matching…":"Auto match"}
+          </button>
+
+          <button class="mw-btn" data-mw-action="validate-reference-mappings" ${state.referenceValidating?"disabled":""}>
+            ${state.referenceValidating?"Validating…":"Validate"}
+          </button>
+
+          <button class="mw-btn danger" data-mw-action="reset-reference-mappings">
+            Reset
+          </button>
+
+          <button class="mw-btn primary" data-mw-action="save-reference-mappings" ${state.referenceSaving?"disabled":""}>
+            ${state.referenceSaving?"Saving…":state.referenceMappingDirty?"Save mappings":"Mappings saved"}
+          </button>
+        `
+      )}
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        <div class="mw-field">
+          <label>Reference type</label>
+
+          <select id="mwReferenceMappingType" class="mw-select">
+            ${groups.map(item=>`
+              <option value="${esc(item.reference_type)}"
+                ${item.reference_type===group.reference_type?"selected":""}>
+                ${esc(referenceTypeLabel(item.reference_type))}
+              </option>
+            `).join("")}
+          </select>
+        </div>
+
+        <div class="mw-stat">
+          <span>References</span>
+          <strong>${group.rows?.length||0}</strong>
+        </div>
+
+        <div class="mw-stat">
+          <span>Pending</span>
+          <strong>${group.pending_count||0}</strong>
+        </div>
+      </div>
+
+      ${referenceMappingStatus(group)}
+      ${referenceMappingTable(group)}
+    `;
+  }
+
+  function referenceTypeLabel(type){
+    return {
+      account:"Chart of Accounts",
+      customer:"Customers",
+      vendor:"Vendors",
+      product:"Products",
+      tax_code:"Tax Codes",
+      bank_account:"Bank Accounts",
+      department:"Departments",
+    }[type]||titleCase(type);
+  }
+
+  function referenceMappingStatus(group){
+    if(group.unresolved_count){
+      return `
+        <div class="mw-alert error" style="margin-top:14px">
+          <strong>${group.unresolved_count} unresolved mapping(s).</strong>
+          Select a FinSage target or choose Create New.
+        </div>
+      `;
+    }
+
+    if(group.pending_count){
+      return `
+        <div class="mw-alert warn" style="margin-top:14px">
+          <strong>${group.pending_count} mapping(s) require approval.</strong>
+          Review automatic matches and save the mappings.
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-alert ok" style="margin-top:14px">
+        <strong>${esc(referenceTypeLabel(group.reference_type))} mapping complete.</strong>
+      </div>
+    `;
+  }
+
+  function referenceMappingTable(group){
+    return table(
+      ["Source Value","Occurrences","Action","FinSage Target","Confidence"],
+      (group.rows||[]).map(row=>[
+        `
+          <strong>${esc(row.source_value)}</strong>
+          ${row.source_label&&row.source_label!==row.source_value
+            ?`<div class="mw-muted mw-small">${esc(row.source_label)}</div>`
+            :""
+          }
+        `,
+
+        Number(row.occurrence_count||0).toLocaleString(),
+
+        referenceActionSelect(group,row),
+
+        referenceTargetSelect(group,row),
+
+        badge(
+          `${Number(row.confidence||0).toFixed(0)}%`,
+          Number(row.confidence||0)>=90
+            ?"ok"
+            :Number(row.confidence||0)>=70
+              ?"warn"
+              :""
+        ),
+      ]),
+      "No source references were found."
+    );
+  }
+
+  function referenceActionSelect(group,row){
+    return `
+      <select
+        class="mw-select"
+        data-mw-reference-action="1"
+        data-mw-reference-type="${esc(group.reference_type)}"
+        data-mw-reference-value="${esc(row.source_value)}"
+      >
+        <option value="map" ${row.mapping_action==="map"?"selected":""}>Map existing</option>
+        <option value="create" ${row.mapping_action==="create"?"selected":""}>Create new</option>
+        <option value="ignore" ${row.mapping_action==="ignore"?"selected":""}>Ignore</option>
+      </select>
+    `;
+  }
+
+  function referenceTargetSelect(group,row){
+    if(row.mapping_action!=="map"){
+      return `<span class="mw-muted">${row.mapping_action==="create"?"Create during migration":"Ignored"}</span>`;
+    }
+
+    return `
+      <select
+        class="mw-select"
+        data-mw-reference-target="${esc(row.source_value)}"
+        data-mw-reference-type="${esc(group.reference_type)}"
+        data-mw-reference-value="${esc(row.source_value)}"
+      >
+        <option value="">Select target</option>
+
+        ${(group.targets||[]).map(target=>`
+          <option value="${esc(target.id)}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(target.code||"")}${target.code?" — ":""}${esc(target.label||"")}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  async function loadPpeMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.ppe={datasets:[],datasetId:null,settings:null,mapping:null,preview:null};
+      state.ppeLoaded=false;
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.ppe(companyId(),projectId)
+      );
+
+      state.ppe.datasets=response?.datasets||[];
+
+      if(!state.ppe.datasets.some(
+        dataset=>Number(dataset.dataset_id)===Number(state.ppe.datasetId)
+      )){
+        state.ppe.datasetId=state.ppe.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.ppe.datasetId){
+        await loadPpeDataset(state.ppe.datasetId,{renderAfter:false});
+      }
+
+      state.ppeLoaded=true;
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadPpeMapping failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadPpeDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.ppeSettings(companyId(),state.project.id,id)
+      ),
+      apiFetch(
+        ENDPOINTS.migrations.ppeMapping(companyId(),state.project.id,id)
+      ),
+    ]);
+
+    state.ppe.datasetId=id;
+    state.ppe.settings=settingsResponse?.settings||null;
+    state.ppe.mapping=mappingResponse?.mapping||null;
+    state.ppe.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePpeSettings(){
+    if(!state.ppe.datasetId||!state.ppe.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.ppeSettings(
+          companyId(),state.project.id,state.ppe.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.ppe.settings),
+        }
+      );
+
+      state.ppe.settings=response?.settings||state.ppe.settings;
+      notify("PPE migration settings saved.");
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+
+  async function savePpeMapping(){
+    const mappings=state.ppe.mapping?.mappings||[];
+    if(!state.ppe.datasetId||!mappings.length)return;
+
+    const invalid=mappings.find(row=>
+      !row.target_asset_class||
+      !row.target_asset_class_group||
+      (state.ppe.settings?.require_gl_mapping&&!row.asset_account_code)
+    );
+
+    if(invalid){
+      notify(`Complete PPE mapping for "${invalid.source_class}".`);
+      return;
+    }
+
+    state.ppeSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.ppeClasses(
+          companyId(),state.project.id,state.ppe.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      state.ppe.mapping=response?.mapping||state.ppe.mapping;
+      notify("PPE class mapping saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.ppeSaving=false;
+      render();
+    }
+  }
+
+  async function previewPpe(){
+    if(!state.ppe.datasetId)return;
+
+    state.ppePreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.ppePreview(
+          companyId(),state.project.id,state.ppe.datasetId
+        )
+      );
+
+      state.ppe.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.ppePreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=state.ppe.datasets?.length;
+
+    return `
+      <div>
+        <div class="mw-inline" style="margin-bottom:14px">
+          ${hasPpe?`<span class="mw-badge info">PPE</span>`:""}
+        </div>
+
+        ${hasPpe
+          ?ppeMappingView()
+          :`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+        }
+      </div>
+    `;
+  }
+
+  function ppeMappingView(){
+    const datasets=state.ppe.datasets||[];
+    const mapping=state.ppe.mapping;
+    const settings=state.ppe.settings;
+
+    if(!datasets.length){
+      return `<div class="mw-empty">No PPE datasets detected.</div>`;
+    }
+
+    if(!mapping||!settings){
+      return `<div class="mw-empty">Loading PPE mapping…</div>`;
+    }
+
+    return `
+      ${heading(
+        "PPE Migration Mapping",
+        "Configure how source fixed assets will be transformed into the existing FinSage PPE onboarding structure.",
+        `
+          <button class="mw-btn" data-mw-action="save-ppe-settings">Save settings</button>
+          <button class="mw-btn primary" data-mw-action="save-ppe-mapping" ${state.ppeSaving?"disabled":""}>
+            ${state.ppeSaving?"Saving…":"Save PPE mapping"}
+          </button>
+          <button class="mw-btn" data-mw-action="preview-ppe" ${state.ppePreviewLoading?"disabled":""}>
+            ${state.ppePreviewLoading?"Building preview…":"Preview payload"}
+          </button>
+        `
+      )}
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        <div class="mw-field">
+          <label>PPE Dataset</label>
+          <select id="mwPpeDataset" class="mw-select">
+            ${datasets.map(dataset=>`
+              <option value="${dataset.dataset_id}"
+                ${Number(dataset.dataset_id)===Number(state.ppe.datasetId)?"selected":""}>
+                ${esc(dataset.dataset_name)}
+              </option>
+            `).join("")}
+          </select>
+        </div>
+
+        ${ppeSettingSelect(
+          "Default entry mode","default_entry_mode",
+          [["opening_balance","Opening balance"],["acquisition","Acquisition"]]
+        )}
+
+        ${ppeSettingInput(
+          "Opening as at","default_opening_as_at","date"
+        )}
+      </div>
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${ppeSettingSelect(
+          "Default standard","default_accounting_standard",
+          [["ias16","IAS 16"],["ias38","IAS 38"],["ias40","IAS 40"]]
+        )}
+
+        ${ppeSettingSelect(
+          "Measurement basis","default_measurement_basis",
+          [["cost","Cost"],["revaluation","Revaluation"]]
+        )}
+
+        ${ppeSettingSelect(
+          "Depreciation method","default_depreciation_method",
+          [["SL","Straight line"],["RB","Reducing balance"],["UOP","Units of production"],["APP","Not depreciated"]]
+        )}
+      </div>
+
+      <div style="margin-top:20px">
+        <h3>Asset class mapping</h3>
+        <p class="mw-muted">
+          Map each source asset class to its FinSage PPE classification and GL accounts.
+        </p>
+
+        ${(mapping.mappings||[]).map(ppeClassCard).join("")||
+          `<div class="mw-empty">No source asset classes were detected.</div>`
+        }
+      </div>
+
+      ${ppePreviewView()}
+    `;
+  }
+
+  function ppeSettingInput(label,field,type="text"){
+    const value=state.ppe.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input" type="${type}"
+          value="${esc(value)}"
+          data-mw-ppe-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function ppeSettingSelect(label,field,options){
+    const value=state.ppe.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <select class="mw-select" data-mw-ppe-setting="${esc(field)}">
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}" ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function ppeClassCard(row){
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>${esc(row.source_class)}</strong>
+            <div class="mw-muted mw-small">
+              ${Number(row.sample_count||0)} sample record(s)
+            </div>
+          </div>
+
+          <span class="mw-badge ${row.is_approved?"ok":"warn"}">
+            ${row.is_approved?"Mapped":"Review required"}
+          </span>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${ppeClassInput(row,"target_asset_class","FinSage Asset Class")}
+          ${ppeClassSelect(row,"target_asset_class_group","Asset Class Group",
+            state.ppe.mapping?.targets?.class_groups?.map(value=>[value,value])||[]
+          )}
+          ${ppeClassSelect(row,"accounting_standard","Standard",[
+            ["ias16","IAS 16"],["ias38","IAS 38"],["ias40","IAS 40"]
+          ])}
+
+          ${ppeClassSelect(row,"measurement_basis","Measurement",[
+            ["cost","Cost"],["revaluation","Revaluation"]
+          ])}
+
+          ${ppeClassSelect(row,"depreciation_method","Depreciation",[
+            ["","Use source/default"],["SL","Straight line"],
+            ["RB","Reducing balance"],["UOP","Units of production"],
+            ["APP","Not depreciated"]
+          ])}
+
+          ${ppeClassInput(row,"useful_life_months","Useful Life Months","number")}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${ppeClassCoa(row,"asset_account_code","Asset Cost Account")}
+          ${ppeClassCoa(row,"accum_dep_account_code","Accumulated Depreciation")}
+          ${ppeClassCoa(row,"dep_expense_account_code","Depreciation Expense")}
+        </div>
+      </div>
+    `;
+  }
+  function ppeClassInput(row,field,label,type="text"){
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input" type="${type}"
+          value="${esc(row[field]??"")}"
+          data-mw-ppe-class-field="${esc(field)}"
+          data-mw-ppe-source-class="${esc(row.source_class)}">
+      </div>
+    `;
+  }
+
+  function ppeClassSelect(row,field,label,options){
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <select class="mw-select"
+          data-mw-ppe-class-field="${esc(field)}"
+          data-mw-ppe-source-class="${esc(row.source_class)}">
+
+          ${options.map(([value,name])=>`
+            <option value="${esc(value)}" ${String(row[field]??"")===String(value)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function ppeClassCoa(row,field,label){
+    const accounts=window.COA_ACCOUNTS||
+      window.ACCOUNTS||
+      window.chartOfAccounts||
+      [];
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-ppe-class-field="${esc(field)}"
+          data-mw-ppe-source-class="${esc(row.source_class)}">
+
+          <option value="">Select account</option>
+
+          ${accounts.map(account=>{
+            const code=account.code||account.account_code||"";
+            const name=account.name||account.account_name||code;
+
+            return `
+              <option value="${esc(code)}"
+                ${String(row[field]||"")===String(code)?"selected":""}>
+                ${esc(name)}
+              </option>
+            `;
+          }).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function ppePreviewView(){
+    const preview=state.ppe.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:22px">
+        <h3>PPE Payload Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Rows previewed</span>
+            <strong>${preview.row_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${(preview.rows||[]).map(row=>`
+          <div class="mw-card" style="margin-top:12px">
+            <div class="mw-inline" style="justify-content:space-between">
+              <strong>
+                ${esc(row.payload?.asset_code||`Row ${row.row_number}`)}
+                ${row.payload?.asset_name?` — ${esc(row.payload.asset_name)}`:""}
+              </strong>
+
+              <span class="mw-badge ${row.valid?"ok":"error"}">
+                ${row.valid?"Ready":"Needs attention"}
+              </span>
+            </div>
+
+            <div class="mw-grid-3" style="margin-top:12px">
+              <div>
+                <span class="mw-muted mw-small">Class</span>
+                <div>${esc(row.payload?.asset_class||"—")}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Historical Cost</span>
+                <div>${Number(row.payload?.cost||0).toLocaleString()}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Opening Carrying Amount</span>
+                <div>${Number(row.payload?.calculated_carrying_amount||0).toLocaleString()}</div>
+              </div>
+            </div>
+
+            ${row.issues?.length?`
+              <div class="mw-alert error" style="margin-top:12px">
+                ${row.issues.map(issue=>`<div>${esc(issue)}</div>`).join("")}
+              </div>
+            `:""}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  async function loadLeaseMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.leases={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.leasesLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.leases(companyId(),projectId)
+      );
+
+      state.leases.datasets=response?.datasets||[];
+
+      if(!state.leases.datasets.some(
+        dataset=>Number(dataset.dataset_id)===Number(state.leases.datasetId)
+      )){
+        state.leases.datasetId=state.leases.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.leases.datasetId){
+        await loadLeaseDataset(
+          state.leases.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.leasesLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadLeaseMapping failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadLeaseDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.leaseSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.leaseMapping(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.leases.datasetId=id;
+    state.leases.settings=settingsResponse?.settings||null;
+    state.leases.mapping=mappingResponse?.mapping||null;
+    state.leases.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveLeaseSettings(){
+    if(!state.leases.datasetId||!state.leases.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.leaseSettings(
+          companyId(),
+          state.project.id,
+          state.leases.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.leases.settings),
+        }
+      );
+
+      state.leases.settings=response?.settings||state.leases.settings;
+
+      await loadLeaseDataset(
+        state.leases.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Lease migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+
+  async function saveLeaseReferences(){
+    const references=state.leases.mapping?.references||{};
+    const mappings=[];
+
+    for(const [referenceType,group] of Object.entries(references)){
+      for(const row of group.rows||[]){
+        if(!row.target_id){
+          notify(`Select a target for "${row.source_value}".`);
+          return;
+        }
+
+        mappings.push({
+          reference_type:referenceType,
+          source_value:row.source_value,
+          source_label:row.source_label||row.source_value,
+          target_id:Number(row.target_id),
+        });
+      }
+    }
+
+    state.leaseSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.leaseReferences(
+          companyId(),
+          state.project.id,
+          state.leases.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadLeaseDataset(
+        state.leases.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Lease reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.leaseSaving=false;
+      render();
+    }
+  }
+
+  async function previewLeaseMigration(){
+    if(!state.leases.datasetId)return;
+
+    state.leasePreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.leasePreview(
+          companyId(),
+          state.project.id,
+          state.leases.datasetId
+        )
+      );
+
+      state.leases.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.leasePreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=Boolean(state.ppe.datasets?.length);
+    const hasLeases=Boolean(state.leases.datasets?.length);
+
+    return `
+      <div>
+        <div class="mw-inline" style="margin-bottom:14px">
+          ${hasPpe?`<button class="mw-btn" data-mw-module-tab="ppe">PPE</button>`:""}
+          ${hasLeases?`<button class="mw-btn" data-mw-module-tab="leases">IFRS 16 Leases</button>`:""}
+        </div>
+
+        ${hasPpe?ppeMappingView():""}
+        ${hasLeases?leaseMigrationView():""}
+
+        ${!hasPpe&&!hasLeases
+          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function leaseMigrationView(){
+    const datasets=state.leases.datasets||[];
+    const settings=state.leases.settings;
+    const mapping=state.leases.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `<div class="mw-empty">Loading IFRS 16 mapping…</div>`;
+    }
+
+    const role=settings.default_role||"lessee";
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "IFRS 16 Lease Migration",
+          "Transform source lease contracts into FinSage lessee or lessor lease payloads without posting them.",
+          `
+            <button class="mw-btn" data-mw-action="save-lease-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn primary" data-mw-action="save-lease-references"
+              ${state.leaseSaving?"disabled":""}>
+              ${state.leaseSaving?"Saving…":"Save references"}
+            </button>
+
+            <button class="mw-btn" data-mw-action="preview-leases"
+              ${state.leasePreviewLoading?"disabled":""}>
+              ${state.leasePreviewLoading?"Calculating…":"Preview leases"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Lease Dataset</label>
+            <select id="mwLeaseDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.leases.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${leaseSettingSelect(
+            "Default Role",
+            "default_role",
+            [
+              ["lessee","Lessee"],
+              ["lessor","Lessor"],
+            ]
+          )}
+
+          ${role==="lessee"
+            ?leaseSettingSelect(
+                "Setup Mode",
+                "default_wizard_mode",
+                [
+                  ["existing","Existing lease / transition"],
+                  ["inception","Lease inception"],
+                ]
+              )
+            :leaseSettingSelect(
+                "Billing Basis",
+                "default_billing_basis",
+                [
+                  ["gross","Gross"],
+                  ["net","Net"],
+                ]
+              )
+          }
+        </div>
+
+        ${role==="lessee"
+          ?lesseeMigrationSettings()
+          :lessorMigrationSettings()
+        }
+
+        ${leaseReferenceMappingView(role)}
+        ${leaseMigrationPreviewView()}
+      </div>
+    `;
+  }
+
+  function leaseSettingSelect(label,field,options){
+    const value=state.leases.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select" data-mw-lease-setting="${esc(field)}">
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function leaseSettingInput(label,field,type="text"){
+    const value=state.leases.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-lease-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function lesseeMigrationSettings(){
+    return `
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingInput(
+          "Go-live Date",
+          "default_go_live_date",
+          "date"
+        )}
+
+        ${leaseSettingSelect(
+          "Payment Frequency",
+          "default_payment_frequency",
+          [
+            ["monthly","Monthly"],
+            ["quarterly","Quarterly"],
+            ["annually","Annually"],
+          ]
+        )}
+
+        ${leaseSettingSelect(
+          "Payment Timing",
+          "default_payment_timing",
+          [
+            ["arrears","Arrears"],
+            ["advance","Advance"],
+          ]
+        )}
+      </div>
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingCoa(
+          "ROU Asset",
+          "lessee_rou_asset_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Current Lease Liability",
+          "lessee_liability_current_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Non-current Lease Liability",
+          "lessee_liability_noncurrent_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Interest Expense",
+          "lessee_interest_expense_account"
+        )}
+
+        ${leaseSettingCoa(
+          "ROU Depreciation Expense",
+          "lessee_depreciation_expense_account"
+        )}
+      </div>
+    `;
+  }
+
+  function lessorMigrationSettings(){
+    return `
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingSelect(
+          "Billing Frequency",
+          "default_billing_frequency",
+          [
+            ["weekly","Weekly"],
+            ["monthly","Monthly"],
+            ["quarterly","Quarterly"],
+            ["annually","Annually"],
+          ]
+        )}
+
+        ${leaseSettingSelect(
+          "Billing Timing",
+          "default_billing_timing",
+          [
+            ["arrears","Arrears"],
+            ["advance","Advance"],
+          ]
+        )}
+
+        ${leaseSettingInput(
+          "Currency",
+          "default_currency"
+        )}
+      </div>
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingCoa(
+          "Current Lease Receivable",
+          "lessor_receivable_current_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Non-current Lease Receivable",
+          "lessor_receivable_noncurrent_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Rental Income",
+          "lessor_revenue_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Finance Income",
+          "lessor_finance_income_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Accounts Receivable",
+          "lessor_ar_account"
+        )}
+
+        ${leaseSettingCoa(
+          "VAT Output",
+          "lessor_vat_output_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Security Deposit",
+          "lessor_security_deposit_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Accrued Rental",
+          "lessor_accrued_rental_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Deferred Rental",
+          "lessor_deferred_rental_account"
+        )}
+      </div>
+    `;
+  }
+
+  function lessorMigrationSettings(){
+    return `
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingSelect(
+          "Billing Frequency",
+          "default_billing_frequency",
+          [
+            ["weekly","Weekly"],
+            ["monthly","Monthly"],
+            ["quarterly","Quarterly"],
+            ["annually","Annually"],
+          ]
+        )}
+
+        ${leaseSettingSelect(
+          "Billing Timing",
+          "default_billing_timing",
+          [
+            ["arrears","Arrears"],
+            ["advance","Advance"],
+          ]
+        )}
+
+        ${leaseSettingInput(
+          "Currency",
+          "default_currency"
+        )}
+      </div>
+
+      <div class="mw-grid-3" style="margin-top:14px">
+        ${leaseSettingCoa(
+          "Current Lease Receivable",
+          "lessor_receivable_current_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Non-current Lease Receivable",
+          "lessor_receivable_noncurrent_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Rental Income",
+          "lessor_revenue_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Finance Income",
+          "lessor_finance_income_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Accounts Receivable",
+          "lessor_ar_account"
+        )}
+
+        ${leaseSettingCoa(
+          "VAT Output",
+          "lessor_vat_output_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Security Deposit",
+          "lessor_security_deposit_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Accrued Rental",
+          "lessor_accrued_rental_account"
+        )}
+
+        ${leaseSettingCoa(
+          "Deferred Rental",
+          "lessor_deferred_rental_account"
+        )}
+      </div>
+    `;
+  }
+
+  function leaseReferenceMappingView(role){
+    const refs=state.leases.mapping?.references||{};
+
+    const types=role==="lessee"
+      ?["lessor"]
+      :["customer","asset"];
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Lease References</h3>
+
+        <p class="mw-muted">
+          Match source counterparties and underlying assets to existing FinSage records.
+        </p>
+
+        ${types.map(type=>
+          leaseReferenceGroup(type,refs[type])
+        ).join("")}
+      </div>
+    `;
+  }
+
+  function leaseReferenceGroup(type,group){
+    if(!group?.rows?.length)return "";
+
+    const label={
+      lessor:"Lessors",
+      customer:"Customers",
+      asset:"Underlying Assets",
+    }[type]||titleCase(type);
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <h3>${esc(label)}</h3>
+
+        ${table(
+          ["Source","Records","FinSage Target"],
+          group.rows.map(row=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+            Number(row.sample_count||0).toLocaleString(),
+            leaseReferenceSelect(type,row,group.targets||[]),
+          ]),
+          `No ${label.toLowerCase()} detected.`
+        )}
+      </div>
+    `;
+  }
+
+  function leaseReferenceSelect(type,row,targets){
+    return `
+      <select class="mw-select"
+        data-mw-lease-reference="${esc(type)}"
+        data-mw-lease-source="${esc(row.source_value)}">
+
+        <option value="">Select target</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(
+              `${target.code?`${target.code} — `:""}${target.label||""}`
+            )}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function leaseMigrationPreviewView(){
+    const preview=state.leases.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:22px">
+        <h3>IFRS 16 Payload Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Rows</span>
+            <strong>${preview.row_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Lessee</span>
+            <strong>${preview.lessee_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Lessor</span>
+            <strong>${preview.lessor_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+        </div>
+
+        ${(preview.rows||[]).map(leasePreviewCard).join("")}
+      </div>
+    `;
+  }
+
+  function leasePreviewCard(row){
+    const payload=row.payload||{};
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>
+              ${esc(
+                payload.lease_name||
+                payload.contract_name||
+                `Row ${row.row_number}`
+              )}
+            </strong>
+
+            <div class="mw-muted mw-small">
+              ${row.role==="lessor"?"Lessor":"Lessee"}
+            </div>
+          </div>
+
+          <span class="mw-badge ${row.valid?"ok":"error"}">
+            ${row.valid?"Ready":"Needs attention"}
+          </span>
+        </div>
+
+        ${row.role==="lessee"
+          ?lesseePreviewSummary(row)
+          :lessorPreviewSummary(row)
+        }
+
+        ${row.issues?.length?`
+          <div class="mw-alert ${row.valid?"warn":"error"}" style="margin-top:12px">
+            ${row.issues.map(issue=>`<div>${esc(issue)}</div>`).join("")}
+          </div>
+        `:""}
+      </div>
+    `;
+  }
+
+  function lesseePreviewSummary(row){
+    return `
+      <div class="mw-grid-3" style="margin-top:12px">
+        <div>
+          <span class="mw-muted mw-small">Opening Liability</span>
+          <div>${Number(row.opening_lease_liability||0).toLocaleString()}</div>
+        </div>
+
+        <div>
+          <span class="mw-muted mw-small">Opening ROU</span>
+          <div>${Number(row.opening_rou_asset||0).toLocaleString()}</div>
+        </div>
+
+        <div>
+          <span class="mw-muted mw-small">Opening Journal</span>
+          <div>${row.opening_journal?.length||0} lines</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function lessorPreviewSummary(row){
+    const classification=
+      row.classification?.classification||
+      row.payload?.lease_classification||
+      "—";
+
+    const terms=row.terms?.terms||row.terms||{};
+
+    return `
+      <div class="mw-grid-3" style="margin-top:12px">
+        <div>
+          <span class="mw-muted mw-small">Classification</span>
+          <div>${esc(titleCase(classification))}</div>
+        </div>
+
+        <div>
+          <span class="mw-muted mw-small">Initial Net Investment</span>
+          <div>${Number(terms.initial_net_investment||0).toLocaleString()}</div>
+        </div>
+
+        <div>
+          <span class="mw-muted mw-small">Periods</span>
+          <div>${terms.period_count||terms.schedule?.length||0}</div>
+        </div>
+      </div>
+    `;
+  }
 
   function toggleScopeEntity(
     code,
@@ -3201,8 +5508,8 @@
       scope: scopeView,
       files: filesView,
       detect: detectionView,
-      mapping: futureView,
-      accounts: futureView,
+      mapping:fieldMappingView,
+      accounts:moduleMappingView,
       validate: futureView,
       preview: futureView,
       stage: futureView,
@@ -3616,6 +5923,22 @@
         .every(dataset=>dataset.entity_code&&!dataset._dirty)
     );
 
+    const fieldMappingComplete=Boolean(
+      state.fieldMappingsLoaded &&
+      state.fieldMappings.dataset_count>0 &&
+      state.fieldMappings.complete_count===state.fieldMappings.dataset_count &&
+      state.fieldMappings.required_unmapped_count===0 &&
+      state.fieldMappings.duplicate_count===0
+    );
+
+    const referenceMappingComplete=Boolean(
+      state.referenceMappingsLoaded &&
+      state.referenceMappings.reference_count>0 &&
+      state.referenceMappings.unresolved_count===0 &&
+      state.referenceMappings.pending_count===0 &&
+      !state.referenceMappingDirty
+    );
+
     const checks=[
       projectSaved,
       projectConfigured,
@@ -3624,6 +5947,8 @@
       filesUploaded,
       datasetsConfigured,
       detectionComplete,
+      fieldMappingComplete,
+      referenceMappingComplete,
     ];
 
     const percentage = Math.round(
@@ -3658,6 +5983,8 @@
         control("Source files uploaded",filesUploaded),
         control("Datasets configured",datasetsConfigured),
         control("Source detection completed",detectionComplete),
+        control("Field mapping completed",fieldMappingComplete),
+        control("Account and reference mapping completed",referenceMappingComplete),
       ].join("");
     }
 
@@ -3836,6 +6163,49 @@
       }
     }
 
+    if(state.activeStep==="mapping"){
+      if(!state.fieldMappingsLoaded||!state.fieldMappings.dataset_count){
+        notify("Load field mappings before continuing.");
+        return;
+      }
+
+      const dirty=(state.fieldMappings.datasets||[]).find(dataset=>
+        (dataset.rows||[]).some(row=>row._dirty)
+      );
+      if(dirty){
+        notify(`Save field mapping changes for "${dirty.dataset_name}" before continuing.`);
+        return;
+      }
+
+      const invalid=(state.fieldMappings.datasets||[]).find(dataset=>
+        dataset.required_unmapped_count>0||dataset.duplicate_targets?.length
+      );
+      if(invalid){
+        notify(`Complete the required field mapping for "${invalid.dataset_name}" before continuing.`);
+        return;
+      }
+    }
+
+    if(state.activeStep==="accounts"){
+      if(!state.referenceMappings.reference_count){
+        notify("Scan account and reference values before continuing.");
+        return;
+      }
+
+      if(state.referenceMappingDirty){
+        notify("Save account and reference mappings before continuing.");
+        return;
+      }
+
+      const unresolved=(state.referenceMappings.groups||[]).find(
+        group=>group.unresolved_count>0||group.pending_count>0
+      );
+
+      if(unresolved){
+        notify(`Complete ${referenceTypeLabel(unresolved.reference_type)} mapping before continuing.`);
+        return;
+      }
+    }
     go(steps[index+1][0]);
   }
 

@@ -3251,3 +3251,322 @@ def api_ifrs9_stage_assessment(
             "ifrs9_stage_assessment failed"
         )
         return _json_error(str(error), 400)
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/calculate",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_calculate_general_ecl(
+    company_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        result = (
+            db_service
+            .ifrs9_calculate_general_ecl(
+                company_id,
+                payload,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_calculate_general_ecl failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/runs",
+    methods=["GET", "POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_general_ecl_runs(
+    company_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        if request.method == "GET":
+            items = (
+                db_service
+                .ifrs9_list_general_ecl_runs(
+                    company_id
+                )
+            )
+
+            return jsonify({
+                "ok": True,
+                "items": items,
+            }), 200
+
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        result = (
+            db_service
+            .ifrs9_create_general_ecl_run(
+                company_id,
+                payload,
+                user_id=user.get("user_id"),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 201
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_general_ecl_runs failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/runs/<int:run_id>",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_general_ecl_run(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        result = (
+            db_service
+            .ifrs9_get_general_ecl_run(
+                company_id,
+                run_id,
+            )
+        )
+
+        if not result:
+            return _json_error(
+                "General ECL run not found",
+                404,
+            )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_general_ecl_run failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/runs/<int:run_id>/preview-journal",
+    methods=["GET", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_general_ecl_preview(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        preview = (
+            db_service
+            .ifrs9_preview_general_ecl_journal(
+                company_id,
+                run_id,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "preview": preview,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_general_ecl_preview failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/runs/<int:run_id>/post",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_post_general_ecl(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        result = (
+            db_service
+            .ifrs9_post_general_ecl_run(
+                company_id,
+                run_id,
+                user_id=user.get("user_id"),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_post_general_ecl failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )
+
+
+@bp_ifrs9.route(
+    "/api/companies/<int:company_id>/ifrs9/ecl/general/runs/<int:run_id>/reverse",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def api_ifrs9_reverse_general_ecl(
+    company_id: int,
+    run_id: int,
+):
+    if request.method == "OPTIONS":
+        return _opt()
+
+    user = _ifrs9_user()
+
+    deny = _deny_if_wrong_company(
+        user,
+        company_id,
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        payload = request.get_json(
+            silent=True
+        ) or {}
+
+        result = (
+            db_service
+            .ifrs9_reverse_general_ecl_run(
+                company_id,
+                run_id,
+                reason=payload.get("reason"),
+                reversal_date=payload.get(
+                    "reversal_date"
+                ),
+                user_id=user.get("user_id"),
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            **result,
+        }), 200
+
+    except Exception as error:
+        current_app.logger.exception(
+            "ifrs9_reverse_general_ecl failed"
+        )
+
+        return _json_error(
+            str(error),
+            400,
+        )

@@ -936,18 +936,108 @@ const ENDPOINTS = {
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close/reopen`,
   
   companyStructure: {
-      get: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
+    get: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
 
-      relatedCompanies: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
+    relatedCompanies: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
 
-      branches: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
+    branches: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
 
-      segments: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+    segments: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+
+    candidates: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/candidates`,
+
+    profile: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/profile`,
+
+    relationships: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/relationships`,
+
+    relationship: (companyId, relationshipId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/relationships/${encodeURIComponent(relationshipId)}`,
+
+    settings: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/settings`,
+
+    setting: (companyId, key) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/settings/${encodeURIComponent(key)}`,
+  
+  },
+
+  consolidation: {
+    runs: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs`,
+
+    run: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}`,
+
+    prepare: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/prepare`,
+
+    trialBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/trial-balances`,
+
+    loadAllTrialBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/trial-balances/load-all`,
+
+    entityTrialBalance: (companyId, runId, runEntityId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/entities/${encodeURIComponent(runEntityId)}/trial-balance`,
+
+    loadEntityTrialBalance: (companyId, runId, runEntityId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/entities/${encodeURIComponent(runEntityId)}/trial-balance/load`,
+
+    groupCoa: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa`,
+
+    groupCoaAccount: (companyId, accountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa/${encodeURIComponent(accountId)}`,
+
+    bootstrapGroupCoa: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa/bootstrap`,
+
+    accountMapping: (companyId, runId, { entityCompanyId, unmappedOnly } = {}) => {
+      const params = new URLSearchParams();
+
+      if (entityCompanyId)
+        params.set("entity_company_id", entityCompanyId);
+
+      if (unmappedOnly)
+        params.set("unmapped_only", "true");
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping${qs ? `?${qs}` : ""}`;
     },
+
+    autoMapAccounts: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping/auto`,
+
+    accountMappingLine: (companyId, runId, tbLineId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping/${encodeURIComponent(tbLineId)}`,
+  
+    createMappingAccount: (companyId, runId, tbLineId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/account-mapping/${encodeURIComponent(tbLineId)}/create-account`,
+  
+    preconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation`,
+
+    validatePreconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation/validate`,
+
+    generatePreconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation/generate`,  
+  },
+
+
   // --- Management packs ---
   managementPacks: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/management_packs`,
@@ -1555,6 +1645,70 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}`,
   
     projectDetection:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/detection`,
+  
+    fieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings`,
+
+    autoFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/auto`,
+
+    copyFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/copy`,
+
+    resetFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/reset`,
+  
+    fieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings`,
+    datasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings`,
+    autoDatasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings/auto`,
+    resetDatasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings/reset`,
+    copyFieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings/copy`,
+    validateFieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings/validate`,
+  
+    referenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings`,
+
+    scanReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/scan`,
+
+    autoReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/auto`,
+
+    validateReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/validate`,
+
+    resetReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/reset`,
+  
+    ppe:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/ppe`,
+
+    ppeSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/settings`,
+
+    ppeMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/mapping`,
+
+    ppeClasses:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/classes`,
+
+    ppePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/preview`,
+  
+    leases:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/leases`,
+
+    leaseSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/settings`,
+
+    leaseMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/mapping`,
+
+    leaseReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/references`,
+
+    leasePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/preview`,
   },
 
   ifrs9: {
@@ -1765,6 +1919,44 @@ const ENDPOINTS = {
 
     generalEclAssessments: (companyId, instrumentId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/ecl/assessments`,
+  
+    generalEclCalculate: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/calculate`,
+
+    generalEclRuns: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs`,
+
+    generalEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}`,
+
+    generalEclRunPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/preview-journal`,
+
+    postGeneralEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/post`,
+
+    reverseGeneralEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/reverse`,
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -2204,6 +2396,21 @@ const ENDPOINTS = {
       `statutory/returns/${encodeURIComponent(returnId)}/`+
       `${encodeURIComponent(action)}`,
 
+    closeOut:(companyId,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `close-out${query?`?${query}`:""}`;
+    },
     // =====================================================
     // IAS 19 EMPLOYEE BENEFITS
     // =====================================================
@@ -3201,6 +3408,51 @@ const ENDPOINTS = {
 
     grantReceiptAction: (companyId, receiptId, action) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grant-receipts/${encodeURIComponent(receiptId)}/${encodeURIComponent(action)}`,
+  
+    reports:(companyId,params={})=>{
+      const q=new URLSearchParams();
+      if(params.reportKey) q.set("report_key",params.reportKey);
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/reports${qs?`?${qs}`:""}`;
+    },
+
+    report:(companyId,reportKey,params={})=>{
+      const q=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!=="") {
+          q.set(key,value);
+        }
+      });
+
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/reports/${encodeURIComponent(reportKey)}${qs?`?${qs}`:""}`;
+    },
+
+    reportRun:(companyId,reportRunId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/report-runs/${encodeURIComponent(reportRunId)}`,
+  
+    disclosure:(companyId,params={})=>{
+      const q=new URLSearchParams();
+
+      Object.entries(params||{}).forEach(
+        ([key,value])=>{
+          if(
+            value!==undefined
+            &&value!==null
+            &&value!==""
+          ){
+            q.set(key,String(value));
+          }
+        }
+      );
+
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/disclosure${qs?`?${qs}`:""}`;
+    },
   },
 
   assets: {
@@ -4416,6 +4668,31 @@ const ENDPOINTS = {
       `${API_BASE}/api/companies/`+
       `${encodeURIComponent(cid)}/payroll/statutory/returns/`+
       `${encodeURIComponent(returnId)}/export`,  
+  
+    payrollEmployeeBenefitsPack:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/employee-benefits-pack`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollEmployeeBenefitsPackExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/payroll/`+
+      `employee-benefits-pack/export`,  
+  
+    ias41DisclosureExport:(companyId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/disclosures/ias41/export`,  
   },
 
   // --- Dashboard / snapshots ---
@@ -4754,7 +5031,10 @@ const ENDPOINTS = {
 
 window.ENDPOINTS = ENDPOINTS;
 window.endpoints = ENDPOINTS;
-
+window.FinSage = window.FinSage || {};
+window.FinSage.ENDPOINTS = ENDPOINTS;
+window.FinSage.apiFetch = apiFetch;
+window.FinSage.getActiveCompanyId = getActiveCompanyId;
 // ----------------------------
 // Backward-compatible aliases
 // ----------------------------
@@ -7683,6 +7963,16 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       ],
     },
 
+    {
+      name: "Group Reporting",
+      screen: "group-reporting",
+      icon: "🏢",
+      minRole: "junior",
+      permissionAny: [
+        "can_prepare_financials",
+        "can_view_reports"
+      ],
+    },
     // ==========================
     // STANDARDS
     // ==========================
@@ -9527,6 +9817,15 @@ const SCREEN_POLICY = {
       "can_view_reports"
     ],
   },
+
+  "group-reporting": {
+    auth: "private",
+    minRole: "junior",
+    permissionAny: [
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+  },
 };
 
 
@@ -10924,6 +11223,9 @@ async function switchScreen(name) {
 
   const isIAS41Workflow =
     name === "ias41";
+
+  const isGroupReportingWorkflow =
+    name === "group-reporting";
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -10983,6 +11285,7 @@ async function switchScreen(name) {
   else if (isDeferredTaxWorkflow) base = "deferred-tax";
   else if (isIAS41Workflow) base = "ias41";
   else if (isDataMigrationWorkflow) base = "data-migration";
+  else if (isGroupReportingWorkflow) base = "group-reporting";
   else base = name.split("-")[0];
 
   // Remember current screen
@@ -11028,6 +11331,18 @@ async function switchScreen(name) {
     }
 
     await window.bindIAS41Screen?.();
+    return;
+  }
+
+  if (base === "group-reporting") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[GroupReporting] company load failed:", e);
+    }
+
+    window.bindConsolidationScreen?.();
+    await window.loadConsolidationRuns?.();
     return;
   }
 
@@ -11516,6 +11831,7 @@ async function switchScreen(name) {
     ledger: "General Ledger",
     trial: "Trial Balance",
     reports: "Financial Statements",
+    "group-reporting": "Group Reporting & Consolidation",
     vat: "VAT & Tax",
     "tax-recon": "Income Tax Workspace",
     company: "Company & Setup",
@@ -27959,6 +28275,9 @@ async function exportStatement(stmtType, format) {
     ias19_defined_benefit:
       "ias19_defined_benefit_disclosure",
     payroll_statutory_return:"payroll_statutory_return",
+
+    ias19_employee_benefits_pack:
+      "ias19_employee_benefits_pack",
   };
 
   switch (t) {
@@ -27985,6 +28304,9 @@ async function exportStatement(stmtType, format) {
       if (pack === "ias16_ppe") {
         url = ENDPOINTS.reports.ppeDisclosureExport(cid);
         window.__notesReportKey = "ppe_disclosure";
+      }else if(pack==="ias41_agriculture"){
+        url= ENDPOINTS.reports.ias41DisclosureExport(cid);
+        window.__notesReportKey="ias41_disclosure";
       } else if (
         pack === "ifrs16_lessee" ||
         pack === "ifrs16_lessor"
@@ -28028,6 +28350,9 @@ async function exportStatement(stmtType, format) {
       }else if(pack==="ias19_defined_benefit"){
         url=ENDPOINTS.reports.payrollDefinedBenefitExport(cid);
         window.__notesReportKey="ias19_defined_benefit";
+      }else if(pack==="ias19_employee_benefits_pack"){
+        url=ENDPOINTS.reports.payrollEmployeeBenefitsPackExport(cid);
+        window.__notesReportKey="ias19_employee_benefits_pack";
       }else{
         return alert(`Notes export is not configured for: ${pack}`);
       }
@@ -30962,6 +31287,462 @@ function renderPayrollDbDisclosureHTML(payload){
     </section>`;
 }
 
+function renderPayrollEmployeeBenefitsPackHTML(payload){
+  const pack=payload?.pack||payload||{};
+  const note=payload?.note||{};
+  const summary=pack.summary||{};
+  const sections=pack.sections||{};
+  const readiness=pack.readiness||{};
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+
+  const amountTable=section=>{
+    const rows=section?.rows||[];
+
+    return`
+      <table class="w-full text-sm">
+        <tbody>
+          ${rows.map(row=>`
+            <tr class="${
+              row.row_type==="total"
+                ?"font-bold"
+                :""
+            }">
+              <td>${escapeHtml(row.label||"")}</td>
+              <td class="text-right">
+                ${moneyValue(row.amount)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  };
+
+  const checks=readiness.checks||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          Employee benefits
+        </h2>
+        <p class="text-sm text-slate-600 mt-1">
+          Combined IAS 19 disclosure pack.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employee benefit expense
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.total_employee_benefit_expense
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employee benefit liabilities
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary
+                .total_employee_benefit_liabilities
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Defined-benefit asset
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.net_defined_benefit_asset
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            OCI remeasurement
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.oci_remeasurement
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div class="card p-4">
+          <h3 class="font-bold mb-2">
+            Employee benefit expense
+          </h3>
+          ${amountTable(sections.expense)}
+        </div>
+
+        <div class="card p-4">
+          <h3 class="font-bold mb-2">
+            Employee benefit liabilities
+          </h3>
+          ${amountTable(sections.liabilities)}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Other comprehensive income
+        </h3>
+        ${amountTable(
+          sections.other_comprehensive_income
+        )}
+      </div>
+
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold">
+            Disclosure readiness
+          </h3>
+
+          <span class="pill">
+            ${readiness.ready
+              ?readiness.has_warnings
+                ?"Ready with warnings"
+                :"Ready"
+              :"Not ready"}
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">Check</th>
+                <th class="text-left">Status</th>
+                <th class="text-left">Message</th>
+                <th class="text-right">Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${checks.length?checks.map(check=>`
+                <tr>
+                  <td>
+                    ${escapeHtml(check.label||"")}
+                  </td>
+                  <td>
+                    <span class="pill">
+                      ${escapeHtml(
+                        String(check.status||"")
+                          .replaceAll("_"," ")
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    ${escapeHtml(check.message||"")}
+                  </td>
+                  <td class="text-right">
+                    ${check.amount==null
+                      ?"—"
+                      :moneyValue(check.amount)}
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="4">
+                    No readiness checks available.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+}
+
+function ias41NoteMoney(value){
+  return Number(value||0).toLocaleString(
+    undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2
+    }
+  );
+}
+
+function renderIAS41DisclosureHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const period=payload?.meta?.period||d?.period||{};
+  const classes=d.biological_asset_classes||[];
+  const recon=d.carrying_amount_reconciliation||{};
+  const fv=d.fair_value_gain_loss||{};
+  const harvest=d.harvest||{};
+  const grants=d.government_grants||{};
+  const closing=d.closing_balance||{};
+
+  const movementRows=[
+    ["Opening carrying amount",recon.opening_carrying_amount],
+    ["Purchases",recon.purchases],
+    ["Births",recon.births],
+    ["Planting",recon.planting],
+    ["Other additions",recon.other_additions],
+    ["Fair-value gains",recon.fair_value_gains],
+    ["Fair-value losses",-Number(recon.fair_value_losses||0)],
+    ["Harvest transfers",-Number(recon.harvest_transfer||0)],
+    ["Mortality",-Number(recon.mortality_loss||0)],
+    ["Closing carrying amount",recon.closing_carrying_amount],
+  ];
+
+  return`
+    <section class="fs-note-render">
+      <h2 class="text-xl font-bold">
+        Agriculture
+      </h2>
+
+      <p class="text-sm text-slate-500 mt-1">
+        IAS 41 Agriculture
+        ${period.from&&period.to
+          ?` · ${escapeHtml(period.from)} to ${escapeHtml(period.to)}`
+          :""
+        }
+      </p>
+
+      <div class="card p-4 mt-4">
+        <h3 class="font-bold mb-2">
+          Accounting policy
+        </h3>
+
+        <div class="text-sm leading-6">
+          Biological assets are measured at fair value less
+          costs to sell. Agricultural produce is measured at
+          fair value less costs to sell at the point of harvest,
+          after which IAS 2 Inventories applies.
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 my-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Biological asset classes
+          </span>
+          <strong class="block mt-1">
+            ${classes.length}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Closing carrying amount
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              closing.carrying_amount
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Fair-value gains
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              fv.gain_amount
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Produce at harvest
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              harvest.inventory_value
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-3">
+          Biological assets by class
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">Class</th>
+                <th class="text-left">Nature</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Fair value</th>
+                <th class="text-right">Costs to sell</th>
+                <th class="text-right">Carrying amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${classes.length
+                ?classes.map(row=>`
+                  <tr>
+                    <td>
+                      ${escapeHtml(
+                        row.class_name||""
+                      )}
+                    </td>
+
+                    <td>
+                      ${escapeHtml(
+                        String(
+                          row.asset_nature||""
+                        ).replaceAll("_"," ")
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${Number(
+                        row.quantity||0
+                      ).toLocaleString()}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.fair_value
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.costs_to_sell
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.carrying_amount
+                      )}
+                    </td>
+                  </tr>
+                `).join("")
+                :`
+                  <tr>
+                    <td colspan="6">
+                      No biological assets for this period.
+                    </td>
+                  </tr>
+                `
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-3">
+          Carrying amount reconciliation
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <tbody>
+              ${movementRows.map(
+                ([label,value],index)=>`
+                  <tr class="${
+                    index===movementRows.length-1
+                      ?"font-bold"
+                      :""
+                  }">
+                    <td>
+                      ${escapeHtml(label)}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(value)}
+                    </td>
+                  </tr>
+                `
+              ).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <h3 class="font-bold mb-3">
+            Fair-value changes
+          </h3>
+
+          <div class="flex justify-between">
+            <span>Gains</span>
+            <strong>
+              ${ias41NoteMoney(
+                fv.gain_amount
+              )}
+            </strong>
+          </div>
+
+          <div class="flex justify-between mt-2">
+            <span>Losses</span>
+            <strong>
+              ${ias41NoteMoney(
+                fv.loss_amount
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <h3 class="font-bold mb-3">
+            Government grants
+          </h3>
+
+          <div class="flex justify-between">
+            <span>Recognised</span>
+            <strong>
+              ${ias41NoteMoney(
+                grants.recognised_amount
+              )}
+            </strong>
+          </div>
+
+          <div class="flex justify-between mt-2">
+            <span>Outstanding</span>
+            <strong>
+              ${ias41NoteMoney(
+                grants.outstanding_amount
+              )}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 const NOTES_REGISTRY = {
   ifrs16_lessee: {
     label: "IFRS 16 Lessee disclosures",
@@ -31105,6 +31886,66 @@ const NOTES_REGISTRY = {
         meta: { q, period_meta: payload?.period_meta || null },
       };
     }
+  },
+
+  ias41_agriculture:{
+    label:"IAS 41 Agriculture",
+
+    fetch:async(cid,period)=>{
+      const p=period?.params||period||{};
+      const q={};
+
+      if(p.from&&p.to){
+        q.from=p.from;
+        q.to=p.to;
+      }else{
+        q.preset=
+          p.preset
+          ||period?.preset
+          ||document.getElementById(
+            "stmtPreset"
+          )?.value
+          ||"this_year";
+      }
+
+      if(p.to){
+        q.as_of=p.to;
+      }
+
+      const url=ENDPOINTS.ias41.disclosure(
+        cid,
+        q
+      );
+
+      const response=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      const disclosure=
+        response?.disclosure
+        ||response?.data
+        ||response;
+
+      const payload={
+        ...response,
+        disclosure,
+      };
+
+      return{
+        data:payload,
+        html:
+          renderIAS41DisclosureHTML(
+            payload
+          ),
+        meta:{
+          q,
+          period,
+          disclosure_key:
+            "ias41_agriculture",
+        },
+      };
+    },
   },
 
   ias38_ia: {
@@ -31373,6 +32214,41 @@ const NOTES_REGISTRY = {
       };
     },
   },
+
+  ias19_employee_benefits_pack:{
+    label:"IAS 19 Complete employee benefits note",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+
+      const data=await window.apiFetch(
+        ENDPOINTS.reports
+          .payrollEmployeeBenefitsPack(
+            cid,
+            params
+          ),
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:
+          renderPayrollEmployeeBenefitsPackHTML(
+            data
+          ),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_employee_benefits_pack",
+        },
+      };
+    },
+  },
 };
 
 window.FS_NOTES_STATE = {
@@ -31520,6 +32396,8 @@ function getEditorNoteKeyFromNotesPack() {
     ias19_bonus_provision: "ias19_bonus_provision_disclosure",
     ifrs9_financial_instruments: "ifrs9_financial_instruments_policy",
     ias19_termination_benefits: "ias19_termination_benefits_disclosure",
+    ias19_employee_benefits_pack: "ias19_employee_benefits_pack",
+    ias41_agriculture: "ias41_agriculture_disclosure",
   };
 
   return map[pack] || "ifrs16_lease_policy";
@@ -76572,6 +77450,105 @@ async function saveEditModal() {
     };
   }
 
+  async function runPayrollCloseOut(){
+    const filters=readPayrollReportFilters();
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.closeOut(
+        cid(),
+        {
+          preset:filters.preset||"this_year",
+          from:filters.date_from||"",
+          to:filters.date_to||"",
+        }
+      )
+    );
+
+    renderPayrollCloseOut(
+      res?.data||{}
+    );
+  }
+
+  function renderPayrollCloseOut(data){
+    const el=$("payrollCloseOutResults");
+    if(!el)return;
+
+    const checks=data.checks||[];
+
+    if(!checks.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No close-out results are available.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-kpis">
+        <div>
+          <span>Checks</span>
+          <strong>${Number(data.check_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Warnings</span>
+          <strong>${Number(data.warning_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Errors</span>
+          <strong>${Number(data.error_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong>
+            ${data.ready
+              ?data.has_warnings
+                ?"Ready with warnings"
+                :"Ready"
+              :"Not ready"}
+          </strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap mt-4">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Check</th>
+              <th>Status</th>
+              <th>Message</th>
+              <th>Amount / Difference</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${checks.map(check=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(check.label||"")}
+                  </strong>
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${esc(cap(check.status||""))}
+                  </span>
+                </td>
+                <td>${esc(check.message||"")}</td>
+                <td class="num">
+                  ${check.amount==null
+                    ?"—"
+                    :money(check.amount)}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   function bindPayrollEventsOnce() {
     if (payrollState.bound) return;
     bindPayrollReportsEvents();
@@ -76986,6 +77963,14 @@ async function saveEditModal() {
         "click",
         runPayrollAction(
           ()=>editPayrollStatutoryReturn()
+        )
+      );
+
+    $("payrollRunCloseOutBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          runPayrollCloseOut
         )
       );
 
@@ -79762,6 +80747,9 @@ async function saveEditModal() {
     generalEclLgds: [],
     creditRiskProfile: null,
     stageAssessments: [],
+    generalEclRuns: [],
+    generalEclCalculation: null,
+    previewGeneralEclRunId: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -79846,6 +80834,8 @@ async function saveEditModal() {
       IFRS9.readiness=readiness;
       IFRS9.writeoffs=writeoffs.items||[];
       IFRS9.generalEclModels=generalModels.items||[];
+      IFRS9.generalEclModels=generalModels.items||[];
+      IFRS9.generalEclRuns=generalRuns.items||[];
 
       renderInstruments();
       renderRuns();
@@ -79856,6 +80846,9 @@ async function saveEditModal() {
       applyIfrs9ReadinessControls();
       renderWriteoffs();
       renderGeneralEclModels();
+      renderGeneralEclModels();
+      renderGeneralEclRunOptions();
+      renderGeneralEclRuns();
 
       setMsg("");
     } catch(error) {
@@ -84780,6 +85773,7 @@ async function saveEditModal() {
     IFRS9.previewAmortisedCostRunId = null;
     IFRS9.previewDerecognitionId = null;
     IFRS9.previewFairValueMeasurementId = null;
+    IFRS9.previewGeneralEclRunId=null;
     $("ifrs9JournalPreviewModal")?.classList.add("hidden");
   }
 
@@ -84945,6 +85939,43 @@ async function saveEditModal() {
         setMsg(
           error.message ||
           "Failed to post the fair-value journal."
+        );
+      }
+
+      return;
+    }
+
+    if (IFRS9.previewGeneralEclRunId) {
+      const runId=
+        IFRS9.previewGeneralEclRunId;
+
+      try {
+        const result=await apiFetch(
+          ENDPOINTS.ifrs9.postGeneralEclRun(
+            cid(),
+            runId
+          ),
+          {
+            method:"POST",
+            body:"{}",
+          }
+        );
+
+        IFRS9.previewGeneralEclRunId=null;
+
+        closePreview();
+        await loadAll();
+        showTab("general-ecl");
+
+        setMsg(
+          `General ECL journal posted: ${
+            result.journal_id
+          }.`
+        );
+      } catch(error) {
+        setMsg(
+          error.message||
+          "Failed to post General ECL journal."
         );
       }
 
@@ -85855,160 +86886,937 @@ async function saveEditModal() {
 
   IFRS9.creditRiskProfile=generalAssessmentResult.profile||null;
 
-function collectCreditRiskProfile() {
-  return {
-    general_model_id:Number(
-      $("ifrs9CreditProfileModel")?.value||0
-    )||null,
+  function renderGeneralEclRunOptions() {
+    const select=$("ifrs9GeneralRunModel");
+    if (!select) return;
 
-    origination_rating:
-      $("ifrs9OriginationRating")?.value.trim()||null,
+    const current=select.value;
 
-    current_rating:
-      $("ifrs9CurrentRating")?.value.trim()||null,
-
-    origination_lifetime_pd:Number(
-      $("ifrs9OriginationLifetimePd")?.value||0
-    )/100,
-
-    current_lifetime_pd:Number(
-      $("ifrs9CurrentLifetimePd")?.value||0
-    )/100,
-
-    credit_limit:Number(
-      $("ifrs9CreditLimit")?.value||0
-    ),
-
-    undrawn_commitment:Number(
-      $("ifrs9UndrawnCommitment")?.value||0
-    ),
-
-    credit_conversion_factor:Number(
-      $("ifrs9CreditConversionFactor")?.value||100
-    )/100,
-
-    collateral_value:Number(
-      $("ifrs9CollateralValue")?.value||0
-    ),
-
-    collateral_type:
-      $("ifrs9CollateralType")?.value.trim()||null,
-
-    watchlist:Boolean(
-      $("ifrs9CreditWatchlist")?.checked
-    ),
-
-    forbearance:Boolean(
-      $("ifrs9CreditForbearance")?.checked
-    ),
-
-    default_flag:Boolean(
-      $("ifrs9CreditDefault")?.checked
-    ),
-
-    credit_impaired:Boolean(
-      $("ifrs9CreditImpaired")?.checked
-    ),
-  };
-}
-
-
-async function saveCreditRiskProfile(instrumentId) {
-  const payload=collectCreditRiskProfile();
-
-  if (!payload.general_model_id) {
-    return alert("Select a General ECL model.");
-  }
-
-  try {
-    await apiFetch(
-      ENDPOINTS.ifrs9.generalEclAssessments(
-        cid(),
-        instrumentId
-      ),
-      {
-        method:"POST",
-        body:JSON.stringify(payload),
-      }
+    const models=IFRS9.generalEclModels.filter(
+      row=>
+        row.is_active ||
+        row.approval_status==="approved"
     );
 
-    await openInstrument(instrumentId);
-    setMsg("Credit-risk profile saved.");
-  } catch(error) {
-    setMsg(
-      error.message||
-      "Failed to save credit-risk profile."
-    );
-  }
-}
+    select.innerHTML=`
+      <option value="">
+        Select General ECL model
+      </option>
 
-
-async function assessGeneralEclStage(instrumentId) {
-  const overrideValue=
-    $("ifrs9StageOverride")?.value;
-
-  const payload={
-    assessment_date:
-      $("ifrs9StageAssessmentDate")?.value,
-
-    days_past_due:Number(
-      $("ifrs9StageDaysPastDue")?.value||0
-    ),
-
-    override_stage:
-      overrideValue?Number(overrideValue):null,
-
-    override_reason:
-      $("ifrs9StageOverrideReason")
-        ?.value.trim()||null,
-  };
-
-  if (!payload.assessment_date) {
-    return alert("Assessment date is required.");
-  }
-
-  if (
-    payload.override_stage &&
-    !payload.override_reason
-  ) {
-    return alert(
-      "Enter a reason for the stage override."
-    );
-  }
-
-  try {
-    const result=await apiFetch(
-      ENDPOINTS.ifrs9.generalEclStageAssessment(
-        cid(),
-        instrumentId
-      ),
-      {
-        method:"POST",
-        body:JSON.stringify(payload),
-      }
-    );
-
-    const row=result.item||{};
-
-    $("ifrs9StageAssessmentResult").innerHTML=`
-      <div class="status-banner ${
-        Number(row.assessed_stage)===1
-          ?"success":"warning"
-      }" style="margin-top:12px;">
-        Assessed as Stage ${row.assessed_stage}.
-        ${esc(row.assessment_reason||"")}
-      </div>
+      ${models.map(row=>`
+        <option value="${row.id}">
+          ${esc(row.model_name)}
+          — ${esc(label(row.applies_to))}
+        </option>
+      `).join("")}
     `;
 
-    await openInstrument(instrumentId);
-    setMsg(`Instrument assessed as Stage ${row.assessed_stage}.`);
-  } catch(error) {
-    setMsg(
-      error.message||
-      "Failed to assess the ECL stage."
-    );
+    if (
+      models.some(
+        row=>String(row.id)===current
+      )
+    ) {
+      select.value=current;
+    }
   }
-}
+
+  async function calculateGeneralEclRun() {
+    const modelId=Number(
+      $("ifrs9GeneralRunModel")?.value||0
+    );
+
+    const reportingDate=
+      $("ifrs9GeneralRunDate")?.value;
+
+    if (!modelId) {
+      return alert(
+        "Select a General ECL model."
+      );
+    }
+
+    if (!reportingDate) {
+      return alert(
+        "Reporting date is required."
+      );
+    }
+
+    const button=
+      $("ifrs9CalculateGeneralRunBtn");
+
+    const originalText=
+      button?.textContent||
+      "Calculate General ECL";
+
+    if (button) {
+      button.disabled=true;
+      button.textContent="Calculating...";
+    }
+
+    setMsg("Calculating General ECL...");
+
+    try {
+      IFRS9.generalEclCalculation=
+        await apiFetch(
+          ENDPOINTS.ifrs9.generalEclCalculate(
+            cid()
+          ),
+          {
+            method:"POST",
+            body:JSON.stringify({
+              model_id:modelId,
+              reporting_date:reportingDate,
+            }),
+          }
+        );
+
+      const data=
+        IFRS9.generalEclCalculation;
+
+      $("ifrs9GeneralGrossExposure").value=
+        Number(
+          data.total_gross_exposure||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralTotalEad").value=
+        Number(
+          data.total_ead||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralTotalEcl").value=
+        Number(
+          data.total_ecl||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralMovementEcl").value=
+        Number(
+          data.movement_ecl||0
+        ).toFixed(2);
+
+      renderGeneralEclCalculation();
+
+      $("ifrs9CreateGeneralRunBtn").disabled=
+        !(data.lines||[]).length;
+
+      setMsg("General ECL calculated.");
+    } catch(error) {
+      IFRS9.generalEclCalculation=null;
+
+      $("ifrs9GeneralRunPreview").innerHTML="";
+
+      if ($("ifrs9CreateGeneralRunBtn")) {
+        $("ifrs9CreateGeneralRunBtn")
+          .disabled=true;
+      }
+
+      setMsg(
+        error.message||
+        "Failed to calculate General ECL."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled=false;
+        button.textContent=originalText;
+      }
+    }
+  }
+
+  function renderGeneralEclCalculation() {
+    const el=$("ifrs9GeneralRunPreview");
+    const data=IFRS9.generalEclCalculation;
+
+    if (!el) return;
+
+    if (!data?.lines?.length) {
+      el.innerHTML=`
+        <p class="muted">
+          No General ECL calculation lines.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="form-grid">
+        <div>
+          <b>Stage 1 Exposure</b>
+          <p>${money(data.stage_1_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 1 ECL</b>
+          <p>${money(data.stage_1_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Stage 2 Exposure</b>
+          <p>${money(data.stage_2_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 2 ECL</b>
+          <p>${money(data.stage_2_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Stage 3 Exposure</b>
+          <p>${money(data.stage_3_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 3 ECL</b>
+          <p>${money(data.stage_3_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Previous ECL</b>
+          <p>${money(data.previous_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Movement</b>
+          <p>${money(data.movement_ecl)}</p>
+        </div>
+      </div>
+
+      <div
+        class="table-responsive"
+        style="margin-top:16px;"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Instrument</th>
+              <th>Stage</th>
+              <th>Rating</th>
+              <th>Gross Exposure</th>
+              <th>Total EAD</th>
+              <th>Collateral</th>
+              <th>Net EAD</th>
+              <th>PD</th>
+              <th>LGD</th>
+              <th>ECL</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${data.lines.map(row=>`
+              <tr>
+                <td>
+                  ${esc(
+                    row.instrument_name||"—"
+                  )}
+                </td>
+
+                <td>
+                  Stage ${Number(
+                    row.assessed_stage||1
+                  )}
+                </td>
+
+                <td>
+                  ${esc(row.rating_grade||"—")}
+                </td>
+
+                <td>
+                  ${money(row.gross_exposure)}
+                </td>
+
+                <td>
+                  ${money(row.total_ead)}
+                </td>
+
+                <td>
+                  ${money(
+                    Number(
+                      row.collateral_value||0
+                    )+
+                    Number(
+                      row.guarantee_value||0
+                    )
+                  )}
+                </td>
+
+                <td>
+                  ${money(row.net_ead)}
+                </td>
+
+                <td>
+                  ${(
+                    Number(row.base_pd||0)*100
+                  ).toFixed(4)}%
+                </td>
+
+                <td>
+                  ${(
+                    Number(row.base_lgd||0)*100
+                  ).toFixed(4)}%
+                </td>
+
+                <td>
+                  ${money(
+                    row.expected_credit_loss
+                  )}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th colspan="3">Total</th>
+              <th>
+                ${money(
+                  data.total_gross_exposure
+                )}
+              </th>
+              <th>
+                ${money(data.total_ead)}
+              </th>
+              <th colspan="4"></th>
+              <th>
+                ${money(data.total_ecl)}
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  }
+
+  async function createGeneralEclRun() {
+    if (!IFRS9.generalEclCalculation) {
+      return alert(
+        "Calculate General ECL first."
+      );
+    }
+
+    const modelId=Number(
+      $("ifrs9GeneralRunModel")?.value||0
+    );
+
+    const reportingDate=
+      $("ifrs9GeneralRunDate")?.value;
+
+    const button=
+      $("ifrs9CreateGeneralRunBtn");
+
+    const originalText=
+      button?.textContent||
+      "Create General ECL Run";
+
+    if (button) {
+      button.disabled=true;
+      button.textContent="Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRuns(
+          cid()
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({
+            model_id:modelId,
+            reporting_date:reportingDate,
+            run_type:"period_end",
+          }),
+        }
+      );
+
+      IFRS9.generalEclCalculation=null;
+
+      $("ifrs9GeneralRunPreview").innerHTML="";
+
+      await loadAll();
+      showTab("general-ecl");
+
+      setMsg(
+        "General ECL run created."
+      );
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to create General ECL run."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled=
+          !IFRS9.generalEclCalculation;
+
+        button.textContent=originalText;
+      }
+    }
+  }
+
+  function renderGeneralEclRuns() {
+    const el=$("ifrs9GeneralRunList");
+    if (!el) return;
+
+    const rows=IFRS9.generalEclRuns||[];
+
+    if (!rows.length) {
+      el.innerHTML=`
+        <p class="muted">
+          No General ECL runs recorded.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Model</th>
+              <th>Gross Exposure</th>
+              <th>Stage 1 ECL</th>
+              <th>Stage 2 ECL</th>
+              <th>Stage 3 ECL</th>
+              <th>Total ECL</th>
+              <th>Movement</th>
+              <th>Status</th>
+              <th>Journal</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map(row=>`
+              <tr>
+                <td>
+                  ${dateText(
+                    row.reporting_date
+                  )}
+                </td>
+
+                <td>
+                  ${esc(row.model_name||"—")}
+                </td>
+
+                <td>
+                  ${money(
+                    row.total_gross_exposure
+                  )}
+                </td>
+
+                <td>
+                  ${money(row.stage_1_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.stage_2_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.stage_3_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.total_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.movement_ecl)}
+                </td>
+
+                <td>
+                  ${esc(label(row.status))}
+                </td>
+
+                <td>
+                  ${esc(row.journal_id||"—")}
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-view-general-run="${row.id}"
+                  >
+                    View
+                  </button>
+
+                  ${
+                    row.status==="draft"
+                      ?`
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-preview-general-run="${row.id}"
+                        >
+                          Preview
+                        </button>
+                      `
+                      :""
+                  }
+
+                  ${
+                    row.status==="posted" &&
+                    row.journal_id &&
+                    !row.reversal_journal_id
+                      ?`
+                        <button
+                          type="button"
+                          class="btn btn-danger btn-sm"
+                          data-ifrs9-reverse-general-run="${row.id}"
+                        >
+                          Reverse
+                        </button>
+                      `
+                      :""
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function viewGeneralEclRun(runId) {
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRun(
+          cid(),
+          runId
+        )
+      );
+
+      const run=result.run||{};
+      const lines=result.lines||[];
+
+      $("ifrs9InstrumentBody").innerHTML=`
+        <div class="form-grid">
+          <div>
+            <b>Reporting Date</b>
+            <p>${dateText(run.reporting_date)}</p>
+          </div>
+
+          <div>
+            <b>Model</b>
+            <p>${esc(run.model_name||"—")}</p>
+          </div>
+
+          <div>
+            <b>Gross Exposure</b>
+            <p>
+              ${money(run.total_gross_exposure)}
+            </p>
+          </div>
+
+          <div>
+            <b>Total ECL</b>
+            <p>${money(run.total_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Previous ECL</b>
+            <p>${money(run.previous_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Movement</b>
+            <p>${money(run.movement_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Status</b>
+            <p>${esc(label(run.status))}</p>
+          </div>
+
+          <div>
+            <b>Journal</b>
+            <p>${esc(run.journal_id||"—")}</p>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Instrument</th>
+                <th>Stage</th>
+                <th>Gross</th>
+                <th>Total EAD</th>
+                <th>Net EAD</th>
+                <th>PD</th>
+                <th>LGD</th>
+                <th>ECL</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${lines.map(line=>`
+                <tr>
+                  <td>
+                    ${esc(
+                      line.instrument_name||"—"
+                    )}
+                  </td>
+                  <td>
+                    Stage ${line.assessed_stage}
+                  </td>
+                  <td>
+                    ${money(line.gross_exposure)}
+                  </td>
+                  <td>
+                    ${money(line.total_ead)}
+                  </td>
+                  <td>
+                    ${money(line.net_ead)}
+                  </td>
+                  <td>
+                    ${(
+                      Number(line.base_pd||0)*100
+                    ).toFixed(4)}%
+                  </td>
+                  <td>
+                    ${(
+                      Number(line.base_lgd||0)*100
+                    ).toFixed(4)}%
+                  </td>
+                  <td>
+                    ${money(
+                      line.expected_credit_loss
+                    )}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9InstrumentModal")
+        ?.classList.remove("hidden");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to load General ECL run."
+      );
+    }
+  }
+
+  async function previewGeneralEclRun(runId) {
+    try {
+      IFRS9.previewGeneralEclRunId=
+        Number(runId);
+
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRunPreview(
+          cid(),
+          runId
+        )
+      );
+
+      const preview=result.preview||{};
+
+      $("ifrs9PreviewBody").innerHTML=`
+        <div class="journal-preview-header">
+          <p>
+            <b>Date:</b>
+            ${dateText(preview.date)}
+          </p>
+
+          <p>
+            <b>Reference:</b>
+            ${esc(preview.ref||"—")}
+          </p>
+
+          <p>
+            <b>Description:</b>
+            ${esc(preview.description||"—")}
+          </p>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(preview.lines||[]).map(line=>`
+                <tr>
+                  <td>
+                    ${esc(
+                      line.account_name||
+                      line.account_code||
+                      "—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(
+                      line.description||"—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${money(line.debit)}
+                  </td>
+
+                  <td>
+                    ${money(line.credit)}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="2">Total</th>
+                <th>
+                  ${money(preview.dr_total)}
+                </th>
+                <th>
+                  ${money(preview.cr_total)}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9JournalPreviewModal")
+        ?.classList.remove("hidden");
+    } catch(error) {
+      IFRS9.previewGeneralEclRunId=null;
+
+      setMsg(
+        error.message||
+        "Failed to preview General ECL journal."
+      );
+    }
+  }
+
+  async function reverseGeneralEclRun(runId) {
+    const run=IFRS9.generalEclRuns.find(
+      row=>Number(row.id)===Number(runId)
+    );
+
+    if (!run) {
+      return setMsg(
+        "General ECL run not found."
+      );
+    }
+
+    const reason=prompt(
+      "Enter the reason for reversing this General ECL run:"
+    )?.trim();
+
+    if (!reason) return;
+
+    if (!confirm(
+      `Reverse General ECL run ${runId}?\n\n`+
+      `Reporting date: ${
+        dateText(run.reporting_date)
+      }\n`+
+      `Movement: ${
+        money(run.movement_ecl)
+      }\n`+
+      `Journal: ${
+        run.journal_id||"—"
+      }\n\n`+
+      "A reversing journal will be posted."
+    )) return;
+
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.reverseGeneralEclRun(
+          cid(),
+          runId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({
+            reason,
+            reversal_date:new Date()
+              .toISOString()
+              .slice(0,10),
+          }),
+        }
+      );
+
+      await loadAll();
+      showTab("general-ecl");
+
+      setMsg(
+        `General ECL run reversed. Journal: ${
+          result.reversal_journal_id
+        }.`
+      );
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to reverse General ECL run."
+      );
+    }
+  }
+
+  function collectCreditRiskProfile() {
+    return {
+      general_model_id:Number(
+        $("ifrs9CreditProfileModel")?.value||0
+      )||null,
+
+      origination_rating:
+        $("ifrs9OriginationRating")?.value.trim()||null,
+
+      current_rating:
+        $("ifrs9CurrentRating")?.value.trim()||null,
+
+      origination_lifetime_pd:Number(
+        $("ifrs9OriginationLifetimePd")?.value||0
+      )/100,
+
+      current_lifetime_pd:Number(
+        $("ifrs9CurrentLifetimePd")?.value||0
+      )/100,
+
+      credit_limit:Number(
+        $("ifrs9CreditLimit")?.value||0
+      ),
+
+      undrawn_commitment:Number(
+        $("ifrs9UndrawnCommitment")?.value||0
+      ),
+
+      credit_conversion_factor:Number(
+        $("ifrs9CreditConversionFactor")?.value||100
+      )/100,
+
+      collateral_value:Number(
+        $("ifrs9CollateralValue")?.value||0
+      ),
+
+      collateral_type:
+        $("ifrs9CollateralType")?.value.trim()||null,
+
+      watchlist:Boolean(
+        $("ifrs9CreditWatchlist")?.checked
+      ),
+
+      forbearance:Boolean(
+        $("ifrs9CreditForbearance")?.checked
+      ),
+
+      default_flag:Boolean(
+        $("ifrs9CreditDefault")?.checked
+      ),
+
+      credit_impaired:Boolean(
+        $("ifrs9CreditImpaired")?.checked
+      ),
+    };
+  }
+
+
+  async function saveCreditRiskProfile(instrumentId) {
+    const payload=collectCreditRiskProfile();
+
+    if (!payload.general_model_id) {
+      return alert("Select a General ECL model.");
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclAssessments(
+          cid(),
+          instrumentId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify(payload),
+        }
+      );
+
+      await openInstrument(instrumentId);
+      setMsg("Credit-risk profile saved.");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to save credit-risk profile."
+      );
+    }
+  }
+
+
+  async function assessGeneralEclStage(instrumentId) {
+    const overrideValue=
+      $("ifrs9StageOverride")?.value;
+
+    const payload={
+      assessment_date:
+        $("ifrs9StageAssessmentDate")?.value,
+
+      days_past_due:Number(
+        $("ifrs9StageDaysPastDue")?.value||0
+      ),
+
+      override_stage:
+        overrideValue?Number(overrideValue):null,
+
+      override_reason:
+        $("ifrs9StageOverrideReason")
+          ?.value.trim()||null,
+    };
+
+    if (!payload.assessment_date) {
+      return alert("Assessment date is required.");
+    }
+
+    if (
+      payload.override_stage &&
+      !payload.override_reason
+    ) {
+      return alert(
+        "Enter a reason for the stage override."
+      );
+    }
+
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclStageAssessment(
+          cid(),
+          instrumentId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify(payload),
+        }
+      );
+
+      const row=result.item||{};
+
+      $("ifrs9StageAssessmentResult").innerHTML=`
+        <div class="status-banner ${
+          Number(row.assessed_stage)===1
+            ?"success":"warning"
+        }" style="margin-top:12px;">
+          Assessed as Stage ${row.assessed_stage}.
+          ${esc(row.assessment_reason||"")}
+        </div>
+      `;
+
+      await openInstrument(instrumentId);
+      setMsg(`Instrument assessed as Stage ${row.assessed_stage}.`);
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to assess the ECL stage."
+      );
+    }
+  }
 
   window.bindIFRS9Screen = async function bindIFRS9Screen() {
     if (!IFRS9.bound) {
@@ -86027,34 +87835,15 @@ async function assessGeneralEclStage(instrumentId) {
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);
       $("ifrs9InstrumentCloseBtn")?.addEventListener("click", closeInstrumentModal);
       $("ifrs9InstrumentCancelBtn")?.addEventListener("click", closeInstrumentModal);
-      $("ifrs9EclReportingDate")?.addEventListener(
-        "change",
-        renderModelOptions
-      );
-      $("ifrs9CreateGeneralModelBtn")
-        ?.addEventListener(
-          "click",
-          createGeneralEclModel
-        );
+      $("ifrs9EclReportingDate")?.addEventListener("change", renderModelOptions);
+      $("ifrs9CreateGeneralModelBtn")?.addEventListener("click", createGeneralEclModel);
+      $("ifrs9SaveGeneralScenariosBtn")?.addEventListener("click", saveGeneralScenarios);
+      $("ifrs9SaveGeneralPdBtn")?.addEventListener("click", saveGeneralPdCurves);
+      $("ifrs9SaveGeneralLgdBtn")?.addEventListener("click", saveGeneralLgds);
+      $("ifrs9CalculateGeneralRunBtn")?.addEventListener("click", calculateGeneralEclRun);
+      $("ifrs9CreateGeneralRunBtn")?.addEventListener( "click", createGeneralEclRun);
 
-      $("ifrs9SaveGeneralScenariosBtn")
-        ?.addEventListener(
-          "click",
-          saveGeneralScenarios
-        );
-
-      $("ifrs9SaveGeneralPdBtn")
-        ?.addEventListener(
-          "click",
-          saveGeneralPdCurves
-        );
-
-      $("ifrs9SaveGeneralLgdBtn")
-        ?.addEventListener(
-          "click",
-          saveGeneralLgds
-        );
-            const today = new Date();
+      const today = new Date();
       const year = today.getFullYear();
 
       if ($("ifrs9ReconciliationTo")) {
@@ -86070,6 +87859,13 @@ async function assessGeneralEclStage(instrumentId) {
 
       if ($("ifrs9ReconciliationYear")) {
         $("ifrs9ReconciliationYear").value ||= year;
+      }
+
+      if ($("ifrs9GeneralRunDate")) {
+        $("ifrs9GeneralRunDate").value||=
+          new Date()
+            .toISOString()
+            .slice(0,10);
       }
 
       document.addEventListener("change", event => {
@@ -86655,6 +88451,48 @@ async function assessGeneralEclStage(instrumentId) {
             reverseFairValue
               .dataset
               .ifrs9ReverseFairValue
+          )
+        );
+      }
+
+      const viewGeneralRun=event.target.closest(
+        "[data-ifrs9-view-general-run]"
+      );
+
+      if (viewGeneralRun) {
+        return viewGeneralEclRun(
+          Number(
+            viewGeneralRun
+              .dataset
+              .ifrs9ViewGeneralRun
+          )
+        );
+      }
+
+      const previewGeneralRun=event.target.closest(
+        "[data-ifrs9-preview-general-run]"
+      );
+
+      if (previewGeneralRun) {
+        return previewGeneralEclRun(
+          Number(
+            previewGeneralRun
+              .dataset
+              .ifrs9PreviewGeneralRun
+          )
+        );
+      }
+
+      const reverseGeneralRun=event.target.closest(
+        "[data-ifrs9-reverse-general-run]"
+      );
+
+      if (reverseGeneralRun) {
+        return reverseGeneralEclRun(
+          Number(
+            reverseGeneralRun
+              .dataset
+              .ifrs9ReverseGeneralRun
           )
         );
       }

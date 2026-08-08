@@ -20619,6 +20619,264 @@
             END IF;
         END $$;
 
+        CREATE TABLE IF NOT EXISTS company_8.ifrs9_general_ecl_runs (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT 8,
+
+            model_id INT NOT NULL,
+            reporting_date DATE NOT NULL,
+
+            run_type TEXT NOT NULL DEFAULT 'period_end',
+
+            total_gross_exposure NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            total_ead NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_1_exposure NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_2_exposure NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_3_exposure NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_1_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_2_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            stage_3_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            total_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            previous_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            movement_ecl NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            journal_id INT NULL,
+            reversal_journal_id INT NULL,
+
+            posted_by INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+
+            reversed_by INT NULL,
+            reversed_at TIMESTAMPTZ NULL,
+            reversal_reason TEXT NULL,
+
+            created_by INT NULL,
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            meta_json JSONB
+                NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        company_8_ifrs9_general_ecl_run_active_date_uq
+        ON company_8.ifrs9_general_ecl_runs(
+            company_id,
+            model_id,
+            reporting_date
+        )
+        WHERE status IN ('draft','posted');
+
+        CREATE INDEX IF NOT EXISTS
+        company_8_ifrs9_general_ecl_run_status_idx
+        ON company_8.ifrs9_general_ecl_runs(
+            company_id,
+            status,
+            reporting_date DESC
+        );   
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid=c.connamespace
+                WHERE c.conname=
+                    'company_8_ifrs9_general_ecl_run_model_fk'
+                AND n.nspname='company_8'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_general_ecl_runs
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (model_id)
+                    REFERENCES %I.ifrs9_general_ecl_models(id)
+                    ON DELETE RESTRICT',
+                    'company_8',
+                    'company_8_ifrs9_general_ecl_run_model_fk',
+                    'company_8'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid=c.connamespace
+                WHERE c.conname=
+                    'company_8_ifrs9_general_ecl_run_ck'
+                AND n.nspname='company_8'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_general_ecl_runs
+                    ADD CONSTRAINT %I CHECK (
+                        total_gross_exposure >= 0
+                        AND total_ead >= 0
+                        AND stage_1_exposure >= 0
+                        AND stage_2_exposure >= 0
+                        AND stage_3_exposure >= 0
+                        AND stage_1_ecl >= 0
+                        AND stage_2_ecl >= 0
+                        AND stage_3_ecl >= 0
+                        AND total_ecl >= 0
+                        AND previous_ecl >= 0
+                        AND status IN (
+                            ''draft'',
+                            ''posted'',
+                            ''reversed'',
+                            ''void''
+                        )
+                    )',
+                    'company_8',
+                    'company_8_ifrs9_general_ecl_run_ck'
+                );
+            END IF;
+        END $$;
+
+        CREATE TABLE IF NOT EXISTS company_8.ifrs9_general_ecl_run_lines (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT 8,
+
+            run_id INT NOT NULL,
+            instrument_id INT NOT NULL,
+            stage_assessment_id INT NULL,
+
+            assessed_stage INT NOT NULL,
+
+            gross_exposure NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            drawn_ead NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            undrawn_ead NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            total_ead NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            collateral_value NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            guarantee_value NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            net_ead NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            base_pd NUMERIC(18,10)
+                NOT NULL DEFAULT 0,
+
+            base_lgd NUMERIC(18,10)
+                NOT NULL DEFAULT 0,
+
+            effective_interest_rate NUMERIC(18,10)
+                NOT NULL DEFAULT 0,
+
+            expected_credit_loss NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
+
+            scenario_json JSONB
+                NOT NULL DEFAULT '[]'::jsonb,
+
+            calculation_json JSONB
+                NOT NULL DEFAULT '{}'::jsonb,
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            meta_json JSONB
+                NOT NULL DEFAULT '{}'::jsonb
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        company_8_ifrs9_general_ecl_line_uq
+        ON company_8.ifrs9_general_ecl_run_lines(
+            company_id,
+            run_id,
+            instrument_id
+        );
+
+        CREATE INDEX IF NOT EXISTS
+        company_8_ifrs9_general_ecl_line_stage_idx
+        ON company_8.ifrs9_general_ecl_run_lines(
+            company_id,
+            assessed_stage,
+            run_id
+        );
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid=c.connamespace
+                WHERE c.conname=
+                    'company_8_ifrs9_general_ecl_line_run_fk'
+                AND n.nspname='company_8'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_general_ecl_run_lines
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (run_id)
+                    REFERENCES %I.ifrs9_general_ecl_runs(id)
+                    ON DELETE CASCADE',
+                    'company_8',
+                    'company_8_ifrs9_general_ecl_line_run_fk',
+                    'company_8'
+                );
+            END IF;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid=c.connamespace
+                WHERE c.conname=
+                    'company_8_ifrs9_general_ecl_line_instr_fk'
+                AND n.nspname='company_8'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_general_ecl_run_lines
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (instrument_id)
+                    REFERENCES %I.ifrs9_financial_instruments(id)
+                    ON DELETE RESTRICT',
+                    'company_8',
+                    'company_8_ifrs9_general_ecl_line_instr_fk',
+                    'company_8'
+                );
+            END IF;
+        END $$;
+
+
         CREATE TABLE IF NOT EXISTS company_8.deferred_tax_runs (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT 8,

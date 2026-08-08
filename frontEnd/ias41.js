@@ -38,6 +38,16 @@
     grants: [],
     activeGrant: null,
     grantPreview: null,
+    reportRuns:[],
+    reportData:null,
+    activeReport:"biological_asset_register",
+    reportFilters:{
+      date_from:"",
+      date_to:"",
+      as_of:"",
+      asset_class_id:"",
+      location_id:"",
+    },
   };
 
   const tabs = [
@@ -148,6 +158,14 @@
       state.companyId,
       id,
       action
+    );
+  }
+
+  function reportUrl(reportKey,params={}) {
+    return window.ENDPOINTS.ias41.report(
+      state.companyId,
+      reportKey,
+      params
     );
   }
 
@@ -838,6 +856,7 @@
       valuations: renderValuations,
       harvest: renderHarvests,
       "government-grants": renderGovernmentGrants,
+      reports:renderReports,
       settings: renderSettings,
     };
 
@@ -1968,6 +1987,28 @@
       ()=>grantModal({})
     );
 
+    $("#ias41RunReportBtn",host)?.addEventListener(
+      "click",
+      async()=>{
+        try {
+          await runIas41Report(false);
+        } catch(error) {
+          toast(error.message||"IAS 41 report failed","error");
+        }
+      }
+    );
+
+    $("#ias41SaveReportSnapshotBtn",host)?.addEventListener(
+      "click",
+      async()=>{
+        try {
+          await runIas41Report(true);
+        } catch(error) {
+          toast(error.message||"Report snapshot failed","error");
+        }
+      }
+    );
+
     host.querySelectorAll("[data-ias41-grant-open]").forEach(button=>{
       button.addEventListener("click",async()=>{
         try {
@@ -2126,6 +2167,7 @@
         loadList("valuations", "valuations"),
         loadList("harvests","harvests"),
         loadList("grants","grants"),
+        loadList("reportRuns","reports"),
       ]);
 
       const validation =
@@ -3504,6 +3546,237 @@ function valuationModal(run) {
         await refresh();
         toast("Grant receipt saved. Preview generated.");
       }
+    );
+  }
+
+  const IAS41_REPORTS=[
+    ["biological_asset_register","Biological Asset Register"],
+    ["movement_reconciliation","Movement Reconciliation"],
+    ["fair_value_gain_loss","Fair-Value Gain/Loss"],
+    ["valuation_history","Valuation History"],
+    ["harvest_report","Harvest and IAS 2 Transfer"],
+    ["government_grants","Government Grants"],
+    ["event_history","Growth and Health Events"],
+    ["ias41_disclosure","IAS 41 Disclosure Note"]
+  ];
+
+  function reportOptions(selected) {
+    return IAS41_REPORTS.map(([value,label])=>`
+      <option value="${value}" ${selected===value?"selected":""}>
+        ${esc(label)}
+      </option>
+    `).join("");
+  }
+
+  function renderReportSummary(data) {
+    const totals=data&&data.totals?data.totals:{};
+    const movement=data&&data.movement?data.movement:{};
+    const values=Object.keys(totals).length?totals:movement;
+
+    return `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        ${Object.entries(values).map(([key,value])=>`
+          <div class="card p-3">
+            <div class="text-xs text-slate-500">
+              ${esc(eventLabel(key))}
+            </div>
+            <div class="font-bold mt-1">
+              ${typeof value==="number"?money(value):esc(value)}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function renderReportRows(data) {
+    const items=data&&Array.isArray(data.items)?data.items:[];
+
+    if(!items.length) {
+      return `
+        <div class="card p-8 text-center text-slate-500 mt-4">
+          Run the report to view its detailed results.
+        </div>
+      `;
+    }
+
+    const columns=Object.keys(items[0]).filter(key=>
+      !["metadata","company_id"].includes(key)
+    ).slice(0,10);
+
+    return table(
+      columns.map(eventLabel),
+      items.map(row=>`
+        <tr class="border-b">
+          ${columns.map(key=>`
+            <td class="p-3">
+              ${
+                typeof row[key]==="number"
+                  ?money(row[key])
+                  :esc(row[key]??"—")
+              }
+            </td>
+          `).join("")}
+        </tr>
+      `),
+      "No report rows found."
+    );
+  }
+
+  function renderDisclosure(data) {
+    if(!data||data.report_key!=="ias41_disclosure") {
+      return "";
+    }
+
+    const reconciliation=data.carrying_amount_reconciliation||{};
+    const classes=data.biological_asset_classes||[];
+
+    return `
+      <div class="card p-4 mt-4">
+        <h3 class="font-bold text-lg">IAS 41 Agriculture</h3>
+
+        <p class="text-sm text-slate-500 mt-1">
+          Biological assets are measured at fair value less costs to sell.
+          Agricultural produce is transferred to IAS 2 at harvest.
+        </p>
+
+        <h4 class="font-bold mt-5">Biological asset classes</h4>
+
+        ${table(
+          ["Class","Nature","Classification","Quantity","Carrying amount"],
+          classes.map(row=>`
+            <tr class="border-b">
+              <td class="p-3">${esc(row.class_name)}</td>
+              <td class="p-3">${esc(eventLabel(row.asset_nature))}</td>
+              <td class="p-3">${esc(eventLabel(row.current_noncurrent))}</td>
+              <td class="p-3 text-right">${n(row.quantity)}</td>
+              <td class="p-3 text-right">${money(row.carrying_amount)}</td>
+            </tr>
+          `),
+          "No biological asset classes found."
+        )}
+
+        <h4 class="font-bold mt-5">Carrying amount reconciliation</h4>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          ${Object.entries(reconciliation).map(([key,value])=>`
+            <div class="card p-3">
+              <div class="text-xs text-slate-500">${esc(eventLabel(key))}</div>
+              <div class="font-bold mt-1">${money(value)}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderReports() {
+    const data=state.reportData||{};
+
+    return `
+      ${pageHeader(
+        "IAS 41 Reports",
+        "Registers, reconciliations, fair-value movements, harvest reporting and disclosure notes.",
+        `<button class="btn" id="ias41SaveReportSnapshotBtn">
+          Save snapshot
+        </button>`
+      )}
+
+      <div class="card p-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+          ${field(
+            "ias41_report_key",
+            "Report",
+            state.activeReport,
+            {choices:reportOptions(state.activeReport)}
+          )}
+
+          ${field(
+            "ias41_report_date_from",
+            "From",
+            state.reportFilters.date_from,
+            {type:"date"}
+          )}
+
+          ${field(
+            "ias41_report_date_to",
+            "To",
+            state.reportFilters.date_to,
+            {type:"date"}
+          )}
+
+          ${field(
+            "ias41_report_as_of",
+            "As of",
+            state.reportFilters.as_of,
+            {type:"date"}
+          )}
+
+          <div class="flex items-end">
+            <button class="btn w-full" id="ias41RunReportBtn">
+              Run report
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        ${data.report_name?`
+          <div class="card p-4 mb-4">
+            <h3 class="font-bold text-lg">${esc(data.report_name)}</h3>
+            <div class="text-sm text-slate-500 mt-1">
+              ${esc(data.date_from||data.as_of||"")}
+              ${data.date_to?` to ${esc(data.date_to)}`:""}
+            </div>
+          </div>
+        `:""}
+
+        ${renderReportSummary(data)}
+        ${renderDisclosure(data)}
+        ${data.report_key==="ias41_disclosure"?"":renderReportRows(data)}
+      </div>
+    `;
+  }
+
+  function collectReportFilters() {
+    const reportKey=$("#ias41Field_ias41_report_key")?.value
+      ||state.activeReport;
+
+    const filters={
+      date_from:$("#ias41Field_ias41_report_date_from")?.value||"",
+      date_to:$("#ias41Field_ias41_report_date_to")?.value||"",
+      as_of:$("#ias41Field_ias41_report_as_of")?.value||"",
+    };
+
+    state.activeReport=reportKey;
+    state.reportFilters={...state.reportFilters,...filters};
+
+    return {reportKey,filters};
+  }
+
+  async function runIas41Report(saveSnapshot=false) {
+    const {reportKey,filters}=collectReportFilters();
+
+    const response=await api(
+      saveSnapshot
+        ?reportUrl(reportKey)
+        :reportUrl(reportKey,filters),
+      saveSnapshot?{
+        method:"POST",
+        body:JSON.stringify({
+          ...filters,
+          save_snapshot:true
+        })
+      }:{}
+    );
+
+    state.reportData=response.data||{};
+    renderWorkspace();
+
+    toast(
+      saveSnapshot
+        ?"IAS 41 report snapshot saved."
+        :"IAS 41 report generated."
     );
   }
 

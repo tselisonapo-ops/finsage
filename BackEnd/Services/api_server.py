@@ -224,9 +224,17 @@ from BackEnd.Services.routes.payroll_employee_benefits_routes import payroll_emp
 from BackEnd.Services.lessor_lease_routes import lessor_bp
 from BackEnd.Services.routes.data_migration_routes import data_migration_bp
 from BackEnd.Services.routes.ias41_routes import ias41_bp
+from BackEnd.Services.routes.corporate_structure import corporate_structure_bp
+from BackEnd.Services.routes.ops_routes import ops_bp
 from BackEnd.Services.routes.payroll_disclosure_routes import (
     payroll_disclosure_bp,
 )
+from BackEnd.Services.routes.ias41_disclosure_routes import (
+    bp_ias41_disclosure,
+)
+from BackEnd.Services.routes.consolidation_routes import consolidation_bp
+
+
 # ────────────────────────────────────────────────────────────────
 # Flask app + CORS
 # ────────────────────────────────────────────────────────────────
@@ -376,6 +384,10 @@ app.register_blueprint(lessor_bp)
 app.register_blueprint(data_migration_bp)
 app.register_blueprint(ias41_bp)
 app.register_blueprint(payroll_disclosure_bp)
+app.register_blueprint(bp_ias41_disclosure)
+app.register_blueprint(corporate_structure_bp)
+app.register_blueprint(ops_bp)
+app.register_blueprint(consolidation_bp)
 # If you have app.run(...) later, add this right above it:
 # print("[BOOT] About to run Flask server")
 
@@ -1793,6 +1805,14 @@ def api_auth_signin():
         email = str(data.get("email") or "").strip().lower()
         password = str(data.get("password") or "")
 
+        product = str(
+            data.get("product")
+            or data.get("app")
+            or "finsage"
+        ).strip().lower()
+
+        is_ops_signin = product in {"ops","finflow"}
+
         if not email or not password:
             return jsonify({
                 "error": "Email and password are required."
@@ -1855,41 +1875,119 @@ def api_auth_signin():
             user.get("user_type") or "Enterprise"
         ).strip()
 
-        primary_mem = db_service.fetch_one(
-            """
-            SELECT company_id, role, access_scope
-            FROM public.company_users
-            WHERE user_id = %s
-              AND is_active = TRUE
-              AND is_primary = TRUE
-            LIMIT 1;
-            """,
-            (user_id,),
-        )
-
-        if not primary_mem:
+        if is_ops_signin:
+            # =========================================================
+            # FINFLOW SIGN-IN
+            # Always enter the user's OWN/native company.
+            # Never begin FinFlow inside a delegated client workspace.
+            # =========================================================
             primary_mem = db_service.fetch_one(
                 """
-                SELECT company_id, role, access_scope
-                FROM public.company_users
-                WHERE user_id = %s
-                  AND is_active = TRUE
-                ORDER BY company_id
+                SELECT
+                    cu.company_id,
+                    cu.role,
+                    cu.access_scope,
+                    cu.membership_kind,
+                    cu.is_primary,
+                    cu.product_access,
+                    cu.ops_is_active
+                FROM public.company_users cu
+                WHERE cu.user_id=%s
+                AND cu.is_active=TRUE
+                AND cu.is_primary=TRUE
+                AND COALESCE(cu.access_scope,'core')='core'
+                ORDER BY
+                    CASE
+                        WHEN cu.membership_kind='primary' THEN 0
+                        ELSE 1
+                    END,
+                    cu.company_id
                 LIMIT 1;
                 """,
                 (user_id,),
             )
 
-        allowed_rows = db_service.fetch_all(
-            """
-            SELECT company_id
-            FROM public.company_users
-            WHERE user_id = %s
-              AND is_active = TRUE
-            ORDER BY company_id;
-            """,
-            (user_id,),
-        ) or []
+            # Legacy/fallback users may not yet have is_primary correctly set.
+            if not primary_mem:
+                primary_mem = db_service.fetch_one(
+                    """
+                    SELECT
+                        cu.company_id,
+                        cu.role,
+                        cu.access_scope,
+                        cu.membership_kind,
+                        cu.is_primary,
+                        cu.product_access,
+                        cu.ops_is_active
+                    FROM public.company_users cu
+                    JOIN public.companies c
+                    ON c.id=cu.company_id
+                    WHERE cu.user_id=%s
+                    AND cu.is_active=TRUE
+                    AND COALESCE(cu.access_scope,'core')='core'
+                    AND (
+                            c.owner_user_id=cu.user_id
+                            OR cu.membership_kind='primary'
+                    )
+                    ORDER BY
+                        CASE WHEN c.owner_user_id=cu.user_id THEN 0 ELSE 1 END,
+                        CASE WHEN cu.membership_kind='primary' THEN 0 ELSE 1 END,
+                        cu.company_id
+                    LIMIT 1;
+                    """,
+                    (user_id,),
+                )
+
+        else:
+            # Existing FinSage behaviour.
+            primary_mem = db_service.fetch_one(
+                """
+                SELECT company_id,role,access_scope
+                FROM public.company_users
+                WHERE user_id=%s
+                AND is_active=TRUE
+                AND is_primary=TRUE
+                LIMIT 1;
+                """,
+                (user_id,),
+            )
+
+            if not primary_mem:
+                primary_mem = db_service.fetch_one(
+                    """
+                    SELECT company_id,role,access_scope
+                    FROM public.company_users
+                    WHERE user_id=%s
+                    AND is_active=TRUE
+                    ORDER BY company_id
+                    LIMIT 1;
+                    """,
+                    (user_id,),
+                )
+
+        if is_ops_signin:
+            allowed_rows = db_service.fetch_all(
+                """
+                SELECT DISTINCT cu.company_id
+                FROM public.company_users cu
+                WHERE cu.user_id=%s
+                AND cu.is_active=TRUE
+                AND COALESCE(cu.access_scope,'core')='core'
+                ORDER BY cu.company_id;
+                """,
+                (user_id,),
+            ) or []
+        else:
+            allowed_rows = db_service.fetch_all(
+                """
+                SELECT company_id
+                FROM public.company_users
+                WHERE user_id=%s
+                AND is_active=TRUE
+                ORDER BY company_id;
+                """,
+                (user_id,),
+            ) or []
 
         allowed_company_ids = []
 
@@ -1904,17 +2002,39 @@ def api_auth_signin():
         if primary_mem and primary_mem.get("company_id") is not None:
             company_id = int(primary_mem["company_id"])
 
+        if is_ops_signin:
+            if not company_id:
+                return jsonify({
+                    "error":"No primary company is available for FinFlow.",
+                    "code":"OPS_NO_PRIMARY_COMPANY",
+                }),403
+
+            ops_access = db_service.user_has_ops_access(
+                company_id,
+                user_id,
+            )
+
+            if not ops_access:
+                return jsonify({
+                    "error":"Your account does not have FinFlow access.",
+                    "code":"OPS_ACCESS_DENIED",
+                    "company_id":company_id,
+                }),403
+    
         if primary_mem:
-            user_role = normalize_role(
+            user_role=normalize_role(
                 primary_mem.get("role") or base_role
             )
 
-            access_scope = str(
+            access_scope=str(
                 primary_mem.get("access_scope") or "core"
             ).strip().lower()
+
+            if is_ops_signin:
+                access_scope="core"
         else:
-            user_role = normalize_role(base_role)
-            access_scope = "core"
+            user_role=normalize_role(base_role)
+            access_scope="core"
 
         dashboards = get_dashboard_access(
             user_role,
@@ -1992,9 +2112,10 @@ def api_auth_signin():
 
         # This return must be outside `if company_id`.
         return jsonify({
-            "message": "signin OK",
-            "token": token,
-            "user": {
+            "message":"signin OK",
+            "token":token,
+            "product":"finflow" if is_ops_signin else "finsage",
+            "user":{
                 "id": user_id,
                 "email": user["email"],
                 "role": user_role,
@@ -2004,6 +2125,7 @@ def api_auth_signin():
                     user.get("is_confirmed")
                 ),
                 "company_id": company_id,
+                "primary_company_id":company_id,
                 "company_name": company_name,
                 "industry": industry,
                 "sub_industry": sub_industry,
@@ -2587,6 +2709,16 @@ def api_create_invite():
     access_scope = (data.get("access_scope") or "core").strip().lower()
     note = (data.get("note") or "").strip()
 
+    department_id=data.get("department_id")
+    position_id=data.get("position_id")
+    branch_id=data.get("branch_id")
+    manager_user_id=data.get("manager_user_id")
+    ops_role_code=(data.get("ops_role_code") or "").strip().upper() or None
+
+    product_access=data.get("product_access") or {}
+    if not isinstance(product_access,dict):
+        product_access={}
+
     if not email or not role_raw:
         return jsonify({"error": "Email and role are required."}), 400
 
@@ -2708,7 +2840,17 @@ def api_create_invite():
 
     token = rec["token"]
 
-    invite_link = f"{FRONTEND_BASE}/accept-invite.html?token={token}"
+    db_service.set_company_invite_ops_context(
+        token=token,
+        department_id=department_id,
+        position_id=position_id,
+        branch_id=branch_id,
+        manager_user_id=manager_user_id,
+        ops_role_code=ops_role_code,
+        product_access=product_access,
+    )
+
+    invite_link=f"{FRONTEND_BASE}/ops/accept-invite?token={token}"
     access_scope_label = "internal access" if access_scope == "core" else "assignment access"
 
     subject = f"You've been invited to {company_name} on FinSage"
@@ -2854,8 +2996,15 @@ def api_accept_invite():
             except Exception:
                 pass
 
-        db_service.mark_invite_accepted(token=token, user_id=user_id)
+        db_service.apply_ops_invite_context(
+            token=token,
+            user_id=user_id,
+        )
 
+        db_service.mark_invite_accepted(
+            token=token,
+            user_id=user_id,
+        )
         primary = db_service.fetch_one(
             """
             SELECT company_id
@@ -2924,8 +3073,15 @@ def api_accept_invite():
         is_primary=True,
     )
 
-    db_service.mark_invite_accepted(token=token, user_id=int(new_id))
+    db_service.apply_ops_invite_context(
+        token=token,
+        user_id=int(new_id),
+    )
 
+    db_service.mark_invite_accepted(
+        token=token,
+        user_id=int(new_id),
+    )
     jwt_token = make_jwt(
         user_id=new_id,
         email=email,
@@ -3266,7 +3422,7 @@ def create_related_company(parent_company_id: int):
         data.setdefault("control_basis", "joint_control")
     elif relationship_type == "branch":
         data.setdefault("entity_kind", "branch_entity")
-        data.setdefault("consolidation_method", "none")
+        data.setdefault("consolidation_method", "full")
         data.setdefault("control_basis", "direct_branch")
 
     data.setdefault("created_via", "related_company")
@@ -3349,17 +3505,23 @@ def create_related_company(parent_company_id: int):
                 current_user["id"],
             )
 
-        rel_id = db_service.create_company_relationship(
-            parent_company_id=parent_company_id,
-            child_company_id=company_result["company_id"],
-            relationship_type=relationship_type,
-            ownership_percent=ownership_percent,
-            voting_percent=voting_percent,
-            control_basis=control_basis,
-            consolidation_method=consolidation_method,
-            effective_from=effective_from,
-            notes=notes,
-        )
+            relationship = db_service.create_company_relationship(
+                parent_company_id=parent_company_id,
+                child_company_id=company_result["company_id"],
+                relationship_type=relationship_type,
+                ownership_percent=ownership_percent,
+                voting_percent=voting_percent,
+                control_basis=control_basis,
+                consolidation_method=consolidation_method,
+                effective_from=effective_from,
+                acquisition_date=data.get("acquisition_date"),
+                functional_currency=data.get("functional_currency") or data.get("currency"),
+                reporting_currency=data.get("reporting_currency"),
+                include_in_group_reporting=bool(data.get("include_in_group_reporting", True)),
+                notes=notes,
+            )
+
+            rel_id = relationship["id"]
 
         current_app.logger.warning(
             "[RELATIONSHIP CREATED] rel_id=%s parent=%s child=%s type=%s",
@@ -3404,6 +3566,8 @@ def api_company_group_structure(company_id: int):
 
     try:
         data = db_service.get_company_group_structure(company_id)
+        if not data.get("company"):
+            return jsonify({"message": "Company not found"}), 404
         return jsonify(data), 200
     except Exception as e:
         current_app.logger.exception("api_company_group_structure failed")

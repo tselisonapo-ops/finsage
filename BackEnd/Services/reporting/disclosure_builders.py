@@ -2905,6 +2905,116 @@ def build_payroll_db_export_payload(disclosure):
         "totals":d.get("totals") or {},
         "disclosure":d,
     }
+
+def build_payroll_employee_benefits_pack_note_payload(
+    note,
+    pack,
+):
+    note=note or {}
+    pack=pack or {}
+    sections_data=pack.get("sections") or {}
+
+    sections=[]
+
+    for key in(
+        "expense",
+        "liabilities",
+        "other_comprehensive_income",
+    ):
+        section=sections_data.get(key) or {}
+        rows=section.get("rows") or []
+
+        if not rows:
+            continue
+
+        sections.append({
+            "title":
+                section.get("title")
+                or key.replace("_"," ").title(),
+            "rows":[{
+                "label":row.get("label"),
+                "values":{
+                    "amount":_money(
+                        row.get("amount")
+                    ),
+                },
+                "row_type":
+                    row.get("row_type") or "normal",
+            } for row in rows],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        })
+
+    return{
+        "title":
+            note.get("note_title")
+            or pack.get("title")
+            or "Employee benefits",
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+        "sections":sections,
+        "meta":pack.get("meta") or {},
+    }
+
+
+def build_payroll_employee_benefits_pack_export_payload(
+    pack,
+):
+    pack=pack or {}
+    sections_data=pack.get("sections") or {}
+
+    sections=[]
+
+    for key in(
+        "expense",
+        "liabilities",
+        "other_comprehensive_income",
+    ):
+        section=sections_data.get(key) or {}
+
+        sections.append({
+            "title":
+                section.get("title")
+                or key.replace("_"," ").title(),
+            "rows":section.get("rows") or [],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        })
+
+    readiness=pack.get("readiness") or {}
+
+    sections.append({
+        "title":"Disclosure readiness checks",
+        "rows":[{
+            "label":row.get("label"),
+            "status":row.get("status"),
+            "message":row.get("message"),
+            "amount":row.get("amount"),
+        } for row in readiness.get("checks") or []],
+        "amount_keys":["amount"],
+        "amount_labels":{
+            "amount":"Difference / Amount",
+        },
+    })
+
+    return{
+        "meta":{
+            **(pack.get("meta") or {}),
+            "report_key":
+                "ias19_employee_benefits_pack",
+        },
+        "title":"Employee benefits",
+        "sections":sections,
+        "totals":pack.get("summary") or {},
+        "pack":pack,
+    }
+
 def build_ifrs9_disclosure(
     db,
     company_id: int,
@@ -3338,6 +3448,7 @@ def build_ifrs9_disclosure(
         "source": strict,
     }
 
+
 def build_ifrs9_note_export_payload(
     db,
     company_id,
@@ -3408,6 +3519,354 @@ def build_ifrs9_note_export_payload(
             or ""
         ),
         "sections": sections,
+    }
+
+def build_ias41_note_export_payload(
+    note,
+    disclosure,
+):
+    note=note or {}
+    d=disclosure or {}
+
+    recon=d.get(
+        "carrying_amount_reconciliation"
+    ) or {}
+
+    classes=d.get(
+        "biological_asset_classes"
+    ) or []
+
+    fv=d.get("fair_value_gain_loss") or {}
+    harvest=d.get("harvest") or {}
+    grants=d.get("government_grants") or {}
+    closing=d.get("closing_balance") or {}
+
+    reconciliation_rows=[
+        {
+            "label":"Opening carrying amount",
+            "values":{
+                "amount":_money(
+                    recon.get(
+                        "opening_carrying_amount"
+                    )
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Purchases",
+            "values":{
+                "amount":_money(
+                    recon.get("purchases")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Births",
+            "values":{
+                "amount":_money(
+                    recon.get("births")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Planting",
+            "values":{
+                "amount":_money(
+                    recon.get("planting")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Other additions",
+            "values":{
+                "amount":_money(
+                    recon.get("other_additions")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Fair-value gains",
+            "values":{
+                "amount":_money(
+                    recon.get("fair_value_gains")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Fair-value losses",
+            "values":{
+                "amount":-_money(
+                    recon.get("fair_value_losses")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Harvest transfers",
+            "values":{
+                "amount":-_money(
+                    recon.get("harvest_transfer")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Mortality",
+            "values":{
+                "amount":-_money(
+                    recon.get("mortality_loss")
+                )
+            },
+            "row_type":"normal",
+        },
+        {
+            "label":"Closing carrying amount",
+            "values":{
+                "amount":_money(
+                    recon.get(
+                        "closing_carrying_amount"
+                    )
+                )
+            },
+            "row_type":"total",
+        },
+    ]
+
+    class_rows=[{
+        "label":
+            row.get("class_name")
+            or row.get("class_code")
+            or "Biological assets",
+
+        "values":{
+            "quantity":
+                row.get("quantity") or 0,
+
+            "fair_value":
+                _money(row.get("fair_value")),
+
+            "costs_to_sell":
+                _money(
+                    row.get("costs_to_sell")
+                ),
+
+            "carrying_amount":
+                _money(
+                    row.get("carrying_amount")
+                ),
+        },
+
+        "row_type":"normal",
+    } for row in classes]
+
+    sections=[
+        {
+            "title":
+                "Biological asset carrying amount reconciliation",
+
+            "rows":reconciliation_rows,
+
+            "amount_keys":["amount"],
+
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        }
+    ]
+
+    if class_rows:
+        sections.append({
+            "title":"Biological assets by class",
+            "rows":class_rows,
+
+            "amount_keys":[
+                "quantity",
+                "fair_value",
+                "costs_to_sell",
+                "carrying_amount",
+            ],
+
+            "amount_labels":{
+                "quantity":"Quantity",
+                "fair_value":"Fair value",
+                "costs_to_sell":"Costs to sell",
+                "carrying_amount":"Carrying amount",
+            },
+        })
+
+    sections.extend([
+        {
+            "title":"Fair-value movements",
+            "rows":[
+                {
+                    "label":"Fair-value gains",
+                    "values":{
+                        "amount":_money(
+                            fv.get("gain_amount")
+                        )
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Fair-value losses",
+                    "values":{
+                        "amount":_money(
+                            fv.get("loss_amount")
+                        )
+                    },
+                    "row_type":"normal",
+                },
+            ],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        },
+        {
+            "title":"Agricultural produce harvested",
+            "rows":[
+                {
+                    "label":
+                        "Fair value less costs to sell at harvest",
+                    "values":{
+                        "amount":_money(
+                            harvest.get(
+                                "inventory_value"
+                            )
+                        )
+                    },
+                    "row_type":"total",
+                },
+            ],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        },
+    ])
+
+    if (
+        float(grants.get("approved_amount") or 0)
+        or float(grants.get("recognised_amount") or 0)
+        or float(grants.get("received_amount") or 0)
+    ):
+        sections.append({
+            "title":"Government grants",
+            "rows":[
+                {
+                    "label":"Approved",
+                    "values":{
+                        "amount":_money(
+                            grants.get(
+                                "approved_amount"
+                            )
+                        )
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Recognised",
+                    "values":{
+                        "amount":_money(
+                            grants.get(
+                                "recognised_amount"
+                            )
+                        )
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Received",
+                    "values":{
+                        "amount":_money(
+                            grants.get(
+                                "received_amount"
+                            )
+                        )
+                    },
+                    "row_type":"normal",
+                },
+                {
+                    "label":"Outstanding",
+                    "values":{
+                        "amount":_money(
+                            grants.get(
+                                "outstanding_amount"
+                            )
+                        )
+                    },
+                    "row_type":"total",
+                },
+            ],
+            "amount_keys":["amount"],
+            "amount_labels":{
+                "amount":"Current period",
+            },
+        })
+
+    return{
+        "title":
+            note.get("note_title")
+            or "Agriculture",
+
+        "text":
+            note.get("content_text")
+            or note.get("system_draft")
+            or "",
+
+        "sections":sections,
+
+        "meta":{
+            **(d.get("meta") or {}),
+            "standard":"IAS 41",
+        },
+
+        "totals":{
+            "closing_carrying_amount":
+                _money(
+                    closing.get(
+                        "carrying_amount"
+                    )
+                ),
+        },
+
+        "disclosure":d,
+    }
+
+def build_ias41_disclosure_export_payload(
+    disclosure,
+):
+    d=disclosure or {}
+    note=build_ias41_note_export_payload(
+        {},
+        d,
+    )
+
+    return{
+        "meta":{
+            **(d.get("meta") or {}),
+            "statement":"ias41_disclosure",
+            "report_name":
+                "Agriculture Disclosure",
+            "standard":"IAS 41",
+        },
+
+        "title":
+            "IAS 41 Agriculture Disclosure",
+
+        "sections":
+            note.get("sections") or [],
+
+        "totals":
+            note.get("totals") or {},
+
+        "disclosure":d,
     }
 
 def build_payroll_leave_liability_note_payload(
