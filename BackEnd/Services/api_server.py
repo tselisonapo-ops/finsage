@@ -4215,6 +4215,23 @@ def update_company_profile(company_id: int):
             "error": str(e)
         }), 400
 
+from flask import send_from_directory
+
+@app.route("/api/companies/<int:company_id>/logo/file", methods=["GET"])
+def api_company_logo_file(company_id: int):
+    upload_dir = Path(current_app.root_path) / "static" / "uploads" / f"company_{company_id}"
+
+    for ext in ALLOWED_EXT:
+        path = upload_dir / f"logo{ext}"
+        if path.exists():
+            return send_from_directory(
+                str(upload_dir),
+                path.name,
+                conditional=True,
+                max_age=3600,
+            )
+
+    return jsonify({"error": "Logo not found"}), 404
 
 @app.route("/api/companies/<int:company_id>/logo", methods=["POST", "OPTIONS"])
 @require_auth
@@ -4237,15 +4254,21 @@ def api_upload_company_logo(company_id: int):
 
     # Save path (serving from /static/uploads)
     root = Path(current_app.root_path)
-    upload_dir = root / "static" / "uploads" / f"company_{company_id}"
-    upload_dir.mkdir(parents=True, exist_ok=True)
 
+    upload_dir = (
+        root
+        / "static"
+        / "uploads"
+        / f"company_{company_id}"
+    )
+
+    upload_dir.mkdir(parents=True, exist_ok=True)
     # always write as logo.png/jpg (simple)
     out_name = f"logo{ext}"
     out_path = upload_dir / out_name
     f.save(str(out_path))
 
-    logo_url = f"/static/uploads/company_{company_id}/{out_name}"
+    logo_url = f"/api/companies/{company_id}/logo/file"
 
     # store in DB
     db_service.execute_sql(
@@ -4269,7 +4292,6 @@ def api_upload_company_logo(company_id: int):
 
     return jsonify({"ok": True, "logo_url": logo_url}), 200
 
-
 @app.route("/api/companies/<int:company_id>/logo", methods=["DELETE", "OPTIONS"])
 @require_auth
 def api_delete_company_logo(company_id: int):
@@ -4279,6 +4301,20 @@ def api_delete_company_logo(company_id: int):
     user = getattr(g, "current_user", None) or {}
     if user.get("company_id") not in (None, company_id):
         return jsonify({"error": "Not authorised for this company"}), 403
+
+    upload_dir = Path(current_app.root_path) / "static" / "uploads" / f"company_{company_id}"
+
+    for ext in ALLOWED_EXT:
+        path = upload_dir / f"logo{ext}"
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                current_app.logger.exception(
+                    "Could not delete company logo company_id=%s path=%s",
+                    company_id,
+                    path,
+                )
 
     db_service.execute_sql(
         "UPDATE public.companies SET logo_url=NULL WHERE id=%s;",
@@ -4300,6 +4336,7 @@ def api_delete_company_logo(company_id: int):
     )
 
     return jsonify({"ok": True}), 200
+
 
 @app.route("/api/companies/<int:company_id>/period-range", methods=["GET"])
 @require_auth
