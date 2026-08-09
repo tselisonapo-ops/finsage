@@ -13,6 +13,12 @@
     mapping: null,
     groupCoa: [],
     precon: null,
+    adjustments: [],
+    intercompany: null,
+    eliminations: [],
+    adjustedTb: null,
+    acquisition: null,
+    equityMethod: null,
   };
 
   function companyId() {
@@ -250,6 +256,27 @@
 
       if (preconTab)
         preconTab.disabled = false;
+
+      const adjustmentsTab =
+        document.getElementById("grAdjustmentsTab");
+
+      if (adjustmentsTab)
+        adjustmentsTab.disabled = false;
+
+      const icTab = document.getElementById("grIntercompanyTab");
+      if (icTab) icTab.disabled = false;
+
+      const elimTab = document.getElementById("grEliminationsTab");
+      if (elimTab) elimTab.disabled = false;
+
+      const adjustedTab = document.getElementById("grAdjustedTbTab");
+      if (adjustedTab) adjustedTab.disabled = false;
+
+      const acqTab = document.getElementById("grAcquisitionTab");
+      if (acqTab) acqTab.disabled = false;
+
+      const eqTab = document.getElementById("grEquityMethodTab");
+      if (eqTab) eqTab.disabled = false;
 
       document
         .querySelector('[data-group-panel="runs"]')
@@ -617,21 +644,40 @@
     const precon =
       document.getElementById("groupPreconWorkspace");
 
-    document.querySelectorAll(".group-reporting-tab").forEach(btn => {
-      const active = btn.dataset.groupTab === tab;
+    const adjustments =
+      document.getElementById("groupAdjustmentsWorkspace");
 
-    document.querySelectorAll(".group-reporting-tab").forEach(btn=>{
-      const active=btn.dataset.groupTab===tab;
-      btn.classList.toggle("active",active);
-    });
-    });
+    const intercompany = 
+      document.getElementById("groupIntercompanyWorkspace");
+
+    const eliminations = 
+      document.getElementById("groupEliminationsWorkspace");
+
+    const adjustedTb = 
+      document.getElementById("groupAdjustedTbWorkspace");
+
+    const acquisition = 
+      document.getElementById("groupAcquisitionWorkspace");
+
+    const equityMethod = 
+      document.getElementById("groupEquityMethodWorkspace");
+
+      document.querySelectorAll(".group-reporting-tab").forEach(btn => {
+        const active = btn.dataset.groupTab === tab;
+
+        btn.classList.toggle("active", active);
+        btn.classList.toggle("border-b-2", active);
+        btn.classList.toggle("border-slate-900", active);
+        btn.classList.toggle("font-medium", active);
+        btn.classList.toggle("text-slate-500", !active);
+      });
 
     if (tab === "preconsolidation") {
       runs?.classList.add("hidden");
       runWorkspace?.classList.add("hidden");
       mapping?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
       precon?.classList.remove("hidden");
-
       loadPreconsolidation();
       return;
     }
@@ -639,14 +685,98 @@
     if (tab === "mapping") {
       runs?.classList.add("hidden");
       runWorkspace?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
       mapping?.classList.remove("hidden");
-
       loadGroupMapping();
+      return;
+    }
+
+    if (tab === "adjustments") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.remove("hidden");
+
+      loadGroupAdjustments();
+      return;
+    }
+
+    if (tab === "intercompany") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.remove("hidden");
+      loadIntercompany();
+      return;
+    }
+
+    if (tab === "eliminations") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.remove("hidden");
+      loadGroupEliminations();
+      return;
+    }
+
+    if (tab === "adjusted-tb") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.remove("hidden");
+      loadAdjustedTb();
+      return;
+    }
+
+    if (tab === "acquisition") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.remove("hidden");
+      loadAcquisitionWorkspace();
+      return;
+    }
+
+    if (tab === "equity-method") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.add("hidden");
+      equityMethod?.classList.remove("hidden");
+      loadEquityMethodWorkspace();
       return;
     }
 
     mapping?.classList.add("hidden");
     precon?.classList.add("hidden");
+    adjustments?.classList.add("hidden");
+    intercompany?.classList.add("hidden");
+    eliminations?.classList.add("hidden");
+    adjustedTb?.classList.add("hidden");
+    acquisition?.classList.add("hidden");
+    equityMethod?.classList.add("hidden");
+    
 
     if (state.selectedRun) {
       runs?.classList.add("hidden");
@@ -1566,6 +1696,1864 @@
     `).join("");
   }
 
+  async function loadGroupAdjustments() {
+    const cid = companyId();
+    const runId = state.selectedRun?.run?.id;
+
+    if (!cid || !runId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.adjustments(cid, runId),
+        { method: "GET" }
+      );
+
+      state.adjustments = res?.items || [];
+      renderGroupAdjustments();
+
+    } catch (e) {
+      console.error("[Consolidation] adjustments load failed:", e);
+      state.adjustments = [];
+      renderGroupAdjustments();
+    }
+  }
+
+  function renderGroupAdjustments() {
+    const rows = state.adjustments || [];
+    const host = document.getElementById("groupAdjustmentsList");
+
+    const set = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value);
+    };
+
+    set("grAdjTotal", rows.length);
+    set("grAdjDraft", rows.filter(r => r.status === "draft").length);
+    set("grAdjReviewed", rows.filter(r => r.status === "reviewed").length);
+    set("grAdjApproved", rows.filter(r => r.status === "approved").length);
+
+    if (!host) return;
+
+    if (!rows.length) {
+      host.innerHTML = `
+        <div class="px-4 py-10 text-center text-sm text-slate-500">
+          No consolidation adjustments yet.
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = rows.map(r => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-800">
+              ${esc(r.adjustment_no)}
+            </span>
+
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">
+              ${esc(r.status)}
+            </span>
+          </div>
+
+          <div class="mt-1 text-sm text-slate-700">
+            ${esc(r.description)}
+          </div>
+
+          <div class="mt-1 text-xs text-slate-500">
+            ${esc(r.adjustment_date)}
+            · ${esc((r.adjustment_type || "").replaceAll("_", " "))}
+            · ${Number(r.line_count || 0)} lines
+          </div>
+
+          <div class="mt-2 text-xs text-slate-600">
+            Debit ${money(r.total_debit)}
+            · Credit ${money(r.total_credit)}
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          ${r.status === "draft" ? `
+            <button
+              type="button"
+              data-gr-adj-review="${r.id}"
+              class="border rounded px-2 py-1 text-xs"
+            >
+              Review
+            </button>
+
+            <button
+              type="button"
+              data-gr-adj-delete="${r.id}"
+              class="border rounded px-2 py-1 text-xs"
+            >
+              Delete
+            </button>
+          ` : ""}
+
+          ${r.status === "reviewed" ? `
+            <button
+              type="button"
+              data-gr-adj-approve="${r.id}"
+              class="rounded bg-slate-900 text-white px-2 py-1 text-xs"
+            >
+              Approve
+            </button>
+
+            <button
+              type="button"
+              data-gr-adj-draft="${r.id}"
+              class="border rounded px-2 py-1 text-xs"
+            >
+              Return Draft
+            </button>
+          ` : ""}
+
+          ${r.status === "approved" ? `
+            <button
+              type="button"
+              data-gr-adj-draft="${r.id}"
+              class="border rounded px-2 py-1 text-xs"
+            >
+              Return Draft
+            </button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("");
+
+    bindGroupAdjustmentActions();
+  }
+
+  function adjustmentLineRow(line = {}) {
+    const entities = state.precon?.entities ||
+      state.selectedRun?.entities || [];
+
+    return `
+      <tr data-gr-adj-line>
+        <td class="px-2 py-2">
+          <select
+            name="run_entity_id"
+            class="w-full border rounded px-2 py-1.5 text-xs bg-white"
+          >
+            <option value="">Group level</option>
+
+            ${entities.map(e => `
+              <option value="${esc(e.run_entity_id || e.id)}">
+                ${esc(e.entity_name)}
+              </option>
+            `).join("")}
+          </select>
+        </td>
+
+        <td class="px-2 py-2">
+          <select
+            name="group_account_id"
+            class="w-full border rounded px-2 py-1.5 text-xs bg-white"
+            required
+          >
+            <option value="">Select account...</option>
+
+            ${(state.groupCoa || []).map(g => `
+              <option value="${esc(g.id)}">
+                ${esc(g.code)} · ${esc(g.name)}
+              </option>
+            `).join("")}
+          </select>
+        </td>
+
+        <td class="px-2 py-2">
+          <input
+            name="line_description"
+            class="w-full border rounded px-2 py-1.5 text-xs"
+          />
+        </td>
+
+        <td class="px-2 py-2">
+          <input
+            name="debit"
+            type="number"
+            min="0"
+            step="0.01"
+            class="w-full border rounded px-2 py-1.5 text-xs text-right"
+          />
+        </td>
+
+        <td class="px-2 py-2">
+          <input
+            name="credit"
+            type="number"
+            min="0"
+            step="0.01"
+            class="w-full border rounded px-2 py-1.5 text-xs text-right"
+          />
+        </td>
+
+        <td class="px-2 py-2">
+          <button
+            type="button"
+            data-gr-remove-adj-line
+            class="text-xs"
+          >
+            ×
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function openGroupAdjustmentModal() {
+    const modal = document.getElementById("groupAdjustmentModal");
+    const body = document.getElementById("groupAdjustmentLines");
+    const form = document.getElementById("groupAdjustmentForm");
+
+    if (!modal || !body || !form) return;
+
+    form.reset();
+
+    const run = state.selectedRun?.run || {};
+
+    if (form.elements.adjustment_date)
+      form.elements.adjustment_date.value =
+        run.reporting_date || "";
+
+    body.innerHTML =
+      adjustmentLineRow() +
+      adjustmentLineRow();
+
+    bindAdjustmentLineEvents();
+    recalcAdjustmentTotals();
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  function closeGroupAdjustmentModal() {
+    const modal =
+      document.getElementById("groupAdjustmentModal");
+
+    modal?.classList.add("hidden");
+    modal?.classList.remove("flex");
+  }
+
+  function recalcAdjustmentTotals() {
+    let debit = 0;
+    let credit = 0;
+
+    document
+      .querySelectorAll("#groupAdjustmentLines [data-gr-adj-line]")
+      .forEach(row => {
+        debit += Number(
+          row.querySelector('[name="debit"]')?.value || 0
+        );
+
+        credit += Number(
+          row.querySelector('[name="credit"]')?.value || 0
+        );
+      });
+
+    const diff = debit - credit;
+
+    const d = document.getElementById("grAdjDebitTotal");
+    const c = document.getElementById("grAdjCreditTotal");
+    const x = document.getElementById("grAdjDifference");
+
+    if (d) d.textContent = money(debit);
+    if (c) c.textContent = money(credit);
+    if (x) x.textContent = money(diff);
+  }
+
+  function bindAdjustmentLineEvents() {
+    document
+      .querySelectorAll("#groupAdjustmentLines [data-gr-adj-line]")
+      .forEach(row => {
+        row.querySelectorAll(
+          '[name="debit"], [name="credit"]'
+        ).forEach(input => {
+          input.oninput = recalcAdjustmentTotals;
+        });
+
+        row
+          .querySelector("[data-gr-remove-adj-line]")
+          ?.addEventListener("click", () => {
+            if (
+              document.querySelectorAll(
+                "#groupAdjustmentLines [data-gr-adj-line]"
+              ).length <= 2
+            ) {
+              alert("Adjustment requires at least two lines.");
+              return;
+            }
+
+            row.remove();
+            recalcAdjustmentTotals();
+          });
+      });
+  }
+
+  async function saveGroupAdjustment(form) {
+    const cid = companyId();
+    const runId = state.selectedRun?.run?.id;
+
+    if (!cid || !runId) return;
+
+    const lines = Array
+      .from(
+        document.querySelectorAll(
+          "#groupAdjustmentLines [data-gr-adj-line]"
+        )
+      )
+      .map(row => ({
+        run_entity_id:
+          Number(
+            row.querySelector('[name="run_entity_id"]')?.value || 0
+          ) || null,
+
+        group_account_id:
+          Number(
+            row.querySelector('[name="group_account_id"]')?.value || 0
+          ),
+
+        description:
+          String(
+            row.querySelector('[name="line_description"]')?.value || ""
+          ).trim() || null,
+
+        debit:
+          Number(
+            row.querySelector('[name="debit"]')?.value || 0
+          ),
+
+        credit:
+          Number(
+            row.querySelector('[name="credit"]')?.value || 0
+          ),
+      }));
+
+    const fd = new FormData(form);
+
+    const payload = {
+      adjustment_date:
+        String(fd.get("adjustment_date") || "").trim(),
+
+      adjustment_type:
+        String(fd.get("adjustment_type") || "").trim(),
+
+      reference:
+        String(fd.get("reference") || "").trim() || null,
+
+      description:
+        String(fd.get("description") || "").trim(),
+
+      lines,
+    };
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.adjustments(cid, runId),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      closeGroupAdjustmentModal();
+
+      alert(
+        res?.message ||
+        "Consolidation adjustment created."
+      );
+
+      await loadGroupAdjustments();
+
+    } catch (e) {
+      console.error(
+        "[Consolidation] adjustment save failed:",
+        e
+      );
+
+      alert(
+        e?.message ||
+        "Failed to save consolidation adjustment."
+      );
+    }
+  }
+
+  async function setAdjustmentStatus(
+    adjustmentId,
+    status
+  ) {
+    const cid = companyId();
+    const runId = state.selectedRun?.run?.id;
+
+    if (!cid || !runId || !adjustmentId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.adjustmentStatus(
+          cid,
+          runId,
+          adjustmentId
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({ status }),
+        }
+      );
+
+      alert(res?.message || "Adjustment updated.");
+      await loadGroupAdjustments();
+
+    } catch (e) {
+      console.error(
+        "[Consolidation] adjustment status failed:",
+        e
+      );
+
+      alert(e?.message || "Failed to update adjustment.");
+    }
+  }
+
+  async function deleteAdjustment(adjustmentId) {
+    const cid = companyId();
+    const runId = state.selectedRun?.run?.id;
+
+    if (!confirm("Delete this draft adjustment?"))
+      return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.adjustment(
+          cid,
+          runId,
+          adjustmentId
+        ),
+        { method: "DELETE" }
+      );
+
+      alert(res?.message || "Adjustment deleted.");
+      await loadGroupAdjustments();
+
+    } catch (e) {
+      console.error("[Consolidation] delete adjustment failed:", e);
+      alert(e?.message || "Failed to delete adjustment.");
+    }
+  }
+
+  function bindGroupAdjustmentActions() {
+    document.querySelectorAll("[data-gr-adj-review]").forEach(btn => {
+      btn.onclick = () =>
+        setAdjustmentStatus(
+          Number(btn.dataset.grAdjReview),
+          "reviewed"
+        );
+    });
+
+    document.querySelectorAll("[data-gr-adj-approve]").forEach(btn => {
+      btn.onclick = () =>
+        setAdjustmentStatus(
+          Number(btn.dataset.grAdjApprove),
+          "approved"
+        );
+    });
+
+    document.querySelectorAll("[data-gr-adj-draft]").forEach(btn => {
+      btn.onclick = () =>
+        setAdjustmentStatus(
+          Number(btn.dataset.grAdjDraft),
+          "draft"
+        );
+    });
+
+    document.querySelectorAll("[data-gr-adj-delete]").forEach(btn => {
+      btn.onclick = () =>
+        deleteAdjustment(
+          Number(btn.dataset.grAdjDelete)
+        );
+    });
+  }
+
+  async function loadIntercompany() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.intercompany = await apiFetch(
+        ENDPOINTS.consolidation.intercompany(cid, runId),
+        { method: "GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] IC load failed:", e);
+      state.intercompany = { entities: [], accounts: [], balances: [], matches: [], summary: {} };
+    }
+    renderIntercompany();
+  }
+
+  function renderIntercompany() {
+    const d = state.intercompany || {}, s = d.summary || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v || 0); };
+
+    set("grIcBalances", s.balances);
+    set("grIcMatched", s.matched);
+    set("grIcUnmatched", s.unmatched);
+    set("grIcVariance", s.variance);
+
+    const body = document.getElementById("grIcBalancesBody");
+    if (body) body.innerHTML = (d.balances || []).length ? d.balances.map(b => `
+      <tr class="border-t">
+        <td class="px-4 py-3">${esc(b.entity_name)}</td>
+        <td class="px-4 py-3">${esc(b.counterparty_name)}</td>
+        <td class="px-4 py-3"><div class="font-medium">${esc(b.group_account_code)}</div><div class="text-xs text-slate-500">${esc(b.group_account_name)}</div></td>
+        <td class="px-4 py-3">${esc((b.nature || "").replaceAll("_", " "))}</td>
+        <td class="px-4 py-3 text-right tabular-nums">${money(b.amount)}</td>
+        <td class="px-4 py-3"><span class="rounded bg-slate-100 px-2 py-1 text-[10px] uppercase">${esc(b.status)}</span></td>
+        <td class="px-4 py-3 text-right"><button type="button" data-gr-ic-delete="${b.id}" class="border rounded px-2 py-1 text-xs">Remove</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No intercompany balances identified yet.</td></tr>`;
+
+    const matches = document.getElementById("grIcMatchesList");
+    if (matches) matches.innerHTML = (d.matches || []).length ? d.matches.map(m => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="text-sm font-semibold">${esc(m.left_entity_name)} ↔ ${esc(m.right_entity_name)}</div>
+          <div class="mt-1 text-xs text-slate-500">${esc(m.left_account_code)} ${esc(m.left_account_name)} ↔ ${esc(m.right_account_code)} ${esc(m.right_account_name)}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-sm font-medium">${money(m.matched_amount)}</div>
+          <div class="text-xs ${Math.abs(Number(m.variance || 0)) > 0.01 ? "text-amber-600" : "text-slate-500"}">Variance ${money(m.variance)}</div>
+        </div>
+      </div>
+    `).join("") : `<div class="px-4 py-8 text-center text-sm text-slate-500">No matches yet.</div>`;
+
+    bindIntercompanyRows();
+  }
+
+  function openIcModal() {
+    const d = state.intercompany || {}, modal = document.getElementById("groupIcModal");
+    const entity = document.getElementById("grIcEntity"), cp = document.getElementById("grIcCounterparty");
+
+    const opts = (d.entities || []).map(e =>
+      `<option value="${esc(e.run_entity_id)}">${esc(e.entity_name)}</option>`
+    ).join("");
+
+    if (entity) entity.innerHTML = `<option value="">Select...</option>${opts}`;
+    if (cp) cp.innerHTML = `<option value="">Select...</option>${opts}`;
+    refreshIcAccounts();
+
+    modal?.classList.remove("hidden");
+    modal?.classList.add("flex");
+  }
+
+  function closeIcModal() {
+    const modal = document.getElementById("groupIcModal");
+    modal?.classList.add("hidden");
+    modal?.classList.remove("flex");
+    document.getElementById("groupIcForm")?.reset();
+  }
+
+  function refreshIcAccounts() {
+    const runEntityId = Number(document.getElementById("grIcEntity")?.value || 0);
+    const select = document.getElementById("grIcAccount");
+    if (!select) return;
+
+    const accounts = (state.intercompany?.accounts || []).filter(a =>
+      !runEntityId || Number(a.run_entity_id) === runEntityId
+    );
+
+    select.innerHTML = `<option value="">Select account...</option>${accounts.map(a =>
+      `<option value="${esc(a.group_account_id)}">${esc(a.code)} · ${esc(a.name)} · ${money(a.balance)}</option>`
+    ).join("")}`;
+  }
+
+  async function saveIcBalance(form) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    const fd = new FormData(form);
+    const runEntityId = Number(fd.get("run_entity_id") || 0);
+    const counterpartyRunEntityId = Number(fd.get("counterparty_run_entity_id") || 0);
+
+    const payload = {
+      run_entity_id: runEntityId,
+      counterparty_run_entity_id: counterpartyRunEntityId,
+      group_account_id: Number(fd.get("group_account_id") || 0),
+      nature: String(fd.get("nature") || "").trim(),
+      amount: Number(fd.get("amount") || 0),
+      reference: String(fd.get("reference") || "").trim() || null,
+      notes: String(fd.get("notes") || "").trim() || null,
+    };
+
+    try {
+      await apiFetch(ENDPOINTS.consolidation.intercompanyBalances(cid, runId), {
+        method: "POST", body: JSON.stringify(payload),
+      });
+
+      if (form.elements.save_rule.checked) {
+        const entity = (state.intercompany?.entities || []).find(e => Number(e.run_entity_id) === runEntityId);
+        const cp = (state.intercompany?.entities || []).find(e => Number(e.run_entity_id) === counterpartyRunEntityId);
+
+        await apiFetch(ENDPOINTS.consolidation.intercompanyRules(cid), {
+          method: "POST",
+          body: JSON.stringify({
+            entity_company_id: entity?.entity_company_id,
+            counterparty_company_id: cp?.entity_company_id,
+            group_account_id: payload.group_account_id,
+            nature: payload.nature,
+            use_full_balance: true,
+          }),
+        });
+      }
+
+      closeIcModal();
+      await loadIntercompany();
+    } catch (e) {
+      console.error("[Consolidation] IC save failed:", e);
+      alert(e?.message || "Failed to save intercompany balance.");
+    }
+  }
+
+  async function applyIcRules() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    try {
+      const res = await apiFetch(ENDPOINTS.consolidation.applyIntercompanyRules(cid, runId), {
+        method: "POST", body: JSON.stringify({}),
+      });
+      alert(res?.message || "Intercompany rules applied.");
+      await loadIntercompany();
+    } catch (e) { alert(e?.message || "Failed to apply intercompany rules."); }
+  }
+
+  async function autoMatchIc() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    try {
+      const res = await apiFetch(ENDPOINTS.consolidation.autoMatchIntercompany(cid, runId), {
+        method: "POST", body: JSON.stringify({}),
+      });
+      alert(res?.message || "Intercompany balances matched.");
+      await loadIntercompany();
+    } catch (e) { alert(e?.message || "Failed to match intercompany balances."); }
+  }
+
+  async function deleteIcBalance(id) {
+    if (!confirm("Remove this intercompany declaration?")) return;
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      await apiFetch(ENDPOINTS.consolidation.intercompanyBalance(cid, runId, id), { method: "DELETE" });
+      await loadIntercompany();
+    } catch (e) { alert(e?.message || "Failed to remove intercompany balance."); }
+  }
+
+  function bindIntercompanyRows() {
+    document.querySelectorAll("[data-gr-ic-delete]").forEach(btn =>
+      btn.onclick = () => deleteIcBalance(Number(btn.dataset.grIcDelete))
+    );
+  }
+
+  function renderGroupEliminations() {
+    const rows = state.eliminations || [];
+    const host = document.getElementById("grEliminationsList");
+    const set = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(v || 0);
+    };
+
+    set("grElimTotal", rows.filter(r => r.status !== "void").length);
+    set("grElimDraft", rows.filter(r => r.status === "draft").length);
+    set("grElimReviewed", rows.filter(r => r.status === "reviewed").length);
+    set("grElimApproved", rows.filter(r => r.status === "approved").length);
+
+    if (!host) return;
+
+    const active = rows.filter(r => r.status !== "void");
+
+    if (!active.length) {
+      host.innerHTML = `<div class="px-4 py-10 text-center text-sm text-slate-500">No elimination journals generated yet.</div>`;
+      return;
+    }
+
+    host.innerHTML = active.map(r => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-800">${esc(r.elimination_no)}</span>
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">${esc(r.status)}</span>
+          </div>
+
+          <div class="mt-1 text-sm text-slate-700">${esc(r.description)}</div>
+
+          <div class="mt-1 text-xs text-slate-500">
+            ${esc((r.elimination_type || "").replaceAll("_", " "))}
+            · ${Number(r.line_count || 0)} lines
+            ${r.source_match_id ? ` · Match #${esc(r.source_match_id)}` : ""}
+          </div>
+
+          <div class="mt-2 text-xs text-slate-600">
+            Debit ${money(r.total_debit)} · Credit ${money(r.total_credit)}
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" data-gr-elim-view="${r.id}" class="border rounded px-2 py-1 text-xs">View</button>
+
+          ${r.status === "draft" ? `
+            <button type="button" data-gr-elim-review="${r.id}" class="border rounded px-2 py-1 text-xs">Review</button>
+            <button type="button" data-gr-elim-void="${r.id}" class="border rounded px-2 py-1 text-xs">Void</button>
+          ` : ""}
+
+          ${r.status === "reviewed" ? `
+            <button type="button" data-gr-elim-approve="${r.id}" class="rounded bg-slate-900 text-white px-2 py-1 text-xs">Approve</button>
+            <button type="button" data-gr-elim-draft="${r.id}" class="border rounded px-2 py-1 text-xs">Return Draft</button>
+          ` : ""}
+
+          ${r.status === "approved" ? `
+            <button type="button" data-gr-elim-draft="${r.id}" class="border rounded px-2 py-1 text-xs">Return Draft</button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("");
+
+    bindEliminationActions();
+  }
+
+  async function generateEliminations() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.generateEliminations(cid, runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      const manual = res?.data?.manual_required || [];
+      const warning = document.getElementById("grEliminationWarning");
+
+      if (warning) {
+        if (manual.length) {
+          warning.classList.remove("hidden");
+          warning.innerHTML = `
+            <div class="text-sm font-semibold text-slate-800">
+              ${manual.length} match${manual.length === 1 ? "" : "es"} require manual treatment
+            </div>
+            <div class="mt-1 text-xs text-slate-500">
+              FinSage did not auto-generate entries where the accounting direction could not be determined safely.
+            </div>
+          `;
+        } else {
+          warning.classList.add("hidden");
+          warning.innerHTML = "";
+        }
+      }
+
+      alert(res?.message || "Eliminations generated.");
+      await loadGroupEliminations();
+    } catch (e) {
+      console.error("[Consolidation] elimination generation failed:", e);
+      alert(e?.message || "Failed to generate eliminations.");
+    }
+  }
+
+  async function viewElimination(id) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId || !id) return;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.elimination(cid, runId, id),
+        { method: "GET" }
+      );
+
+      const journal = data?.journal || {}, lines = data?.lines || [];
+      const modal = document.getElementById("groupEliminationModal");
+
+      const title = document.getElementById("grElimModalTitle");
+      const meta = document.getElementById("grElimModalMeta");
+      const body = document.getElementById("grElimModalBody");
+
+      if (title) title.textContent = `${journal.elimination_no || ""} · ${journal.description || ""}`;
+      if (meta) meta.textContent = `${statusLabel(journal.status)} · Debit ${money(journal.total_debit)} · Credit ${money(journal.total_credit)}`;
+
+      if (body) body.innerHTML = lines.map(l => `
+        <tr class="border-t">
+          <td class="px-4 py-3">${esc(l.entity_name || "Group")}</td>
+          <td class="px-4 py-3"><div class="font-medium">${esc(l.group_account_code)}</div><div class="text-xs text-slate-500">${esc(l.group_account_name)}</div></td>
+          <td class="px-4 py-3">${esc(l.description || "")}</td>
+          <td class="px-4 py-3 text-right tabular-nums">${money(l.debit)}</td>
+          <td class="px-4 py-3 text-right tabular-nums">${money(l.credit)}</td>
+        </tr>
+      `).join("");
+
+      modal?.classList.remove("hidden");
+      modal?.classList.add("flex");
+    } catch (e) {
+      alert(e?.message || "Failed to load elimination.");
+    }
+  }
+
+  function closeEliminationModal() {
+    const modal = document.getElementById("groupEliminationModal");
+    modal?.classList.add("hidden");
+    modal?.classList.remove("flex");
+  }
+
+  async function setEliminationStatus(id, status) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.eliminationStatus(cid, runId, id),
+        { method: "POST", body: JSON.stringify({ status }) }
+      );
+      alert(res?.message || "Elimination updated.");
+      await loadGroupEliminations();
+    } catch (e) {
+      alert(e?.message || "Failed to update elimination.");
+    }
+  }
+
+  async function voidElimination(id) {
+    if (!confirm("Void this draft elimination?")) return;
+
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.elimination(cid, runId, id),
+        { method: "DELETE" }
+      );
+      alert(res?.message || "Elimination voided.");
+      await loadGroupEliminations();
+    } catch (e) {
+      alert(e?.message || "Failed to void elimination.");
+    }
+  }
+
+  function bindEliminationActions() {
+    document.querySelectorAll("[data-gr-elim-view]").forEach(btn =>
+      btn.onclick = () => viewElimination(Number(btn.dataset.grElimView))
+    );
+
+    document.querySelectorAll("[data-gr-elim-review]").forEach(btn =>
+      btn.onclick = () => setEliminationStatus(Number(btn.dataset.grElimReview), "reviewed")
+    );
+
+    document.querySelectorAll("[data-gr-elim-approve]").forEach(btn =>
+      btn.onclick = () => setEliminationStatus(Number(btn.dataset.grElimApprove), "approved")
+    );
+
+    document.querySelectorAll("[data-gr-elim-draft]").forEach(btn =>
+      btn.onclick = () => setEliminationStatus(Number(btn.dataset.grElimDraft), "draft")
+    );
+
+    document.querySelectorAll("[data-gr-elim-void]").forEach(btn =>
+      btn.onclick = () => voidElimination(Number(btn.dataset.grElimVoid))
+    );
+  }
+
+  async function validateAdjustedTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return null;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.validateAdjustedTb(cid, runId),
+        { method: "GET" }
+      );
+      renderAdjustedTbValidation(data);
+      return data;
+    } catch (e) {
+      console.error("[Consolidation] adjusted TB validation failed:", e);
+      alert(e?.message || "Adjusted TB validation failed.");
+      return null;
+    }
+  }
+
+  function renderAdjustedTbValidation(data) {
+    const host = document.getElementById("grAdjustedTbValidation");
+    if (!host) return;
+
+    host.classList.remove("hidden");
+
+    if (data?.ready) {
+      host.innerHTML = `
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-slate-800">Ready to generate</div>
+            <div class="mt-1 text-xs text-slate-500">Pre-consolidation TB is ready and all active adjustments and eliminations are approved.</div>
+          </div>
+          <span class="rounded bg-emerald-50 text-emerald-700 px-2 py-1 text-xs">Ready</span>
+        </div>
+      `;
+      return;
+    }
+
+    const issues = data?.issues || [];
+
+    host.innerHTML = `
+      <div class="text-sm font-semibold text-slate-800">${issues.length} issue${issues.length === 1 ? "" : "s"} must be resolved</div>
+      <div class="mt-3 space-y-2">
+        ${issues.map(i => `
+          <div class="rounded bg-slate-50 px-3 py-2">
+            <div class="text-xs font-medium text-slate-700">${esc((i.code || "").replaceAll("_", " "))}</div>
+            <div class="text-xs text-slate-500">${esc(i.message || "")}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  async function generateAdjustedTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    const validation = await validateAdjustedTb();
+    if (!validation?.ready) {
+      alert("Resolve outstanding consolidation items first.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.generateAdjustedTb(cid, runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      state.adjustedTb = res?.data || null;
+      alert(res?.message || "Adjusted Group Trial Balance generated.");
+      renderAdjustedTb();
+      await loadRuns();
+    } catch (e) {
+      console.error("[Consolidation] adjusted TB generation failed:", e);
+      alert(e?.message || "Failed to generate Adjusted Group Trial Balance.");
+    }
+  }
+
+  async function loadAdjustedTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.adjustedTb = await apiFetch(
+        ENDPOINTS.consolidation.adjustedTb(cid, runId),
+        { method: "GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] adjusted TB load failed:", e);
+      state.adjustedTb = { header: null, rows: [], summary: {} };
+    }
+
+    renderAdjustedTb();
+  }
+  function renderAdjustedTb() {
+    const data = state.adjustedTb || {}, s = data.summary || {};
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v); };
+
+    set("grAdjustedAccounts", s.account_count || 0);
+    set("grAdjustedDebit", money(s.final_debit));
+    set("grAdjustedCredit", money(s.final_credit));
+    set("grAdjustedDifference", money(s.difference));
+
+    const run = state.selectedRun?.run || {};
+    const meta = document.getElementById("grAdjustedTbMeta");
+    if (meta) meta.textContent = `${run.run_name || "Consolidation run"} · ${run.reporting_date || ""}`;
+
+    renderAdjustedTbRows();
+  }
+  function renderAdjustedTbRows() {
+    const rows = state.adjustedTb?.rows || [];
+    const body = document.getElementById("grAdjustedTbBody");
+    if (!body) return;
+
+    if (!state.adjustedTb?.header) {
+      body.innerHTML = `<tr><td colspan="5" class="px-4 py-10 text-center text-slate-500">Adjusted Group Trial Balance has not been generated yet.</td></tr>`;
+      return;
+    }
+
+    const q = String(document.getElementById("grAdjustedTbSearch")?.value || "").trim().toLowerCase();
+    const filtered = !q ? rows : rows.filter(r =>
+      String(r.code || "").toLowerCase().includes(q) ||
+      String(r.name || "").toLowerCase().includes(q) ||
+      String(r.category || "").toLowerCase().includes(q)
+    );
+
+    body.innerHTML = filtered.length ? filtered.map(r => `
+      <tr class="border-t cursor-pointer hover:bg-slate-50" data-gr-adjusted-account="${r.group_account_id}">
+        <td class="px-4 py-3">
+          <div class="font-medium text-slate-800">${esc(r.code)} · ${esc(r.name)}</div>
+          <div class="text-[11px] text-slate-500">${esc(r.section || "")}${r.category ? ` · ${esc(r.category)}` : ""}</div>
+        </td>
+        <td class="px-4 py-3 text-right tabular-nums">${money(r.precon_balance)}</td>
+        <td class="px-4 py-3 text-right tabular-nums">${money(r.adjustment_balance)}</td>
+        <td class="px-4 py-3 text-right tabular-nums">${money(r.elimination_balance)}</td>
+        <td class="px-4 py-3 text-right tabular-nums font-semibold">${money(r.final_balance)}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No accounts found.</td></tr>`;
+
+    bindAdjustedTbRows();
+  }
+
+  function bindAdjustedTbRows() {
+    document.querySelectorAll("[data-gr-adjusted-account]").forEach(row =>
+      row.onclick = () => viewAdjustedTbAccount(Number(row.dataset.grAdjustedAccount))
+    );
+  }
+  async function viewAdjustedTbAccount(accountId) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId || !accountId) return;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.adjustedTbAccount(cid, runId, accountId),
+        { method: "GET" }
+      );
+
+      const a = data?.account || {}, entities = data?.entities || [];
+      const adjustments = data?.adjustments || [], eliminations = data?.eliminations || [];
+
+      const title = document.getElementById("grAdjustedDetailTitle");
+      const meta = document.getElementById("grAdjustedDetailMeta");
+      const body = document.getElementById("grAdjustedDetailBody");
+
+      if (title) title.textContent = `${a.code || ""} · ${a.name || ""}`;
+      if (meta) meta.textContent = `${a.section || ""}${a.category ? ` · ${a.category}` : ""}`;
+
+      if (body) body.innerHTML = `
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div class="rounded-xl border p-4">
+            <h4 class="text-sm font-semibold text-slate-800">Entity balances</h4>
+            <div class="mt-3 space-y-2">
+              ${entities.length ? entities.map(e => `
+                <div class="flex justify-between gap-3 text-xs">
+                  <span class="text-slate-600">${esc(e.entity_name)}</span>
+                  <span class="font-medium tabular-nums">${money(e.balance)}</span>
+                </div>
+              `).join("") : `<div class="text-xs text-slate-500">None</div>`}
+            </div>
+          </div>
+
+          <div class="rounded-xl border p-4">
+            <h4 class="text-sm font-semibold text-slate-800">Approved adjustments</h4>
+            <div class="mt-3 space-y-2">
+              ${adjustments.length ? adjustments.map(j => `
+                <div class="rounded bg-slate-50 p-2">
+                  <div class="text-xs font-medium">${esc(j.adjustment_no)}</div>
+                  <div class="text-[11px] text-slate-500">${esc(j.journal_description || "")}</div>
+                  <div class="mt-1 text-xs">Dr ${money(j.debit)} · Cr ${money(j.credit)}</div>
+                </div>
+              `).join("") : `<div class="text-xs text-slate-500">None</div>`}
+            </div>
+          </div>
+
+          <div class="rounded-xl border p-4">
+            <h4 class="text-sm font-semibold text-slate-800">Approved eliminations</h4>
+            <div class="mt-3 space-y-2">
+              ${eliminations.length ? eliminations.map(j => `
+                <div class="rounded bg-slate-50 p-2">
+                  <div class="text-xs font-medium">${esc(j.elimination_no)}</div>
+                  <div class="text-[11px] text-slate-500">${esc(j.journal_description || "")}</div>
+                  <div class="mt-1 text-xs">Dr ${money(j.debit)} · Cr ${money(j.credit)}</div>
+                </div>
+              `).join("") : `<div class="text-xs text-slate-500">None</div>`}
+            </div>
+          </div>
+        </div>
+      `;
+
+      const modal = document.getElementById("groupAdjustedTbModal");
+      modal?.classList.remove("hidden");
+      modal?.classList.add("flex");
+    } catch (e) {
+      alert(e?.message || "Failed to load account detail.");
+    }
+  }
+  function closeAdjustedTbModal() {
+    const modal = document.getElementById("groupAdjustedTbModal");
+    modal?.classList.add("hidden");
+    modal?.classList.remove("flex");
+  }
+
+  async function loadAcquisitionWorkspace() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.acquisition = await apiFetch(
+        ENDPOINTS.consolidation.acquisition(cid, runId),
+        { method: "GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] acquisition load failed:", e);
+      state.acquisition = { items: [], summary: {} };
+    }
+
+    renderAcquisitionWorkspace();
+  }
+  function renderAcquisitionWorkspace() {
+    const d = state.acquisition || {}, s = d.summary || {}, rows = d.items || [];
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = String(v); };
+
+    set("grAcqTotal", s.total || 0);
+    set("grAcqApproved", s.approved || 0);
+    set("grAcqGoodwill", money(s.goodwill));
+    set("grAcqNci", money(s.closing_nci));
+
+    const host = document.getElementById("grAcquisitionList");
+    if (!host) return;
+
+    if (!rows.length) {
+      host.innerHTML = `<div class="px-4 py-10 text-center text-sm text-slate-500">No acquisition workpapers prepared yet.</div>`;
+      return;
+    }
+
+    host.innerHTML = rows.map(w => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-800">${esc(w.entity_name)}</span>
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">${esc(w.status)}</span>
+          </div>
+
+          <div class="mt-1 text-xs text-slate-500">
+            Acquired ${esc(w.acquisition_date)} · Ownership ${Number(w.ownership_percent || 0).toFixed(2)}%
+            · NCI ${Number(w.nci_percent || 0).toFixed(2)}%
+          </div>
+
+          <div class="mt-2 flex gap-4 text-xs text-slate-600">
+            <span>Goodwill <strong>${money(w.goodwill)}</strong></span>
+            <span>Post-acq <strong>${money(w.post_acquisition_movement)}</strong></span>
+            <span>Closing NCI <strong>${money(w.closing_nci)}</strong></span>
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" data-gr-acq-open="${w.id}" class="border rounded px-2 py-1 text-xs">Open</button>
+
+          ${w.status === "calculated" ? `
+            <button type="button" data-gr-acq-review="${w.id}" class="border rounded px-2 py-1 text-xs">Review</button>
+          ` : ""}
+
+          ${w.status === "reviewed" ? `
+            <button type="button" data-gr-acq-approve="${w.id}" class="rounded bg-slate-900 text-white px-2 py-1 text-xs">Approve</button>
+            <button type="button" data-gr-acq-calc="${w.id}" class="border rounded px-2 py-1 text-xs">Return</button>
+          ` : ""}
+
+          ${w.status === "approved" ? `
+            <button type="button" data-gr-acq-calc="${w.id}" class="border rounded px-2 py-1 text-xs">Return</button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("");
+
+    bindAcquisitionActions();
+  }
+
+  async function prepareAcquisitionWorkpapers() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.prepareAcquisition(cid, runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      alert(res?.message || "Acquisition workpapers prepared.");
+      await loadAcquisitionWorkspace();
+    } catch (e) {
+      console.error("[Consolidation] acquisition prepare failed:", e);
+      alert(e?.message || "Failed to prepare acquisition workpapers.");
+    }
+  }
+
+  async function openAcquisitionWorkpaper(id) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId || !id) return;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.acquisitionWorkpaper(cid, runId, id),
+        { method: "GET" }
+      );
+
+      renderAcquisitionModal(data);
+    } catch (e) {
+      alert(e?.message || "Failed to load acquisition workpaper.");
+    }
+  }
+
+
+  function renderAcquisitionModal(data) {
+    const w = data?.workpaper || {};
+    const consideration = data?.consideration || [];
+    const netAssets = data?.net_assets || [];
+
+    const title = document.getElementById("grAcqModalTitle");
+    const meta = document.getElementById("grAcqModalMeta");
+    const body = document.getElementById("grAcqModalBody");
+
+    if (title) title.textContent = `${w.entity_name || ""} Acquisition Workpaper`;
+    if (meta) meta.textContent = `${w.acquisition_date || ""} · ${Number(w.ownership_percent || 0).toFixed(2)}% ownership`;
+
+    if (!body) return;
+
+    body.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="rounded border p-3">
+          <div class="text-xs text-slate-500">Consideration</div>
+          <div class="mt-1 font-semibold">${money(w.consideration_transferred)}</div>
+        </div>
+        <div class="rounded border p-3">
+          <div class="text-xs text-slate-500">Identifiable Net Assets</div>
+          <div class="mt-1 font-semibold">${money(w.identifiable_net_assets_fv)}</div>
+        </div>
+        <div class="rounded border p-3">
+          <div class="text-xs text-slate-500">Goodwill</div>
+          <div class="mt-1 font-semibold">${money(w.goodwill)}</div>
+        </div>
+        <div class="rounded border p-3">
+          <div class="text-xs text-slate-500">Closing NCI</div>
+          <div class="mt-1 font-semibold">${money(w.closing_nci)}</div>
+        </div>
+      </div>
+
+      <form id="grAcqWorkpaperForm" class="mt-5">
+        <input type="hidden" name="workpaper_id" value="${esc(w.id)}" />
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">NCI measurement</label>
+            <select name="nci_measurement_method" class="w-full border rounded px-3 py-2 text-sm">
+              <option value="proportionate" ${w.nci_measurement_method === "proportionate" ? "selected" : ""}>Proportionate share</option>
+              <option value="fair_value" ${w.nci_measurement_method === "fair_value" ? "selected" : ""}>Fair value / full goodwill</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Previously held interest FV</label>
+            <input name="previously_held_interest_fv" type="number" step="0.01"
+              value="${esc(w.previously_held_interest_fv || 0)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">NCI fair value</label>
+            <input name="nci_fair_value" type="number" step="0.01"
+              value="${esc(w.nci_fair_value || 0)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold">Consideration</h4>
+            <button type="button" id="btnAddAcqConsideration" class="border rounded px-2 py-1 text-xs">+ Component</button>
+          </div>
+
+          <div id="grAcqConsiderationLines" class="mt-2 space-y-2"></div>
+        </div>
+
+        <div class="mt-5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-semibold">Acquisition-date identifiable net assets</h4>
+            <button type="button" id="btnAddAcqNetAsset" class="border rounded px-2 py-1 text-xs">+ Line</button>
+          </div>
+
+          <div id="grAcqNetAssetLines" class="mt-2 space-y-2"></div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="submit" class="border rounded px-4 py-2 text-sm">Save</button>
+          <button type="button" id="btnCalculateAcquisition" class="rounded bg-slate-900 text-white px-4 py-2 text-sm">Calculate</button>
+        </div>
+      </form>
+    `;
+
+    renderAcquisitionInputLines(consideration, netAssets);
+    bindAcquisitionModal(w.id);
+
+    const modal = document.getElementById("groupAcquisitionModal");
+    modal?.classList.remove("hidden");
+    modal?.classList.add("flex");
+  }
+
+  function renderAcquisitionInputLines(consideration = [], netAssets = []) {
+    const c = document.getElementById("grAcqConsiderationLines");
+    const n = document.getElementById("grAcqNetAssetLines");
+
+    if (c) c.innerHTML = (consideration.length ? consideration : [{}]).map(x => `
+      <div class="grid grid-cols-1 md:grid-cols-[160px_1fr_180px_40px] gap-2" data-acq-consideration>
+        <select name="component_type" class="border rounded px-2 py-1.5 text-xs">
+          ${["cash","shares","deferred","contingent","other"].map(v =>
+            `<option value="${v}" ${x.component_type === v ? "selected" : ""}>${v.replaceAll("_"," ")}</option>`
+          ).join("")}
+        </select>
+        <input name="description" value="${esc(x.description || "")}" placeholder="Description" class="border rounded px-2 py-1.5 text-xs" />
+        <input name="amount" type="number" step="0.01" value="${esc(x.amount || "")}" placeholder="Amount" class="border rounded px-2 py-1.5 text-xs text-right" />
+        <button type="button" data-acq-remove class="text-xs">×</button>
+      </div>
+    `).join("");
+
+    if (n) n.innerHTML = (netAssets.length ? netAssets : [{}]).map(x => `
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_150px_150px_150px_40px] gap-2" data-acq-net-asset>
+        <input name="description" value="${esc(x.description || "")}" placeholder="Net asset / FV adjustment" class="border rounded px-2 py-1.5 text-xs" />
+        <input name="book_value" type="number" step="0.01" value="${esc(x.book_value || "")}" placeholder="Book value" class="border rounded px-2 py-1.5 text-xs text-right" />
+        <input name="fair_value_adjustment" type="number" step="0.01" value="${esc(x.fair_value_adjustment || "")}" placeholder="FV adjustment" class="border rounded px-2 py-1.5 text-xs text-right" />
+        <input name="deferred_tax_adjustment" type="number" step="0.01" value="${esc(x.deferred_tax_adjustment || "")}" placeholder="Deferred tax" class="border rounded px-2 py-1.5 text-xs text-right" />
+        <button type="button" data-acq-remove class="text-xs">×</button>
+      </div>
+    `).join("");
+  }
+
+  function collectAcquisitionPayload(form) {
+    return {
+      nci_measurement_method: form.elements.nci_measurement_method.value,
+      previously_held_interest_fv: Number(form.elements.previously_held_interest_fv.value || 0),
+      nci_fair_value: Number(form.elements.nci_fair_value.value || 0),
+
+      consideration: Array.from(document.querySelectorAll("[data-acq-consideration]")).map(row => ({
+        component_type: row.querySelector('[name="component_type"]')?.value,
+        description: row.querySelector('[name="description"]')?.value?.trim(),
+        amount: Number(row.querySelector('[name="amount"]')?.value || 0),
+      })),
+
+      net_assets: Array.from(document.querySelectorAll("[data-acq-net-asset]")).map(row => ({
+        description: row.querySelector('[name="description"]')?.value?.trim(),
+        book_value: Number(row.querySelector('[name="book_value"]')?.value || 0),
+        fair_value_adjustment: Number(row.querySelector('[name="fair_value_adjustment"]')?.value || 0),
+        deferred_tax_adjustment: Number(row.querySelector('[name="deferred_tax_adjustment"]')?.value || 0),
+      })),
+    };
+  }
+  async function saveAcquisitionWorkpaper(id, form) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    await apiFetch(
+      ENDPOINTS.consolidation.acquisitionWorkpaper(cid, runId, id),
+      { method: "PATCH", body: JSON.stringify(collectAcquisitionPayload(form)) }
+    );
+  }
+  async function calculateAcquisitionWorkpaper(id, form) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      await saveAcquisitionWorkpaper(id, form);
+
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.calculateAcquisition(cid, runId, id),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      alert(res?.message || "Acquisition workpaper calculated.");
+      document.getElementById("groupAcquisitionModal")?.classList.add("hidden");
+      document.getElementById("groupAcquisitionModal")?.classList.remove("flex");
+      await loadAcquisitionWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to calculate acquisition workpaper.");
+    }
+  }
+
+  function bindAcquisitionModal(id) {
+    const form = document.getElementById("grAcqWorkpaperForm");
+    const cHost = document.getElementById("grAcqConsiderationLines");
+    const nHost = document.getElementById("grAcqNetAssetLines");
+
+    document.getElementById("btnAddAcqConsideration")?.addEventListener("click", () => {
+      cHost?.insertAdjacentHTML("beforeend", `
+        <div class="grid grid-cols-1 md:grid-cols-[160px_1fr_180px_40px] gap-2" data-acq-consideration>
+          <select name="component_type" class="border rounded px-2 py-1.5 text-xs">
+            <option value="cash">cash</option><option value="shares">shares</option>
+            <option value="deferred">deferred</option><option value="contingent">contingent</option>
+            <option value="other">other</option>
+          </select>
+          <input name="description" placeholder="Description" class="border rounded px-2 py-1.5 text-xs" />
+          <input name="amount" type="number" step="0.01" placeholder="Amount" class="border rounded px-2 py-1.5 text-xs text-right" />
+          <button type="button" data-acq-remove class="text-xs">×</button>
+        </div>
+      `);
+    });
+
+    document.getElementById("btnAddAcqNetAsset")?.addEventListener("click", () => {
+      nHost?.insertAdjacentHTML("beforeend", `
+        <div class="grid grid-cols-1 md:grid-cols-[1fr_150px_150px_150px_40px] gap-2" data-acq-net-asset>
+          <input name="description" placeholder="Net asset / FV adjustment" class="border rounded px-2 py-1.5 text-xs" />
+          <input name="book_value" type="number" step="0.01" placeholder="Book value" class="border rounded px-2 py-1.5 text-xs text-right" />
+          <input name="fair_value_adjustment" type="number" step="0.01" placeholder="FV adjustment" class="border rounded px-2 py-1.5 text-xs text-right" />
+          <input name="deferred_tax_adjustment" type="number" step="0.01" placeholder="Deferred tax" class="border rounded px-2 py-1.5 text-xs text-right" />
+          <button type="button" data-acq-remove class="text-xs">×</button>
+        </div>
+      `);
+    });
+
+    document.getElementById("grAcqModalBody")?.addEventListener("click", e => {
+      e.target.closest("[data-acq-remove]")?.parentElement?.remove();
+    });
+
+    form?.addEventListener("submit", async e => {
+      e.preventDefault();
+      try {
+        await saveAcquisitionWorkpaper(id, form);
+        alert("Acquisition workpaper saved.");
+      } catch (err) {
+        alert(err?.message || "Failed to save workpaper.");
+      }
+    });
+
+    document.getElementById("btnCalculateAcquisition")?.addEventListener(
+      "click", () => calculateAcquisitionWorkpaper(id, form)
+    );
+  }
+
+  async function setAcquisitionStatus(id, status) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.acquisitionStatus(cid, runId, id),
+        { method: "POST", body: JSON.stringify({ status }) }
+      );
+      alert(res?.message || "Workpaper updated.");
+      await loadAcquisitionWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to update acquisition workpaper.");
+    }
+  }
+
+  function bindAcquisitionActions() {
+    document.querySelectorAll("[data-gr-acq-open]").forEach(btn =>
+      btn.onclick = () => openAcquisitionWorkpaper(Number(btn.dataset.grAcqOpen))
+    );
+
+    document.querySelectorAll("[data-gr-acq-review]").forEach(btn =>
+      btn.onclick = () => setAcquisitionStatus(Number(btn.dataset.grAcqReview), "reviewed")
+    );
+
+    document.querySelectorAll("[data-gr-acq-approve]").forEach(btn =>
+      btn.onclick = () => setAcquisitionStatus(Number(btn.dataset.grAcqApprove), "approved")
+    );
+
+    document.querySelectorAll("[data-gr-acq-calc]").forEach(btn =>
+      btn.onclick = () => setAcquisitionStatus(Number(btn.dataset.grAcqCalc), "calculated")
+    );
+  }
+
+  async function loadEquityMethodWorkspace() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.equityMethod = await apiFetch(
+        ENDPOINTS.consolidation.equityMethod(cid,runId),
+        { method: "GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] equity method load failed:",e);
+      state.equityMethod = {
+        items: [], summary: {}, configuration_issues: [],
+      };
+    }
+
+    renderEquityMethodWorkspace();
+  }
+
+  function renderEquityMethodWorkspace() {
+    const d = state.equityMethod || {}, s = d.summary || {};
+    const rows = d.items || [], issues = d.configuration_issues || [];
+    const set = (id,v) => { const el = document.getElementById(id); if (el) el.textContent = String(v); };
+
+    set("grEqTotal",s.total || 0);
+    set("grEqAssociates",s.associates || 0);
+    set("grEqJvs",s.joint_ventures || 0);
+    set("grEqProfit",money(s.share_profit_loss));
+    set("grEqInvestment",money(s.closing_investment));
+
+    const issueHost = document.getElementById("grEquityMethodIssues");
+    if (issueHost) {
+      issueHost.classList.toggle("hidden",!issues.length);
+      issueHost.innerHTML = issues.length ? `
+        <div class="text-sm font-semibold text-amber-900">Structure configuration needs attention</div>
+        <div class="mt-2 space-y-1 text-xs text-amber-800">
+          ${issues.map(x => `
+            <div>
+              ${esc(x.entity_name)} is classified as
+              <strong>${esc(x.relationship_type)}</strong> but uses
+              <strong>${esc(x.consolidation_method)}</strong>.
+              Controlled subsidiaries should not normally enter the associate/JV equity-method flow.
+            </div>
+          `).join("")}
+        </div>
+      ` : "";
+    }
+
+    const host = document.getElementById("grEquityMethodList");
+    if (!host) return;
+
+    if (!rows.length) {
+      host.innerHTML = `
+        <div class="px-4 py-10 text-center text-sm text-slate-500">
+          No associate or joint-venture workpapers prepared yet.
+        </div>
+      `;
+      return;
+    }
+
+    host.innerHTML = rows.map(w => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-semibold text-slate-800">${esc(w.entity_name)}</span>
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">
+              ${esc((w.relationship_type || "").replaceAll("_"," "))}
+            </span>
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">
+              ${esc(w.status)}
+            </span>
+          </div>
+
+          <div class="mt-1 text-xs text-slate-500">
+            Ownership ${Number(w.ownership_percent || 0).toFixed(2)}%
+            · Effective interest ${Number(w.effective_interest_percent || 0).toFixed(2)}%
+          </div>
+
+          <div class="mt-2 flex gap-4 flex-wrap text-xs text-slate-600">
+            <span>Entity P/L <strong>${money(w.entity_profit_loss)}</strong></span>
+            <span>Group share <strong>${money(w.share_profit_loss)}</strong></span>
+            <span>Dividends <strong>${money(w.dividends_received)}</strong></span>
+            <span>Impairment <strong>${money(w.impairment_loss)}</strong></span>
+            <span>Closing investment <strong>${money(w.closing_investment)}</strong></span>
+          </div>
+        </div>
+
+        <div class="flex gap-2 shrink-0">
+          <button type="button" data-gr-eq-open="${w.id}"
+            class="border rounded px-2 py-1 text-xs">Open</button>
+
+          ${w.status === "calculated" ? `
+            <button type="button" data-gr-eq-review="${w.id}"
+              class="border rounded px-2 py-1 text-xs">Review</button>
+          ` : ""}
+
+          ${w.status === "reviewed" ? `
+            <button type="button" data-gr-eq-approve="${w.id}"
+              class="rounded bg-slate-900 text-white px-2 py-1 text-xs">Approve</button>
+            <button type="button" data-gr-eq-calc="${w.id}"
+              class="border rounded px-2 py-1 text-xs">Return</button>
+          ` : ""}
+
+          ${w.status === "approved" ? `
+            <button type="button" data-gr-eq-calc="${w.id}"
+              class="border rounded px-2 py-1 text-xs">Return</button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("");
+
+    bindEquityMethodActions();
+  }
+
+  async function prepareEquityMethodWorkpapers() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.prepareEquityMethod(cid,runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      const issues = res?.data?.configuration_issues || [];
+
+      alert(
+        issues.length
+          ? `${res?.message || "Workpapers prepared."}\n\n${issues.length} structure configuration issue(s) require attention.`
+          : res?.message || "Equity-method workpapers prepared."
+      );
+
+      await loadEquityMethodWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to prepare equity-method workpapers.");
+    }
+  }
+
+  async function openEquityMethodWorkpaper(id) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId || !id) return;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.equityMethodWorkpaper(cid,runId,id),
+        { method: "GET" }
+      );
+      renderEquityMethodModal(data);
+    } catch (e) {
+      alert(e?.message || "Failed to load equity-method workpaper.");
+    }
+  }
+
+  function renderEquityMethodModal(data) {
+    const w = data?.workpaper || {}, adjustments = data?.adjustments || [];
+    const title = document.getElementById("grEqModalTitle");
+    const meta = document.getElementById("grEqModalMeta");
+    const body = document.getElementById("grEqModalBody");
+
+    if (title) title.textContent = `${w.entity_name || ""} Equity Method Workpaper`;
+    if (meta) meta.textContent =
+      `${(w.relationship_type || "").replaceAll("_"," ")} · ${Number(w.effective_interest_percent || 0).toFixed(2)}% effective interest`;
+
+    if (!body) return;
+
+    body.innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        ${[
+          ["Opening investment",w.opening_investment],
+          ["Entity profit/(loss)",w.entity_profit_loss],
+          ["Group share P/L",w.share_profit_loss],
+          ["Group share OCI",w.share_oci],
+          ["Closing investment",w.closing_investment],
+        ].map(([label,value]) => `
+          <div class="rounded border p-3">
+            <div class="text-xs text-slate-500">${esc(label)}</div>
+            <div class="mt-1 font-semibold">${money(value)}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <form id="grEqWorkpaperForm" class="mt-5">
+        <input type="hidden" name="workpaper_id" value="${esc(w.id)}" />
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Opening investment carrying amount</label>
+            <input name="opening_investment" type="number" step="0.01"
+              value="${esc(w.opening_investment || 0)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Notes</label>
+            <input name="notes" value="${esc(w.notes || "")}"
+              class="w-full border rounded px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-semibold">Equity-method adjustments</h4>
+              <p class="mt-1 text-[11px] text-slate-500">
+                Add dividends, impairment, FX and other movements affecting the investment.
+              </p>
+            </div>
+
+            <button type="button" id="btnAddEquityMethodAdjustment"
+              class="border rounded px-2 py-1 text-xs">
+              + Adjustment
+            </button>
+          </div>
+
+          <div id="grEqAdjustmentLines" class="mt-3 space-y-2"></div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="submit"
+            class="border rounded px-4 py-2 text-sm">
+            Save
+          </button>
+
+          <button type="button" id="btnCalculateEquityMethod"
+            class="rounded bg-slate-900 text-white px-4 py-2 text-sm">
+            Calculate
+          </button>
+        </div>
+      </form>
+    `;
+
+    renderEquityMethodAdjustmentLines(adjustments);
+    bindEquityMethodModal(w.id);
+
+    const modal = document.getElementById("groupEquityMethodModal");
+    modal?.classList.remove("hidden");
+    modal?.classList.add("flex");
+  }
+
+  function equityMethodAdjustmentRow(x = {}) {
+    return `
+      <div class="grid grid-cols-1 md:grid-cols-[150px_1fr_160px_40px] gap-2"
+        data-eq-adjustment>
+
+        <select name="adjustment_type"
+          class="border rounded px-2 py-1.5 text-xs">
+          ${["dividend","impairment","fx","other_equity","other"].map(v => `
+            <option value="${v}" ${x.adjustment_type === v ? "selected" : ""}>
+              ${v.replaceAll("_"," ")}
+            </option>
+          `).join("")}
+        </select>
+
+        <input name="description"
+          value="${esc(x.description || "")}"
+          placeholder="Description"
+          class="border rounded px-2 py-1.5 text-xs" />
+
+        <input name="amount" type="number" step="0.01"
+          value="${esc(x.amount ?? "")}"
+          placeholder="Amount"
+          class="border rounded px-2 py-1.5 text-xs text-right" />
+
+        <button type="button" data-eq-remove
+          class="text-xs text-slate-500">×</button>
+      </div>
+    `;
+  }
+
+  function renderEquityMethodAdjustmentLines(items = []) {
+    const host = document.getElementById("grEqAdjustmentLines");
+    if (!host) return;
+    host.innerHTML = (items.length ? items : [{}])
+      .map(equityMethodAdjustmentRow).join("");
+  }
+
+  function collectEquityMethodPayload(form) {
+    return {
+      opening_investment: Number(form.elements.opening_investment.value || 0),
+      notes: form.elements.notes.value?.trim() || "",
+      adjustments: Array.from(
+        document.querySelectorAll("[data-eq-adjustment]")
+      ).map(row => ({
+        adjustment_type: row.querySelector('[name="adjustment_type"]')?.value,
+        description: row.querySelector('[name="description"]')?.value?.trim(),
+        amount: Number(row.querySelector('[name="amount"]')?.value || 0),
+      })),
+    };
+  }
+
+  async function saveEquityMethodWorkpaper(id,form) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    return apiFetch(
+      ENDPOINTS.consolidation.equityMethodWorkpaper(cid,runId,id),
+      {
+        method: "PATCH",
+        body: JSON.stringify(collectEquityMethodPayload(form)),
+      }
+    );
+  }
+
+  async function calculateEquityMethodWorkpaper(id,form) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      await saveEquityMethodWorkpaper(id,form);
+
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.calculateEquityMethod(cid,runId,id),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      alert(res?.message || "Equity-method workpaper calculated.");
+
+      const modal = document.getElementById("groupEquityMethodModal");
+      modal?.classList.add("hidden");
+      modal?.classList.remove("flex");
+
+      await loadEquityMethodWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to calculate equity-method workpaper.");
+    }
+  }
+
+  function bindEquityMethodModal(id) {
+    const form = document.getElementById("grEqWorkpaperForm");
+    const host = document.getElementById("grEqAdjustmentLines");
+
+    document.getElementById("btnAddEquityMethodAdjustment")?.addEventListener("click",() => {
+      host?.insertAdjacentHTML("beforeend",equityMethodAdjustmentRow());
+    });
+
+    host?.addEventListener("click",e => {
+      e.target.closest("[data-eq-remove]")?.closest("[data-eq-adjustment]")?.remove();
+    });
+
+    form?.addEventListener("submit",async e => {
+      e.preventDefault();
+      try {
+        await saveEquityMethodWorkpaper(id,form);
+        alert("Equity-method workpaper saved.");
+      } catch (err) {
+        alert(err?.message || "Failed to save workpaper.");
+      }
+    });
+
+    document.getElementById("btnCalculateEquityMethod")?.addEventListener(
+      "click",() => calculateEquityMethodWorkpaper(id,form)
+    );
+  }
+
+  async function setEquityMethodStatus(id,status) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.equityMethodStatus(cid,runId,id),
+        {
+          method: "POST",
+          body: JSON.stringify({ status }),
+        }
+      );
+
+      alert(res?.message || "Workpaper updated.");
+      await loadEquityMethodWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to update workpaper.");
+    }
+  }
+
+  function bindEquityMethodActions() {
+    document.querySelectorAll("[data-gr-eq-open]").forEach(btn =>
+      btn.onclick = () =>
+        openEquityMethodWorkpaper(Number(btn.dataset.grEqOpen))
+    );
+
+    document.querySelectorAll("[data-gr-eq-review]").forEach(btn =>
+      btn.onclick = () =>
+        setEquityMethodStatus(Number(btn.dataset.grEqReview),"reviewed")
+    );
+
+    document.querySelectorAll("[data-gr-eq-approve]").forEach(btn =>
+      btn.onclick = () =>
+        setEquityMethodStatus(Number(btn.dataset.grEqApprove),"approved")
+    );
+
+    document.querySelectorAll("[data-gr-eq-calc]").forEach(btn =>
+      btn.onclick = () =>
+        setEquityMethodStatus(Number(btn.dataset.grEqCalc),"calculated")
+    );
+  }
+
+  async function generateEquityMethodJournals() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.generateEquityMethodJournals(cid,runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+
+      const missing = res?.data?.missing_accounts || [];
+
+      alert(
+        missing.length
+          ? `${res?.message || "Journals generated."}\n\nMissing Group COA mappings:\n${missing.join("\n")}`
+          : res?.message || "Equity-method journals generated."
+      );
+
+      await loadEquityMethodWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to generate equity-method journals.");
+    }
+  }
+
   function bindConsolidationScreen() {
     const newBtn = document.getElementById("btnNewConsolidationRun");
     const closeBtn = document.getElementById("btnCloseGroupRunModal");
@@ -1601,9 +3589,6 @@
     const mappingUnmappedOnly =
       document.getElementById("grMappingUnmappedOnly");
 
-    const groupCoaForm =
-      document.getElementById("groupCoaForm");
-
     const preconTab =
       document.getElementById("grPreconsolidationTab");
 
@@ -1615,6 +3600,37 @@
 
     const preconSearch =
       document.getElementById("grPreconSearch");
+
+    const newAdjustmentBtn =
+      document.getElementById("btnNewGroupAdjustment");
+
+    const closeAdjustmentBtn =
+      document.getElementById("btnCloseGroupAdjustmentModal");
+
+    const addAdjustmentLineBtn =
+      document.getElementById("btnAddGroupAdjustmentLine");
+
+    const adjustmentForm =
+      document.getElementById("groupAdjustmentForm");
+
+    const newIcBtn = document.getElementById("btnNewIcBalance");
+    const closeIcBtn = document.getElementById("btnCloseIcModal");
+    const applyIcBtn = document.getElementById("btnApplyIcRules");
+    const autoMatchIcBtn = document.getElementById("btnAutoMatchIc");
+    const icForm = document.getElementById("groupIcForm");
+    const icEntity = document.getElementById("grIcEntity");
+    const generateElimBtn = document.getElementById("btnGenerateEliminations");
+    const closeElimBtn = document.getElementById("btnCloseEliminationModal");
+    
+    const validateAdjustedBtn = document.getElementById("btnValidateAdjustedTb");
+    const generateAdjustedBtn = document.getElementById("btnGenerateAdjustedTb");
+    const adjustedSearch = document.getElementById("grAdjustedTbSearch");
+    const closeAdjustedBtn = document.getElementById("btnCloseAdjustedTbModal");
+    const prepareAcqBtn = document.getElementById("btnPrepareAcquisition");
+    const closeAcqBtn = document.getElementById("btnCloseAcquisitionModal");
+    const prepareEqBtn = document.getElementById("btnPrepareEquityMethod");
+    const generateEqBtn = document.getElementById("btnGenerateEquityMethodJournals");
+    const closeEqBtn = document.getElementById("btnCloseEquityMethodModal");
 
     if (newBtn && newBtn.dataset.bound !== "1") {
       newBtn.dataset.bound = "1";
@@ -1641,30 +3657,46 @@
 
     if (backBtn && backBtn.dataset.bound !== "1") {
       backBtn.dataset.bound = "1";
-
       backBtn.addEventListener("click", () => {
         state.selectedRun = null;
         state.tbSummary = null;
         state.mapping = null;
+        state.groupCoa = [];
+        state.precon = null;
+        state.adjustments = [];
+        state.intercompany = null;
+        state.adjustedTb = null;
+        state.acquisition = null;
+        state.equityMethod = null;
 
-        const mapTab =
-          document.getElementById("grAccountMappingTab");
+        [
+          "grAccountMappingTab", 
+          "grPreconsolidationTab", 
+          "grAdjustmentsTab", 
+          "grIntercompanyTab",
+          "grEliminationsTab", 
+          "grAdjustedTbTab",
+          "grAcquisitionTab",
+          "grEquityMethodTab",
+        ].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = true;
+        });
 
-        if (mapTab)
-          mapTab.disabled = true;
+        ["groupRunWorkspace", 
+          "groupMappingWorkspace", 
+          "groupPreconWorkspace", 
+          "groupAdjustmentsWorkspace", 
+          "groupIntercompanyWorkspace", 
+          "groupEliminationsWorkspace", 
+          "groupAdjustedTbWorkspace",
+          "groupAcquisitionWorkspace",
+          "groupEquityMethodWorkspace",
+        ].forEach(id =>
+          document.getElementById(id)?.classList.add("hidden")
+        );
 
-        document
-          .getElementById("groupRunWorkspace")
-          ?.classList.add("hidden");
-
-        document
-          .getElementById("groupMappingWorkspace")
-          ?.classList.add("hidden");
-
-        document
-          .querySelector('[data-group-panel="runs"]')
-          ?.classList.remove("hidden");
-
+        document.querySelector('[data-group-panel="runs"]')?.classList.remove("hidden");
         showGroupTab("runs");
       });
     }
@@ -1751,6 +3783,58 @@
     }
 
     if (
+      newAdjustmentBtn &&
+      newAdjustmentBtn.dataset.bound !== "1"
+    ) {
+      newAdjustmentBtn.dataset.bound = "1";
+      newAdjustmentBtn.addEventListener(
+        "click",
+        openGroupAdjustmentModal
+      );
+    }
+
+    if (
+      closeAdjustmentBtn &&
+      closeAdjustmentBtn.dataset.bound !== "1"
+    ) {
+      closeAdjustmentBtn.dataset.bound = "1";
+      closeAdjustmentBtn.addEventListener(
+        "click",
+        closeGroupAdjustmentModal
+      );
+    }
+
+    if (
+      addAdjustmentLineBtn &&
+      addAdjustmentLineBtn.dataset.bound !== "1"
+    ) {
+      addAdjustmentLineBtn.dataset.bound = "1";
+
+      addAdjustmentLineBtn.addEventListener("click", () => {
+        document
+          .getElementById("groupAdjustmentLines")
+          ?.insertAdjacentHTML(
+            "beforeend",
+            adjustmentLineRow()
+          );
+
+        bindAdjustmentLineEvents();
+      });
+    }
+
+    if (
+      adjustmentForm &&
+      adjustmentForm.dataset.bound !== "1"
+    ) {
+      adjustmentForm.dataset.bound = "1";
+
+      adjustmentForm.addEventListener("submit", async e => {
+        e.preventDefault();
+        await saveGroupAdjustment(adjustmentForm);
+      });
+    }
+
+    if (
       preconSearch &&
       preconSearch.dataset.bound !== "1"
     ) {
@@ -1758,6 +3842,102 @@
 
       preconSearch.addEventListener("input", () => {
         renderPreconRows();
+      });
+    }
+
+    if (newIcBtn && newIcBtn.dataset.bound !== "1") {
+      newIcBtn.dataset.bound = "1";
+      newIcBtn.addEventListener("click", openIcModal);
+    }
+
+    if (closeIcBtn && closeIcBtn.dataset.bound !== "1") {
+      closeIcBtn.dataset.bound = "1";
+      closeIcBtn.addEventListener("click", closeIcModal);
+    }
+
+    if (applyIcBtn && applyIcBtn.dataset.bound !== "1") {
+      applyIcBtn.dataset.bound = "1";
+      applyIcBtn.addEventListener("click", applyIcRules);
+    }
+
+    if (autoMatchIcBtn && autoMatchIcBtn.dataset.bound !== "1") {
+      autoMatchIcBtn.dataset.bound = "1";
+      autoMatchIcBtn.addEventListener("click", autoMatchIc);
+    }
+
+    if (icEntity && icEntity.dataset.bound !== "1") {
+      icEntity.dataset.bound = "1";
+      icEntity.addEventListener("change", refreshIcAccounts);
+    }
+
+    if (icForm && icForm.dataset.bound !== "1") {
+      icForm.dataset.bound = "1";
+      icForm.addEventListener("submit", async e => {
+        e.preventDefault();
+        await saveIcBalance(icForm);
+      });
+    }
+
+    if (generateElimBtn && generateElimBtn.dataset.bound !== "1") {
+      generateElimBtn.dataset.bound = "1";
+      generateElimBtn.addEventListener("click", generateEliminations);
+    }
+
+    if (closeElimBtn && closeElimBtn.dataset.bound !== "1") {
+      closeElimBtn.dataset.bound = "1";
+      closeElimBtn.addEventListener("click", closeEliminationModal);
+    }
+
+    if (validateAdjustedBtn && validateAdjustedBtn.dataset.bound !== "1") {
+      validateAdjustedBtn.dataset.bound = "1";
+      validateAdjustedBtn.addEventListener("click", validateAdjustedTb);
+    }
+
+    if (generateAdjustedBtn && generateAdjustedBtn.dataset.bound !== "1") {
+      generateAdjustedBtn.dataset.bound = "1";
+      generateAdjustedBtn.addEventListener("click", generateAdjustedTb);
+    }
+
+    if (adjustedSearch && adjustedSearch.dataset.bound !== "1") {
+      adjustedSearch.dataset.bound = "1";
+      adjustedSearch.addEventListener("input", renderAdjustedTbRows);
+    }
+
+    if (closeAdjustedBtn && closeAdjustedBtn.dataset.bound !== "1") {
+      closeAdjustedBtn.dataset.bound = "1";
+      closeAdjustedBtn.addEventListener("click", closeAdjustedTbModal);
+    }
+
+    if (prepareAcqBtn && prepareAcqBtn.dataset.bound !== "1") {
+      prepareAcqBtn.dataset.bound = "1";
+      prepareAcqBtn.addEventListener("click", prepareAcquisitionWorkpapers);
+    }
+
+    if (closeAcqBtn && closeAcqBtn.dataset.bound !== "1") {
+      closeAcqBtn.dataset.bound = "1";
+      closeAcqBtn.addEventListener("click", () => {
+        const modal = document.getElementById("groupAcquisitionModal");
+        modal?.classList.add("hidden");
+        modal?.classList.remove("flex");
+      });
+    }
+
+    if (prepareEqBtn && prepareEqBtn.dataset.bound !== "1") {
+      prepareEqBtn.dataset.bound = "1";
+      prepareEqBtn.addEventListener("click",prepareEquityMethodWorkpapers);
+    }
+
+    if (generateEqBtn && generateEqBtn.dataset.bound !== "1") {
+      generateEqBtn.dataset.bound = "1";
+      generateEqBtn.addEventListener("click",generateEquityMethodJournals);
+    }
+
+    if (closeEqBtn && closeEqBtn.dataset.bound !== "1") {
+      closeEqBtn.dataset.bound = "1";
+      closeEqBtn.addEventListener("click",() => {
+        const modal = document.getElementById("groupEquityMethodModal");
+        modal?.classList.add("hidden");
+        modal?.classList.remove("flex");
       });
     }
   }

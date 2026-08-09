@@ -181,6 +181,85 @@
     leasesLoaded:false,
     leaseSaving:false,
     leasePreviewLoading:false,
+
+    loans:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    loansLoaded:false,
+    loanSaving:false,
+    loanPreviewLoading:false,
+  
+    revenue:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    revenueLoaded:false,
+    revenueSaving:false,
+    revenuePreviewLoading:false,
+
+    accruals:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    accrualsLoaded:false,
+    accrualSaving:false,
+    accrualPreviewLoading:false,
+
+    payroll:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    payrollLoaded:false,
+    payrollSaving:false,
+    payrollPreviewLoading:false,
+
+    payrollItems:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    payrollItemsLoaded:false,
+    payrollItemsSaving:false,
+    payrollItemsPreviewLoading:false,
+
+    payrollLeave:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+
+    payrollEmployeeLoans:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+
+    payrollLeaveLoaded:false,
+    payrollLeaveSaving:false,
+    payrollLeavePreviewLoading:false,
+
+    payrollEmployeeLoansLoaded:false,
+    payrollEmployeeLoansSaving:false,
+    payrollEmployeeLoansPreviewLoading:false,
   };
 
   function defaultProject() {
@@ -588,8 +667,15 @@
       await loadFieldMappings(state.project.id,{renderAfter:false});
       await loadReferenceMappings(state.project.id,{renderAfter:false});
       await loadPpeMapping(state.project.id,{renderAfter:false});
-      await loadPpeMapping(state.project.id,{renderAfter:false});
       await loadLeaseMapping(state.project.id,{renderAfter:false});
+      await loadLoanMapping(state.project.id,{renderAfter:false});
+      await loadRevenueMapping(state.project.id,{renderAfter:false});
+      await loadAccrualMapping(state.project.id,{renderAfter:false});
+      await loadPayrollMapping(state.project.id,{renderAfter:false});
+      await loadPayrollItems(state.project.id,{renderAfter:false});
+      await loadPayrollLeave(state.project.id,{renderAfter:false});
+      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false});      
+
       state.dirty = false;
       state.scopeDirty = false;
 
@@ -851,6 +937,14 @@
       await loadDetection(state.project.id,{renderAfter:false});
       await loadFieldMappings(state.project.id,{renderAfter:false});
       await loadPpeMapping(state.project.id,{renderAfter:false});
+      await loadLeaseMapping(state.project.id,{renderAfter:false});
+      await loadLoanMapping(state.project.id,{renderAfter:false});
+      await loadRevenueMapping(state.project.id,{renderAfter:false});
+      await loadAccrualMapping(state.project.id,{renderAfter:false});
+      await loadPayrollMapping(state.project.id,{renderAfter:false});
+      await loadPayrollItems(state.project.id,{renderAfter:false});
+      await loadPayrollLeave(state.project.id,{renderAfter:false});
+      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false})
 
       log(`Configured dataset ${dataset.dataset_name}`);
       notify("Dataset configuration saved.");
@@ -1498,6 +1592,33 @@
       "save-lease-settings":saveLeaseSettings,
       "save-lease-references":saveLeaseReferences,
       "preview-leases":previewLeaseMigration,
+
+      "save-loan-settings":saveLoanSettings,
+      "save-loan-references":saveLoanReferences,
+      "preview-loans":previewLoanMigration,
+
+      "save-revenue-settings":saveRevenueSettings,
+      "save-revenue-references":saveRevenueReferences,
+      "preview-revenue":previewRevenueMigration,
+      
+      "save-accrual-settings":saveAccrualSettings,
+      "save-accrual-references":saveAccrualReferences,
+      "preview-accruals":previewAccrualMigration,
+
+      "save-payroll-settings":savePayrollSettings,
+      "save-payroll-references":savePayrollReferences,
+      "preview-payroll":previewPayrollMigration,
+
+      "save-payroll-item-settings":savePayrollItemSettings,
+      "save-payroll-item-mapping":savePayrollItemMapping,
+      "preview-payroll-items":previewPayrollItems,
+
+      "save-payroll-leave-settings":savePayrollLeaveSettings,
+      "save-payroll-leave-mapping":savePayrollLeaveMapping,
+      "preview-payroll-leave":previewPayrollLeave,
+
+      "save-payroll-employee-loan-settings":savePayrollEmployeeLoanSettings,
+      "preview-payroll-employee-loans":previewPayrollEmployeeLoans,
       previous,
       next,
     };
@@ -1692,6 +1813,242 @@
       }
 
       render();
+      return;
+    }
+
+    if(element.id==="mwLoanDataset"){
+      loadLoanDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-loan-setting]")){
+      if(state.loans.settings){
+        const field=element.dataset.mwLoanSetting;
+
+        state.loans.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-loan-reference]")){
+      const type=element.dataset.mwLoanReference;
+      const sourceValue=element.dataset.mwLoanSource;
+
+      const group=state.loans.mapping?.references?.[type];
+
+      const row=group?.rows?.find(
+        item=>String(item.source_value)===String(sourceValue)
+      );
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwRevenueDataset"){
+      loadRevenueDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-revenue-setting]")){
+      if(state.revenue.settings){
+        const field=element.dataset.mwRevenueSetting;
+
+        state.revenue.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-revenue-reference]")){
+      const type=element.dataset.mwRevenueReference;
+      const sourceValue=element.dataset.mwRevenueSource;
+      const group=state.revenue.mapping?.references?.[type];
+
+      const row=group?.rows?.find(
+        item=>String(item.source_value)===String(sourceValue)
+      );
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwAccrualDataset"){
+      loadAccrualDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-accrual-setting]")){
+      if(state.accruals.settings){
+        const field=element.dataset.mwAccrualSetting;
+
+        state.accruals.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-accrual-reference]")){
+      const type=element.dataset.mwAccrualReference;
+      const sourceValue=element.dataset.mwAccrualSource;
+      const group=state.accruals.mapping?.references?.[type];
+
+      const row=group?.rows?.find(
+        item=>String(item.source_value)===String(sourceValue)
+      );
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPayrollDataset"){
+      loadPayrollDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-setting]")){
+      const field=element.dataset.mwPayrollSetting;
+
+      if(state.payroll.settings){
+        state.payroll.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-reference]")){
+      const type=element.dataset.mwPayrollReference;
+      const sourceValue=element.dataset.mwPayrollSource;
+      const group=state.payroll.mapping?.references?.[type];
+
+      const row=group?.rows?.find(
+        item=>String(item.source_value)===String(sourceValue)
+      );
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row._dirty=true;
+      }
+
+      render();
+      return;
+    }
+      
+    if(element.id==="mwPayrollItemDataset"){
+      loadPayrollItemDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-item-setting]")){
+      const field=element.dataset.mwPayrollItemSetting;
+
+      if(state.payrollItems.settings){
+        state.payrollItems.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-map-type]")){
+      const index=Number(element.dataset.mwPayrollMapType);
+      const row=state.payrollItems.mapping?.detection?.items?.[index];
+
+      if(row){
+        row.item_type=element.value||null;
+        row.target_id=null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-map-target]")){
+      const index=Number(element.dataset.mwPayrollMapTarget);
+      const row=state.payrollItems.mapping?.detection?.items?.[index];
+
+      if(row){
+        row.target_id=Number(element.value)||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPayrollLeaveDataset"){
+      loadPayrollLeaveDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-leave-setting]")){
+      const field=element.dataset.mwPayrollLeaveSetting;
+
+      if(state.payrollLeave.settings){
+        state.payrollLeave.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-leave-target]")){
+      const index=Number(element.dataset.mwPayrollLeaveTarget);
+      const row=state.payrollLeave.mapping?.leave_types?.items?.[index];
+
+      if(row){
+        row.target_leave_type_id=Number(element.value)||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.id==="mwPayrollEmployeeLoanDataset"){
+      loadPayrollEmployeeLoanDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-loan-setting]")){
+      const field=element.dataset.mwPayrollLoanSetting;
+
+      if(state.payrollEmployeeLoans.settings){
+        state.payrollEmployeeLoans.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
       return;
     }
 
@@ -1954,6 +2311,85 @@
     state.leasesLoaded=false;
     state.leaseSaving=false;
     state.leasePreviewLoading=false;
+
+    state.loans={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.loansLoaded=false;
+    state.loanSaving=false;
+    state.loanPreviewLoading=false;
+
+    state.revenue={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.revenueLoaded=false;
+    state.revenueSaving=false;
+    state.revenuePreviewLoading=false;
+
+    state.accruals={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.accrualsLoaded=false;
+    state.accrualSaving=false;
+    state.accrualPreviewLoading=false;
+
+    state.payroll={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.payrollLoaded=false;
+    state.payrollSaving=false;
+    state.payrollPreviewLoading=false;
+
+    state.payrollItems={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.payrollItemsLoaded=false;
+    state.payrollItemsSaving=false;
+    state.payrollItemsPreviewLoading=false;
+
+    state.payrollLeave={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+
+    state.payrollEmployeeLoans={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+
+    state.payrollLeaveLoaded=false;
+    state.payrollLeaveSaving=false;
+    state.payrollLeavePreviewLoading=false;
+
+    state.payrollEmployeeLoansLoaded=false;
+    state.payrollEmployeeLoansSaving=false;
+    state.payrollEmployeeLoansPreviewLoading=false;
     log("New migration project prepared");
     render();
   }
@@ -4306,6 +4742,3770 @@
           <span class="mw-muted mw-small">Periods</span>
           <div>${terms.period_count||terms.schedule?.length||0}</div>
         </div>
+      </div>
+    `;
+  }
+
+
+  async function loadLoanMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.loans={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.loansLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.loans(companyId(),projectId)
+      );
+
+      state.loans.datasets=response?.datasets||[];
+
+      if(!state.loans.datasets.some(
+        dataset=>Number(dataset.dataset_id)===Number(state.loans.datasetId)
+      )){
+        state.loans.datasetId=state.loans.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.loans.datasetId){
+        await loadLoanDataset(
+          state.loans.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.loansLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadLoanMapping failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadLoanDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.loanSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.loanMapping(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.loans.datasetId=id;
+    state.loans.settings=settingsResponse?.settings||null;
+    state.loans.mapping=mappingResponse?.mapping||null;
+    state.loans.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveLoanSettings(){
+    if(!state.loans.datasetId||!state.loans.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.loanSettings(
+          companyId(),
+          state.project.id,
+          state.loans.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.loans.settings),
+        }
+      );
+
+      state.loans.settings=response?.settings||state.loans.settings;
+
+      await loadLoanDataset(
+        state.loans.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Loan migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+
+  async function saveLoanReferences(){
+    const references=state.loans.mapping?.references||{};
+    const mappings=[];
+
+    for(const [referenceType,group] of Object.entries(references)){
+      for(const row of group.rows||[]){
+        if(!row.target_id){
+          if(referenceType==="bank_account"&&!state.loans.settings?.require_bank_mapping){
+            continue;
+          }
+
+          notify(`Select a target for "${row.source_value}".`);
+          return;
+        }
+
+        mappings.push({
+          reference_type:referenceType,
+          source_value:row.source_value,
+          source_label:row.source_label||row.source_value,
+          target_id:Number(row.target_id),
+        });
+      }
+    }
+
+    if(!mappings.length){
+      notify("No loan reference mappings require saving.");
+      return;
+    }
+
+    state.loanSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.loanReferences(
+          companyId(),
+          state.project.id,
+          state.loans.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadLoanDataset(
+        state.loans.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Loan reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.loanSaving=false;
+      render();
+    }
+  }
+
+  async function previewLoanMigration(){
+    if(!state.loans.datasetId)return;
+
+    state.loanPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.loanPreview(
+          companyId(),
+          state.project.id,
+          state.loans.datasetId
+        )
+      );
+
+      state.loans.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.loanPreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=Boolean(state.ppe.datasets?.length);
+    const hasLeases=Boolean(state.leases.datasets?.length);
+    const hasLoans=Boolean(state.loans.datasets?.length);
+
+    return `
+      <div>
+        ${hasPpe?ppeMappingView():""}
+        ${hasLeases?leaseMigrationView():""}
+        ${hasLoans?loanMigrationView():""}
+
+        ${!hasPpe&&!hasLeases&&!hasLoans
+          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function loanMigrationView(){
+    const datasets=state.loans.datasets||[];
+    const settings=state.loans.settings;
+    const mapping=state.loans.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `<div class="mw-empty">Loading loan migration mapping…</div>`;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Loan Migration",
+          "Reconstruct existing borrowings, validate amortisation schedules and establish the cutover loan position.",
+          `
+            <button class="mw-btn" data-mw-action="save-loan-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn" data-mw-action="save-loan-references"
+              ${state.loanSaving?"disabled":""}>
+              ${state.loanSaving?"Saving…":"Save references"}
+            </button>
+
+            <button class="mw-btn primary" data-mw-action="preview-loans"
+              ${state.loanPreviewLoading?"disabled":""}>
+              ${state.loanPreviewLoading?"Reconstructing…":"Reconstruct & preview"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Loan Dataset</label>
+
+            <select id="mwLoanDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.loans.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${loanSettingSelect(
+            "Source Mode",
+            "source_mode",
+            [
+              ["contract_terms","Reconstruct from contract terms"],
+              ["existing_schedule","Use existing amortisation schedule"],
+              ["opening_balance_only","Opening balance only"],
+            ]
+          )}
+
+          ${loanSettingInput(
+            "Migration Date",
+            "migration_date",
+            "date"
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${loanSettingSelect(
+            "Default Loan Type",
+            "default_loan_type",
+            [
+              ["term_loan","Term Loan"],
+              ["vehicle","Vehicle Finance"],
+              ["mortgage","Mortgage"],
+              ["overdraft","Overdraft"],
+              ["director_loan","Director Loan"],
+              ["other","Other"],
+            ]
+          )}
+
+          ${loanSettingSelect(
+            "Interest Method",
+            "default_interest_method",
+            [
+              ["amortised_fixed_payment","Amortised Fixed Payment"],
+              ["straight_line_interest","Straight-line Interest"],
+              ["interest_only","Interest Only"],
+              ["manual","Manual"],
+            ]
+          )}
+
+          ${loanSettingSelect(
+            "Payment Frequency",
+            "default_payment_frequency",
+            [
+              ["weekly","Weekly"],
+              ["monthly","Monthly"],
+              ["quarterly","Quarterly"],
+              ["annually","Annually"],
+            ]
+          )}
+        </div>
+
+        ${loanAccountSettings()}
+        ${loanReferenceMappingView()}
+        ${loanPreviewView()}
+      </div>
+    `;
+  }
+
+  function loanSettingInput(label,field,type="text"){
+    const value=state.loans.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-loan-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+
+  function loanSettingSelect(label,field,options){
+    const value=state.loans.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select" data-mw-loan-setting="${esc(field)}">
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function loanAccountSettings(){
+    return `
+      <div style="margin-top:20px">
+        <h3>Loan Accounting</h3>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${loanSettingCoa(
+            "Interest Expense",
+            "interest_expense_account_code"
+          )}
+
+          ${loanSettingCoa(
+            "Accrued Interest",
+            "accrued_interest_account_code"
+          )}
+
+          ${loanSettingCoa(
+            "Current Loan Payable",
+            "loan_payable_current_account_code"
+          )}
+
+          ${loanSettingCoa(
+            "Non-current Loan Payable",
+            "loan_payable_noncurrent_account_code"
+          )}
+
+          ${loanSettingCoa(
+            "Deferred Fees Asset",
+            "fees_asset_account_code"
+          )}
+
+          ${loanSettingCoa(
+            "Loan Fees Expense",
+            "fees_expense_account_code"
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  function loanSettingCoa(label,field){
+    const accounts=window.COA_ACCOUNTS||
+      window.ACCOUNTS||
+      window.chartOfAccounts||
+      [];
+
+    const selected=state.loans.settings?.[field]||"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select" data-mw-loan-setting="${esc(field)}">
+          <option value="">Select account</option>
+
+          ${accounts.map(account=>{
+            const code=account.code||account.account_code||"";
+            const name=account.name||account.account_name||code;
+
+            return `
+              <option value="${esc(code)}"
+                ${String(selected)===String(code)?"selected":""}>
+                ${esc(name)}
+              </option>
+            `;
+          }).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function loanReferenceMappingView(){
+    const refs=state.loans.mapping?.references||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Loan References</h3>
+
+        ${loanReferenceGroup(
+          "bank_account",
+          "Bank Accounts",
+          refs.bank_account
+        )}
+
+        ${state.loans.settings?.enable_ias23_mapping
+          ?loanReferenceGroup(
+              "qualifying_asset",
+              "IAS 23 Qualifying Assets",
+              refs.qualifying_asset
+            )
+          :""
+        }
+      </div>
+    `;
+  }
+  function loanReferenceGroup(type,label,group){
+    if(!group?.rows?.length)return "";
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <h3>${esc(label)}</h3>
+
+        ${table(
+          ["Source Reference","Records","FinSage Target"],
+          group.rows.map(row=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            loanReferenceSelect(
+              type,
+              row,
+              group.targets||[]
+            ),
+          ]),
+          `No ${label.toLowerCase()} detected.`
+        )}
+      </div>
+    `;
+  }
+  function loanReferenceSelect(type,row,targets){
+    return `
+      <select class="mw-select"
+        data-mw-loan-reference="${esc(type)}"
+        data-mw-loan-source="${esc(row.source_value)}">
+
+        <option value="">Select target</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(
+              `${target.code?`${target.code} — `:""}${target.label||""}`
+            )}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function loanPreviewCard(row){
+    const payload=row.payload||{};
+    const recon=row.reconciliation||{};
+    const cutover=row.cutover||{};
+    const next=row.next_payment||{};
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>
+              ${esc(
+                payload.loan_name||
+                row.loan_key||
+                `Loan ${row.row_number}`
+              )}
+            </strong>
+
+            <div class="mw-muted mw-small">
+              ${esc(payload.lender_name||"")}
+            </div>
+          </div>
+
+          <span class="mw-badge ${row.valid?"ok":"error"}">
+            ${row.valid?"Ready":"Needs attention"}
+          </span>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div>
+            <span class="mw-muted mw-small">Outstanding Principal</span>
+            <div>
+              ${Number(cutover.outstanding_principal||0).toLocaleString()}
+            </div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Current Portion</span>
+            <div>
+              ${Number(cutover.current_portion||0).toLocaleString()}
+            </div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Non-current Portion</span>
+            <div>
+              ${Number(cutover.noncurrent_portion||0).toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        ${row.source_mode==="contract_terms"||row.source_mode==="existing_schedule"
+          ?`
+            <div class="mw-grid-3" style="margin-top:14px">
+              <div>
+                <span class="mw-muted mw-small">Calculated Balance</span>
+                <div>${Number(recon.calculated_outstanding||0).toLocaleString()}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Imported Balance</span>
+                <div>${Number(recon.imported_outstanding||0).toLocaleString()}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Difference</span>
+                <div>${Number(recon.difference||0).toLocaleString()}</div>
+              </div>
+            </div>
+          `
+          :""
+        }
+
+        ${next?.due_date?`
+          <div class="mw-alert" style="margin-top:14px">
+            <strong>Next payment: ${esc(next.due_date)}</strong>
+
+            <div class="mw-grid-3" style="margin-top:8px">
+              <div>
+                <span class="mw-muted mw-small">Payment</span>
+                <div>${Number(next.payment??next.scheduled_payment??0).toLocaleString()}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Interest</span>
+                <div>${Number(next.interest??next.scheduled_interest??0).toLocaleString()}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Principal</span>
+                <div>${Number(next.principal??next.scheduled_principal??0).toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+        `:""}
+
+        ${row.issues?.length?`
+          <div class="mw-alert ${row.valid?"warn":"error"}" style="margin-top:12px">
+            ${row.issues.map(
+              issue=>`<div>${esc(issue)}</div>`
+            ).join("")}
+          </div>
+        `:""}
+      </div>
+    `;
+  }
+
+  async function loadRevenueMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.revenue={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.revenueLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.revenue(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.revenue.datasets=response?.datasets||[];
+
+      if(!state.revenue.datasets.some(
+        dataset=>Number(dataset.dataset_id)===Number(state.revenue.datasetId)
+      )){
+        state.revenue.datasetId=
+          state.revenue.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.revenue.datasetId){
+        await loadRevenueDataset(
+          state.revenue.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.revenueLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadRevenueMapping failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadRevenueDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.revenueSettings(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.revenueMapping(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+    ]);
+
+    state.revenue.datasetId=id;
+    state.revenue.settings=settingsResponse?.settings||null;
+    state.revenue.mapping=mappingResponse?.mapping||null;
+    state.revenue.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveRevenueReferences(){
+    const references=state.revenue.mapping?.references||{};
+    const mappings=[];
+
+    for(const [referenceType,group] of Object.entries(references)){
+      for(const row of group.rows||[]){
+        if(!row.target_id){
+          if(
+            referenceType==="project"&&
+            !state.revenue.settings?.require_project_mapping
+          ){
+            continue;
+          }
+
+          notify(`Select a target for "${row.source_value}".`);
+          return;
+        }
+
+        mappings.push({
+          reference_type:referenceType,
+          source_value:row.source_value,
+          source_label:row.source_label||row.source_value,
+          target_id:Number(row.target_id),
+        });
+      }
+    }
+
+    if(!mappings.length){
+      notify("No revenue reference mappings require saving.");
+      return;
+    }
+
+    state.revenueSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.revenueReferences(
+          companyId(),
+          state.project.id,
+          state.revenue.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadRevenueDataset(
+        state.revenue.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Revenue reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.revenueSaving=false;
+      render();
+    }
+  }
+
+  async function previewRevenueMigration(){
+    if(!state.revenue.datasetId)return;
+
+    state.revenuePreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.revenuePreview(
+          companyId(),
+          state.project.id,
+          state.revenue.datasetId
+        )
+      );
+
+      state.revenue.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.revenuePreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=Boolean(state.ppe.datasets?.length);
+    const hasLeases=Boolean(state.leases.datasets?.length);
+    const hasLoans=Boolean(state.loans.datasets?.length);
+    const hasRevenue=Boolean(state.revenue.datasets?.length);
+
+    return `
+      <div>
+        ${hasPpe?ppeMappingView():""}
+        ${hasLeases?leaseMigrationView():""}
+        ${hasLoans?loanMigrationView():""}
+        ${hasRevenue?revenueMigrationView():""}
+
+        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue
+          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function revenueMigrationView(){
+    const datasets=state.revenue.datasets||[];
+    const settings=state.revenue.settings;
+    const mapping=state.revenue.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `<div class="mw-empty">Loading IFRS 15 migration mapping…</div>`;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "IFRS 15 Revenue Migration",
+          "Reconstruct contracts, performance obligations, project progress, billings and the cutover contract position.",
+          `
+            <button class="mw-btn" data-mw-action="save-revenue-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn" data-mw-action="save-revenue-references"
+              ${state.revenueSaving?"disabled":""}>
+              ${state.revenueSaving?"Saving…":"Save references"}
+            </button>
+
+            <button class="mw-btn primary" data-mw-action="preview-revenue"
+              ${state.revenuePreviewLoading?"disabled":""}>
+              ${state.revenuePreviewLoading?"Reconstructing…":"Reconstruct & preview"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Revenue Dataset</label>
+
+            <select id="mwRevenueDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.revenue.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${revenueSettingSelect(
+            "Source Mode",
+            "source_mode",
+            [
+              ["full_history","Full Contract History"],
+              ["contract_and_progress","Contract + Progress"],
+              ["opening_position","Opening Position"],
+            ]
+          )}
+
+          ${revenueSettingInput(
+            "Migration Date",
+            "migration_date",
+            "date"
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${revenueSettingSelect(
+            "Billing Method",
+            "default_billing_method",
+            [
+              ["milestone","Milestone"],
+              ["progress","Progress"],
+              ["periodic","Periodic"],
+              ["manual","Manual"],
+            ]
+          )}
+
+          ${revenueSettingSelect(
+            "Recognition Timing",
+            "default_recognition_timing",
+            [
+              ["over_time","Over Time"],
+              ["point_in_time","Point in Time"],
+            ]
+          )}
+
+          ${revenueSettingSelect(
+            "Progress Method",
+            "default_progress_method",
+            [
+              ["cost_to_cost","Cost-to-Cost"],
+              ["units","Units"],
+              ["units_delivered","Units Delivered"],
+              ["milestone","Milestone"],
+              ["time_elapsed","Time Elapsed"],
+              ["manual","Manual"],
+            ]
+          )}
+        </div>
+
+        ${revenueAccountSettings()}
+        ${revenueReferenceMappingView()}
+        ${revenuePreviewView()}
+      </div>
+    `;
+  }
+
+  function revenueSettingInput(label,field,type="text"){
+    const value=state.revenue.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-revenue-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+
+  function revenueSettingSelect(label,field,options){
+    const value=state.revenue.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-revenue-setting="${esc(field)}">
+
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function revenueAccountSettings(){
+    return `
+      <div style="margin-top:20px">
+        <h3>IFRS 15 Accounting</h3>
+
+        <p class="mw-muted">
+          Existing FinSage IFRS 15 roles are used as defaults. Override only where necessary.
+        </p>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${revenueSettingCoa(
+            "Contract Revenue",
+            "revenue_account_code"
+          )}
+
+          ${revenueSettingCoa(
+            "Contract Asset",
+            "contract_asset_account_code"
+          )}
+
+          ${revenueSettingCoa(
+            "Contract Liability",
+            "contract_liability_account_code"
+          )}
+
+          ${revenueSettingCoa(
+            "Accounts Receivable",
+            "receivable_account_code"
+          )}
+        </div>
+      </div>
+    `;
+  }
+  function revenueSettingCoa(label,field){
+    const accounts=window.COA_ACCOUNTS||
+      window.ACCOUNTS||
+      window.chartOfAccounts||
+      [];
+
+    const selected=state.revenue.settings?.[field]||"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-revenue-setting="${esc(field)}">
+
+          <option value="">Select account</option>
+
+          ${accounts.map(account=>{
+            const code=account.code||account.account_code||"";
+            const name=account.name||account.account_name||code;
+
+            return `
+              <option value="${esc(code)}"
+                ${String(selected)===String(code)?"selected":""}>
+                ${esc(name)}
+              </option>
+            `;
+          }).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function revenueReferenceMappingView(){
+    const refs=state.revenue.mapping?.references||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Contract References</h3>
+
+        ${revenueReferenceGroup(
+          "customer",
+          "Customers",
+          refs.customer
+        )}
+
+        ${revenueReferenceGroup(
+          "project",
+          "Projects",
+          refs.project
+        )}
+      </div>
+    `;
+  }
+  function revenueReferenceGroup(type,label,group){
+    if(!group?.rows?.length)return "";
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <h3>${esc(label)}</h3>
+
+        ${table(
+          ["Source Reference","Records","FinSage Target"],
+          group.rows.map(row=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            revenueReferenceSelect(
+              type,
+              row,
+              group.targets||[]
+            ),
+          ]),
+          `No ${label.toLowerCase()} detected.`
+        )}
+      </div>
+    `;
+  }
+  function revenueReferenceSelect(type,row,targets){
+    return `
+      <select class="mw-select"
+        data-mw-revenue-reference="${esc(type)}"
+        data-mw-revenue-source="${esc(row.source_value)}">
+
+        <option value="">Select target</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(
+              `${target.code?`${target.code} — `:""}${target.label||""}`
+            )}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function revenuePreviewView(){
+    const preview=state.revenue.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:22px">
+        <h3>Revenue Contract Reconstruction</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Contracts</span>
+            <strong>${preview.contract_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Contract Assets</span>
+            <strong>${money(preview.total_contract_assets||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Contract Liabilities</span>
+            <strong>${money(preview.total_contract_liabilities||0)}</strong>
+          </div>
+        </div>
+
+        ${(preview.contracts||[]).map(
+          revenuePreviewCard
+        ).join("")}
+      </div>
+    `;
+  }
+
+  function money(value){
+    return Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+  }
+
+  function revenuePreviewCard(row){
+    const payload=row.payload||{};
+    const recon=row.reconciliation||{};
+    const position=row.position||{};
+    const history=row.history||{};
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>
+              ${esc(
+                payload.contract_number||
+                row.contract_key||
+                `Contract ${row.row_number}`
+              )}
+              ${payload.contract_title
+                ?` — ${esc(payload.contract_title)}`
+                :""
+              }
+            </strong>
+
+            <div class="mw-muted mw-small">
+              ${esc(payload.contract_currency||"")}
+            </div>
+          </div>
+
+          <span class="mw-badge ${row.valid?"ok":"error"}">
+            ${row.valid?"Ready":"Needs attention"}
+          </span>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div>
+            <span class="mw-muted mw-small">Transaction Price</span>
+            <div>${money(recon.transaction_price)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Revenue to Date</span>
+            <div>${money(position.recognized_revenue_to_date)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Billed to Date</span>
+            <div>${money(position.billed_to_date)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Cash Received</span>
+            <div>${money(position.cash_received_to_date)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Accounts Receivable</span>
+            <div>${money(position.accounts_receivable_balance)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">
+              ${position.position_type==="asset"
+                ?"Contract Asset"
+                :position.position_type==="liability"
+                  ?"Contract Liability"
+                  :"Contract Position"
+              }
+            </span>
+
+            <div>${money(position.position_amount)}</div>
+          </div>
+        </div>
+
+        ${revenueProgressSummary(row)}
+
+        <div class="mw-inline" style="margin-top:14px">
+          <span class="mw-badge info">
+            ${row.obligations?.length||0} obligation(s)
+          </span>
+
+          <span class="mw-badge">
+            ${history.progress_event_count||0} progress update(s)
+          </span>
+
+          <span class="mw-badge">
+            ${history.billing_event_count||0} billing event(s)
+          </span>
+
+          <span class="mw-badge">
+            ${history.cash_event_count||0} cash event(s)
+          </span>
+
+          ${history.variation_count
+            ?`<span class="mw-badge warn">${history.variation_count} variation(s)</span>`
+            :""
+          }
+
+          ${history.claim_count
+            ?`<span class="mw-badge warn">${history.claim_count} claim(s)</span>`
+            :""
+          }
+        </div>
+
+        ${row.issues?.length?`
+          <div class="mw-alert ${row.valid?"warn":"error"}" style="margin-top:12px">
+            ${row.issues.map(
+              issue=>`<div>${esc(issue)}</div>`
+            ).join("")}
+          </div>
+        `:""}
+      </div>
+    `;
+  }
+
+  function revenueProgressSummary(row){
+    if(!row.obligations?.length)return "";
+
+    return `
+      <div style="margin-top:16px">
+        <h3>Performance Obligations</h3>
+
+        ${(row.obligations||[]).map(obligation=>{
+          const pct=Math.max(
+            0,
+            Math.min(100,Number(obligation.progress_percent||0))
+          );
+
+          return `
+            <div class="mw-list-item" style="margin-top:8px">
+              <div class="mw-inline" style="justify-content:space-between">
+                <div>
+                  <strong>
+                    ${esc(
+                      obligation.obligation_code||
+                      obligation.obligation_name
+                    )}
+                  </strong>
+
+                  ${obligation.obligation_name
+                    ?`<div class="mw-muted mw-small">${esc(obligation.obligation_name)}</div>`
+                    :""
+                  }
+                </div>
+
+                <strong>${pct.toFixed(2)}%</strong>
+              </div>
+
+              <div class="mw-progress" style="margin-top:8px">
+                <span style="width:${pct}%"></span>
+              </div>
+
+              <div class="mw-grid-3" style="margin-top:10px">
+                <div>
+                  <span class="mw-muted mw-small">Allocated Price</span>
+                  <div>${money(obligation.allocated_transaction_price)}</div>
+                </div>
+
+                <div>
+                  <span class="mw-muted mw-small">Revenue Required</span>
+                  <div>${money(obligation.revenue_required_to_date)}</div>
+                </div>
+
+                <div>
+                  <span class="mw-muted mw-small">Method</span>
+                  <div>${esc(
+                    obligation.progress_method||
+                    obligation.recognition_timing||
+                    "—"
+                  )}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  async function loadAccrualMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.accruals={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.accrualsLoaded=false;
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.accrualDeferrals(
+          companyId(),projectId
+        )
+      );
+
+      state.accruals.datasets=response?.datasets||[];
+
+      if(!state.accruals.datasets.some(
+        dataset=>Number(dataset.dataset_id)===Number(state.accruals.datasetId)
+      )){
+        state.accruals.datasetId=
+          state.accruals.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.accruals.datasetId){
+        await loadAccrualDataset(
+          state.accruals.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.accrualsLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadAccrualMapping failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadAccrualDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.accrualSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.migrations.accrualMapping(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.accruals.datasetId=id;
+    state.accruals.settings=settingsResponse?.settings||null;
+    state.accruals.mapping=mappingResponse?.mapping||null;
+    state.accruals.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveAccrualSettings(){
+    if(!state.accruals.datasetId||!state.accruals.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.accrualSettings(
+          companyId(),
+          state.project.id,
+          state.accruals.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.accruals.settings),
+        }
+      );
+
+      state.accruals.settings=
+        response?.settings||state.accruals.settings;
+
+      await loadAccrualDataset(
+        state.accruals.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Accrual migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+  async function saveAccrualReferences(){
+    const references=state.accruals.mapping?.references||{};
+    const mappings=[];
+
+    for(const [referenceType,group] of Object.entries(references)){
+      for(const row of group.rows||[]){
+        if(!row.target_id){
+          if(!state.accruals.settings?.require_counterparty_mapping){
+            continue;
+          }
+
+          notify(`Select a target for "${row.source_value}".`);
+          return;
+        }
+
+        mappings.push({
+          reference_type:referenceType,
+          source_value:row.source_value,
+          source_label:row.source_label||row.source_value,
+          target_id:Number(row.target_id),
+        });
+      }
+    }
+
+    if(!mappings.length){
+      notify("No accrual reference mappings require saving.");
+      return;
+    }
+
+    state.accrualSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.accrualReferences(
+          companyId(),
+          state.project.id,
+          state.accruals.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadAccrualDataset(
+        state.accruals.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Accrual reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.accrualSaving=false;
+      render();
+    }
+  }
+  async function previewAccrualMigration(){
+    if(!state.accruals.datasetId)return;
+
+    state.accrualPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.accrualPreview(
+          companyId(),
+          state.project.id,
+          state.accruals.datasetId
+        )
+      );
+
+      state.accruals.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.accrualPreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=Boolean(state.ppe.datasets?.length);
+    const hasLeases=Boolean(state.leases.datasets?.length);
+    const hasLoans=Boolean(state.loans.datasets?.length);
+    const hasRevenue=Boolean(state.revenue.datasets?.length);
+    const hasAccruals=Boolean(state.accruals.datasets?.length);
+
+    return `
+      <div>
+        ${hasPpe?ppeMappingView():""}
+        ${hasLeases?leaseMigrationView():""}
+        ${hasLoans?loanMigrationView():""}
+        ${hasRevenue?revenueMigrationView():""}
+        ${hasAccruals?accrualMigrationView():""}
+
+        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals
+          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function accrualMigrationView(){
+    const datasets=state.accruals.datasets||[];
+    const settings=state.accruals.settings;
+    const mapping=state.accruals.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `<div class="mw-empty">Loading accruals and prepayments mapping…</div>`;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Accruals, Prepayments & Deferrals",
+          "Reconstruct prepaid expenses, deferred balances, accrued income and accrued expenses at migration cutover.",
+          `
+            <button class="mw-btn" data-mw-action="save-accrual-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn" data-mw-action="save-accrual-references"
+              ${state.accrualSaving?"disabled":""}>
+              ${state.accrualSaving?"Saving…":"Save references"}
+            </button>
+
+            <button class="mw-btn primary" data-mw-action="preview-accruals"
+              ${state.accrualPreviewLoading?"disabled":""}>
+              ${state.accrualPreviewLoading?"Reconstructing…":"Reconstruct & preview"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwAccrualDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.accruals.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${accrualSettingSelect(
+            "Source Mode",
+            "source_mode",
+            [
+              ["original_terms","Reconstruct from Original Terms"],
+              ["existing_schedule","Existing Recognition Schedule"],
+              ["opening_position","Opening Position"],
+            ]
+          )}
+
+          ${accrualSettingInput(
+            "Migration Date",
+            "migration_date",
+            "date"
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${accrualSettingSelect(
+            "Default Item Type",
+            "default_item_type",
+            [
+              ["prepaid_expense","Prepaid Expense"],
+              ["deferred_expense","Deferred Expense"],
+              ["deferred_income","Deferred Income"],
+              ["accrued_income","Accrued Income"],
+              ["accrued_expense","Accrued Expense"],
+            ]
+          )}
+
+          ${accrualSettingSelect(
+            "Recognition Method",
+            "default_recognition_method",
+            [
+              ["straight_line","Straight Line"],
+              ["manual","Manual"],
+              ["units","Units"],
+              ["milestone","Milestone"],
+            ]
+          )}
+
+          ${accrualSettingSelect(
+            "Frequency",
+            "default_frequency",
+            [
+              ["monthly","Monthly"],
+              ["quarterly","Quarterly"],
+              ["annually","Annually"],
+              ["once","Once"],
+              ["manual","Manual"],
+            ]
+          )}
+        </div>
+
+        ${accrualAccountSettings()}
+        ${accrualReferenceMappingView()}
+        ${accrualPreviewView()}
+      </div>
+    `;
+  }
+
+
+  function accrualSettingInput(label,field,type="text"){
+    const value=state.accruals.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-accrual-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+
+  function accrualSettingSelect(label,field,options){
+    const value=state.accruals.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-accrual-setting="${esc(field)}">
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function accrualAccountSettings(){
+    return `
+      <div style="margin-top:20px">
+        <h3>Balance Sheet Controls</h3>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${accrualSettingCoa(
+            "Prepaid Expense",
+            "prepaid_expense_account"
+          )}
+
+          ${accrualSettingCoa(
+            "Deferred Expense",
+            "deferred_expense_account"
+          )}
+
+          ${accrualSettingCoa(
+            "Deferred Income",
+            "deferred_income_account"
+          )}
+
+          ${accrualSettingCoa(
+            "Accrued Income",
+            "accrued_income_account"
+          )}
+
+          ${accrualSettingCoa(
+            "Accrued Expense",
+            "accrued_expense_account"
+          )}
+        </div>
+
+        <h3 style="margin-top:18px">Default Posting Accounts</h3>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          ${accrualSettingCoa(
+            "Recognition Expense / Income",
+            "default_recognition_account"
+          )}
+
+          ${accrualSettingCoa(
+            "Settlement / Contra",
+            "default_settlement_account"
+          )}
+
+          ${accrualSettingCoa(
+            "VAT / Tax",
+            "default_tax_account"
+          )}
+        </div>
+      </div>
+    `;
+  }
+  function accrualSettingCoa(label,field){
+    const accounts=window.COA_ACCOUNTS||
+      window.ACCOUNTS||
+      window.chartOfAccounts||
+      [];
+
+    const selected=state.accruals.settings?.[field]||"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-accrual-setting="${esc(field)}">
+
+          <option value="">Select account</option>
+
+          ${accounts.map(account=>{
+            const code=account.code||account.account_code||"";
+            const name=account.name||account.account_name||code;
+
+            return `
+              <option value="${esc(code)}"
+                ${String(selected)===String(code)?"selected":""}>
+                ${esc(name)}
+              </option>
+            `;
+          }).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function accrualReferenceMappingView(){
+    const refs=state.accruals.mapping?.references||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Counterparty Mapping</h3>
+
+        ${accrualReferenceGroup(
+          "customer",
+          "Customers",
+          refs.customer
+        )}
+
+        ${accrualReferenceGroup(
+          "vendor",
+          "Vendors / Suppliers",
+          refs.vendor
+        )}
+
+        ${accrualReferenceGroup(
+          "employee",
+          "Employees",
+          refs.employee
+        )}
+      </div>
+    `;
+  }
+  function accrualReferenceGroup(type,label,group){
+    if(!group?.rows?.length)return "";
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <h3>${esc(label)}</h3>
+
+        ${table(
+          ["Source Reference","Records","FinSage Target"],
+          group.rows.map(row=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+            Number(row.sample_count||0).toLocaleString(),
+            accrualReferenceSelect(
+              type,row,group.targets||[]
+            ),
+          ]),
+          `No ${label.toLowerCase()} detected.`
+        )}
+      </div>
+    `;
+  }
+
+  function accrualReferenceSelect(type,row,targets){
+    return `
+      <select class="mw-select"
+        data-mw-accrual-reference="${esc(type)}"
+        data-mw-accrual-source="${esc(row.source_value)}">
+
+        <option value="">Select target</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(
+              `${target.code?`${target.code} — `:""}${target.label||""}`
+            )}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function accrualPreviewView(){
+    const preview=state.accruals.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:22px">
+        <h3>Cutover Reconstruction</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Items</span>
+            <strong>${preview.item_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Recognised</span>
+            <strong>${money(preview.total_recognized_to_date||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Remaining</span>
+            <strong>${money(preview.total_remaining_balance||0)}</strong>
+          </div>
+        </div>
+
+        ${(preview.items||[]).map(
+          accrualPreviewCard
+        ).join("")}
+      </div>
+    `;
+  }
+  function accrualPreviewCard(row){
+    const payload=row.payload||{};
+    const cutover=row.cutover||{};
+    const recon=row.reconciliation||{};
+    const next=row.next_recognition||{};
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>
+              ${esc(
+                payload.item_title||
+                payload.item_number||
+                row.item_key||
+                `Item ${row.row_number}`
+              )}
+            </strong>
+
+            <div class="mw-muted mw-small">
+              ${esc(
+                String(payload.item_type||"")
+                  .replaceAll("_"," ")
+              )}
+            </div>
+          </div>
+
+          <span class="mw-badge ${row.valid?"ok":"error"}">
+            ${row.valid?"Ready":"Needs attention"}
+          </span>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div>
+            <span class="mw-muted mw-small">Original Amount</span>
+            <div>${money(payload.original_amount)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Recognised to Date</span>
+            <div>${money(cutover.recognized_to_date)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Remaining Balance</span>
+            <div>${money(cutover.remaining_balance)}</div>
+          </div>
+        </div>
+
+        ${recon.remaining_difference!=null?`
+          <div class="mw-grid-3" style="margin-top:12px">
+            <div>
+              <span class="mw-muted mw-small">Calculated Remaining</span>
+              <div>${money(recon.calculated_remaining_balance)}</div>
+            </div>
+
+            <div>
+              <span class="mw-muted mw-small">Imported Remaining</span>
+              <div>${money(recon.imported_remaining_balance)}</div>
+            </div>
+
+            <div>
+              <span class="mw-muted mw-small">Difference</span>
+              <div>${money(recon.remaining_difference)}</div>
+            </div>
+          </div>
+        `:""}
+
+        ${next?.date||next?.recognition_date?`
+          <div class="mw-alert" style="margin-top:14px">
+            <strong>
+              Next recognition:
+              ${esc(next.date||next.recognition_date)}
+            </strong>
+
+            <div class="mw-grid-3" style="margin-top:8px">
+              <div>
+                <span class="mw-muted mw-small">Amount</span>
+                <div>${money(next.amount??next.recognition_amount)}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Opening</span>
+                <div>${money(next.opening_balance)}</div>
+              </div>
+
+              <div>
+                <span class="mw-muted mw-small">Closing</span>
+                <div>${money(next.closing_balance)}</div>
+              </div>
+            </div>
+          </div>
+        `:""}
+
+        ${row.issues?.length?`
+          <div class="mw-alert ${row.valid?"warn":"error"}" style="margin-top:12px">
+            ${row.issues.map(
+              issue=>`<div>${esc(issue)}</div>`
+            ).join("")}
+          </div>
+        `:""}
+      </div>
+    `;
+  }
+
+  async function loadPayrollMapping(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payroll={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.payrollLoaded=false;
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payroll(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.payroll.datasets=response?.datasets||[];
+
+      if(!state.payroll.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.payroll.datasetId)
+      )){
+        state.payroll.datasetId=
+          state.payroll.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.payroll.datasetId){
+        await loadPayrollDataset(
+          state.payroll.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.payrollLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error(
+        "[DataMigration] loadPayrollMapping failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadPayrollDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.payrollSettings(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.payrollMapping(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+    ]);
+
+    state.payroll.datasetId=id;
+    state.payroll.settings=settingsResponse?.settings||null;
+    state.payroll.mapping=mappingResponse?.mapping||null;
+    state.payroll.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePayrollSettings(){
+    if(!state.payroll.datasetId||!state.payroll.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollSettings(
+          companyId(),
+          state.project.id,
+          state.payroll.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(state.payroll.settings),
+        }
+      );
+
+      state.payroll.settings=
+        response?.settings||state.payroll.settings;
+
+      await loadPayrollDataset(
+        state.payroll.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Payroll migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+  async function savePayrollReferences(){
+    const references=state.payroll.mapping?.references||{};
+    const mappings=[];
+
+    for(const [referenceType,group] of Object.entries(references)){
+      for(const row of group.rows||[]){
+        if(!row.target_id)continue;
+
+        mappings.push({
+          reference_type:referenceType,
+          source_value:row.source_value,
+          source_label:row.source_label||row.source_value,
+          target_id:Number(row.target_id),
+        });
+      }
+    }
+
+    if(!mappings.length){
+      notify("No payroll reference mappings require saving.");
+      return;
+    }
+
+    state.payrollSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.payrollReferences(
+          companyId(),
+          state.project.id,
+          state.payroll.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadPayrollDataset(
+        state.payroll.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Payroll reference mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollSaving=false;
+      render();
+    }
+  }
+  async function previewPayrollMigration(){
+    if(!state.payroll.datasetId)return;
+
+    state.payrollPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollPreview(
+          companyId(),
+          state.project.id,
+          state.payroll.datasetId
+        )
+      );
+
+      state.payroll.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollPreviewLoading=false;
+      render();
+    }
+  }
+
+  function moduleMappingView(){
+    const hasPpe=Boolean(state.ppe.datasets?.length);
+    const hasLeases=Boolean(state.leases.datasets?.length);
+    const hasLoans=Boolean(state.loans.datasets?.length);
+    const hasRevenue=Boolean(state.revenue.datasets?.length);
+    const hasAccruals=Boolean(state.accruals.datasets?.length);
+    const hasPayroll=Boolean(state.payroll.datasets?.length);
+
+    return `
+      <div>
+        ${hasPpe?ppeMappingView():""}
+        ${hasLeases?leaseMigrationView():""}
+        ${hasLoans?loanMigrationView():""}
+        ${hasRevenue?revenueMigrationView():""}
+        ${hasAccruals?accrualMigrationView():""}
+        ${hasPayroll?payrollMigrationView():""}
+
+        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals&&!hasPayroll
+          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
+          :""
+        }
+      </div>
+    `;
+  }
+
+  function payrollMigrationView(){
+    const datasets=state.payroll.datasets||[];
+    const settings=state.payroll.settings;
+    const mapping=state.payroll.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `
+        <div class="mw-empty">
+          Loading payroll migration mapping…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Payroll",
+          "Map employees, contracts, tax profiles, bank details and current payroll setup.",
+          `
+            <button class="mw-btn" data-mw-action="save-payroll-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn" data-mw-action="save-payroll-references"
+              ${state.payrollSaving?"disabled":""}>
+              ${state.payrollSaving?"Saving…":"Save references"}
+            </button>
+
+            <button class="mw-btn primary" data-mw-action="preview-payroll"
+              ${state.payrollPreviewLoading?"disabled":""}>
+              ${state.payrollPreviewLoading?"Validating…":"Validate & preview"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwPayrollDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.payroll.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${payrollSettingInput(
+            "Migration Date",
+            "migration_date",
+            "date"
+          )}
+
+          ${payrollSettingSelect(
+            "Payroll Frequency",
+            "default_pay_frequency",
+            [
+              ["weekly","Weekly"],
+              ["fortnightly","Fortnightly"],
+              ["monthly","Monthly"],
+            ]
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${payrollSettingSelect(
+            "Default Pay Basis",
+            "default_pay_basis",
+            [
+              ["monthly","Monthly"],
+              ["hourly","Hourly"],
+              ["daily","Daily"],
+              ["quantity","Quantity"],
+              ["commission_only","Commission Only"],
+            ]
+          )}
+
+          ${payrollSettingSelect(
+            "Tax Residency",
+            "default_residency_status",
+            [
+              ["resident","Resident"],
+              ["non_resident","Non-resident"],
+            ]
+          )}
+
+          ${payrollSettingSelect(
+            "Tax Method",
+            "default_tax_calculation_method",
+            [
+              ["standard","Standard"],
+              ["directive","Directive"],
+              ["manual","Manual"],
+              ["exempt","Exempt"],
+            ]
+          )}
+        </div>
+
+        ${payrollTaxSettingsView()}
+        ${payrollReferenceMappingView()}
+        ${payrollPreviewView()}
+        ${payrollItemsMigrationView()}
+        ${payrollLeaveMigrationView()}
+        ${payrollEmployeeLoansMigrationView()}
+      </div>
+    `;
+  }
+
+  function payrollSettingInput(label,field,type="text"){
+    const value=state.payroll.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-payroll-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function payrollSettingSelect(label,field,options){
+    const value=state.payroll.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-payroll-setting="${esc(field)}">
+
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function payrollTaxSettingsView(){
+    const mapping=state.payroll.mapping||{};
+    const tax=mapping.tax_options||{};
+    const settings=state.payroll.settings||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Tax Configuration</h3>
+
+        <div class="mw-grid-3" style="margin-top:12px">
+          <div class="mw-field">
+            <label>Default Tax Authority</label>
+
+            <select class="mw-select"
+              data-mw-payroll-setting="default_tax_authority_id">
+
+              <option value="">Select authority</option>
+
+              ${(tax.authorities||[]).map(item=>`
+                <option value="${item.id}"
+                  ${Number(settings.default_tax_authority_id)===Number(item.id)?"selected":""}>
+                  ${esc(item.name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Default Payroll Tax Regime</label>
+
+            <select class="mw-select"
+              data-mw-payroll-setting="default_tax_regime_id">
+
+              <option value="">Select regime</option>
+
+              ${(tax.regimes||[]).map(item=>`
+                <option value="${item.id}"
+                  ${Number(settings.default_tax_regime_id)===Number(item.id)?"selected":""}>
+                  ${esc(`${item.name} — ${item.country_code}`)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${payrollSettingSelect(
+            "Proration Method",
+            "default_proration_method",
+            [
+              ["working_days","Working Days"],
+              ["calendar_days","Calendar Days"],
+              ["fixed_30_days","Fixed 30 Days"],
+              ["scheduled_hours","Scheduled Hours"],
+              ["actual_hours","Actual Hours"],
+              ["no_proration","No Proration"],
+            ]
+          )}
+        </div>
+      </div>
+    `;
+  }
+
+  function payrollReferenceMappingView(){
+    const refs=state.payroll.mapping?.references||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Reference Mapping</h3>
+
+        ${payrollReferenceGroup(
+          "department",
+          "Departments",
+          refs.department
+        )}
+
+        ${payrollReferenceGroup(
+          "position",
+          "Positions",
+          refs.position
+        )}
+
+        ${payrollReferenceGroup(
+          "tax_authority",
+          "Tax Authorities",
+          refs.tax_authority
+        )}
+
+        ${payrollReferenceGroup(
+          "tax_regime",
+          "Payroll Tax Regimes",
+          refs.tax_regime
+        )}
+      </div>
+    `;
+  }
+  function payrollReferenceGroup(type,label,group){
+    if(!group?.rows?.length)return "";
+
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <h3>${esc(label)}</h3>
+
+        ${table(
+          ["Source Value","Records","FinSage Target"],
+          group.rows.map(row=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+            Number(row.sample_count||0).toLocaleString(),
+            payrollReferenceSelect(
+              type,
+              row,
+              group.targets||[]
+            ),
+          ]),
+          `No ${label.toLowerCase()} detected.`
+        )}
+      </div>
+    `;
+  }
+  function payrollReferenceSelect(type,row,targets){
+    return `
+      <select class="mw-select"
+        data-mw-payroll-reference="${esc(type)}"
+        data-mw-payroll-source="${esc(row.source_value)}">
+
+        <option value="">Select target</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(
+              `${target.code?`${target.code} — `:""}${target.label||""}`
+            )}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function payrollPreviewView(){
+    const preview=state.payroll.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:22px">
+        <h3>Payroll Migration Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Employees</span>
+            <strong>${preview.employee_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Tax Profiles</span>
+            <strong>${preview.tax_profile_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Bank Accounts</span>
+            <strong>${preview.bank_account_count||0}</strong>
+          </div>
+        </div>
+
+        ${table(
+          [
+            "Employee",
+            "Department",
+            "Pay Basis",
+            "Basic Salary",
+            "Tax",
+            "Status",
+          ],
+
+          (preview.employees||[]).map(row=>{
+            const employee=row.employee||{};
+            const contract=row.contract||{};
+            const setup=row.pay_setup||{};
+            const tax=row.tax_profile||{};
+
+            return [
+              `<strong>${esc(
+                `${employee.first_name||""} ${employee.last_name||""}`.trim()
+              )}</strong>
+              <div class="mw-muted mw-small">
+                ${esc(employee.employee_no||"Number will be generated")}
+              </div>`,
+
+              employee.department_id
+                ?`Mapped #${esc(employee.department_id)}`
+                :"—",
+
+              esc(setup.pay_basis||"—"),
+
+              money(contract.basic_salary||0),
+
+              tax.tax_authority_id
+                ?`<span class="mw-badge ok">Configured</span>`
+                :`<span class="mw-badge warn">Missing</span>`,
+
+              row.valid
+                ?`<span class="mw-badge ok">Ready</span>`
+                :`<span class="mw-badge error">${row.issues?.length||1} issue(s)</span>`,
+            ];
+          }),
+
+          "No payroll employees found."
+        )}
+      </div>
+    `;
+  }
+
+  async function loadPayrollItems(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payrollItems={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.payrollItemsLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollItems(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.payrollItems.datasets=response?.datasets||[];
+
+      if(!state.payrollItems.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.payrollItems.datasetId)
+      )){
+        state.payrollItems.datasetId=
+          state.payrollItems.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.payrollItems.datasetId){
+        await loadPayrollItemDataset(
+          state.payrollItems.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.payrollItemsLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error(
+        "[DataMigration] loadPayrollItems failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadPayrollItemDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.payrollItemSettings(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.payrollItemMapping(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+    ]);
+
+    state.payrollItems.datasetId=id;
+    state.payrollItems.settings=settingsResponse?.settings||null;
+    state.payrollItems.mapping=mappingResponse?.mapping||null;
+    state.payrollItems.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePayrollItemSettings(){
+    if(!state.payrollItems.datasetId||!state.payrollItems.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollItemSettings(
+          companyId(),
+          state.project.id,
+          state.payrollItems.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(
+            state.payrollItems.settings
+          ),
+        }
+      );
+
+      state.payrollItems.settings=
+        response?.settings||state.payrollItems.settings;
+
+      notify("Payroll item settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+
+  async function savePayrollItemMapping(){
+    const rows=
+      state.payrollItems.mapping?.detection?.items||[];
+
+    const mappings=[];
+
+    for(const row of rows){
+      if(!row.item_type){
+        notify(
+          `Select an item type for "${row.source_name}".`
+        );
+        return;
+      }
+
+      if(!row.target_id){
+        notify(
+          `Select a FinSage item for "${row.source_name}".`
+        );
+        return;
+      }
+
+      mappings.push({
+        item_type:row.item_type,
+        source_code:row.source_code||null,
+        source_name:row.source_name,
+
+        target_id:Number(row.target_id),
+
+        default_calculation_method:
+          row.default_calculation_method||"fixed_amount",
+
+        default_amount:
+          row.default_amount??null,
+
+        default_percentage:
+          row.default_percentage??null,
+
+        default_quantity:
+          row.default_quantity??null,
+
+        default_rate:
+          row.default_rate??null,
+
+        taxable:
+          row.taxable??null,
+
+        pensionable:
+          row.pensionable??null,
+      });
+    }
+
+    if(!mappings.length){
+      notify("No payroll items detected.");
+      return;
+    }
+
+    state.payrollItemsSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.payrollItemMapping(
+          companyId(),
+          state.project.id,
+          state.payrollItems.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadPayrollItemDataset(
+        state.payrollItems.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Payroll item mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollItemsSaving=false;
+      render();
+    }
+  }
+
+  async function previewPayrollItems(){
+    if(!state.payrollItems.datasetId)return;
+
+    state.payrollItemsPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollItemPreview(
+          companyId(),
+          state.project.id,
+          state.payrollItems.datasetId
+        )
+      );
+
+      state.payrollItems.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollItemsPreviewLoading=false;
+      render();
+    }
+  }
+
+  
+  function payrollItemsMigrationView(){
+    const datasets=state.payrollItems.datasets||[];
+
+    if(!datasets.length)return "";
+
+    const settings=state.payrollItems.settings;
+    const mapping=state.payrollItems.mapping;
+
+    if(!settings||!mapping){
+      return `
+        <div class="mw-empty">
+          Loading payroll items…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Earnings, Deductions, Benefits & Contributions",
+          "Map legacy payroll items to the FinSage payroll catalogue before importing employee pay setup.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-payroll-item-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="save-payroll-item-mapping"
+              ${state.payrollItemsSaving?"disabled":""}>
+              ${state.payrollItemsSaving?"Saving…":"Save mappings"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="preview-payroll-items"
+              ${state.payrollItemsPreviewLoading?"disabled":""}>
+              ${state.payrollItemsPreviewLoading?"Validating…":"Validate items"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwPayrollItemDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.payrollItems.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Source Layout</label>
+
+            <select class="mw-select"
+              data-mw-payroll-item-setting="source_layout">
+
+              <option value="item_rows"
+                ${settings.source_layout==="item_rows"?"selected":""}>
+                One Payroll Item Per Row
+              </option>
+
+              <option value="employee_rows"
+                ${settings.source_layout==="employee_rows"?"selected":""}>
+                One Employee Per Row
+              </option>
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Default Effective From</label>
+
+            <input type="date"
+              class="mw-input"
+              value="${esc(settings.default_effective_from||"")}"
+              data-mw-payroll-item-setting="default_effective_from">
+          </div>
+        </div>
+
+        ${payrollItemMappingTable()}
+        ${payrollItemsPreviewView()}
+      </div>
+    `;
+  }
+
+  function payrollItemMappingTable(){
+    const mapping=state.payrollItems.mapping||{};
+    const rows=mapping.detection?.items||[];
+    const targets=mapping.targets||{};
+
+    return `
+      <div style="margin-top:18px">
+        <h3>Payroll Item Mapping</h3>
+
+        ${table(
+          [
+            "Source Item",
+            "Records",
+            "Type",
+            "FinSage Item",
+            "Confidence",
+          ],
+
+          rows.map((row,index)=>[
+            `
+              <strong>${esc(row.source_name||row.source_code)}</strong>
+              <div class="mw-muted mw-small">
+                ${esc(row.source_code||"No source code")}
+              </div>
+            `,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            `
+              <select class="mw-select"
+                data-mw-payroll-map-type="${index}">
+                <option value="">Select type</option>
+
+                ${[
+                  ["earning","Earning"],
+                  ["deduction","Deduction"],
+                  ["benefit","Benefit"],
+                  ["contribution","Employer Contribution"],
+                ].map(([value,label])=>`
+                  <option value="${value}"
+                    ${row.item_type===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            payrollItemTargetSelect(
+              row,
+              index,
+              targets[row.item_type]||[]
+            ),
+
+            row.target_id
+              ?`<span class="mw-badge ${row.is_approved?"ok":"info"}">
+                  ${Number(row.confidence||0).toFixed(0)}%
+                </span>`
+              :`<span class="mw-badge warn">Unmapped</span>`,
+          ]),
+
+          "No payroll items detected."
+        )}
+      </div>
+    `;
+  }
+  function payrollItemTargetSelect(row,index,targets){
+    if(!row.item_type){
+      return `
+        <select class="mw-select" disabled>
+          <option>Select item type first</option>
+        </select>
+      `;
+    }
+
+    return `
+      <select class="mw-select"
+        data-mw-payroll-map-target="${index}">
+
+        <option value="">Select FinSage item</option>
+
+        ${targets.map(target=>`
+          <option value="${target.id}"
+            ${Number(row.target_id)===Number(target.id)?"selected":""}>
+            ${esc(`${target.code||""} — ${target.name||""}`)}
+          </option>
+        `).join("")}
+      </select>
+    `;
+  }
+
+  function payrollItemsPreviewView(){
+    const preview=state.payrollItems.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Payroll Items Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Items</span>
+            <strong>${preview.item_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Earnings</span>
+            <strong>${money(preview.totals?.earning||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Deductions</span>
+            <strong>${money(preview.totals?.deduction||0)}</strong>
+          </div>
+        </div>
+
+        ${table(
+          [
+            "Employee",
+            "Source Item",
+            "FinSage Item",
+            "Method",
+            "Amount",
+            "Status",
+          ],
+
+          (preview.items||[]).map(row=>{
+            const employee=row.employee||{};
+            const item=row.item||{};
+
+            return [
+              esc(employee.employee_no||"—"),
+
+              esc(
+                item.source_name
+                ||item.source_code
+                ||"—"
+              ),
+
+              item.target_code
+                ?`${esc(item.target_code)} — ${esc(item.target_name||"")}`
+                :"—",
+
+              esc(
+                String(item.calculation_method||"")
+                  .replaceAll("_"," ")
+              ),
+
+              money(item.amount||0),
+
+              row.valid
+                ?`<span class="mw-badge ok">Ready</span>`
+                :`<span class="mw-badge error">${row.issues?.length||1} issue(s)</span>`,
+            ];
+          }),
+
+          "No payroll items available."
+        )}
+      </div>
+    `;
+  }
+
+  async function loadPayrollLeave(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payrollLeave={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.payrollLeaveLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollLeaveBalances(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.payrollLeave.datasets=response?.datasets||[];
+
+      if(!state.payrollLeave.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.payrollLeave.datasetId)
+      )){
+        state.payrollLeave.datasetId=
+          state.payrollLeave.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.payrollLeave.datasetId){
+        await loadPayrollLeaveDataset(
+          state.payrollLeave.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.payrollLeaveLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error("[DataMigration] loadPayrollLeave failed",error);
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadPayrollLeaveDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.payrollLeaveSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.payrollLeaveMapping(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.payrollLeave.datasetId=id;
+    state.payrollLeave.settings=settingsResponse?.settings||null;
+    state.payrollLeave.mapping=mappingResponse?.mapping||null;
+    state.payrollLeave.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function loadPayrollEmployeeLoans(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payrollEmployeeLoans={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.payrollEmployeeLoansLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollEmployeeLoans(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.payrollEmployeeLoans.datasets=response?.datasets||[];
+
+      if(!state.payrollEmployeeLoans.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.payrollEmployeeLoans.datasetId)
+      )){
+        state.payrollEmployeeLoans.datasetId=
+          state.payrollEmployeeLoans.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.payrollEmployeeLoans.datasetId){
+        await loadPayrollEmployeeLoanDataset(
+          state.payrollEmployeeLoans.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.payrollEmployeeLoansLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error(
+        "[DataMigration] loadPayrollEmployeeLoans failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadPayrollEmployeeLoanDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.payrollEmployeeLoanSettings(
+          companyId(),state.project.id,id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.payrollEmployeeLoanMapping(
+          companyId(),state.project.id,id
+        )
+      ),
+    ]);
+
+    state.payrollEmployeeLoans.datasetId=id;
+    state.payrollEmployeeLoans.settings=settingsResponse?.settings||null;
+    state.payrollEmployeeLoans.mapping=mappingResponse?.mapping||null;
+    state.payrollEmployeeLoans.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePayrollLeaveSettings(){
+    if(!state.payrollLeave.datasetId||!state.payrollLeave.settings)return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollLeaveSettings(
+          companyId(),
+          state.project.id,
+          state.payrollLeave.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(
+            state.payrollLeave.settings
+          ),
+        }
+      );
+
+      state.payrollLeave.settings=
+        response?.settings||state.payrollLeave.settings;
+
+      notify("Payroll leave settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+
+  async function savePayrollLeaveMapping(){
+    const rows=
+      state.payrollLeave.mapping?.leave_types?.items||[];
+
+    const mappings=[];
+
+    for(const row of rows){
+      if(!row.target_leave_type_id){
+        notify(
+          `Select a leave type for "${row.source_name}".`
+        );
+        return;
+      }
+
+      mappings.push({
+        source_code:row.source_code||null,
+        source_name:row.source_name,
+        target_leave_type_id:Number(
+          row.target_leave_type_id
+        ),
+      });
+    }
+
+    if(!mappings.length){
+      notify("No leave types detected.");
+      return;
+    }
+
+    state.payrollLeaveSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.payrollLeaveMapping(
+          companyId(),
+          state.project.id,
+          state.payrollLeave.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadPayrollLeaveDataset(
+        state.payrollLeave.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Leave type mappings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollLeaveSaving=false;
+      render();
+    }
+  }
+
+  async function previewPayrollLeave(){
+    if(!state.payrollLeave.datasetId)return;
+
+    state.payrollLeavePreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollLeavePreview(
+          companyId(),
+          state.project.id,
+          state.payrollLeave.datasetId
+        )
+      );
+
+      state.payrollLeave.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollLeavePreviewLoading=false;
+      render();
+    }
+  }
+
+  async function savePayrollEmployeeLoanSettings(){
+    if(
+      !state.payrollEmployeeLoans.datasetId||
+      !state.payrollEmployeeLoans.settings
+    )return;
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollEmployeeLoanSettings(
+          companyId(),
+          state.project.id,
+          state.payrollEmployeeLoans.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(
+            state.payrollEmployeeLoans.settings
+          ),
+        }
+      );
+
+      state.payrollEmployeeLoans.settings=
+        response?.settings||state.payrollEmployeeLoans.settings;
+
+      notify("Employee loan migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+    }
+
+    render();
+  }
+  async function previewPayrollEmployeeLoans(){
+    if(!state.payrollEmployeeLoans.datasetId)return;
+
+    state.payrollEmployeeLoansPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollEmployeeLoanPreview(
+          companyId(),
+          state.project.id,
+          state.payrollEmployeeLoans.datasetId
+        )
+      );
+
+      state.payrollEmployeeLoans.preview=response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollEmployeeLoansPreviewLoading=false;
+      render();
+    }
+  }
+
+  function payrollLeaveMigrationView(){
+    const datasets=state.payrollLeave.datasets||[];
+
+    if(!datasets.length)return "";
+
+    const settings=state.payrollLeave.settings;
+    const mapping=state.payrollLeave.mapping;
+
+    if(!settings||!mapping){
+      return `
+        <div class="mw-empty">
+          Loading leave opening balances…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Leave Opening Balances",
+          "Map legacy leave types and reconstruct employee leave balances at migration cutover.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-payroll-leave-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn"
+              data-mw-action="save-payroll-leave-mapping"
+              ${state.payrollLeaveSaving?"disabled":""}>
+              ${state.payrollLeaveSaving?"Saving…":"Save leave mapping"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="preview-payroll-leave"
+              ${state.payrollLeavePreviewLoading?"disabled":""}>
+              ${state.payrollLeavePreviewLoading?"Validating…":"Validate balances"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwPayrollLeaveDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.payrollLeave.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Opening Balance Source</label>
+
+            <select class="mw-select"
+              data-mw-payroll-leave-setting="default_opening_source">
+
+              <option value="legacy_balance"
+                ${settings.default_opening_source==="legacy_balance"?"selected":""}>
+                Legacy Closing Balance
+              </option>
+
+              <option value="entitlement_less_taken"
+                ${settings.default_opening_source==="entitlement_less_taken"?"selected":""}>
+                Entitlement Less Leave Taken
+              </option>
+
+              <option value="movement_history"
+                ${settings.default_opening_source==="movement_history"?"selected":""}>
+                Movement History
+              </option>
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Balance Unit</label>
+
+            <select class="mw-select"
+              data-mw-payroll-leave-setting="default_balance_unit">
+
+              <option value="days"
+                ${settings.default_balance_unit==="days"?"selected":""}>
+                Days
+              </option>
+
+              <option value="hours"
+                ${settings.default_balance_unit==="hours"?"selected":""}>
+                Hours
+              </option>
+            </select>
+          </div>
+        </div>
+
+        ${payrollLeaveTypeMappingView()}
+        ${payrollLeavePreviewView()}
+      </div>
+    `;
+  }
+
+  function payrollLeaveTypeMappingView(){
+    const mapping=state.payrollLeave.mapping||{};
+    const rows=mapping.leave_types?.items||[];
+    const targets=mapping.leave_types?.targets||[];
+
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:18px">
+        <h3>Leave Type Mapping</h3>
+
+        ${table(
+          [
+            "Source Leave Type",
+            "Records",
+            "FinSage Leave Type",
+            "Confidence",
+          ],
+
+          rows.map((row,index)=>[
+            `
+              <strong>${esc(row.source_name)}</strong>
+              <div class="mw-muted mw-small">
+                ${esc(row.source_code||"No source code")}
+              </div>
+            `,
+
+            Number(row.sample_count||0).toLocaleString(),
+
+            `
+              <select class="mw-select"
+                data-mw-payroll-leave-target="${index}">
+
+                <option value="">Select leave type</option>
+
+                ${targets.map(target=>`
+                  <option value="${target.id}"
+                    ${Number(row.target_leave_type_id)===Number(target.id)?"selected":""}>
+                    ${esc(`${target.code||""} — ${target.name||""}`)}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.target_leave_type_id
+              ?`<span class="mw-badge ${row.is_approved?"ok":"info"}">
+                  ${Number(row.confidence||0).toFixed(0)}%
+                </span>`
+              :`<span class="mw-badge warn">Unmapped</span>`,
+          ]),
+
+          "No leave types detected."
+        )}
+      </div>
+    `;
+  }
+
+  function payrollLeavePreviewView(){
+    const preview=state.payrollLeave.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Leave Opening Position</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Balances</span>
+            <strong>${preview.balance_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Total Opening Balance</span>
+            <strong>${Number(preview.total_opening_balance||0).toLocaleString()}</strong>
+          </div>
+        </div>
+
+        ${table(
+          [
+            "Employee",
+            "Leave Type",
+            "Entitlement",
+            "Taken",
+            "Opening Balance",
+            "Status",
+          ],
+
+          (preview.items||[]).map(row=>[
+            esc(row.employee?.employee_no||"—"),
+
+            esc(row.leave?.leave_type_name||"—"),
+
+            Number(row.leave?.opening_entitlement||0).toLocaleString(),
+
+            Number(row.leave?.leave_taken_to_date||0).toLocaleString(),
+
+            `<strong>${Number(row.leave?.opening_balance||0).toLocaleString()}</strong>`,
+
+            row.valid
+              ?`<span class="mw-badge ok">Ready</span>`
+              :`<span class="mw-badge error">${row.issues?.length||1} issue(s)</span>`,
+          ]),
+
+          "No leave balances available."
+        )}
+      </div>
+    `;
+  }
+
+  function payrollEmployeeLoansMigrationView(){
+    const datasets=state.payrollEmployeeLoans.datasets||[];
+
+    if(!datasets.length)return "";
+
+    const settings=state.payrollEmployeeLoans.settings;
+
+    if(!settings){
+      return `
+        <div class="mw-empty">
+          Loading employee loans…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Employee Loans",
+          "Reconstruct outstanding employee-loan balances and repayment settings at payroll cutover.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-payroll-employee-loan-settings">
+              Save settings
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="preview-payroll-employee-loans"
+              ${state.payrollEmployeeLoansPreviewLoading?"disabled":""}>
+              ${state.payrollEmployeeLoansPreviewLoading?"Validating…":"Validate loans"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwPayrollEmployeeLoanDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.payrollEmployeeLoans.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Repayment Frequency</label>
+
+            <select class="mw-select"
+              data-mw-payroll-loan-setting="default_frequency">
+
+              <option value="weekly"
+                ${settings.default_frequency==="weekly"?"selected":""}>
+                Weekly
+              </option>
+
+              <option value="fortnightly"
+                ${settings.default_frequency==="fortnightly"?"selected":""}>
+                Fortnightly
+              </option>
+
+              <option value="monthly"
+                ${settings.default_frequency==="monthly"?"selected":""}>
+                Monthly
+              </option>
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Interest Method</label>
+
+            <select class="mw-select"
+              data-mw-payroll-loan-setting="default_interest_method">
+
+              <option value="reducing_balance"
+                ${settings.default_interest_method==="reducing_balance"?"selected":""}>
+                Reducing Balance
+              </option>
+
+              <option value="flat"
+                ${settings.default_interest_method==="flat"?"selected":""}>
+                Flat
+              </option>
+
+              <option value="interest_free"
+                ${settings.default_interest_method==="interest_free"?"selected":""}>
+                Interest Free
+              </option>
+
+              <option value="manual"
+                ${settings.default_interest_method==="manual"?"selected":""}>
+                Manual
+              </option>
+            </select>
+          </div>
+        </div>
+
+        ${payrollEmployeeLoanPreviewView()}
+      </div>
+    `;
+  }
+
+  function payrollEmployeeLoanPreviewView(){
+    const preview=state.payrollEmployeeLoans.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Employee Loan Opening Position</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Loans</span>
+            <strong>${preview.loan_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Outstanding</span>
+            <strong>${money(preview.total_outstanding||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Payroll Repayments</span>
+            <strong>${money(preview.total_repayment_amount||0)}</strong>
+          </div>
+        </div>
+
+        ${table(
+          [
+            "Employee",
+            "Loan",
+            "Original",
+            "Repaid",
+            "Outstanding",
+            "Repayment",
+            "Status",
+          ],
+
+          (preview.items||[]).map(row=>[
+            esc(row.employee?.employee_no||"—"),
+
+            `
+              <strong>${esc(row.loan?.loan_name||"—")}</strong>
+              <div class="mw-muted mw-small">
+                ${esc(row.loan?.loan_reference||"")}
+              </div>
+            `,
+
+            money(row.loan?.original_amount||0),
+
+            money(row.loan?.amount_repaid_to_date||0),
+
+            `<strong>${money(row.loan?.outstanding_balance||0)}</strong>`,
+
+            money(row.loan?.repayment_amount||0),
+
+            row.valid
+              ?`<span class="mw-badge ok">Ready</span>`
+              :`<span class="mw-badge error">${row.issues?.length||1} issue(s)</span>`,
+          ]),
+
+          "No employee loans available."
+        )}
       </div>
     `;
   }

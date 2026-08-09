@@ -1035,6 +1035,95 @@ const ENDPOINTS = {
     generatePreconsolidation: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
       `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation/generate`,  
+  
+    adjustments: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/adjustments`,
+
+    adjustment: (companyId, runId, adjustmentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/adjustments/${encodeURIComponent(adjustmentId)}`,
+
+    adjustmentStatus: (companyId, runId, adjustmentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/adjustments/${encodeURIComponent(adjustmentId)}/status`,
+  
+    intercompany: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany`,
+
+    intercompanyBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/balances`,
+
+    intercompanyBalance: (companyId, runId, balanceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/balances/${encodeURIComponent(balanceId)}`,
+
+    intercompanyRules: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/intercompany/rules`,
+
+    applyIntercompanyRules: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/apply-rules`,
+
+    autoMatchIntercompany: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/auto-match`,  
+  
+    eliminations: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations`,
+
+    generateEliminations: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/generate`,
+
+    elimination: (companyId, runId, eliminationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/${encodeURIComponent(eliminationId)}`,
+
+    eliminationStatus: (companyId, runId, eliminationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/${encodeURIComponent(eliminationId)}/status`,
+  
+    adjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb`,
+
+    validateAdjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/validate`,
+
+    generateAdjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/generate`,
+
+    adjustedTbAccount: (companyId, runId, accountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/accounts/${encodeURIComponent(accountId)}`,  
+  
+    acquisition: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition`,
+
+    prepareAcquisition: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/prepare`,
+
+    acquisitionWorkpaper: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}`,
+
+    calculateAcquisition: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}/calculate`,
+
+    acquisitionStatus: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}/status`,
+  
+    equityMethod: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method`,
+
+    prepareEquityMethod: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/prepare`,
+
+    equityMethodWorkpaper: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}`,
+
+    calculateEquityMethod: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}/calculate`,
+
+    equityMethodStatus: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}/status`,
+
+    generateEquityMethodJournals: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/journals/generate`,
   },
 
 
@@ -1709,6 +1798,102 @@ const ENDPOINTS = {
 
     leasePreview:(companyId,projectId,datasetId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/preview`,
+  
+    loans:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/loans`,
+
+    loanSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/settings`,
+
+    loanMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/mapping`,
+
+    loanReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/references`,
+
+    loanPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/preview`,
+  
+    revenue:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/revenue`,
+
+    revenueSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/settings`,
+
+    revenueMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/mapping`,
+
+    revenueReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/references`,
+
+    revenuePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/preview`,
+  
+    accrualDeferrals:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/accrual-deferrals`,
+
+    accrualSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/settings`,
+
+    accrualMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/mapping`,
+
+    accrualReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/references`,
+
+    accrualPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/preview`,
+  
+    payroll:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll`,
+
+    payrollSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/settings`,
+
+    payrollMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/mapping`,
+
+    payrollReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/references`,
+
+    payrollPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/preview`,
+  
+    payrollItems:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/items`,
+
+    payrollItemSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/settings`,
+
+    payrollItemMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/mapping`,
+
+    payrollItemPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/preview`,
+  
+    payrollLeaveBalances:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/leave-balances`,
+
+    payrollLeaveSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/settings`,
+
+    payrollLeaveMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/mapping`,
+
+    payrollLeavePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/preview`,
+
+    payrollEmployeeLoans:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/employee-loans`,
+
+    payrollEmployeeLoanSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/settings`,
+
+    payrollEmployeeLoanMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/mapping`,
+
+    payrollEmployeeLoanPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/preview`,  
   },
 
   ifrs9: {

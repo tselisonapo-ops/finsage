@@ -44,6 +44,40 @@ async function request(path,{method="GET",body,auth=true}={}){
   return data;
 }
 
+async function download(url,fileName){
+  const token=getToken();
+
+  const res=await fetch(url,{
+    method:"GET",
+    headers:{
+      ...(token?{Authorization:`Bearer ${token}`}:{})
+    }
+  });
+
+  if(!res.ok){
+    let message=`Request failed (${res.status})`;
+
+    try{
+      const data=await res.json();
+      message=data.error||data.message||message;
+    }catch{}
+
+    throw new Error(message);
+  }
+
+  const blob=await res.blob();
+  const href=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+
+  a.href=href;
+  a.download=fileName||"document";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(href);
+}
+
 export const authApi={
   signin:(email,password)=>request("/api/auth/signin",{
     method:"POST",
@@ -69,6 +103,12 @@ export const opsApi={
 
   settings:(companyId,payload)=>request(`${base(companyId)}/settings`,{
     method:"PATCH",body:payload
+  }),
+
+  governance:companyId=>request(`${base(companyId)}/governance`),
+
+  saveGovernance:(companyId,payload)=>request(`${base(companyId)}/governance`,{
+    method:"PUT",body:payload
   }),
 
   createDepartment:(companyId,payload)=>request(`${base(companyId)}/departments`,{
@@ -112,11 +152,14 @@ export const opsApi={
       `${base(companyId)}/requests/${encodeURIComponent(requestId)}`
     ),
 
-  createRequest:(companyId,payload)=>
-    request(`${base(companyId)}/requests`,{
-      method:"POST",
-      body:payload
-    }),
+  createRequest:(companyId,payload)=>request(`${base(companyId)}/requests`,{
+    method:"POST",body:payload
+  }),
+
+  updateRequest:(companyId,requestId,payload)=>request(
+    `${base(companyId)}/requests/${encodeURIComponent(requestId)}`,
+    {method:"PATCH",body:payload}
+  ),
 
   submitRequest:(companyId,requestId)=>
     request(
@@ -202,4 +245,40 @@ export const opsApi={
   requestDocument:(companyId,requestId)=>request(
     `${base(companyId)}/requests/${encodeURIComponent(requestId)}/document`
   ),
+
+  financeMetadata:companyId=>request(`${base(companyId)}/finance/metadata`),
+
+  financeReview:(companyId,requestId,taskId)=>
+    request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/finance-review?approval_task_id=${encodeURIComponent(taskId)}`),
+
+  saveFinanceReview:(companyId,requestId,payload)=>
+    request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/finance-review`,{
+      method:"PATCH",body:payload
+    }),
+
+  costCentres:companyId=>request(`${base(companyId)}/cost-centres`),
+
+  createCostCentre:(companyId,payload)=>request(`${base(companyId)}/cost-centres`,{
+    method:"POST",body:payload
+  }),
+
+  requestDocuments:companyId=>request(`${base(companyId)}/requests`),
+
+  requestDocumentList:(companyId,requestId)=>
+    request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/documents`),
+
+  exportRequestDocument:(companyId,requestId,format)=>
+    request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/documents/export`,{
+      method:"POST",
+      body:{format}
+    }),
+
+  downloadRequestDocument:(companyId,documentId,fileName)=>
+    download(
+      `${base(companyId)}/documents/${encodeURIComponent(documentId)}/download`,
+      fileName
+    ),
+
+  requestAudit:(companyId,requestId)=>
+    request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/audit`),
 };

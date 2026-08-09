@@ -19097,6 +19097,17 @@ tbody tr:hover {
 
                 <button
                   type="button"
+                  id="grAdjustmentsTab"
+                  class="group-reporting-tab pb-3 text-slate-500"
+                  data-group-tab="adjustments"
+                  disabled
+                >
+                  Adjustments
+                </button>
+
+                <button
+                  type="button"
+                  id="grIntercompanyTab"
                   class="group-reporting-tab pb-3 text-slate-500"
                   data-group-tab="intercompany"
                   disabled
@@ -19104,6 +19115,38 @@ tbody tr:hover {
                   Intercompany
                 </button>
 
+                <button
+                  type="button"
+                  id="grEliminationsTab"
+                  class="group-reporting-tab pb-3 text-slate-500"
+                  data-group-tab="eliminations"
+                  disabled
+                >
+                  Eliminations
+                </button>
+              
+                <button
+                  type="button"
+                  id="grAdjustedTbTab"
+                  class="group-reporting-tab pb-3 text-slate-500"
+                  data-group-tab="adjusted-tb"
+                  disabled
+                >
+                  Adjusted Group TB
+                </button>
+
+                <button type="button" id="grAcquisitionTab"
+                  class="group-reporting-tab pb-3 text-slate-500"
+                  data-group-tab="acquisition" disabled>
+                  Acquisition & NCI
+                </button>
+
+                <button type="button" id="grEquityMethodTab"
+                  class="group-reporting-tab pb-3 text-slate-500"
+                  data-group-tab="equity-method" disabled>
+                  Associates & JVs
+                </button>
+            
                 <button
                   type="button"
                   class="group-reporting-tab pb-3 text-slate-500"
@@ -19481,8 +19524,410 @@ tbody tr:hover {
                 </div>
               </div>
             </div>
+
+            <div
+              id="groupAdjustmentsWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="adjustments"
+            >
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">
+                    Consolidation Adjustments
+                  </h3>
+
+                  <p class="mt-1 text-xs text-slate-500">
+                    Group-only journals for IFRS alignment, audit adjustments and reclassifications.
+                  </p>
+                </div>
+
+                <button
+                  id="btnNewGroupAdjustment"
+                  type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  New Adjustment
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Adjustments</div>
+                  <div id="grAdjTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Draft</div>
+                  <div id="grAdjDraft" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Reviewed</div>
+                  <div id="grAdjReviewed" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grAdjApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="groupAdjustmentsList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupIntercompanyWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="intercompany">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Intercompany Reconciliation</h3>
+                  <p class="mt-1 text-xs text-slate-500">Identify, match and reconcile balances between group entities before elimination.</p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnApplyIcRules" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">Apply Rules</button>
+                  <button id="btnAutoMatchIc" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">Auto Match</button>
+                  <button id="btnNewIcBalance" type="button" class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white">Add Balance</button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Declarations</div><div id="grIcBalances" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Matched</div><div id="grIcMatched" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Unmatched</div><div id="grIcUnmatched" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Variances</div><div id="grIcVariance" class="mt-1 text-xl font-semibold">0</div></div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden mb-5">
+                <div class="px-4 py-3 border-b">
+                  <h4 class="text-sm font-semibold text-slate-800">Intercompany balances</h4>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Entity</th>
+                        <th class="text-left px-4 py-3">Counterparty</th>
+                        <th class="text-left px-4 py-3">Account</th>
+                        <th class="text-left px-4 py-3">Nature</th>
+                        <th class="text-right px-4 py-3">Amount</th>
+                        <th class="text-left px-4 py-3">Status</th>
+                        <th class="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="grIcBalancesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b"><h4 class="text-sm font-semibold text-slate-800">Matches & variances</h4></div>
+                <div id="grIcMatchesList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupEliminationsWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="eliminations">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Intercompany Eliminations</h3>
+                  <p class="mt-1 text-xs text-slate-500">Generate and approve group-only elimination journals from reconciled intercompany matches.</p>
+                </div>
+
+                <button id="btnGenerateEliminations" type="button" class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                  Generate Eliminations
+                </button>
+              </div>
+
+              <div id="grEliminationWarning" class="hidden rounded-xl border bg-white p-4 mb-5"></div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Eliminations</div>
+                  <div id="grElimTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Draft</div>
+                  <div id="grElimDraft" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Reviewed</div>
+                  <div id="grElimReviewed" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grElimApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grEliminationsList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupAdjustedTbWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="adjusted-tb">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Adjusted Group Trial Balance</h3>
+                  <p id="grAdjustedTbMeta" class="mt-1 text-xs text-slate-500">
+                    Pre-consolidation balances plus approved group adjustments and eliminations.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnValidateAdjustedTb" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">
+                    Validate
+                  </button>
+
+                  <button id="btnGenerateAdjustedTb" type="button" class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white">
+                    Generate
+                  </button>
+                </div>
+              </div>
+
+              <div id="grAdjustedTbValidation" class="hidden rounded-xl border bg-white p-4 mb-5"></div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Accounts</div>
+                  <div id="grAdjustedAccounts" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Debit</div>
+                  <div id="grAdjustedDebit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Credit</div>
+                  <div id="grAdjustedCredit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Difference</div>
+                  <div id="grAdjustedDifference" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b flex items-center justify-between gap-3">
+                  <div>
+                    <h4 class="text-sm font-semibold text-slate-800">Consolidation Working Trial Balance</h4>
+                    <p class="mt-1 text-xs text-slate-500">Click an account to inspect the underlying entity balances and journals.</p>
+                  </div>
+
+                  <input id="grAdjustedTbSearch" type="search" placeholder="Search account..." class="border rounded px-3 py-2 text-sm w-64" />
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm whitespace-nowrap">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Group Account</th>
+                        <th class="text-right px-4 py-3">Pre-Con</th>
+                        <th class="text-right px-4 py-3">Adjustments</th>
+                        <th class="text-right px-4 py-3">Eliminations</th>
+                        <th class="text-right px-4 py-3">Final Balance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="grAdjustedTbBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div id="groupAcquisitionWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="acquisition">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Acquisition Accounting & NCI</h3>
+                  <p class="mt-1 text-xs text-slate-500">Calculate acquisition-date net assets, goodwill, post-acquisition movements and non-controlling interests.</p>
+                </div>
+
+                <button id="btnPrepareAcquisition" type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                  Prepare Workpapers
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Subsidiaries</div>
+                  <div id="grAcqTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grAcqApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Goodwill</div>
+                  <div id="grAcqGoodwill" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Closing NCI</div>
+                  <div id="grAcqNci" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grAcquisitionList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupEquityMethodWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="equity-method">
+
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Associates & Joint Ventures</h3>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Equity-method accounting for associates and joint ventures included in the consolidation run.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnPrepareEquityMethod" type="button"
+                    class="border rounded-lg bg-white px-4 py-2 text-sm">
+                    Prepare Workpapers
+                  </button>
+
+                  <button id="btnGenerateEquityMethodJournals" type="button"
+                    class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                    Generate Journals
+                  </button>
+                </div>
+              </div>
+
+              <div id="grEquityMethodIssues"
+                class="hidden mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Investments</div>
+                  <div id="grEqTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Associates</div>
+                  <div id="grEqAssociates" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Joint Ventures</div>
+                  <div id="grEqJvs" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Share of Profit/(Loss)</div>
+                  <div id="grEqProfit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Closing Investment</div>
+                  <div id="grEqInvestment" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grEquityMethodList" class="divide-y"></div>
+              </div>
+            </div>
           </div>
         </section>
+
+        <div id="groupEquityMethodModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+
+          <div class="w-full max-w-6xl max-h-[92vh] bg-white rounded-xl shadow-xl flex flex-col">
+
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grEqModalTitle" class="font-semibold text-slate-900">Equity Method Workpaper</h3>
+                <div id="grEqModalMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseEquityMethodModal" type="button"
+                class="border rounded px-3 py-1.5 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div id="grEqModalBody" class="p-5 overflow-auto"></div>
+          </div>
+        </div>
+
+      <div id="groupAcquisitionModal"
+        class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+
+        <div class="w-full max-w-6xl max-h-[92vh] bg-white rounded-xl shadow-xl flex flex-col">
+
+          <div class="flex items-center justify-between px-5 py-4 border-b">
+            <div>
+              <h3 id="grAcqModalTitle" class="font-semibold text-slate-900">Acquisition Workpaper</h3>
+              <div id="grAcqModalMeta" class="mt-1 text-xs text-slate-500"></div>
+            </div>
+
+            <button id="btnCloseAcquisitionModal" type="button"
+              class="border rounded px-3 py-1.5 text-xs">
+              Close
+            </button>
+          </div>
+
+          <div id="grAcqModalBody" class="p-5 overflow-auto"></div>
+        </div>
+      </div>
+
+        <div id="groupAdjustedTbModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grAdjustedDetailTitle" class="font-semibold text-slate-900">Account Detail</h3>
+                <div id="grAdjustedDetailMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseAdjustedTbModal" type="button" class="border rounded px-3 py-1.5 text-xs">Close</button>
+            </div>
+
+            <div id="grAdjustedDetailBody" class="p-5 overflow-auto"></div>
+          </div>
+        </div>
+
+        <div id="groupEliminationModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grElimModalTitle" class="font-semibold text-slate-900">Elimination Journal</h3>
+                <div id="grElimModalMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseEliminationModal" type="button" class="border rounded px-3 py-1.5 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div class="overflow-auto flex-1">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th class="text-left px-4 py-3">Entity</th>
+                    <th class="text-left px-4 py-3">Group Account</th>
+                    <th class="text-left px-4 py-3">Description</th>
+                    <th class="text-right px-4 py-3">Debit</th>
+                    <th class="text-right px-4 py-3">Credit</th>
+                  </tr>
+                </thead>
+                <tbody id="grElimModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
 
         <div
           id="groupRunModal"
@@ -19757,6 +20202,221 @@ tbody tr:hover {
                 >
                   Create account
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div
+          id="groupAdjustmentModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4"
+        >
+          <div class="w-full max-w-5xl max-h-[90vh] rounded-xl bg-white shadow-xl flex flex-col">
+
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">
+                  Consolidation Adjustment
+                </h3>
+
+                <p class="text-xs text-slate-500 mt-1">
+                  This journal affects group reporting only.
+                </p>
+              </div>
+
+              <button
+                id="btnCloseGroupAdjustmentModal"
+                type="button"
+                class="border rounded px-3 py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <form id="groupAdjustmentForm" class="p-5 overflow-auto">
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Date
+                  </label>
+
+                  <input
+                    name="adjustment_date"
+                    type="date"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Type
+                  </label>
+
+                  <select
+                    name="adjustment_type"
+                    class="w-full border rounded px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="consolidation_adjustment">Consolidation adjustment</option>
+                    <option value="gaap_alignment">GAAP / IFRS alignment</option>
+                    <option value="reclassification">Reclassification</option>
+                    <option value="audit_adjustment">Audit adjustment</option>
+                    <option value="late_adjustment">Late adjustment</option>
+                    <option value="acquisition_adjustment">Acquisition adjustment</option>
+                    <option value="policy_alignment">Policy alignment</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Reference
+                  </label>
+
+                  <input
+                    name="reference"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div class="md:col-span-4">
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Description
+                  </label>
+
+                  <input
+                    name="description"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div class="mt-5 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-slate-50 text-xs text-slate-500">
+                    <tr>
+                      <th class="text-left px-3 py-2">Entity</th>
+                      <th class="text-left px-3 py-2">Group Account</th>
+                      <th class="text-left px-3 py-2">Description</th>
+                      <th class="text-right px-3 py-2">Debit</th>
+                      <th class="text-right px-3 py-2">Credit</th>
+                      <th class="w-10"></th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="groupAdjustmentLines"></tbody>
+                </table>
+              </div>
+
+              <div class="mt-3 flex items-center justify-between">
+                <button
+                  id="btnAddGroupAdjustmentLine"
+                  type="button"
+                  class="border rounded px-3 py-2 text-sm bg-white"
+                >
+                  + Add Line
+                </button>
+
+                <div class="flex gap-6 text-sm">
+                  <span>
+                    Debit:
+                    <strong id="grAdjDebitTotal">0.00</strong>
+                  </span>
+
+                  <span>
+                    Credit:
+                    <strong id="grAdjCreditTotal">0.00</strong>
+                  </span>
+
+                  <span>
+                    Difference:
+                    <strong id="grAdjDifference">0.00</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="mt-5 flex justify-end">
+                <button
+                  type="submit"
+                  class="rounded bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  Save Draft
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="groupIcModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">Intercompany Balance</h3>
+                <p class="text-xs text-slate-500 mt-1">Identify the portion of an account attributable to another group entity.</p>
+              </div>
+              <button id="btnCloseIcModal" type="button" class="border rounded px-3 py-1.5 text-xs">Close</button>
+            </div>
+
+            <form id="groupIcForm" class="p-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Entity</label>
+                  <select name="run_entity_id" id="grIcEntity" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Counterparty</label>
+                  <select name="counterparty_run_entity_id" id="grIcCounterparty" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">Group Account</label>
+                  <select name="group_account_id" id="grIcAccount" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Nature</label>
+                  <select name="nature" required class="w-full border rounded px-3 py-2 text-sm bg-white">
+                    <option value="receivable">Receivable</option>
+                    <option value="payable">Payable</option>
+                    <option value="loan_receivable">Loan receivable</option>
+                    <option value="loan_payable">Loan payable</option>
+                    <option value="revenue">Revenue</option>
+                    <option value="expense">Expense / purchase</option>
+                    <option value="interest_income">Interest income</option>
+                    <option value="interest_expense">Interest expense</option>
+                    <option value="dividend_income">Dividend income</option>
+                    <option value="dividend_payable">Dividend payable</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">IC Amount</label>
+                  <input name="amount" type="number" min="0.01" step="0.01" required class="w-full border rounded px-3 py-2 text-sm text-right" />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Reference</label>
+                  <input name="reference" class="w-full border rounded px-3 py-2 text-sm" />
+                </div>
+
+                <div class="flex items-end">
+                  <label class="flex items-center gap-2 pb-2 text-sm">
+                    <input name="save_rule" type="checkbox" />
+                    Remember as dedicated IC account
+                  </label>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">Notes</label>
+                  <textarea name="notes" class="w-full border rounded px-3 py-2 text-sm min-h-[70px]"></textarea>
+                </div>
+              </div>
+
+              <div class="mt-5 flex justify-end">
+                <button type="submit" class="rounded bg-slate-900 text-white px-4 py-2 text-sm">Save Balance</button>
               </div>
             </form>
           </div>

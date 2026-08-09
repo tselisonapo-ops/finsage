@@ -1,7 +1,7 @@
 import {useEffect,useMemo,useState} from "react";
 import {
-  ArrowLeft,Building2,CalendarDays,CheckCircle2,FileText,
-  Landmark,Plus,Save,Send,ShieldCheck,Trash2,WalletCards
+  ArrowLeft,Building2,CalendarDays,CheckCircle2,Download,FileSpreadsheet,
+  FileText,Landmark,Plus,RotateCcw,Save,Send,ShieldCheck,Trash2,WalletCards
 } from "lucide-react";
 import {useNavigate,useParams} from "react-router-dom";
 import {API_BASE,companyApi,getCompanyId,opsApi} from "../api/api";
@@ -105,6 +105,9 @@ export default function RequestPage(){
 
   const [existing,setExisting]=useState(null);
   const [budget,setBudget]=useState(null);
+  const [documents,setDocuments]=useState([]);
+  const [audit,setAudit]=useState([]);
+  const [documentBusy,setDocumentBusy]=useState("");
 
   const [form,setForm]=useState(emptyForm());
   const [busy,setBusy]=useState(false);
@@ -129,6 +132,8 @@ export default function RequestPage(){
   );
 
   const currency=session?.currency||existing?.currency_code||"";
+  const canEdit=isNew||["draft","returned"].includes(existing?.status);
+  const wasReturned=existing?.status==="returned";
 
   async function load(){
     setError("");
@@ -152,8 +157,15 @@ export default function RequestPage(){
       setTypes(typeData.rows||[]);
 
       if(!isNew){
-        const row=await opsApi.request(companyId,requestId);
+        const [row,documentData,auditData]=await Promise.all([
+          opsApi.request(companyId,requestId),
+          opsApi.requestDocumentList(companyId,requestId).catch(()=>({rows:[]})),
+          opsApi.requestAudit(companyId,requestId).catch(()=>({rows:[]}))
+        ]);
+
         setExisting(row);
+        setDocuments(documentData.rows||[]);
+        setAudit(auditData.rows||[]);
 
         setForm({
           request_type_id:String(row.request_type_id||""),
@@ -243,7 +255,10 @@ export default function RequestPage(){
       return null;
     }
 
-    if(!form.items.some(line=>line.description.trim())&&selectedType?.requires_items){
+    if(
+      !form.items.some(line=>line.description.trim())&&
+      selectedType?.requires_items
+    ){
       setError("Add at least one requisition line.");
       return null;
     }
@@ -252,13 +267,50 @@ export default function RequestPage(){
     setError("");
 
     try{
-      if(!isNew){
-        return existing;
+      let row;
+
+      if(isNew){
+        row=await opsApi.createRequest(
+          companyId,
+          buildPayload()
+        );
+
+        nav(`/requests/${row.id}`,{replace:true});
+      }else{
+        row=await opsApi.updateRequest(
+          companyId,
+          requestId,
+          buildPayload()
+        );
       }
 
-      const row=await opsApi.createRequest(companyId,buildPayload());
       setExisting(row);
-      nav(`/requests/${row.id}`,{replace:true});
+      setBudget(null);
+
+      setForm({
+        request_type_id:String(row.request_type_id||""),
+        title:row.title||"",
+        business_purpose:row.business_purpose||"",
+        description:row.description||"",
+        required_date:row.required_date
+          ?String(row.required_date).slice(0,10)
+          :"",
+        priority:row.priority||"normal",
+        primary_gl_account_code:row.primary_gl_account_code||"",
+        primary_gl_account_name:row.primary_gl_account_name||"",
+        estimated_amount:Number(row.estimated_amount||0),
+
+        items:(row.items?.length?row.items:[emptyLine()]).map(line=>({
+          id:line.id,
+          description:line.description||"",
+          quantity:Number(line.quantity||1),
+          unit_of_measure:line.unit_of_measure||"",
+          estimated_unit_cost:Number(line.estimated_unit_cost||0),
+          gl_account_code:line.gl_account_code||"",
+          gl_account_name:line.gl_account_name||""
+        }))
+      });
+
       return row;
     }catch(err){
       setError(err.message||"Unable to save requisition.");
@@ -268,45 +320,95 @@ export default function RequestPage(){
     }
   }
 
-  async function runBudgetCheck(){
-    const row=existing||await saveDraft();
+  async function submit(){
+    const row=await saveDraft();
     if(!row?.id) return;
 
     setBusy(true);
     setError("");
 
     try{
-      const result=await opsApi.budgetCheck(companyId,row.id);
-      setBudget(result);
+      const updated=await opsApi.submitRequest(companyId,row.id);
+      setExisting(updated);
+      setBudget(null);
+
+      const documentData=await opsApi.requestDocumentList(
+        companyId,
+        row.id
+      ).catch(()=>({rows:[]}));
+
+      setDocuments(documentData.rows||[]);
+
+      const auditData=await opsApi.requestAudit(
+        companyId,
+        row.id
+      ).catch(()=>({rows:[]}));
+
+      setAudit(auditData.rows||[]);
     }catch(err){
-      setError(err.message||"Budget check failed.");
+      setError(err.message||"Unable to submit requisition.");
     }finally{
       setBusy(false);
     }
   }
 
-  async function submit(){
-    const row=existing||await saveDraft();
-    if(!row?.id) return;
+  async function exportDocument(format){
+    if(!existing?.id) return;
 
-    setBusy(true);
+    setDocumentBusy(format);
     setError("");
 
     try{
-      if(selectedType?.requires_budget||existing?.requires_budget)
-        await opsApi.budgetCheck(companyId,row.id);
+      const document=await opsApi.exportRequestDocument(
+        companyId,
+        existing.id,
+        format
+      );
 
-      const updated=await opsApi.submitRequest(companyId,row.id);
-      setExisting(updated);
+      const data=await opsApi.requestDocumentList(
+        companyId,
+        existing.id
+      );
 
-      try{
-        const check=await opsApi.latestBudgetCheck(companyId,row.id);
-        setBudget(check?.id?check:null);
-      }catch{}
+      setDocuments(data.rows||[]);
+
+      const auditData=await opsApi.requestAudit(
+        companyId,
+        existing.id
+      ).catch(()=>({rows:[]}));
+
+      setAudit(auditData.rows||[]);
+      await opsApi.downloadRequestDocument(
+        companyId,
+        document.id,
+        document.file_name
+      );
     }catch(err){
-      setError(err.message||"Unable to submit requisition.");
+      setError(
+        err.message||
+        `Unable to export ${format.toUpperCase()}.`
+      );
     }finally{
-      setBusy(false);
+      setDocumentBusy("");
+    }
+  }
+
+  async function downloadDocument(document){
+    if(!document?.id) return;
+
+    setDocumentBusy(`download-${document.id}`);
+    setError("");
+
+    try{
+      await opsApi.downloadRequestDocument(
+        companyId,
+        document.id,
+        document.file_name
+      );
+    }catch(err){
+      setError(err.message||"Unable to download document.");
+    }finally{
+      setDocumentBusy("");
     }
   }
 
@@ -337,39 +439,110 @@ export default function RequestPage(){
     <Shell session={session} active="requests">
       <div className="requisition-screen" style={documentStyle}>
         <div className="requisition-page-header">
-          <button type="button" className="ghost-btn" onClick={()=>nav("/requests")}>
-            <ArrowLeft size={16}/> Requests
-          </button>
+          <div className="requisition-topline">
+            <button type="button" className="ghost-btn requisition-back" onClick={()=>nav("/requests")}>
+              <ArrowLeft size={16}/> Requests
+            </button>
+
+            <div className="requisition-header-actions">
+              {!isNew&&(
+                <span className={`status-pill ${requestStatus}`}>
+                  {requestStatus.replaceAll("_"," ")}
+                </span>
+              )}
+
+              {!isNew&&["pending_approval","approved"].includes(requestStatus)&&(
+                <>
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={()=>exportDocument("pdf")}
+                    disabled={Boolean(documentBusy)}
+                  >
+                    <Download size={16}/>
+                    {documentBusy==="pdf"?"Generating...":"PDF"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={()=>exportDocument("xlsx")}
+                    disabled={Boolean(documentBusy)}
+                  >
+                    <FileSpreadsheet size={16}/>
+                    {documentBusy==="xlsx"?"Generating...":"XLSX"}
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={saveDraft}
+                disabled={busy||!canEdit}
+              >
+                <Save size={16}/>
+                {busy
+                  ?"Saving..."
+                  :wasReturned
+                    ?"Save corrections"
+                    :"Save draft"}
+              </button>
+
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={submit}
+                disabled={
+                  busy||
+                  !["draft","returned"].includes(requestStatus)
+                }
+              >
+                <Send size={16}/>
+                {requestStatus==="returned"?"Resubmit":"Submit"}
+              </button>
+            </div>
+          </div>
 
           <div className="requisition-heading">
             <div>
-              <span className="eyebrow dark">{isNew?"NEW REQUISITION":"REQUEST WORKSPACE"}</span>
+              <span className="eyebrow dark">
+                {isNew?"NEW REQUISITION":"REQUEST WORKSPACE"}
+              </span>
+
               <h1>{isNew?"Prepare requisition":existing?.title}</h1>
-              <p>{isNew
-                ?"Complete the request while FinFlow builds the official document beside you."
-                :`${existing?.request_no} · ${existing?.request_type_name}`}
+
+              <p>
+                {isNew
+                  ?"Complete the request while FinFlow builds the official document beside you."
+                  :`${existing?.request_no} · ${existing?.request_type_name}`}
               </p>
-            </div>
-
-            <div className="requisition-header-actions">
-              {!isNew&&<span className={`status-pill ${requestStatus}`}>
-                {requestStatus.replaceAll("_"," ")}
-              </span>}
-
-              <button type="button" className="ghost-btn" onClick={saveDraft} disabled={busy||!isNew}>
-                <Save size={16}/> {busy?"Saving...":"Save draft"}
-              </button>
-
-              <button type="button" className="primary-btn" onClick={submit} disabled={busy||requestStatus!=="draft"}>
-                <Send size={16}/> Submit
-              </button>
             </div>
           </div>
         </div>
 
         {error&&<div className="alert error">{error}</div>}
 
-        <div className="request-context-strip">
+        {existing?.status==="returned"&&(
+          <div className="request-returned-banner">
+            <RotateCcw size={18}/>
+            <div>
+              <strong>Returned for correction</strong>
+              <span>
+                {existing.last_return_comment||
+                  "An approver returned this requisition for correction."}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {existing?.revision_no>1&&(
+          <div className="request-revision-note">
+            Revision {existing.revision_no}
+          </div>
+        )}
+
+        <div className="requisition-workspace">
           <div className="request-context-card">
             <span>Requester</span>
             <strong>{requesterName||session.email}</strong>
@@ -412,7 +585,7 @@ export default function RequestPage(){
                 <label>Request type</label>
                 <select
                   value={form.request_type_id}
-                  disabled={!isNew}
+                  disabled={!canEdit}
                   onChange={e=>set("request_type_id",e.target.value)}
                 >
                   <option value="">Select request type</option>
@@ -422,7 +595,7 @@ export default function RequestPage(){
                 <label>Request title</label>
                 <input
                   value={form.title}
-                  disabled={!isNew}
+                  disabled={!canEdit}
                   onChange={e=>set("title",e.target.value)}
                   placeholder="e.g. Finance department laptop replacements"
                 />
@@ -431,7 +604,7 @@ export default function RequestPage(){
                 <textarea
                   rows="4"
                   value={form.business_purpose}
-                  disabled={!isNew}
+                  disabled={!canEdit}
                   onChange={e=>set("business_purpose",e.target.value)}
                   placeholder="Explain why this expenditure is required and how it supports operations."
                 />
@@ -442,7 +615,7 @@ export default function RequestPage(){
                     <input
                       type="date"
                       value={form.required_date}
-                      disabled={!isNew}
+                      disabled={!canEdit}
                       onChange={e=>set("required_date",e.target.value)}
                     />
                   </div>
@@ -451,7 +624,7 @@ export default function RequestPage(){
                     <label>Priority</label>
                     <select
                       value={form.priority}
-                      disabled={!isNew}
+                      disabled={!canEdit}
                       onChange={e=>set("priority",e.target.value)}
                     >
                       <option value="low">Low</option>
@@ -500,7 +673,7 @@ export default function RequestPage(){
                   <div className="req-section-icon"><WalletCards size={17}/></div>
                   <div>
                     <h3>Requisition lines</h3>
-                    <p>Each line may carry its own financial coding.</p>
+                    <p>Add the items, services or costs required for this request.</p>
                   </div>
                 </div>
 
@@ -513,7 +686,7 @@ export default function RequestPage(){
                         <label>Description</label>
                         <input
                           value={line.description}
-                          disabled={!isNew}
+                          disabled={!canEdit}
                           onChange={e=>updateLine(index,"description",e.target.value)}
                           placeholder="Item or service description"
                         />
@@ -526,7 +699,7 @@ export default function RequestPage(){
                               min="0"
                               step="0.01"
                               value={line.quantity}
-                              disabled={!isNew}
+                              disabled={!canEdit}
                               onChange={e=>updateLine(index,"quantity",e.target.value)}
                             />
                           </div>
@@ -535,7 +708,7 @@ export default function RequestPage(){
                             <label>Unit</label>
                             <input
                               value={line.unit_of_measure}
-                              disabled={!isNew}
+                              disabled={!canEdit}
                               onChange={e=>updateLine(index,"unit_of_measure",e.target.value)}
                               placeholder="Each"
                             />
@@ -548,7 +721,7 @@ export default function RequestPage(){
                               min="0"
                               step="0.01"
                               value={line.estimated_unit_cost}
-                              disabled={!isNew}
+                              disabled={!canEdit}
                               onChange={e=>updateLine(index,"estimated_unit_cost",e.target.value)}
                             />
                           </div>
@@ -563,7 +736,7 @@ export default function RequestPage(){
                         </div>
                       </div>
 
-                      {isNew&&form.items.length>1&&(
+                      {canEdit&&form.items.length>1&&(
                         <button type="button" className="req-remove-line" onClick={()=>removeLine(index)}>
                           <Trash2 size={15}/>
                         </button>
@@ -571,7 +744,7 @@ export default function RequestPage(){
                     </div>
                   ))}
 
-                  {isNew&&(
+                  {canEdit&&(
                     <button type="button" className="req-add-line" onClick={addLine}>
                       <Plus size={16}/> Add line
                     </button>
@@ -584,7 +757,7 @@ export default function RequestPage(){
                   <div className="req-section-icon"><Landmark size={17}/></div>
                   <div>
                     <h3>Financial control</h3>
-                    <p>Budget validation uses FinSage approved budgets and posted actuals.</p>
+                    <p>Financial coding and authoritative budget validation are completed during Finance review.</p>
                   </div>
                 </div>
 
@@ -595,9 +768,9 @@ export default function RequestPage(){
                 )}
 
                 {existing&&!budget&&(
-                  <button type="button" className="ghost-btn" onClick={runBudgetCheck} disabled={busy}>
-                    <WalletCards size={16}/> Run budget check
-                  </button>
+                  <div className="req-budget-empty">
+                    Financial classification and budget validation are pending Finance review.
+                  </div>
                 )}
 
                 {budget&&(
@@ -627,16 +800,125 @@ export default function RequestPage(){
                 )}
               </div>
 
+              {!isNew&&(
+                <div className="req-section">
+                  <div className="req-section-heading">
+                    <div className="req-section-icon"><FileText size={17}/></div>
+                    <div>
+                      <h3>Documents</h3>
+                      <p>Revision snapshots and generated business documents.</p>
+                    </div>
+                  </div>
+
+                  {!documents.length?(
+                    <div className="req-budget-empty">
+                      No stored document versions yet.
+                    </div>
+                  ):(
+                    <div className="request-document-list">
+                      {documents.map(document=>(
+                        <button
+                          type="button"
+                          className="request-document-row"
+                          key={document.id}
+                          disabled={!document.storage_path||Boolean(documentBusy)}
+                          onClick={()=>downloadDocument(document)}
+                        >
+                          <div className={`request-document-icon ${document.format}`}>
+                            {document.format==="xlsx"
+                              ?<FileSpreadsheet size={16}/>
+                              :<FileText size={16}/>}
+                          </div>
+
+                          <div>
+                            <strong>
+                              {document.file_name||
+                               `${document.document_type} snapshot`}
+                            </strong>
+
+                            <span>
+                              Revision {document.request_revision_no}
+                              {" · "}
+                              Version {document.version_no}
+                              {" · "}
+                              {document.document_status}
+                            </span>
+                          </div>
+
+                          {document.storage_path&&(
+                            <Download size={15}/>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!isNew&&(
+                <div className="req-section">
+                  <div className="req-section-heading">
+                    <div className="req-section-icon"><ShieldCheck size={17}/></div>
+                    <div>
+                      <h3>Audit trail</h3>
+                      <p>Complete lifecycle history for this requisition.</p>
+                    </div>
+                  </div>
+
+                  {!audit.length?(
+                    <div className="req-budget-empty">
+                      No audit events recorded yet.
+                    </div>
+                  ):(
+                    <div className="request-audit-list">
+                      {audit.map(event=>(
+                        <div className="request-audit-row" key={event.id}>
+                          <div className="request-audit-dot"/>
+
+                          <div>
+                            <strong>
+                              {(event.action||event.event_type||"activity")
+                                .replaceAll("_"," ")
+                                .replaceAll("."," ")}
+                            </strong>
+
+                            <span>
+                              {event.actor_name||"System"}
+                              {" · "}
+                              {event.created_at
+                                ?new Date(event.created_at).toLocaleString()
+                                :""}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
           <section className={`document-preview-shell ${docMeta.tone}`}>
             <div className="document-preview-toolbar">
               <div>
-                <span>LIVE DOCUMENT</span>
+                <span>
+                  {requestStatus==="approved"
+                    ?"APPROVED DOCUMENT"
+                    :"LIVE DOCUMENT"}
+                </span>
                 <strong>{docMeta.title}</strong>
               </div>
-              <span className="status-pill draft">{requestStatus}</span>
+
+              <div className="document-preview-status">
+                {existing?.revision_no>1&&(
+                  <span>Revision {existing.revision_no}</span>
+                )}
+
+                <span className={`status-pill ${requestStatus}`}>
+                  {requestStatus.replaceAll("_"," ")}
+                </span>
+              </div>
             </div>
 
             <div className="document-paper">
@@ -721,6 +1003,7 @@ function DocumentInfo({session,requesterName,form,existing}){
       <div><span>Required Date</span><strong>{form.required_date||"-"}</strong></div>
       <div><span>Branch</span><strong>{session.branch_name||"Head office"}</strong></div>
       <div><span>Priority</span><strong>{form.priority}</strong></div>
+      <div><span>Revision</span><strong>{existing?.revision_no||1}</strong></div>
     </div>
   );
 }
@@ -750,6 +1033,49 @@ function DocumentLines({form,currency}){
         </div>
       )}
     </div>
+  );
+}
+
+function FinancialCodingBlock({existing}){
+  return (
+    <section className="doc-section">
+      <div className="doc-section-title">Financial Classification</div>
+
+      {!existing?.primary_gl_account_code?(
+        <div className="doc-muted">
+          Financial coding pending Finance review.
+        </div>
+      ):(
+        <div className="doc-finance-grid">
+          <span>Classification</span>
+          <strong>
+            {(existing.financial_classification||"-")
+              .replaceAll("_"," ")}
+          </strong>
+
+          <span>GL Account</span>
+          <strong>
+            {[
+              existing.primary_gl_account_code,
+              existing.primary_gl_account_name
+            ].filter(Boolean).join(" · ")}
+          </strong>
+
+          <span>Cost Centre</span>
+          <strong>
+            {existing.cost_centre_name||
+             existing.cost_centre_code||
+             "-"}
+          </strong>
+
+          <span>Tax Treatment</span>
+          <strong>
+            {(existing.tax_treatment||"-")
+              .replaceAll("_"," ")}
+          </strong>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -826,6 +1152,7 @@ function PurchaseTemplate(props){
         <DocTotal total={total} currency={currency}/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
       <DocumentFooter/>
@@ -853,6 +1180,7 @@ function ServiceTemplate(props){
         <DocTotal total={total} currency={currency} label="Estimated Service Cost"/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
       <DocumentFooter/>
@@ -888,9 +1216,10 @@ function CapexTemplate(props){
         <DocTotal total={total} currency={currency} label="Total Capital Requirement"/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
-      <DocumentFooter text="Approved CapEx will be eligible for handoff to FinSage PPE."/>
+      <DocumentFooter/>
     </article>
   );
 }
@@ -915,9 +1244,10 @@ function LeaseTemplate(props){
         <DocTotal total={total} currency={currency} label="Estimated Commitment"/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
-      <DocumentFooter text="Approved lease requests may be handed off to FinSage IFRS 16."/>
+      <DocumentFooter/>
     </article>
   );
 }
@@ -953,9 +1283,10 @@ function PaymentTemplate(props){
         <DocTotal total={total} currency={currency} label="Amount Requested"/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
-      <DocumentFooter text="Payment processing remains subject to Finance verification and payment approval."/>
+      <DocumentFooter/>
     </article>
   );
 }
@@ -988,6 +1319,7 @@ function TravelTemplate(props){
         <DocTotal total={total} currency={currency} label="Estimated Travel Cost"/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
       <DocumentFooter/>
@@ -1014,6 +1346,7 @@ function GeneralTemplate(props){
         <DocTotal total={total} currency={currency}/>
       </section>
 
+      <FinancialCodingBlock existing={existing}/>
       <BudgetBlock budget={budget} currency={currency}/>
       <ApprovalBlock existing={existing}/>
       <DocumentFooter/>
