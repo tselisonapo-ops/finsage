@@ -636,3 +636,819 @@ def api_get_group_preconsolidation(
             "api_get_group_preconsolidation failed"
         )
         return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/"
+    "runs/<int:run_id>/adjustments",
+    methods=["GET"],
+)
+@require_auth
+def api_list_group_adjustments(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny:
+        return deny
+
+    try:
+        rows = db_service.list_group_adjustments(
+            company_id,
+            run_id,
+        )
+        return jsonify({"items": rows}), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_list_group_adjustments failed"
+        )
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/"
+    "runs/<int:run_id>/adjustments",
+    methods=["POST"],
+)
+@require_auth
+def api_create_group_adjustment(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.create_group_adjustment(
+            company_id,
+            run_id,
+            request.get_json(silent=True) or {},
+            user_id=user.get("id"),
+        )
+
+        return jsonify({
+            "message": "Consolidation adjustment created",
+            "data": out,
+        }), 201
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_create_group_adjustment failed"
+        )
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/"
+    "runs/<int:run_id>/adjustments/<int:adjustment_id>",
+    methods=["GET"],
+)
+@require_auth
+def api_get_group_adjustment(
+    company_id: int,
+    run_id: int,
+    adjustment_id: int,
+):
+    _, deny = _company_access(company_id)
+    if deny:
+        return deny
+
+    try:
+        out = db_service.get_group_adjustment(
+            company_id,
+            run_id,
+            adjustment_id,
+        )
+
+        if not out:
+            return jsonify({"message": "Adjustment not found"}), 404
+
+        return jsonify(out), 200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_get_group_adjustment failed"
+        )
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/"
+    "runs/<int:run_id>/adjustments/<int:adjustment_id>/status",
+    methods=["POST"],
+)
+@require_auth
+def api_set_group_adjustment_status(
+    company_id: int,
+    run_id: int,
+    adjustment_id: int,
+):
+    user, deny = _company_access(company_id)
+    if deny:
+        return deny
+
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+
+    if status not in {"draft", "reviewed", "approved"}:
+        return jsonify({"message": "Invalid target status"}), 400
+
+    try:
+        row = db_service.set_group_adjustment_status(
+            company_id,
+            run_id,
+            adjustment_id,
+            status,
+            user_id=user.get("id"),
+        )
+
+        return jsonify({
+            "message": f"Adjustment moved to {status}",
+            "journal": row,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_set_group_adjustment_status failed"
+        )
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/"
+    "runs/<int:run_id>/adjustments/<int:adjustment_id>",
+    methods=["DELETE"],
+)
+@require_auth
+def api_delete_group_adjustment(
+    company_id: int,
+    run_id: int,
+    adjustment_id: int,
+):
+    _, deny = _company_access(company_id)
+    if deny:
+        return deny
+
+    try:
+        db_service.delete_group_adjustment(
+            company_id,
+            run_id,
+            adjustment_id,
+        )
+
+        return jsonify({
+            "message": "Adjustment deleted"
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "api_delete_group_adjustment failed"
+        )
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/intercompany",
+    methods=["GET"],
+)
+@require_auth
+def api_group_intercompany_workspace(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        return jsonify(db_service.get_group_intercompany_workspace(company_id, run_id)), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_group_intercompany_workspace failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/intercompany/balances",
+    methods=["POST"],
+)
+@require_auth
+def api_save_group_intercompany_balance(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        row = db_service.save_group_intercompany_balance(
+            company_id, run_id, request.get_json(silent=True) or {},
+            user_id=user.get("id"),
+        )
+        return jsonify({"message": "Intercompany balance added", "balance": row}), 201
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_save_group_intercompany_balance failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/intercompany/balances/<int:balance_id>",
+    methods=["DELETE"],
+)
+@require_auth
+def api_delete_group_intercompany_balance(company_id: int, run_id: int, balance_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        db_service.delete_group_intercompany_balance(company_id, run_id, balance_id)
+        return jsonify({"message": "Intercompany balance removed"}), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_delete_group_intercompany_balance failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/intercompany/rules",
+    methods=["POST"],
+)
+@require_auth
+def api_save_group_intercompany_rule(company_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        row = db_service.save_group_intercompany_rule(
+            company_id, request.get_json(silent=True) or {},
+            user_id=user.get("id"),
+        )
+        return jsonify({"message": "Intercompany rule saved", "rule": row}), 201
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_save_group_intercompany_rule failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/intercompany/apply-rules",
+    methods=["POST"],
+)
+@require_auth
+def api_apply_group_intercompany_rules(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        out = db_service.apply_group_intercompany_rules(
+            company_id, run_id, user_id=user.get("id")
+        )
+        return jsonify({"message": f"{out['created']} balance(s) created from rules", "data": out}), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_apply_group_intercompany_rules failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/intercompany/auto-match",
+    methods=["POST"],
+)
+@require_auth
+def api_auto_match_group_intercompany(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+    try:
+        out = db_service.auto_match_group_intercompany(
+            company_id, run_id, user_id=user.get("id")
+        )
+        return jsonify({"message": f"{out['matches_created']} match(es) created", "data": out}), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_auto_match_group_intercompany failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/eliminations",
+    methods=["GET"],
+)
+@require_auth
+def api_list_group_eliminations(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        rows = db_service.list_group_eliminations(company_id, run_id)
+        return jsonify({"items": rows}), 200
+    except Exception as e:
+        current_app.logger.exception("api_list_group_eliminations failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/eliminations/generate",
+    methods=["POST"],
+)
+@require_auth
+def api_generate_group_eliminations(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.generate_group_eliminations(
+            company_id,
+            run_id,
+            user_id=user.get("id"),
+        )
+
+        return jsonify({
+            "message": f"{out['created']} elimination(s) generated",
+            "data": out,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_generate_group_eliminations failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/eliminations/<int:elimination_id>",
+    methods=["GET"],
+)
+@require_auth
+def api_get_group_elimination(company_id: int, run_id: int, elimination_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.get_group_elimination(
+            company_id,
+            run_id,
+            elimination_id,
+        )
+
+        if not out:
+            return jsonify({"message": "Elimination not found"}), 404
+
+        return jsonify(out), 200
+    except Exception as e:
+        current_app.logger.exception("api_get_group_elimination failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/eliminations/<int:elimination_id>/status",
+    methods=["POST"],
+)
+@require_auth
+def api_set_group_elimination_status(
+    company_id: int,
+    run_id: int,
+    elimination_id: int,
+):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip().lower()
+
+    if status not in {"draft", "reviewed", "approved"}:
+        return jsonify({"message": "Invalid elimination status"}), 400
+
+    try:
+        row = db_service.set_group_elimination_status(
+            company_id,
+            run_id,
+            elimination_id,
+            status,
+            user_id=user.get("id"),
+        )
+
+        return jsonify({
+            "message": f"Elimination moved to {status}",
+            "journal": row,
+        }), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_set_group_elimination_status failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/eliminations/<int:elimination_id>",
+    methods=["DELETE"],
+)
+@require_auth
+def api_void_group_elimination(company_id: int, run_id: int, elimination_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.void_group_elimination(
+            company_id,
+            run_id,
+            elimination_id,
+        )
+
+        return jsonify({
+            "message": "Elimination voided",
+            "journal": row,
+        }), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_void_group_elimination failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/adjusted-tb/validate",
+    methods=["GET"],
+)
+@require_auth
+def api_validate_group_adjusted_tb(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.validate_group_adjusted_tb(company_id, run_id)
+        ), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_validate_group_adjusted_tb failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/adjusted-tb/generate",
+    methods=["POST"],
+)
+@require_auth
+def api_generate_group_adjusted_tb(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.generate_group_adjusted_tb(
+            company_id,
+            run_id,
+            user_id=user.get("id"),
+        )
+
+        return jsonify({
+            "message": "Adjusted Group Trial Balance generated",
+            "data": out,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_generate_group_adjusted_tb failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/adjusted-tb",
+    methods=["GET"],
+)
+@require_auth
+def api_get_group_adjusted_tb(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_adjusted_tb(company_id, run_id)
+        ), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_get_group_adjusted_tb failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/adjusted-tb/accounts/<int:group_account_id>",
+    methods=["GET"],
+)
+@require_auth
+def api_group_adjusted_tb_account_detail(
+    company_id: int,
+    run_id: int,
+    group_account_id: int,
+):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_adjusted_tb_account_detail(
+                company_id,
+                run_id,
+                group_account_id,
+            )
+        ), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 404
+    except Exception as e:
+        current_app.logger.exception("api_group_adjusted_tb_account_detail failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/acquisition/prepare",
+    methods=["POST"],
+)
+@require_auth
+def api_prepare_group_acquisition(company_id: int, run_id: int):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.prepare_group_acquisition_workpapers(
+            company_id, run_id, user_id=user.get("id")
+        )
+        return jsonify({
+            "message": f"{out['workpapers_prepared']} acquisition workpaper(s) prepared",
+            "data": out,
+        }), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_prepare_group_acquisition failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/acquisition",
+    methods=["GET"],
+)
+@require_auth
+def api_group_acquisition_workspace(company_id: int, run_id: int):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_acquisition_workspace(company_id, run_id)
+        ), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_group_acquisition_workspace failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/acquisition/<int:workpaper_id>",
+    methods=["GET","PATCH"],
+)
+@require_auth
+def api_group_acquisition_workpaper(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        if request.method == "GET":
+            out = db_service.get_group_acquisition_workpaper(
+                company_id, run_id, workpaper_id
+            )
+            if not out:
+                return jsonify({"message": "Acquisition workpaper not found"}), 404
+            return jsonify(out), 200
+
+        out = db_service.save_group_acquisition_workpaper(
+            company_id,
+            run_id,
+            workpaper_id,
+            request.get_json(silent=True) or {},
+        )
+        return jsonify({
+            "message": "Acquisition workpaper saved",
+            "data": out,
+        }), 200
+
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_group_acquisition_workpaper failed")
+        return jsonify({"message": str(e)}), 500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/acquisition/<int:workpaper_id>/calculate",
+    methods=["POST"],
+)
+@require_auth
+def api_calculate_group_acquisition(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _, deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.calculate_group_acquisition_workpaper(
+            company_id, run_id, workpaper_id
+        )
+        return jsonify({
+            "message": "Acquisition workpaper calculated",
+            "workpaper": row,
+        }), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_calculate_group_acquisition failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/acquisition/<int:workpaper_id>/status",
+    methods=["POST"],
+)
+@require_auth
+def api_group_acquisition_status(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    user, deny = _company_access(company_id)
+    if deny: return deny
+
+    status = (
+        (request.get_json(silent=True) or {}).get("status") or ""
+    ).strip().lower()
+
+    if status not in {"calculated","reviewed","approved"}:
+        return jsonify({"message": "Invalid workpaper status"}), 400
+
+    try:
+        row = db_service.set_group_acquisition_workpaper_status(
+            company_id,
+            run_id,
+            workpaper_id,
+            status,
+            user_id=user.get("id"),
+        )
+        return jsonify({
+            "message": f"Acquisition workpaper moved to {status}",
+            "workpaper": row,
+        }), 200
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception("api_group_acquisition_status failed")
+        return jsonify({"message": str(e)}), 500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method/prepare",
+    methods=["POST"],
+)
+@require_auth
+def api_prepare_group_equity_method(company_id: int,run_id: int):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.prepare_group_equity_method_workpapers(
+            company_id,run_id,user_id=user.get("id")
+        )
+        return jsonify({
+            "message": f"{out['workpapers_prepared']} equity-method workpaper(s) prepared",
+            "data": out,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_prepare_group_equity_method failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method",
+    methods=["GET"],
+)
+@require_auth
+def api_group_equity_method_workspace(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_equity_method_workspace(company_id,run_id)
+        ),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_equity_method_workspace failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method/<int:workpaper_id>",
+    methods=["GET","PATCH"],
+)
+@require_auth
+def api_group_equity_method_workpaper(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        if request.method == "GET":
+            out = db_service.get_group_equity_method_workpaper(
+                company_id,run_id,workpaper_id
+            )
+            if not out:
+                return jsonify({"message":"Equity-method workpaper not found"}),404
+            return jsonify(out),200
+
+        out = db_service.save_group_equity_method_workpaper(
+            company_id,
+            run_id,
+            workpaper_id,
+            request.get_json(silent=True) or {},
+        )
+        return jsonify({
+            "message":"Equity-method workpaper saved",
+            "data":out,
+        }),200
+
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_equity_method_workpaper failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method/<int:workpaper_id>/calculate",
+    methods=["POST"],
+)
+@require_auth
+def api_calculate_group_equity_method(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.calculate_group_equity_method_workpaper(
+            company_id,run_id,workpaper_id
+        )
+        return jsonify({
+            "message":"Equity-method workpaper calculated",
+            "workpaper":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_calculate_group_equity_method failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method/<int:workpaper_id>/status",
+    methods=["POST"],
+)
+@require_auth
+def api_group_equity_method_status(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    status = (
+        (request.get_json(silent=True) or {}).get("status") or ""
+    ).strip().lower()
+
+    if status not in {"calculated","reviewed","approved"}:
+        return jsonify({"message":"Invalid workpaper status"}),400
+
+    try:
+        row = db_service.set_group_equity_method_workpaper_status(
+            company_id,run_id,workpaper_id,status,
+            user_id=user.get("id"),
+        )
+        return jsonify({
+            "message":f"Equity-method workpaper moved to {status}",
+            "workpaper":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_equity_method_status failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/equity-method/journals/generate",
+    methods=["POST"],
+)
+@require_auth
+def api_generate_group_equity_method_journals(company_id: int,run_id: int):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.generate_group_equity_method_journals(
+            company_id,run_id,user_id=user.get("id")
+        )
+        return jsonify({
+            "message":f"{out['created']} equity-method journal(s) generated",
+            "data":out,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_generate_group_equity_method_journals failed")
+        return jsonify({"message":str(e)}),500

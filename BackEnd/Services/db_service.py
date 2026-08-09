@@ -68,6 +68,10 @@ from BackEnd.Services.reporting.cashflow_templates import (
     _norm_preview_columns as norm_preview_columns,
     _norm_compare as norm_compare,
 )
+from BackEnd.Services.utils.ops_document_builder import (
+    build_requisition_pdf,
+    build_requisition_xlsx,
+)
 from BackEnd.Services.reporting.equity_changes_builder import build_statement_of_changes_in_equity
 from BackEnd.Services.reporting.reporting_helpers import (
     build_income_statement_template,
@@ -1951,6 +1955,36 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS company_branding_contact_email_idx
             ON public.company_branding(contact_email);
 
+        INSERT INTO public.company_branding (
+            company_id,
+            logo_url,
+            contact_phone,
+            contact_email,
+            address,
+            vat_no
+        )
+        SELECT
+            id,
+            CASE
+                WHEN logo_url IS NOT NULL
+                THEN '/api/companies/' || id || '/logo/file'
+                ELSE NULL
+            END,
+            company_phone,
+            company_email,
+            physical_address,
+            vat
+        FROM public.companies
+        ON CONFLICT (company_id)
+        DO UPDATE
+        SET
+            logo_url      = EXCLUDED.logo_url,
+            contact_phone = EXCLUDED.contact_phone,
+            contact_email = EXCLUDED.contact_email,
+            address       = EXCLUDED.address,
+            vat_no        = EXCLUDED.vat_no,
+            updated_at    = NOW();
+            
         -- ==========================================
         -- ENTITY KIND ON COMPANIES
         -- ==========================================
@@ -2948,7 +2982,279 @@ class DatabaseService:
                     'blocked'
                 )
             );
-            
+
+        -- =========================================================
+        -- CONSOLIDATION ADJUSTMENT JOURNALS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_adjustment_journals (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            adjustment_no TEXT NOT NULL,
+            adjustment_type TEXT NOT NULL DEFAULT 'consolidation_adjustment',
+
+            adjustment_date DATE NOT NULL,
+            description TEXT NOT NULL,
+            reference TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            total_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            total_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            reviewed_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            approved_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_group_adjustment_no
+                UNIQUE(run_id, adjustment_no),
+
+            CONSTRAINT chk_group_adjustment_type
+                CHECK (
+                    adjustment_type IN (
+                        'consolidation_adjustment',
+                        'gaap_alignment',
+                        'reclassification',
+                        'audit_adjustment',
+                        'late_adjustment',
+                        'acquisition_adjustment',
+                        'policy_alignment'
+                    )
+                ),
+
+            CONSTRAINT chk_group_adjustment_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'reviewed',
+                        'approved',
+                        'void'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_adjustment_journals_run_idx
+            ON public.group_adjustment_journals(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_adjustment_journals_status_idx
+            ON public.group_adjustment_journals(run_id, status);
+
+
+        -- =========================================================
+        -- CONSOLIDATION ADJUSTMENT LINES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_adjustment_lines (
+            id SERIAL PRIMARY KEY,
+
+            journal_id INT NOT NULL
+                REFERENCES public.group_adjustment_journals(id) ON DELETE CASCADE,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            group_account_id INT NOT NULL
+                REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            run_entity_id INT NULL
+                REFERENCES public.group_consolidation_run_entities(id) ON DELETE SET NULL,
+
+            entity_company_id INT NULL
+                REFERENCES public.companies(id) ON DELETE SET NULL,
+
+            line_no INT NOT NULL,
+
+            description TEXT NULL,
+
+            debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_adjustment_line_no
+                UNIQUE(journal_id, line_no),
+
+            CONSTRAINT chk_group_adjustment_line_amount
+                CHECK (
+                    debit >= 0
+                    AND credit >= 0
+                    AND NOT (debit > 0 AND credit > 0)
+                    AND (debit > 0 OR credit > 0)
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_adjustment_lines_journal_idx
+            ON public.group_adjustment_lines(journal_id);
+
+        CREATE INDEX IF NOT EXISTS group_adjustment_lines_run_idx
+            ON public.group_adjustment_lines(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_adjustment_lines_account_idx
+            ON public.group_adjustment_lines(group_account_id);
+
+
+        -- =========================================================
+        -- PERSISTENT INTERCOMPANY ACCOUNT RULES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_intercompany_rules (
+            id SERIAL PRIMARY KEY,
+            profile_id INT NOT NULL REFERENCES public.group_reporting_profiles(id) ON DELETE CASCADE,
+            entity_company_id INT NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+            counterparty_company_id INT NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+            group_account_id INT NOT NULL REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            nature TEXT NOT NULL,
+            use_full_balance BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            notes TEXT NULL,
+
+            created_by_user_id INT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT chk_group_ic_rule_nature CHECK (
+                nature IN (
+                    'receivable','payable',
+                    'loan_receivable','loan_payable',
+                    'revenue','expense',
+                    'interest_income','interest_expense',
+                    'dividend_income','dividend_payable',
+                    'other'
+                )
+            ),
+
+            CONSTRAINT chk_group_ic_rule_counterparty CHECK (
+                entity_company_id <> counterparty_company_id
+            )
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_group_ic_rule_active
+            ON public.group_intercompany_rules(
+                profile_id, entity_company_id,
+                counterparty_company_id, group_account_id, nature
+            )
+            WHERE is_active = TRUE;
+
+
+        -- =========================================================
+        -- RUN INTERCOMPANY BALANCES / DECLARATIONS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_intercompany_balances (
+            id SERIAL PRIMARY KEY,
+            run_id INT NOT NULL REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+            run_entity_id INT NOT NULL REFERENCES public.group_consolidation_run_entities(id) ON DELETE CASCADE,
+            entity_company_id INT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+
+            counterparty_run_entity_id INT NOT NULL REFERENCES public.group_consolidation_run_entities(id) ON DELETE CASCADE,
+            counterparty_company_id INT NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+
+            group_account_id INT NOT NULL REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+            rule_id INT NULL REFERENCES public.group_intercompany_rules(id) ON DELETE SET NULL,
+
+            nature TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'manual',
+
+            amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+            source_balance NUMERIC(20,2) NULL,
+
+            reference TEXT NULL,
+            notes TEXT NULL,
+            status TEXT NOT NULL DEFAULT 'unmatched',
+
+            created_by_user_id INT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT chk_group_ic_balance_nature CHECK (
+                nature IN (
+                    'receivable','payable',
+                    'loan_receivable','loan_payable',
+                    'revenue','expense',
+                    'interest_income','interest_expense',
+                    'dividend_income','dividend_payable',
+                    'other'
+                )
+            ),
+
+            CONSTRAINT chk_group_ic_balance_source CHECK (
+                source_type IN ('manual','rule','import')
+            ),
+
+            CONSTRAINT chk_group_ic_balance_status CHECK (
+                status IN ('unmatched','matched','partial','variance','excluded')
+            ),
+
+            CONSTRAINT chk_group_ic_balance_amount CHECK (amount >= 0),
+            CONSTRAINT chk_group_ic_balance_counterparty CHECK (
+                entity_company_id <> counterparty_company_id
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_ic_balances_run_idx
+            ON public.group_intercompany_balances(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_ic_balances_pair_idx
+            ON public.group_intercompany_balances(
+                run_id, entity_company_id, counterparty_company_id
+            );
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD COLUMN IF NOT EXISTS intercompany_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE public.group_consolidation_runs
+            DROP CONSTRAINT IF EXISTS chk_group_consolidation_ic_status;
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD CONSTRAINT chk_group_consolidation_ic_status
+            CHECK (
+                intercompany_status IN (
+                    'pending','in_progress','reconciled','variance','not_applicable'
+                )
+            );
+
+        -- =========================================================
+        -- INTERCOMPANY MATCHES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_intercompany_matches (
+            id SERIAL PRIMARY KEY,
+            run_id INT NOT NULL REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            left_balance_id INT NOT NULL REFERENCES public.group_intercompany_balances(id) ON DELETE CASCADE,
+            right_balance_id INT NOT NULL REFERENCES public.group_intercompany_balances(id) ON DELETE CASCADE,
+
+            match_type TEXT NOT NULL,
+            left_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+            right_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+            matched_amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+            variance NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'matched',
+            notes TEXT NULL,
+
+            matched_by_user_id INT NULL REFERENCES public.users(id) ON DELETE SET NULL,
+            matched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_ic_match_pair UNIQUE(left_balance_id, right_balance_id),
+
+            CONSTRAINT chk_group_ic_match_status CHECK (
+                status IN ('matched','partial','variance','resolved','excluded')
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_ic_matches_run_idx
+            ON public.group_intercompany_matches(run_id);
+
         -- ==========================================
         -- COMPANY USERS (membership + per-company role)
         -- ==========================================
@@ -2995,9 +3301,9 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS pin_hash TEXT,
         ADD COLUMN IF NOT EXISTS pos_display_name TEXT;
 
-            ALTER TABLE public.company_users
-                ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{{}}'::jsonb,
-                ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE; 
+        ALTER TABLE public.company_users
+            ADD COLUMN IF NOT EXISTS product_access JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            ADD COLUMN IF NOT EXISTS ops_is_active BOOLEAN NOT NULL DEFAULT FALSE; 
 
         ALTER TABLE public.company_users
         ADD COLUMN IF NOT EXISTS pos_access_code TEXT;
@@ -3083,6 +3389,768 @@ class DatabaseService:
         ON CONFLICT (company_id, user_id) DO UPDATE
         SET role = 'owner', is_active = TRUE;
 
+        -- =========================================================
+        -- INTERCOMPANY ELIMINATION JOURNALS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_elimination_journals (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            source_match_id INT NULL
+                REFERENCES public.group_intercompany_matches(id) ON DELETE SET NULL,
+
+            elimination_no TEXT NOT NULL,
+            elimination_type TEXT NOT NULL DEFAULT 'intercompany',
+
+            description TEXT NOT NULL,
+            reference TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            total_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            total_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            is_system_generated BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            reviewed_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            approved_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_group_elimination_no
+                UNIQUE(run_id, elimination_no),
+
+            CONSTRAINT chk_group_elimination_type
+                CHECK (
+                    elimination_type IN (
+                        'intercompany_balance',
+                        'intercompany_trade',
+                        'intercompany_interest',
+                        'intercompany_loan',
+                        'manual'
+                    )
+                ),
+
+            CONSTRAINT chk_group_elimination_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'reviewed',
+                        'approved',
+                        'void'
+                    )
+                )
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_group_elimination_source_match
+            ON public.group_elimination_journals(run_id, source_match_id)
+            WHERE source_match_id IS NOT NULL
+            AND status <> 'void';
+
+        CREATE INDEX IF NOT EXISTS group_elimination_journals_run_idx
+            ON public.group_elimination_journals(run_id, status);
+
+
+        -- =========================================================
+        -- INTERCOMPANY ELIMINATION LINES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_elimination_lines (
+            id SERIAL PRIMARY KEY,
+
+            journal_id INT NOT NULL
+                REFERENCES public.group_elimination_journals(id) ON DELETE CASCADE,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            source_balance_id INT NULL
+                REFERENCES public.group_intercompany_balances(id) ON DELETE SET NULL,
+
+            run_entity_id INT NULL
+                REFERENCES public.group_consolidation_run_entities(id) ON DELETE SET NULL,
+
+            entity_company_id INT NULL
+                REFERENCES public.companies(id) ON DELETE SET NULL,
+
+            group_account_id INT NOT NULL
+                REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+            description TEXT NULL,
+
+            debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_elimination_line_no
+                UNIQUE(journal_id, line_no),
+
+            CONSTRAINT chk_group_elimination_line_amount
+                CHECK (
+                    debit >= 0
+                    AND credit >= 0
+                    AND NOT (debit > 0 AND credit > 0)
+                    AND (debit > 0 OR credit > 0)
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_elimination_lines_run_idx
+            ON public.group_elimination_lines(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_elimination_lines_journal_idx
+            ON public.group_elimination_lines(journal_id);
+
+        CREATE INDEX IF NOT EXISTS group_elimination_lines_account_idx
+            ON public.group_elimination_lines(group_account_id);
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD COLUMN IF NOT EXISTS elimination_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE public.group_consolidation_runs
+            DROP CONSTRAINT IF EXISTS chk_group_consolidation_elimination_status;
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD CONSTRAINT chk_group_consolidation_elimination_status
+            CHECK (
+                elimination_status IN (
+                    'pending',
+                    'generated',
+                    'reviewed',
+                    'approved',
+                    'blocked',
+                    'not_applicable'
+                )
+            );
+            
+        CREATE TABLE IF NOT EXISTS public.group_adjusted_tb_runs (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            account_count INT NOT NULL DEFAULT 0,
+
+            precon_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            precon_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            adjustment_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            adjustment_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            elimination_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            elimination_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            final_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            final_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            difference NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            generated_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            generated_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_adjusted_tb_run UNIQUE(run_id),
+
+            CONSTRAINT chk_group_adjusted_tb_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'generated',
+                        'warning',
+                        'blocked'
+                    )
+                )
+        );
+
+        -- =========================================================
+        -- ADJUSTED GROUP TB LINES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_adjusted_tb_lines (
+            id SERIAL PRIMARY KEY,
+
+            adjusted_tb_run_id INT NOT NULL
+                REFERENCES public.group_adjusted_tb_runs(id) ON DELETE CASCADE,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            group_account_id INT NOT NULL
+                REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            precon_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            precon_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            precon_balance NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            adjustment_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            adjustment_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            adjustment_balance NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            elimination_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            elimination_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            elimination_balance NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            final_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            final_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            final_balance NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_adjusted_tb_account
+                UNIQUE(adjusted_tb_run_id, group_account_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS group_adjusted_tb_lines_run_idx
+            ON public.group_adjusted_tb_lines(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_adjusted_tb_lines_account_idx
+            ON public.group_adjusted_tb_lines(group_account_id);
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD COLUMN IF NOT EXISTS adjusted_tb_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE public.group_consolidation_runs
+            DROP CONSTRAINT IF EXISTS chk_group_adjusted_tb_run_status;
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD CONSTRAINT chk_group_adjusted_tb_run_status
+            CHECK (
+                adjusted_tb_status IN (
+                    'pending',
+                    'ready',
+                    'generated',
+                    'blocked'
+                )
+            );
+            
+        -- =========================================================
+        -- ACQUISITION WORKING PAPERS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_acquisition_workpapers (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            run_entity_id INT NOT NULL
+                REFERENCES public.group_consolidation_run_entities(id) ON DELETE CASCADE,
+
+            entity_company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE RESTRICT,
+
+            relationship_id INT NULL
+                REFERENCES public.company_relationships(id) ON DELETE SET NULL,
+
+            acquisition_date DATE NOT NULL,
+
+            ownership_percent NUMERIC(8,4) NOT NULL,
+            nci_percent NUMERIC(8,4) NOT NULL,
+
+            nci_measurement_method TEXT NOT NULL DEFAULT 'proportionate',
+
+            consideration_transferred NUMERIC(20,2) NOT NULL DEFAULT 0,
+            previously_held_interest_fv NUMERIC(20,2) NOT NULL DEFAULT 0,
+            nci_fair_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            book_net_assets NUMERIC(20,2) NOT NULL DEFAULT 0,
+            fair_value_adjustments NUMERIC(20,2) NOT NULL DEFAULT 0,
+            deferred_tax_adjustment NUMERIC(20,2) NOT NULL DEFAULT 0,
+            identifiable_net_assets_fv NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            calculated_nci_at_acquisition NUMERIC(20,2) NOT NULL DEFAULT 0,
+            goodwill NUMERIC(20,2) NOT NULL DEFAULT 0,
+            bargain_purchase_gain NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            current_net_assets NUMERIC(20,2) NOT NULL DEFAULT 0,
+            post_acquisition_movement NUMERIC(20,2) NOT NULL DEFAULT 0,
+            parent_post_acquisition_share NUMERIC(20,2) NOT NULL DEFAULT 0,
+            nci_post_acquisition_share NUMERIC(20,2) NOT NULL DEFAULT 0,
+            closing_nci NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            notes TEXT NULL,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            reviewed_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            approved_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            calculated_at TIMESTAMPTZ NULL,
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_group_acquisition_workpaper
+                UNIQUE(run_id, run_entity_id),
+
+            CONSTRAINT chk_group_acquisition_nci_method
+                CHECK (
+                    nci_measurement_method IN (
+                        'proportionate',
+                        'fair_value'
+                    )
+                ),
+
+            CONSTRAINT chk_group_acquisition_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'calculated',
+                        'reviewed',
+                        'approved'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_acquisition_workpapers_run_idx
+            ON public.group_acquisition_workpapers(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_acquisition_workpapers_entity_idx
+            ON public.group_acquisition_workpapers(run_entity_id);
+
+
+        -- =========================================================
+        -- ACQUISITION-DATE IDENTIFIABLE NET ASSET LINES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_acquisition_net_asset_lines (
+            id SERIAL PRIMARY KEY,
+
+            workpaper_id INT NOT NULL
+                REFERENCES public.group_acquisition_workpapers(id) ON DELETE CASCADE,
+
+            line_no INT NOT NULL,
+
+            group_account_id INT NULL
+                REFERENCES public.group_coa(id) ON DELETE SET NULL,
+
+            description TEXT NOT NULL,
+
+            book_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+            fair_value_adjustment NUMERIC(20,2) NOT NULL DEFAULT 0,
+            deferred_tax_adjustment NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            fair_value NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            line_type TEXT NOT NULL DEFAULT 'net_asset',
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_acquisition_net_asset_line
+                UNIQUE(workpaper_id, line_no),
+
+            CONSTRAINT chk_group_acquisition_line_type
+                CHECK (
+                    line_type IN (
+                        'net_asset',
+                        'fair_value_adjustment',
+                        'deferred_tax',
+                        'other'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_acquisition_net_asset_wp_idx
+            ON public.group_acquisition_net_asset_lines(workpaper_id);
+
+
+        -- =========================================================
+        -- CONSIDERATION COMPONENTS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_acquisition_consideration_lines (
+            id SERIAL PRIMARY KEY,
+
+            workpaper_id INT NOT NULL
+                REFERENCES public.group_acquisition_workpapers(id) ON DELETE CASCADE,
+
+            line_no INT NOT NULL,
+            component_type TEXT NOT NULL,
+
+            description TEXT NOT NULL,
+            amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_acquisition_consideration_line
+                UNIQUE(workpaper_id, line_no),
+
+            CONSTRAINT chk_group_acquisition_component_type
+                CHECK (
+                    component_type IN (
+                        'cash',
+                        'shares',
+                        'deferred',
+                        'contingent',
+                        'other'
+                    )
+                )
+        );
+
+
+        -- =========================================================
+        -- ACQUISITION / NCI GROUP JOURNALS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_acquisition_journals (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            workpaper_id INT NOT NULL
+                REFERENCES public.group_acquisition_workpapers(id) ON DELETE CASCADE,
+
+            journal_no TEXT NOT NULL,
+            journal_type TEXT NOT NULL,
+
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            total_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            total_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            reviewed_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            approved_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_group_acquisition_journal_no
+                UNIQUE(run_id, journal_no),
+
+            CONSTRAINT chk_group_acquisition_journal_type
+                CHECK (
+                    journal_type IN (
+                        'acquisition',
+                        'goodwill',
+                        'bargain_purchase',
+                        'nci',
+                        'post_acquisition'
+                    )
+                ),
+
+            CONSTRAINT chk_group_acquisition_journal_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'reviewed',
+                        'approved',
+                        'void'
+                    )
+                )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS public.group_acquisition_journal_lines (
+            id SERIAL PRIMARY KEY,
+
+            journal_id INT NOT NULL
+                REFERENCES public.group_acquisition_journals(id) ON DELETE CASCADE,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            group_account_id INT NOT NULL
+                REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+            description TEXT NULL,
+
+            debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_acquisition_journal_line
+                UNIQUE(journal_id, line_no),
+
+            CONSTRAINT chk_group_acquisition_journal_line_amount
+                CHECK (
+                    debit >= 0
+                    AND credit >= 0
+                    AND NOT (debit > 0 AND credit > 0)
+                    AND (debit > 0 OR credit > 0)
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_acquisition_journals_run_idx
+            ON public.group_acquisition_journals(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_acquisition_journal_lines_run_idx
+            ON public.group_acquisition_journal_lines(run_id);
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD COLUMN IF NOT EXISTS acquisition_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE public.group_consolidation_runs
+            DROP CONSTRAINT IF EXISTS chk_group_consolidation_acquisition_status;
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD CONSTRAINT chk_group_consolidation_acquisition_status
+            CHECK (
+                acquisition_status IN (
+                    'pending',
+                    'in_progress',
+                    'calculated',
+                    'approved',
+                    'not_applicable',
+                    'blocked'
+                )
+            );
+
+        -- =========================================================
+        -- EQUITY METHOD WORKPAPERS
+        -- Associates + Joint Ventures
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_equity_method_workpapers (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            run_entity_id INT NOT NULL
+                REFERENCES public.group_consolidation_run_entities(id) ON DELETE CASCADE,
+
+            entity_company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE RESTRICT,
+
+            relationship_id INT NULL
+                REFERENCES public.company_relationships(id) ON DELETE SET NULL,
+
+            relationship_type TEXT NOT NULL,
+            measurement_date DATE NOT NULL,
+
+            ownership_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
+            effective_interest_percent NUMERIC(8,4) NOT NULL DEFAULT 0,
+
+            opening_investment NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            entity_profit_loss NUMERIC(20,2) NOT NULL DEFAULT 0,
+            share_profit_loss NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            entity_oci NUMERIC(20,2) NOT NULL DEFAULT 0,
+            share_oci NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            entity_other_equity NUMERIC(20,2) NOT NULL DEFAULT 0,
+            share_other_equity NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            dividends_received NUMERIC(20,2) NOT NULL DEFAULT 0,
+            impairment_loss NUMERIC(20,2) NOT NULL DEFAULT 0,
+            fx_adjustment NUMERIC(20,2) NOT NULL DEFAULT 0,
+            other_adjustment NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            closing_investment NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+            notes TEXT NULL,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            reviewed_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            approved_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            calculated_at TIMESTAMPTZ NULL,
+            reviewed_at TIMESTAMPTZ NULL,
+            approved_at TIMESTAMPTZ NULL,
+
+            CONSTRAINT uq_group_equity_method_workpaper
+                UNIQUE(run_id,run_entity_id),
+
+            CONSTRAINT chk_group_equity_method_relationship
+                CHECK (
+                    relationship_type IN (
+                        'associate',
+                        'joint_venture'
+                    )
+                ),
+
+            CONSTRAINT chk_group_equity_method_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'calculated',
+                        'reviewed',
+                        'approved'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_equity_method_wp_run_idx
+            ON public.group_equity_method_workpapers(run_id);
+
+        CREATE INDEX IF NOT EXISTS group_equity_method_wp_entity_idx
+            ON public.group_equity_method_workpapers(run_entity_id);
+
+
+        -- =========================================================
+        -- EQUITY METHOD MANUAL ADJUSTMENT LINES
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_equity_method_adjustments (
+            id SERIAL PRIMARY KEY,
+
+            workpaper_id INT NOT NULL
+                REFERENCES public.group_equity_method_workpapers(id) ON DELETE CASCADE,
+
+            line_no INT NOT NULL,
+            adjustment_type TEXT NOT NULL,
+
+            description TEXT NOT NULL,
+            amount NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            affects_profit_loss BOOLEAN NOT NULL DEFAULT FALSE,
+            affects_oci BOOLEAN NOT NULL DEFAULT FALSE,
+            affects_investment BOOLEAN NOT NULL DEFAULT TRUE,
+
+            notes TEXT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_equity_method_adjustment
+                UNIQUE(workpaper_id,line_no),
+
+            CONSTRAINT chk_group_equity_method_adjustment_type
+                CHECK (
+                    adjustment_type IN (
+                        'dividend',
+                        'impairment',
+                        'fx',
+                        'other_equity',
+                        'other'
+                    )
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_equity_method_adj_wp_idx
+            ON public.group_equity_method_adjustments(workpaper_id);
+
+
+        -- =========================================================
+        -- EQUITY METHOD GROUP JOURNALS
+        -- =========================================================
+        CREATE TABLE IF NOT EXISTS public.group_equity_method_journals (
+            id SERIAL PRIMARY KEY,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            workpaper_id INT NOT NULL
+                REFERENCES public.group_equity_method_workpapers(id) ON DELETE CASCADE,
+
+            journal_no TEXT NOT NULL,
+            journal_type TEXT NOT NULL DEFAULT 'equity_method',
+
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            total_debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            total_credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_equity_method_journal
+                UNIQUE(run_id,workpaper_id),
+
+            CONSTRAINT chk_group_equity_method_journal_status
+                CHECK (
+                    status IN (
+                        'draft',
+                        'approved',
+                        'void'
+                    )
+                )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS public.group_equity_method_journal_lines (
+            id SERIAL PRIMARY KEY,
+
+            journal_id INT NOT NULL
+                REFERENCES public.group_equity_method_journals(id) ON DELETE CASCADE,
+
+            run_id INT NOT NULL
+                REFERENCES public.group_consolidation_runs(id) ON DELETE CASCADE,
+
+            group_account_id INT NOT NULL
+                REFERENCES public.group_coa(id) ON DELETE RESTRICT,
+
+            line_no INT NOT NULL,
+            description TEXT NULL,
+
+            debit NUMERIC(20,2) NOT NULL DEFAULT 0,
+            credit NUMERIC(20,2) NOT NULL DEFAULT 0,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_group_equity_method_journal_line
+                UNIQUE(journal_id,line_no),
+
+            CONSTRAINT chk_group_equity_method_journal_line_amount
+                CHECK (
+                    debit >= 0
+                    AND credit >= 0
+                    AND NOT (debit > 0 AND credit > 0)
+                    AND (debit > 0 OR credit > 0)
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS group_equity_method_journal_run_idx
+            ON public.group_equity_method_journals(run_id);
+
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD COLUMN IF NOT EXISTS equity_method_status TEXT NOT NULL DEFAULT 'pending';
+
+        ALTER TABLE public.group_consolidation_runs
+            DROP CONSTRAINT IF EXISTS chk_group_consolidation_equity_method_status;
+
+        ALTER TABLE public.group_consolidation_runs
+            ADD CONSTRAINT chk_group_consolidation_equity_method_status
+            CHECK (
+                equity_method_status IN (
+                    'pending',
+                    'in_progress',
+                    'calculated',
+                    'approved',
+                    'not_applicable',
+                    'blocked'
+                )
+            );
         -- ==========================================
         -- COMPANY INVITES (DB-backed invites)
         -- ==========================================
@@ -9722,7 +10790,8 @@ class DatabaseService:
                 AND e.run_id = t.run_id
 
                 WHERE t.run_id = %s
-                AND e.included = TRUE
+                    AND e.included = TRUE
+                    AND e.consolidation_method IN ('full','proportionate')
 
                 GROUP BY
                     t.run_id,
@@ -9845,6 +10914,7 @@ class DatabaseService:
                 ON c.id = e.entity_company_id
                 WHERE e.run_id = %s
                 AND e.included = TRUE
+                AND e.consolidation_method IN ('full','proportionate')
                 ORDER BY
                     CASE e.relationship_type
                         WHEN 'parent' THEN 0
@@ -9985,6 +11055,3291 @@ class DatabaseService:
 
             conn.commit()
             return dict(row)
+
+    def _next_group_adjustment_no(self, cur, run_id: int) -> str:
+        cur.execute("""
+            SELECT adjustment_no
+            FROM public.group_adjustment_journals
+            WHERE run_id = %s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (run_id,))
+
+        row = cur.fetchone()
+
+        if not row:
+            return "CAJ-0001"
+
+        try:
+            n = int(str(row["adjustment_no"]).split("-")[-1]) + 1
+        except Exception:
+            n = 1
+
+        return f"CAJ-{n:04d}"
+
+    def create_group_adjustment(
+        self,
+        company_id: int,
+        run_id: int,
+        payload: dict,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        lines = payload.get("lines") or []
+
+        if len(lines) < 2:
+            raise ValueError("Adjustment requires at least two lines.")
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id = %s
+                AND parent_company_id = %s
+                FOR UPDATE
+            """, (run_id, company_id))
+
+            run = cur.fetchone()
+
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            if run["status"] in {"approved", "locked"}:
+                raise ValueError(
+                    f"Adjustments cannot be created while run status is '{run['status']}'."
+                )
+
+            total_debit = round(
+                sum(float(x.get("debit") or 0) for x in lines),
+                2,
+            )
+
+            total_credit = round(
+                sum(float(x.get("credit") or 0) for x in lines),
+                2,
+            )
+
+            if abs(total_debit - total_credit) > 0.01:
+                raise ValueError(
+                    f"Adjustment is not balanced. "
+                    f"Debit {total_debit:.2f}, Credit {total_credit:.2f}."
+                )
+
+            adjustment_no = self._next_group_adjustment_no(
+                cur,
+                run_id,
+            )
+
+            cur.execute("""
+                INSERT INTO public.group_adjustment_journals (
+                    run_id,
+                    adjustment_no,
+                    adjustment_type,
+                    adjustment_date,
+                    description,
+                    reference,
+                    status,
+                    total_debit,
+                    total_credit,
+                    created_by_user_id,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,
+                    'draft',%s,%s,%s,NOW()
+                )
+                RETURNING *
+            """, (
+                run_id,
+                adjustment_no,
+                payload.get("adjustment_type") or "consolidation_adjustment",
+                payload.get("adjustment_date") or run["reporting_date"],
+                (payload.get("description") or "").strip(),
+                (payload.get("reference") or "").strip() or None,
+                total_debit,
+                total_credit,
+                user_id,
+            ))
+
+            journal = dict(cur.fetchone())
+
+            for idx, line in enumerate(lines, start=1):
+                group_account_id = int(
+                    line.get("group_account_id") or 0
+                )
+
+                if not group_account_id:
+                    raise ValueError(
+                        f"Group account is required on line {idx}."
+                    )
+
+                cur.execute("""
+                    SELECT id
+                    FROM public.group_coa
+                    WHERE id = %s
+                    AND is_active = TRUE
+                """, (group_account_id,))
+
+                if not cur.fetchone():
+                    raise ValueError(
+                        f"Invalid Group Account on line {idx}."
+                    )
+
+                run_entity_id = (
+                    int(line["run_entity_id"])
+                    if line.get("run_entity_id")
+                    else None
+                )
+
+                entity_company_id = None
+
+                if run_entity_id:
+                    cur.execute("""
+                        SELECT entity_company_id
+                        FROM public.group_consolidation_run_entities
+                        WHERE id = %s
+                        AND run_id = %s
+                    """, (
+                        run_entity_id,
+                        run_id,
+                    ))
+
+                    entity = cur.fetchone()
+
+                    if not entity:
+                        raise ValueError(
+                            f"Invalid run entity on line {idx}."
+                        )
+
+                    entity_company_id = entity["entity_company_id"]
+
+                cur.execute("""
+                    INSERT INTO public.group_adjustment_lines (
+                        journal_id,
+                        run_id,
+                        group_account_id,
+                        run_entity_id,
+                        entity_company_id,
+                        line_no,
+                        description,
+                        debit,
+                        credit
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s
+                    )
+                """, (
+                    journal["id"],
+                    run_id,
+                    group_account_id,
+                    run_entity_id,
+                    entity_company_id,
+                    idx,
+                    (line.get("description") or "").strip() or None,
+                    round(float(line.get("debit") or 0), 2),
+                    round(float(line.get("credit") or 0), 2),
+                ))
+
+            conn.commit()
+
+            return self.get_group_adjustment(
+                company_id,
+                run_id,
+                journal["id"],
+            )
+
+    def list_group_adjustments(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> list:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT
+                    j.*,
+                    COUNT(l.id) AS line_count
+                FROM public.group_adjustment_journals j
+                JOIN public.group_consolidation_runs r
+                ON r.id = j.run_id
+                LEFT JOIN public.group_adjustment_lines l
+                ON l.journal_id = j.id
+                WHERE j.run_id = %s
+                AND r.parent_company_id = %s
+                GROUP BY j.id
+                ORDER BY j.adjustment_date, j.id
+            """, (
+                run_id,
+                company_id,
+            ))
+
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_group_adjustment(
+        self,
+        company_id: int,
+        run_id: int,
+        adjustment_id: int,
+    ) -> Optional[dict]:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT j.*
+                FROM public.group_adjustment_journals j
+                JOIN public.group_consolidation_runs r
+                ON r.id = j.run_id
+                WHERE j.id = %s
+                AND j.run_id = %s
+                AND r.parent_company_id = %s
+            """, (
+                adjustment_id,
+                run_id,
+                company_id,
+            ))
+
+            journal = cur.fetchone()
+
+            if not journal:
+                return None
+
+            cur.execute("""
+                SELECT
+                    l.*,
+                    g.code AS group_account_code,
+                    g.name AS group_account_name,
+                    c.name AS entity_name
+                FROM public.group_adjustment_lines l
+                JOIN public.group_coa g
+                ON g.id = l.group_account_id
+                LEFT JOIN public.companies c
+                ON c.id = l.entity_company_id
+                WHERE l.journal_id = %s
+                ORDER BY l.line_no
+            """, (adjustment_id,))
+
+            return {
+                "journal": dict(journal),
+                "lines": [dict(r) for r in cur.fetchall()],
+            }
+
+    def set_group_adjustment_status(
+        self,
+        company_id: int,
+        run_id: int,
+        adjustment_id: int,
+        target_status: str,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        allowed = {
+            "draft": {"reviewed"},
+            "reviewed": {"draft", "approved"},
+            "approved": {"draft"},
+        }
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT j.*
+                FROM public.group_adjustment_journals j
+                JOIN public.group_consolidation_runs r
+                ON r.id = j.run_id
+                WHERE j.id = %s
+                AND j.run_id = %s
+                AND r.parent_company_id = %s
+                FOR UPDATE
+            """, (
+                adjustment_id,
+                run_id,
+                company_id,
+            ))
+
+            row = cur.fetchone()
+
+            if not row:
+                raise ValueError("Adjustment not found.")
+
+            current = row["status"]
+
+            if target_status not in allowed.get(current, set()):
+                raise ValueError(
+                    f"Adjustment cannot move from '{current}' to '{target_status}'."
+                )
+
+            fields = [
+                "status = %s",
+                "updated_at = NOW()",
+            ]
+            params = [target_status]
+
+            if target_status == "reviewed":
+                fields += [
+                    "reviewed_by_user_id = %s",
+                    "reviewed_at = NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "approved":
+                fields += [
+                    "approved_by_user_id = %s",
+                    "approved_at = NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "draft":
+                fields += [
+                    "reviewed_by_user_id = NULL",
+                    "reviewed_at = NULL",
+                    "approved_by_user_id = NULL",
+                    "approved_at = NULL",
+                ]
+
+            params.append(adjustment_id)
+
+            cur.execute(f"""
+                UPDATE public.group_adjustment_journals
+                SET {', '.join(fields)}
+                WHERE id = %s
+                RETURNING *
+            """, tuple(params))
+
+            updated = dict(cur.fetchone())
+            conn.commit()
+            return updated
+
+    def delete_group_adjustment(
+        self,
+        company_id: int,
+        run_id: int,
+        adjustment_id: int,
+    ) -> bool:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                DELETE FROM public.group_adjustment_journals j
+                USING public.group_consolidation_runs r
+                WHERE j.id = %s
+                AND j.run_id = %s
+                AND j.run_id = r.id
+                AND r.parent_company_id = %s
+                AND j.status = 'draft'
+                RETURNING j.id
+            """, (
+                adjustment_id,
+                run_id,
+                company_id,
+            ))
+
+            deleted = cur.fetchone()
+
+            if not deleted:
+                raise ValueError(
+                    "Only draft adjustments can be deleted."
+                )
+
+            conn.commit()
+            return True
+
+    def _group_ic_opposite_nature(self, nature: str) -> set:
+        pairs = {
+            "receivable": {"payable"},
+            "payable": {"receivable"},
+            "loan_receivable": {"loan_payable"},
+            "loan_payable": {"loan_receivable"},
+            "revenue": {"expense"},
+            "expense": {"revenue"},
+            "interest_income": {"interest_expense"},
+            "interest_expense": {"interest_income"},
+            "dividend_income": {"dividend_payable"},
+            "dividend_payable": {"dividend_income"},
+            "other": {"other"},
+        }
+        return pairs.get((nature or "").strip().lower(), set())
+
+    def get_group_intercompany_workspace(self, company_id: int, run_id: int) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+            """, (run_id, company_id))
+            run = cur.fetchone()
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            cur.execute("""
+                SELECT
+                    e.id AS run_entity_id,
+                    e.entity_company_id,
+                    c.name AS entity_name,
+                    e.relationship_type
+                FROM public.group_consolidation_run_entities e
+                JOIN public.companies c ON c.id=e.entity_company_id
+                WHERE e.run_id=%s AND e.included=TRUE
+                ORDER BY c.name
+            """, (run_id,))
+            entities = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    b.*,
+                    ec.name AS entity_name,
+                    cc.name AS counterparty_name,
+                    g.code AS group_account_code,
+                    g.name AS group_account_name
+                FROM public.group_intercompany_balances b
+                JOIN public.companies ec ON ec.id=b.entity_company_id
+                JOIN public.companies cc ON cc.id=b.counterparty_company_id
+                JOIN public.group_coa g ON g.id=b.group_account_id
+                WHERE b.run_id=%s
+                ORDER BY ec.name, cc.name, g.code, b.id
+            """, (run_id,))
+            balances = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    m.*,
+                    lb.entity_company_id AS left_company_id,
+                    le.name AS left_entity_name,
+                    rb.entity_company_id AS right_company_id,
+                    re.name AS right_entity_name,
+                    lg.code AS left_account_code,
+                    lg.name AS left_account_name,
+                    rg.code AS right_account_code,
+                    rg.name AS right_account_name
+                FROM public.group_intercompany_matches m
+                JOIN public.group_intercompany_balances lb ON lb.id=m.left_balance_id
+                JOIN public.group_intercompany_balances rb ON rb.id=m.right_balance_id
+                JOIN public.companies le ON le.id=lb.entity_company_id
+                JOIN public.companies re ON re.id=rb.entity_company_id
+                JOIN public.group_coa lg ON lg.id=lb.group_account_id
+                JOIN public.group_coa rg ON rg.id=rb.group_account_id
+                WHERE m.run_id=%s
+                ORDER BY m.id
+            """, (run_id,))
+            matches = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    l.run_entity_id,
+                    l.entity_company_id,
+                    l.group_account_id,
+                    g.code,
+                    g.name,
+                    g.section,
+                    g.category,
+                    SUM(l.balance) AS balance
+                FROM public.group_preconsolidation_lines l
+                JOIN public.group_coa g ON g.id=l.group_account_id
+                WHERE l.run_id=%s
+                GROUP BY l.run_entity_id,l.entity_company_id,l.group_account_id,
+                        g.code,g.name,g.section,g.category
+                ORDER BY l.entity_company_id,g.code
+            """, (run_id,))
+            accounts = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "run": dict(run),
+                "entities": entities,
+                "accounts": accounts,
+                "balances": balances,
+                "matches": matches,
+                "summary": {
+                    "balances": len(balances),
+                    "matched": sum(1 for b in balances if b["status"] == "matched"),
+                    "variance": sum(1 for b in balances if b["status"] == "variance"),
+                    "unmatched": sum(1 for b in balances if b["status"] == "unmatched"),
+                    "match_count": len(matches),
+                },
+            }
+
+    def save_group_intercompany_balance(
+        self, company_id: int, run_id: int, payload: dict,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        run_entity_id = int(payload.get("run_entity_id") or 0)
+        counterparty_id = int(payload.get("counterparty_run_entity_id") or 0)
+        group_account_id = int(payload.get("group_account_id") or 0)
+        nature = (payload.get("nature") or "").strip().lower()
+        amount = round(float(payload.get("amount") or 0), 2)
+
+        if not run_entity_id or not counterparty_id:
+            raise ValueError("Entity and counterparty are required.")
+        if run_entity_id == counterparty_id:
+            raise ValueError("Entity cannot be its own counterparty.")
+        if not group_account_id:
+            raise ValueError("Group account is required.")
+        if amount <= 0:
+            raise ValueError("Intercompany amount must be greater than zero.")
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT e.id,e.entity_company_id
+                FROM public.group_consolidation_run_entities e
+                JOIN public.group_consolidation_runs r ON r.id=e.run_id
+                WHERE e.id=%s AND e.run_id=%s AND r.parent_company_id=%s
+            """, (run_entity_id, run_id, company_id))
+            entity = cur.fetchone()
+            if not entity:
+                raise ValueError("Run entity not found.")
+
+            cur.execute("""
+                SELECT id,entity_company_id
+                FROM public.group_consolidation_run_entities
+                WHERE id=%s AND run_id=%s
+            """, (counterparty_id, run_id))
+            counterparty = cur.fetchone()
+            if not counterparty:
+                raise ValueError("Counterparty not found.")
+
+            cur.execute("""
+                SELECT COALESCE(SUM(balance),0) AS source_balance
+                FROM public.group_preconsolidation_lines
+                WHERE run_id=%s AND run_entity_id=%s AND group_account_id=%s
+            """, (run_id, run_entity_id, group_account_id))
+            source_balance = abs(float(cur.fetchone()["source_balance"] or 0))
+
+            if amount > source_balance + 0.01:
+                raise ValueError(
+                    f"Intercompany amount {amount:.2f} exceeds account balance "
+                    f"{source_balance:.2f}."
+                )
+
+            cur.execute("""
+                INSERT INTO public.group_intercompany_balances (
+                    run_id,run_entity_id,entity_company_id,
+                    counterparty_run_entity_id,counterparty_company_id,
+                    group_account_id,nature,source_type,amount,source_balance,
+                    reference,notes,status,created_by_user_id,updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,'manual',%s,%s,%s,%s,'unmatched',%s,NOW())
+                RETURNING *
+            """, (
+                run_id, run_entity_id, entity["entity_company_id"],
+                counterparty_id, counterparty["entity_company_id"],
+                group_account_id, nature, amount, source_balance,
+                (payload.get("reference") or "").strip() or None,
+                (payload.get("notes") or "").strip() or None,
+                user_id,
+            ))
+
+            row = dict(cur.fetchone())
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET intercompany_status='in_progress',updated_at=NOW()
+                WHERE id=%s
+            """, (run_id,))
+
+            conn.commit()
+            return row
+
+    def save_group_intercompany_rule(
+        self, company_id: int, payload: dict,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        profile = self._require_group_profile(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                INSERT INTO public.group_intercompany_rules (
+                    profile_id,entity_company_id,counterparty_company_id,
+                    group_account_id,nature,use_full_balance,is_active,
+                    notes,created_by_user_id,updated_at
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,TRUE,%s,%s,NOW())
+                RETURNING *
+            """, (
+                profile["id"],
+                int(payload["entity_company_id"]),
+                int(payload["counterparty_company_id"]),
+                int(payload["group_account_id"]),
+                payload["nature"],
+                bool(payload.get("use_full_balance", False)),
+                (payload.get("notes") or "").strip() or None,
+                user_id,
+            ))
+            row = dict(cur.fetchone())
+            conn.commit()
+            return row
+        
+    def apply_group_intercompany_rules(
+        self, company_id: int, run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        profile = self._require_group_profile(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT r.*,e.id AS run_entity_id,cp.id AS counterparty_run_entity_id
+                FROM public.group_intercompany_rules r
+                JOIN public.group_consolidation_run_entities e
+                ON e.run_id=%s AND e.entity_company_id=r.entity_company_id
+                JOIN public.group_consolidation_run_entities cp
+                ON cp.run_id=%s AND cp.entity_company_id=r.counterparty_company_id
+                WHERE r.profile_id=%s AND r.is_active=TRUE AND r.use_full_balance=TRUE
+            """, (run_id, run_id, profile["id"]))
+            rules = [dict(r) for r in cur.fetchall()]
+
+            created = 0
+            for rule in rules:
+                cur.execute("""
+                    SELECT ABS(COALESCE(SUM(balance),0)) AS amount
+                    FROM public.group_preconsolidation_lines
+                    WHERE run_id=%s AND run_entity_id=%s AND group_account_id=%s
+                """, (run_id, rule["run_entity_id"], rule["group_account_id"]))
+                amount = round(float(cur.fetchone()["amount"] or 0), 2)
+                if amount <= 0:
+                    continue
+
+                cur.execute("""
+                    SELECT id FROM public.group_intercompany_balances
+                    WHERE run_id=%s AND run_entity_id=%s
+                    AND counterparty_run_entity_id=%s
+                    AND group_account_id=%s AND rule_id=%s
+                    LIMIT 1
+                """, (
+                    run_id, rule["run_entity_id"], rule["counterparty_run_entity_id"],
+                    rule["group_account_id"], rule["id"],
+                ))
+                if cur.fetchone():
+                    continue
+
+                cur.execute("""
+                    INSERT INTO public.group_intercompany_balances (
+                        run_id,run_entity_id,entity_company_id,
+                        counterparty_run_entity_id,counterparty_company_id,
+                        group_account_id,rule_id,nature,source_type,
+                        amount,source_balance,status,created_by_user_id,updated_at
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'rule',%s,%s,'unmatched',%s,NOW())
+                """, (
+                    run_id, rule["run_entity_id"], rule["entity_company_id"],
+                    rule["counterparty_run_entity_id"], rule["counterparty_company_id"],
+                    rule["group_account_id"], rule["id"], rule["nature"],
+                    amount, amount, user_id,
+                ))
+                created += 1
+
+            if created:
+                cur.execute("""
+                    UPDATE public.group_consolidation_runs
+                    SET intercompany_status='in_progress',updated_at=NOW()
+                    WHERE id=%s
+                """, (run_id,))
+
+            conn.commit()
+            return {"created": created}
+
+    def auto_match_group_intercompany(
+        self, company_id: int, run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT b.*
+                FROM public.group_intercompany_balances b
+                JOIN public.group_consolidation_runs r ON r.id=b.run_id
+                WHERE b.run_id=%s AND r.parent_company_id=%s
+                AND b.status IN ('unmatched','partial','variance')
+                ORDER BY b.id
+            """, (run_id, company_id))
+            balances = [dict(r) for r in cur.fetchall()]
+
+            matched_ids, created = set(), 0
+
+            for left in balances:
+                if left["id"] in matched_ids:
+                    continue
+
+                opposites = self._group_ic_opposite_nature(left["nature"])
+                candidates = [
+                    r for r in balances
+                    if r["id"] != left["id"]
+                    and r["id"] not in matched_ids
+                    and r["entity_company_id"] == left["counterparty_company_id"]
+                    and r["counterparty_company_id"] == left["entity_company_id"]
+                    and r["nature"] in opposites
+                ]
+
+                if not candidates:
+                    continue
+
+                right = min(
+                    candidates,
+                    key=lambda r: abs(float(left["amount"]) - float(r["amount"]))
+                )
+
+                left_amount = round(float(left["amount"] or 0), 2)
+                right_amount = round(float(right["amount"] or 0), 2)
+                matched_amount = min(left_amount, right_amount)
+                variance = round(left_amount - right_amount, 2)
+                status = "matched" if abs(variance) <= 0.01 else "variance"
+
+                cur.execute("""
+                    INSERT INTO public.group_intercompany_matches (
+                        run_id,left_balance_id,right_balance_id,match_type,
+                        left_amount,right_amount,matched_amount,variance,
+                        status,matched_by_user_id
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (left_balance_id,right_balance_id) DO NOTHING
+                """, (
+                    run_id,left["id"],right["id"],
+                    f"{left['nature']}:{right['nature']}",
+                    left_amount,right_amount,matched_amount,variance,status,user_id,
+                ))
+
+                if cur.rowcount:
+                    created += 1
+                    matched_ids.update({left["id"], right["id"]})
+
+                    cur.execute("""
+                        UPDATE public.group_intercompany_balances
+                        SET status=%s,updated_at=NOW()
+                        WHERE id IN (%s,%s)
+                    """, (status, left["id"], right["id"]))
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status='variance') AS variance_count,
+                    COUNT(*) FILTER (WHERE status='unmatched') AS unmatched_count
+                FROM public.group_intercompany_balances
+                WHERE run_id=%s
+            """, (run_id,))
+            counts = cur.fetchone()
+
+            run_status = (
+                "variance" if int(counts["variance_count"] or 0) > 0
+                else "in_progress" if int(counts["unmatched_count"] or 0) > 0
+                else "reconciled"
+            )
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET intercompany_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (run_status, run_id))
+
+            conn.commit()
+            return {
+                "matches_created": created,
+                "variance_count": int(counts["variance_count"] or 0),
+                "unmatched_count": int(counts["unmatched_count"] or 0),
+                "status": run_status,
+            }
+
+    def delete_group_intercompany_balance(
+        self, company_id: int, run_id: int, balance_id: int
+    ) -> bool:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                DELETE FROM public.group_intercompany_balances b
+                USING public.group_consolidation_runs r
+                WHERE b.id=%s AND b.run_id=%s AND r.id=b.run_id
+                AND r.parent_company_id=%s
+                RETURNING b.id
+            """, (balance_id, run_id, company_id))
+
+            if not cur.fetchone():
+                raise ValueError("Intercompany balance not found.")
+
+            conn.commit()
+            return True
+
+    def _next_group_elimination_no(self, cur, run_id: int) -> str:
+        cur.execute("""
+            SELECT elimination_no
+            FROM public.group_elimination_journals
+            WHERE run_id=%s
+            ORDER BY id DESC
+            LIMIT 1
+        """, (run_id,))
+        row = cur.fetchone()
+
+        if not row:
+            return "ELIM-0001"
+
+        try:
+            n = int(str(row["elimination_no"]).split("-")[-1]) + 1
+        except Exception:
+            n = 1
+
+        return f"ELIM-{n:04d}"
+
+    def _group_elimination_type(self, left_nature: str, right_nature: str) -> str:
+        pair = {left_nature, right_nature}
+
+        if pair == {"receivable", "payable"}:
+            return "intercompany_balance"
+
+        if pair == {"loan_receivable", "loan_payable"}:
+            return "intercompany_loan"
+
+        if pair == {"revenue", "expense"}:
+            return "intercompany_trade"
+
+        if pair == {"interest_income", "interest_expense"}:
+            return "intercompany_interest"
+
+        return "manual"
+
+    def generate_group_eliminations(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s
+                AND parent_company_id=%s
+                FOR UPDATE
+            """, (run_id, company_id))
+            run = cur.fetchone()
+
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            if run["status"] in {"approved", "locked"}:
+                raise ValueError(
+                    f"Eliminations cannot be generated while run status is '{run['status']}'."
+                )
+
+            cur.execute("""
+                SELECT
+                    m.*,
+
+                    lb.run_entity_id AS left_run_entity_id,
+                    lb.entity_company_id AS left_company_id,
+                    lb.group_account_id AS left_group_account_id,
+                    lb.nature AS left_nature,
+
+                    rb.run_entity_id AS right_run_entity_id,
+                    rb.entity_company_id AS right_company_id,
+                    rb.group_account_id AS right_group_account_id,
+                    rb.nature AS right_nature,
+
+                    le.name AS left_entity_name,
+                    re.name AS right_entity_name
+
+                FROM public.group_intercompany_matches m
+
+                JOIN public.group_intercompany_balances lb
+                ON lb.id=m.left_balance_id
+
+                JOIN public.group_intercompany_balances rb
+                ON rb.id=m.right_balance_id
+
+                JOIN public.companies le
+                ON le.id=lb.entity_company_id
+
+                JOIN public.companies re
+                ON re.id=rb.entity_company_id
+
+                WHERE m.run_id=%s
+                AND m.status IN ('matched','resolved')
+                AND ABS(COALESCE(m.variance,0)) <= 0.01
+
+                ORDER BY m.id
+            """, (run_id,))
+
+            matches = [dict(r) for r in cur.fetchall()]
+
+            if not matches:
+                raise ValueError(
+                    "No fully reconciled intercompany matches are available for elimination."
+                )
+
+            created = 0
+            skipped = 0
+            manual_required = []
+
+            for m in matches:
+                cur.execute("""
+                    SELECT id,status
+                    FROM public.group_elimination_journals
+                    WHERE run_id=%s
+                    AND source_match_id=%s
+                    AND status <> 'void'
+                    LIMIT 1
+                """, (run_id, m["id"]))
+                existing = cur.fetchone()
+
+                if existing:
+                    skipped += 1
+                    continue
+
+                amount = round(float(m["matched_amount"] or 0), 2)
+                if amount <= 0:
+                    skipped += 1
+                    continue
+
+                try:
+                    left_amounts = self._group_elimination_amounts(
+                        m["left_nature"],
+                        amount,
+                    )
+                    right_amounts = self._group_elimination_amounts(
+                        m["right_nature"],
+                        amount,
+                    )
+                except ValueError:
+                    manual_required.append({
+                        "match_id": m["id"],
+                        "left_nature": m["left_nature"],
+                        "right_nature": m["right_nature"],
+                    })
+                    continue
+
+                total_debit = round(
+                    float(left_amounts["debit"]) +
+                    float(right_amounts["debit"]),
+                    2,
+                )
+                total_credit = round(
+                    float(left_amounts["credit"]) +
+                    float(right_amounts["credit"]),
+                    2,
+                )
+
+                if abs(total_debit - total_credit) > 0.01:
+                    manual_required.append({
+                        "match_id": m["id"],
+                        "left_nature": m["left_nature"],
+                        "right_nature": m["right_nature"],
+                    })
+                    continue
+
+                elimination_no = self._next_group_elimination_no(
+                    cur,
+                    run_id,
+                )
+
+                elimination_type = self._group_elimination_type(
+                    m["left_nature"],
+                    m["right_nature"],
+                )
+
+                description = (
+                    f"Eliminate {m['left_entity_name']} ↔ "
+                    f"{m['right_entity_name']} intercompany balance"
+                )
+
+                cur.execute("""
+                    INSERT INTO public.group_elimination_journals (
+                        run_id,
+                        source_match_id,
+                        elimination_no,
+                        elimination_type,
+                        description,
+                        reference,
+                        status,
+                        total_debit,
+                        total_credit,
+                        is_system_generated,
+                        created_by_user_id,
+                        updated_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,
+                        'draft',%s,%s,TRUE,%s,NOW()
+                    )
+                    RETURNING *
+                """, (
+                    run_id,
+                    m["id"],
+                    elimination_no,
+                    elimination_type,
+                    description,
+                    f"IC-MATCH-{m['id']}",
+                    total_debit,
+                    total_credit,
+                    user_id,
+                ))
+
+                journal = dict(cur.fetchone())
+
+                lines = [
+                    {
+                        "source_balance_id": m["left_balance_id"],
+                        "run_entity_id": m["left_run_entity_id"],
+                        "entity_company_id": m["left_company_id"],
+                        "group_account_id": m["left_group_account_id"],
+                        "nature": m["left_nature"],
+                        **left_amounts,
+                    },
+                    {
+                        "source_balance_id": m["right_balance_id"],
+                        "run_entity_id": m["right_run_entity_id"],
+                        "entity_company_id": m["right_company_id"],
+                        "group_account_id": m["right_group_account_id"],
+                        "nature": m["right_nature"],
+                        **right_amounts,
+                    },
+                ]
+
+                for idx, line in enumerate(lines, start=1):
+                    cur.execute("""
+                        INSERT INTO public.group_elimination_lines (
+                            journal_id,
+                            run_id,
+                            source_balance_id,
+                            run_entity_id,
+                            entity_company_id,
+                            group_account_id,
+                            line_no,
+                            description,
+                            debit,
+                            credit
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (
+                        journal["id"],
+                        run_id,
+                        line["source_balance_id"],
+                        line["run_entity_id"],
+                        line["entity_company_id"],
+                        line["group_account_id"],
+                        idx,
+                        f"Eliminate {line['nature'].replace('_', ' ')}",
+                        line["debit"],
+                        line["credit"],
+                    ))
+
+                created += 1
+
+            status = (
+                "blocked" if manual_required
+                else "generated" if created or skipped
+                else "pending"
+            )
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET elimination_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (status, run_id))
+
+            conn.commit()
+
+            return {
+                "created": created,
+                "skipped": skipped,
+                "manual_required": manual_required,
+                "status": status,
+            }
+
+    def list_group_eliminations(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> list:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT
+                    j.*,
+                    COUNT(l.id) AS line_count
+                FROM public.group_elimination_journals j
+
+                JOIN public.group_consolidation_runs r
+                ON r.id=j.run_id
+
+                LEFT JOIN public.group_elimination_lines l
+                ON l.journal_id=j.id
+
+                WHERE j.run_id=%s
+                AND r.parent_company_id=%s
+
+                GROUP BY j.id
+                ORDER BY j.id
+            """, (run_id, company_id))
+
+            return [dict(r) for r in cur.fetchall()]
+
+    def get_group_elimination(
+        self,
+        company_id: int,
+        run_id: int,
+        elimination_id: int,
+    ) -> Optional[dict]:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT j.*
+                FROM public.group_elimination_journals j
+                JOIN public.group_consolidation_runs r
+                ON r.id=j.run_id
+                WHERE j.id=%s
+                AND j.run_id=%s
+                AND r.parent_company_id=%s
+            """, (
+                elimination_id,
+                run_id,
+                company_id,
+            ))
+            journal = cur.fetchone()
+
+            if not journal:
+                return None
+
+            cur.execute("""
+                SELECT
+                    l.*,
+                    g.code AS group_account_code,
+                    g.name AS group_account_name,
+                    c.name AS entity_name
+                FROM public.group_elimination_lines l
+                JOIN public.group_coa g
+                ON g.id=l.group_account_id
+                LEFT JOIN public.companies c
+                ON c.id=l.entity_company_id
+                WHERE l.journal_id=%s
+                ORDER BY l.line_no
+            """, (elimination_id,))
+
+            return {
+                "journal": dict(journal),
+                "lines": [dict(r) for r in cur.fetchall()],
+            }
+
+    def set_group_elimination_status(
+        self,
+        company_id: int,
+        run_id: int,
+        elimination_id: int,
+        target_status: str,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        allowed = {
+            "draft": {"reviewed"},
+            "reviewed": {"draft", "approved"},
+            "approved": {"draft"},
+        }
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT j.*
+                FROM public.group_elimination_journals j
+                JOIN public.group_consolidation_runs r
+                ON r.id=j.run_id
+                WHERE j.id=%s
+                AND j.run_id=%s
+                AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (
+                elimination_id,
+                run_id,
+                company_id,
+            ))
+            row = cur.fetchone()
+
+            if not row:
+                raise ValueError("Elimination not found.")
+
+            current = row["status"]
+
+            if target_status not in allowed.get(current, set()):
+                raise ValueError(
+                    f"Elimination cannot move from '{current}' to '{target_status}'."
+                )
+
+            fields = ["status=%s", "updated_at=NOW()"]
+            params = [target_status]
+
+            if target_status == "reviewed":
+                fields += [
+                    "reviewed_by_user_id=%s",
+                    "reviewed_at=NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "approved":
+                fields += [
+                    "approved_by_user_id=%s",
+                    "approved_at=NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "draft":
+                fields += [
+                    "reviewed_by_user_id=NULL",
+                    "reviewed_at=NULL",
+                    "approved_by_user_id=NULL",
+                    "approved_at=NULL",
+                ]
+
+            params.append(elimination_id)
+
+            cur.execute(f"""
+                UPDATE public.group_elimination_journals
+                SET {', '.join(fields)}
+                WHERE id=%s
+                RETURNING *
+            """, tuple(params))
+
+            updated = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) FILTER (WHERE status='draft') AS draft_count,
+                    COUNT(*) FILTER (WHERE status='reviewed') AS reviewed_count,
+                    COUNT(*) FILTER (WHERE status='approved') AS approved_count
+                FROM public.group_elimination_journals
+                WHERE run_id=%s
+                AND status <> 'void'
+            """, (run_id,))
+            counts = cur.fetchone()
+
+            if int(counts["draft_count"] or 0):
+                run_status = "generated"
+            elif int(counts["reviewed_count"] or 0):
+                run_status = "reviewed"
+            elif int(counts["approved_count"] or 0):
+                run_status = "approved"
+            else:
+                run_status = "pending"
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET elimination_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (run_status, run_id))
+
+            conn.commit()
+            return updated
+
+    def void_group_elimination(
+        self,
+        company_id: int,
+        run_id: int,
+        elimination_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                UPDATE public.group_elimination_journals j
+                SET status='void',updated_at=NOW()
+                FROM public.group_consolidation_runs r
+                WHERE j.id=%s
+                AND j.run_id=%s
+                AND r.id=j.run_id
+                AND r.parent_company_id=%s
+                AND j.status='draft'
+                RETURNING j.*
+            """, (
+                elimination_id,
+                run_id,
+                company_id,
+            ))
+            row = cur.fetchone()
+
+            if not row:
+                raise ValueError("Only draft eliminations can be voided.")
+
+            conn.commit()
+            return dict(row)
+
+    def generate_group_adjusted_tb(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        validation = self.validate_group_adjusted_tb(company_id, run_id)
+
+        if not validation["ready"]:
+            raise ValueError(
+                "Adjusted group trial balance cannot be generated while "
+                "consolidation working papers remain incomplete."
+            )
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+                FOR UPDATE
+            """, (run_id, company_id))
+            run = cur.fetchone()
+
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            if run["status"] in {"approved", "locked"}:
+                raise ValueError(
+                    f"Adjusted TB cannot be regenerated while run status is '{run['status']}'."
+                )
+
+            cur.execute("""
+                INSERT INTO public.group_adjusted_tb_runs (
+                    run_id,status,generated_by_user_id,updated_at
+                )
+                VALUES (%s,'draft',%s,NOW())
+                ON CONFLICT (run_id)
+                DO UPDATE SET
+                    status='draft',
+                    generated_by_user_id=EXCLUDED.generated_by_user_id,
+                    generated_at=NULL,
+                    updated_at=NOW()
+                RETURNING *
+            """, (run_id, user_id))
+
+            header = dict(cur.fetchone())
+            adjusted_id = int(header["id"])
+
+            cur.execute("""
+                DELETE FROM public.group_adjusted_tb_lines
+                WHERE adjusted_tb_run_id=%s
+            """, (adjusted_id,))
+
+            # -----------------------------------------------------
+            # ALL GROUP ACCOUNTS USED BY PRECON / ADJ / ELIM
+            # -----------------------------------------------------
+            cur.execute("""
+                WITH accounts AS (
+                    SELECT group_account_id
+                    FROM public.group_preconsolidation_lines
+                    WHERE run_id=%s
+
+                    UNION
+
+                    SELECT l.group_account_id
+                    FROM public.group_adjustment_lines l
+                    JOIN public.group_adjustment_journals j
+                    ON j.id=l.journal_id
+                    WHERE l.run_id=%s
+                    AND j.status='approved'
+
+                    UNION
+
+                    SELECT l.group_account_id
+                    FROM public.group_elimination_lines l
+                    JOIN public.group_elimination_journals j
+                    ON j.id=l.journal_id
+                    WHERE l.run_id=%s
+                    AND j.status='approved'
+                )
+                SELECT group_account_id
+                FROM accounts
+                ORDER BY group_account_id
+            """, (run_id, run_id, run_id))
+
+            account_ids = [
+                int(r["group_account_id"])
+                for r in cur.fetchall()
+            ]
+
+            for group_account_id in account_ids:
+                # Pre-consolidation
+                cur.execute("""
+                    SELECT
+                        COALESCE(SUM(debit),0) AS debit,
+                        COALESCE(SUM(credit),0) AS credit
+                    FROM public.group_preconsolidation_lines
+                    WHERE run_id=%s
+                    AND group_account_id=%s
+                """, (run_id, group_account_id))
+                pre = cur.fetchone()
+
+                pre_d = round(float(pre["debit"] or 0), 2)
+                pre_c = round(float(pre["credit"] or 0), 2)
+
+                # Approved adjustments
+                cur.execute("""
+                    SELECT
+                        COALESCE(SUM(l.debit),0) AS debit,
+                        COALESCE(SUM(l.credit),0) AS credit
+                    FROM public.group_adjustment_lines l
+                    JOIN public.group_adjustment_journals j
+                    ON j.id=l.journal_id
+                    WHERE l.run_id=%s
+                    AND l.group_account_id=%s
+                    AND j.status='approved'
+                """, (run_id, group_account_id))
+                adj = cur.fetchone()
+
+                adj_d = round(float(adj["debit"] or 0), 2)
+                adj_c = round(float(adj["credit"] or 0), 2)
+
+                # Approved eliminations
+                cur.execute("""
+                    SELECT
+                        COALESCE(SUM(l.debit),0) AS debit,
+                        COALESCE(SUM(l.credit),0) AS credit
+                    FROM public.group_elimination_lines l
+                    JOIN public.group_elimination_journals j
+                    ON j.id=l.journal_id
+                    WHERE l.run_id=%s
+                    AND l.group_account_id=%s
+                    AND j.status='approved'
+                """, (run_id, group_account_id))
+                elim = cur.fetchone()
+
+                elim_d = round(float(elim["debit"] or 0), 2)
+                elim_c = round(float(elim["credit"] or 0), 2)
+
+                pre_balance = round(pre_d - pre_c, 2)
+                adj_balance = round(adj_d - adj_c, 2)
+                elim_balance = round(elim_d - elim_c, 2)
+
+                movement_debit = round(pre_d + adj_d + elim_d, 2)
+                movement_credit = round(pre_c + adj_c + elim_c, 2)
+                final_balance = round(
+                    pre_balance + adj_balance + elim_balance,
+                    2,
+                )
+
+                # Convert final net balance back to TB debit/credit columns.
+                final_debit = final_balance if final_balance > 0 else 0
+                final_credit = abs(final_balance) if final_balance < 0 else 0
+
+                cur.execute("""
+                    INSERT INTO public.group_adjusted_tb_lines (
+                        adjusted_tb_run_id,run_id,group_account_id,
+
+                        precon_debit,precon_credit,precon_balance,
+                        adjustment_debit,adjustment_credit,adjustment_balance,
+                        elimination_debit,elimination_credit,elimination_balance,
+
+                        final_debit,final_credit,final_balance
+                    )
+                    VALUES (
+                        %s,%s,%s,
+                        %s,%s,%s,
+                        %s,%s,%s,
+                        %s,%s,%s,
+                        %s,%s,%s
+                    )
+                """, (
+                    adjusted_id, run_id, group_account_id,
+                    pre_d, pre_c, pre_balance,
+                    adj_d, adj_c, adj_balance,
+                    elim_d, elim_c, elim_balance,
+                    final_debit, final_credit, final_balance,
+                ))
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS account_count,
+
+                    COALESCE(SUM(precon_debit),0) AS precon_debit,
+                    COALESCE(SUM(precon_credit),0) AS precon_credit,
+
+                    COALESCE(SUM(adjustment_debit),0) AS adjustment_debit,
+                    COALESCE(SUM(adjustment_credit),0) AS adjustment_credit,
+
+                    COALESCE(SUM(elimination_debit),0) AS elimination_debit,
+                    COALESCE(SUM(elimination_credit),0) AS elimination_credit,
+
+                    COALESCE(SUM(final_debit),0) AS final_debit,
+                    COALESCE(SUM(final_credit),0) AS final_credit
+
+                FROM public.group_adjusted_tb_lines
+                WHERE adjusted_tb_run_id=%s
+            """, (adjusted_id,))
+            totals = cur.fetchone()
+
+            final_debit = round(float(totals["final_debit"] or 0), 2)
+            final_credit = round(float(totals["final_credit"] or 0), 2)
+            difference = round(final_debit - final_credit, 2)
+
+            status = "generated" if abs(difference) <= 0.01 else "warning"
+
+            cur.execute("""
+                UPDATE public.group_adjusted_tb_runs
+                SET
+                    status=%s,
+                    account_count=%s,
+
+                    precon_debit=%s,
+                    precon_credit=%s,
+
+                    adjustment_debit=%s,
+                    adjustment_credit=%s,
+
+                    elimination_debit=%s,
+                    elimination_credit=%s,
+
+                    final_debit=%s,
+                    final_credit=%s,
+                    difference=%s,
+
+                    generated_by_user_id=%s,
+                    generated_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *
+            """, (
+                status,
+                int(totals["account_count"] or 0),
+
+                totals["precon_debit"],
+                totals["precon_credit"],
+
+                totals["adjustment_debit"],
+                totals["adjustment_credit"],
+
+                totals["elimination_debit"],
+                totals["elimination_credit"],
+
+                final_debit,
+                final_credit,
+                difference,
+
+                user_id,
+                adjusted_id,
+            ))
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET
+                    adjusted_tb_status=%s,
+                    status=CASE
+                        WHEN status='prepared' THEN 'calculated'
+                        ELSE status
+                    END,
+                    updated_at=NOW()
+                WHERE id=%s
+            """, (
+                "generated" if status == "generated" else "blocked",
+                run_id,
+            ))
+
+            conn.commit()
+
+        return self.get_group_adjusted_tb(company_id, run_id)
+
+    def get_group_adjusted_tb(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT a.*
+                FROM public.group_adjusted_tb_runs a
+                JOIN public.group_consolidation_runs r
+                ON r.id=a.run_id
+                WHERE a.run_id=%s
+                AND r.parent_company_id=%s
+            """, (run_id, company_id))
+            header = cur.fetchone()
+
+            if not header:
+                return {
+                    "header": None,
+                    "rows": [],
+                    "summary": {},
+                }
+
+            cur.execute("""
+                SELECT
+                    l.*,
+
+                    g.code,
+                    g.name,
+                    g.section,
+                    g.category,
+                    g.subcategory,
+                    g.reporting_description,
+                    g.standard,
+                    g.role,
+                    g.code_family,
+                    g.code_numeric,
+                    g.is_contra
+
+                FROM public.group_adjusted_tb_lines l
+
+                JOIN public.group_coa g
+                ON g.id=l.group_account_id
+
+                WHERE l.adjusted_tb_run_id=%s
+
+                ORDER BY
+                    COALESCE(g.code_numeric,999999),
+                    g.code,
+                    g.name
+            """, (header["id"],))
+
+            rows = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "header": dict(header),
+                "rows": rows,
+                "summary": {
+                    "status": header["status"],
+                    "account_count": int(header["account_count"] or 0),
+
+                    "precon_debit": float(header["precon_debit"] or 0),
+                    "precon_credit": float(header["precon_credit"] or 0),
+
+                    "adjustment_debit": float(header["adjustment_debit"] or 0),
+                    "adjustment_credit": float(header["adjustment_credit"] or 0),
+
+                    "elimination_debit": float(header["elimination_debit"] or 0),
+                    "elimination_credit": float(header["elimination_credit"] or 0),
+
+                    "final_debit": float(header["final_debit"] or 0),
+                    "final_credit": float(header["final_credit"] or 0),
+                    "difference": float(header["difference"] or 0),
+
+                    "generated_at": header["generated_at"],
+                },
+            }
+
+    def get_group_adjusted_tb_account_detail(
+        self,
+        company_id: int,
+        run_id: int,
+        group_account_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT g.*
+                FROM public.group_coa g
+                JOIN public.group_adjusted_tb_lines l
+                ON l.group_account_id=g.id
+                JOIN public.group_adjusted_tb_runs a
+                ON a.id=l.adjusted_tb_run_id
+                JOIN public.group_consolidation_runs r
+                ON r.id=a.run_id
+                WHERE g.id=%s
+                AND r.id=%s
+                AND r.parent_company_id=%s
+                LIMIT 1
+            """, (
+                group_account_id,
+                run_id,
+                company_id,
+            ))
+            account = cur.fetchone()
+
+            if not account:
+                raise ValueError("Adjusted Group Account not found.")
+
+            cur.execute("""
+                SELECT
+                    l.run_entity_id,
+                    l.entity_company_id,
+                    c.name AS entity_name,
+                    l.debit,
+                    l.credit,
+                    l.balance
+                FROM public.group_preconsolidation_lines l
+                JOIN public.companies c
+                ON c.id=l.entity_company_id
+                WHERE l.run_id=%s
+                AND l.group_account_id=%s
+                ORDER BY c.name
+            """, (
+                run_id,
+                group_account_id,
+            ))
+            entities = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    j.id AS journal_id,
+                    j.adjustment_no,
+                    j.description AS journal_description,
+                    j.adjustment_type,
+                    l.description,
+                    l.debit,
+                    l.credit
+                FROM public.group_adjustment_lines l
+                JOIN public.group_adjustment_journals j
+                ON j.id=l.journal_id
+                WHERE l.run_id=%s
+                AND l.group_account_id=%s
+                AND j.status='approved'
+                ORDER BY j.id,l.line_no
+            """, (
+                run_id,
+                group_account_id,
+            ))
+            adjustments = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    j.id AS journal_id,
+                    j.elimination_no,
+                    j.description AS journal_description,
+                    j.elimination_type,
+                    l.description,
+                    l.debit,
+                    l.credit
+                FROM public.group_elimination_lines l
+                JOIN public.group_elimination_journals j
+                ON j.id=l.journal_id
+                WHERE l.run_id=%s
+                AND l.group_account_id=%s
+                AND j.status='approved'
+                ORDER BY j.id,l.line_no
+            """, (
+                run_id,
+                group_account_id,
+            ))
+            eliminations = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "account": dict(account),
+                "entities": entities,
+                "adjustments": adjustments,
+                "eliminations": eliminations,
+            }
+
+    def prepare_group_acquisition_workpapers(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+            """, (run_id, company_id))
+            run = cur.fetchone()
+
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            cur.execute("""
+                SELECT
+                    e.*,
+                    c.name AS entity_name
+                FROM public.group_consolidation_run_entities e
+                JOIN public.companies c ON c.id=e.entity_company_id
+                WHERE e.run_id=%s
+                AND e.included=TRUE
+                AND e.relationship_type='subsidiary'
+                AND e.consolidation_method='full'
+                ORDER BY c.name
+            """, (run_id,))
+            entities = [dict(r) for r in cur.fetchall()]
+
+            created = 0
+
+            for e in entities:
+                acquisition_date = e.get("acquisition_date")
+
+                if not acquisition_date:
+                    continue
+
+                ownership = float(e.get("ownership_percent") or 100)
+                nci = float(
+                    e.get("nci_percent")
+                    if e.get("nci_percent") is not None
+                    else max(0, 100 - ownership)
+                )
+
+                cur.execute("""
+                    INSERT INTO public.group_acquisition_workpapers (
+                        run_id,
+                        run_entity_id,
+                        entity_company_id,
+                        relationship_id,
+                        acquisition_date,
+                        ownership_percent,
+                        nci_percent,
+                        nci_measurement_method,
+                        status,
+                        created_by_user_id,
+                        updated_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,%s,
+                        'proportionate','draft',%s,NOW()
+                    )
+                    ON CONFLICT (run_id,run_entity_id)
+                    DO UPDATE SET
+                        acquisition_date=EXCLUDED.acquisition_date,
+                        ownership_percent=EXCLUDED.ownership_percent,
+                        nci_percent=EXCLUDED.nci_percent,
+                        updated_at=NOW()
+                    RETURNING id
+                """, (
+                    run_id,
+                    e["id"],
+                    e["entity_company_id"],
+                    e.get("relationship_id"),
+                    acquisition_date,
+                    ownership,
+                    nci,
+                    user_id,
+                ))
+
+                if cur.rowcount:
+                    created += 1
+
+            status = "in_progress" if entities else "not_applicable"
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET acquisition_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (status, run_id))
+
+            conn.commit()
+
+            return {
+                "entities": len(entities),
+                "workpapers_prepared": created,
+                "status": status,
+            }
+
+    def get_group_acquisition_workspace(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+            """, (run_id, company_id))
+            run = cur.fetchone()
+
+            if not run:
+                raise ValueError("Consolidation run not found.")
+
+            cur.execute("""
+                SELECT
+                    w.*,
+                    c.name AS entity_name,
+                    c.system_company_code
+                FROM public.group_acquisition_workpapers w
+                JOIN public.companies c
+                ON c.id=w.entity_company_id
+                WHERE w.run_id=%s
+                ORDER BY c.name
+            """, (run_id,))
+            workpapers = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "run": dict(run),
+                "items": workpapers,
+                "summary": {
+                    "total": len(workpapers),
+                    "draft": sum(1 for w in workpapers if w["status"] == "draft"),
+                    "calculated": sum(1 for w in workpapers if w["status"] == "calculated"),
+                    "reviewed": sum(1 for w in workpapers if w["status"] == "reviewed"),
+                    "approved": sum(1 for w in workpapers if w["status"] == "approved"),
+                    "goodwill": round(sum(float(w["goodwill"] or 0) for w in workpapers), 2),
+                    "closing_nci": round(sum(float(w["closing_nci"] or 0) for w in workpapers), 2),
+                },
+            }
+
+    def get_group_acquisition_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+    ) -> Optional[dict]:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT
+                    w.*,
+                    c.name AS entity_name,
+                    c.system_company_code
+                FROM public.group_acquisition_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                JOIN public.companies c ON c.id=w.entity_company_id
+                WHERE w.id=%s
+                AND w.run_id=%s
+                AND r.parent_company_id=%s
+            """, (workpaper_id, run_id, company_id))
+            wp = cur.fetchone()
+
+            if not wp:
+                return None
+
+            cur.execute("""
+                SELECT *
+                FROM public.group_acquisition_consideration_lines
+                WHERE workpaper_id=%s
+                ORDER BY line_no
+            """, (workpaper_id,))
+            consideration = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    l.*,
+                    g.code AS group_account_code,
+                    g.name AS group_account_name
+                FROM public.group_acquisition_net_asset_lines l
+                LEFT JOIN public.group_coa g ON g.id=l.group_account_id
+                WHERE l.workpaper_id=%s
+                ORDER BY l.line_no
+            """, (workpaper_id,))
+            net_assets = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "workpaper": dict(wp),
+                "consideration": consideration,
+                "net_assets": net_assets,
+            }
+
+    def save_group_acquisition_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+        payload: dict,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_acquisition_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s AND w.run_id=%s AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id, run_id, company_id))
+            wp = cur.fetchone()
+
+            if not wp:
+                raise ValueError("Acquisition workpaper not found.")
+
+            if wp["status"] in {"reviewed", "approved"}:
+                raise ValueError(
+                    f"Workpaper cannot be edited while status is '{wp['status']}'."
+                )
+
+            method = (
+                payload.get("nci_measurement_method")
+                or wp["nci_measurement_method"]
+                or "proportionate"
+            ).strip().lower()
+
+            if method not in {"proportionate", "fair_value"}:
+                raise ValueError("Invalid NCI measurement method.")
+
+            cur.execute("""
+                UPDATE public.group_acquisition_workpapers
+                SET
+                    nci_measurement_method=%s,
+                    previously_held_interest_fv=%s,
+                    nci_fair_value=%s,
+                    notes=%s,
+                    status='draft',
+                    updated_at=NOW()
+                WHERE id=%s
+            """, (
+                method,
+                float(payload.get("previously_held_interest_fv") or 0),
+                float(payload.get("nci_fair_value") or 0),
+                (payload.get("notes") or "").strip() or None,
+                workpaper_id,
+            ))
+
+            cur.execute("""
+                DELETE FROM public.group_acquisition_consideration_lines
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+
+            consideration = payload.get("consideration") or []
+
+            for idx, line in enumerate(consideration, 1):
+                amount = round(float(line.get("amount") or 0), 2)
+
+                if amount == 0:
+                    continue
+
+                cur.execute("""
+                    INSERT INTO public.group_acquisition_consideration_lines (
+                        workpaper_id,line_no,component_type,
+                        description,amount,notes
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                """, (
+                    workpaper_id,
+                    idx,
+                    line.get("component_type") or "other",
+                    (line.get("description") or "").strip() or "Consideration",
+                    amount,
+                    (line.get("notes") or "").strip() or None,
+                ))
+
+            cur.execute("""
+                DELETE FROM public.group_acquisition_net_asset_lines
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+
+            net_assets = payload.get("net_assets") or []
+
+            for idx, line in enumerate(net_assets, 1):
+                book = round(float(line.get("book_value") or 0), 2)
+                fv_adj = round(float(line.get("fair_value_adjustment") or 0), 2)
+                dt = round(float(line.get("deferred_tax_adjustment") or 0), 2)
+                fv = round(book + fv_adj + dt, 2)
+
+                cur.execute("""
+                    INSERT INTO public.group_acquisition_net_asset_lines (
+                        workpaper_id,line_no,group_account_id,
+                        description,book_value,fair_value_adjustment,
+                        deferred_tax_adjustment,fair_value,line_type,notes
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    workpaper_id,
+                    idx,
+                    int(line["group_account_id"]) if line.get("group_account_id") else None,
+                    (line.get("description") or "").strip() or f"Net asset line {idx}",
+                    book,
+                    fv_adj,
+                    dt,
+                    fv,
+                    line.get("line_type") or "net_asset",
+                    (line.get("notes") or "").strip() or None,
+                ))
+
+            conn.commit()
+
+        return self.get_group_acquisition_workpaper(
+            company_id,
+            run_id,
+            workpaper_id,
+        )
+
+    def calculate_group_acquisition_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_acquisition_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s
+                AND w.run_id=%s
+                AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id, run_id, company_id))
+            wp = cur.fetchone()
+
+            if not wp:
+                raise ValueError("Acquisition workpaper not found.")
+
+            if wp["status"] in {"reviewed", "approved"}:
+                raise ValueError(
+                    f"Workpaper cannot be recalculated while status is '{wp['status']}'."
+                )
+
+            cur.execute("""
+                SELECT COALESCE(SUM(amount),0) AS consideration
+                FROM public.group_acquisition_consideration_lines
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+            consideration = round(
+                float(cur.fetchone()["consideration"] or 0),
+                2,
+            )
+
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(book_value),0) AS book_net_assets,
+                    COALESCE(SUM(fair_value_adjustment),0) AS fv_adjustments,
+                    COALESCE(SUM(deferred_tax_adjustment),0) AS dt_adjustment,
+                    COALESCE(SUM(fair_value),0) AS identifiable_net_assets
+                FROM public.group_acquisition_net_asset_lines
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+            na = cur.fetchone()
+
+            book_net_assets = round(float(na["book_net_assets"] or 0), 2)
+            fv_adjustments = round(float(na["fv_adjustments"] or 0), 2)
+            dt_adjustment = round(float(na["dt_adjustment"] or 0), 2)
+            identifiable = round(float(na["identifiable_net_assets"] or 0), 2)
+
+            nci_pct = float(wp["nci_percent"] or 0) / 100
+
+            if wp["nci_measurement_method"] == "fair_value":
+                nci_acquisition = round(float(wp["nci_fair_value"] or 0), 2)
+            else:
+                nci_acquisition = round(identifiable * nci_pct, 2)
+
+            phi = round(
+                float(wp["previously_held_interest_fv"] or 0),
+                2,
+            )
+
+            goodwill_raw = round(
+                consideration +
+                nci_acquisition +
+                phi -
+                identifiable,
+                2,
+            )
+
+            goodwill = max(goodwill_raw, 0)
+            bargain_purchase = abs(min(goodwill_raw, 0))
+
+            # Current net assets from adjusted group TB for this entity cannot
+            # safely be inferred from group-level totals. Use a dedicated helper.
+            current_net_assets = self._calculate_entity_current_net_assets(
+                cur,
+                run_id,
+                int(wp["run_entity_id"]),
+            )
+
+            post_acq = round(
+                current_net_assets - identifiable,
+                2,
+            )
+
+            parent_pct = float(wp["ownership_percent"] or 0) / 100
+
+            parent_share = round(
+                post_acq * parent_pct,
+                2,
+            )
+
+            nci_post_share = round(
+                post_acq * nci_pct,
+                2,
+            )
+
+            closing_nci = round(
+                nci_acquisition + nci_post_share,
+                2,
+            )
+
+            cur.execute("""
+                UPDATE public.group_acquisition_workpapers
+                SET
+                    consideration_transferred=%s,
+                    book_net_assets=%s,
+                    fair_value_adjustments=%s,
+                    deferred_tax_adjustment=%s,
+                    identifiable_net_assets_fv=%s,
+
+                    calculated_nci_at_acquisition=%s,
+                    goodwill=%s,
+                    bargain_purchase_gain=%s,
+
+                    current_net_assets=%s,
+                    post_acquisition_movement=%s,
+                    parent_post_acquisition_share=%s,
+                    nci_post_acquisition_share=%s,
+                    closing_nci=%s,
+
+                    status='calculated',
+                    calculated_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *
+            """, (
+                consideration,
+                book_net_assets,
+                fv_adjustments,
+                dt_adjustment,
+                identifiable,
+
+                nci_acquisition,
+                goodwill,
+                bargain_purchase,
+
+                current_net_assets,
+                post_acq,
+                parent_share,
+                nci_post_share,
+                closing_nci,
+
+                workpaper_id,
+            ))
+
+            row = dict(cur.fetchone())
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET acquisition_status='calculated',updated_at=NOW()
+                WHERE id=%s
+            """, (run_id,))
+
+            conn.commit()
+            return row
+
+    def _calculate_entity_current_net_assets(
+        self,
+        cur,
+        run_id: int,
+        run_entity_id: int,
+    ) -> float:
+        cur.execute("""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN LOWER(COALESCE(g.section,'')) LIKE 'asset%%'
+                            THEN l.balance
+                        WHEN LOWER(COALESCE(g.section,'')) LIKE 'liabil%%'
+                            THEN l.balance
+                        WHEN LOWER(COALESCE(g.section,'')) LIKE 'equity%%'
+                            THEN l.balance
+                        ELSE 0
+                    END
+                ),0) AS net_balance
+            FROM public.group_preconsolidation_lines l
+            JOIN public.group_coa g ON g.id=l.group_account_id
+            WHERE l.run_id=%s
+            AND l.run_entity_id=%s
+        """, (run_id, run_entity_id))
+
+        # TB convention is Dr positive / Cr negative.
+        # Assets + liabilities/equity therefore need to be converted into
+        # net-assets magnitude using assets - liabilities.
+        cur.execute("""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN LOWER(COALESCE(g.section,'')) LIKE 'asset%%'
+                            THEN l.balance
+                        ELSE 0
+                    END
+                ),0) AS assets,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN LOWER(COALESCE(g.section,'')) LIKE 'liabil%%'
+                            THEN -l.balance
+                        ELSE 0
+                    END
+                ),0) AS liabilities
+
+            FROM public.group_preconsolidation_lines l
+            JOIN public.group_coa g ON g.id=l.group_account_id
+
+            WHERE l.run_id=%s
+            AND l.run_entity_id=%s
+        """, (run_id, run_entity_id))
+
+        row = cur.fetchone()
+
+        assets = float(row["assets"] or 0)
+        liabilities = float(row["liabilities"] or 0)
+
+        return round(assets - liabilities, 2)
+
+
+    def set_group_acquisition_workpaper_status(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+        target_status: str,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        allowed = {
+            "calculated": {"reviewed"},
+            "reviewed": {"calculated", "approved"},
+            "approved": {"calculated"},
+        }
+
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_acquisition_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s AND w.run_id=%s AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id, run_id, company_id))
+            wp = cur.fetchone()
+
+            if not wp:
+                raise ValueError("Acquisition workpaper not found.")
+
+            current = wp["status"]
+
+            if target_status not in allowed.get(current, set()):
+                raise ValueError(
+                    f"Workpaper cannot move from '{current}' to '{target_status}'."
+                )
+
+            fields = ["status=%s", "updated_at=NOW()"]
+            params = [target_status]
+
+            if target_status == "reviewed":
+                fields += [
+                    "reviewed_by_user_id=%s",
+                    "reviewed_at=NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "approved":
+                fields += [
+                    "approved_by_user_id=%s",
+                    "approved_at=NOW()",
+                ]
+                params.append(user_id)
+
+            elif target_status == "calculated":
+                fields += [
+                    "reviewed_by_user_id=NULL",
+                    "reviewed_at=NULL",
+                    "approved_by_user_id=NULL",
+                    "approved_at=NULL",
+                ]
+
+            params.append(workpaper_id)
+
+            cur.execute(f"""
+                UPDATE public.group_acquisition_workpapers
+                SET {', '.join(fields)}
+                WHERE id=%s
+                RETURNING *
+            """, tuple(params))
+
+            updated = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='approved') AS approved
+                FROM public.group_acquisition_workpapers
+                WHERE run_id=%s
+            """, (run_id,))
+            counts = cur.fetchone()
+
+            total = int(counts["total"] or 0)
+            approved = int(counts["approved"] or 0)
+
+            run_status = (
+                "not_applicable" if total == 0
+                else "approved" if approved == total
+                else "in_progress"
+            )
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET acquisition_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (run_status, run_id))
+
+            conn.commit()
+            return updated
+
+    def _find_group_account_by_roles(
+        self,
+        cur,
+        company_id: int,
+        roles: tuple,
+    ) -> Optional[dict]:
+        profile = self._require_group_profile(company_id)
+
+        cur.execute("""
+            SELECT *
+            FROM public.group_coa
+            WHERE profile_id=%s
+            AND is_active=TRUE
+            AND LOWER(COALESCE(role,'')) = ANY(%s)
+            ORDER BY id
+            LIMIT 1
+        """, (
+            profile["id"],
+            list(roles),
+        ))
+
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def generate_group_acquisition_journals(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_acquisition_workpapers
+                WHERE run_id=%s
+                AND status='approved'
+                ORDER BY id
+            """, (run_id,))
+            workpapers = [dict(r) for r in cur.fetchall()]
+
+            if not workpapers:
+                raise ValueError(
+                    "No approved acquisition workpapers are available."
+                )
+
+            goodwill_acct = self._find_group_account_by_roles(
+                cur, company_id, ("group_goodwill", "goodwill")
+            )
+
+            nci_acct = self._find_group_account_by_roles(
+                cur, company_id, ("group_nci", "non_controlling_interest")
+            )
+
+            bargain_acct = self._find_group_account_by_roles(
+                cur, company_id,
+                ("group_bargain_purchase_gain", "bargain_purchase_gain")
+            )
+
+            missing = []
+
+            if any(float(w["goodwill"] or 0) > 0 for w in workpapers) and not goodwill_acct:
+                missing.append("Goodwill")
+
+            if any(float(w["closing_nci"] or 0) != 0 for w in workpapers) and not nci_acct:
+                missing.append("Non-controlling interest")
+
+            if any(float(w["bargain_purchase_gain"] or 0) > 0 for w in workpapers) and not bargain_acct:
+                missing.append("Bargain purchase gain")
+
+            if missing:
+                raise ValueError(
+                    "Missing Group COA account(s): " + ", ".join(missing)
+                )
+
+            created = 0
+
+            for wp in workpapers:
+                cur.execute("""
+                    SELECT id
+                    FROM public.group_acquisition_journals
+                    WHERE run_id=%s
+                    AND workpaper_id=%s
+                    AND status <> 'void'
+                    LIMIT 1
+                """, (run_id, wp["id"]))
+
+                if cur.fetchone():
+                    continue
+
+                # Phase 10 journals record goodwill / bargain purchase / NCI.
+                # Share capital and pre-acquisition reserve elimination will be
+                # expanded when equity account attribution is introduced.
+                lines = []
+
+                goodwill = round(float(wp["goodwill"] or 0), 2)
+                bargain = round(float(wp["bargain_purchase_gain"] or 0), 2)
+                closing_nci = round(float(wp["closing_nci"] or 0), 2)
+
+                if goodwill > 0:
+                    lines.append({
+                        "account_id": goodwill_acct["id"],
+                        "description": "Recognise goodwill on consolidation",
+                        "debit": goodwill,
+                        "credit": 0,
+                    })
+
+                if bargain > 0:
+                    lines.append({
+                        "account_id": bargain_acct["id"],
+                        "description": "Recognise bargain purchase gain",
+                        "debit": 0,
+                        "credit": bargain,
+                    })
+
+                if closing_nci > 0:
+                    lines.append({
+                        "account_id": nci_acct["id"],
+                        "description": "Recognise non-controlling interest",
+                        "debit": 0,
+                        "credit": closing_nci,
+                    })
+
+                if not lines:
+                    continue
+
+                debit = round(sum(x["debit"] for x in lines), 2)
+                credit = round(sum(x["credit"] for x in lines), 2)
+
+                # Do not create an unbalanced journal.
+                # Remaining acquisition elimination accounts must be identified
+                # before a complete journal can be generated.
+                if abs(debit - credit) > 0.01:
+                    continue
+
+                journal_no = f"ACQ-{run_id}-{wp['id']}"
+
+                cur.execute("""
+                    INSERT INTO public.group_acquisition_journals (
+                        run_id,workpaper_id,journal_no,journal_type,
+                        description,status,total_debit,total_credit,
+                        created_by_user_id,updated_at
+                    )
+                    VALUES (
+                        %s,%s,%s,'acquisition',%s,'draft',
+                        %s,%s,%s,NOW()
+                    )
+                    RETURNING id
+                """, (
+                    run_id,
+                    wp["id"],
+                    journal_no,
+                    f"Acquisition accounting workpaper #{wp['id']}",
+                    debit,
+                    credit,
+                    user_id,
+                ))
+
+                journal_id = int(cur.fetchone()["id"])
+
+                for idx, line in enumerate(lines, 1):
+                    cur.execute("""
+                        INSERT INTO public.group_acquisition_journal_lines (
+                            journal_id,run_id,group_account_id,line_no,
+                            description,debit,credit
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """, (
+                        journal_id,
+                        run_id,
+                        line["account_id"],
+                        idx,
+                        line["description"],
+                        line["debit"],
+                        line["credit"],
+                    ))
+
+                created += 1
+
+            conn.commit()
+            return {"created": created}
+
+    def prepare_group_equity_method_workpapers(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn, cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+                FOR UPDATE
+            """, (run_id,company_id))
+            run = cur.fetchone()
+            if not run: raise ValueError("Consolidation run not found.")
+
+            cur.execute("""
+                SELECT
+                    e.*,
+                    c.name AS entity_name
+                FROM public.group_consolidation_run_entities e
+                JOIN public.companies c ON c.id=e.entity_company_id
+                WHERE e.run_id=%s
+                AND e.included=TRUE
+                AND e.relationship_type IN ('associate','joint_venture')
+                ORDER BY c.name
+            """, (run_id,))
+            entities = [dict(r) for r in cur.fetchall()]
+
+            created = 0
+
+            for e in entities:
+                ownership = float(e.get("ownership_percent") or 0)
+                effective = float(
+                    e.get("effective_interest_percent")
+                    if e.get("effective_interest_percent") is not None
+                    else ownership
+                )
+
+                cur.execute("""
+                    INSERT INTO public.group_equity_method_workpapers (
+                        run_id,run_entity_id,entity_company_id,relationship_id,
+                        relationship_type,measurement_date,
+                        ownership_percent,effective_interest_percent,
+                        status,created_by_user_id,updated_at
+                    )
+                    VALUES (
+                        %s,%s,%s,%s,%s,%s,%s,%s,
+                        'draft',%s,NOW()
+                    )
+                    ON CONFLICT (run_id,run_entity_id)
+                    DO UPDATE SET
+                        relationship_type=EXCLUDED.relationship_type,
+                        measurement_date=EXCLUDED.measurement_date,
+                        ownership_percent=EXCLUDED.ownership_percent,
+                        effective_interest_percent=EXCLUDED.effective_interest_percent,
+                        updated_at=NOW()
+                    RETURNING id
+                """, (
+                    run_id,
+                    e["id"],
+                    e["entity_company_id"],
+                    e.get("relationship_id"),
+                    e["relationship_type"],
+                    run["reporting_date"],
+                    ownership,
+                    effective,
+                    user_id,
+                ))
+                if cur.fetchone(): created += 1
+
+            cur.execute("""
+                SELECT
+                    c.name AS entity_name,
+                    e.relationship_type,
+                    e.consolidation_method
+                FROM public.group_consolidation_run_entities e
+                JOIN public.companies c ON c.id=e.entity_company_id
+                WHERE e.run_id=%s
+                AND e.included=TRUE
+                AND e.relationship_type='subsidiary'
+                AND e.consolidation_method='equity'
+            """, (run_id,))
+            invalid = [dict(r) for r in cur.fetchall()]
+
+            status = "in_progress" if entities else "not_applicable"
+
+            if invalid:
+                status = "blocked"
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET equity_method_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """, (status,run_id))
+
+            conn.commit()
+            return {
+                "entities": len(entities),
+                "workpapers_prepared": created,
+                "configuration_issues": invalid,
+                "status": status,
+            }
+
+
+    def _group_equity_method_entity_profit_loss(
+        self,
+        cur,
+        run_id: int,
+        run_entity_id: int,
+    ) -> float:
+        cur.execute("""
+            SELECT
+                COALESCE(SUM(
+                    CASE
+                        WHEN UPPER(COALESCE(g.section,'')) IN (
+                            'INCOME','REVENUE','OTHER INCOME'
+                        )
+                        OR UPPER(COALESCE(g.category,'')) IN (
+                            'INCOME','REVENUE','OTHER INCOME'
+                        )
+                            THEN -l.balance
+
+                        WHEN UPPER(COALESCE(g.section,'')) IN (
+                            'EXPENSE','EXPENSES'
+                        )
+                        OR UPPER(COALESCE(g.category,'')) IN (
+                            'EXPENSE','EXPENSES',
+                            'COST OF SALES','COST OF REVENUE'
+                        )
+                            THEN -l.balance
+
+                        ELSE 0
+                    END
+                ),0) AS profit_loss
+            FROM public.group_preconsolidation_lines l
+            JOIN public.group_coa g ON g.id=l.group_account_id
+            WHERE l.run_id=%s
+            AND l.run_entity_id=%s
+        """, (run_id,run_entity_id))
+
+        row = cur.fetchone()
+        return round(float(row["profit_loss"] or 0),2)
+
+    def _group_equity_method_entity_oci(
+        self,
+        cur,
+        run_id: int,
+        run_entity_id: int,
+    ) -> float:
+        cur.execute("""
+            SELECT COALESCE(SUM(-l.balance),0) AS oci
+            FROM public.group_preconsolidation_lines l
+            JOIN public.group_coa g ON g.id=l.group_account_id
+            WHERE l.run_id=%s
+            AND l.run_entity_id=%s
+            AND (
+                LOWER(COALESCE(g.section,'')) LIKE '%%oci%%'
+                OR LOWER(COALESCE(g.category,'')) LIKE '%%oci%%'
+                OR LOWER(COALESCE(g.role,'')) LIKE '%%oci%%'
+            )
+        """, (run_id,run_entity_id))
+
+        row = cur.fetchone()
+        return round(float(row["oci"] or 0),2)
+
+    def get_group_equity_method_workspace(
+        self,
+        company_id: int,
+        run_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_consolidation_runs
+                WHERE id=%s AND parent_company_id=%s
+            """, (run_id,company_id))
+            run = cur.fetchone()
+            if not run: raise ValueError("Consolidation run not found.")
+
+            cur.execute("""
+                SELECT
+                    w.*,
+                    c.name AS entity_name,
+                    c.system_company_code
+                FROM public.group_equity_method_workpapers w
+                JOIN public.companies c ON c.id=w.entity_company_id
+                WHERE w.run_id=%s
+                ORDER BY c.name
+            """, (run_id,))
+            items = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT
+                    c.name AS entity_name,
+                    e.relationship_type,
+                    e.consolidation_method
+                FROM public.group_consolidation_run_entities e
+                JOIN public.companies c ON c.id=e.entity_company_id
+                WHERE e.run_id=%s
+                AND e.included=TRUE
+                AND e.relationship_type='subsidiary'
+                AND e.consolidation_method='equity'
+            """, (run_id,))
+            issues = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "run": dict(run),
+                "items": items,
+                "configuration_issues": issues,
+                "summary": {
+                    "total": len(items),
+                    "associates": sum(
+                        1 for x in items
+                        if x["relationship_type"] == "associate"
+                    ),
+                    "joint_ventures": sum(
+                        1 for x in items
+                        if x["relationship_type"] == "joint_venture"
+                    ),
+                    "approved": sum(
+                        1 for x in items
+                        if x["status"] == "approved"
+                    ),
+                    "share_profit_loss": round(sum(
+                        float(x["share_profit_loss"] or 0)
+                        for x in items
+                    ),2),
+                    "closing_investment": round(sum(
+                        float(x["closing_investment"] or 0)
+                        for x in items
+                    ),2),
+                },
+            }
+
+    def get_group_equity_method_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+    ) -> Optional[dict]:
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT
+                    w.*,
+                    c.name AS entity_name,
+                    c.system_company_code
+                FROM public.group_equity_method_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                JOIN public.companies c ON c.id=w.entity_company_id
+                WHERE w.id=%s
+                AND w.run_id=%s
+                AND r.parent_company_id=%s
+            """, (workpaper_id,run_id,company_id))
+            wp = cur.fetchone()
+            if not wp: return None
+
+            cur.execute("""
+                SELECT *
+                FROM public.group_equity_method_adjustments
+                WHERE workpaper_id=%s
+                ORDER BY line_no
+            """, (workpaper_id,))
+
+            return {
+                "workpaper": dict(wp),
+                "adjustments": [dict(r) for r in cur.fetchall()],
+            }
+
+    def save_group_equity_method_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+        payload: dict,
+    ) -> dict:
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_equity_method_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s AND w.run_id=%s AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id,run_id,company_id))
+            wp = cur.fetchone()
+
+            if not wp: raise ValueError("Equity-method workpaper not found.")
+            if wp["status"] in {"reviewed","approved"}:
+                raise ValueError(f"Workpaper cannot be edited while status is '{wp['status']}'.")
+
+            cur.execute("""
+                UPDATE public.group_equity_method_workpapers
+                SET
+                    opening_investment=%s,
+                    notes=%s,
+                    status='draft',
+                    updated_at=NOW()
+                WHERE id=%s
+            """, (
+                round(float(payload.get("opening_investment") or 0),2),
+                (payload.get("notes") or "").strip() or None,
+                workpaper_id,
+            ))
+
+            cur.execute("""
+                DELETE FROM public.group_equity_method_adjustments
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+
+            for idx,line in enumerate(payload.get("adjustments") or [],1):
+                amount = round(float(line.get("amount") or 0),2)
+                if amount == 0: continue
+
+                typ = (line.get("adjustment_type") or "other").strip().lower()
+                if typ not in {"dividend","impairment","fx","other_equity","other"}:
+                    raise ValueError(f"Invalid equity-method adjustment type: {typ}")
+
+                cur.execute("""
+                    INSERT INTO public.group_equity_method_adjustments (
+                        workpaper_id,line_no,adjustment_type,
+                        description,amount,
+                        affects_profit_loss,affects_oci,
+                        affects_investment,notes
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    workpaper_id,idx,typ,
+                    (line.get("description") or typ.replace("_"," ").title()).strip(),
+                    amount,
+                    bool(line.get("affects_profit_loss",typ == "impairment")),
+                    bool(line.get("affects_oci",False)),
+                    bool(line.get("affects_investment",True)),
+                    (line.get("notes") or "").strip() or None,
+                ))
+
+            conn.commit()
+
+        return self.get_group_equity_method_workpaper(
+            company_id,run_id,workpaper_id
+        )
+
+    def calculate_group_equity_method_workpaper(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+    ) -> dict:
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_equity_method_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s AND w.run_id=%s AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id,run_id,company_id))
+            wp = cur.fetchone()
+
+            if not wp: raise ValueError("Equity-method workpaper not found.")
+            if wp["status"] in {"reviewed","approved"}:
+                raise ValueError(f"Workpaper cannot be recalculated while status is '{wp['status']}'.")
+
+            interest = float(
+                wp["effective_interest_percent"]
+                or wp["ownership_percent"]
+                or 0
+            ) / 100
+
+            entity_pl = self._group_equity_method_entity_profit_loss(
+                cur,run_id,int(wp["run_entity_id"])
+            )
+            entity_oci = self._group_equity_method_entity_oci(
+                cur,run_id,int(wp["run_entity_id"])
+            )
+
+            share_pl = round(entity_pl * interest,2)
+            share_oci = round(entity_oci * interest,2)
+
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN adjustment_type='dividend'
+                        THEN ABS(amount) ELSE 0 END),0) AS dividends,
+
+                    COALESCE(SUM(CASE WHEN adjustment_type='impairment'
+                        THEN ABS(amount) ELSE 0 END),0) AS impairment,
+
+                    COALESCE(SUM(CASE WHEN adjustment_type='fx'
+                        THEN amount ELSE 0 END),0) AS fx,
+
+                    COALESCE(SUM(CASE WHEN adjustment_type='other_equity'
+                        THEN amount ELSE 0 END),0) AS other_equity,
+
+                    COALESCE(SUM(CASE WHEN adjustment_type='other'
+                        THEN amount ELSE 0 END),0) AS other_adjustment
+
+                FROM public.group_equity_method_adjustments
+                WHERE workpaper_id=%s
+            """, (workpaper_id,))
+            a = cur.fetchone()
+
+            dividends = round(float(a["dividends"] or 0),2)
+            impairment = round(float(a["impairment"] or 0),2)
+            fx = round(float(a["fx"] or 0),2)
+            other_equity = round(float(a["other_equity"] or 0),2)
+            other = round(float(a["other_adjustment"] or 0),2)
+
+            share_other_equity = round(other_equity * interest,2)
+
+            opening = round(float(wp["opening_investment"] or 0),2)
+
+            closing = round(
+                opening
+                + share_pl
+                + share_oci
+                + share_other_equity
+                - dividends
+                - impairment
+                + fx
+                + other,
+                2,
+            )
+
+            if closing < 0:
+                closing = 0
+
+            cur.execute("""
+                UPDATE public.group_equity_method_workpapers
+                SET
+                    entity_profit_loss=%s,
+                    share_profit_loss=%s,
+                    entity_oci=%s,
+                    share_oci=%s,
+                    entity_other_equity=%s,
+                    share_other_equity=%s,
+                    dividends_received=%s,
+                    impairment_loss=%s,
+                    fx_adjustment=%s,
+                    other_adjustment=%s,
+                    closing_investment=%s,
+                    status='calculated',
+                    calculated_at=NOW(),
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *
+            """, (
+                entity_pl,share_pl,
+                entity_oci,share_oci,
+                other_equity,share_other_equity,
+                dividends,impairment,fx,other,
+                closing,workpaper_id,
+            ))
+
+            row = dict(cur.fetchone())
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET equity_method_status='calculated',updated_at=NOW()
+                WHERE id=%s
+            """, (run_id,))
+
+            conn.commit()
+            return row
+
+
+    def set_group_equity_method_workpaper_status(
+        self,
+        company_id: int,
+        run_id: int,
+        workpaper_id: int,
+        target_status: str,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        allowed = {
+            "calculated": {"reviewed"},
+            "reviewed": {"calculated","approved"},
+            "approved": {"calculated"},
+        }
+
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT w.*
+                FROM public.group_equity_method_workpapers w
+                JOIN public.group_consolidation_runs r ON r.id=w.run_id
+                WHERE w.id=%s AND w.run_id=%s AND r.parent_company_id=%s
+                FOR UPDATE
+            """, (workpaper_id,run_id,company_id))
+            wp = cur.fetchone()
+
+            if not wp: raise ValueError("Equity-method workpaper not found.")
+
+            current = wp["status"]
+            if target_status not in allowed.get(current,set()):
+                raise ValueError(
+                    f"Workpaper cannot move from '{current}' to '{target_status}'."
+                )
+
+            fields = ["status=%s","updated_at=NOW()"]
+            params = [target_status]
+
+            if target_status == "reviewed":
+                fields += ["reviewed_by_user_id=%s","reviewed_at=NOW()"]
+                params.append(user_id)
+
+            elif target_status == "approved":
+                fields += ["approved_by_user_id=%s","approved_at=NOW()"]
+                params.append(user_id)
+
+            elif target_status == "calculated":
+                fields += [
+                    "reviewed_by_user_id=NULL","reviewed_at=NULL",
+                    "approved_by_user_id=NULL","approved_at=NULL",
+                ]
+
+            params.append(workpaper_id)
+
+            cur.execute(f"""
+                UPDATE public.group_equity_method_workpapers
+                SET {', '.join(fields)}
+                WHERE id=%s
+                RETURNING *
+            """,tuple(params))
+
+            updated = dict(cur.fetchone())
+
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='approved') AS approved
+                FROM public.group_equity_method_workpapers
+                WHERE run_id=%s
+            """,(run_id,))
+            counts = cur.fetchone()
+
+            total = int(counts["total"] or 0)
+            approved = int(counts["approved"] or 0)
+
+            status = (
+                "not_applicable" if total == 0
+                else "approved" if total == approved
+                else "in_progress"
+            )
+
+            cur.execute("""
+                UPDATE public.group_consolidation_runs
+                SET equity_method_status=%s,updated_at=NOW()
+                WHERE id=%s
+            """,(status,run_id))
+
+            conn.commit()
+            return updated
+
+
+    def generate_group_equity_method_journals(
+        self,
+        company_id: int,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        with self._conn_cursor() as (conn,cur):
+            cur.execute("""
+                SELECT *
+                FROM public.group_equity_method_workpapers
+                WHERE run_id=%s AND status='approved'
+                ORDER BY id
+            """,(run_id,))
+            workpapers = [dict(r) for r in cur.fetchall()]
+
+            if not workpapers:
+                raise ValueError("No approved equity-method workpapers are available.")
+
+            created = 0
+            missing = []
+
+            for wp in workpapers:
+                rel = wp["relationship_type"]
+
+                investment_roles = (
+                    ("group_investment_associate","investment_in_associate")
+                    if rel == "associate"
+                    else ("group_investment_joint_venture","investment_in_joint_venture")
+                )
+
+                profit_roles = (
+                    ("group_share_profit_associate","share_profit_associate")
+                    if rel == "associate"
+                    else ("group_share_profit_joint_venture","share_profit_joint_venture")
+                )
+
+                oci_roles = (
+                    ("group_share_oci_associate","share_oci_associate")
+                    if rel == "associate"
+                    else ("group_share_oci_joint_venture","share_oci_joint_venture")
+                )
+
+                investment = self._find_group_account_by_roles(
+                    cur,company_id,investment_roles
+                )
+                profit = self._find_group_account_by_roles(
+                    cur,company_id,profit_roles
+                )
+                oci = self._find_group_account_by_roles(
+                    cur,company_id,oci_roles
+                )
+                impairment_acct = self._find_group_account_by_roles(
+                    cur,company_id,
+                    ("group_equity_method_impairment","equity_method_impairment")
+                )
+
+                if not investment:
+                    missing.append(
+                        f"{rel.replace('_',' ').title()} investment account"
+                    )
+                    continue
+
+                share_pl = round(float(wp["share_profit_loss"] or 0),2)
+                share_oci = round(float(wp["share_oci"] or 0),2)
+                impairment = round(float(wp["impairment_loss"] or 0),2)
+
+                if share_pl and not profit:
+                    missing.append(
+                        f"{rel.replace('_',' ').title()} share of profit/loss account"
+                    )
+                    continue
+
+                if share_oci and not oci:
+                    missing.append(
+                        f"{rel.replace('_',' ').title()} share of OCI account"
+                    )
+                    continue
+
+                if impairment and not impairment_acct:
+                    missing.append("Equity-method impairment account")
+                    continue
+
+                cur.execute("""
+                    SELECT id
+                    FROM public.group_equity_method_journals
+                    WHERE run_id=%s AND workpaper_id=%s AND status<>'void'
+                """,(run_id,wp["id"]))
+
+                if cur.fetchone():
+                    continue
+
+                lines = []
+
+                def add_pair(account_a,account_b,amount,description):
+                    amount = round(float(amount or 0),2)
+                    if not amount: return
+
+                    if amount > 0:
+                        lines.extend([
+                            (account_a["id"],description,amount,0),
+                            (account_b["id"],description,0,amount),
+                        ])
+                    else:
+                        amount = abs(amount)
+                        lines.extend([
+                            (account_b["id"],description,amount,0),
+                            (account_a["id"],description,0,amount),
+                        ])
+
+                if share_pl:
+                    add_pair(
+                        investment,
+                        profit,
+                        share_pl,
+                        "Share of profit/(loss) under equity method",
+                    )
+
+                if share_oci:
+                    add_pair(
+                        investment,
+                        oci,
+                        share_oci,
+                        "Share of OCI under equity method",
+                    )
+
+                if impairment:
+                    lines.extend([
+                        (
+                            impairment_acct["id"],
+                            "Equity-method investment impairment",
+                            impairment,0,
+                        ),
+                        (
+                            investment["id"],
+                            "Equity-method investment impairment",
+                            0,impairment,
+                        ),
+                    ])
+
+                if not lines:
+                    continue
+
+                total_debit = round(sum(float(x[2]) for x in lines),2)
+                total_credit = round(sum(float(x[3]) for x in lines),2)
+
+                if abs(total_debit-total_credit) > 0.01:
+                    raise ValueError(
+                        f"Equity-method journal for workpaper {wp['id']} is not balanced."
+                    )
+
+                journal_no = f"EQM-{run_id}-{wp['id']}"
+
+                cur.execute("""
+                    INSERT INTO public.group_equity_method_journals (
+                        run_id,workpaper_id,journal_no,
+                        journal_type,description,status,
+                        total_debit,total_credit,
+                        created_by_user_id,updated_at
+                    )
+                    VALUES (
+                        %s,%s,%s,'equity_method',%s,
+                        'draft',%s,%s,%s,NOW()
+                    )
+                    RETURNING id
+                """,(
+                    run_id,wp["id"],journal_no,
+                    f"Equity method — entity {wp['entity_company_id']}",
+                    total_debit,total_credit,user_id,
+                ))
+
+                journal_id = int(cur.fetchone()["id"])
+
+                for idx,line in enumerate(lines,1):
+                    cur.execute("""
+                        INSERT INTO public.group_equity_method_journal_lines (
+                            journal_id,run_id,group_account_id,line_no,
+                            description,debit,credit
+                        )
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,(
+                        journal_id,run_id,line[0],idx,
+                        line[1],line[2],line[3],
+                    ))
+
+                created += 1
+
+            conn.commit()
+
+            return {
+                "created": created,
+                "missing_accounts": sorted(set(missing)),
+            }
 
     def get_company_profile(self, company_id: int) -> Optional[Dict[str, Any]]:
         sql = """
@@ -12810,6 +17165,165 @@ class DatabaseService:
                 report_key,
                 generated_at DESC
             );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_item_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_layout TEXT NOT NULL DEFAULT 'employee_rows',
+            default_effective_from DATE,
+
+            earning_strategy TEXT NOT NULL DEFAULT 'map_existing',
+            deduction_strategy TEXT NOT NULL DEFAULT 'map_existing',
+            benefit_strategy TEXT NOT NULL DEFAULT 'map_existing',
+            contribution_strategy TEXT NOT NULL DEFAULT 'map_existing',
+
+            allow_create_missing BOOLEAN NOT NULL DEFAULT FALSE,
+            require_all_items_mapped BOOLEAN NOT NULL DEFAULT TRUE,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_item_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_item_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_item_layout
+                CHECK(source_layout IN(
+                    'employee_rows',
+                    'item_rows'
+                )),
+
+            CONSTRAINT ck_migration_payroll_earning_strategy
+                CHECK(earning_strategy IN(
+                    'map_existing',
+                    'create_missing'
+                )),
+
+            CONSTRAINT ck_migration_payroll_deduction_strategy
+                CHECK(deduction_strategy IN(
+                    'map_existing',
+                    'create_missing'
+                )),
+
+            CONSTRAINT ck_migration_payroll_benefit_strategy
+                CHECK(benefit_strategy IN(
+                    'map_existing',
+                    'create_missing'
+                )),
+
+            CONSTRAINT ck_migration_payroll_contribution_strategy
+                CHECK(contribution_strategy IN(
+                    'map_existing',
+                    'create_missing'
+                )),
+
+            CONSTRAINT uq_migration_payroll_item_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_item_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            item_type TEXT NOT NULL,
+
+            source_code TEXT,
+            source_name TEXT NOT NULL,
+
+            target_id BIGINT,
+            target_code TEXT,
+            target_name TEXT,
+
+            default_calculation_method TEXT NOT NULL DEFAULT 'fixed_amount',
+            default_amount NUMERIC(18,2),
+            default_percentage NUMERIC(18,4),
+            default_quantity NUMERIC(18,4),
+            default_rate NUMERIC(18,4),
+
+            taxable BOOLEAN,
+            pensionable BOOLEAN,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_item_map_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_item_map_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_item_type
+                CHECK(item_type IN(
+                    'earning',
+                    'deduction',
+                    'benefit',
+                    'contribution'
+                )),
+
+            CONSTRAINT ck_migration_payroll_item_calc_method
+                CHECK(default_calculation_method IN(
+                    'fixed_amount',
+                    'percentage',
+                    'quantity_rate',
+                    'manual'
+                )),
+
+            CONSTRAINT ck_migration_payroll_item_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                ))
+        );
+
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        uq_migration_payroll_item_mapping
+        ON {schema}.migration_payroll_item_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            item_type,
+            LOWER(source_name)
+        );
+
+
+        CREATE INDEX IF NOT EXISTS
+        idx_migration_payroll_item_mapping_project
+        ON {schema}.migration_payroll_item_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            item_type
+        );
         """
 
         self.execute_ddl(
@@ -12819,7 +17333,7 @@ class DatabaseService:
             migration_version=self.IAS41_MIGRATION_VERSION,
         )
 
-    MIGRATION_WORKSPACE_MIGRATION_VERSION = 8
+    MIGRATION_WORKSPACE_MIGRATION_VERSION = 10
     def ensure_schema_migration(
         self,
         company_id: int,
@@ -13734,7 +18248,7 @@ class DatabaseService:
                 'payroll',
                 'Payroll',
                 'Payroll Opening Balances',
-                'Year-to-date payroll and leave balances.',
+                'Year-to-date payroll earnings, deductions, tax and contribution balances.',
                 'opening',
                 'create_only',
                 FALSE,
@@ -13750,6 +18264,17 @@ class DatabaseService:
                 'create_only',
                 FALSE,
                 820
+            ),
+            (
+                'payroll_leave_balances',
+                'payroll',
+                'Payroll',
+                'Leave Balances',
+                'Employee leave opening balances and accrued leave entitlements.',
+                'opening',
+                'create_only',
+                FALSE,
+                830
             )
         ON CONFLICT (code)
         DO UPDATE SET
@@ -14065,6 +18590,13 @@ class DatabaseService:
                 'employees',
                 'required',
                 'Payroll history requires employee records.',
+                10
+            ),
+            (
+                'payroll_leave_balances',
+                'employees',
+                'required',
+                'Leave balances require employee records.',
                 10
             )
         ON CONFLICT (
@@ -15159,7 +19691,844 @@ class DatabaseService:
             reference_type
         );
 
+        CREATE TABLE IF NOT EXISTS {schema}.migration_loan_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
 
+            source_mode VARCHAR(30) NOT NULL DEFAULT 'contract_terms',
+            migration_date DATE,
+
+            default_currency VARCHAR(10),
+            default_loan_type VARCHAR(30) NOT NULL DEFAULT 'term_loan',
+            default_interest_method VARCHAR(40) NOT NULL DEFAULT 'amortised_fixed_payment',
+            default_payment_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
+
+            interest_expense_account_code TEXT,
+            accrued_interest_account_code TEXT,
+            loan_payable_current_account_code TEXT,
+            loan_payable_noncurrent_account_code TEXT,
+            fees_asset_account_code TEXT,
+            fees_expense_account_code TEXT,
+
+            require_bank_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+            require_gl_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+            enable_ias23_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+
+            balance_tolerance NUMERIC(18,2) NOT NULL DEFAULT 1.00,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_loan_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_loan_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_loan_source_mode
+                CHECK(source_mode IN(
+                    'contract_terms',
+                    'existing_schedule',
+                    'opening_balance_only'
+                )),
+
+            CONSTRAINT ck_migration_loan_type
+                CHECK(default_loan_type IN(
+                    'term_loan',
+                    'vehicle',
+                    'mortgage',
+                    'overdraft',
+                    'director_loan',
+                    'other'
+                )),
+
+            CONSTRAINT ck_migration_loan_interest_method
+                CHECK(default_interest_method IN(
+                    'amortised_fixed_payment',
+                    'straight_line_interest',
+                    'interest_only',
+                    'manual'
+                )),
+
+            CONSTRAINT ck_migration_loan_frequency
+                CHECK(default_payment_frequency IN(
+                    'weekly',
+                    'monthly',
+                    'quarterly',
+                    'annually'
+                )),
+
+            CONSTRAINT uq_migration_loan_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_loan_reference_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reference_type VARCHAR(40) NOT NULL,
+            source_value VARCHAR(500) NOT NULL,
+            source_label VARCHAR(500),
+
+            target_id BIGINT,
+            target_code VARCHAR(220),
+            target_label VARCHAR(500),
+
+            mapping_method VARCHAR(30) NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_loan_ref_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_loan_ref_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_loan_ref_type
+                CHECK(reference_type IN(
+                    'bank_account',
+                    'qualifying_asset'
+                )),
+
+            CONSTRAINT ck_migration_loan_ref_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_loan_reference
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    reference_type,
+                    source_value
+                )
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_loan_settings_project
+        ON {schema}.migration_loan_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_loan_refs_project
+        ON {schema}.migration_loan_reference_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            reference_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_revenue_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_mode VARCHAR(30) NOT NULL DEFAULT 'contract_and_progress',
+            migration_date DATE,
+
+            default_currency VARCHAR(10),
+            default_billing_method VARCHAR(20) NOT NULL DEFAULT 'milestone',
+            default_recognition_timing VARCHAR(20) NOT NULL DEFAULT 'over_time',
+            default_progress_method VARCHAR(30) NOT NULL DEFAULT 'cost_to_cost',
+
+            revenue_account_code TEXT,
+            contract_asset_account_code TEXT,
+            contract_liability_account_code TEXT,
+            receivable_account_code TEXT,
+
+            require_customer_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+            require_project_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+            require_gl_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+
+            reconciliation_tolerance NUMERIC(18,2) NOT NULL DEFAULT 1.00,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_revenue_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_revenue_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_revenue_source_mode
+                CHECK(source_mode IN(
+                    'full_history',
+                    'contract_and_progress',
+                    'opening_position'
+                )),
+
+            CONSTRAINT ck_migration_revenue_billing
+                CHECK(default_billing_method IN(
+                    'milestone',
+                    'progress',
+                    'periodic',
+                    'manual'
+                )),
+
+            CONSTRAINT ck_migration_revenue_timing
+                CHECK(default_recognition_timing IN(
+                    'over_time',
+                    'point_in_time'
+                )),
+
+            CONSTRAINT ck_migration_revenue_progress
+                CHECK(default_progress_method IN(
+                    'cost_to_cost',
+                    'milestone',
+                    'units',
+                    'units_delivered',
+                    'time_elapsed',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_revenue_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_revenue_reference_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reference_type VARCHAR(30) NOT NULL,
+            source_value VARCHAR(500) NOT NULL,
+            source_label VARCHAR(500),
+
+            target_id BIGINT,
+            target_code VARCHAR(220),
+            target_label VARCHAR(500),
+
+            mapping_method VARCHAR(30) NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_revenue_ref_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_revenue_ref_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_revenue_ref_type
+                CHECK(reference_type IN(
+                    'customer',
+                    'project'
+                )),
+
+            CONSTRAINT ck_migration_revenue_ref_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_revenue_reference
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    reference_type,
+                    source_value
+                )
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_revenue_settings_project
+        ON {schema}.migration_revenue_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_revenue_refs_project
+        ON {schema}.migration_revenue_reference_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            reference_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_accrual_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_mode VARCHAR(30) NOT NULL DEFAULT 'original_terms',
+            migration_date DATE,
+
+            default_currency VARCHAR(10),
+            default_item_type VARCHAR(30) NOT NULL DEFAULT 'prepaid_expense',
+            default_recognition_method VARCHAR(30) NOT NULL DEFAULT 'straight_line',
+            default_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
+            default_tax_mode VARCHAR(20) NOT NULL DEFAULT 'no_vat',
+
+            prepaid_expense_account TEXT,
+            deferred_expense_account TEXT,
+            deferred_income_account TEXT,
+            accrued_income_account TEXT,
+            accrued_expense_account TEXT,
+
+            default_recognition_account TEXT,
+            default_settlement_account TEXT,
+            default_tax_account TEXT,
+
+            require_counterparty_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+            require_gl_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+
+            reconciliation_tolerance NUMERIC(18,2) NOT NULL DEFAULT 1.00,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_accrual_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_accrual_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_accrual_source_mode
+                CHECK(source_mode IN(
+                    'original_terms',
+                    'existing_schedule',
+                    'opening_position'
+                )),
+
+            CONSTRAINT ck_migration_accrual_item_type
+                CHECK(default_item_type IN(
+                    'prepaid_expense',
+                    'deferred_expense',
+                    'deferred_income',
+                    'accrued_income',
+                    'accrued_expense'
+                )),
+
+            CONSTRAINT ck_migration_accrual_method
+                CHECK(default_recognition_method IN(
+                    'straight_line',
+                    'manual',
+                    'units',
+                    'milestone'
+                )),
+
+            CONSTRAINT ck_migration_accrual_frequency
+                CHECK(default_frequency IN(
+                    'monthly',
+                    'quarterly',
+                    'annually',
+                    'once',
+                    'manual'
+                )),
+
+            CONSTRAINT ck_migration_accrual_tax_mode
+                CHECK(default_tax_mode IN(
+                    'exclusive',
+                    'inclusive',
+                    'no_vat'
+                )),
+
+            CONSTRAINT uq_migration_accrual_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_accrual_reference_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reference_type VARCHAR(30) NOT NULL,
+            source_value VARCHAR(500) NOT NULL,
+            source_label VARCHAR(500),
+
+            target_id BIGINT,
+            target_code VARCHAR(220),
+            target_label VARCHAR(500),
+
+            mapping_method VARCHAR(30) NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_accrual_ref_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_accrual_ref_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_accrual_ref_type
+                CHECK(reference_type IN(
+                    'customer',
+                    'vendor',
+                    'employee'
+                )),
+
+            CONSTRAINT ck_migration_accrual_ref_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_accrual_reference
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    reference_type,
+                    source_value
+                )
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_accrual_settings_project
+        ON {schema}.migration_accrual_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_accrual_refs_project
+        ON {schema}.migration_accrual_reference_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            reference_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            migration_date DATE,
+
+            default_currency TEXT,
+            default_pay_frequency TEXT NOT NULL DEFAULT 'monthly',
+            default_pay_basis TEXT NOT NULL DEFAULT 'monthly',
+            default_contract_type TEXT NOT NULL DEFAULT 'permanent',
+            default_salary_type TEXT NOT NULL DEFAULT 'monthly',
+
+            default_tax_authority_id BIGINT,
+            default_tax_regime_id BIGINT,
+
+            default_residency_status TEXT NOT NULL DEFAULT 'resident',
+            default_tax_calculation_method TEXT NOT NULL DEFAULT 'standard',
+            default_tax_treatment TEXT NOT NULL DEFAULT 'standard',
+
+            default_proration_method TEXT NOT NULL DEFAULT 'working_days',
+            default_hours_per_day NUMERIC(10,4) NOT NULL DEFAULT 8,
+            default_attendance_required BOOLEAN NOT NULL DEFAULT FALSE,
+
+            department_strategy TEXT NOT NULL DEFAULT 'map_existing',
+            position_strategy TEXT NOT NULL DEFAULT 'map_existing',
+            payroll_item_strategy TEXT NOT NULL DEFAULT 'map_existing',
+
+            require_department_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+            require_position_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+            require_bank_details BOOLEAN NOT NULL DEFAULT FALSE,
+            require_tax_profile BOOLEAN NOT NULL DEFAULT TRUE,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_frequency
+                CHECK(default_pay_frequency IN(
+                    'weekly','fortnightly','monthly'
+                )),
+
+            CONSTRAINT ck_migration_payroll_basis
+                CHECK(default_pay_basis IN(
+                    'monthly','hourly','daily',
+                    'quantity','commission_only'
+                )),
+
+            CONSTRAINT ck_migration_payroll_residency
+                CHECK(default_residency_status IN(
+                    'resident','non_resident'
+                )),
+
+            CONSTRAINT ck_migration_payroll_tax_method
+                CHECK(default_tax_calculation_method IN(
+                    'standard','directive','manual','exempt'
+                )),
+
+            CONSTRAINT ck_migration_payroll_tax_treatment
+                CHECK(default_tax_treatment IN(
+                    'standard','manual','exempt'
+                )),
+
+            CONSTRAINT ck_migration_payroll_proration
+                CHECK(default_proration_method IN(
+                    'working_days',
+                    'calendar_days',
+                    'fixed_30_days',
+                    'scheduled_hours',
+                    'actual_hours',
+                    'no_proration'
+                )),
+
+            CONSTRAINT ck_migration_payroll_department_strategy
+                CHECK(department_strategy IN(
+                    'map_existing','create_missing'
+                )),
+
+            CONSTRAINT ck_migration_payroll_position_strategy
+                CHECK(position_strategy IN(
+                    'map_existing','create_missing'
+                )),
+
+            CONSTRAINT ck_migration_payroll_item_strategy
+                CHECK(payroll_item_strategy IN(
+                    'map_existing','create_missing'
+                )),
+
+            CONSTRAINT uq_migration_payroll_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_reference_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            reference_type TEXT NOT NULL,
+            source_value TEXT NOT NULL,
+            source_label TEXT,
+
+            target_id BIGINT,
+            target_code TEXT,
+            target_label TEXT,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+            create_target BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_ref_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_ref_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_ref_type
+                CHECK(reference_type IN(
+                    'department',
+                    'position',
+                    'tax_authority',
+                    'tax_regime',
+                    'earning_type',
+                    'deduction_type',
+                    'contribution_type',
+                    'benefit_type'
+                )),
+
+            CONSTRAINT ck_migration_payroll_ref_method
+                CHECK(mapping_method IN(
+                    'auto','manual'
+                )),
+
+            CONSTRAINT uq_migration_payroll_reference
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    reference_type,
+                    source_value
+                )
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_payroll_settings_project
+        ON {schema}.migration_payroll_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_payroll_refs_project
+        ON {schema}.migration_payroll_reference_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            reference_type
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_leave_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            migration_date DATE,
+            default_balance_unit TEXT NOT NULL DEFAULT 'days',
+            default_opening_source TEXT NOT NULL DEFAULT 'legacy_balance',
+
+            allow_negative_balance BOOLEAN NOT NULL DEFAULT FALSE,
+            require_leave_type_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+
+            reconciliation_tolerance NUMERIC(18,4) NOT NULL DEFAULT 0.01,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_leave_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_leave_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_leave_unit
+                CHECK(default_balance_unit IN(
+                    'days',
+                    'hours'
+                )),
+
+            CONSTRAINT ck_migration_payroll_leave_source
+                CHECK(default_opening_source IN(
+                    'legacy_balance',
+                    'entitlement_less_taken',
+                    'movement_history'
+                )),
+
+            CONSTRAINT uq_migration_payroll_leave_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_leave_type_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_code TEXT,
+            source_name TEXT NOT NULL,
+
+            target_leave_type_id BIGINT,
+            target_code TEXT,
+            target_name TEXT,
+
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_leave_map_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_leave_map_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_leave_map_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_payroll_leave_mapping
+                UNIQUE(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    source_name
+                )
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_payroll_loan_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            migration_date DATE,
+
+            default_currency TEXT,
+            default_frequency TEXT NOT NULL DEFAULT 'monthly',
+            default_interest_method TEXT NOT NULL DEFAULT 'reducing_balance',
+
+            require_employee_mapping BOOLEAN NOT NULL DEFAULT TRUE,
+            require_deduction_mapping BOOLEAN NOT NULL DEFAULT FALSE,
+
+            reconciliation_tolerance NUMERIC(18,2) NOT NULL DEFAULT 1.00,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT,
+            updated_by_user_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_payroll_loan_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_payroll_loan_settings_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_payroll_loan_frequency
+                CHECK(default_frequency IN(
+                    'weekly',
+                    'fortnightly',
+                    'monthly'
+                )),
+
+            CONSTRAINT ck_migration_payroll_loan_interest_method
+                CHECK(default_interest_method IN(
+                    'reducing_balance',
+                    'flat',
+                    'interest_free',
+                    'manual'
+                )),
+
+            CONSTRAINT uq_migration_payroll_loan_settings
+                UNIQUE(company_id,project_id,dataset_id)
+        );
+
+
+        CREATE INDEX IF NOT EXISTS idx_migration_payroll_leave_settings
+        ON {schema}.migration_payroll_leave_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_payroll_leave_mapping
+        ON {schema}.migration_payroll_leave_type_mappings(
+            company_id,
+            project_id,
+            dataset_id
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_migration_payroll_loan_settings
+        ON {schema}.migration_payroll_loan_settings(
+            company_id,
+            project_id,
+            dataset_id
+        );
         """
 
         self.execute_ddl(
@@ -15168,6 +20537,852 @@ class DatabaseService:
             migration_key=f"{schema}:migration_workspace",
             migration_version=self.MIGRATION_WORKSPACE_MIGRATION_VERSION,
         )
+
+        payroll_leave_fields=[
+            ("employee_no","Employee Number","text",True,True,
+            ["employee no","employee number","staff number","staff no","payroll number"],10),
+
+            ("leave_type_code","Leave Type Code","text",False,False,
+            ["leave type code","leave code","absence code"],20),
+
+            ("leave_type_name","Leave Type","text",True,False,
+            ["leave type","leave name","absence type"],30),
+
+            ("balance_unit","Balance Unit","text",False,False,
+            ["balance unit","unit","days hours"],40),
+
+            ("opening_entitlement","Opening Entitlement","number",False,False,
+            ["opening entitlement","entitlement","annual entitlement","leave entitlement"],50),
+
+            ("leave_taken_to_date","Leave Taken","number",False,False,
+            ["leave taken","days taken","hours taken","used leave"],60),
+
+            ("leave_adjustments","Adjustments","number",False,False,
+            ["adjustments","leave adjustments","manual adjustments"],70),
+
+            ("opening_balance","Opening Balance","number",False,False,
+            ["opening balance","leave balance","available leave","closing balance"],80),
+
+            ("accrued_balance","Accrued Balance","number",False,False,
+            ["accrued balance","accrued leave","earned leave"],90),
+
+            ("carried_forward","Carried Forward","number",False,False,
+            ["carried forward","carry forward","brought forward"],100),
+
+            ("expiry_date","Expiry Date","date",False,False,
+            ["expiry date","carry forward expiry","leave expiry"],110),
+
+            ("migration_date","Migration Date","date",False,False,
+            ["migration date","cutover date","opening date"],120),
+
+            ("notes","Notes","text",False,False,
+            ["notes","remarks","comments"],200),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in payroll_leave_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'payroll_leave_balances',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        payroll_loan_fields=[
+            ("employee_no","Employee Number","text",True,True,
+            ["employee no","employee number","staff number","payroll number"],10),
+
+            ("loan_reference","Loan Reference","text",False,True,
+            ["loan reference","loan number","reference"],20),
+
+            ("loan_name","Loan Name","text",True,False,
+            ["loan name","loan description","advance description"],30),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],40),
+
+            ("original_amount","Original Loan Amount","number",False,False,
+            ["original amount","loan amount","principal","original principal"],50),
+
+            ("amount_repaid_to_date","Amount Repaid To Date","number",False,False,
+            ["amount repaid","repaid to date","principal repaid"],60),
+
+            ("outstanding_balance","Outstanding Balance","number",True,False,
+            ["outstanding balance","loan balance","remaining balance","balance due"],70),
+
+            ("interest_rate","Interest Rate","number",False,False,
+            ["interest rate","rate","annual interest rate"],80),
+
+            ("interest_method","Interest Method","text",False,False,
+            ["interest method","calculation method"],90),
+
+            ("repayment_amount","Repayment Amount","number",False,False,
+            ["repayment amount","monthly repayment","instalment","installment"],100),
+
+            ("repayment_frequency","Repayment Frequency","text",False,False,
+            ["repayment frequency","frequency"],110),
+
+            ("start_date","Original Start Date","date",False,False,
+            ["start date","loan date","advance date"],120),
+
+            ("next_repayment_date","Next Repayment Date","date",False,False,
+            ["next repayment date","next payment date","next deduction date"],130),
+
+            ("maturity_date","Maturity Date","date",False,False,
+            ["maturity date","end date","final repayment date"],140),
+
+            ("deduction_reference","Payroll Deduction","text",False,False,
+            ["deduction","deduction code","loan deduction","payroll deduction"],150),
+
+            ("migration_date","Migration Date","date",False,False,
+            ["migration date","cutover date","opening date"],160),
+
+            ("notes","Notes","text",False,False,
+            ["notes","remarks","comments"],200),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in payroll_loan_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'payroll_employee_loans',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        payroll_fields=[
+            # EMPLOYEE MASTER
+            ("employee_no","Employee Number","text",False,True,
+            ["employee no","employee number","staff number","staff no","payroll number","emp no"],10),
+
+            ("first_name","First Name","text",True,False,
+            ["first name","firstname","given name","forename"],20),
+
+            ("last_name","Last Name","text",True,False,
+            ["last name","lastname","surname","family name"],30),
+
+            ("email","Email","text",False,False,
+            ["email","email address","work email"],40),
+
+            ("phone","Phone","text",False,False,
+            ["phone","telephone","mobile","cellphone","contact number"],50),
+
+            ("id_number","ID Number","text",False,False,
+            ["id number","identity number","national id","national identity number"],60),
+
+            ("passport_number","Passport Number","text",False,False,
+            ["passport","passport number"],70),
+
+            ("tax_number","Tax Number","text",False,False,
+            ["tax number","tax no","tin","taxpayer number","income tax number"],80),
+
+            ("date_of_birth","Date of Birth","date",False,False,
+            ["date of birth","dob","birth date"],90),
+
+            ("department_reference","Department","text",False,False,
+            ["department","department name","division","business unit"],100),
+
+            ("position_reference","Position","text",False,False,
+            ["position","job title","position title","job","role"],110),
+
+            ("start_date","Employment Start Date","date",True,False,
+            ["start date","employment date","hire date","appointment date","join date"],120),
+
+            ("termination_date","Termination Date","date",False,False,
+            ["termination date","end date","leaving date","exit date"],130),
+
+            ("employment_status","Employment Status","text",False,False,
+            ["employment status","employee status","status"],140),
+
+            # CONTRACT
+            ("contract_type","Contract Type","text",False,False,
+            ["contract type","employment type","employment contract"],200),
+
+            ("salary_type","Salary Type","text",False,False,
+            ["salary type","pay type","remuneration type"],210),
+
+            ("basic_salary","Basic Salary","number",False,False,
+            ["basic salary","basic pay","salary","base salary","base pay"],220),
+
+            ("hourly_rate","Hourly Rate","number",False,False,
+            ["hourly rate","hour rate","rate per hour"],230),
+
+            ("normal_hours_per_month","Normal Hours Per Month","number",False,False,
+            ["normal hours per month","monthly hours","standard monthly hours"],240),
+
+            ("contract_effective_from","Contract Effective From","date",False,False,
+            ["contract effective from","salary effective from","contract start"],250),
+
+            ("contract_effective_to","Contract Effective To","date",False,False,
+            ["contract effective to","salary effective to","contract end"],260),
+
+            # PAY SETUP
+            ("pay_basis","Pay Basis","text",False,False,
+            ["pay basis","payment basis","salary basis"],300),
+
+            ("fixed_basic_amount","Fixed Basic Amount","number",False,False,
+            ["fixed basic amount","fixed salary","basic amount"],310),
+
+            ("standard_quantity","Standard Quantity","number",False,False,
+            ["standard quantity","standard units","normal quantity"],320),
+
+            ("rate","Pay Rate","number",False,False,
+            ["pay rate","rate"],330),
+
+            ("pay_setup_effective_from","Pay Setup Effective From","date",False,False,
+            ["pay setup effective from","pay effective from","salary effective date"],340),
+
+            ("tax_treatment","Tax Treatment","text",False,False,
+            ["tax treatment","paye treatment"],350),
+
+            ("manual_paye_amount","Manual PAYE","number",False,False,
+            ["manual paye","manual tax","fixed tax","fixed paye"],360),
+
+            ("proration_method","Proration Method","text",False,False,
+            ["proration method","prorate method","salary proration"],370),
+
+            ("hours_per_day","Hours Per Day","number",False,False,
+            ["hours per day","daily hours","working hours per day"],380),
+
+            ("attendance_required","Attendance Required","boolean",False,False,
+            ["attendance required","requires attendance"],390),
+
+            # TAX PROFILE
+            ("tax_authority_reference","Tax Authority","text",False,False,
+            ["tax authority","revenue authority","tax office"],400),
+
+            ("tax_regime_reference","Tax Regime","text",False,False,
+            ["tax regime","payroll tax regime","paye regime"],410),
+
+            ("residency_status","Residency Status","text",False,False,
+            ["residency status","tax residency","resident status"],420),
+
+            ("paye_exempt","PAYE Exempt","boolean",False,False,
+            ["paye exempt","tax exempt","exempt from paye"],430),
+
+            ("tax_calculation_method","Tax Calculation Method","text",False,False,
+            ["tax calculation method","paye method","tax method"],440),
+
+            ("directive_number","Directive Number","text",False,False,
+            ["directive number","tax directive","directive no"],450),
+
+            ("directive_rate","Directive Rate","number",False,False,
+            ["directive rate","tax directive rate"],460),
+
+            ("additional_tax_amount","Additional Tax","number",False,False,
+            ["additional tax","additional paye","voluntary tax"],470),
+
+            ("medical_scheme_members","Medical Scheme Members","integer",False,False,
+            ["medical scheme members","medical members","dependants","dependents"],480),
+
+            # BANK
+            ("bank_name","Bank Name","text",False,False,
+            ["bank","bank name"],500),
+
+            ("bank_account_name","Bank Account Name","text",False,False,
+            ["account name","account holder","bank account name"],510),
+
+            ("bank_account_number","Bank Account Number","text",False,False,
+            ["account number","bank account","bank account number"],520),
+
+            ("bank_branch_code","Branch Code","text",False,False,
+            ["branch code","bank branch","branch"],530),
+
+            ("bank_account_type","Account Type","text",False,False,
+            ["account type","bank account type"],540),
+
+            # RECURRING PAYROLL ITEM
+            ("payroll_item_type","Payroll Item Type","text",False,False,
+            ["payroll item type","item type","pay item type"],600),
+
+            ("payroll_item_reference","Payroll Item","text",False,False,
+            ["payroll item","pay item","earning","deduction","contribution","allowance"],610),
+
+            ("payroll_item_amount","Payroll Item Amount","number",False,False,
+            ["item amount","payroll amount","allowance amount","deduction amount"],620),
+
+            ("payroll_item_percentage","Payroll Item Percentage","number",False,False,
+            ["percentage","item percentage","contribution percentage"],630),
+
+            ("payroll_item_quantity","Payroll Item Quantity","number",False,False,
+            ["item quantity","quantity"],640),
+
+            ("payroll_item_rate","Payroll Item Rate","number",False,False,
+            ["item rate","payroll item rate"],650),
+
+            ("payroll_item_calculation_method","Calculation Method","text",False,False,
+            ["calculation method","calc method"],660),
+
+            ("payroll_item_effective_from","Item Effective From","date",False,False,
+            ["item effective from","allowance effective from","deduction effective from"],670),
+
+            ("payroll_item_effective_to","Item Effective To","date",False,False,
+            ["item effective to","allowance effective to","deduction effective to"],680),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in payroll_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'payroll_employees',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        accrual_fields=[
+            ("item_number","Item Number","text",False,True,
+            ["item number","reference","schedule number","accrual number","prepayment number"],10),
+
+            ("item_title","Item Title","text",True,False,
+            ["item title","description","accrual description","prepayment description","title"],20),
+
+            ("item_type","Item Type","text",False,False,
+            ["item type","type","accrual type","prepayment type","deferral type"],30),
+
+            ("counterparty_type","Counterparty Type","text",False,False,
+            ["counterparty type","party type"],40),
+
+            ("customer_reference","Customer","text",False,False,
+            ["customer","customer name","client","debtor"],50),
+
+            ("vendor_reference","Vendor / Supplier","text",False,False,
+            ["vendor","supplier","supplier name","vendor name","creditor"],60),
+
+            ("employee_reference","Employee","text",False,False,
+            ["employee","employee number","employee name","staff member"],70),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],80),
+
+            # DATES
+            ("transaction_date","Transaction Date","date",False,False,
+            ["transaction date","invoice date","purchase date","original date"],100),
+
+            ("start_date","Recognition Start Date","date",True,False,
+            ["start date","recognition start","service start","coverage start"],110),
+
+            ("end_date","Recognition End Date","date",True,False,
+            ["end date","recognition end","service end","coverage end","expiry date"],120),
+
+            ("migration_date","Migration Date","date",False,False,
+            ["migration date","cutover date","opening date","balance date"],130),
+
+            # BALANCES
+            ("original_amount","Original Amount","number",True,False,
+            ["original amount","gross amount","initial amount","schedule amount","total amount"],150),
+
+            ("recognized_to_date","Recognised To Date","number",False,False,
+            ["recognized to date","recognised to date","amortised to date","amortized to date","released to date"],160),
+
+            ("remaining_balance","Remaining Balance","number",False,False,
+            ["remaining balance","unamortised balance","unamortized balance","outstanding balance"],170),
+
+            # RECOGNITION
+            ("recognition_method","Recognition Method","text",False,False,
+            ["recognition method","amortisation method","amortization method","release method"],190),
+
+            ("frequency","Frequency","text",False,False,
+            ["frequency","recognition frequency","posting frequency"],200),
+
+            # GL
+            ("balance_account","Balance Account","code",False,False,
+            ["balance account","prepayment account","accrual account","deferred account","control account"],220),
+
+            ("balance_account_role","Balance Account Role","text",False,False,
+            ["balance account role","balance role"],230),
+
+            ("recognition_account","Recognition Account","code",False,False,
+            ["recognition account","expense account","income account","release account"],240),
+
+            ("recognition_account_role","Recognition Account Role","text",False,False,
+            ["recognition account role","recognition role"],250),
+
+            ("settlement_account","Settlement Account","code",False,False,
+            ["settlement account","cash account","bank account","contra account"],260),
+
+            ("settlement_role","Settlement Role","text",False,False,
+            ["settlement role","contra role"],270),
+
+            # VAT / TAX
+            ("vat_amount","VAT Amount","number",False,False,
+            ["vat amount","tax amount","input vat","output vat"],290),
+
+            ("tax_mode","Tax Mode","text",False,False,
+            ["tax mode","vat mode","tax basis","vat basis"],300),
+
+            ("tax_account","Tax Account","code",False,False,
+            ["tax account","vat account","input vat account","output vat account"],310),
+
+            ("tax_treatment_code","Tax Treatment","text",False,False,
+            ["tax treatment","tax treatment code","tax code"],320),
+
+            ("tax_base_override","Tax Base Override","number",False,False,
+            ["tax base override","tax base"],330),
+
+            ("manual_tax_base","Manual Tax Base","number",False,False,
+            ["manual tax base"],340),
+
+            # EXISTING SCHEDULE
+            ("schedule_line_no","Schedule Line","integer",False,False,
+            ["line no","line number","schedule line","period number"],400),
+
+            ("schedule_period_start","Period Start","date",False,False,
+            ["period start","schedule start"],410),
+
+            ("schedule_period_end","Period End","date",False,False,
+            ["period end","schedule end"],420),
+
+            ("schedule_recognition_date","Recognition Date","date",False,False,
+            ["recognition date","posting date","release date"],430),
+
+            ("schedule_opening_balance","Schedule Opening Balance","number",False,False,
+            ["opening balance","schedule opening balance"],440),
+
+            ("schedule_recognition_amount","Recognition Amount","number",False,False,
+            ["recognition amount","amortisation amount","amortization amount","release amount"],450),
+
+            ("schedule_closing_balance","Schedule Closing Balance","number",False,False,
+            ["closing balance","schedule closing balance"],460),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],500),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in accrual_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'accrual_deferrals',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        revenue_fields=[
+            # CONTRACT
+            ("contract_number","Contract Number","text",True,True,
+            ["contract number","contract no","contract reference","agreement number","tender number"],10),
+
+            ("contract_title","Contract Title","text",True,False,
+            ["contract title","contract name","project contract","agreement title"],20),
+
+            ("customer_reference","Customer","text",True,False,
+            ["customer","customer name","client","employer","contracting authority"],30),
+
+            ("project_reference","Project","text",False,False,
+            ["project","project code","project name","job","job number"],40),
+
+            ("contract_currency","Currency","currency",False,False,
+            ["currency","contract currency","currency code"],50),
+
+            ("contract_date","Contract Date","date",True,False,
+            ["contract date","agreement date","award date","tender award date"],60),
+
+            ("start_date","Start Date","date",False,False,
+            ["start date","commencement date","project start"],70),
+
+            ("end_date","End Date","date",False,False,
+            ["end date","completion date","contract completion date"],80),
+
+            ("transaction_price","Transaction Price","number",True,False,
+            ["transaction price","contract value","contract amount","contract price","tender value"],90),
+
+            ("billing_method","Billing Method","text",False,False,
+            ["billing method","invoice method","billing basis"],100),
+
+            ("is_over_time","Recognised Over Time","boolean",False,False,
+            ["over time","recognised over time","recognized over time"],110),
+
+            # VARIABLE CONSIDERATION
+            ("variable_consideration_est","Variable Consideration Estimate","number",False,False,
+            ["variable consideration","variable consideration estimate","claims estimate"],120),
+
+            ("variable_consideration_constrained","Constrained Variable Consideration","number",False,False,
+            ["constrained variable consideration","constraint amount"],130),
+
+            ("has_significant_financing_component","Significant Financing Component","boolean",False,False,
+            ["significant financing component","financing component"],140),
+
+            ("financing_component_amount","Financing Component Amount","number",False,False,
+            ["financing component amount","financing amount"],150),
+
+            # OBLIGATION
+            ("obligation_code","Performance Obligation Code","text",False,False,
+            ["obligation code","performance obligation code","pob code","deliverable code"],200),
+
+            ("obligation_name","Performance Obligation","text",False,False,
+            ["performance obligation","obligation name","deliverable","work package"],210),
+
+            ("standalone_selling_price","Standalone Selling Price","number",False,False,
+            ["standalone selling price","ssp"],220),
+
+            ("allocated_transaction_price","Allocated Transaction Price","number",False,False,
+            ["allocated transaction price","allocated price","allocated revenue"],230),
+
+            ("recognition_timing","Recognition Timing","text",False,False,
+            ["recognition timing","over time or point in time"],240),
+
+            ("progress_method","Progress Method","text",False,False,
+            ["progress method","recognition method","measure of progress"],250),
+
+            ("recognition_trigger","Recognition Trigger","text",False,False,
+            ["recognition trigger","delivery trigger","acceptance trigger"],260),
+
+            ("expected_total_cost","Expected Total Cost","number",False,False,
+            ["expected total cost","estimated total cost","budget cost","cost to complete total"],270),
+
+            # PROGRESS
+            ("progress_date","Progress Date","date",False,False,
+            ["progress date","period end","certificate date","measurement date"],300),
+
+            ("actual_cost_to_date","Actual Cost To Date","number",False,False,
+            ["actual cost to date","cost incurred to date","cost to date"],310),
+
+            ("progress_percent","Progress Percentage","number",False,False,
+            ["progress percent","percentage complete","completion percentage","percent complete"],320),
+
+            ("units_done","Units Completed","number",False,False,
+            ["units done","units completed","delivered units","completed units","km completed"],330),
+
+            ("units_total","Total Units","number",False,False,
+            ["units total","total units","contract units","total km"],340),
+
+            ("certified_units","Certified Units","number",False,False,
+            ["certified units","approved units","certified km"],350),
+
+            ("unit_of_measure","Unit of Measure","text",False,False,
+            ["unit of measure","uom","unit","measurement unit"],360),
+
+            ("milestone_code","Milestone Code","text",False,False,
+            ["milestone code","milestone","stage code"],370),
+
+            ("milestone_status","Milestone Status","text",False,False,
+            ["milestone status","stage status"],380),
+
+            ("certificate_reference","Certificate Reference","text",False,False,
+            ["certificate reference","certificate no","ipc number","payment certificate"],390),
+
+            # VARIATIONS / CLAIMS
+            ("variation_reference","Variation Reference","text",False,False,
+            ["variation order","variation reference","vo number"],400),
+
+            ("variation_amount","Variation Amount","number",False,False,
+            ["variation amount","variation order amount","vo amount"],410),
+
+            ("claim_reference","Claim Reference","text",False,False,
+            ["claim reference","claim number"],420),
+
+            ("claim_amount","Claim Amount","number",False,False,
+            ["claim amount","claim value"],430),
+
+            ("claim_status","Claim Status","text",False,False,
+            ["claim status","claim approval status"],440),
+
+            # BILLING
+            ("billing_reference","Billing Reference","text",False,False,
+            ["invoice reference","invoice number","billing reference","certificate invoice"],500),
+
+            ("billing_date","Billing Date","date",False,False,
+            ["billing date","invoice date","certificate billing date"],510),
+
+            ("billing_amount","Billing Amount","number",False,False,
+            ["billing amount","invoice amount","certified amount","amount billed"],520),
+
+            ("retention_percent","Retention Percentage","number",False,False,
+            ["retention percent","retention percentage"],530),
+
+            ("retention_amount","Retention Amount","number",False,False,
+            ["retention amount","retention"],540),
+
+            # CASH
+            ("receipt_reference","Receipt Reference","text",False,False,
+            ["receipt reference","receipt number","payment reference"],600),
+
+            ("receipt_date","Receipt Date","date",False,False,
+            ["receipt date","payment date","cash date"],610),
+
+            ("receipt_amount","Receipt Amount","number",False,False,
+            ["receipt amount","cash received","payment received"],620),
+
+            # CUTOVER
+            ("migration_date","Migration Date","date",False,False,
+            ["migration date","cutover date","opening date","balance date"],700),
+
+            ("recognized_revenue_to_date","Revenue Recognised To Date","number",False,False,
+            ["recognized revenue to date","recognised revenue to date","revenue to date"],710),
+
+            ("billed_to_date","Billed To Date","number",False,False,
+            ["billed to date","invoiced to date","certified to date"],720),
+
+            ("cash_received_to_date","Cash Received To Date","number",False,False,
+            ["cash received to date","received to date","collections to date"],730),
+
+            ("accounts_receivable_balance","Accounts Receivable Balance","number",False,False,
+            ["accounts receivable","receivable balance","trade receivable"],740),
+
+            ("contract_asset_balance","Contract Asset Balance","number",False,False,
+            ["contract asset","contract asset balance","unbilled revenue"],750),
+
+            ("contract_liability_balance","Contract Liability Balance","number",False,False,
+            ["contract liability","contract liability balance","deferred revenue","customer advance"],760),
+
+            ("notes","Notes","text",False,False,
+            ["notes","remarks","comments"],800),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in revenue_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'revenue_contracts',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+
+        loan_fields=[
+            # MASTER
+            ("loan_name","Loan Name","text",True,False,
+            ["loan name","facility name","finance agreement","loan description"],10),
+
+            ("loan_reference","Loan Reference","text",False,True,
+            ["loan reference","facility reference","loan number","account number","agreement number"],20),
+
+            ("lender_name","Lender Name","text",True,False,
+            ["lender","lender name","bank","finance provider","creditor"],30),
+
+            ("loan_type","Loan Type","text",False,False,
+            ["loan type","facility type","finance type"],40),
+
+            ("agreement_reference","Agreement Reference","text",False,False,
+            ["agreement reference","agreement number","contract reference"],50),
+
+            # DATES
+            ("start_date","Original Start Date","date",False,False,
+            ["start date","loan start date","origination date","drawdown date"],60),
+
+            ("first_payment_date","First Payment Date","date",False,False,
+            ["first payment date","first instalment date","first installment date"],70),
+
+            ("maturity_date","Maturity Date","date",False,False,
+            ["maturity date","end date","final payment date"],80),
+
+            ("migration_date","Migration / Cutover Date","date",False,False,
+            ["migration date","cutover date","opening date","balance date"],90),
+
+            ("next_payment_date","Next Payment Date","date",False,False,
+            ["next payment date","next due date","next instalment date"],100),
+
+            # ORIGINAL TERMS
+            ("principal_amount","Original Principal","number",False,False,
+            ["principal","principal amount","original principal","original loan amount","loan amount"],110),
+
+            ("annual_interest_rate","Annual Interest Rate","number",False,False,
+            ["interest rate","annual interest rate","rate","annual rate"],120),
+
+            ("interest_method","Interest Method","text",False,False,
+            ["interest method","amortisation method","amortization method","calculation method"],130),
+
+            ("term_count","Original Term Count","integer",False,False,
+            ["term count","term","number of payments","number of instalments","number of installments"],140),
+
+            ("remaining_term_count","Remaining Term Count","integer",False,False,
+            ["remaining term","remaining payments","remaining instalments","remaining installments"],150),
+
+            ("payment_frequency","Payment Frequency","text",False,False,
+            ["payment frequency","frequency","repayment frequency"],160),
+
+            ("payment_amount","Scheduled Payment","number",False,False,
+            ["payment amount","instalment","installment","monthly payment","repayment"],170),
+
+            ("balloon_amount","Balloon Amount","number",False,False,
+            ["balloon","balloon amount","residual payment","final balloon"],180),
+
+            ("fees_amount","Loan Fees","number",False,False,
+            ["fees","loan fees","origination fees","finance fees"],190),
+
+            ("repayment_holiday_count","Repayment Holiday Count","integer",False,False,
+            ["repayment holiday","payment holiday","holiday periods"],200),
+
+            ("variable_rate","Variable Rate","boolean",False,False,
+            ["variable rate","floating rate","rate variable"],210),
+
+            ("rate_review_rule","Rate Review Rule","text",False,False,
+            ["rate review","rate review rule","interest review"],220),
+
+            # CUTOVER POSITION
+            ("outstanding_principal","Outstanding Principal","number",False,False,
+            ["outstanding principal","principal balance","loan balance","capital balance","outstanding balance"],230),
+
+            ("outstanding_interest","Outstanding Interest","number",False,False,
+            ["outstanding interest","interest payable","unpaid interest","interest balance"],240),
+
+            ("accrued_interest_opening","Opening Accrued Interest","number",False,False,
+            ["accrued interest","opening accrued interest","interest accrued"],250),
+
+            ("currency","Currency","currency",False,False,
+            ["currency","currency code"],260),
+
+            # BANK / GL
+            ("bank_account_reference","Bank Account","text",False,False,
+            ["bank account","payment account","bank account number","cash account"],270),
+
+            ("interest_expense_account_code","Interest Expense Account","code",False,False,
+            ["interest expense account","interest account"],280),
+
+            ("accrued_interest_account_code","Accrued Interest Account","code",False,False,
+            ["accrued interest account","interest payable account"],290),
+
+            ("loan_payable_current_account_code","Current Loan Payable","code",False,False,
+            ["current loan account","current loan payable","current portion account"],300),
+
+            ("loan_payable_noncurrent_account_code","Non-current Loan Payable","code",False,False,
+            ["non current loan account","non-current loan payable","long term loan account"],310),
+
+            ("fees_asset_account_code","Deferred Fees Asset Account","code",False,False,
+            ["fees asset account","deferred loan fees","loan fees asset"],320),
+
+            ("fees_expense_account_code","Fees Expense Account","code",False,False,
+            ["fees expense account","loan fees expense"],330),
+
+            # IAS 23
+            ("qualifying_asset_reference","IAS 23 Qualifying Asset","text",False,False,
+            ["qualifying asset","asset reference","asset code","construction asset"],340),
+
+            ("capitalization_start_date","Capitalisation Start Date","date",False,False,
+            ["capitalisation start date","capitalization start date","borrowing cost start"],350),
+
+            ("capitalization_end_date","Capitalisation End Date","date",False,False,
+            ["capitalisation end date","capitalization end date","borrowing cost end"],360),
+
+            ("capitalization_ratio","Capitalisation Ratio","number",False,False,
+            ["capitalisation ratio","capitalization ratio","borrowing cost percentage"],370),
+
+            # EXISTING SOURCE SCHEDULE
+            ("schedule_period_no","Schedule Period","integer",False,False,
+            ["period no","period number","schedule period","instalment number"],400),
+
+            ("schedule_due_date","Schedule Due Date","date",False,False,
+            ["due date","schedule due date","payment due date"],410),
+
+            ("schedule_opening_balance","Schedule Opening Balance","number",False,False,
+            ["opening balance","schedule opening balance"],420),
+
+            ("schedule_payment","Schedule Payment","number",False,False,
+            ["scheduled payment","payment","instalment amount"],430),
+
+            ("schedule_interest","Schedule Interest","number",False,False,
+            ["scheduled interest","interest portion","interest amount"],440),
+
+            ("schedule_principal","Schedule Principal","number",False,False,
+            ["scheduled principal","principal portion","capital portion"],450),
+
+            ("schedule_closing_balance","Schedule Closing Balance","number",False,False,
+            ["closing balance","schedule closing balance","remaining balance"],460),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],500),
+        ]
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in loan_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'loans',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
 
         lease_fields=[
             # shared
@@ -15506,7 +21721,7 @@ class DatabaseService:
                 sort_order,
             ),cur=cur)
 
-    OPS_MASTER_MIGRATION_VERSION = 1
+    OPS_MASTER_MIGRATION_VERSION = 2
    
     def ensure_ops_master(
         self,
@@ -15627,6 +21842,53 @@ class DatabaseService:
             ON public.company_user_assignments(company_id,company_user_id)
             WHERE is_active=TRUE AND is_primary=TRUE;
 
+        -- =========================================================
+        -- FINFLOW COST CENTRES
+        -- =========================================================
+
+        CREATE TABLE IF NOT EXISTS public.company_cost_centres (
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL
+                REFERENCES public.companies(id) ON DELETE CASCADE,
+
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NULL,
+
+            department_id INT NULL
+                REFERENCES public.company_departments(id) ON DELETE SET NULL,
+
+            branch_id INT NULL
+                REFERENCES public.company_branches(id) ON DELETE SET NULL,
+
+            manager_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            parent_cost_centre_id BIGINT NULL
+                REFERENCES public.company_cost_centres(id) ON DELETE SET NULL,
+
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            created_by_user_id INT NULL
+                REFERENCES public.users(id) ON DELETE SET NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,code)
+        );
+
+        CREATE INDEX IF NOT EXISTS company_cost_centres_company_idx
+            ON public.company_cost_centres(company_id,is_active);
+
+        CREATE INDEX IF NOT EXISTS company_cost_centres_department_idx
+            ON public.company_cost_centres(company_id,department_id);
+
+        CREATE INDEX IF NOT EXISTS company_cost_centres_branch_idx
+            ON public.company_cost_centres(company_id,branch_id);
+
         -- ---------------------------------------------------------
         -- PRODUCT ACCESS
         -- ---------------------------------------------------------
@@ -15676,6 +21938,82 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS company_invites_ops_role_idx
             ON public.company_invites(company_id,ops_role_code);
+
+        -- ============================================================
+        -- FINFLOW PHASE 2G — DOCUMENT FINALISATION
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_documents
+            ADD COLUMN IF NOT EXISTS document_status TEXT NOT NULL DEFAULT 'draft',
+            ADD COLUMN IF NOT EXISTS storage_path TEXT NULL,
+            ADD COLUMN IF NOT EXISTS mime_type TEXT NULL,
+            ADD COLUMN IF NOT EXISTS file_size BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS checksum_sha256 TEXT NULL,
+            ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS approved_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_documents
+            DROP CONSTRAINT IF EXISTS chk_ops_document_status;
+
+        ALTER TABLE {schema}.ops_documents
+            ADD CONSTRAINT chk_ops_document_status
+            CHECK(document_status IN(
+                'draft',
+                'submitted',
+                'approved',
+                'superseded'
+            ));
+
+        CREATE INDEX IF NOT EXISTS ops_documents_current_idx
+        ON {schema}.ops_documents(
+            company_id,
+            entity_type,
+            entity_id,
+            document_type,
+            request_revision_no,
+            is_current
+        );
+
+        INSERT INTO {schema}.ops_permissions(code,name,module,description)
+        VALUES
+            ('documents.export','Export documents','documents','Generate PDF and XLSX operational documents'),
+            ('documents.download','Download documents','documents','Download generated operational documents')
+        ON CONFLICT(code)
+        DO UPDATE SET
+            name=EXCLUDED.name,
+            module=EXCLUDED.module,
+            description=EXCLUDED.description;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','EXECUTIVE','CFO',
+            'DEPARTMENT_HEAD','FINANCE_MANAGER',
+            'PROCUREMENT_MANAGER','OPERATIONS_MANAGER',
+            'MANAGER','ACCOUNTANT','FINANCE_REVIEWER',
+            'APPROVER','PROCUREMENT_OFFICER',
+            'PAYMENT_PREPARER','RECEIVING_OFFICER',
+            'REQUESTER'
+        )
+        AND p.code IN(
+            'documents.download',
+            'documents.view'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','EXECUTIVE','CFO',
+            'FINANCE_MANAGER','ACCOUNTANT',
+            'FINANCE_REVIEWER','PROCUREMENT_OFFICER'
+        )
+        AND p.code='documents.export'
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
         """
         self.execute_ddl(
                 ddl,
@@ -15685,7 +22023,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 3
+    OPS_MIGRATION_VERSION = 5
     def ensure_company_ops(
         self,
         company_id:int,
@@ -16942,6 +23280,15 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS ops_finance_reviews_request_idx
         ON {schema}.ops_finance_reviews(request_id,status);
 
+        ALTER TABLE {schema}.ops_finance_reviews
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        CREATE INDEX IF NOT EXISTS ops_finance_reviews_revision_idx
+        ON {schema}.ops_finance_reviews(
+            request_id,
+            request_revision_no
+        );
+
         -- ============================================================
         -- PHASE 2 PERMISSIONS
         -- ============================================================
@@ -17049,6 +23396,407 @@ class DatabaseService:
             company_id,budget_id,account_code,
             department_id,branch_id,cost_center_id
         );
+
+        -- ============================================================
+        -- FINFLOW PHASE 2D — APPROVAL REVIEW STATES
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_requests
+            DROP CONSTRAINT IF EXISTS chk_ops_request_status;
+
+        ALTER TABLE {schema}.ops_requests
+            ADD CONSTRAINT chk_ops_request_status
+            CHECK(status IN(
+                'draft',
+                'submitted',
+                'pending_approval',
+                'returned',
+                'approved',
+                'rejected',
+                'cancelled',
+                'completed'
+            ));
+
+        ALTER TABLE {schema}.ops_approval_tasks
+            DROP CONSTRAINT IF EXISTS chk_ops_approval_task_status;
+
+        ALTER TABLE {schema}.ops_approval_tasks
+            ADD CONSTRAINT chk_ops_approval_task_status
+            CHECK(status IN(
+                'pending',
+                'approved',
+                'returned',
+                'rejected',
+                'delegated',
+                'cancelled',
+                'skipped'
+            ));
+
+        ALTER TABLE {schema}.ops_approval_decisions
+            DROP CONSTRAINT IF EXISTS chk_ops_approval_decision;
+
+        ALTER TABLE {schema}.ops_approval_decisions
+            ADD CONSTRAINT chk_ops_approval_decision
+            CHECK(decision IN(
+                'approve',
+                'return',
+                'reject',
+                'delegate',
+                'skip'
+            ));
+
+        -- ============================================================
+        -- FINFLOW PHASE 2D — GOVERNANCE WORKFLOW CONFIGURATION
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_workflow_steps
+            ADD COLUMN IF NOT EXISTS approver_position_id INT NULL
+                REFERENCES public.company_positions(id) ON DELETE SET NULL;
+
+        ALTER TABLE {schema}.ops_workflow_steps
+            DROP CONSTRAINT IF EXISTS chk_ops_workflow_approver_type;
+
+        ALTER TABLE {schema}.ops_workflow_steps
+            ADD CONSTRAINT chk_ops_workflow_approver_type
+            CHECK(
+                approver_type IS NULL
+                OR approver_type IN(
+                    'requester_manager',
+                    'department_head',
+                    'role',
+                    'position',
+                    'user',
+                    'owner'
+                )
+            );
+
+        CREATE INDEX IF NOT EXISTS ops_workflow_steps_position_idx
+        ON {schema}.ops_workflow_steps(approver_position_id);
+
+        INSERT INTO {schema}.ops_permissions(code,name,module,description)
+        VALUES
+            ('governance.view','View governance','governance','View FinFlow governance and approval workflows'),
+            ('governance.manage','Manage governance','governance','Configure FinFlow governance and approval workflows')
+        ON CONFLICT(code)
+        DO UPDATE SET
+            name=EXCLUDED.name,
+            module=EXCLUDED.module,
+            description=EXCLUDED.description;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN('OWNER','ADMIN','CFO','EXECUTIVE')
+        AND p.code IN('governance.view','governance.manage')
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'DEPARTMENT_HEAD',
+            'FINANCE_MANAGER',
+            'PROCUREMENT_MANAGER',
+            'OPERATIONS_MANAGER',
+            'MANAGER'
+        )
+        AND p.code='governance.view'
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- ============================================================
+        -- FINFLOW PHASE 2E — FINANCE REVIEW & CLASSIFICATION
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_requests
+            ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS financial_classification TEXT NULL,
+            ADD COLUMN IF NOT EXISTS tax_treatment TEXT NULL,
+            ADD COLUMN IF NOT EXISTS finance_coded_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS finance_coded_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_request_items
+            ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS financial_classification TEXT NULL,
+            ADD COLUMN IF NOT EXISTS tax_treatment TEXT NULL;
+
+        ALTER TABLE {schema}.ops_requests
+            DROP CONSTRAINT IF EXISTS chk_ops_financial_classification;
+
+        ALTER TABLE {schema}.ops_requests
+            ADD CONSTRAINT chk_ops_financial_classification
+            CHECK(
+                financial_classification IS NULL
+                OR financial_classification IN(
+                    'opex',
+                    'capex',
+                    'inventory',
+                    'prepayment',
+                    'lease',
+                    'project_cost',
+                    'other'
+                )
+            );
+
+        ALTER TABLE {schema}.ops_requests
+            DROP CONSTRAINT IF EXISTS chk_ops_tax_treatment;
+
+        ALTER TABLE {schema}.ops_requests
+            ADD CONSTRAINT chk_ops_tax_treatment
+            CHECK(
+                tax_treatment IS NULL
+                OR tax_treatment IN(
+                    'standard',
+                    'zero_rated',
+                    'exempt',
+                    'no_vat',
+                    'reverse_charge',
+                    'review_required'
+                )
+            );
+
+        -- ============================================================
+        -- FINANCE REVIEW — EXTEND EXISTING TABLE
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_finance_reviews
+            ADD COLUMN IF NOT EXISTS workflow_instance_id BIGINT NULL
+                REFERENCES {schema}.ops_workflow_instances(id) ON DELETE SET NULL,
+
+            ADD COLUMN IF NOT EXISTS approval_task_id BIGINT NULL
+                REFERENCES {schema}.ops_approval_tasks(id) ON DELETE SET NULL,
+
+            ADD COLUMN IF NOT EXISTS classification TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS account_code TEXT NULL,
+            ADD COLUMN IF NOT EXISTS account_name TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
+
+            ADD COLUMN IF NOT EXISTS project_id BIGINT NULL,
+
+            ADD COLUMN IF NOT EXISTS tax_treatment TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS budget_result TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS coding_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_ops_finance_review_task
+        ON {schema}.ops_finance_reviews(approval_task_id)
+        WHERE approval_task_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS ops_finance_reviews_reviewer_idx
+        ON {schema}.ops_finance_reviews(
+            company_id,
+            reviewer_user_id,
+            status
+        );
+
+        ALTER TABLE {schema}.ops_finance_reviews
+            DROP CONSTRAINT IF EXISTS chk_ops_finance_review_status;
+
+        ALTER TABLE {schema}.ops_finance_reviews
+            ADD CONSTRAINT chk_ops_finance_review_status
+            CHECK(status IN(
+                'pending',
+                'approved',
+                'returned',
+                'rejected',
+                'superseded'
+            ));
+
+        -- ============================================================
+        -- BUDGET ALLOCATION
+        -- FinSage remains owner of the approved budget.
+        -- This table apportions that budget operationally.
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_budget_allocations (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            budget_id INT NOT NULL,
+
+            account_code TEXT NOT NULL,
+
+            department_id INT NULL
+                REFERENCES public.company_departments(id) ON DELETE CASCADE,
+
+            branch_id INT NULL
+                REFERENCES public.company_branches(id) ON DELETE CASCADE,
+
+            cost_centre_id BIGINT NULL
+                REFERENCES public.company_cost_centres(id) ON DELETE CASCADE,
+
+            period_month DATE NULL,
+
+            allocation_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            notes TEXT NULL,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT chk_ops_budget_allocation_amount
+                CHECK(allocation_amount>=0)
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_budget_allocations_lookup_idx
+        ON {schema}.ops_budget_allocations(
+            company_id,
+            budget_id,
+            account_code,
+            department_id,
+            branch_id,
+            cost_centre_id
+        );
+
+        -- ============================================================
+        -- PHASE 2E PERMISSIONS
+        -- ============================================================
+
+        INSERT INTO {schema}.ops_permissions(code,name,module,description)
+        VALUES
+            ('finance.review.view','View Finance reviews','finance','View Finance review work'),
+            ('finance.review.edit','Complete Finance review','finance','Complete financial classification and coding'),
+            ('cost_centres.view','View cost centres','organisation','View organisation cost centres'),
+            ('cost_centres.manage','Manage cost centres','organisation','Create and update organisation cost centres'),
+            ('budget.allocations.view','View budget allocations','budget','View operational allocations of approved budgets'),
+            ('budget.allocations.manage','Manage budget allocations','budget','Allocate approved budget amounts operationally')
+        ON CONFLICT(code)
+        DO UPDATE SET
+            name=EXCLUDED.name,
+            module=EXCLUDED.module,
+            description=EXCLUDED.description;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','CFO',
+            'FINANCE_MANAGER','ACCOUNTANT','FINANCE_REVIEWER'
+        )
+        AND p.code IN(
+            'finance.review.view',
+            'finance.review.edit',
+            'cost_centres.view',
+            'budget.allocations.view'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN('OWNER','ADMIN','CFO','FINANCE_MANAGER')
+        AND p.code IN(
+            'cost_centres.manage',
+            'budget.allocations.manage'
+        )
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- ============================================================
+        -- FINFLOW PHASE 2F — REQUEST REVISION & RETURN WORKFLOW
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_requests
+            ADD COLUMN IF NOT EXISTS revision_no INT NOT NULL DEFAULT 1,
+            ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS returned_by_user_id INT NULL,
+            ADD COLUMN IF NOT EXISTS last_return_comment TEXT NULL;
+
+        ALTER TABLE {schema}.ops_budget_checks
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        ALTER TABLE {schema}.ops_documents
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        CREATE INDEX IF NOT EXISTS ops_budget_checks_revision_idx
+        ON {schema}.ops_budget_checks(
+            request_id,
+            request_revision_no,
+            checked_at DESC
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_documents_request_revision_idx
+        ON {schema}.ops_documents(
+            entity_id,
+            request_revision_no
+        )
+        WHERE entity_type='request';
+
+        INSERT INTO {schema}.ops_permissions(code,name,module,description)
+        VALUES
+            ('requests.update_own','Update own requests','requests','Edit own draft or returned requisitions'),
+            ('requests.resubmit','Resubmit returned requests','requests','Resubmit corrected returned requisitions')
+        ON CONFLICT(code)
+        DO UPDATE SET
+            name=EXCLUDED.name,
+            module=EXCLUDED.module,
+            description=EXCLUDED.description;
+
+        INSERT INTO {schema}.ops_role_permissions(role_id,permission_id)
+        SELECT r.id,p.id
+        FROM {schema}.ops_roles r
+        CROSS JOIN {schema}.ops_permissions p
+        WHERE r.code IN(
+            'OWNER','ADMIN','EXECUTIVE','CFO',
+            'DEPARTMENT_HEAD','FINANCE_MANAGER',
+            'PROCUREMENT_MANAGER','OPERATIONS_MANAGER',
+            'MANAGER','ACCOUNTANT','FINANCE_REVIEWER',
+            'APPROVER','PROCUREMENT_OFFICER',
+            'PAYMENT_PREPARER','RECEIVING_OFFICER',
+            'REQUESTER'
+        )
+        AND p.code IN('requests.update_own','requests.resubmit')
+        ON CONFLICT(role_id,permission_id) DO NOTHING;
+
+        -- ============================================================
+        -- FINFLOW PHASE 2H — REQUEST LIFECYCLE HARDENING
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_requests
+            ADD COLUMN IF NOT EXISTS last_submitted_revision_no INT NULL,
+            ADD COLUMN IF NOT EXISTS final_approval_revision_no INT NULL,
+            ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ NULL,
+            ADD COLUMN IF NOT EXISTS locked_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.ops_workflow_instances
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        ALTER TABLE {schema}.ops_approval_tasks
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        ALTER TABLE {schema}.ops_approval_decisions
+            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        CREATE INDEX IF NOT EXISTS ops_workflow_instances_request_revision_idx
+        ON {schema}.ops_workflow_instances(
+            request_id,
+            request_revision_no
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_approval_tasks_request_revision_idx
+        ON {schema}.ops_approval_tasks(
+            request_id,
+            request_revision_no,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_approval_decisions_request_revision_idx
+        ON {schema}.ops_approval_decisions(
+            request_id,
+            request_revision_no
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_ops_active_workflow_per_request
+        ON {schema}.ops_workflow_instances(request_id)
+        WHERE status IN('pending','active');
         """
 
         self.execute_ddl(
@@ -148001,6 +154749,8605 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "lessor_count":sum(1 for row in previews if row.get("role")=="lessor"),
         }
 
+    def _migration_loan_number(self,value,default=0.0)->float:
+        if value in (None,""):return float(default or 0)
+        try:return float(str(value).replace(",","").strip())
+        except Exception:return float(default or 0)
+
+
+    def _migration_loan_int(self,value,default=0)->int:
+        if value in (None,""):return int(default or 0)
+        try:return int(float(str(value).replace(",","").strip()))
+        except Exception:return int(default or 0)
+
+
+    def _migration_loan_bool(self,value)->bool:
+        if isinstance(value,bool):return value
+        return str(value or "").strip().lower() in {"1","true","yes","y","on"}
+
+
+    def _migration_loan_date(self,value,required=False):
+        if isinstance(value,date):return value
+        text=str(value or "").strip()
+
+        if not text:
+            if required:raise ValueError("Date is required.")
+            return None
+
+        try:return datetime.strptime(text[:10],"%Y-%m-%d").date()
+        except Exception:
+            if required:raise ValueError(f"Invalid date: {text}")
+            return None
+
+    def migration_loan_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='loans'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_loan_gl_defaults(
+        self,company_id:int,*,cur=None
+    )->dict:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        roles={
+            "interest_expense_account_code":"loan_interest_expense",
+            "accrued_interest_account_code":"loan_accrued_interest",
+            "loan_payable_current_account_code":"loan_payable_current",
+            "loan_payable_noncurrent_account_code":"loan_payable_noncurrent",
+        }
+
+        out={}
+
+        for field,role in roles.items():
+            row=self.fetch_one(f"""
+                SELECT code
+                FROM {schema}.coa
+                WHERE company_id=%s
+                AND posting=TRUE
+                AND role=%s
+                ORDER BY id
+                LIMIT 1
+            """,(company_id,role),cur=cur)
+
+            out[field]=(row or {}).get("code")
+
+        return out
+
+    def migration_loan_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_loan_settings
+            WHERE company_id=%s AND project_id=%s AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        gl=self.migration_loan_gl_defaults(company_id,cur=cur)
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "source_mode":"contract_terms",
+            "migration_date":project.get("cutover_date"),
+
+            "default_currency":project.get("default_currency"),
+            "default_loan_type":"term_loan",
+            "default_interest_method":"amortised_fixed_payment",
+            "default_payment_frequency":"monthly",
+
+            **gl,
+
+            "fees_asset_account_code":None,
+            "fees_expense_account_code":None,
+
+            "require_bank_mapping":False,
+            "require_gl_mapping":True,
+            "enable_ias23_mapping":True,
+
+            "balance_tolerance":1.00,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_loan_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        source_mode=str(
+            data.get("source_mode") or current["source_mode"]
+        ).strip().lower()
+
+        loan_type=str(
+            data.get("default_loan_type") or current["default_loan_type"]
+        ).strip().lower()
+
+        method=str(
+            data.get("default_interest_method") or current["default_interest_method"]
+        ).strip().lower().replace("-","_").replace(" ","_")
+
+        frequency=str(
+            data.get("default_payment_frequency") or current["default_payment_frequency"]
+        ).strip().lower()
+
+        if source_mode not in {
+            "contract_terms","existing_schedule","opening_balance_only"
+        }:
+            raise ValueError("Invalid loan migration source mode.")
+
+        if loan_type not in {
+            "term_loan","vehicle","mortgage","overdraft","director_loan","other"
+        }:
+            raise ValueError("Invalid loan type.")
+
+        if method not in {
+            "amortised_fixed_payment",
+            "straight_line_interest",
+            "interest_only",
+            "manual",
+        }:
+            raise ValueError("Invalid interest method.")
+
+        if frequency not in {
+            "weekly","monthly","quarterly","annually"
+        }:
+            raise ValueError("Invalid payment frequency.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_loan_settings(
+                company_id,project_id,dataset_id,
+                source_mode,migration_date,
+                default_currency,default_loan_type,
+                default_interest_method,default_payment_frequency,
+
+                interest_expense_account_code,
+                accrued_interest_account_code,
+                loan_payable_current_account_code,
+                loan_payable_noncurrent_account_code,
+                fees_asset_account_code,
+                fees_expense_account_code,
+
+                require_bank_mapping,
+                require_gl_mapping,
+                enable_ias23_mapping,
+                balance_tolerance,
+
+                settings_json,metadata_json,
+                created_by_user_id,updated_by_user_id,
+                created_at,updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,%s,%s,
+                NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                source_mode=EXCLUDED.source_mode,
+                migration_date=EXCLUDED.migration_date,
+                default_currency=EXCLUDED.default_currency,
+                default_loan_type=EXCLUDED.default_loan_type,
+                default_interest_method=EXCLUDED.default_interest_method,
+                default_payment_frequency=EXCLUDED.default_payment_frequency,
+
+                interest_expense_account_code=EXCLUDED.interest_expense_account_code,
+                accrued_interest_account_code=EXCLUDED.accrued_interest_account_code,
+                loan_payable_current_account_code=EXCLUDED.loan_payable_current_account_code,
+                loan_payable_noncurrent_account_code=EXCLUDED.loan_payable_noncurrent_account_code,
+                fees_asset_account_code=EXCLUDED.fees_asset_account_code,
+                fees_expense_account_code=EXCLUDED.fees_expense_account_code,
+
+                require_bank_mapping=EXCLUDED.require_bank_mapping,
+                require_gl_mapping=EXCLUDED.require_gl_mapping,
+                enable_ias23_mapping=EXCLUDED.enable_ias23_mapping,
+                balance_tolerance=EXCLUDED.balance_tolerance,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            source_mode,
+            data.get("migration_date") or current.get("migration_date"),
+
+            data.get("default_currency") or current.get("default_currency"),
+            loan_type,method,frequency,
+
+            data.get("interest_expense_account_code")
+                or current.get("interest_expense_account_code"),
+
+            data.get("accrued_interest_account_code")
+                or current.get("accrued_interest_account_code"),
+
+            data.get("loan_payable_current_account_code")
+                or current.get("loan_payable_current_account_code"),
+
+            data.get("loan_payable_noncurrent_account_code")
+                or current.get("loan_payable_noncurrent_account_code"),
+
+            data.get("fees_asset_account_code")
+                or current.get("fees_asset_account_code"),
+
+            data.get("fees_expense_account_code")
+                or current.get("fees_expense_account_code"),
+
+            bool(data.get("require_bank_mapping",current.get("require_bank_mapping",False))),
+            bool(data.get("require_gl_mapping",current.get("require_gl_mapping",True))),
+            bool(data.get("enable_ias23_mapping",current.get("enable_ias23_mapping",True))),
+
+            float(
+                data.get("balance_tolerance")
+                if data.get("balance_tolerance") not in (None,"")
+                else current.get("balance_tolerance") or 1
+            ),
+
+            self._migration_json_dump(
+                data.get("settings_json") or current.get("settings_json"),{}
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json") or current.get("metadata_json"),{}
+            ),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_loan_reference_targets(
+        self,company_id:int,reference_type:str,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        reference_type=str(reference_type or "").strip().lower()
+
+        if reference_type=="bank_account":
+            rows=self.fetch_all(f"""
+                SELECT id,ledger_account_code
+                FROM {schema}.company_bank_accounts
+                WHERE company_id=%s
+                ORDER BY id
+            """,(company_id,),cur=cur) or []
+
+            return [
+                {
+                    "id":row["id"],
+                    "code":row.get("ledger_account_code"),
+                    "label":row.get("ledger_account_code") or f"Bank {row['id']}",
+                }
+                for row in rows
+            ]
+
+        if reference_type=="qualifying_asset":
+            rows=self.fetch_all(f"""
+                SELECT
+                    id,
+                    asset_code,
+                    asset_name,
+                    asset_class,
+                    available_for_use_date,
+                    ready_for_use_date,
+                    asset_account_code
+                FROM {schema}.assets
+                WHERE company_id=%s
+                AND COALESCE(is_qualifying_asset,FALSE)=TRUE
+                AND COALESCE(disposed,FALSE)=FALSE
+                ORDER BY asset_name,id
+            """,(company_id,),cur=cur) or []
+
+            return [
+                {
+                    "id":row["id"],
+                    "code":row.get("asset_code"),
+                    "label":row.get("asset_name") or f"Asset {row['id']}",
+                    "asset_class":row.get("asset_class"),
+                    "asset_account_code":row.get("asset_account_code"),
+                }
+                for row in rows
+            ]
+
+        raise ValueError(f"Unsupported loan reference type: {reference_type}")
+
+    def migration_loan_source_references(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s AND project_id=%s AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        sample_rows=metadata.get("sample_rows") or []
+
+        target_to_source={
+            row["target_field_code"]:row["source_name"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        refs={
+            "bank_account":"bank_account_reference",
+            "qualifying_asset":"qualifying_asset_reference",
+        }
+
+        result={}
+
+        for reference_type,target_field in refs.items():
+            source_name=target_to_source.get(target_field)
+            values={}
+
+            if source_name:
+                for row in sample_rows:
+                    value=str(row.get(source_name) or "").strip()
+                    if value:values[value]=values.get(value,0)+1
+
+            saved=self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.migration_loan_reference_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND reference_type=%s
+            """,(company_id,project_id,dataset_id,reference_type),cur=cur) or []
+
+            saved_map={row["source_value"]:row for row in saved}
+
+            result[reference_type]={
+                "rows":[
+                    {
+                        "source_value":value,
+                        "sample_count":count,
+                        **(saved_map.get(value) or {}),
+                    }
+                    for value,count in sorted(values.items())
+                ],
+
+                "targets":self.migration_loan_reference_targets(
+                    company_id,reference_type,cur=cur
+                ),
+            }
+
+        return result
+
+    def migration_loan_reference_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        if not isinstance(mappings,list):
+            raise ValueError("mappings must be a list.")
+
+        for item in mappings:
+            reference_type=str(item.get("reference_type") or "").strip().lower()
+            source_value=str(item.get("source_value") or "").strip()
+            target_id=int(item.get("target_id") or 0)
+
+            if reference_type not in {"bank_account","qualifying_asset"}:
+                raise ValueError(f"Unsupported loan reference type: {reference_type}")
+
+            if not source_value:
+                raise ValueError("Source reference value is required.")
+
+            if not target_id:
+                raise ValueError(f'Target required for "{source_value}".')
+
+            targets=self.migration_loan_reference_targets(
+                company_id,reference_type,cur=cur
+            )
+
+            target=next(
+                (row for row in targets if int(row["id"])==target_id),
+                None
+            )
+
+            if not target:
+                raise ValueError(f'Invalid target for "{source_value}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_loan_reference_mappings(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value,source_label,
+                    target_id,target_code,target_label,
+                    mapping_method,confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value
+                )
+                DO UPDATE SET
+                    target_id=EXCLUDED.target_id,
+                    target_code=EXCLUDED.target_code,
+                    target_label=EXCLUDED.target_label,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                reference_type,source_value,
+                item.get("source_label") or source_value,
+
+                target_id,
+                target.get("code"),
+                target.get("label"),
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_loan_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_loan_reference_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        reference_type:str,source_value,*,cur=None
+    ):
+        value=str(source_value or "").strip()
+        if not value:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_id
+            FROM {schema}.migration_loan_reference_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            AND reference_type=%s
+            AND source_value=%s
+            AND is_approved=TRUE
+        """,(
+            int(company_id),int(project_id),int(dataset_id),
+            reference_type,value
+        ),cur=cur)
+
+        return int(row["target_id"]) if row and row.get("target_id") else None
+
+    def migration_loan_normalized_rows(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,limit:int=100,cur=None
+    )->list[dict]:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s AND project_id=%s AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        source_rows=metadata.get("sample_rows") or []
+
+        source_to_target={
+            row["source_name"]:row["target_field_code"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        out=[]
+
+        for source_row in source_rows[:limit]:
+            normalized={}
+
+            for source_name,target_field in source_to_target.items():
+                normalized[target_field]=source_row.get(source_name)
+
+            out.append({
+                "source":source_row,
+                "normalized":normalized,
+            })
+
+        return out   
+
+    def migration_loan_cutover_split(
+        self,schedule:list[dict],migration_date:date
+    )->dict:
+        horizon=migration_date+relativedelta(years=1)
+
+        future=[
+            row for row in schedule
+            if self._migration_loan_date(row.get("due_date"))
+            and self._migration_loan_date(row.get("due_date"))>migration_date
+        ]
+
+        current=sum(
+            self._migration_loan_number(row.get("scheduled_principal"))
+            for row in future
+            if self._migration_loan_date(row.get("due_date"))<=horizon
+        )
+
+        noncurrent=sum(
+            self._migration_loan_number(row.get("scheduled_principal"))
+            for row in future
+            if self._migration_loan_date(row.get("due_date"))>horizon
+        )
+
+        return {
+            "current_portion":round(current,2),
+            "noncurrent_portion":round(noncurrent,2),
+        }
+
+    def migration_loan_contract_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        normalized:dict,settings:dict,*,cur=None
+    )->dict:
+        migration_date=self._migration_loan_date(
+            normalized.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        start_date=self._migration_loan_date(
+            normalized.get("start_date"),
+            required=True,
+        )
+
+        first_payment_date=self._migration_loan_date(
+            normalized.get("first_payment_date"),
+            required=True,
+        )
+
+        principal=self._migration_loan_number(
+            normalized.get("principal_amount")
+        )
+
+        term_count=self._migration_loan_int(
+            normalized.get("term_count")
+        )
+
+        method=str(
+            normalized.get("interest_method")
+            or settings.get("default_interest_method")
+            or "amortised_fixed_payment"
+        ).strip().lower().replace("-","_").replace(" ","_")
+
+        frequency=str(
+            normalized.get("payment_frequency")
+            or settings.get("default_payment_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        issues=[]
+
+        if not str(normalized.get("loan_name") or "").strip():
+            issues.append("Loan name is required.")
+
+        if not str(normalized.get("lender_name") or "").strip():
+            issues.append("Lender name is required.")
+
+        if principal<=0:
+            issues.append("Original principal must be greater than zero.")
+
+        if term_count<=0:
+            issues.append("Loan term count must be greater than zero.")
+
+        if migration_date<start_date:
+            issues.append("Migration date cannot be before the loan start date.")
+
+        if issues:
+            return {
+                "valid":False,
+                "issues":issues,
+                "source_mode":"contract_terms",
+                "payload":normalized,
+            }
+
+        loan_row={
+            "principal_amount":principal,
+            "annual_interest_rate":self._migration_loan_number(
+                normalized.get("annual_interest_rate")
+            ),
+            "term_count":term_count,
+            "interest_method":method,
+            "first_payment_date":first_payment_date,
+            "balloon_amount":self._migration_loan_number(
+                normalized.get("balloon_amount")
+            ),
+            "repayment_holiday_count":self._migration_loan_int(
+                normalized.get("repayment_holiday_count")
+            ),
+            "payment_frequency":frequency,
+            "payment_amount":self._migration_loan_number(
+                normalized.get("payment_amount")
+            ),
+        }
+
+        schedule=self._build_loan_amortisation_rows(loan_row)
+
+        schedule=[
+            {
+                key:(float(value) if isinstance(value,Decimal) else value)
+                for key,value in row.items()
+            }
+            for row in schedule
+        ]
+
+        past=[
+            row for row in schedule
+            if self._migration_loan_date(row.get("due_date"))<=migration_date
+        ]
+
+        future=[
+            row for row in schedule
+            if self._migration_loan_date(row.get("due_date"))>migration_date
+        ]
+
+        calculated_outstanding=(
+            self._migration_loan_number(past[-1].get("closing_balance"))
+            if past else principal
+        )
+
+        imported_outstanding=self._migration_loan_number(
+            normalized.get("outstanding_principal"),
+            calculated_outstanding,
+        )
+
+        difference=round(
+            imported_outstanding-calculated_outstanding,
+            2,
+        )
+
+        tolerance=float(settings.get("balance_tolerance") or 1)
+
+        if abs(difference)>tolerance:
+            issues.append(
+                f"Outstanding principal differs from reconstructed schedule by {difference:.2f}."
+            )
+
+        split=self.migration_loan_cutover_split(
+            schedule,
+            migration_date,
+        )
+
+        next_row=future[0] if future else None
+
+        bank_id=self.migration_loan_reference_resolve(
+            company_id,project_id,dataset_id,
+            "bank_account",
+            normalized.get("bank_account_reference"),
+            cur=cur,
+        )
+
+        asset_id=self.migration_loan_reference_resolve(
+            company_id,project_id,dataset_id,
+            "qualifying_asset",
+            normalized.get("qualifying_asset_reference"),
+            cur=cur,
+        )
+
+        if settings.get("require_bank_mapping") and normalized.get("bank_account_reference") and not bank_id:
+            issues.append("Bank account is not mapped.")
+
+        if normalized.get("qualifying_asset_reference") and not asset_id:
+            issues.append("IAS 23 qualifying asset is not mapped.")
+
+        payload={
+            "loan_name":str(normalized.get("loan_name") or "").strip(),
+            "loan_reference":str(normalized.get("loan_reference") or "").strip() or None,
+            "lender_name":str(normalized.get("lender_name") or "").strip(),
+
+            "loan_type":str(
+                normalized.get("loan_type")
+                or settings.get("default_loan_type")
+                or "term_loan"
+            ).strip().lower(),
+
+            "start_date":start_date,
+            "first_payment_date":first_payment_date,
+            "maturity_date":self._migration_loan_date(
+                normalized.get("maturity_date")
+            ),
+
+            "principal_amount":principal,
+
+            "annual_interest_rate":self._migration_loan_number(
+                normalized.get("annual_interest_rate")
+            ),
+
+            "interest_method":method,
+            "term_count":term_count,
+            "payment_frequency":frequency,
+
+            "payment_amount":self._migration_loan_number(
+                normalized.get("payment_amount")
+            ),
+
+            "balloon_amount":self._migration_loan_number(
+                normalized.get("balloon_amount")
+            ),
+
+            "fees_amount":self._migration_loan_number(
+                normalized.get("fees_amount")
+            ),
+
+            "repayment_holiday_count":self._migration_loan_int(
+                normalized.get("repayment_holiday_count")
+            ),
+
+            "variable_rate":self._migration_loan_bool(
+                normalized.get("variable_rate")
+            ),
+
+            "rate_review_rule":normalized.get("rate_review_rule"),
+
+            "currency":str(
+                normalized.get("currency")
+                or settings.get("default_currency")
+                or "USD"
+            ).strip().upper(),
+
+            "bank_account_id":bank_id,
+
+            "outstanding_principal":imported_outstanding,
+
+            "outstanding_interest":self._migration_loan_number(
+                normalized.get("outstanding_interest")
+                or normalized.get("accrued_interest_opening")
+            ),
+
+            "interest_expense_account_code":
+                normalized.get("interest_expense_account_code")
+                or settings.get("interest_expense_account_code"),
+
+            "accrued_interest_account_code":
+                normalized.get("accrued_interest_account_code")
+                or settings.get("accrued_interest_account_code"),
+
+            "loan_payable_current_account_code":
+                normalized.get("loan_payable_current_account_code")
+                or settings.get("loan_payable_current_account_code"),
+
+            "loan_payable_noncurrent_account_code":
+                normalized.get("loan_payable_noncurrent_account_code")
+                or settings.get("loan_payable_noncurrent_account_code"),
+
+            "fees_asset_account_code":
+                normalized.get("fees_asset_account_code")
+                or settings.get("fees_asset_account_code"),
+
+            "fees_expense_account_code":
+                normalized.get("fees_expense_account_code")
+                or settings.get("fees_expense_account_code"),
+
+            "agreement_reference":normalized.get("agreement_reference"),
+            "notes":normalized.get("notes"),
+
+            "migration_date":migration_date,
+
+            "ias23_link":{
+                "asset_id":asset_id,
+                "capitalization_start_date":
+                    normalized.get("capitalization_start_date"),
+                "capitalization_end_date":
+                    normalized.get("capitalization_end_date"),
+                "capitalization_ratio":
+                    self._migration_loan_number(
+                        normalized.get("capitalization_ratio"),
+                        1,
+                    ),
+            } if asset_id else None,
+        }
+
+        if settings.get("require_gl_mapping"):
+            required_accounts=[
+                ("interest_expense_account_code","Interest expense account"),
+                ("loan_payable_current_account_code","Current loan payable account"),
+                ("loan_payable_noncurrent_account_code","Non-current loan payable account"),
+            ]
+
+            for field,label in required_accounts:
+                if not payload.get(field):
+                    issues.append(f"{label} is not mapped.")
+
+            if payload["outstanding_interest"]>0 and not payload.get("accrued_interest_account_code"):
+                issues.append("Accrued interest account is required for opening interest.")
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"contract_terms",
+
+            "payload":payload,
+
+            "reconciliation":{
+                "original_principal":round(principal,2),
+                "calculated_outstanding":round(calculated_outstanding,2),
+                "imported_outstanding":round(imported_outstanding,2),
+                "difference":difference,
+                "tolerance":tolerance,
+            },
+
+            "cutover":{
+                "migration_date":migration_date,
+                "outstanding_principal":round(imported_outstanding,2),
+                "outstanding_interest":round(payload["outstanding_interest"],2),
+                **split,
+            },
+
+            "next_payment":(
+                {
+                    "due_date":next_row.get("due_date"),
+                    "payment":next_row.get("scheduled_payment"),
+                    "interest":next_row.get("scheduled_interest"),
+                    "principal":next_row.get("scheduled_principal"),
+                    "closing_balance":next_row.get("closing_balance"),
+                }
+                if next_row else None
+            ),
+
+            "schedule":schedule,
+        }
+
+    def migration_loan_opening_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        normalized:dict,settings:dict,*,cur=None
+    )->dict:
+        migration_date=self._migration_loan_date(
+            normalized.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        outstanding=self._migration_loan_number(
+            normalized.get("outstanding_principal")
+        )
+
+        remaining_term=self._migration_loan_int(
+            normalized.get("remaining_term_count")
+            or normalized.get("term_count")
+        )
+
+        next_payment_date=self._migration_loan_date(
+            normalized.get("next_payment_date")
+            or normalized.get("first_payment_date")
+        )
+
+        issues=[]
+
+        if not str(normalized.get("loan_name") or "").strip():
+            issues.append("Loan name is required.")
+
+        if not str(normalized.get("lender_name") or "").strip():
+            issues.append("Lender name is required.")
+
+        if outstanding<=0:
+            issues.append("Outstanding principal must be greater than zero.")
+
+        if remaining_term<=0:
+            issues.append("Remaining term count is required.")
+
+        if not next_payment_date:
+            issues.append("Next payment date is required.")
+
+        if issues:
+            return {
+                "valid":False,
+                "issues":issues,
+                "source_mode":"opening_balance_only",
+                "payload":normalized,
+            }
+
+        method=str(
+            normalized.get("interest_method")
+            or settings.get("default_interest_method")
+            or "amortised_fixed_payment"
+        ).strip().lower().replace("-","_").replace(" ","_")
+
+        frequency=str(
+            normalized.get("payment_frequency")
+            or settings.get("default_payment_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        loan_row={
+            "principal_amount":outstanding,
+            "annual_interest_rate":self._migration_loan_number(
+                normalized.get("annual_interest_rate")
+            ),
+            "term_count":remaining_term,
+            "interest_method":method,
+            "first_payment_date":next_payment_date,
+            "balloon_amount":self._migration_loan_number(
+                normalized.get("balloon_amount")
+            ),
+            "repayment_holiday_count":0,
+            "payment_frequency":frequency,
+            "payment_amount":self._migration_loan_number(
+                normalized.get("payment_amount")
+            ),
+        }
+
+        schedule=self._build_loan_amortisation_rows(loan_row)
+
+        schedule=[
+            {
+                key:(float(value) if isinstance(value,Decimal) else value)
+                for key,value in row.items()
+            }
+            for row in schedule
+        ]
+
+        split=self.migration_loan_cutover_split(
+            schedule,
+            migration_date,
+        )
+
+        bank_id=self.migration_loan_reference_resolve(
+            company_id,project_id,dataset_id,
+            "bank_account",
+            normalized.get("bank_account_reference"),
+            cur=cur,
+        )
+
+        asset_id=self.migration_loan_reference_resolve(
+            company_id,project_id,dataset_id,
+            "qualifying_asset",
+            normalized.get("qualifying_asset_reference"),
+            cur=cur,
+        )
+
+        payload={
+            "loan_name":str(normalized.get("loan_name") or "").strip(),
+            "loan_reference":str(normalized.get("loan_reference") or "").strip() or None,
+            "lender_name":str(normalized.get("lender_name") or "").strip(),
+
+            "loan_type":str(
+                normalized.get("loan_type")
+                or settings.get("default_loan_type")
+                or "term_loan"
+            ).strip().lower(),
+
+            "start_date":self._migration_loan_date(
+                normalized.get("start_date")
+            ) or migration_date,
+
+            "first_payment_date":next_payment_date,
+
+            "maturity_date":self._migration_loan_date(
+                normalized.get("maturity_date")
+            ),
+
+            "principal_amount":outstanding,
+            "outstanding_principal":outstanding,
+
+            "outstanding_interest":self._migration_loan_number(
+                normalized.get("outstanding_interest")
+                or normalized.get("accrued_interest_opening")
+            ),
+
+            "annual_interest_rate":self._migration_loan_number(
+                normalized.get("annual_interest_rate")
+            ),
+
+            "interest_method":method,
+            "term_count":remaining_term,
+            "payment_frequency":frequency,
+
+            "payment_amount":self._migration_loan_number(
+                normalized.get("payment_amount")
+            ),
+
+            "balloon_amount":self._migration_loan_number(
+                normalized.get("balloon_amount")
+            ),
+
+            "currency":str(
+                normalized.get("currency")
+                or settings.get("default_currency")
+                or "USD"
+            ).strip().upper(),
+
+            "bank_account_id":bank_id,
+
+            "interest_expense_account_code":
+                normalized.get("interest_expense_account_code")
+                or settings.get("interest_expense_account_code"),
+
+            "accrued_interest_account_code":
+                normalized.get("accrued_interest_account_code")
+                or settings.get("accrued_interest_account_code"),
+
+            "loan_payable_current_account_code":
+                normalized.get("loan_payable_current_account_code")
+                or settings.get("loan_payable_current_account_code"),
+
+            "loan_payable_noncurrent_account_code":
+                normalized.get("loan_payable_noncurrent_account_code")
+                or settings.get("loan_payable_noncurrent_account_code"),
+
+            "migration_date":migration_date,
+
+            "ias23_link":{
+                "asset_id":asset_id,
+                "capitalization_start_date":
+                    normalized.get("capitalization_start_date"),
+                "capitalization_end_date":
+                    normalized.get("capitalization_end_date"),
+                "capitalization_ratio":
+                    self._migration_loan_number(
+                        normalized.get("capitalization_ratio"),
+                        1,
+                    ),
+            } if asset_id else None,
+        }
+
+        if settings.get("require_gl_mapping"):
+            for field,label in [
+                ("interest_expense_account_code","Interest expense account"),
+                ("loan_payable_current_account_code","Current loan payable account"),
+                ("loan_payable_noncurrent_account_code","Non-current loan payable account"),
+            ]:
+                if not payload.get(field):
+                    issues.append(f"{label} is not mapped.")
+
+        next_row=schedule[0] if schedule else None
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"opening_balance_only",
+
+            "payload":payload,
+
+            "cutover":{
+                "migration_date":migration_date,
+                "outstanding_principal":round(outstanding,2),
+                "outstanding_interest":round(payload["outstanding_interest"],2),
+                **split,
+            },
+
+            "next_payment":(
+                {
+                    "due_date":next_row.get("due_date"),
+                    "payment":next_row.get("scheduled_payment"),
+                    "interest":next_row.get("scheduled_interest"),
+                    "principal":next_row.get("scheduled_principal"),
+                    "closing_balance":next_row.get("closing_balance"),
+                }
+                if next_row else None
+            ),
+
+            "schedule":schedule,
+        }
+
+    def migration_loan_existing_schedule_preview(
+        self,normalized_rows:list[dict],settings:dict
+    )->dict:
+        if not normalized_rows:
+            return {
+                "valid":False,
+                "issues":["No loan schedule rows found."],
+                "source_mode":"existing_schedule",
+            }
+
+        first=normalized_rows[0]
+
+        migration_date=self._migration_loan_date(
+            first.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        tolerance=float(settings.get("balance_tolerance") or 1)
+
+        schedule=[]
+        issues=[]
+
+        sorted_rows=sorted(
+            normalized_rows,
+            key=lambda row:(
+                self._migration_loan_int(row.get("schedule_period_no"),999999),
+                self._migration_loan_date(row.get("schedule_due_date"))
+                    or date.max,
+            )
+        )
+
+        previous_closing=None
+
+        for index,row in enumerate(sorted_rows,start=1):
+            opening=self._migration_loan_number(
+                row.get("schedule_opening_balance")
+            )
+
+            payment=self._migration_loan_number(
+                row.get("schedule_payment")
+            )
+
+            interest=self._migration_loan_number(
+                row.get("schedule_interest")
+            )
+
+            principal=self._migration_loan_number(
+                row.get("schedule_principal")
+            )
+
+            closing=self._migration_loan_number(
+                row.get("schedule_closing_balance")
+            )
+
+            due=self._migration_loan_date(
+                row.get("schedule_due_date")
+            )
+
+            if not due:
+                issues.append(f"Schedule row {index}: due date is required.")
+
+            if abs(payment-(interest+principal))>tolerance:
+                issues.append(
+                    f"Schedule row {index}: payment does not equal principal + interest."
+                )
+
+            if abs((opening-principal)-closing)>tolerance:
+                issues.append(
+                    f"Schedule row {index}: opening less principal does not equal closing."
+                )
+
+            if previous_closing is not None and abs(opening-previous_closing)>tolerance:
+                issues.append(
+                    f"Schedule row {index}: opening balance does not agree to previous closing balance."
+                )
+
+            schedule.append({
+                "period_no":self._migration_loan_int(
+                    row.get("schedule_period_no"),index
+                ),
+                "due_date":due,
+                "opening_balance":round(opening,2),
+                "scheduled_payment":round(payment,2),
+                "scheduled_interest":round(interest,2),
+                "scheduled_principal":round(principal,2),
+                "closing_balance":round(closing,2),
+            })
+
+            previous_closing=closing
+
+        past=[
+            row for row in schedule
+            if row.get("due_date") and row["due_date"]<=migration_date
+        ]
+
+        future=[
+            row for row in schedule
+            if row.get("due_date") and row["due_date"]>migration_date
+        ]
+
+        calculated_outstanding=(
+            past[-1]["closing_balance"]
+            if past
+            else schedule[0]["opening_balance"]
+        )
+
+        imported_outstanding=self._migration_loan_number(
+            first.get("outstanding_principal"),
+            calculated_outstanding,
+        )
+
+        difference=round(
+            imported_outstanding-calculated_outstanding,
+            2,
+        )
+
+        if abs(difference)>tolerance:
+            issues.append(
+                f"Imported outstanding principal differs from source schedule by {difference:.2f}."
+            )
+
+        split=self.migration_loan_cutover_split(
+            schedule,
+            migration_date,
+        )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"existing_schedule",
+
+            "payload":{
+                **first,
+                "outstanding_principal":imported_outstanding,
+                "migration_date":migration_date,
+            },
+
+            "reconciliation":{
+                "calculated_outstanding":round(calculated_outstanding,2),
+                "imported_outstanding":round(imported_outstanding,2),
+                "difference":difference,
+                "tolerance":tolerance,
+            },
+
+            "cutover":{
+                "migration_date":migration_date,
+                "outstanding_principal":round(imported_outstanding,2),
+                "outstanding_interest":self._migration_loan_number(
+                    first.get("outstanding_interest")
+                ),
+                **split,
+            },
+
+            "next_payment":future[0] if future else None,
+            "schedule":schedule,
+        }
+
+    def migration_loan_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_loan_normalized_rows(
+            company_id,project_id,dataset_id,
+            limit=100,
+            cur=cur,
+        )
+
+        mode=settings.get("source_mode") or "contract_terms"
+        previews=[]
+
+        if mode=="existing_schedule":
+            groups={}
+
+            for item in rows:
+                row=item["normalized"]
+
+                key=str(
+                    row.get("loan_reference")
+                    or row.get("loan_name")
+                    or "UNIDENTIFIED"
+                ).strip()
+
+                groups.setdefault(key,[]).append(row)
+
+            for index,(key,group_rows) in enumerate(groups.items(),start=1):
+                try:
+                    preview=self.migration_loan_existing_schedule_preview(
+                        group_rows,settings
+                    )
+
+                except Exception as error:
+                    preview={
+                        "valid":False,
+                        "issues":[str(error)],
+                        "source_mode":"existing_schedule",
+                        "payload":group_rows[0] if group_rows else {},
+                    }
+
+                previews.append({
+                    "row_number":index,
+                    "loan_key":key,
+                    **preview,
+                })
+
+        else:
+            for index,item in enumerate(rows,start=1):
+                normalized=item["normalized"]
+
+                try:
+                    if mode=="opening_balance_only":
+                        preview=self.migration_loan_opening_preview(
+                            company_id,project_id,dataset_id,
+                            normalized,settings,cur=cur
+                        )
+                    else:
+                        preview=self.migration_loan_contract_preview(
+                            company_id,project_id,dataset_id,
+                            normalized,settings,cur=cur
+                        )
+
+                except Exception as error:
+                    preview={
+                        "valid":False,
+                        "issues":[str(error)],
+                        "source_mode":mode,
+                        "payload":normalized,
+                    }
+
+                previews.append({
+                    "row_number":index,
+                    "source":item["source"],
+                    **preview,
+                })
+
+        return {
+            "dataset_id":int(dataset_id),
+            "source_mode":mode,
+            "rows":previews,
+            "row_count":len(previews),
+            "valid_count":sum(1 for row in previews if row.get("valid")),
+            "error_count":sum(1 for row in previews if not row.get("valid")),
+        }
+
+    def migration_loan_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        references=self.migration_loan_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        mode=settings.get("source_mode") or "contract_terms"
+
+        required={
+            "contract_terms":{
+                "loan_name","lender_name",
+                "start_date","first_payment_date",
+                "principal_amount",
+                "annual_interest_rate",
+                "term_count",
+            },
+
+            "opening_balance_only":{
+                "loan_name","lender_name",
+                "outstanding_principal",
+                "annual_interest_rate",
+                "remaining_term_count",
+                "next_payment_date",
+            },
+
+            "existing_schedule":{
+                "loan_name",
+                "schedule_due_date",
+                "schedule_opening_balance",
+                "schedule_payment",
+                "schedule_interest",
+                "schedule_principal",
+                "schedule_closing_balance",
+            },
+        }[mode]
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(required-mapped)
+        missing_references=[]
+
+        if settings.get("require_bank_mapping"):
+            for row in references["bank_account"]["rows"]:
+                if not row.get("target_id") or not row.get("is_approved"):
+                    missing_references.append({
+                        "reference_type":"bank_account",
+                        "source_value":row.get("source_value"),
+                    })
+
+        if settings.get("enable_ias23_mapping"):
+            for row in references["qualifying_asset"]["rows"]:
+                if not row.get("target_id") or not row.get("is_approved"):
+                    missing_references.append({
+                        "reference_type":"qualifying_asset",
+                        "source_value":row.get("source_value"),
+                    })
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "references":references,
+            "source_mode":mode,
+            "missing_fields":missing_fields,
+            "missing_references":missing_references,
+            "is_complete":not missing_fields and not missing_references,
+        }
+
+    def _migration_revenue_number(self,value,default=0.0)->float:
+        if value in (None,""):return float(default or 0)
+        try:return float(str(value).replace(",","").strip())
+        except Exception:return float(default or 0)
+
+
+    def _migration_revenue_bool(self,value,default=False)->bool:
+        if isinstance(value,bool):return value
+        if value in (None,""):return bool(default)
+        return str(value).strip().lower() in {"1","true","yes","y","on"}
+
+
+    def _migration_revenue_date(self,value,required=False):
+        if isinstance(value,date):return value
+        text=str(value or "").strip()
+
+        if not text:
+            if required:raise ValueError("Date is required.")
+            return None
+
+        try:return datetime.strptime(text[:10],"%Y-%m-%d").date()
+        except Exception:
+            if required:raise ValueError(f"Invalid date: {text}")
+            return None
+
+    def migration_revenue_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='revenue_contracts'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_revenue_gl_defaults(
+        self,company_id:int,*,cur=None
+    )->dict:
+        accounts=self.resolve_ifrs15_accounts(
+            int(company_id),
+            cur=cur,
+            strict=False,
+        ) or {}
+
+        return {
+            "revenue_account_code":
+                accounts.get("contract_revenue_account")
+                or accounts.get("revenue_code")
+                or None,
+
+            "contract_asset_account_code":
+                accounts.get("contract_asset_account")
+                or accounts.get("contract_asset_code")
+                or None,
+
+            "contract_liability_account_code":
+                accounts.get("contract_liability_account")
+                or accounts.get("contract_liability_code")
+                or None,
+
+            "receivable_account_code":None,
+        }
+
+    def migration_revenue_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_revenue_settings
+            WHERE company_id=%s AND project_id=%s AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        gl=self.migration_revenue_gl_defaults(company_id,cur=cur)
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "source_mode":"contract_and_progress",
+            "migration_date":project.get("cutover_date"),
+
+            "default_currency":project.get("default_currency"),
+            "default_billing_method":"milestone",
+            "default_recognition_timing":"over_time",
+            "default_progress_method":"cost_to_cost",
+
+            **gl,
+
+            "require_customer_mapping":True,
+            "require_project_mapping":False,
+            "require_gl_mapping":True,
+
+            "reconciliation_tolerance":1.00,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_revenue_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_revenue_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        source_mode=str(data.get("source_mode") or current["source_mode"]).strip().lower()
+        billing=str(data.get("default_billing_method") or current["default_billing_method"]).strip().lower()
+        timing=str(data.get("default_recognition_timing") or current["default_recognition_timing"]).strip().lower()
+        progress=str(data.get("default_progress_method") or current["default_progress_method"]).strip().lower()
+
+        if source_mode not in {"full_history","contract_and_progress","opening_position"}:
+            raise ValueError("Invalid revenue migration source mode.")
+
+        if billing not in {"milestone","progress","periodic","manual"}:
+            raise ValueError("Invalid revenue billing method.")
+
+        if timing not in {"over_time","point_in_time"}:
+            raise ValueError("Invalid revenue recognition timing.")
+
+        if progress not in {
+            "cost_to_cost","milestone","units",
+            "units_delivered","time_elapsed","manual"
+        }:
+            raise ValueError("Invalid revenue progress method.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_revenue_settings(
+                company_id,project_id,dataset_id,
+                source_mode,migration_date,
+                default_currency,
+                default_billing_method,
+                default_recognition_timing,
+                default_progress_method,
+
+                revenue_account_code,
+                contract_asset_account_code,
+                contract_liability_account_code,
+                receivable_account_code,
+
+                require_customer_mapping,
+                require_project_mapping,
+                require_gl_mapping,
+                reconciliation_tolerance,
+
+                settings_json,metadata_json,
+                created_by_user_id,updated_by_user_id,
+                created_at,updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,%s,%s,
+                NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                source_mode=EXCLUDED.source_mode,
+                migration_date=EXCLUDED.migration_date,
+                default_currency=EXCLUDED.default_currency,
+                default_billing_method=EXCLUDED.default_billing_method,
+                default_recognition_timing=EXCLUDED.default_recognition_timing,
+                default_progress_method=EXCLUDED.default_progress_method,
+
+                revenue_account_code=EXCLUDED.revenue_account_code,
+                contract_asset_account_code=EXCLUDED.contract_asset_account_code,
+                contract_liability_account_code=EXCLUDED.contract_liability_account_code,
+                receivable_account_code=EXCLUDED.receivable_account_code,
+
+                require_customer_mapping=EXCLUDED.require_customer_mapping,
+                require_project_mapping=EXCLUDED.require_project_mapping,
+                require_gl_mapping=EXCLUDED.require_gl_mapping,
+                reconciliation_tolerance=EXCLUDED.reconciliation_tolerance,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            source_mode,
+            data.get("migration_date") or current.get("migration_date"),
+
+            data.get("default_currency") or current.get("default_currency"),
+            billing,timing,progress,
+
+            data.get("revenue_account_code") or current.get("revenue_account_code"),
+            data.get("contract_asset_account_code") or current.get("contract_asset_account_code"),
+            data.get("contract_liability_account_code") or current.get("contract_liability_account_code"),
+            data.get("receivable_account_code") or current.get("receivable_account_code"),
+
+            bool(data.get("require_customer_mapping",current.get("require_customer_mapping",True))),
+            bool(data.get("require_project_mapping",current.get("require_project_mapping",False))),
+            bool(data.get("require_gl_mapping",current.get("require_gl_mapping",True))),
+
+            float(
+                data.get("reconciliation_tolerance")
+                if data.get("reconciliation_tolerance") not in (None,"")
+                else current.get("reconciliation_tolerance") or 1
+            ),
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_revenue_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_revenue_reference_targets(
+        self,company_id:int,reference_type:str,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        reference_type=str(reference_type or "").strip().lower()
+
+        if reference_type=="customer":
+            rows=self.fetch_all(f"""
+                SELECT id,external_code,name
+                FROM {schema}.customers
+                WHERE company_id=%s
+                AND COALESCE(is_active,TRUE)=TRUE
+                ORDER BY name,id
+            """,(company_id,),cur=cur) or []
+
+            return [{
+                "id":row["id"],
+                "code":row.get("external_code"),
+                "label":row.get("name") or f"Customer {row['id']}",
+            } for row in rows]
+
+        if reference_type=="project":
+            rows=self.fetch_all(f"""
+                SELECT
+                    id,
+                    project_code,
+                    project_name,
+                    customer_id
+                FROM {schema}.projects
+                WHERE company_id=%s
+                ORDER BY project_name,project_code,id
+            """,(company_id,),cur=cur) or []
+
+            return [{
+                "id":row["id"],
+                "code":row.get("project_code"),
+                "label":row.get("project_name") or row.get("project_code") or f"Project {row['id']}",
+                "customer_id":row.get("customer_id"),
+            } for row in rows]
+
+        raise ValueError(f"Unsupported revenue reference type: {reference_type}")
+
+    def migration_revenue_source_references(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s AND project_id=%s AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        sample_rows=metadata.get("sample_rows") or []
+
+        target_to_source={
+            row["target_field_code"]:row["source_name"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        refs={
+            "customer":"customer_reference",
+            "project":"project_reference",
+        }
+
+        result={}
+
+        for reference_type,target_field in refs.items():
+            source_name=target_to_source.get(target_field)
+            values={}
+
+            if source_name:
+                for source_row in sample_rows:
+                    value=str(source_row.get(source_name) or "").strip()
+                    if value:values[value]=values.get(value,0)+1
+
+            saved=self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.migration_revenue_reference_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND reference_type=%s
+            """,(company_id,project_id,dataset_id,reference_type),cur=cur) or []
+
+            saved_map={row["source_value"]:row for row in saved}
+
+            result[reference_type]={
+                "rows":[
+                    {
+                        "source_value":value,
+                        "sample_count":count,
+                        **(saved_map.get(value) or {}),
+                    }
+                    for value,count in sorted(values.items())
+                ],
+
+                "targets":self.migration_revenue_reference_targets(
+                    company_id,reference_type,cur=cur
+                ),
+            }
+
+        return result
+
+    def migration_revenue_reference_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        if not isinstance(mappings,list):
+            raise ValueError("mappings must be a list.")
+
+        for item in mappings:
+            reference_type=str(item.get("reference_type") or "").strip().lower()
+            source_value=str(item.get("source_value") or "").strip()
+            target_id=int(item.get("target_id") or 0)
+
+            if reference_type not in {"customer","project"}:
+                raise ValueError(f"Unsupported revenue reference type: {reference_type}")
+
+            if not source_value:
+                raise ValueError("Source reference value is required.")
+
+            if not target_id:
+                raise ValueError(f'Target required for "{source_value}".')
+
+            targets=self.migration_revenue_reference_targets(
+                company_id,reference_type,cur=cur
+            )
+
+            target=next(
+                (row for row in targets if int(row["id"])==target_id),
+                None
+            )
+
+            if not target:
+                raise ValueError(f'Invalid target for "{source_value}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_revenue_reference_mappings(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value,source_label,
+                    target_id,target_code,target_label,
+                    mapping_method,confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value
+                )
+                DO UPDATE SET
+                    target_id=EXCLUDED.target_id,
+                    target_code=EXCLUDED.target_code,
+                    target_label=EXCLUDED.target_label,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                reference_type,source_value,
+                item.get("source_label") or source_value,
+
+                target_id,
+                target.get("code"),
+                target.get("label"),
+
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_revenue_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_revenue_reference_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        reference_type:str,source_value,*,cur=None
+    ):
+        value=str(source_value or "").strip()
+        if not value:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_id
+            FROM {schema}.migration_revenue_reference_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            AND reference_type=%s
+            AND source_value=%s
+            AND is_approved=TRUE
+        """,(
+            int(company_id),int(project_id),int(dataset_id),
+            reference_type,value
+        ),cur=cur)
+
+        return int(row["target_id"]) if row and row.get("target_id") else None
+
+    def migration_revenue_normalized_rows(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,limit:int=200,cur=None
+    )->list[dict]:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s AND project_id=%s AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        source_rows=metadata.get("sample_rows") or []
+
+        source_to_target={
+            row["source_name"]:row["target_field_code"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        result=[]
+
+        for source_row in source_rows[:limit]:
+            normalized={}
+
+            for source_name,target_field in source_to_target.items():
+                normalized[target_field]=source_row.get(source_name)
+
+            result.append({
+                "source":source_row,
+                "normalized":normalized,
+            })
+
+        return result
+
+    def migration_revenue_progress_percent(
+        self,row:dict,method:str,*,start_date=None,end_date=None,migration_date=None
+    )->float:
+        method=str(method or "").strip().lower()
+
+        if method=="cost_to_cost":
+            expected=self._migration_revenue_number(row.get("expected_total_cost"))
+            actual=self._migration_revenue_number(row.get("actual_cost_to_date"))
+
+            if expected<=0:
+                raise ValueError("Expected total cost must be greater than zero for cost-to-cost.")
+
+            return min(100.0,max(0.0,(actual/expected)*100))
+
+        if method in {"units","units_delivered"}:
+            total=self._migration_revenue_number(row.get("units_total"))
+            done=self._migration_revenue_number(
+                row.get("certified_units")
+                if row.get("certified_units") not in (None,"")
+                else row.get("units_done")
+            )
+
+            if total<=0:
+                raise ValueError("Total units must be greater than zero.")
+
+            if done<0 or done>total:
+                raise ValueError("Completed/certified units must be between zero and total units.")
+
+            return min(100.0,max(0.0,(done/total)*100))
+
+        if method=="manual":
+            pct=self._migration_revenue_number(row.get("progress_percent"))
+
+            if pct<0 or pct>100:
+                raise ValueError("Progress percentage must be between 0 and 100.")
+
+            return pct
+
+        if method=="milestone":
+            status=str(row.get("milestone_status") or "").strip().lower()
+
+            return 100.0 if status in {
+                "achieved","certified","approved","completed"
+            } else 0.0
+
+        if method=="time_elapsed":
+            start=self._migration_revenue_date(start_date)
+            end=self._migration_revenue_date(end_date)
+            as_of=self._migration_revenue_date(
+                row.get("progress_date") or migration_date
+            )
+
+            if not start or not end or not as_of:
+                raise ValueError("Time-elapsed recognition requires start, end and progress dates.")
+
+            if end<=start:
+                raise ValueError("Contract end date must be after start date.")
+
+            if as_of<=start:return 0.0
+            if as_of>=end:return 100.0
+
+            elapsed=(as_of-start).days
+            total=(end-start).days
+
+            return min(100.0,max(0.0,(elapsed/total)*100))
+
+        raise ValueError(f"Unsupported progress method: {method}")
+
+    def migration_revenue_position(
+        self,recognized:float,billed:float,cash_received:float
+    )->dict:
+        recognized=round(float(recognized or 0),2)
+        billed=round(float(billed or 0),2)
+        cash_received=round(float(cash_received or 0),2)
+
+        contract_asset=max(recognized-billed,0)
+        contract_liability=max(billed-recognized,0)
+        receivable=max(billed-cash_received,0)
+
+        return {
+            "recognized_revenue_to_date":recognized,
+            "billed_to_date":billed,
+            "cash_received_to_date":cash_received,
+
+            "contract_asset_balance":round(contract_asset,2),
+            "contract_liability_balance":round(contract_liability,2),
+            "accounts_receivable_balance":round(receivable,2),
+
+            "position_type":
+                "asset" if contract_asset>0
+                else "liability" if contract_liability>0
+                else "neutral",
+
+            "position_amount":round(
+                contract_asset if contract_asset>0 else contract_liability,
+                2,
+            ),
+        }
+
+    def migration_revenue_group_contracts(self,rows:list[dict])->dict:
+        groups={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            key=str(
+                row.get("contract_number")
+                or row.get("contract_title")
+                or "UNIDENTIFIED"
+            ).strip()
+
+            groups.setdefault(key,[]).append(row)
+
+        return groups
+
+    def migration_revenue_contract_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        rows:list[dict],settings:dict,*,cur=None
+    )->dict:
+        if not rows:
+            raise ValueError("Revenue contract has no source rows.")
+
+        first=rows[0]
+
+        contract_number=str(first.get("contract_number") or "").strip()
+        contract_title=str(first.get("contract_title") or "").strip()
+
+        transaction_price=self._migration_revenue_number(
+            first.get("transaction_price")
+        )
+
+        migration_date=self._migration_revenue_date(
+            first.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        start_date=self._migration_revenue_date(first.get("start_date"))
+        end_date=self._migration_revenue_date(first.get("end_date"))
+
+        customer_id=self.migration_revenue_reference_resolve(
+            company_id,project_id,dataset_id,
+            "customer",
+            first.get("customer_reference"),
+            cur=cur,
+        )
+
+        project_target_id=self.migration_revenue_reference_resolve(
+            company_id,project_id,dataset_id,
+            "project",
+            first.get("project_reference"),
+            cur=cur,
+        )
+
+        issues=[]
+
+        if not contract_number:
+            issues.append("Contract number is required.")
+
+        if not contract_title:
+            issues.append("Contract title is required.")
+
+        if transaction_price<=0:
+            issues.append("Transaction price must be greater than zero.")
+
+        if settings.get("require_customer_mapping") and not customer_id:
+            issues.append("Customer is not mapped.")
+
+        if (
+            settings.get("require_project_mapping")
+            and first.get("project_reference")
+            and not project_target_id
+        ):
+            issues.append("Project is not mapped.")
+
+        if customer_id and project_target_id:
+            project_row=self.fetch_one(f"""
+                SELECT customer_id
+                FROM {self.company_schema(int(company_id))}.projects
+                WHERE company_id=%s AND id=%s
+            """,(int(company_id),int(project_target_id)),cur=cur)
+
+            project_customer=(project_row or {}).get("customer_id")
+
+            if project_customer and int(project_customer)!=int(customer_id):
+                issues.append("Mapped project belongs to a different customer.")
+
+        billing_method=str(
+            first.get("billing_method")
+            or settings.get("default_billing_method")
+            or "milestone"
+        ).strip().lower()
+
+        is_over_time=self._migration_revenue_bool(
+            first.get("is_over_time"),
+            settings.get("default_recognition_timing")=="over_time",
+        )
+
+        mode=settings.get("source_mode") or "contract_and_progress"
+
+        obligations={}
+
+        for row in rows:
+            obligation_key=str(
+                row.get("obligation_code")
+                or row.get("obligation_name")
+                or "MAIN"
+            ).strip()
+
+            obligations.setdefault(obligation_key,[]).append(row)
+
+        obligation_previews=[]
+        calculated_revenue=0.0
+
+        for obligation_key,obligation_rows in obligations.items():
+            base=obligation_rows[0]
+
+            allocated=self._migration_revenue_number(
+                base.get("allocated_transaction_price")
+            )
+
+            if allocated<=0:
+                allocated=(
+                    transaction_price
+                    if len(obligations)==1
+                    else self._migration_revenue_number(
+                        base.get("standalone_selling_price")
+                    )
+                )
+
+            timing=str(
+                base.get("recognition_timing")
+                or ("over_time" if is_over_time else "point_in_time")
+            ).strip().lower()
+
+            progress_method=str(
+                base.get("progress_method")
+                or settings.get("default_progress_method")
+                or "cost_to_cost"
+            ).strip().lower()
+
+            progress_row=max(
+                obligation_rows,
+                key=lambda row:str(row.get("progress_date") or ""),
+            )
+
+            try:
+                if timing=="point_in_time":
+                    trigger=str(
+                        base.get("recognition_trigger") or ""
+                    ).strip()
+
+                    if not trigger:
+                        raise ValueError(
+                            f'Point-in-time obligation "{obligation_key}" needs a recognition trigger.'
+                        )
+
+                    progress_pct=self._migration_revenue_number(
+                        progress_row.get("progress_percent")
+                    )
+
+                    progress_pct=100.0 if progress_pct>=100 else 0.0
+
+                else:
+                    progress_pct=self.migration_revenue_progress_percent(
+                        progress_row,
+                        progress_method,
+                        start_date=start_date,
+                        end_date=end_date,
+                        migration_date=migration_date,
+                    )
+
+            except Exception as error:
+                issues.append(
+                    f'{obligation_key}: {error}'
+                )
+                progress_pct=0.0
+
+            revenue_required=round(
+                allocated*(progress_pct/100),
+                2,
+            )
+
+            calculated_revenue+=revenue_required
+
+            obligation_previews.append({
+                "obligation_code":
+                    base.get("obligation_code") or obligation_key,
+
+                "obligation_name":
+                    base.get("obligation_name") or obligation_key,
+
+                "recognition_timing":timing,
+                "progress_method":
+                    progress_method if timing=="over_time" else None,
+
+                "recognition_trigger":
+                    base.get("recognition_trigger")
+                    if timing=="point_in_time" else None,
+
+                "allocated_transaction_price":round(allocated,2),
+                "expected_total_cost":
+                    self._migration_revenue_number(
+                        progress_row.get("expected_total_cost")
+                    ),
+
+                "actual_cost_to_date":
+                    self._migration_revenue_number(
+                        progress_row.get("actual_cost_to_date")
+                    ),
+
+                "units_done":
+                    self._migration_revenue_number(
+                        progress_row.get("units_done")
+                    ),
+
+                "units_total":
+                    self._migration_revenue_number(
+                        progress_row.get("units_total")
+                    ),
+
+                "certified_units":
+                    self._migration_revenue_number(
+                        progress_row.get("certified_units")
+                    ),
+
+                "progress_percent":round(progress_pct,4),
+                "revenue_required_to_date":revenue_required,
+
+                "progress_date":
+                    progress_row.get("progress_date")
+                    or migration_date,
+
+                "milestone_code":
+                    progress_row.get("milestone_code"),
+
+                "certificate_reference":
+                    progress_row.get("certificate_reference"),
+            })
+
+        calculated_revenue=round(calculated_revenue,2)
+
+        imported_revenue=self._migration_revenue_number(
+            first.get("recognized_revenue_to_date"),
+            calculated_revenue,
+        )
+
+        # Full-history datasets can have several billing/cash rows.
+        if mode=="full_history":
+            billed=round(sum(
+                self._migration_revenue_number(row.get("billing_amount"))
+                for row in rows
+            ),2)
+
+            cash=round(sum(
+                self._migration_revenue_number(row.get("receipt_amount"))
+                for row in rows
+            ),2)
+
+            if billed==0:
+                billed=self._migration_revenue_number(
+                    first.get("billed_to_date")
+                )
+
+            if cash==0:
+                cash=self._migration_revenue_number(
+                    first.get("cash_received_to_date")
+                )
+
+        else:
+            billed=self._migration_revenue_number(
+                first.get("billed_to_date")
+            )
+
+            cash=self._migration_revenue_number(
+                first.get("cash_received_to_date")
+            )
+
+        if mode=="opening_position":
+            calculated_revenue=imported_revenue
+
+        calculated_position=self.migration_revenue_position(
+            calculated_revenue,
+            billed,
+            cash,
+        )
+
+        imported_position=self.migration_revenue_position(
+            imported_revenue,
+            billed,
+            cash,
+        )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 1
+        )
+
+        revenue_difference=round(
+            imported_revenue-calculated_revenue,
+            2,
+        )
+
+        if (
+            mode!="opening_position"
+            and abs(revenue_difference)>tolerance
+        ):
+            issues.append(
+                f"Imported revenue to date differs from reconstructed revenue by {revenue_difference:.2f}."
+            )
+
+        source_ca=first.get("contract_asset_balance")
+        source_cl=first.get("contract_liability_balance")
+        source_ar=first.get("accounts_receivable_balance")
+
+        if source_ca not in (None,""):
+            diff=round(
+                self._migration_revenue_number(source_ca)
+                -imported_position["contract_asset_balance"],
+                2,
+            )
+
+            if abs(diff)>tolerance:
+                issues.append(
+                    f"Contract asset differs from reconstructed position by {diff:.2f}."
+                )
+
+        if source_cl not in (None,""):
+            diff=round(
+                self._migration_revenue_number(source_cl)
+                -imported_position["contract_liability_balance"],
+                2,
+            )
+
+            if abs(diff)>tolerance:
+                issues.append(
+                    f"Contract liability differs from reconstructed position by {diff:.2f}."
+                )
+
+        if source_ar not in (None,""):
+            diff=round(
+                self._migration_revenue_number(source_ar)
+                -imported_position["accounts_receivable_balance"],
+                2,
+            )
+
+            if abs(diff)>tolerance:
+                issues.append(
+                    f"Receivable differs from reconstructed position by {diff:.2f}."
+                )
+
+        if settings.get("require_gl_mapping"):
+            for field,label in [
+                ("revenue_account_code","Revenue account"),
+                ("contract_asset_account_code","Contract asset account"),
+                ("contract_liability_account_code","Contract liability account"),
+            ]:
+                if not settings.get(field):
+                    issues.append(f"{label} is not configured.")
+
+        variations=[]
+
+        for row in rows:
+            ref=str(row.get("variation_reference") or "").strip()
+
+            if ref and not any(
+                item["reference"]==ref
+                for item in variations
+            ):
+                variations.append({
+                    "reference":ref,
+                    "amount":self._migration_revenue_number(
+                        row.get("variation_amount")
+                    ),
+                })
+
+        claims=[]
+
+        for row in rows:
+            ref=str(row.get("claim_reference") or "").strip()
+
+            if ref and not any(
+                item["reference"]==ref
+                for item in claims
+            ):
+                claims.append({
+                    "reference":ref,
+                    "amount":self._migration_revenue_number(
+                        row.get("claim_amount")
+                    ),
+                    "status":row.get("claim_status"),
+                })
+
+        payload={
+            "customer_id":customer_id,
+            "project_id":project_target_id,
+
+            "contract_number":contract_number,
+            "contract_title":contract_title,
+
+            "contract_currency":str(
+                first.get("contract_currency")
+                or settings.get("default_currency")
+                or "USD"
+            ).strip().upper(),
+
+            "contract_date":
+                self._migration_revenue_date(
+                    first.get("contract_date")
+                ),
+
+            "start_date":start_date,
+            "end_date":end_date,
+
+            "billing_method":billing_method,
+            "transaction_price":round(transaction_price,2),
+
+            "variable_consideration_est":
+                self._migration_revenue_number(
+                    first.get("variable_consideration_est")
+                ),
+
+            "variable_consideration_constrained":
+                self._migration_revenue_number(
+                    first.get("variable_consideration_constrained")
+                ),
+
+            "has_significant_financing_component":
+                self._migration_revenue_bool(
+                    first.get("has_significant_financing_component")
+                ),
+
+            "financing_component_amount":
+                self._migration_revenue_number(
+                    first.get("financing_component_amount")
+                ),
+
+            "is_over_time":is_over_time,
+
+            "recognized_revenue_to_date":round(imported_revenue,2),
+            "billed_to_date":round(billed,2),
+            "cash_received_to_date":round(cash,2),
+
+            "contract_asset_balance":
+                imported_position["contract_asset_balance"],
+
+            "contract_liability_balance":
+                imported_position["contract_liability_balance"],
+
+            "accounts_receivable_balance":
+                imported_position["accounts_receivable_balance"],
+
+            "migration_date":migration_date,
+            "notes":first.get("notes"),
+
+            "payload_json":{
+                "migration":{
+                    "source_mode":mode,
+                    "migration_date":str(migration_date),
+                    "variations":variations,
+                    "claims":claims,
+                }
+            },
+        }
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+
+            "payload":payload,
+            "obligations":obligation_previews,
+
+            "reconciliation":{
+                "transaction_price":round(transaction_price,2),
+
+                "calculated_revenue_to_date":
+                    round(calculated_revenue,2),
+
+                "imported_revenue_to_date":
+                    round(imported_revenue,2),
+
+                "revenue_difference":
+                    revenue_difference,
+
+                "billed_to_date":
+                    round(billed,2),
+
+                "cash_received_to_date":
+                    round(cash,2),
+
+                "tolerance":tolerance,
+            },
+
+            "position":imported_position,
+
+            "history":{
+                "variation_count":len(variations),
+                "claim_count":len(claims),
+
+                "billing_event_count":sum(
+                    1 for row in rows
+                    if self._migration_revenue_number(
+                        row.get("billing_amount")
+                    )!=0
+                ),
+
+                "cash_event_count":sum(
+                    1 for row in rows
+                    if self._migration_revenue_number(
+                        row.get("receipt_amount")
+                    )!=0
+                ),
+
+                "progress_event_count":sum(
+                    1 for row in rows
+                    if row.get("progress_date")
+                ),
+            },
+        }
+
+    def migration_revenue_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_revenue_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_revenue_normalized_rows(
+            company_id,project_id,dataset_id,
+            limit=200,
+            cur=cur,
+        )
+
+        groups=self.migration_revenue_group_contracts(rows)
+
+        previews=[]
+
+        for index,(contract_key,group_rows) in enumerate(
+            groups.items(),
+            start=1,
+        ):
+            try:
+                preview=self.migration_revenue_contract_preview(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    group_rows,
+                    settings,
+                    cur=cur,
+                )
+
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "payload":group_rows[0] if group_rows else {},
+                    "obligations":[],
+                    "reconciliation":{},
+                    "position":{},
+                    "history":{},
+                }
+
+            previews.append({
+                "row_number":index,
+                "contract_key":contract_key,
+                **preview,
+            })
+
+        return {
+            "dataset_id":int(dataset_id),
+            "source_mode":settings.get("source_mode"),
+            "contracts":previews,
+
+            "contract_count":len(previews),
+
+            "valid_count":sum(
+                1 for row in previews
+                if row.get("valid")
+            ),
+
+            "error_count":sum(
+                1 for row in previews
+                if not row.get("valid")
+            ),
+
+            "total_transaction_price":round(sum(
+                self._migration_revenue_number(
+                    row.get("payload",{}).get("transaction_price")
+                )
+                for row in previews
+            ),2),
+
+            "total_revenue_to_date":round(sum(
+                self._migration_revenue_number(
+                    row.get("position",{}).get(
+                        "recognized_revenue_to_date"
+                    )
+                )
+                for row in previews
+            ),2),
+
+            "total_contract_assets":round(sum(
+                self._migration_revenue_number(
+                    row.get("position",{}).get(
+                        "contract_asset_balance"
+                    )
+                )
+                for row in previews
+            ),2),
+
+            "total_contract_liabilities":round(sum(
+                self._migration_revenue_number(
+                    row.get("position",{}).get(
+                        "contract_liability_balance"
+                    )
+                )
+                for row in previews
+            ),2),
+        }
+
+    def migration_revenue_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_revenue_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        references=self.migration_revenue_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        mode=settings.get("source_mode") or "contract_and_progress"
+
+        required={
+            "full_history":{
+                "contract_number",
+                "contract_title",
+                "customer_reference",
+                "contract_date",
+                "transaction_price",
+            },
+
+            "contract_and_progress":{
+                "contract_number",
+                "contract_title",
+                "customer_reference",
+                "contract_date",
+                "transaction_price",
+                "progress_method",
+            },
+
+            "opening_position":{
+                "contract_number",
+                "contract_title",
+                "customer_reference",
+                "contract_date",
+                "transaction_price",
+                "recognized_revenue_to_date",
+                "billed_to_date",
+            },
+        }[mode]
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(required-mapped)
+        missing_references=[]
+
+        if settings.get("require_customer_mapping"):
+            for row in references["customer"]["rows"]:
+                if not row.get("target_id") or not row.get("is_approved"):
+                    missing_references.append({
+                        "reference_type":"customer",
+                        "source_value":row.get("source_value"),
+                    })
+
+        if settings.get("require_project_mapping"):
+            for row in references["project"]["rows"]:
+                if not row.get("target_id") or not row.get("is_approved"):
+                    missing_references.append({
+                        "reference_type":"project",
+                        "source_value":row.get("source_value"),
+                    })
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "references":references,
+
+            "source_mode":mode,
+
+            "missing_fields":missing_fields,
+            "missing_references":missing_references,
+
+            "is_complete":
+                not missing_fields
+                and not missing_references,
+        }
+
+    def _migration_ad_number(self,value,default=0.0)->float:
+        if value in (None,""):return float(default or 0)
+        try:return float(str(value).replace(",","").strip())
+        except Exception:return float(default or 0)
+
+
+    def _migration_ad_int(self,value,default=0)->int:
+        if value in (None,""):return int(default or 0)
+        try:return int(float(str(value).replace(",","").strip()))
+        except Exception:return int(default or 0)
+
+
+    def _migration_ad_date(self,value,required=False):
+        if isinstance(value,date):return value
+
+        text=str(value or "").strip()
+
+        if not text:
+            if required:raise ValueError("Date is required.")
+            return None
+
+        try:return datetime.strptime(text[:10],"%Y-%m-%d").date()
+        except Exception:
+            if required:raise ValueError(f"Invalid date: {text}")
+            return None
+
+
+    def _migration_ad_month_end(self,value:date)->date:
+        if value.month==12:return date(value.year,12,31)
+        return date(value.year,value.month+1,1)-timedelta(days=1)
+
+
+    def _migration_ad_add_month(self,value:date)->date:
+        if value.month==12:return date(value.year+1,1,1)
+        return date(value.year,value.month+1,1)
+
+
+    def migration_accrual_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='accrual_deferrals'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_accrual_gl_defaults(
+        self,company_id:int,*,cur=None
+    )->dict:
+        company_id=int(company_id)
+
+        out={
+            "prepaid_expense_account":None,
+            "deferred_expense_account":None,
+            "deferred_income_account":None,
+            "accrued_income_account":None,
+            "accrued_expense_account":None,
+        }
+
+        for field,role in {
+            "prepaid_expense_account":"prepaid_expense",
+            "deferred_expense_account":"deferred_expense",
+            "deferred_income_account":"deferred_income",
+            "accrued_income_account":"accrued_income",
+            "accrued_expense_account":"accrued_expense",
+        }.items():
+            try:
+                row=self.accrual_deferral_account_by_role(
+                    company_id,
+                    role,
+                ) or {}
+
+                out[field]=row.get("code")
+            except Exception:
+                out[field]=None
+
+        return out
+
+    def migration_accrual_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_accrual_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(
+                row.get("settings_json"),{}
+            )
+            row["metadata_json"]=self._migration_json(
+                row.get("metadata_json"),{}
+            )
+            return row
+
+        gl=self.migration_accrual_gl_defaults(
+            company_id,
+            cur=cur,
+        )
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "source_mode":"original_terms",
+            "migration_date":project.get("cutover_date"),
+
+            "default_currency":project.get("default_currency"),
+            "default_item_type":"prepaid_expense",
+            "default_recognition_method":"straight_line",
+            "default_frequency":"monthly",
+            "default_tax_mode":"no_vat",
+
+            **gl,
+
+            "default_recognition_account":None,
+            "default_settlement_account":None,
+            "default_tax_account":None,
+
+            "require_counterparty_mapping":False,
+            "require_gl_mapping":True,
+            "reconciliation_tolerance":1.00,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_accrual_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_accrual_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        source_mode=str(
+            data.get("source_mode") or current["source_mode"]
+        ).strip().lower()
+
+        item_type=str(
+            data.get("default_item_type") or current["default_item_type"]
+        ).strip().lower()
+
+        method=str(
+            data.get("default_recognition_method")
+            or current["default_recognition_method"]
+        ).strip().lower()
+
+        frequency=str(
+            data.get("default_frequency") or current["default_frequency"]
+        ).strip().lower()
+
+        tax_mode=str(
+            data.get("default_tax_mode") or current["default_tax_mode"]
+        ).strip().lower()
+
+        if source_mode not in {
+            "original_terms","existing_schedule","opening_position"
+        }:
+            raise ValueError("Invalid accrual migration source mode.")
+
+        if item_type not in {
+            "prepaid_expense","deferred_expense","deferred_income",
+            "accrued_income","accrued_expense"
+        }:
+            raise ValueError("Invalid accrual/deferral item type.")
+
+        if method not in {
+            "straight_line","manual","units","milestone"
+        }:
+            raise ValueError("Invalid recognition method.")
+
+        if frequency not in {
+            "monthly","quarterly","annually","once","manual"
+        }:
+            raise ValueError("Invalid recognition frequency.")
+
+        if tax_mode not in {
+            "exclusive","inclusive","no_vat"
+        }:
+            raise ValueError("Invalid tax mode.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_accrual_settings(
+                company_id,project_id,dataset_id,
+                source_mode,migration_date,
+                default_currency,
+                default_item_type,
+                default_recognition_method,
+                default_frequency,
+                default_tax_mode,
+
+                prepaid_expense_account,
+                deferred_expense_account,
+                deferred_income_account,
+                accrued_income_account,
+                accrued_expense_account,
+
+                default_recognition_account,
+                default_settlement_account,
+                default_tax_account,
+
+                require_counterparty_mapping,
+                require_gl_mapping,
+                reconciliation_tolerance,
+
+                settings_json,metadata_json,
+                created_by_user_id,updated_by_user_id,
+                created_at,updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                source_mode=EXCLUDED.source_mode,
+                migration_date=EXCLUDED.migration_date,
+                default_currency=EXCLUDED.default_currency,
+                default_item_type=EXCLUDED.default_item_type,
+                default_recognition_method=EXCLUDED.default_recognition_method,
+                default_frequency=EXCLUDED.default_frequency,
+                default_tax_mode=EXCLUDED.default_tax_mode,
+
+                prepaid_expense_account=EXCLUDED.prepaid_expense_account,
+                deferred_expense_account=EXCLUDED.deferred_expense_account,
+                deferred_income_account=EXCLUDED.deferred_income_account,
+                accrued_income_account=EXCLUDED.accrued_income_account,
+                accrued_expense_account=EXCLUDED.accrued_expense_account,
+
+                default_recognition_account=EXCLUDED.default_recognition_account,
+                default_settlement_account=EXCLUDED.default_settlement_account,
+                default_tax_account=EXCLUDED.default_tax_account,
+
+                require_counterparty_mapping=EXCLUDED.require_counterparty_mapping,
+                require_gl_mapping=EXCLUDED.require_gl_mapping,
+                reconciliation_tolerance=EXCLUDED.reconciliation_tolerance,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            source_mode,
+            data.get("migration_date") or current.get("migration_date"),
+
+            data.get("default_currency") or current.get("default_currency"),
+            item_type,method,frequency,tax_mode,
+
+            data.get("prepaid_expense_account")
+                or current.get("prepaid_expense_account"),
+
+            data.get("deferred_expense_account")
+                or current.get("deferred_expense_account"),
+
+            data.get("deferred_income_account")
+                or current.get("deferred_income_account"),
+
+            data.get("accrued_income_account")
+                or current.get("accrued_income_account"),
+
+            data.get("accrued_expense_account")
+                or current.get("accrued_expense_account"),
+
+            data.get("default_recognition_account")
+                or current.get("default_recognition_account"),
+
+            data.get("default_settlement_account")
+                or current.get("default_settlement_account"),
+
+            data.get("default_tax_account")
+                or current.get("default_tax_account"),
+
+            bool(data.get(
+                "require_counterparty_mapping",
+                current.get("require_counterparty_mapping",False),
+            )),
+
+            bool(data.get(
+                "require_gl_mapping",
+                current.get("require_gl_mapping",True),
+            )),
+
+            float(
+                data.get("reconciliation_tolerance")
+                if data.get("reconciliation_tolerance") not in (None,"")
+                else current.get("reconciliation_tolerance") or 1
+            ),
+
+            self._migration_json_dump(
+                data.get("settings_json") or current.get("settings_json"),{}
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json") or current.get("metadata_json"),{}
+            ),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_accrual_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_accrual_reference_targets(
+        self,company_id:int,reference_type:str,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        reference_type=str(reference_type or "").strip().lower()
+
+        if reference_type=="customer":
+            rows=self.fetch_all(f"""
+                SELECT id,external_code,name
+                FROM {schema}.customers
+                WHERE company_id=%s
+                AND COALESCE(is_active,TRUE)=TRUE
+                ORDER BY name,id
+            """,(company_id,),cur=cur) or []
+
+            return [{
+                "id":row["id"],
+                "code":row.get("external_code"),
+                "label":row.get("name") or f"Customer {row['id']}",
+            } for row in rows]
+
+        if reference_type=="vendor":
+            rows=self.fetch_all(f"""
+                SELECT id,vendor_code,name
+                FROM {schema}.vendors
+                WHERE company_id=%s
+                ORDER BY name,id
+            """,(company_id,),cur=cur) or []
+
+            return [{
+                "id":row["id"],
+                "code":row.get("vendor_code"),
+                "label":row.get("name") or f"Vendor {row['id']}",
+            } for row in rows]
+
+        if reference_type=="employee":
+            rows=self.fetch_all(f"""
+                SELECT id,employee_number,first_name,last_name
+                FROM {schema}.payroll_employees
+                WHERE company_id=%s
+                ORDER BY last_name,first_name,id
+            """,(company_id,),cur=cur) or []
+
+            return [{
+                "id":row["id"],
+                "code":row.get("employee_number"),
+                "label":" ".join(filter(None,[
+                    row.get("first_name"),
+                    row.get("last_name"),
+                ])) or f"Employee {row['id']}",
+            } for row in rows]
+
+        raise ValueError(
+            f"Unsupported accrual reference type: {reference_type}"
+        )
+
+    def migration_accrual_source_references(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        sample_rows=metadata.get("sample_rows") or []
+
+        target_to_source={
+            row["target_field_code"]:row["source_name"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        config={
+            "customer":"customer_reference",
+            "vendor":"vendor_reference",
+            "employee":"employee_reference",
+        }
+
+        result={}
+
+        for reference_type,target_field in config.items():
+            source_name=target_to_source.get(target_field)
+            values={}
+
+            if source_name:
+                for source_row in sample_rows:
+                    value=str(source_row.get(source_name) or "").strip()
+                    if value:values[value]=values.get(value,0)+1
+
+            saved=self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.migration_accrual_reference_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND reference_type=%s
+            """,(
+                company_id,project_id,dataset_id,reference_type
+            ),cur=cur) or []
+
+            saved_map={
+                row["source_value"]:row
+                for row in saved
+            }
+
+            result[reference_type]={
+                "rows":[
+                    {
+                        "source_value":value,
+                        "sample_count":count,
+                        **(saved_map.get(value) or {}),
+                    }
+                    for value,count in sorted(values.items())
+                ],
+
+                "targets":self.migration_accrual_reference_targets(
+                    company_id,
+                    reference_type,
+                    cur=cur,
+                ),
+            }
+
+        return result
+
+    def migration_accrual_reference_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        if not isinstance(mappings,list):
+            raise ValueError("mappings must be a list.")
+
+        for item in mappings:
+            reference_type=str(
+                item.get("reference_type") or ""
+            ).strip().lower()
+
+            source_value=str(
+                item.get("source_value") or ""
+            ).strip()
+
+            target_id=int(item.get("target_id") or 0)
+
+            if reference_type not in {
+                "customer","vendor","employee"
+            }:
+                raise ValueError(
+                    f"Unsupported accrual reference type: {reference_type}"
+                )
+
+            if not source_value:
+                raise ValueError("Source reference value is required.")
+
+            if not target_id:
+                raise ValueError(
+                    f'Target required for "{source_value}".'
+                )
+
+            targets=self.migration_accrual_reference_targets(
+                company_id,
+                reference_type,
+                cur=cur,
+            )
+
+            target=next(
+                (row for row in targets if int(row["id"])==target_id),
+                None,
+            )
+
+            if not target:
+                raise ValueError(
+                    f'Invalid target for "{source_value}".'
+                )
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_accrual_reference_mappings(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value,source_label,
+                    target_id,target_code,target_label,
+                    mapping_method,confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,project_id,dataset_id,
+                    reference_type,source_value
+                )
+                DO UPDATE SET
+                    target_id=EXCLUDED.target_id,
+                    target_code=EXCLUDED.target_code,
+                    target_label=EXCLUDED.target_label,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                reference_type,source_value,
+                item.get("source_label") or source_value,
+                target_id,target.get("code"),target.get("label"),
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_accrual_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+
+    def migration_accrual_reference_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        reference_type:str,source_value,*,cur=None
+    ):
+        value=str(source_value or "").strip()
+        if not value:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_id
+            FROM {schema}.migration_accrual_reference_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            AND reference_type=%s
+            AND source_value=%s
+            AND is_approved=TRUE
+        """,(
+            int(company_id),
+            int(project_id),
+            int(dataset_id),
+            reference_type,
+            value,
+        ),cur=cur)
+
+        return (
+            int(row["target_id"])
+            if row and row.get("target_id")
+            else None
+        )
+
+
+    def migration_accrual_normalized_rows(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,limit:int=200,cur=None
+    )->list[dict]:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        source_rows=metadata.get("sample_rows") or []
+
+        source_to_target={
+            row["source_name"]:row["target_field_code"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        result=[]
+
+        for source_row in source_rows[:limit]:
+            normalized={}
+
+            for source_name,target_field in source_to_target.items():
+                normalized[target_field]=source_row.get(source_name)
+
+            result.append({
+                "source":source_row,
+                "normalized":normalized,
+            })
+
+        return result
+
+    def migration_accrual_straight_line_schedule(
+        self,start_date:date,end_date:date,amount:float
+    )->list[dict]:
+        start=self._migration_ad_date(start_date,required=True)
+        end=self._migration_ad_date(end_date,required=True)
+        amount=round(float(amount or 0),2)
+
+        if end<start:
+            raise ValueError("Recognition end date cannot be before start date.")
+
+        if amount<=0:
+            raise ValueError("Original amount must be greater than zero.")
+
+        months=[]
+        cursor=date(start.year,start.month,1)
+
+        while cursor<=end:
+            period_start=max(cursor,start)
+            period_end=min(
+                self._migration_ad_month_end(cursor),
+                end,
+            )
+
+            months.append((period_start,period_end))
+            cursor=self._migration_ad_add_month(cursor)
+
+        if not months:return []
+
+        normal_amount=round(amount/len(months),2)
+        opening=amount
+        schedule=[]
+
+        for index,(period_start,period_end) in enumerate(months,start=1):
+            recognition=(
+                opening
+                if index==len(months)
+                else min(normal_amount,opening)
+            )
+
+            recognition=round(recognition,2)
+            closing=round(max(opening-recognition,0),2)
+
+            schedule.append({
+                "line_no":index,
+                "period_start":period_start,
+                "period_end":period_end,
+                "recognition_date":period_end,
+                "opening_balance":round(opening,2),
+                "recognition_amount":recognition,
+                "closing_balance":closing,
+            })
+
+            opening=closing
+
+        return schedule
+
+    def migration_accrual_balance_account(
+        self,item_type:str,row:dict,settings:dict
+    ):
+        direct=str(row.get("balance_account") or "").strip()
+        if direct:return direct
+
+        return {
+            "prepaid_expense":
+                settings.get("prepaid_expense_account"),
+
+            "deferred_expense":
+                settings.get("deferred_expense_account"),
+
+            "deferred_income":
+                settings.get("deferred_income_account"),
+
+            "accrued_income":
+                settings.get("accrued_income_account"),
+
+            "accrued_expense":
+                settings.get("accrued_expense_account"),
+        }.get(item_type)
+
+    def migration_accrual_recognition_journal(
+        self,item_type:str,amount:float,
+        balance_account:str|None,
+        recognition_account:str|None,
+    )->list[dict]:
+        amount=round(float(amount or 0),2)
+
+        if amount<=0:
+            return []
+
+        if not balance_account:
+            raise ValueError("Balance account is required.")
+
+        if not recognition_account:
+            raise ValueError("Recognition account is required.")
+
+        if item_type in {
+            "prepaid_expense",
+            "deferred_expense",
+            "accrued_expense",
+        }:
+            debit_account=recognition_account
+            credit_account=balance_account
+
+        elif item_type=="deferred_income":
+            debit_account=balance_account
+            credit_account=recognition_account
+
+        elif item_type=="accrued_income":
+            debit_account=balance_account
+            credit_account=recognition_account
+
+        else:
+            raise ValueError(
+                f"Unsupported item type: {item_type}"
+            )
+
+        return [
+            {
+                "account_code":debit_account,
+                "debit":amount,
+                "credit":0.0,
+            },
+            {
+                "account_code":credit_account,
+                "debit":0.0,
+                "credit":amount,
+            },
+        ]
+
+    def migration_accrual_original_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        item_type=str(
+            row.get("item_type")
+            or settings.get("default_item_type")
+            or "prepaid_expense"
+        ).strip().lower()
+
+        method=str(
+            row.get("recognition_method")
+            or settings.get("default_recognition_method")
+            or "straight_line"
+        ).strip().lower()
+
+        frequency=str(
+            row.get("frequency")
+            or settings.get("default_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        migration_date=self._migration_ad_date(
+            row.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        start_date=self._migration_ad_date(
+            row.get("start_date"),
+            required=True,
+        )
+
+        end_date=self._migration_ad_date(
+            row.get("end_date"),
+            required=True,
+        )
+
+        transaction_date=self._migration_ad_date(
+            row.get("transaction_date")
+        ) or start_date
+
+        original=self._migration_ad_number(
+            row.get("original_amount")
+        )
+
+        issues=[]
+
+        if item_type not in {
+            "prepaid_expense","deferred_expense","deferred_income",
+            "accrued_income","accrued_expense"
+        }:
+            issues.append(f"Unsupported item type: {item_type}.")
+
+        if original<=0:
+            issues.append("Original amount must be greater than zero.")
+
+        if end_date<start_date:
+            issues.append("End date cannot be before start date.")
+
+        if migration_date<transaction_date:
+            issues.append(
+                "Migration date cannot be before transaction date."
+            )
+
+        if method!="straight_line":
+            issues.append(
+                f"{method} cannot be reconstructed from original terms alone; use Existing Schedule or Opening Position mode."
+            )
+
+        schedule=[]
+
+        if not issues:
+            schedule=self.migration_accrual_straight_line_schedule(
+                start_date,
+                end_date,
+                original,
+            )
+
+        past=[
+            line for line in schedule
+            if line["recognition_date"]<=migration_date
+        ]
+
+        future=[
+            line for line in schedule
+            if line["recognition_date"]>migration_date
+        ]
+
+        calculated_recognized=round(sum(
+            line["recognition_amount"]
+            for line in past
+        ),2)
+
+        calculated_remaining=round(
+            max(original-calculated_recognized,0),
+            2,
+        )
+
+        imported_recognized=self._migration_ad_number(
+            row.get("recognized_to_date"),
+            calculated_recognized,
+        )
+
+        imported_remaining=self._migration_ad_number(
+            row.get("remaining_balance"),
+            max(original-imported_recognized,0),
+        )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 1
+        )
+
+        recognized_difference=round(
+            imported_recognized-calculated_recognized,
+            2,
+        )
+
+        remaining_difference=round(
+            imported_remaining-calculated_remaining,
+            2,
+        )
+
+        if abs(recognized_difference)>tolerance:
+            issues.append(
+                f"Recognised-to-date differs from reconstructed schedule by {recognized_difference:.2f}."
+            )
+
+        if abs(remaining_difference)>tolerance:
+            issues.append(
+                f"Remaining balance differs from reconstructed schedule by {remaining_difference:.2f}."
+            )
+
+        balance_account=self.migration_accrual_balance_account(
+            item_type,row,settings
+        )
+
+        recognition_account=(
+            row.get("recognition_account")
+            or settings.get("default_recognition_account")
+        )
+
+        settlement_account=(
+            row.get("settlement_account")
+            or settings.get("default_settlement_account")
+        )
+
+        tax_account=(
+            row.get("tax_account")
+            or settings.get("default_tax_account")
+        )
+
+        if settings.get("require_gl_mapping"):
+            if not balance_account:
+                issues.append("Balance account is not mapped.")
+
+            if not recognition_account:
+                issues.append("Recognition account is not mapped.")
+
+        customer_id=self.migration_accrual_reference_resolve(
+            company_id,project_id,dataset_id,
+            "customer",
+            row.get("customer_reference"),
+            cur=cur,
+        )
+
+        vendor_id=self.migration_accrual_reference_resolve(
+            company_id,project_id,dataset_id,
+            "vendor",
+            row.get("vendor_reference"),
+            cur=cur,
+        )
+
+        employee_id=self.migration_accrual_reference_resolve(
+            company_id,project_id,dataset_id,
+            "employee",
+            row.get("employee_reference"),
+            cur=cur,
+        )
+
+        counterparty_type=str(
+            row.get("counterparty_type") or ""
+        ).strip().lower() or None
+
+        if not counterparty_type:
+            if customer_id:counterparty_type="customer"
+            elif vendor_id:counterparty_type="supplier"
+            elif employee_id:counterparty_type="employee"
+
+        if settings.get("require_counterparty_mapping"):
+            source_counterparty=(
+                row.get("customer_reference")
+                or row.get("vendor_reference")
+                or row.get("employee_reference")
+            )
+
+            if source_counterparty and not any([
+                customer_id,
+                vendor_id,
+                employee_id,
+            ]):
+                issues.append("Counterparty is not mapped.")
+
+        next_line=future[0] if future else None
+
+        payload={
+            "item_number":
+                str(row.get("item_number") or "").strip() or None,
+
+            "item_title":
+                str(row.get("item_title") or "").strip(),
+
+            "item_type":item_type,
+            "status":"active",
+
+            "counterparty_type":counterparty_type,
+            "customer_id":customer_id,
+            "supplier_id":vendor_id,
+            "employee_id":employee_id,
+
+            "currency":str(
+                row.get("currency")
+                or settings.get("default_currency")
+                or "USD"
+            ).strip().upper(),
+
+            "transaction_date":transaction_date,
+            "start_date":start_date,
+            "end_date":end_date,
+
+            "original_amount":round(original,2),
+            "recognized_to_date":round(imported_recognized,2),
+            "remaining_balance":round(imported_remaining,2),
+
+            "recognition_method":method,
+            "frequency":frequency,
+
+            "balance_account":balance_account,
+            "balance_account_role":
+                row.get("balance_account_role") or item_type,
+
+            "recognition_account":recognition_account,
+            "recognition_account_role":
+                row.get("recognition_account_role"),
+
+            "settlement_account":settlement_account,
+            "settlement_role":row.get("settlement_role"),
+
+            "tax_account":tax_account,
+
+            "vat_amount":self._migration_ad_number(
+                row.get("vat_amount")
+            ),
+
+            "tax_mode":str(
+                row.get("tax_mode")
+                or settings.get("default_tax_mode")
+                or "no_vat"
+            ).strip().lower(),
+
+            "tax_treatment_code":
+                row.get("tax_treatment_code"),
+
+            "tax_base_override":
+                self._migration_ad_number(
+                    row.get("tax_base_override")
+                ) if row.get("tax_base_override") not in (None,"") else None,
+
+            "manual_tax_base":
+                self._migration_ad_number(
+                    row.get("manual_tax_base")
+                ) if row.get("manual_tax_base") not in (None,"") else None,
+
+            "notes":row.get("notes"),
+
+            "migration_date":migration_date,
+
+            "payload_json":{
+                "migration":{
+                    "source_mode":"original_terms",
+                    "migration_date":str(migration_date),
+                }
+            },
+        }
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"original_terms",
+            "payload":payload,
+
+            "reconciliation":{
+                "original_amount":round(original,2),
+
+                "calculated_recognized_to_date":
+                    calculated_recognized,
+
+                "imported_recognized_to_date":
+                    round(imported_recognized,2),
+
+                "recognized_difference":
+                    recognized_difference,
+
+                "calculated_remaining_balance":
+                    calculated_remaining,
+
+                "imported_remaining_balance":
+                    round(imported_remaining,2),
+
+                "remaining_difference":
+                    remaining_difference,
+
+                "tolerance":tolerance,
+            },
+
+            "cutover":{
+                "migration_date":migration_date,
+                "recognized_to_date":round(imported_recognized,2),
+                "remaining_balance":round(imported_remaining,2),
+                "recognized_percent":round(
+                    imported_recognized/original*100,
+                    2,
+                ) if original else 0,
+            },
+
+            "next_recognition":(
+                {
+                    "date":next_line["recognition_date"],
+                    "amount":next_line["recognition_amount"],
+                    "opening_balance":next_line["opening_balance"],
+                    "closing_balance":next_line["closing_balance"],
+
+                    "journal_lines":
+                        self.migration_accrual_recognition_journal(
+                            item_type,
+                            next_line["recognition_amount"],
+                            balance_account,
+                            recognition_account,
+                        ) if balance_account and recognition_account else [],
+                }
+                if next_line else None
+            ),
+
+            "schedule":schedule,
+        }
+
+    def migration_accrual_opening_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        item_type=str(
+            row.get("item_type")
+            or settings.get("default_item_type")
+            or "prepaid_expense"
+        ).strip().lower()
+
+        migration_date=self._migration_ad_date(
+            row.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        start_date=self._migration_ad_date(
+            row.get("start_date")
+        ) or migration_date
+
+        end_date=self._migration_ad_date(
+            row.get("end_date"),
+            required=True,
+        )
+
+        original=self._migration_ad_number(
+            row.get("original_amount")
+        )
+
+        recognized=self._migration_ad_number(
+            row.get("recognized_to_date")
+        )
+
+        remaining=self._migration_ad_number(
+            row.get("remaining_balance"),
+            max(original-recognized,0),
+        )
+
+        issues=[]
+
+        if original<=0:
+            issues.append("Original amount must be greater than zero.")
+
+        if recognized<0 or remaining<0:
+            issues.append(
+                "Recognised and remaining balances cannot be negative."
+            )
+
+        balance_check=round(
+            original-recognized-remaining,
+            2,
+        )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 1
+        )
+
+        if abs(balance_check)>tolerance:
+            issues.append(
+                f"Original amount does not reconcile to recognised + remaining by {balance_check:.2f}."
+            )
+
+        if end_date<migration_date and remaining>tolerance:
+            issues.append(
+                "Item has a remaining balance even though its recognition end date is before migration."
+            )
+
+        balance_account=self.migration_accrual_balance_account(
+            item_type,row,settings
+        )
+
+        recognition_account=(
+            row.get("recognition_account")
+            or settings.get("default_recognition_account")
+        )
+
+        if settings.get("require_gl_mapping"):
+            if not balance_account:
+                issues.append("Balance account is not mapped.")
+            if not recognition_account:
+                issues.append("Recognition account is not mapped.")
+
+        future_schedule=[]
+
+        if (
+            remaining>0
+            and end_date>=migration_date
+            and str(
+                row.get("recognition_method")
+                or settings.get("default_recognition_method")
+                or "straight_line"
+            ).strip().lower()=="straight_line"
+        ):
+            future_start=max(
+                migration_date+timedelta(days=1),
+                start_date,
+            )
+
+            if future_start<=end_date:
+                future_schedule=self.migration_accrual_straight_line_schedule(
+                    future_start,
+                    end_date,
+                    remaining,
+                )
+
+        payload={
+            "item_number":
+                str(row.get("item_number") or "").strip() or None,
+
+            "item_title":
+                str(row.get("item_title") or "").strip(),
+
+            "item_type":item_type,
+
+            "currency":str(
+                row.get("currency")
+                or settings.get("default_currency")
+                or "USD"
+            ).strip().upper(),
+
+            "transaction_date":
+                self._migration_ad_date(
+                    row.get("transaction_date")
+                ) or start_date,
+
+            "start_date":start_date,
+            "end_date":end_date,
+
+            "original_amount":round(original,2),
+            "recognized_to_date":round(recognized,2),
+            "remaining_balance":round(remaining,2),
+
+            "recognition_method":str(
+                row.get("recognition_method")
+                or settings.get("default_recognition_method")
+                or "straight_line"
+            ).strip().lower(),
+
+            "frequency":str(
+                row.get("frequency")
+                or settings.get("default_frequency")
+                or "monthly"
+            ).strip().lower(),
+
+            "balance_account":balance_account,
+            "recognition_account":recognition_account,
+
+            "settlement_account":
+                row.get("settlement_account")
+                or settings.get("default_settlement_account"),
+
+            "tax_account":
+                row.get("tax_account")
+                or settings.get("default_tax_account"),
+
+            "vat_amount":
+                self._migration_ad_number(
+                    row.get("vat_amount")
+                ),
+
+            "tax_mode":str(
+                row.get("tax_mode")
+                or settings.get("default_tax_mode")
+                or "no_vat"
+            ).strip().lower(),
+
+            "migration_date":migration_date,
+            "notes":row.get("notes"),
+
+            "payload_json":{
+                "migration":{
+                    "source_mode":"opening_position",
+                    "migration_date":str(migration_date),
+                }
+            },
+        }
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"opening_position",
+            "payload":payload,
+
+            "reconciliation":{
+                "original_amount":round(original,2),
+                "recognized_to_date":round(recognized,2),
+                "remaining_balance":round(remaining,2),
+                "balance_difference":balance_check,
+                "tolerance":tolerance,
+            },
+
+            "cutover":{
+                "migration_date":migration_date,
+                "recognized_to_date":round(recognized,2),
+                "remaining_balance":round(remaining,2),
+            },
+
+            "next_recognition":(
+                future_schedule[0]
+                if future_schedule
+                else None
+            ),
+
+            "schedule":future_schedule,
+        }
+
+    def migration_accrual_existing_schedule_preview(
+        self,rows:list[dict],settings:dict
+    )->dict:
+        if not rows:
+            return {
+                "valid":False,
+                "issues":["No schedule rows found."],
+                "source_mode":"existing_schedule",
+            }
+
+        first=rows[0]
+
+        migration_date=self._migration_ad_date(
+            first.get("migration_date")
+            or settings.get("migration_date"),
+            required=True,
+        )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 1
+        )
+
+        schedule=[]
+        issues=[]
+
+        sorted_rows=sorted(
+            rows,
+            key=lambda row:(
+                self._migration_ad_int(
+                    row.get("schedule_line_no"),
+                    999999,
+                ),
+                self._migration_ad_date(
+                    row.get("schedule_recognition_date")
+                ) or date.max,
+            ),
+        )
+
+        previous_closing=None
+
+        for index,row in enumerate(sorted_rows,start=1):
+            opening=self._migration_ad_number(
+                row.get("schedule_opening_balance")
+            )
+
+            recognition=self._migration_ad_number(
+                row.get("schedule_recognition_amount")
+            )
+
+            closing=self._migration_ad_number(
+                row.get("schedule_closing_balance")
+            )
+
+            recognition_date=self._migration_ad_date(
+                row.get("schedule_recognition_date")
+            )
+
+            if not recognition_date:
+                issues.append(
+                    f"Schedule row {index}: recognition date is required."
+                )
+
+            if recognition<0:
+                issues.append(
+                    f"Schedule row {index}: recognition amount cannot be negative."
+                )
+
+            if abs(
+                (opening-recognition)-closing
+            )>tolerance:
+                issues.append(
+                    f"Schedule row {index}: opening less recognition does not equal closing."
+                )
+
+            if (
+                previous_closing is not None
+                and abs(opening-previous_closing)>tolerance
+            ):
+                issues.append(
+                    f"Schedule row {index}: opening balance does not agree to previous closing."
+                )
+
+            schedule.append({
+                "line_no":self._migration_ad_int(
+                    row.get("schedule_line_no"),
+                    index,
+                ),
+
+                "period_start":
+                    self._migration_ad_date(
+                        row.get("schedule_period_start")
+                    ),
+
+                "period_end":
+                    self._migration_ad_date(
+                        row.get("schedule_period_end")
+                    ),
+
+                "recognition_date":recognition_date,
+
+                "opening_balance":round(opening,2),
+                "recognition_amount":round(recognition,2),
+                "closing_balance":round(closing,2),
+            })
+
+            previous_closing=closing
+
+        past=[
+            row for row in schedule
+            if row.get("recognition_date")
+            and row["recognition_date"]<=migration_date
+        ]
+
+        future=[
+            row for row in schedule
+            if row.get("recognition_date")
+            and row["recognition_date"]>migration_date
+        ]
+
+        original=(
+            schedule[0]["opening_balance"]
+            if schedule else 0
+        )
+
+        calculated_recognized=round(sum(
+            row["recognition_amount"]
+            for row in past
+        ),2)
+
+        calculated_remaining=(
+            past[-1]["closing_balance"]
+            if past
+            else original
+        )
+
+        imported_recognized=self._migration_ad_number(
+            first.get("recognized_to_date"),
+            calculated_recognized,
+        )
+
+        imported_remaining=self._migration_ad_number(
+            first.get("remaining_balance"),
+            calculated_remaining,
+        )
+
+        recognized_diff=round(
+            imported_recognized-calculated_recognized,
+            2,
+        )
+
+        remaining_diff=round(
+            imported_remaining-calculated_remaining,
+            2,
+        )
+
+        if abs(recognized_diff)>tolerance:
+            issues.append(
+                f"Imported recognised-to-date differs from schedule by {recognized_diff:.2f}."
+            )
+
+        if abs(remaining_diff)>tolerance:
+            issues.append(
+                f"Imported remaining balance differs from schedule by {remaining_diff:.2f}."
+            )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "source_mode":"existing_schedule",
+
+            "payload":{
+                **first,
+                "original_amount":original,
+                "recognized_to_date":imported_recognized,
+                "remaining_balance":imported_remaining,
+                "migration_date":migration_date,
+            },
+
+            "reconciliation":{
+                "original_amount":round(original,2),
+                "calculated_recognized_to_date":
+                    calculated_recognized,
+                "imported_recognized_to_date":
+                    round(imported_recognized,2),
+                "recognized_difference":recognized_diff,
+
+                "calculated_remaining_balance":
+                    round(calculated_remaining,2),
+                "imported_remaining_balance":
+                    round(imported_remaining,2),
+                "remaining_difference":remaining_diff,
+
+                "tolerance":tolerance,
+            },
+
+            "cutover":{
+                "migration_date":migration_date,
+                "recognized_to_date":
+                    round(imported_recognized,2),
+                "remaining_balance":
+                    round(imported_remaining,2),
+            },
+
+            "next_recognition":
+                future[0] if future else None,
+
+            "schedule":schedule,
+        }
+    
+    def migration_accrual_group_items(
+        self,rows:list[dict]
+    )->dict:
+        groups={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            key=str(
+                row.get("item_number")
+                or row.get("item_title")
+                or "UNIDENTIFIED"
+            ).strip()
+
+            groups.setdefault(key,[]).append(row)
+
+        return groups
+
+    def migration_accrual_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_accrual_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_accrual_normalized_rows(
+            company_id,project_id,dataset_id,
+            limit=200,
+            cur=cur,
+        )
+
+        mode=settings.get("source_mode") or "original_terms"
+        previews=[]
+
+        if mode=="existing_schedule":
+            groups=self.migration_accrual_group_items(rows)
+
+            for index,(key,group_rows) in enumerate(
+                groups.items(),
+                start=1,
+            ):
+                try:
+                    preview=self.migration_accrual_existing_schedule_preview(
+                        group_rows,
+                        settings,
+                    )
+
+                except Exception as error:
+                    preview={
+                        "valid":False,
+                        "issues":[str(error)],
+                        "payload":group_rows[0] if group_rows else {},
+                        "schedule":[],
+                    }
+
+                previews.append({
+                    "row_number":index,
+                    "item_key":key,
+                    **preview,
+                })
+
+        else:
+            for index,item in enumerate(rows,start=1):
+                normalized=item["normalized"]
+
+                try:
+                    if mode=="opening_position":
+                        preview=self.migration_accrual_opening_preview(
+                            company_id,
+                            project_id,
+                            dataset_id,
+                            normalized,
+                            settings,
+                            cur=cur,
+                        )
+                    else:
+                        preview=self.migration_accrual_original_preview(
+                            company_id,
+                            project_id,
+                            dataset_id,
+                            normalized,
+                            settings,
+                            cur=cur,
+                        )
+
+                except Exception as error:
+                    preview={
+                        "valid":False,
+                        "issues":[str(error)],
+                        "payload":normalized,
+                        "schedule":[],
+                    }
+
+                previews.append({
+                    "row_number":index,
+                    "source":item["source"],
+                    **preview,
+                })
+
+        return {
+            "dataset_id":int(dataset_id),
+            "source_mode":mode,
+            "items":previews,
+
+            "item_count":len(previews),
+
+            "valid_count":sum(
+                1 for row in previews
+                if row.get("valid")
+            ),
+
+            "error_count":sum(
+                1 for row in previews
+                if not row.get("valid")
+            ),
+
+            "total_original_amount":round(sum(
+                self._migration_ad_number(
+                    row.get("payload",{}).get("original_amount")
+                )
+                for row in previews
+            ),2),
+
+            "total_recognized_to_date":round(sum(
+                self._migration_ad_number(
+                    row.get("cutover",{}).get("recognized_to_date")
+                )
+                for row in previews
+            ),2),
+
+            "total_remaining_balance":round(sum(
+                self._migration_ad_number(
+                    row.get("cutover",{}).get("remaining_balance")
+                )
+                for row in previews
+            ),2),
+
+            "by_type":{
+                item_type:sum(
+                    1 for row in previews
+                    if str(
+                        row.get("payload",{}).get("item_type") or ""
+                    )==item_type
+                )
+                for item_type in [
+                    "prepaid_expense",
+                    "deferred_expense",
+                    "deferred_income",
+                    "accrued_income",
+                    "accrued_expense",
+                ]
+            },
+        }
+
+    def migration_accrual_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_accrual_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        references=self.migration_accrual_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        mode=settings.get("source_mode") or "original_terms"
+
+        required={
+            "original_terms":{
+                "item_title",
+                "start_date",
+                "end_date",
+                "original_amount",
+            },
+
+            "opening_position":{
+                "item_title",
+                "end_date",
+                "original_amount",
+                "remaining_balance",
+            },
+
+            "existing_schedule":{
+                "item_title",
+                "schedule_recognition_date",
+                "schedule_opening_balance",
+                "schedule_recognition_amount",
+                "schedule_closing_balance",
+            },
+        }[mode]
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(required-mapped)
+        missing_references=[]
+
+        if settings.get("require_counterparty_mapping"):
+            for reference_type in [
+                "customer","vendor","employee"
+            ]:
+                for row in references[reference_type]["rows"]:
+                    if not row.get("target_id") or not row.get("is_approved"):
+                        missing_references.append({
+                            "reference_type":reference_type,
+                            "source_value":row.get("source_value"),
+                        })
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "references":references,
+            "source_mode":mode,
+
+            "missing_fields":missing_fields,
+            "missing_references":missing_references,
+
+            "is_complete":
+                not missing_fields
+                and not missing_references,
+        }
+
+    def migration_payroll_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='payroll_employees'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_payroll_tax_options(self,company_id:int,*,cur=None)->dict:
+        company_id=int(company_id)
+
+        authorities=self.fetch_all("""
+            SELECT id,code,name,country_code
+            FROM public.tax_authorities
+            ORDER BY country_code,name,id
+        """,cur=cur) or []
+
+        regimes=self.fetch_all("""
+            SELECT
+                r.id,
+                r.authority_code,
+                r.country_code,
+                r.name,
+                r.currency,
+                r.is_active
+            FROM public.payroll_tax_regimes r
+            WHERE r.is_active=TRUE
+            ORDER BY r.country_code,r.name,r.id
+        """,cur=cur) or []
+
+        years=self.fetch_all("""
+            SELECT
+                y.id,
+                y.regime_id,
+                y.tax_year_label,
+                y.effective_from,
+                y.effective_to,
+                y.calculation_basis,
+                r.authority_code,
+                r.country_code,
+                r.currency
+            FROM public.payroll_tax_years y
+            JOIN public.payroll_tax_regimes r
+            ON r.id=y.regime_id
+            WHERE y.is_active=TRUE
+            AND r.is_active=TRUE
+            ORDER BY y.effective_from DESC,y.id DESC
+        """,cur=cur) or []
+
+        return {
+            "authorities":authorities,
+            "regimes":regimes,
+            "years":years,
+        }
+
+    def migration_payroll_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        existing=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if existing:
+            existing["settings_json"]=self._migration_json(
+                existing.get("settings_json"),{}
+            )
+            existing["metadata_json"]=self._migration_json(
+                existing.get("metadata_json"),{}
+            )
+            return existing
+
+        payroll_settings=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_settings
+            WHERE company_id=%s
+            LIMIT 1
+        """,(company_id,),cur=cur) or {}
+
+        tax_options=self.migration_payroll_tax_options(
+            company_id,
+            cur=cur,
+        )
+
+        default_authority_id=payroll_settings.get("tax_authority_id")
+        default_regime_id=None
+
+        if default_authority_id:
+            authority=next(
+                (
+                    item for item in tax_options["authorities"]
+                    if int(item["id"])==int(default_authority_id)
+                ),
+                None,
+            )
+
+            if authority:
+                default_regime=next(
+                    (
+                        item for item in tax_options["regimes"]
+                        if str(item.get("authority_code") or "").upper()
+                        ==str(authority.get("code") or "").upper()
+                    ),
+                    None,
+                )
+
+                if default_regime:
+                    default_regime_id=default_regime["id"]
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "migration_date":project.get("cutover_date"),
+
+            "default_currency":
+                payroll_settings.get("default_currency")
+                or project.get("default_currency"),
+
+            "default_pay_frequency":
+                payroll_settings.get("default_frequency")
+                or "monthly",
+
+            "default_pay_basis":"monthly",
+            "default_contract_type":"permanent",
+            "default_salary_type":"monthly",
+
+            "default_tax_authority_id":default_authority_id,
+            "default_tax_regime_id":default_regime_id,
+
+            "default_residency_status":"resident",
+            "default_tax_calculation_method":"standard",
+            "default_tax_treatment":"standard",
+
+            "default_proration_method":"working_days",
+            "default_hours_per_day":8,
+            "default_attendance_required":False,
+
+            "department_strategy":"map_existing",
+            "position_strategy":"map_existing",
+            "payroll_item_strategy":"map_existing",
+
+            "require_department_mapping":False,
+            "require_position_mapping":False,
+            "require_bank_details":False,
+            "require_tax_profile":True,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+  
+    def migration_payroll_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_payroll_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        frequency=str(
+            data.get("default_pay_frequency")
+            or current.get("default_pay_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        pay_basis=str(
+            data.get("default_pay_basis")
+            or current.get("default_pay_basis")
+            or "monthly"
+        ).strip().lower()
+
+        residency=str(
+            data.get("default_residency_status")
+            or current.get("default_residency_status")
+            or "resident"
+        ).strip().lower()
+
+        tax_method=str(
+            data.get("default_tax_calculation_method")
+            or current.get("default_tax_calculation_method")
+            or "standard"
+        ).strip().lower()
+
+        tax_treatment=str(
+            data.get("default_tax_treatment")
+            or current.get("default_tax_treatment")
+            or "standard"
+        ).strip().lower()
+
+        proration=str(
+            data.get("default_proration_method")
+            or current.get("default_proration_method")
+            or "working_days"
+        ).strip().lower()
+
+        if frequency not in {"weekly","fortnightly","monthly"}:
+            raise ValueError("Invalid payroll frequency.")
+
+        if pay_basis not in {
+            "monthly","hourly","daily","quantity","commission_only"
+        }:
+            raise ValueError("Invalid pay basis.")
+
+        if residency not in {"resident","non_resident"}:
+            raise ValueError("Invalid residency status.")
+
+        if tax_method not in {
+            "standard","directive","manual","exempt"
+        }:
+            raise ValueError("Invalid tax calculation method.")
+
+        if tax_treatment not in {
+            "standard","manual","exempt"
+        }:
+            raise ValueError("Invalid tax treatment.")
+
+        if proration not in {
+            "working_days","calendar_days","fixed_30_days",
+            "scheduled_hours","actual_hours","no_proration"
+        }:
+            raise ValueError("Invalid proration method.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_payroll_settings(
+                company_id,project_id,dataset_id,
+                migration_date,
+                default_currency,
+                default_pay_frequency,
+                default_pay_basis,
+                default_contract_type,
+                default_salary_type,
+
+                default_tax_authority_id,
+                default_tax_regime_id,
+                default_residency_status,
+                default_tax_calculation_method,
+                default_tax_treatment,
+
+                default_proration_method,
+                default_hours_per_day,
+                default_attendance_required,
+
+                department_strategy,
+                position_strategy,
+                payroll_item_strategy,
+
+                require_department_mapping,
+                require_position_mapping,
+                require_bank_details,
+                require_tax_profile,
+
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                migration_date=EXCLUDED.migration_date,
+                default_currency=EXCLUDED.default_currency,
+                default_pay_frequency=EXCLUDED.default_pay_frequency,
+                default_pay_basis=EXCLUDED.default_pay_basis,
+                default_contract_type=EXCLUDED.default_contract_type,
+                default_salary_type=EXCLUDED.default_salary_type,
+
+                default_tax_authority_id=EXCLUDED.default_tax_authority_id,
+                default_tax_regime_id=EXCLUDED.default_tax_regime_id,
+                default_residency_status=EXCLUDED.default_residency_status,
+                default_tax_calculation_method=EXCLUDED.default_tax_calculation_method,
+                default_tax_treatment=EXCLUDED.default_tax_treatment,
+
+                default_proration_method=EXCLUDED.default_proration_method,
+                default_hours_per_day=EXCLUDED.default_hours_per_day,
+                default_attendance_required=EXCLUDED.default_attendance_required,
+
+                department_strategy=EXCLUDED.department_strategy,
+                position_strategy=EXCLUDED.position_strategy,
+                payroll_item_strategy=EXCLUDED.payroll_item_strategy,
+
+                require_department_mapping=EXCLUDED.require_department_mapping,
+                require_position_mapping=EXCLUDED.require_position_mapping,
+                require_bank_details=EXCLUDED.require_bank_details,
+                require_tax_profile=EXCLUDED.require_tax_profile,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+
+            data.get("migration_date")
+                or current.get("migration_date"),
+
+            data.get("default_currency")
+                or current.get("default_currency"),
+
+            frequency,
+            pay_basis,
+
+            data.get("default_contract_type")
+                or current.get("default_contract_type")
+                or "permanent",
+
+            data.get("default_salary_type")
+                or current.get("default_salary_type")
+                or "monthly",
+
+            data.get(
+                "default_tax_authority_id",
+                current.get("default_tax_authority_id"),
+            ),
+
+            data.get(
+                "default_tax_regime_id",
+                current.get("default_tax_regime_id"),
+            ),
+
+            residency,
+            tax_method,
+            tax_treatment,
+            proration,
+
+            float(
+                data.get("default_hours_per_day")
+                if data.get("default_hours_per_day") not in (None,"")
+                else current.get("default_hours_per_day") or 8
+            ),
+
+            bool(data.get(
+                "default_attendance_required",
+                current.get("default_attendance_required",False),
+            )),
+
+            data.get("department_strategy")
+                or current.get("department_strategy")
+                or "map_existing",
+
+            data.get("position_strategy")
+                or current.get("position_strategy")
+                or "map_existing",
+
+            data.get("payroll_item_strategy")
+                or current.get("payroll_item_strategy")
+                or "map_existing",
+
+            bool(data.get(
+                "require_department_mapping",
+                current.get("require_department_mapping",False),
+            )),
+
+            bool(data.get(
+                "require_position_mapping",
+                current.get("require_position_mapping",False),
+            )),
+
+            bool(data.get(
+                "require_bank_details",
+                current.get("require_bank_details",False),
+            )),
+
+            bool(data.get(
+                "require_tax_profile",
+                current.get("require_tax_profile",True),
+            )),
+
+            self._migration_json_dump(
+                data.get("settings_json")
+                or current.get("settings_json"),
+                {},
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json")
+                or current.get("metadata_json"),
+                {},
+            ),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_payroll_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_payroll_reference_targets(
+        self,company_id:int,reference_type:str,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        reference_type=str(reference_type or "").strip().lower()
+
+        queries={
+            "department":f"""
+                SELECT id,NULL::TEXT AS code,name AS label
+                FROM {schema}.payroll_departments
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY name,id
+            """,
+
+            "position":f"""
+                SELECT id,NULL::TEXT AS code,title AS label
+                FROM {schema}.payroll_positions
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY title,id
+            """,
+
+            "earning_type":f"""
+                SELECT id,code,name AS label
+                FROM {schema}.payroll_earning_types
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY code,id
+            """,
+
+            "deduction_type":f"""
+                SELECT id,code,name AS label
+                FROM {schema}.payroll_deduction_types
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY code,id
+            """,
+
+            "contribution_type":f"""
+                SELECT id,code,name AS label
+                FROM {schema}.payroll_employer_contribution_types
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY code,id
+            """,
+
+            "benefit_type":f"""
+                SELECT id,code,name AS label
+                FROM {schema}.payroll_benefit_types
+                WHERE company_id=%s AND is_active=TRUE
+                ORDER BY code,id
+            """,
+        }
+
+        if reference_type in queries:
+            return self.fetch_all(
+                queries[reference_type],
+                (company_id,),
+                cur=cur,
+            ) or []
+
+        if reference_type=="tax_authority":
+            return self.fetch_all("""
+                SELECT
+                    id,
+                    code,
+                    name AS label
+                FROM public.tax_authorities
+                ORDER BY name,id
+            """,cur=cur) or []
+
+        if reference_type=="tax_regime":
+            return self.fetch_all("""
+                SELECT
+                    id,
+                    authority_code AS code,
+                    CONCAT(name,' — ',country_code) AS label
+                FROM public.payroll_tax_regimes
+                WHERE is_active=TRUE
+                ORDER BY country_code,name,id
+            """,cur=cur) or []
+
+        raise ValueError(
+            f"Unsupported payroll reference type: {reference_type}"
+        )
+
+    def migration_payroll_source_references(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        sample_rows=metadata.get("sample_rows") or []
+
+        target_to_source={
+            row["target_field_code"]:row["source_name"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        field_types={
+            "department":"department_reference",
+            "position":"position_reference",
+            "tax_authority":"tax_authority_reference",
+            "tax_regime":"tax_regime_reference",
+        }
+
+        result={}
+
+        for reference_type,target_field in field_types.items():
+            source_name=target_to_source.get(target_field)
+            values={}
+
+            if source_name:
+                for source_row in sample_rows:
+                    value=str(source_row.get(source_name) or "").strip()
+                    if value:
+                        values[value]=values.get(value,0)+1
+
+            saved=self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.migration_payroll_reference_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND reference_type=%s
+            """,(
+                company_id,
+                project_id,
+                dataset_id,
+                reference_type,
+            ),cur=cur) or []
+
+            saved_map={
+                row["source_value"]:row
+                for row in saved
+            }
+
+            result[reference_type]={
+                "rows":[{
+                    "source_value":value,
+                    "sample_count":count,
+                    **(saved_map.get(value) or {}),
+                } for value,count in sorted(values.items())],
+
+                "targets":self.migration_payroll_reference_targets(
+                    company_id,
+                    reference_type,
+                    cur=cur,
+                ),
+            }
+
+        return result
+
+    def migration_payroll_reference_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        if not isinstance(mappings,list):
+            raise ValueError("mappings must be a list.")
+
+        allowed={
+            "department",
+            "position",
+            "tax_authority",
+            "tax_regime",
+            "earning_type",
+            "deduction_type",
+            "contribution_type",
+            "benefit_type",
+        }
+
+        for item in mappings:
+            reference_type=str(
+                item.get("reference_type") or ""
+            ).strip().lower()
+
+            source_value=str(
+                item.get("source_value") or ""
+            ).strip()
+
+            target_id=int(item.get("target_id") or 0)
+
+            if reference_type not in allowed:
+                raise ValueError(
+                    f"Unsupported payroll reference type: {reference_type}"
+                )
+
+            if not source_value:
+                raise ValueError("Source value is required.")
+
+            if not target_id:
+                raise ValueError(
+                    f'Select a target for "{source_value}".'
+                )
+
+            targets=self.migration_payroll_reference_targets(
+                company_id,
+                reference_type,
+                cur=cur,
+            )
+
+            target=next(
+                (
+                    row for row in targets
+                    if int(row["id"])==target_id
+                ),
+                None,
+            )
+
+            if not target:
+                raise ValueError(
+                    f'Invalid target for "{source_value}".'
+                )
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_payroll_reference_mappings(
+                    company_id,project_id,dataset_id,
+                    reference_type,
+                    source_value,
+                    source_label,
+                    target_id,
+                    target_code,
+                    target_label,
+                    mapping_method,
+                    confidence,
+                    is_approved,
+                    create_target,
+                    metadata_json,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    'manual',100,TRUE,FALSE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    reference_type,
+                    source_value
+                )
+                DO UPDATE SET
+                    target_id=EXCLUDED.target_id,
+                    target_code=EXCLUDED.target_code,
+                    target_label=EXCLUDED.target_label,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    create_target=FALSE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,
+                project_id,
+                dataset_id,
+                reference_type,
+                source_value,
+                item.get("source_label") or source_value,
+
+                target_id,
+                target.get("code"),
+                target.get("label"),
+
+                user_id,
+                user_id,
+            ),cur=cur)
+
+        return self.migration_payroll_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_payroll_reference_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        reference_type:str,source_value,*,cur=None
+    ):
+        value=str(source_value or "").strip()
+        if not value:return None
+
+        schema=self.company_schema(int(company_id))
+
+        row=self.fetch_one(f"""
+            SELECT target_id
+            FROM {schema}.migration_payroll_reference_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            AND reference_type=%s
+            AND source_value=%s
+            AND is_approved=TRUE
+        """,(
+            int(company_id),
+            int(project_id),
+            int(dataset_id),
+            reference_type,
+            value,
+        ),cur=cur)
+
+        return (
+            int(row["target_id"])
+            if row and row.get("target_id")
+            else None
+        )
+
+    def migration_payroll_normalized_rows(
+        self,company_id:int,project_id:int,dataset_id:int,
+        *,limit:int=500,cur=None
+    )->list[dict]:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        dataset=self.fetch_one(f"""
+            SELECT metadata_json
+            FROM {schema}.migration_source_datasets
+            WHERE company_id=%s
+            AND project_id=%s
+            AND id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        metadata=self._migration_json(
+            dataset.get("metadata_json") if dataset else {},
+            {},
+        )
+
+        source_rows=metadata.get("sample_rows") or []
+
+        source_to_target={
+            row["source_name"]:row["target_field_code"]
+            for row in mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+            and row.get("target_field_code")
+        }
+
+        result=[]
+
+        for source_row in source_rows[:limit]:
+            normalized={}
+
+            for source_name,target_field in source_to_target.items():
+                normalized[target_field]=source_row.get(source_name)
+
+            result.append({
+                "source":source_row,
+                "normalized":normalized,
+            })
+
+        return result
+
+    def _migration_payroll_number(self,value,default=0.0)->float:
+        if value in (None,""):return float(default or 0)
+
+        try:
+            return float(
+                str(value)
+                .replace(",","")
+                .replace(" ","")
+                .strip()
+            )
+        except Exception:
+            return float(default or 0)
+
+
+    def _migration_payroll_bool(self,value,default=False)->bool:
+        if isinstance(value,bool):return value
+        if value in (None,""):return bool(default)
+
+        return str(value).strip().lower() in {
+            "1","true","yes","y","on"
+        }
+
+
+    def _migration_payroll_date(self,value,required=False):
+        if isinstance(value,date):return value
+
+        text=str(value or "").strip()
+
+        if not text:
+            if required:raise ValueError("Date is required.")
+            return None
+
+        try:
+            return datetime.strptime(
+                text[:10],
+                "%Y-%m-%d",
+            ).date()
+        except Exception:
+            if required:
+                raise ValueError(
+                    f"Invalid date: {text}"
+                )
+            return None
+
+    def migration_payroll_employee_preview(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        first_name=str(
+            row.get("first_name") or ""
+        ).strip()
+
+        last_name=str(
+            row.get("last_name") or ""
+        ).strip()
+
+        employee_no=str(
+            row.get("employee_no") or ""
+        ).strip() or None
+
+        start_date=self._migration_payroll_date(
+            row.get("start_date"),
+            required=True,
+        )
+
+        termination_date=self._migration_payroll_date(
+            row.get("termination_date")
+        )
+
+        issues=[]
+        warnings=[]
+
+        if not first_name:
+            issues.append("First name is required.")
+
+        if not last_name:
+            issues.append("Last name is required.")
+
+        if termination_date and termination_date<start_date:
+            issues.append(
+                "Termination date cannot be before start date."
+            )
+
+        if not employee_no:
+            warnings.append(
+                "Employee number is missing; FinSage can generate one during commit."
+            )
+
+        existing=None
+
+        if employee_no:
+            existing=self.fetch_one(f"""
+                SELECT id,employee_no,first_name,last_name
+                FROM {schema}.payroll_employees
+                WHERE company_id=%s
+                AND LOWER(employee_no)=LOWER(%s)
+                LIMIT 1
+            """,(company_id,employee_no),cur=cur)
+
+            if existing:
+                issues.append(
+                    f"Employee number {employee_no} already exists in FinSage."
+                )
+
+        department_id=self.migration_payroll_reference_resolve(
+            company_id,
+            project_id,
+            dataset_id,
+            "department",
+            row.get("department_reference"),
+            cur=cur,
+        )
+
+        position_id=self.migration_payroll_reference_resolve(
+            company_id,
+            project_id,
+            dataset_id,
+            "position",
+            row.get("position_reference"),
+            cur=cur,
+        )
+
+        if (
+            settings.get("require_department_mapping")
+            and row.get("department_reference")
+            and not department_id
+        ):
+            issues.append("Department is not mapped.")
+
+        if (
+            settings.get("require_position_mapping")
+            and row.get("position_reference")
+            and not position_id
+        ):
+            issues.append("Position is not mapped.")
+
+        # --------------------------------
+        # Contract
+        # --------------------------------
+        contract_type=str(
+            row.get("contract_type")
+            or settings.get("default_contract_type")
+            or "permanent"
+        ).strip().lower()
+
+        salary_type=str(
+            row.get("salary_type")
+            or settings.get("default_salary_type")
+            or "monthly"
+        ).strip().lower()
+
+        basic_salary=self._migration_payroll_number(
+            row.get("basic_salary")
+        )
+
+        hourly_rate=self._migration_payroll_number(
+            row.get("hourly_rate")
+        )
+
+        contract_effective_from=self._migration_payroll_date(
+            row.get("contract_effective_from")
+        ) or start_date
+
+        contract_effective_to=self._migration_payroll_date(
+            row.get("contract_effective_to")
+        )
+
+        if contract_effective_to and contract_effective_to<contract_effective_from:
+            issues.append(
+                "Contract effective-to cannot be before effective-from."
+            )
+
+        if salary_type=="monthly" and basic_salary<=0:
+            issues.append(
+                "Monthly employee requires a basic salary."
+            )
+
+        if salary_type=="hourly" and hourly_rate<=0:
+            issues.append(
+                "Hourly employee requires an hourly rate."
+            )
+
+        # --------------------------------
+        # Pay setup
+        # --------------------------------
+        pay_basis=str(
+            row.get("pay_basis")
+            or settings.get("default_pay_basis")
+            or salary_type
+            or "monthly"
+        ).strip().lower()
+
+        fixed_basic_amount=self._migration_payroll_number(
+            row.get("fixed_basic_amount"),
+            basic_salary,
+        )
+
+        rate=self._migration_payroll_number(
+            row.get("rate"),
+            hourly_rate,
+        )
+
+        pay_setup_effective_from=self._migration_payroll_date(
+            row.get("pay_setup_effective_from")
+        ) or contract_effective_from
+
+        tax_treatment=str(
+            row.get("tax_treatment")
+            or settings.get("default_tax_treatment")
+            or "standard"
+        ).strip().lower()
+
+        proration_method=str(
+            row.get("proration_method")
+            or settings.get("default_proration_method")
+            or "working_days"
+        ).strip().lower()
+
+        if pay_basis not in {
+            "monthly","hourly","daily",
+            "quantity","commission_only"
+        }:
+            issues.append(
+                f"Unsupported pay basis: {pay_basis}."
+            )
+
+        if tax_treatment not in {
+            "standard","manual","exempt"
+        }:
+            issues.append(
+                f"Unsupported tax treatment: {tax_treatment}."
+            )
+
+        # --------------------------------
+        # Tax
+        # --------------------------------
+        source_authority=row.get(
+            "tax_authority_reference"
+        )
+
+        source_regime=row.get(
+            "tax_regime_reference"
+        )
+
+        tax_authority_id=(
+            self.migration_payroll_reference_resolve(
+                company_id,
+                project_id,
+                dataset_id,
+                "tax_authority",
+                source_authority,
+                cur=cur,
+            )
+            if source_authority
+            else settings.get("default_tax_authority_id")
+        )
+
+        tax_regime_id=(
+            self.migration_payroll_reference_resolve(
+                company_id,
+                project_id,
+                dataset_id,
+                "tax_regime",
+                source_regime,
+                cur=cur,
+            )
+            if source_regime
+            else settings.get("default_tax_regime_id")
+        )
+
+        residency_status=str(
+            row.get("residency_status")
+            or settings.get("default_residency_status")
+            or "resident"
+        ).strip().lower()
+
+        tax_calculation_method=str(
+            row.get("tax_calculation_method")
+            or settings.get("default_tax_calculation_method")
+            or "standard"
+        ).strip().lower()
+
+        paye_exempt=self._migration_payroll_bool(
+            row.get("paye_exempt"),
+            tax_calculation_method=="exempt",
+        )
+
+        if (
+            settings.get("require_tax_profile")
+            and not tax_authority_id
+        ):
+            issues.append(
+                "Tax authority is not resolved."
+            )
+
+        if residency_status not in {
+            "resident","non_resident"
+        }:
+            issues.append(
+                "Invalid residency status."
+            )
+
+        # --------------------------------
+        # Bank
+        # --------------------------------
+        bank_account_number=str(
+            row.get("bank_account_number") or ""
+        ).strip()
+
+        if (
+            settings.get("require_bank_details")
+            and not bank_account_number
+        ):
+            issues.append(
+                "Bank account number is required."
+            )
+
+        employee_payload={
+            "employee_no":employee_no,
+            "first_name":first_name,
+            "last_name":last_name,
+            "email":
+                str(row.get("email") or "").strip()
+                or None,
+            "phone":
+                str(row.get("phone") or "").strip()
+                or None,
+            "id_number":
+                str(row.get("id_number") or "").strip()
+                or None,
+            "passport_number":
+                str(row.get("passport_number") or "").strip()
+                or None,
+            "tax_number":
+                str(row.get("tax_number") or "").strip()
+                or None,
+
+            "department_id":department_id,
+            "position_id":position_id,
+
+            "start_date":start_date,
+            "termination_date":termination_date,
+
+            "employment_status":str(
+                row.get("employment_status")
+                or (
+                    "terminated"
+                    if termination_date
+                    else "active"
+                )
+            ).strip().lower(),
+        }
+
+        contract_payload={
+            "contract_type":contract_type,
+            "salary_type":salary_type,
+            "basic_salary":round(basic_salary,2),
+            "hourly_rate":round(hourly_rate,2),
+
+            "normal_hours_per_month":
+                self._migration_payroll_number(
+                    row.get("normal_hours_per_month")
+                ) or None,
+
+            "effective_from":contract_effective_from,
+            "effective_to":contract_effective_to,
+        }
+
+        tax_payload={
+            "tax_authority_id":
+                int(tax_authority_id)
+                if tax_authority_id else None,
+
+            "tax_regime_id":
+                int(tax_regime_id)
+                if tax_regime_id else None,
+
+            "tax_number":
+                str(row.get("tax_number") or "").strip()
+                or None,
+
+            "residency_status":residency_status,
+            "date_of_birth":
+                self._migration_payroll_date(
+                    row.get("date_of_birth")
+                ),
+
+            "paye_exempt":paye_exempt,
+
+            "tax_calculation_method":
+                tax_calculation_method,
+
+            "directive_number":
+                str(row.get("directive_number") or "").strip()
+                or None,
+
+            "directive_rate":
+                self._migration_payroll_number(
+                    row.get("directive_rate")
+                ) or None,
+
+            "additional_tax_amount":
+                self._migration_payroll_number(
+                    row.get("additional_tax_amount")
+                ),
+
+            "medical_scheme_members":
+                int(
+                    self._migration_payroll_number(
+                        row.get("medical_scheme_members")
+                    )
+                ),
+
+            "effective_from":pay_setup_effective_from,
+            "effective_to":None,
+        }
+
+        bank_payload=None
+
+        if (
+            row.get("bank_name")
+            or bank_account_number
+        ):
+            bank_payload={
+                "bank_name":
+                    str(row.get("bank_name") or "").strip(),
+
+                "account_name":
+                    str(
+                        row.get("bank_account_name")
+                        or f"{first_name} {last_name}"
+                    ).strip(),
+
+                "account_number":
+                    bank_account_number,
+
+                "branch_code":
+                    str(row.get("bank_branch_code") or "").strip()
+                    or None,
+
+                "account_type":
+                    str(row.get("bank_account_type") or "").strip().lower()
+                    or None,
+
+                "is_primary":True,
+            }
+
+        setup_payload={
+            "pay_basis":pay_basis,
+
+            "fixed_basic_amount":
+                round(fixed_basic_amount,2),
+
+            "standard_quantity":
+                self._migration_payroll_number(
+                    row.get("standard_quantity")
+                ) or None,
+
+            "rate":round(rate,4),
+
+            "tax_treatment":tax_treatment,
+
+            "manual_paye_amount":
+                self._migration_payroll_number(
+                    row.get("manual_paye_amount")
+                ) or None,
+
+            "proration_method":proration_method,
+
+            "hours_per_day":
+                self._migration_payroll_number(
+                    row.get("hours_per_day"),
+                    settings.get("default_hours_per_day") or 8,
+                ),
+
+            "attendance_required":
+                self._migration_payroll_bool(
+                    row.get("attendance_required"),
+                    settings.get(
+                        "default_attendance_required",
+                        False,
+                    ),
+                ),
+
+            "effective_from":pay_setup_effective_from,
+            "effective_to":None,
+        }
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+            "employee":employee_payload,
+            "contract":contract_payload,
+            "tax_profile":tax_payload,
+            "bank_account":bank_payload,
+            "pay_setup":setup_payload,
+        }
+
+    def migration_payroll_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=500,
+            cur=cur,
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_payroll_employee_preview(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item["normalized"],
+                    settings,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "employee":item["normalized"],
+                    "contract":{},
+                    "tax_profile":{},
+                    "bank_account":None,
+                    "pay_setup":{},
+                }
+
+            items.append({
+                "row_number":index,
+                "source":item["source"],
+                **preview,
+            })
+
+        active_count=sum(
+            1 for item in items
+            if item.get("employee",{}).get("employment_status")=="active"
+        )
+
+        bank_count=sum(
+            1 for item in items
+            if item.get("bank_account")
+        )
+
+        tax_count=sum(
+            1 for item in items
+            if item.get("tax_profile",{}).get("tax_authority_id")
+        )
+
+        total_basic=round(sum(
+            self._migration_payroll_number(
+                item.get("contract",{}).get("basic_salary")
+            )
+            for item in items
+        ),2)
+
+        return {
+            "dataset_id":int(dataset_id),
+            "employees":items,
+
+            "employee_count":len(items),
+            "valid_count":sum(
+                1 for item in items
+                if item.get("valid")
+            ),
+            "error_count":sum(
+                1 for item in items
+                if not item.get("valid")
+            ),
+
+            "active_count":active_count,
+            "bank_account_count":bank_count,
+            "tax_profile_count":tax_count,
+            "total_monthly_basic_salary":total_basic,
+        }
+
+    def migration_payroll_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        references=self.migration_payroll_source_references(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        required={
+            "first_name",
+            "last_name",
+            "start_date",
+        }
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(
+            required-mapped
+        )
+
+        missing_references=[]
+
+        checks={
+            "department":
+                settings.get("require_department_mapping"),
+
+            "position":
+                settings.get("require_position_mapping"),
+
+            "tax_authority":
+                settings.get("require_tax_profile"),
+        }
+
+        for reference_type,required_mapping in checks.items():
+            if not required_mapping:
+                continue
+
+            group=references.get(reference_type) or {}
+
+            for row in group.get("rows") or []:
+                if (
+                    not row.get("target_id")
+                    or not row.get("is_approved")
+                ):
+                    missing_references.append({
+                        "reference_type":reference_type,
+                        "source_value":row.get("source_value"),
+                    })
+
+        if (
+            settings.get("require_tax_profile")
+            and not settings.get("default_tax_authority_id")
+            and not references.get(
+                "tax_authority",{}
+            ).get("rows")
+        ):
+            missing_references.append({
+                "reference_type":"tax_authority",
+                "source_value":
+                    "Default payroll tax authority",
+            })
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "references":references,
+            "tax_options":
+                self.migration_payroll_tax_options(
+                    company_id,
+                    cur=cur,
+                ),
+
+            "missing_fields":missing_fields,
+            "missing_references":missing_references,
+
+            "is_complete":
+                not missing_fields
+                and not missing_references,
+        }
+
+    def migration_payroll_item_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.entity_code,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.is_selected=TRUE
+            AND d.entity_code IN(
+                'payroll_items',
+                'payroll_employees'
+            )
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_payroll_item_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date
+            FROM {schema}.migration_projects
+            WHERE company_id=%s
+            AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_item_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(
+                row.get("settings_json"),{}
+            )
+            row["metadata_json"]=self._migration_json(
+                row.get("metadata_json"),{}
+            )
+            return row
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+
+            "source_layout":"item_rows",
+            "default_effective_from":
+                project.get("cutover_date"),
+
+            "earning_strategy":"map_existing",
+            "deduction_strategy":"map_existing",
+            "benefit_strategy":"map_existing",
+            "contribution_strategy":"map_existing",
+
+            "allow_create_missing":False,
+            "require_all_items_mapped":True,
+
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_payroll_item_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_payroll_item_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        source_layout=str(
+            data.get("source_layout")
+            or current.get("source_layout")
+            or "item_rows"
+        ).strip().lower()
+
+        if source_layout not in {
+            "employee_rows",
+            "item_rows",
+        }:
+            raise ValueError("Invalid payroll item source layout.")
+
+        strategies={}
+
+        for key in (
+            "earning_strategy",
+            "deduction_strategy",
+            "benefit_strategy",
+            "contribution_strategy",
+        ):
+            value=str(
+                data.get(key)
+                or current.get(key)
+                or "map_existing"
+            ).strip().lower()
+
+            if value not in {
+                "map_existing",
+                "create_missing",
+            }:
+                raise ValueError(
+                    f"Invalid {key.replace('_',' ')}."
+                )
+
+            strategies[key]=value
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_payroll_item_settings(
+                company_id,
+                project_id,
+                dataset_id,
+                source_layout,
+                default_effective_from,
+
+                earning_strategy,
+                deduction_strategy,
+                benefit_strategy,
+                contribution_strategy,
+
+                allow_create_missing,
+                require_all_items_mapped,
+
+                settings_json,
+                metadata_json,
+
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                source_layout=EXCLUDED.source_layout,
+                default_effective_from=EXCLUDED.default_effective_from,
+
+                earning_strategy=EXCLUDED.earning_strategy,
+                deduction_strategy=EXCLUDED.deduction_strategy,
+                benefit_strategy=EXCLUDED.benefit_strategy,
+                contribution_strategy=EXCLUDED.contribution_strategy,
+
+                allow_create_missing=EXCLUDED.allow_create_missing,
+                require_all_items_mapped=EXCLUDED.require_all_items_mapped,
+
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,
+            project_id,
+            dataset_id,
+            source_layout,
+
+            data.get("default_effective_from")
+                or current.get("default_effective_from"),
+
+            strategies["earning_strategy"],
+            strategies["deduction_strategy"],
+            strategies["benefit_strategy"],
+            strategies["contribution_strategy"],
+
+            bool(data.get(
+                "allow_create_missing",
+                current.get("allow_create_missing",False),
+            )),
+
+            bool(data.get(
+                "require_all_items_mapped",
+                current.get("require_all_items_mapped",True),
+            )),
+
+            self._migration_json_dump(
+                data.get("settings_json")
+                or current.get("settings_json"),
+                {},
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json")
+                or current.get("metadata_json"),
+                {},
+            ),
+
+            user_id,
+            user_id,
+        ),cur=cur)
+
+        return self.migration_payroll_item_settings_get(
+            company_id,
+            project_id,
+            dataset_id,
+            cur=cur,
+        )
+
+    def migration_payroll_item_targets(
+        self,company_id:int,item_type:str,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+        item_type=str(item_type or "").strip().lower()
+
+        if item_type=="earning":
+            return self.fetch_all(f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    taxable,
+                    pensionable
+                FROM {schema}.payroll_earning_types
+                WHERE company_id=%s
+                AND is_active=TRUE
+                ORDER BY code,name,id
+            """,(company_id,),cur=cur) or []
+
+        if item_type=="deduction":
+            return self.fetch_all(f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    is_statutory
+                FROM {schema}.payroll_deduction_types
+                WHERE company_id=%s
+                AND is_active=TRUE
+                ORDER BY code,name,id
+            """,(company_id,),cur=cur) or []
+
+        if item_type=="benefit":
+            return self.fetch_all(f"""
+                SELECT
+                    id,
+                    code,
+                    name,
+                    benefit_category,
+                    taxable
+                FROM {schema}.payroll_benefit_types
+                WHERE company_id=%s
+                AND is_active=TRUE
+                ORDER BY code,name,id
+            """,(company_id,),cur=cur) or []
+
+        if item_type=="contribution":
+            return self.fetch_all(f"""
+                SELECT
+                    id,
+                    code,
+                    name
+                FROM {schema}.payroll_employer_contribution_types
+                WHERE company_id=%s
+                AND is_active=TRUE
+                ORDER BY code,name,id
+            """,(company_id,),cur=cur) or []
+
+        raise ValueError(
+            f"Unsupported payroll item type: {item_type}"
+        )
+
+    def _migration_payroll_item_type(self,value)->str|None:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "earning":"earning",
+            "earnings":"earning",
+            "income":"earning",
+            "allowance":"earning",
+            "salary":"earning",
+
+            "deduction":"deduction",
+            "deductions":"deduction",
+            "employee deduction":"deduction",
+
+            "benefit":"benefit",
+            "benefits":"benefit",
+            "fringe benefit":"benefit",
+
+            "contribution":"contribution",
+            "employer contribution":"contribution",
+            "employer_contribution":"contribution",
+        }
+
+        return aliases.get(value)
+
+    def migration_payroll_item_auto_match(
+        self,company_id:int,item_type:str,source_code,source_name,*,cur=None
+    ):
+        targets=self.migration_payroll_item_targets(
+            company_id,
+            item_type,
+            cur=cur,
+        )
+
+        source_code=str(source_code or "").strip().upper()
+        source_name=str(source_name or "").strip().lower()
+
+        if source_code:
+            match=next(
+                (
+                    row for row in targets
+                    if str(row.get("code") or "").strip().upper()
+                    ==source_code
+                ),
+                None,
+            )
+
+            if match:
+                return {
+                    "target":match,
+                    "confidence":100,
+                    "method":"auto",
+                }
+
+        if source_name:
+            match=next(
+                (
+                    row for row in targets
+                    if str(row.get("name") or "").strip().lower()
+                    ==source_name
+                ),
+                None,
+            )
+
+            if match:
+                return {
+                    "target":match,
+                    "confidence":98,
+                    "method":"auto",
+                }
+
+        return None
+
+    def migration_payroll_items_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        normalized_rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=500,
+            cur=cur,
+        )
+
+        detected={}
+
+        for item in normalized_rows:
+            row=item.get("normalized") or {}
+
+            item_name=str(
+                row.get("payroll_item_name")
+                or row.get("payroll_item_reference")
+                or ""
+            ).strip()
+
+            item_code=str(
+                row.get("payroll_item_code")
+                or ""
+            ).strip()
+
+            item_type=self._migration_payroll_item_type(
+                row.get("payroll_item_type")
+            )
+
+            if not item_name and not item_code:
+                continue
+
+            key=(
+                item_type or "unknown",
+                item_code.lower(),
+                item_name.lower(),
+            )
+
+            if key not in detected:
+                detected[key]={
+                    "item_type":item_type,
+                    "source_code":item_code or None,
+                    "source_name":
+                        item_name
+                        or item_code,
+                    "sample_count":0,
+                    "sample_rows":[],
+                }
+
+            detected[key]["sample_count"]+=1
+
+            if len(detected[key]["sample_rows"])<3:
+                detected[key]["sample_rows"].append(row)
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_item_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY item_type,source_name
+        """,(
+            company_id,
+            project_id,
+            dataset_id,
+        ),cur=cur) or []
+
+        saved_map={
+            (
+                row.get("item_type"),
+                str(row.get("source_code") or "").lower(),
+                str(row.get("source_name") or "").lower(),
+            ):row
+            for row in saved
+        }
+
+        result=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(key)
+
+            if existing:
+                result.append({
+                    **item,
+                    **existing,
+                })
+                continue
+
+            auto=None
+
+            if item.get("item_type"):
+                auto=self.migration_payroll_item_auto_match(
+                    company_id,
+                    item["item_type"],
+                    item.get("source_code"),
+                    item.get("source_name"),
+                    cur=cur,
+                )
+
+            if auto:
+                target=auto["target"]
+
+                result.append({
+                    **item,
+                    "target_id":target["id"],
+                    "target_code":target.get("code"),
+                    "target_name":target.get("name"),
+                    "mapping_method":"auto",
+                    "confidence":auto["confidence"],
+                    "is_approved":False,
+                })
+            else:
+                result.append({
+                    **item,
+                    "target_id":None,
+                    "target_code":None,
+                    "target_name":None,
+                    "mapping_method":"manual",
+                    "confidence":0,
+                    "is_approved":False,
+                })
+
+        return {
+            "dataset_id":dataset_id,
+            "items":result,
+
+            "detected_count":len(result),
+
+            "mapped_count":sum(
+                1 for item in result
+                if item.get("target_id")
+            ),
+
+            "approved_count":sum(
+                1 for item in result
+                if item.get("target_id")
+                and item.get("is_approved")
+            ),
+        }
+
+    def migration_payroll_item_mapping_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        if not isinstance(mappings,list):
+            raise ValueError("mappings must be a list.")
+
+        for item in mappings:
+            item_type=self._migration_payroll_item_type(
+                item.get("item_type")
+            )
+
+            if not item_type:
+                raise ValueError(
+                    f"Select an item type for {item.get('source_name') or 'payroll item'}."
+                )
+
+            source_name=str(
+                item.get("source_name") or ""
+            ).strip()
+
+            source_code=str(
+                item.get("source_code") or ""
+            ).strip() or None
+
+            target_id=int(
+                item.get("target_id") or 0
+            )
+
+            if not source_name:
+                raise ValueError(
+                    "Payroll source item name is required."
+                )
+
+            if not target_id:
+                raise ValueError(
+                    f'Select a FinSage payroll item for "{source_name}".'
+                )
+
+            targets=self.migration_payroll_item_targets(
+                company_id,
+                item_type,
+                cur=cur,
+            )
+
+            target=next(
+                (
+                    row for row in targets
+                    if int(row["id"])==target_id
+                ),
+                None,
+            )
+
+            if not target:
+                raise ValueError(
+                    f'Invalid target for "{source_name}".'
+                )
+
+            calculation_method=str(
+                item.get("default_calculation_method")
+                or "fixed_amount"
+            ).strip().lower()
+
+            if calculation_method not in {
+                "fixed_amount",
+                "percentage",
+                "quantity_rate",
+                "manual",
+            }:
+                raise ValueError(
+                    f'Invalid calculation method for "{source_name}".'
+                )
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_payroll_item_mappings(
+                    company_id,
+                    project_id,
+                    dataset_id,
+
+                    item_type,
+                    source_code,
+                    source_name,
+
+                    target_id,
+                    target_code,
+                    target_name,
+
+                    default_calculation_method,
+                    default_amount,
+                    default_percentage,
+                    default_quantity,
+                    default_rate,
+
+                    taxable,
+                    pensionable,
+
+                    mapping_method,
+                    confidence,
+                    is_approved,
+
+                    metadata_json,
+
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item_type,
+                    LOWER(source_name)
+                )
+                DO UPDATE SET
+                    source_code=EXCLUDED.source_code,
+
+                    target_id=EXCLUDED.target_id,
+                    target_code=EXCLUDED.target_code,
+                    target_name=EXCLUDED.target_name,
+
+                    default_calculation_method=
+                        EXCLUDED.default_calculation_method,
+
+                    default_amount=EXCLUDED.default_amount,
+                    default_percentage=EXCLUDED.default_percentage,
+                    default_quantity=EXCLUDED.default_quantity,
+                    default_rate=EXCLUDED.default_rate,
+
+                    taxable=EXCLUDED.taxable,
+                    pensionable=EXCLUDED.pensionable,
+
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+
+                    updated_by_user_id=
+                        EXCLUDED.updated_by_user_id,
+
+                    updated_at=NOW()
+            """,(
+                company_id,
+                project_id,
+                dataset_id,
+
+                item_type,
+                source_code,
+                source_name,
+
+                target["id"],
+                target.get("code"),
+                target.get("name"),
+
+                calculation_method,
+
+                self._migration_payroll_number(
+                    item.get("default_amount")
+                ) if item.get("default_amount") not in (None,"") else None,
+
+                self._migration_payroll_number(
+                    item.get("default_percentage")
+                ) if item.get("default_percentage") not in (None,"") else None,
+
+                self._migration_payroll_number(
+                    item.get("default_quantity")
+                ) if item.get("default_quantity") not in (None,"") else None,
+
+                self._migration_payroll_number(
+                    item.get("default_rate")
+                ) if item.get("default_rate") not in (None,"") else None,
+
+                item.get("taxable"),
+                item.get("pensionable"),
+
+                user_id,
+                user_id,
+            ),cur=cur)
+
+        return self.migration_payroll_items_detect(
+            company_id,
+            project_id,
+            dataset_id,
+            cur=cur,
+        )
+
+    def migration_payroll_item_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        item_type:str,source_code,source_name,*,cur=None
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        item_type=self._migration_payroll_item_type(
+            item_type
+        )
+
+        if not item_type:
+            return None
+
+        source_code=str(
+            source_code or ""
+        ).strip()
+
+        source_name=str(
+            source_name or ""
+        ).strip()
+
+        if source_code:
+            row=self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.migration_payroll_item_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND item_type=%s
+                AND LOWER(COALESCE(source_code,''))=LOWER(%s)
+                AND is_approved=TRUE
+                LIMIT 1
+            """,(
+                company_id,
+                int(project_id),
+                int(dataset_id),
+                item_type,
+                source_code,
+            ),cur=cur)
+
+            if row:
+                return row
+
+        if source_name:
+            return self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.migration_payroll_item_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND item_type=%s
+                AND LOWER(source_name)=LOWER(%s)
+                AND is_approved=TRUE
+                LIMIT 1
+            """,(
+                company_id,
+                int(project_id),
+                int(dataset_id),
+                item_type,
+                source_name,
+            ),cur=cur)
+
+        return None
+
+    def migration_payroll_item_preview_row(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        item_type=self._migration_payroll_item_type(
+            row.get("payroll_item_type")
+        )
+
+        source_code=str(
+            row.get("payroll_item_code") or ""
+        ).strip()
+
+        source_name=str(
+            row.get("payroll_item_name")
+            or row.get("payroll_item_reference")
+            or ""
+        ).strip()
+
+        employee_no=str(
+            row.get("employee_no") or ""
+        ).strip()
+
+        issues=[]
+
+        if not employee_no:
+            issues.append(
+                "Employee number is required for payroll item migration."
+            )
+
+        if not source_name and not source_code:
+            issues.append(
+                "Payroll item name or code is required."
+            )
+
+        if not item_type:
+            issues.append(
+                "Payroll item type is required."
+            )
+
+        mapped=None
+
+        if item_type:
+            mapped=self.migration_payroll_item_resolve(
+                company_id,
+                project_id,
+                dataset_id,
+                item_type,
+                source_code,
+                source_name,
+                cur=cur,
+            )
+
+        if not mapped:
+            issues.append(
+                f'Payroll item "{source_name or source_code}" is not mapped.'
+            )
+
+        employee=None
+
+        if employee_no:
+            schema=self.company_schema(
+                int(company_id)
+            )
+
+            employee=self.fetch_one(f"""
+                SELECT id,employee_no,first_name,last_name
+                FROM {schema}.payroll_employees
+                WHERE company_id=%s
+                AND LOWER(employee_no)=LOWER(%s)
+                LIMIT 1
+            """,(
+                int(company_id),
+                employee_no,
+            ),cur=cur)
+
+        calculation_method=str(
+            row.get("payroll_item_calculation_method")
+            or (
+                mapped.get("default_calculation_method")
+                if mapped else None
+            )
+            or "fixed_amount"
+        ).strip().lower()
+
+        amount=self._migration_payroll_number(
+            row.get("payroll_item_amount"),
+            mapped.get("default_amount")
+                if mapped else 0,
+        )
+
+        percentage=self._migration_payroll_number(
+            row.get("payroll_item_percentage"),
+            mapped.get("default_percentage")
+                if mapped else 0,
+        )
+
+        quantity=self._migration_payroll_number(
+            row.get("payroll_item_quantity"),
+            mapped.get("default_quantity")
+                if mapped else 0,
+        )
+
+        rate=self._migration_payroll_number(
+            row.get("payroll_item_rate"),
+            mapped.get("default_rate")
+                if mapped else 0,
+        )
+
+        if calculation_method=="fixed_amount" and amount<0:
+            issues.append(
+                "Payroll item amount cannot be negative."
+            )
+
+        if (
+            calculation_method=="percentage"
+            and percentage<0
+        ):
+            issues.append(
+                "Payroll item percentage cannot be negative."
+            )
+
+        if calculation_method=="quantity_rate":
+            if quantity<0:
+                issues.append(
+                    "Payroll item quantity cannot be negative."
+                )
+            if rate<0:
+                issues.append(
+                    "Payroll item rate cannot be negative."
+                )
+
+        effective_from=self._migration_payroll_date(
+            row.get("payroll_item_effective_from")
+        ) or self._migration_payroll_date(
+            settings.get("default_effective_from")
+        )
+
+        effective_to=self._migration_payroll_date(
+            row.get("payroll_item_effective_to")
+        )
+
+        if (
+            effective_from
+            and effective_to
+            and effective_to<effective_from
+        ):
+            issues.append(
+                "Payroll item effective-to cannot be before effective-from."
+            )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+
+            "employee":{
+                "employee_id":
+                    employee.get("id")
+                    if employee else None,
+
+                "employee_no":employee_no,
+
+                "employee_name":
+                    " ".join(filter(None,[
+                        employee.get("first_name")
+                            if employee else None,
+                        employee.get("last_name")
+                            if employee else None,
+                    ])),
+            },
+
+            "item":{
+                "item_type":item_type,
+
+                "source_code":
+                    source_code or None,
+
+                "source_name":
+                    source_name or source_code,
+
+                "target_id":
+                    mapped.get("target_id")
+                    if mapped else None,
+
+                "target_code":
+                    mapped.get("target_code")
+                    if mapped else None,
+
+                "target_name":
+                    mapped.get("target_name")
+                    if mapped else None,
+
+                "calculation_method":
+                    calculation_method,
+
+                "amount":
+                    round(amount,2),
+
+                "percentage":
+                    round(percentage,4),
+
+                "quantity":
+                    round(quantity,4),
+
+                "rate":
+                    round(rate,4),
+
+                "taxable":
+                    row.get("payroll_item_taxable")
+                    if row.get("payroll_item_taxable") not in (None,"")
+                    else (
+                        mapped.get("taxable")
+                        if mapped else None
+                    ),
+
+                "pensionable":
+                    row.get("payroll_item_pensionable")
+                    if row.get("payroll_item_pensionable") not in (None,"")
+                    else (
+                        mapped.get("pensionable")
+                        if mapped else None
+                    ),
+
+                "effective_from":effective_from,
+                "effective_to":effective_to,
+            },
+        }
+
+
+    def migration_payroll_items_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_item_settings_get(
+            company_id,
+            project_id,
+            dataset_id,
+            cur=cur,
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=500,
+            cur=cur,
+        )
+
+        items=[]
+
+        for index,row in enumerate(rows,start=1):
+            normalized=row.get("normalized") or {}
+
+            if not (
+                normalized.get("payroll_item_name")
+                or normalized.get("payroll_item_reference")
+                or normalized.get("payroll_item_code")
+            ):
+                continue
+
+            try:
+                preview=self.migration_payroll_item_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    normalized,
+                    settings,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "employee":{
+                        "employee_no":
+                            normalized.get("employee_no"),
+                    },
+                    "item":normalized,
+                }
+
+            items.append({
+                "row_number":index,
+                "source":row.get("source"),
+                **preview,
+            })
+
+        totals={
+            "earning":0.0,
+            "deduction":0.0,
+            "benefit":0.0,
+            "contribution":0.0,
+        }
+
+        for row in items:
+            item=row.get("item") or {}
+            item_type=item.get("item_type")
+
+            if item_type in totals:
+                totals[item_type]+=float(
+                    item.get("amount") or 0
+                )
+
+        return {
+            "dataset_id":int(dataset_id),
+            "items":items,
+
+            "item_count":len(items),
+
+            "valid_count":sum(
+                1 for item in items
+                if item.get("valid")
+            ),
+
+            "error_count":sum(
+                1 for item in items
+                if not item.get("valid")
+            ),
+
+            "mapped_types":{
+                item_type:sum(
+                    1 for item in items
+                    if item.get("item",{}).get("item_type")
+                    ==item_type
+                )
+                for item_type in (
+                    "earning",
+                    "deduction",
+                    "benefit",
+                    "contribution",
+                )
+            },
+
+            "totals":{
+                key:round(value,2)
+                for key,value in totals.items()
+            },
+        }
+
+    def migration_payroll_items_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_item_settings_get(
+            company_id,
+            project_id,
+            dataset_id,
+            cur=cur,
+        )
+
+        detection=self.migration_payroll_items_detect(
+            company_id,
+            project_id,
+            dataset_id,
+            cur=cur,
+        )
+
+        items=detection.get("items") or []
+
+        unresolved=[
+            item
+            for item in items
+            if (
+                not item.get("item_type")
+                or not item.get("target_id")
+                or not item.get("is_approved")
+            )
+        ]
+
+        return {
+            "settings":settings,
+            "detection":detection,
+
+            "targets":{
+                item_type:
+                    self.migration_payroll_item_targets(
+                        company_id,
+                        item_type,
+                        cur=cur,
+                    )
+                for item_type in (
+                    "earning",
+                    "deduction",
+                    "benefit",
+                    "contribution",
+                )
+            },
+
+            "unresolved":unresolved,
+
+            "is_complete":(
+                not unresolved
+                if settings.get(
+                    "require_all_items_mapped",
+                    True,
+                )
+                else True
+            ),
+        }
+
+    def migration_payroll_leave_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='payroll_leave_balances'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+
+    def migration_payroll_loan_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='payroll_employee_loans'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_payroll_leave_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_leave_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+            "migration_date":project.get("cutover_date"),
+            "default_balance_unit":"days",
+            "default_opening_source":"legacy_balance",
+            "allow_negative_balance":False,
+            "require_leave_type_mapping":True,
+            "reconciliation_tolerance":0.01,
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_payroll_leave_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_payroll_leave_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        unit=str(
+            data.get("default_balance_unit")
+            or current.get("default_balance_unit")
+            or "days"
+        ).strip().lower()
+
+        source=str(
+            data.get("default_opening_source")
+            or current.get("default_opening_source")
+            or "legacy_balance"
+        ).strip().lower()
+
+        if unit not in {"days","hours"}:
+            raise ValueError("Invalid leave balance unit.")
+
+        if source not in {
+            "legacy_balance",
+            "entitlement_less_taken",
+            "movement_history",
+        }:
+            raise ValueError("Invalid leave opening source.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_payroll_leave_settings(
+                company_id,project_id,dataset_id,
+                migration_date,
+                default_balance_unit,
+                default_opening_source,
+                allow_negative_balance,
+                require_leave_type_mapping,
+                reconciliation_tolerance,
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,%s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                migration_date=EXCLUDED.migration_date,
+                default_balance_unit=EXCLUDED.default_balance_unit,
+                default_opening_source=EXCLUDED.default_opening_source,
+                allow_negative_balance=EXCLUDED.allow_negative_balance,
+                require_leave_type_mapping=EXCLUDED.require_leave_type_mapping,
+                reconciliation_tolerance=EXCLUDED.reconciliation_tolerance,
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            data.get("migration_date") or current.get("migration_date"),
+            unit,source,
+
+            bool(data.get(
+                "allow_negative_balance",
+                current.get("allow_negative_balance",False),
+            )),
+
+            bool(data.get(
+                "require_leave_type_mapping",
+                current.get("require_leave_type_mapping",True),
+            )),
+
+            float(
+                data.get("reconciliation_tolerance")
+                if data.get("reconciliation_tolerance") not in (None,"")
+                else current.get("reconciliation_tolerance") or 0.01
+            ),
+
+            self._migration_json_dump(
+                data.get("settings_json") or current.get("settings_json"),{}
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json") or current.get("metadata_json"),{}
+            ),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_payroll_leave_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_payroll_loan_settings_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT cutover_date,default_currency
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_loan_settings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+        """,(company_id,project_id,dataset_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "dataset_id":dataset_id,
+            "migration_date":project.get("cutover_date"),
+            "default_currency":project.get("default_currency"),
+            "default_frequency":"monthly",
+            "default_interest_method":"reducing_balance",
+            "require_employee_mapping":True,
+            "require_deduction_mapping":False,
+            "reconciliation_tolerance":1.00,
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_payroll_loan_settings_save(
+        self,company_id:int,project_id:int,dataset_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_payroll_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        frequency=str(
+            data.get("default_frequency")
+            or current.get("default_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        method=str(
+            data.get("default_interest_method")
+            or current.get("default_interest_method")
+            or "reducing_balance"
+        ).strip().lower()
+
+        if frequency not in {
+            "weekly","fortnightly","monthly"
+        }:
+            raise ValueError("Invalid employee-loan frequency.")
+
+        if method not in {
+            "reducing_balance",
+            "flat",
+            "interest_free",
+            "manual",
+        }:
+            raise ValueError("Invalid employee-loan interest method.")
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_payroll_loan_settings(
+                company_id,project_id,dataset_id,
+                migration_date,
+                default_currency,
+                default_frequency,
+                default_interest_method,
+                require_employee_mapping,
+                require_deduction_mapping,
+                reconciliation_tolerance,
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,%s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id,dataset_id)
+            DO UPDATE SET
+                migration_date=EXCLUDED.migration_date,
+                default_currency=EXCLUDED.default_currency,
+                default_frequency=EXCLUDED.default_frequency,
+                default_interest_method=EXCLUDED.default_interest_method,
+                require_employee_mapping=EXCLUDED.require_employee_mapping,
+                require_deduction_mapping=EXCLUDED.require_deduction_mapping,
+                reconciliation_tolerance=EXCLUDED.reconciliation_tolerance,
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,dataset_id,
+            data.get("migration_date") or current.get("migration_date"),
+            data.get("default_currency") or current.get("default_currency"),
+            frequency,method,
+
+            bool(data.get(
+                "require_employee_mapping",
+                current.get("require_employee_mapping",True),
+            )),
+
+            bool(data.get(
+                "require_deduction_mapping",
+                current.get("require_deduction_mapping",False),
+            )),
+
+            float(
+                data.get("reconciliation_tolerance")
+                if data.get("reconciliation_tolerance") not in (None,"")
+                else current.get("reconciliation_tolerance") or 1
+            ),
+
+            self._migration_json_dump(
+                data.get("settings_json") or current.get("settings_json"),{}
+            ),
+
+            self._migration_json_dump(
+                data.get("metadata_json") or current.get("metadata_json"),{}
+            ),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_payroll_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+    def migration_payroll_leave_type_targets(
+        self,company_id:int,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                id,
+                code,
+                name
+            FROM {schema}.payroll_leave_types
+            WHERE company_id=%s
+            AND is_active=TRUE
+            ORDER BY code,name,id
+        """,(company_id,),cur=cur) or []
+
+    def migration_payroll_leave_types_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,project_id,dataset_id,
+            limit=500,
+            cur=cur,
+        )
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+
+            source_code=str(
+                row.get("leave_type_code") or ""
+            ).strip()
+
+            source_name=str(
+                row.get("leave_type_name") or ""
+            ).strip()
+
+            if not source_name and not source_code:
+                continue
+
+            key=(source_code.lower(),source_name.lower())
+
+            if key not in detected:
+                detected[key]={
+                    "source_code":source_code or None,
+                    "source_name":source_name or source_code,
+                    "sample_count":0,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        targets=self.migration_payroll_leave_type_targets(
+            company_id,
+            cur=cur,
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_payroll_leave_type_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            str(row.get("source_name") or "").lower():row
+            for row in saved
+        }
+
+        result=[]
+
+        for item in detected.values():
+            existing=saved_map.get(
+                item["source_name"].lower()
+            )
+
+            if existing:
+                result.append({
+                    **item,
+                    **existing,
+                })
+                continue
+
+            source_code=str(
+                item.get("source_code") or ""
+            ).upper()
+
+            source_name=item["source_name"].lower()
+
+            target=next(
+                (
+                    row for row in targets
+                    if source_code
+                    and str(row.get("code") or "").upper()==source_code
+                ),
+                None,
+            )
+
+            confidence=100 if target else 0
+
+            if not target:
+                target=next(
+                    (
+                        row for row in targets
+                        if str(row.get("name") or "").strip().lower()
+                        ==source_name
+                    ),
+                    None,
+                )
+
+                if target:
+                    confidence=98
+
+            result.append({
+                **item,
+                "target_leave_type_id":
+                    target.get("id")
+                    if target else None,
+
+                "target_code":
+                    target.get("code")
+                    if target else None,
+
+                "target_name":
+                    target.get("name")
+                    if target else None,
+
+                "mapping_method":
+                    "auto" if target else "manual",
+
+                "confidence":confidence,
+                "is_approved":False,
+            })
+
+        return {
+            "items":result,
+            "targets":targets,
+
+            "detected_count":len(result),
+
+            "mapped_count":sum(
+                1 for item in result
+                if item.get("target_leave_type_id")
+            ),
+
+            "approved_count":sum(
+                1 for item in result
+                if item.get("is_approved")
+            ),
+        }
+
+    def migration_payroll_leave_type_mapping_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        targets=self.migration_payroll_leave_type_targets(
+            company_id,
+            cur=cur,
+        )
+
+        for item in mappings or []:
+            source_name=str(
+                item.get("source_name") or ""
+            ).strip()
+
+            source_code=str(
+                item.get("source_code") or ""
+            ).strip() or None
+
+            target_id=int(
+                item.get("target_leave_type_id")
+                or item.get("target_id")
+                or 0
+            )
+
+            if not source_name:
+                raise ValueError(
+                    "Source leave type name is required."
+                )
+
+            if not target_id:
+                raise ValueError(
+                    f'Select a leave type for "{source_name}".'
+                )
+
+            target=next(
+                (
+                    row for row in targets
+                    if int(row["id"])==target_id
+                ),
+                None,
+            )
+
+            if not target:
+                raise ValueError(
+                    f'Invalid leave type for "{source_name}".'
+                )
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_payroll_leave_type_mappings(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    source_code,
+                    source_name,
+                    target_leave_type_id,
+                    target_code,
+                    target_name,
+                    mapping_method,
+                    confidence,
+                    is_approved,
+                    metadata_json,
+                    created_by_user_id,
+                    updated_by_user_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    'manual',100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    source_name
+                )
+                DO UPDATE SET
+                    source_code=EXCLUDED.source_code,
+                    target_leave_type_id=EXCLUDED.target_leave_type_id,
+                    target_code=EXCLUDED.target_code,
+                    target_name=EXCLUDED.target_name,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=EXCLUDED.updated_by_user_id,
+                    updated_at=NOW()
+            """,(
+                company_id,project_id,dataset_id,
+                source_code,source_name,
+                target["id"],
+                target.get("code"),
+                target.get("name"),
+                user_id,user_id,
+            ),cur=cur)
+
+        return self.migration_payroll_leave_types_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+
+
+    def migration_payroll_leave_type_resolve(
+        self,company_id:int,project_id:int,dataset_id:int,
+        source_code,source_name,*,cur=None
+    ):
+        schema=self.company_schema(int(company_id))
+
+        source_code=str(source_code or "").strip()
+        source_name=str(source_name or "").strip()
+
+        if source_code:
+            row=self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.migration_payroll_leave_type_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND LOWER(COALESCE(source_code,''))=LOWER(%s)
+                AND is_approved=TRUE
+                LIMIT 1
+            """,(
+                int(company_id),
+                int(project_id),
+                int(dataset_id),
+                source_code,
+            ),cur=cur)
+
+            if row:return row
+
+        if source_name:
+            return self.fetch_one(f"""
+                SELECT *
+                FROM {schema}.migration_payroll_leave_type_mappings
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND LOWER(source_name)=LOWER(%s)
+                AND is_approved=TRUE
+                LIMIT 1
+            """,(
+                int(company_id),
+                int(project_id),
+                int(dataset_id),
+                source_name,
+            ),cur=cur)
+
+        return None
+
+
+    def migration_payroll_employee_resolve(
+        self,company_id:int,employee_no,*,cur=None
+    ):
+        employee_no=str(employee_no or "").strip()
+        if not employee_no:return None
+
+        schema=self.company_schema(int(company_id))
+
+        return self.fetch_one(f"""
+            SELECT
+                id,
+                employee_no,
+                first_name,
+                last_name
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s
+            AND LOWER(employee_no)=LOWER(%s)
+            LIMIT 1
+        """,(int(company_id),employee_no),cur=cur)
+
+
+    def migration_payroll_leave_preview_row(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        employee_no=str(
+            row.get("employee_no") or ""
+        ).strip()
+
+        source_name=str(
+            row.get("leave_type_name") or ""
+        ).strip()
+
+        source_code=str(
+            row.get("leave_type_code") or ""
+        ).strip()
+
+        issues=[]
+        warnings=[]
+
+        if not employee_no:
+            issues.append("Employee number is required.")
+
+        if not source_name and not source_code:
+            issues.append("Leave type is required.")
+
+        mapping=self.migration_payroll_leave_type_resolve(
+            company_id,
+            project_id,
+            dataset_id,
+            source_code,
+            source_name,
+            cur=cur,
+        )
+
+        if (
+            settings.get("require_leave_type_mapping")
+            and not mapping
+        ):
+            issues.append(
+                f'Leave type "{source_name or source_code}" is not mapped.'
+            )
+
+        source_mode=str(
+            settings.get("default_opening_source")
+            or "legacy_balance"
+        ).strip().lower()
+
+        entitlement=self._migration_payroll_number(
+            row.get("opening_entitlement")
+        )
+
+        taken=self._migration_payroll_number(
+            row.get("leave_taken_to_date")
+        )
+
+        adjustments=self._migration_payroll_number(
+            row.get("leave_adjustments")
+        )
+
+        imported_balance=self._migration_payroll_number(
+            row.get("opening_balance")
+            if row.get("opening_balance") not in (None,"")
+            else row.get("accrued_balance")
+        )
+
+        carried_forward=self._migration_payroll_number(
+            row.get("carried_forward")
+        )
+
+        if source_mode=="entitlement_less_taken":
+            calculated_balance=round(
+                entitlement-taken+adjustments+carried_forward,
+                4,
+            )
+
+        else:
+            calculated_balance=round(
+                imported_balance,
+                4,
+            )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 0.01
+        )
+
+        difference=round(
+            imported_balance-calculated_balance,
+            4,
+        )
+
+        if (
+            source_mode=="entitlement_less_taken"
+            and row.get("opening_balance") not in (None,"")
+            and abs(difference)>tolerance
+        ):
+            issues.append(
+                f"Opening leave balance differs from entitlement less taken by {difference:.4f}."
+            )
+
+        if (
+            calculated_balance<0
+            and not settings.get("allow_negative_balance")
+        ):
+            issues.append(
+                "Negative leave balance is not allowed."
+            )
+
+        employee=self.migration_payroll_employee_resolve(
+            company_id,
+            employee_no,
+            cur=cur,
+        )
+
+        if not employee:
+            warnings.append(
+                "Employee is not in the live payroll yet; migration will link by employee number during commit."
+            )
+
+        unit=str(
+            row.get("balance_unit")
+            or settings.get("default_balance_unit")
+            or "days"
+        ).strip().lower()
+
+        if unit not in {"days","hours"}:
+            issues.append("Leave balance unit must be days or hours.")
+
+        migration_date=self._migration_payroll_date(
+            row.get("migration_date")
+            or settings.get("migration_date")
+        )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+
+            "employee":{
+                "employee_id":
+                    employee.get("id")
+                    if employee else None,
+
+                "employee_no":employee_no,
+
+                "employee_name":
+                    " ".join(filter(None,[
+                        employee.get("first_name")
+                            if employee else None,
+                        employee.get("last_name")
+                            if employee else None,
+                    ])),
+            },
+
+            "leave":{
+                "leave_type_id":
+                    mapping.get("target_leave_type_id")
+                    if mapping else None,
+
+                "leave_type_code":
+                    mapping.get("target_code")
+                    if mapping else source_code or None,
+
+                "leave_type_name":
+                    mapping.get("target_name")
+                    if mapping else source_name or source_code,
+
+                "balance_unit":unit,
+
+                "opening_entitlement":
+                    round(entitlement,4),
+
+                "leave_taken_to_date":
+                    round(taken,4),
+
+                "adjustments":
+                    round(adjustments,4),
+
+                "carried_forward":
+                    round(carried_forward,4),
+
+                "opening_balance":
+                    round(calculated_balance,4),
+
+                "expiry_date":
+                    self._migration_payroll_date(
+                        row.get("expiry_date")
+                    ),
+
+                "migration_date":migration_date,
+                "notes":row.get("notes"),
+            },
+
+            "reconciliation":{
+                "source_mode":source_mode,
+                "imported_balance":
+                    round(imported_balance,4),
+
+                "calculated_balance":
+                    round(calculated_balance,4),
+
+                "difference":difference,
+                "tolerance":tolerance,
+            },
+        }
+
+    def migration_payroll_leave_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_leave_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=1000,
+            cur=cur,
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_payroll_leave_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item.get("normalized") or {},
+                    settings,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "employee":{
+                        "employee_no":
+                            item.get("normalized",{}).get("employee_no"),
+                    },
+                    "leave":{},
+                    "reconciliation":{},
+                }
+
+            items.append({
+                "row_number":index,
+                "source":item.get("source"),
+                **preview,
+            })
+
+        return {
+            "dataset_id":int(dataset_id),
+            "items":items,
+
+            "balance_count":len(items),
+
+            "valid_count":sum(
+                1 for row in items
+                if row.get("valid")
+            ),
+
+            "error_count":sum(
+                1 for row in items
+                if not row.get("valid")
+            ),
+
+            "total_opening_balance":round(sum(
+                self._migration_payroll_number(
+                    row.get("leave",{}).get("opening_balance")
+                )
+                for row in items
+            ),4),
+        }
+
+    def migration_payroll_employee_loan_preview_row(
+        self,company_id:int,project_id:int,dataset_id:int,
+        row:dict,settings:dict,*,cur=None
+    )->dict:
+        employee_no=str(
+            row.get("employee_no") or ""
+        ).strip()
+
+        loan_name=str(
+            row.get("loan_name") or ""
+        ).strip()
+
+        loan_reference=str(
+            row.get("loan_reference") or ""
+        ).strip() or None
+
+        issues=[]
+        warnings=[]
+
+        if not employee_no:
+            issues.append("Employee number is required.")
+
+        if not loan_name:
+            issues.append("Loan name is required.")
+
+        original_amount=self._migration_payroll_number(
+            row.get("original_amount")
+        )
+
+        repaid=self._migration_payroll_number(
+            row.get("amount_repaid_to_date")
+        )
+
+        outstanding=self._migration_payroll_number(
+            row.get("outstanding_balance")
+        )
+
+        tolerance=float(
+            settings.get("reconciliation_tolerance") or 1
+        )
+
+        calculated_outstanding=None
+        difference=None
+
+        if original_amount>0:
+            calculated_outstanding=round(
+                max(original_amount-repaid,0),
+                2,
+            )
+
+            difference=round(
+                outstanding-calculated_outstanding,
+                2,
+            )
+
+            if abs(difference)>tolerance:
+                issues.append(
+                    f"Outstanding employee-loan balance differs from original less repayments by {difference:.2f}."
+                )
+
+        if outstanding<=0:
+            issues.append(
+                "Outstanding employee-loan balance must be greater than zero."
+            )
+
+        method=str(
+            row.get("interest_method")
+            or settings.get("default_interest_method")
+            or "reducing_balance"
+        ).strip().lower()
+
+        frequency=str(
+            row.get("repayment_frequency")
+            or settings.get("default_frequency")
+            or "monthly"
+        ).strip().lower()
+
+        if method not in {
+            "reducing_balance",
+            "flat",
+            "interest_free",
+            "manual",
+        }:
+            issues.append(
+                f"Unsupported interest method: {method}."
+            )
+
+        if frequency not in {
+            "weekly",
+            "fortnightly",
+            "monthly",
+        }:
+            issues.append(
+                f"Unsupported repayment frequency: {frequency}."
+            )
+
+        repayment_amount=self._migration_payroll_number(
+            row.get("repayment_amount")
+        )
+
+        if repayment_amount<=0:
+            warnings.append(
+                "Repayment amount is missing; payroll deduction cannot continue automatically until configured."
+            )
+
+        employee=self.migration_payroll_employee_resolve(
+            company_id,
+            employee_no,
+            cur=cur,
+        )
+
+        if not employee:
+            warnings.append(
+                "Employee is not in the live payroll yet; migration will link by employee number during commit."
+            )
+
+        deduction_mapping=None
+        deduction_reference=str(
+            row.get("deduction_reference") or ""
+        ).strip()
+
+        if deduction_reference:
+            deduction_mapping=self.migration_payroll_reference_resolve(
+                company_id,
+                project_id,
+                dataset_id,
+                "deduction_type",
+                deduction_reference,
+                cur=cur,
+            )
+
+        if (
+            settings.get("require_deduction_mapping")
+            and not deduction_mapping
+        ):
+            issues.append(
+                "Employee loan payroll deduction is not mapped."
+            )
+
+        migration_date=self._migration_payroll_date(
+            row.get("migration_date")
+            or settings.get("migration_date")
+        )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+
+            "employee":{
+                "employee_id":
+                    employee.get("id")
+                    if employee else None,
+
+                "employee_no":employee_no,
+
+                "employee_name":
+                    " ".join(filter(None,[
+                        employee.get("first_name")
+                            if employee else None,
+                        employee.get("last_name")
+                            if employee else None,
+                    ])),
+            },
+
+            "loan":{
+                "loan_reference":loan_reference,
+                "loan_name":loan_name,
+
+                "currency":str(
+                    row.get("currency")
+                    or settings.get("default_currency")
+                    or "USD"
+                ).strip().upper(),
+
+                "original_amount":
+                    round(original_amount,2),
+
+                "amount_repaid_to_date":
+                    round(repaid,2),
+
+                "outstanding_balance":
+                    round(outstanding,2),
+
+                "interest_rate":
+                    round(
+                        self._migration_payroll_number(
+                            row.get("interest_rate")
+                        ),
+                        6,
+                    ),
+
+                "interest_method":method,
+
+                "repayment_amount":
+                    round(repayment_amount,2),
+
+                "repayment_frequency":
+                    frequency,
+
+                "start_date":
+                    self._migration_payroll_date(
+                        row.get("start_date")
+                    ),
+
+                "next_repayment_date":
+                    self._migration_payroll_date(
+                        row.get("next_repayment_date")
+                    ),
+
+                "maturity_date":
+                    self._migration_payroll_date(
+                        row.get("maturity_date")
+                    ),
+
+                "deduction_type_id":
+                    deduction_mapping,
+
+                "deduction_reference":
+                    deduction_reference or None,
+
+                "migration_date":
+                    migration_date,
+
+                "notes":
+                    row.get("notes"),
+            },
+
+            "reconciliation":{
+                "original_amount":
+                    round(original_amount,2),
+
+                "amount_repaid_to_date":
+                    round(repaid,2),
+
+                "calculated_outstanding":
+                    calculated_outstanding,
+
+                "imported_outstanding":
+                    round(outstanding,2),
+
+                "difference":
+                    difference,
+
+                "tolerance":
+                    tolerance,
+            },
+        }
+
+    def migration_payroll_employee_loans_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        rows=self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=1000,
+            cur=cur,
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_payroll_employee_loan_preview_row(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    item.get("normalized") or {},
+                    settings,
+                    cur=cur,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "employee":{
+                        "employee_no":
+                            item.get("normalized",{}).get("employee_no"),
+                    },
+                    "loan":{},
+                    "reconciliation":{},
+                }
+
+            items.append({
+                "row_number":index,
+                "source":item.get("source"),
+                **preview,
+            })
+
+        return {
+            "dataset_id":int(dataset_id),
+            "items":items,
+
+            "loan_count":len(items),
+
+            "valid_count":sum(
+                1 for row in items
+                if row.get("valid")
+            ),
+
+            "error_count":sum(
+                1 for row in items
+                if not row.get("valid")
+            ),
+
+            "total_outstanding":round(sum(
+                self._migration_payroll_number(
+                    row.get("loan",{}).get("outstanding_balance")
+                )
+                for row in items
+            ),2),
+
+            "total_repayment_amount":round(sum(
+                self._migration_payroll_number(
+                    row.get("loan",{}).get("repayment_amount")
+                )
+                for row in items
+            ),2),
+        }
+
+    def migration_payroll_leave_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_leave_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        leave_types=self.migration_payroll_leave_types_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        required={
+            "employee_no",
+            "leave_type_name",
+        }
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(
+            required-mapped
+        )
+
+        unresolved=[]
+
+        if settings.get("require_leave_type_mapping"):
+            unresolved=[
+                item
+                for item in leave_types.get("items") or []
+                if (
+                    not item.get("target_leave_type_id")
+                    or not item.get("is_approved")
+                )
+            ]
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "leave_types":leave_types,
+            "missing_fields":missing_fields,
+            "unresolved_leave_types":unresolved,
+
+            "is_complete":
+                not missing_fields
+                and not unresolved,
+        }
+
+    def migration_payroll_loan_mapping_get(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        settings=self.migration_payroll_loan_settings_get(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        field_mapping=self.migration_field_mapping_dataset(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        required={
+            "employee_no",
+            "loan_name",
+            "outstanding_balance",
+        }
+
+        mapped={
+            row.get("target_field_code")
+            for row in field_mapping.get("rows") or []
+            if row.get("mapping_status")=="mapped"
+        }
+
+        missing_fields=sorted(
+            required-mapped
+        )
+
+        return {
+            "settings":settings,
+            "field_mapping":field_mapping,
+            "missing_fields":missing_fields,
+            "is_complete":not missing_fields,
+        }
 
     # ============================================================
     # IAS 41 AGRICULTURE
@@ -157723,6 +173070,56 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             (company_id,),
         ) or {}
 
+    def get_ops_governance_rules(self,company_id:int):
+        settings=self.get_ops_settings(company_id) or {}
+        settings_json=settings.get("settings_json") or {}
+
+        if not isinstance(settings_json,dict):
+            settings_json={}
+
+        governance=settings_json.get("governance") or {}
+
+        if not isinstance(governance,dict):
+            governance={}
+
+        mode=(settings.get("governance_mode") or "structured").strip().lower()
+
+        return {
+            "mode":mode,
+            "allow_owner_override":bool(settings.get("allow_owner_override")),
+            "require_override_reason":bool(settings.get("require_override_reason")),
+            "prevent_self_approval":bool(
+                governance.get(
+                    "prevent_self_approval",
+                    mode in {"structured","controlled"}
+                )
+            ),
+            "prevent_consecutive_approval":bool(
+                governance.get(
+                    "prevent_consecutive_approval",
+                    mode in {"structured","controlled"}
+                )
+            ),
+            "require_finance_review":bool(
+                governance.get(
+                    "require_finance_review",
+                    mode in {"structured","controlled"}
+                )
+            ),
+            "require_budget_validation":bool(
+                governance.get(
+                    "require_budget_validation",
+                    mode in {"structured","controlled"}
+                )
+            ),
+            "invalidate_approvals_on_change":bool(
+                governance.get(
+                    "invalidate_approvals_on_change",
+                    mode=="controlled"
+                )
+            ),
+        }
+
     def update_ops_settings(self, company_id:int, payload:dict):
         company_id=int(company_id)
         schema=self.company_schema(company_id)
@@ -158783,6 +174180,327 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             request_id,
         )
 
+    def update_ops_request(
+        self,
+        company_id:int,
+        request_id:int,
+        payload:dict,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_requests
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (company_id,request_id),
+            )
+
+            req=cur.fetchone()
+
+            if not req:
+                raise ValueError("Request not found.")
+
+            req=dict(req)
+
+            if req["status"] not in {"draft","returned"}:
+                raise ValueError(
+                    "Only draft or returned requests can be edited."
+                )
+
+            if req.get("locked_at"):
+                raise ValueError(
+                    "This request is locked and cannot be edited."
+                )
+
+            if int(req["requested_by_user_id"])!=actor_user_id:
+                permissions=set(
+                    self.get_ops_user_permissions(
+                        company_id,
+                        actor_user_id,
+                    )
+                )
+
+                if "requests.view_all" not in permissions:
+                    raise PermissionError(
+                        "You cannot edit this request."
+                    )
+
+            before=dict(req)
+
+            title=str(
+                payload.get("title",req.get("title") or "")
+            ).strip()
+
+            if not title:
+                raise ValueError("Request title is required.")
+
+            request_type_id=int(
+                payload.get("request_type_id")
+                or req["request_type_id"]
+            )
+
+            cur.execute(
+                f"""
+                SELECT id,code,name,document_type,template_code
+                FROM {schema}.ops_request_types
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                LIMIT 1;
+                """,
+                (company_id,request_type_id),
+            )
+
+            request_type=cur.fetchone()
+
+            if not request_type:
+                raise ValueError("Invalid request type.")
+
+            items=payload.get("items")
+
+            if items is None:
+                cur.execute(
+                    f"""
+                    SELECT *
+                    FROM {schema}.ops_request_items
+                    WHERE request_id=%s
+                    ORDER BY line_no,id;
+                    """,
+                    (request_id,),
+                )
+                items=[dict(x) for x in cur.fetchall()]
+
+            clean_items=[]
+
+            for index,item in enumerate(items,1):
+                item=item or {}
+                description=str(
+                    item.get("description") or ""
+                ).strip()
+
+                if not description:
+                    continue
+
+                qty=float(item.get("quantity") or 1)
+                unit_cost=float(
+                    item.get("estimated_unit_cost") or 0
+                )
+
+                clean_items.append({
+                    "line_no":index,
+                    "description":description,
+                    "quantity":qty,
+                    "unit_of_measure":
+                        (item.get("unit_of_measure") or "").strip() or None,
+                    "estimated_unit_cost":unit_cost,
+                    "estimated_total":qty*unit_cost,
+
+                    "item_type":item.get("item_type"),
+                    "item_id":item.get("item_id"),
+
+                    "preferred_vendor_id":
+                        item.get("preferred_vendor_id"),
+
+                    "gl_account_id":
+                        item.get("gl_account_id"),
+
+                    "gl_account_code":
+                        (item.get("gl_account_code") or "").strip() or None,
+
+                    "gl_account_name":
+                        (item.get("gl_account_name") or "").strip() or None,
+
+                    "cost_centre_id":
+                        item.get("cost_centre_id"),
+
+                    "financial_classification":
+                        item.get("financial_classification"),
+
+                    "tax_treatment":
+                        item.get("tax_treatment"),
+
+                    "metadata_json":
+                        item.get("metadata_json") or {},
+                })
+
+            estimated_amount=sum(
+                float(item["estimated_total"] or 0)
+                for item in clean_items
+            )
+
+            was_returned=req["status"]=="returned"
+
+            revision_changed=was_returned
+
+            if revision_changed:
+                revision_no+=1
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_requests
+                SET request_type_id=%s,
+                    document_type=%s,
+                    title=%s,
+                    business_purpose=%s,
+                    description=%s,
+                    required_date=%s,
+                    priority=%s,
+                    estimated_amount=%s,
+                    currency_code=COALESCE(%s,currency_code),
+
+                    status='draft',
+                    revision_no=%s,
+
+                    submitted_at=NULL,
+                    approved_at=NULL,
+                    rejected_at=NULL,
+                    cancelled_at=NULL,
+                    completed_at=NULL,
+
+                    current_workflow_instance_id=NULL,
+
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    request_type_id,
+                    request_type.get("document_type"),
+                    title,
+                    (payload.get("business_purpose") or "").strip() or None,
+                    (payload.get("description") or "").strip() or None,
+                    payload.get("required_date"),
+                    payload.get("priority") or "normal",
+                    estimated_amount,
+                    payload.get("currency_code"),
+                    revision_no,
+                    actor_user_id,
+                    request_id,
+                ),
+            )
+
+            updated=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                DELETE FROM {schema}.ops_request_items
+                WHERE request_id=%s;
+                """,
+                (request_id,),
+            )
+
+            if revision_changed:
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_finance_reviews
+                    SET status='superseded',
+                        updated_at=NOW()
+                    WHERE request_id=%s
+                    AND status='pending';
+                    """,
+                    (request_id,),
+                )
+
+            for item in clean_items:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_request_items(
+                        request_id,
+                        line_no,
+                        item_type,
+                        item_id,
+                        description,
+                        quantity,
+                        unit_of_measure,
+                        estimated_unit_cost,
+                        estimated_total,
+                        preferred_vendor_id,
+                        gl_account_id,
+                        gl_account_code,
+                        gl_account_name,
+                        cost_centre_id,
+                        financial_classification,
+                        tax_treatment,
+                        metadata_json
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,%s,%s,%s,%s
+                    );
+                    """,
+                    (
+                        request_id,
+                        item["line_no"],
+                        item["item_type"],
+                        item["item_id"],
+                        item["description"],
+                        item["quantity"],
+                        item["unit_of_measure"],
+                        item["estimated_unit_cost"],
+                        item["estimated_total"],
+                        item["preferred_vendor_id"],
+                        item["gl_account_id"],
+                        item["gl_account_code"],
+                        item["gl_account_name"],
+                        item["cost_centre_id"],
+                        item["financial_classification"],
+                        item["tax_treatment"],
+                        psycopg2.extras.Json(
+                            item["metadata_json"]
+                        ),
+                    ),
+                )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,event_type,module,
+                    entity_type,entity_id,entity_ref,
+                    actor_user_id,action,
+                    before_json,after_json
+                )
+                VALUES(
+                    %s,%s,'requests',
+                    'request',%s,%s,
+                    %s,'update',
+                    %s,%s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    (
+                        "request.corrected"
+                        if was_returned
+                        else "request.updated"
+                    ),
+                    str(request_id),
+                    req["request_no"],
+                    actor_user_id,
+                    psycopg2.extras.Json(before),
+                    psycopg2.extras.Json({
+                        **updated,
+                        "items":clean_items,
+                    }),
+                ),
+            )
+
+        return self.get_ops_request(
+            company_id,
+            request_id,
+        )
+
     def get_ops_request(self,company_id:int,request_id:int):
         company_id=int(company_id)
         request_id=int(request_id)
@@ -158794,10 +174512,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 r.*,
                 rt.code AS request_type_code,
                 rt.name AS request_type_name,
-
                 d.name AS department_name,
                 b.name AS branch_name,
-
+                cc.code AS cost_centre_code,
+                cc.name AS cost_centre_name
                 trim(concat_ws(
                     ' ',
                     u.first_name,
@@ -158814,6 +174532,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             LEFT JOIN public.company_branches b
             ON b.id=r.branch_id
+            LEFT JOIN public.company_cost_centres cc
+            ON cc.id=r.cost_centre_id
 
             LEFT JOIN public.users u
             ON u.id=r.requested_by_user_id
@@ -158953,6 +174673,80 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tuple(params),
         ) or []
 
+    def _ops_workflow_step_matches(
+        self,
+        company_id:int,
+        *,
+        workflow_step_id:int,
+        request_row:dict,
+    ):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        conditions=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_workflow_conditions
+            WHERE workflow_step_id=%s
+            AND is_active=TRUE
+            ORDER BY sort_order,id;
+            """,
+            (int(workflow_step_id),),
+        ) or []
+
+        if not conditions:
+            return True
+
+        for condition in conditions:
+            field=condition["field_name"]
+            operator=condition["operator"]
+            expected=condition.get("comparison_value")
+            actual=request_row.get(field)
+
+            if field=="estimated_amount":
+                try:
+                    actual=float(actual or 0)
+                    expected=float(expected or 0)
+                except Exception:
+                    return False
+
+            if operator=="eq" and actual!=expected:
+                return False
+            if operator=="neq" and actual==expected:
+                return False
+            if operator=="gt" and not actual>expected:
+                return False
+            if operator=="gte" and not actual>=expected:
+                return False
+            if operator=="lt" and not actual<expected:
+                return False
+            if operator=="lte" and not actual<=expected:
+                return False
+
+            if operator=="in":
+                values=[
+                    x.strip()
+                    for x in str(expected or "").split(",")
+                    if x.strip()
+                ]
+                if str(actual) not in values:
+                    return False
+
+            if operator=="not_in":
+                values=[
+                    x.strip()
+                    for x in str(expected or "").split(",")
+                    if x.strip()
+                ]
+                if str(actual) in values:
+                    return False
+
+            if operator=="contains":
+                if str(expected or "") not in str(actual or ""):
+                    return False
+
+        return True
+
     def resolve_ops_approver(
         self,
         company_id:int,
@@ -158961,6 +174755,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         workflow_step:dict,
     ):
         company_id=int(company_id)
+        schema=self.company_schema(company_id)
 
         approver_type=(
             workflow_step.get("approver_type")
@@ -159026,7 +174821,80 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 AND d.is_active=TRUE
                 LIMIT 1;
                 """,
-                (company_id,int(department_id)),
+                (
+                    company_id,
+                    int(department_id),
+                ),
+            ) or {}
+
+            return row.get("user_id")
+
+        if approver_type=="role":
+            role_code=(
+                workflow_step.get("approver_role_code")
+                or ""
+            ).strip().upper()
+
+            if not role_code:
+                return None
+
+            row=self.fetch_one(
+                f"""
+                SELECT cu.user_id
+                FROM {schema}.ops_user_roles ur
+                JOIN {schema}.ops_roles r
+                ON r.id=ur.role_id
+                AND r.is_active=TRUE
+                JOIN public.company_users cu
+                ON cu.id=ur.company_user_id
+                AND cu.company_id=%s
+                AND cu.is_active=TRUE
+                AND cu.ops_is_active=TRUE
+                WHERE r.code=%s
+                AND ur.is_active=TRUE
+                ORDER BY
+                    CASE WHEN cu.user_id=%s THEN 1 ELSE 0 END,
+                    cu.id
+                LIMIT 1;
+                """,
+                (
+                    company_id,
+                    role_code,
+                    requester_id,
+                ),
+            ) or {}
+
+            return row.get("user_id")
+
+        if approver_type=="position":
+            position_id=workflow_step.get("approver_position_id")
+
+            if not position_id:
+                return None
+
+            row=self.fetch_one(
+                """
+                SELECT cu.user_id
+                FROM public.company_user_assignments a
+                JOIN public.company_users cu
+                ON cu.id=a.company_user_id
+                AND cu.company_id=a.company_id
+                AND cu.is_active=TRUE
+                AND cu.ops_is_active=TRUE
+                WHERE a.company_id=%s
+                AND a.position_id=%s
+                AND a.is_primary=TRUE
+                AND a.is_active=TRUE
+                ORDER BY
+                    CASE WHEN cu.user_id=%s THEN 1 ELSE 0 END,
+                    a.id
+                LIMIT 1;
+                """,
+                (
+                    company_id,
+                    int(position_id),
+                    requester_id,
+                ),
             ) or {}
 
             return row.get("user_id")
@@ -159045,6 +174913,452 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             return workflow_step.get("approver_user_id")
 
         return None
+
+    def get_ops_governance_config(self,company_id:int):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        settings=self.get_ops_settings(company_id)
+
+        workflow=self.fetch_one(
+            f"""
+            SELECT
+                w.id AS workflow_id,
+                w.code,
+                w.name,
+                w.description,
+                w.request_type_id,
+                v.id AS workflow_version_id,
+                v.version_no
+            FROM {schema}.ops_workflows w
+            JOIN {schema}.ops_workflow_versions v
+            ON v.workflow_id=w.id
+            AND v.status='active'
+            WHERE w.company_id=%s
+            AND w.status='active'
+            AND w.is_default=TRUE
+            ORDER BY v.version_no DESC
+            LIMIT 1;
+            """,
+            (company_id,),
+        ) or {}
+
+        steps=[]
+
+        if workflow:
+            rows=self.fetch_all(
+                f"""
+                SELECT
+                    s.*,
+                    p.title AS approver_position_title,
+                    r.name AS approver_role_name
+                FROM {schema}.ops_workflow_steps s
+                LEFT JOIN public.company_positions p
+                ON p.id=s.approver_position_id
+                LEFT JOIN {schema}.ops_roles r
+                ON r.code=s.approver_role_code
+                WHERE s.workflow_version_id=%s
+                AND s.is_active=TRUE
+                ORDER BY s.step_no;
+                """,
+                (workflow["workflow_version_id"],),
+            ) or []
+
+            for row in rows:
+                row=dict(row)
+
+                conditions=self.fetch_all(
+                    f"""
+                    SELECT *
+                    FROM {schema}.ops_workflow_conditions
+                    WHERE workflow_step_id=%s
+                    AND is_active=TRUE
+                    ORDER BY sort_order,id;
+                    """,
+                    (row["id"],),
+                ) or []
+
+                row["conditions"]=conditions
+                steps.append(row)
+
+        return {
+            "mode":settings.get("governance_mode") or "structured",
+            "allow_owner_override":bool(settings.get("allow_owner_override")),
+            "require_override_reason":bool(settings.get("require_override_reason")),
+            "settings_json":settings.get("settings_json") or {},
+            "workflow":workflow or None,
+            "steps":steps,
+        }
+
+    def save_ops_governance_config(
+        self,
+        company_id:int,
+        payload:dict,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        mode=str(payload.get("mode") or "structured").strip().lower()
+
+        if mode not in {"flexible","structured","controlled"}:
+            raise ValueError("Invalid governance mode.")
+
+        steps=payload.get("steps") or []
+
+        if not isinstance(steps,list) or not steps:
+            raise ValueError("At least one approval step is required.")
+
+        require_finance_review=bool(payload.get("require_finance_review"))
+
+        if require_finance_review:
+            has_finance_step=any(
+                (
+                    str(step.get("approver_role_code") or "").strip().upper()
+                    in {"FINANCE_REVIEWER","FINANCE_MANAGER","CFO","ACCOUNTANT"}
+                )
+                or (
+                    "finance" in str(step.get("name") or "").strip().lower()
+                )
+                for step in steps
+            )
+
+            if not has_finance_step:
+                raise ValueError(
+                    "Finance review is required, but the workflow has no Finance approval stage."
+                )
+
+        allow_owner_override=bool(payload.get("allow_owner_override"))
+        require_override_reason=bool(payload.get("require_override_reason"))
+
+        governance_rules={
+            "prevent_self_approval":bool(payload.get("prevent_self_approval")),
+            "prevent_consecutive_approval":bool(payload.get("prevent_consecutive_approval")),
+            "require_finance_review":require_finance_review,
+            "require_budget_validation":bool(payload.get("require_budget_validation")),
+            "invalidate_approvals_on_change":bool(payload.get("invalidate_approvals_on_change")),
+        }
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_workflows
+                WHERE company_id=%s
+                AND is_default=TRUE
+                ORDER BY id
+                LIMIT 1
+                FOR UPDATE;
+                """,
+                (company_id,),
+            )
+
+            workflow=cur.fetchone()
+
+            if not workflow:
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_workflows(
+                        company_id,code,name,description,
+                        status,is_default,is_system,
+                        created_by_user_id
+                    )
+                    VALUES(
+                        %s,'STANDARD_REQUEST',
+                        'Standard Request Approval',
+                        'Default FinFlow governance workflow',
+                        'active',TRUE,TRUE,%s
+                    )
+                    RETURNING *;
+                    """,
+                    (company_id,actor_user_id),
+                )
+                workflow=cur.fetchone()
+
+            workflow_id=int(workflow["id"])
+
+            cur.execute(
+                f"""
+                SELECT COALESCE(MAX(version_no),0)
+                FROM {schema}.ops_workflow_versions
+                WHERE workflow_id=%s;
+                """,
+                (workflow_id,),
+            )
+
+            version_no=int(cur.fetchone()[0] or 0)+1
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_workflow_versions
+                SET status='retired',
+                    effective_to=NOW()
+                WHERE workflow_id=%s
+                AND status='active';
+                """,
+                (workflow_id,),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_workflow_versions(
+                    workflow_id,version_no,status,
+                    effective_from,created_by_user_id
+                )
+                VALUES(%s,%s,'active',NOW(),%s)
+                RETURNING id;
+                """,
+                (
+                    workflow_id,
+                    version_no,
+                    actor_user_id,
+                ),
+            )
+
+            workflow_version_id=int(cur.fetchone()["id"])
+
+            for index,item in enumerate(steps,1):
+                item=item or {}
+
+                name=str(
+                    item.get("name")
+                    or f"Approval {index}"
+                ).strip()
+
+                approver_type=str(
+                    item.get("approver_type")
+                    or ""
+                ).strip().lower()
+
+                if approver_type not in {
+                    "requester_manager",
+                    "department_head",
+                    "role",
+                    "position",
+                    "user",
+                    "owner",
+                }:
+                    raise ValueError(
+                        f"Invalid approver type for step {index}."
+                    )
+
+                role_code=(
+                    str(item.get("approver_role_code") or "")
+                    .strip()
+                    .upper()
+                    or None
+                )
+
+                position_id=item.get("approver_position_id")
+                user_id=item.get("approver_user_id")
+
+                if approver_type=="role" and not role_code:
+                    raise ValueError(
+                        f"Choose a role for '{name}'."
+                    )
+
+                if approver_type=="position" and not position_id:
+                    raise ValueError(
+                        f"Choose a position for '{name}'."
+                    )
+
+                if approver_type=="user" and not user_id:
+                    raise ValueError(
+                        f"Choose a user for '{name}'."
+                    )
+
+                if position_id:
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM public.company_positions
+                        WHERE company_id=%s
+                        AND id=%s
+                        AND is_active=TRUE;
+                        """,
+                        (company_id,int(position_id)),
+                    )
+
+                    if not cur.fetchone():
+                        raise ValueError(
+                            f"Invalid position for '{name}'."
+                        )
+
+                if role_code:
+                    cur.execute(
+                        f"""
+                        SELECT 1
+                        FROM {schema}.ops_roles
+                        WHERE code=%s
+                        AND is_active=TRUE;
+                        """,
+                        (role_code,),
+                    )
+
+                    if not cur.fetchone():
+                        raise ValueError(
+                            f"Invalid role for '{name}'."
+                        )
+
+                finance_roles={
+                    "FINANCE_REVIEWER",
+                    "FINANCE_MANAGER",
+                    "CFO",
+                    "ACCOUNTANT",
+                }
+
+                is_finance_step=(
+                    role_code in finance_roles
+                    or "finance" in name.lower()
+                )
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_workflow_steps(
+                        workflow_version_id,
+                        step_no,
+                        code,
+                        name,
+                        step_type,
+                        approver_type,
+                        approver_role_code,
+                        approver_position_id,
+                        approver_user_id,
+                        approval_mode,
+                        required_approvals,
+                        allow_delegation,
+                        allow_reassignment,
+                        settings_json,
+                        is_active
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,%s,
+                        %s,%s,%s,%s,
+                        'single',1,
+                        %s,%s,%s,TRUE
+                    )
+                    RETURNING id;
+                    """,
+                    (
+                        workflow_version_id,
+                        index,
+                        f"GOV_APPROVAL_{index}",
+                        name,
+                        "review" if is_finance_step else "approval",
+                        approver_type,
+                        role_code,
+                        int(position_id) if position_id else None,
+                        int(user_id) if user_id else None,
+                        bool(item.get("allow_delegation",mode!="controlled")),
+                        bool(item.get("allow_reassignment",mode=="flexible")),
+                        psycopg2.extras.Json({
+                            "required":bool(item.get("required",True)),
+                        }),
+                    ),
+                )
+
+                step_id=int(cur.fetchone()["id"])
+
+                min_amount=item.get("min_amount")
+                max_amount=item.get("max_amount")
+
+                if min_amount not in (None,""):
+                    cur.execute(
+                        f"""
+                        INSERT INTO {schema}.ops_workflow_conditions(
+                            workflow_step_id,
+                            field_name,
+                            operator,
+                            comparison_value,
+                            sort_order
+                        )
+                        VALUES(%s,'estimated_amount','gte',%s,10);
+                        """,
+                        (
+                            step_id,
+                            str(float(min_amount)),
+                        ),
+                    )
+
+                if max_amount not in (None,""):
+                    cur.execute(
+                        f"""
+                        INSERT INTO {schema}.ops_workflow_conditions(
+                            workflow_step_id,
+                            field_name,
+                            operator,
+                            comparison_value,
+                            sort_order
+                        )
+                        VALUES(%s,'estimated_amount','lte',%s,20);
+                        """,
+                        (
+                            step_id,
+                            str(float(max_amount)),
+                        ),
+                    )
+
+            current_settings=self.get_ops_settings(company_id)
+            current_json=current_settings.get("settings_json") or {}
+
+            governance_json={
+                **current_json,
+                "governance":{
+                    **governance_rules,
+                    "workflow_version":version_no,
+                }
+            }
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_settings
+                SET governance_mode=%s,
+                    allow_owner_override=%s,
+                    require_override_reason=%s,
+                    settings_json=%s,
+                    setup_step=4,
+                    updated_at=NOW()
+                WHERE company_id=%s;
+                """,
+                (
+                    mode,
+                    allow_owner_override,
+                    require_override_reason,
+                    psycopg2.extras.Json(governance_json),
+                    company_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,event_type,module,
+                    entity_type,entity_id,entity_ref,
+                    actor_user_id,action,after_json
+                )
+                VALUES(
+                    %s,'governance.updated','governance',
+                    'workflow',%s,'STANDARD_REQUEST',
+                    %s,'configure',%s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(workflow_id),
+                    actor_user_id,
+                    psycopg2.extras.Json({
+                        "mode":mode,
+                        "workflow_version":version_no,
+                        "steps":steps,
+                        **governance_rules,
+                    }),
+                ),
+            )
+
+        return self.get_ops_governance_config(company_id)
 
     def _start_next_ops_workflow_step(
         self,
@@ -159094,6 +175408,34 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         step=cur.fetchone()
 
         if not step:
+            governance=self.get_ops_governance_rules(company_id)
+
+            if governance["require_budget_validation"]:
+                latest_budget=self.fetch_one(
+                    f"""
+                    SELECT bc.*
+                    FROM {schema}.ops_budget_checks bc
+                    JOIN {schema}.ops_requests r
+                    ON r.id=bc.request_id
+                    WHERE bc.request_id=%s
+                    AND bc.request_revision_no=r.revision_no
+                    ORDER BY bc.checked_at DESC,bc.id DESC
+                    LIMIT 1;
+                    """,
+                    (request_id,),
+            ) or {}
+
+                if not latest_budget:
+                    raise ValueError(
+                        "Final approval is blocked because budget validation has not been completed."
+                    )
+
+                if latest_budget.get("result") not in {"pass","warn","not_required"}:
+                    raise ValueError(
+                        latest_budget.get("message")
+                        or "Final approval is blocked by budget control."
+                    )
+
             cur.execute(
                 f"""
                 UPDATE {schema}.ops_workflow_instances
@@ -159110,24 +175452,40 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 UPDATE {schema}.ops_requests
                 SET status='approved',
                     approved_at=NOW(),
+                    final_approval_revision_no=revision_no,
+                    locked_at=NOW(),
+                    locked_by_user_id=%s,
                     updated_at=NOW(),
                     updated_by_user_id=%s
                 WHERE id=%s;
                 """,
-                (actor_user_id,request_id),
+                (
+                    actor_user_id,
+                    actor_user_id,
+                    request_id,
+                ),
             )
 
-            self.reserve_ops_request_budget(
-                company_id,
-                request_id,
-                actor_user_id=actor_user_id,
-                cur=cur,
-            )
+        self.reserve_ops_request_budget(
+            company_id,
+            request_id,
+            actor_user_id=actor_user_id,
+            cur=cur,
+        )
 
-            return {
-                "completed":True,
-                "step":None,
-            }
+        document=self.snapshot_ops_requisition(
+            company_id,
+            request_id,
+            actor_user_id=actor_user_id,
+            document_status="approved",
+            cur=cur,
+        )
+
+        return {
+            "completed":True,
+            "step":None,
+            "document_id":document["id"],
+        }
 
         cur.execute(
             f"""
@@ -159141,67 +175499,39 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         request_row=dict(cur.fetchone() or {})
 
-        approver_id=self.resolve_ops_approver(
+        if not self._ops_workflow_step_matches(
             company_id,
+            workflow_step_id=int(step["id"]),
             request_row=request_row,
-            workflow_step=dict(step),
-        )
-
-        if not approver_id:
-            # Missing organisational approver:
-            # owner becomes safe fallback.
-            approver_id=self.fetch_val(
-                """
-                SELECT owner_user_id
-                FROM public.companies
-                WHERE id=%s;
-                """,
-                (company_id,),
-            )
-
-        if not approver_id:
-            raise ValueError(
-                f"No approver could be resolved for step '{step['name']}'."
-            )
-
-        # Avoid forcing same person to approve consecutive steps.
-        cur.execute(
-            f"""
-            SELECT assigned_to_user_id
-            FROM {schema}.ops_approval_tasks
-            WHERE workflow_instance_id=%s
-            AND status='approved'
-            ORDER BY id DESC
-            LIMIT 1;
-            """,
-            (workflow_instance_id,),
-        )
-
-        previous=cur.fetchone()
-
-        if (
-            previous
-            and int(previous["assigned_to_user_id"])==int(approver_id)
         ):
+            
             cur.execute(
                 f"""
                 INSERT INTO {schema}.ops_approval_tasks(
                     workflow_instance_id,
                     workflow_step_id,
                     request_id,
+                    request_revision_no,
                     assigned_to_user_id,
                     assigned_by_user_id,
                     status,
                     acted_at
                 )
-                VALUES(%s,%s,%s,%s,%s,'skipped',NOW());
+                SELECT
+                    %s,%s,%s,
+                    request_revision_no,
+                    %s,%s,
+                    'skipped',NOW()
+                FROM {schema}.ops_workflow_instances
+                WHERE id=%s;
                 """,
                 (
                     workflow_instance_id,
                     step["id"],
                     request_id,
-                    approver_id,
                     actor_user_id,
+                    actor_user_id,
+                    workflow_instance_id,
                 ),
             )
 
@@ -159214,16 +175544,78 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 cur=cur,
             )
 
+        approver_id=self.resolve_ops_approver(
+            company_id,
+            request_row=request_row,
+            workflow_step=dict(step),
+        )
+
+        governance=self.get_ops_governance_rules(company_id)
+
+        if not approver_id and governance["mode"]=="flexible":
+            approver_id=self.fetch_val(
+                """
+                SELECT owner_user_id
+                FROM public.companies
+                WHERE id=%s;
+                """,
+                (company_id,),
+            )
+
+        if not approver_id:
+            raise ValueError(
+                f"No approver could be resolved for step '{step['name']}'. Check the Governance setup."
+            )
+
+        # Avoid forcing same person to approve consecutive steps.
+        cur.execute(
+            f"""
+            SELECT assigned_to_user_id
+            FROM {schema}.ops_approval_tasks
+            WHERE workflow_instance_id=%s
+              AND status='approved'
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (workflow_instance_id,),
+        )
+
+        previous=cur.fetchone()
+
+        if (
+            governance["prevent_consecutive_approval"]
+            and previous
+            and int(previous["assigned_to_user_id"])==int(approver_id)
+        ):
+            raise ValueError(
+                f"Governance prevents the same person from approving consecutive stages. "
+                f"Step '{step['name']}' must be assigned to another approver."
+            )
+
+        if (
+            governance["prevent_self_approval"]
+            and int(approver_id)==int(request_row.get("requested_by_user_id") or 0)
+        ):
+            raise ValueError(
+                f"Governance prevents self-approval. "
+                f"Step '{step['name']}' resolves to the requester."
+            )
         cur.execute(
             f"""
             INSERT INTO {schema}.ops_approval_tasks(
                 workflow_instance_id,
                 workflow_step_id,
                 request_id,
+                request_revision_no,
                 assigned_to_user_id,
                 assigned_by_user_id
             )
-            VALUES(%s,%s,%s,%s,%s)
+            SELECT
+                %s,%s,%s,
+                request_revision_no,
+                %s,%s
+            FROM {schema}.ops_workflow_instances
+            WHERE id=%s
             RETURNING *;
             """,
             (
@@ -159232,6 +175624,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 request_id,
                 approver_id,
                 actor_user_id,
+                workflow_instance_id,
             ),
         )
 
@@ -159255,6 +175648,169 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "task":task,
         }
 
+    def validate_ops_workflow_for_request(
+        self,
+        company_id:int,
+        request_id:int,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        schema=self.company_schema(company_id)
+
+        request_row=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_requests
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (company_id,request_id),
+        ) or {}
+
+        if not request_row:
+            raise ValueError("Request not found.")
+
+        governance=self.get_ops_governance_rules(company_id)
+
+        workflow=self.fetch_one(
+            f"""
+            SELECT
+                w.id AS workflow_id,
+                v.id AS workflow_version_id,
+                v.version_no
+            FROM {schema}.ops_workflows w
+            JOIN {schema}.ops_workflow_versions v
+            ON v.workflow_id=w.id
+            AND v.status='active'
+            WHERE w.company_id=%s
+            AND w.status='active'
+            AND (
+                w.request_type_id=%s
+                OR w.is_default=TRUE
+            )
+            ORDER BY
+                CASE
+                    WHEN w.request_type_id=%s THEN 0
+                    ELSE 1
+                END,
+                v.version_no DESC
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                request_row["request_type_id"],
+                request_row["request_type_id"],
+            ),
+        ) or {}
+
+        if not workflow:
+            raise ValueError(
+                "No active approval workflow is configured for this request."
+            )
+
+        steps=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_workflow_steps
+            WHERE workflow_version_id=%s
+            AND is_active=TRUE
+            ORDER BY step_no;
+            """,
+            (workflow["workflow_version_id"],),
+        ) or []
+
+        if not steps:
+            raise ValueError(
+                "The active approval workflow has no approval stages."
+            )
+
+        applicable=[]
+        previous_approver_id=None
+
+        for step in steps:
+            step=dict(step)
+
+            if not self._ops_workflow_step_matches(
+                company_id,
+                workflow_step_id=int(step["id"]),
+                request_row=request_row,
+            ):
+                continue
+
+            approver_id=self.resolve_ops_approver(
+                company_id,
+                request_row=request_row,
+                workflow_step=step,
+            )
+
+            if not approver_id:
+                if governance["mode"]=="flexible":
+                    approver_id=self.fetch_val(
+                        """
+                        SELECT owner_user_id
+                        FROM public.companies
+                        WHERE id=%s;
+                        """,
+                        (company_id,),
+                    )
+
+                if not approver_id:
+                    raise ValueError(
+                        f"Governance configuration error: no approver is assigned for '{step['name']}'."
+                    )
+
+            approver_id=int(approver_id)
+
+            if (
+                governance["prevent_self_approval"]
+                and approver_id==int(request_row["requested_by_user_id"])
+            ):
+                raise ValueError(
+                    f"Governance configuration error: '{step['name']}' resolves to the requester, but self-approval is prohibited."
+                )
+
+            if (
+                governance["prevent_consecutive_approval"]
+                and previous_approver_id is not None
+                and previous_approver_id==approver_id
+            ):
+                raise ValueError(
+                    f"Governance configuration error: '{step['name']}' resolves to the same person as the preceding approval stage."
+                )
+
+            applicable.append({
+                "step_id":step["id"],
+                "step_no":step["step_no"],
+                "step_name":step["name"],
+                "step_type":step["step_type"],
+                "approver_id":approver_id,
+            })
+
+            previous_approver_id=approver_id
+
+        if not applicable:
+            raise ValueError(
+                "No approval stage applies to this request."
+            )
+
+        if governance["require_finance_review"]:
+            has_finance_review=any(
+                step["step_type"]=="review"
+                for step in applicable
+            )
+
+            if not has_finance_review:
+                raise ValueError(
+                    "Governance requires Finance review, but no Finance review stage applies to this request."
+                )
+
+        return {
+            "governance":governance,
+            "workflow":workflow,
+            "steps":applicable,
+        }
+
     def submit_ops_request(
         self,
         company_id:int,
@@ -159267,18 +175823,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         actor_user_id=int(actor_user_id)
         schema=self.company_schema(company_id)
 
-        budget_check=self.check_ops_request_budget(
+        validation=self.validate_ops_workflow_for_request(
             company_id,
             request_id,
-            actor_user_id=actor_user_id,
         )
 
-        if budget_check.get("result")=="fail":
-            raise ValueError(
-                budget_check.get("message")
-                or "Budget check failed."
-            )
-            
+        governance=validation["governance"]
+
         with self.transaction() as (_conn,cur):
             cur.execute(
                 f"""
@@ -159296,9 +175847,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not req:
                 raise ValueError("Request not found.")
 
-            if req["status"]!="draft":
+            if req["status"] not in {"draft","returned"}:
                 raise ValueError(
-                    "Only draft requests can be submitted."
+                    "Only draft or returned requests can be submitted."
                 )
 
             if int(req["requested_by_user_id"])!=actor_user_id:
@@ -159306,60 +175857,30 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "Only the requester can submit this request."
                 )
 
-            cur.execute(
-                f"""
-                SELECT
-                    w.id AS workflow_id,
-                    v.id AS workflow_version_id
-                FROM {schema}.ops_workflows w
-                JOIN {schema}.ops_workflow_versions v
-                ON v.workflow_id=w.id
-                AND v.status='active'
-                WHERE w.company_id=%s
-                AND w.status='active'
-                AND (
-                        w.request_type_id=%s
-                        OR w.is_default=TRUE
-                )
-                ORDER BY
-                    CASE
-                        WHEN w.request_type_id=%s THEN 0
-                        ELSE 1
-                    END,
-                    v.version_no DESC
-                LIMIT 1;
-                """,
-                (
-                    company_id,
-                    req["request_type_id"],
-                    req["request_type_id"],
-                ),
-            )
-
-            wf=cur.fetchone()
-
-            if not wf:
-                raise ValueError(
-                    "No active workflow is configured for this request."
-                )
+            wf=validation["workflow"]
 
             cur.execute(
                 f"""
                 INSERT INTO {schema}.ops_workflow_instances(
-                    company_id,
                     workflow_id,
                     workflow_version_id,
                     request_id,
+                    request_revision_no,
+                    status,
+                    current_step_no,
                     started_by_user_id
                 )
-                VALUES(%s,%s,%s,%s,%s)
+                VALUES(
+                    %s,%s,%s,%s,
+                    'active',NULL,%s
+                )
                 RETURNING id;
                 """,
                 (
-                    company_id,
                     wf["workflow_id"],
                     wf["workflow_version_id"],
                     request_id,
+                    int(req.get("revision_no") or 1),
                     actor_user_id,
                 ),
             )
@@ -159373,7 +175894,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 UPDATE {schema}.ops_requests
                 SET status='pending_approval',
                     submitted_at=NOW(),
+                    last_submitted_revision_no=revision_no,
                     current_workflow_instance_id=%s,
+                    returned_at=NULL,
+                    returned_by_user_id=NULL,
+                    last_return_comment=NULL,
                     updated_by_user_id=%s,
                     updated_at=NOW()
                 WHERE id=%s;
@@ -159391,6 +175916,14 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 workflow_instance_id=workflow_instance_id,
                 after_step_no=0,
                 actor_user_id=actor_user_id,
+                cur=cur,
+            )
+
+            document=self.snapshot_ops_requisition(
+                company_id,
+                request_id,
+                actor_user_id=actor_user_id,
+                document_status="submitted",
                 cur=cur,
             )
 
@@ -159412,8 +175945,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     req["request_no"],
                     actor_user_id,
                     psycopg2.extras.Json({
-                        "workflow_instance_id":
-                            workflow_instance_id,
+                        "workflow_instance_id":workflow_instance_id,
+                        "workflow_version_id":wf["workflow_version_id"],
+                        "governance_mode":governance["mode"],
+                        "governance_rules":governance,
+                        "validated_steps":validation["steps"],
+                        "document_snapshot_id":document["id"],
+                        "request_revision_no":int(req.get("revision_no") or 1),
                         "next":result,
                     }),
                 ),
@@ -159443,22 +175981,79 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 r.request_no,
                 r.title,
                 r.description,
+                r.business_purpose,
                 r.estimated_amount,
                 r.currency_code,
                 r.priority,
+                r.status AS request_status,
                 r.submitted_at,
+                r.required_date,
+                r.department_id,
+                r.branch_id,
 
+                rt.code AS request_type_code,
                 rt.name AS request_type_name,
 
+                ws.step_no,
+                ws.code AS step_code,
                 ws.name AS step_name,
+                ws.step_type,
+                ws.approver_type,
+                ws.approval_mode,
+                ws.required_approvals,
+
+                wi.current_step_no,
+                wi.status AS workflow_status,
 
                 d.name AS department_name,
+                b.name AS branch_name,
 
                 trim(concat_ws(
                     ' ',
                     u.first_name,
                     u.last_name
-                )) AS requester_name
+                )) AS requester_name,
+
+                pos.title AS requester_position,
+
+                (
+                    SELECT bc.result
+                    FROM {schema}.ops_budget_checks bc
+                    WHERE bc.request_id=r.id
+                    ORDER BY bc.checked_at DESC,bc.id DESC
+                    LIMIT 1
+                ) AS budget_result,
+
+                (
+                    SELECT bc.available_after
+                    FROM {schema}.ops_budget_checks bc
+                    WHERE bc.request_id=r.id
+                    ORDER BY bc.checked_at DESC,bc.id DESC
+                    LIMIT 1
+                ) AS budget_available_after,
+
+                (
+                    SELECT bc.message
+                    FROM {schema}.ops_budget_checks bc
+                    WHERE bc.request_id=r.id
+                    ORDER BY bc.checked_at DESC,bc.id DESC
+                    LIMIT 1
+                ) AS budget_message,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ops_approval_tasks ta
+                    WHERE ta.workflow_instance_id=t.workflow_instance_id
+                    AND ta.status='approved'
+                ) AS completed_approval_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM {schema}.ops_workflow_steps wsa
+                    WHERE wsa.workflow_version_id=wi.workflow_version_id
+                    AND wsa.is_active=TRUE
+                    AND wsa.step_type='approval'
+                ) AS total_approval_count
 
             FROM {schema}.ops_approval_tasks t
 
@@ -159471,11 +176066,31 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             JOIN {schema}.ops_workflow_steps ws
             ON ws.id=t.workflow_step_id
 
+            JOIN {schema}.ops_workflow_instances wi
+            ON wi.id=t.workflow_instance_id
+
             LEFT JOIN public.company_departments d
             ON d.id=r.department_id
 
+            LEFT JOIN public.company_branches b
+            ON b.id=r.branch_id
+
             LEFT JOIN public.users u
             ON u.id=r.requested_by_user_id
+
+            LEFT JOIN public.company_users cu
+            ON cu.company_id=%s
+            AND cu.user_id=r.requested_by_user_id
+            AND cu.is_active=TRUE
+
+            LEFT JOIN public.company_user_assignments cua
+            ON cua.company_id=%s
+            AND cua.company_user_id=cu.id
+            AND cua.is_primary=TRUE
+            AND cua.is_active=TRUE
+
+            LEFT JOIN public.company_positions pos
+            ON pos.id=cua.position_id
 
             WHERE t.company_id=%s
             AND t.assigned_to_user_id=%s
@@ -159491,6 +176106,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 t.created_at;
             """,
             (
+                company_id,
+                company_id,
                 company_id,
                 user_id,
                 status,
@@ -159513,9 +176130,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         schema=self.company_schema(company_id)
 
         decision=(decision or "").strip().lower()
+        comment=(comment or "").strip() or None
 
-        if decision not in {"approve","reject"}:
+        if decision not in {"approve","return","reject"}:
             raise ValueError("Invalid approval decision.")
+
+        if decision in {"return","reject"} and not comment:
+            raise ValueError(
+                "A comment is required when returning or rejecting a request."
+            )
 
         with self.transaction() as (_conn,cur):
             cur.execute(
@@ -159523,7 +176146,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 SELECT
                     t.*,
                     ws.step_no,
-                    r.request_no
+                    ws.name AS step_name,
+                    ws.step_type,
+                    ws.approver_role_code,
+                    r.request_no,
+                    r.requested_by_user_id
                 FROM {schema}.ops_approval_tasks t
                 JOIN {schema}.ops_workflow_steps ws
                 ON ws.id=t.workflow_step_id
@@ -159541,6 +176168,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             if not task:
                 raise ValueError("Approval task not found.")
 
+            request_id=int(task["request_id"])
+            workflow_instance_id=int(task["workflow_instance_id"])
+
             if int(task["assigned_to_user_id"])!=actor_user_id:
                 raise PermissionError(
                     "This approval is not assigned to you."
@@ -159551,11 +176181,94 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     "This approval has already been actioned."
                 )
 
-            task_status=(
-                "approved"
-                if decision=="approve"
-                else "rejected"
+            current_revision=self.fetch_val(
+                f"""
+                SELECT revision_no
+                FROM {schema}.ops_requests
+                WHERE id=%s;
+                """,
+                (request_id,),
             )
+
+            if int(current_revision or 0)!=int(task.get("request_revision_no") or 0):
+                raise ValueError(
+                    "This Finance review belongs to an older request revision."
+                )
+
+            governance=self.get_ops_governance_rules(company_id)
+
+            is_finance_review=(
+                task.get("step_type")=="review"
+                or str(task.get("approver_role_code") or "").upper()
+                in {
+                    "FINANCE_REVIEWER",
+                    "FINANCE_MANAGER",
+                    "CFO",
+                    "ACCOUNTANT",
+                }
+            )
+
+            if decision=="approve" and is_finance_review:
+                self.validate_ops_finance_review(
+                    company_id,
+                    int(task["request_id"]),
+                    approval_task_id=task_id,
+                )
+
+            if (
+                decision=="approve"
+                and is_finance_review
+                and governance["require_budget_validation"]
+            ):
+                budget_check=self.check_ops_request_budget(
+                    company_id,
+                    int(task["request_id"]),
+                    actor_user_id=actor_user_id,
+                )
+
+                if budget_check.get("result")=="fail":
+                    raise ValueError(
+                        budget_check.get("message")
+                        or "Budget validation failed."
+                    )
+
+                if budget_check.get("result")=="unavailable":
+                    raise ValueError(
+                        "Finance cannot approve this request until financial coding and an approved budget are available."
+                    )
+
+                self.execute_sql(
+                    f"""
+                    UPDATE {schema}.ops_finance_reviews
+                    SET budget_result=%s,
+                        budget_verified=TRUE,
+                        updated_at=NOW()
+                    WHERE approval_task_id=%s;
+                    """,
+                    (
+                        budget_check.get("result"),
+                        task_id,
+                    ),
+                    cur=cur,
+                )
+
+            if int(task.get("requested_by_user_id") or 0)==actor_user_id:
+                settings=self.get_ops_settings(company_id)
+                governance_mode=(
+                    settings.get("governance_mode")
+                    or "structured"
+                ).strip().lower()
+
+                if governance_mode in {"structured","controlled"}:
+                    raise PermissionError(
+                        "You cannot approve your own request under this governance mode."
+                    )
+
+            task_status={
+                "approve":"approved",
+                "return":"returned",
+                "reject":"rejected",
+            }[decision]
 
             cur.execute(
                 f"""
@@ -159564,10 +176277,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     acted_at=NOW()
                 WHERE id=%s;
                 """,
-                (
-                    task_status,
-                    task_id,
-                ),
+                (task_status,task_id),
             )
 
             cur.execute(
@@ -159575,22 +176285,78 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 INSERT INTO {schema}.ops_approval_decisions(
                     approval_task_id,
                     request_id,
+                    request_revision_no,
                     decision,
                     decided_by_user_id,
-                    comment
+                    comment,
+                    metadata_json
                 )
-                VALUES(%s,%s,%s,%s,%s);
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,%s,%s
+                );
                 """,
                 (
                     task_id,
                     task["request_id"],
+                    int(task.get("request_revision_no") or 1),
                     decision,
                     actor_user_id,
-                    (comment or "").strip() or None,
+                    comment,
+                    psycopg2.extras.Json({
+                        "step_no":task["step_no"],
+                        "step_name":task["step_name"],
+                    }),
                 ),
             )
 
-            if decision=="reject":
+            if decision=="return":
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_workflow_instances
+                    SET status='cancelled',
+                        cancelled_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (task["workflow_instance_id"],),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_approval_tasks
+                    SET status='cancelled',
+                        acted_at=COALESCE(acted_at,NOW())
+                    WHERE workflow_instance_id=%s
+                    AND id<>%s
+                    AND status='pending';
+                    """,
+                    (
+                        task["workflow_instance_id"],
+                        task_id,
+                    ),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_requests
+                    SET status='returned',
+                        current_workflow_instance_id=NULL,
+                        returned_at=NOW(),
+                        returned_by_user_id=%s,
+                        last_return_comment=%s,
+                        updated_by_user_id=%s,
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (
+                        actor_user_id,
+                        comment,
+                        actor_user_id,
+                        task["request_id"],
+                    ),
+                )
+
+            elif decision=="reject":
                 cur.execute(
                     f"""
                     UPDATE {schema}.ops_workflow_instances
@@ -159599,6 +176365,21 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     WHERE id=%s;
                     """,
                     (task["workflow_instance_id"],),
+                )
+
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.ops_approval_tasks
+                    SET status='cancelled',
+                        acted_at=COALESCE(acted_at,NOW())
+                    WHERE workflow_instance_id=%s
+                    AND id<>%s
+                    AND status='pending';
+                    """,
+                    (
+                        task["workflow_instance_id"],
+                        task_id,
+                    ),
                 )
 
                 cur.execute(
@@ -159628,6 +176409,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     cur=cur,
                 )
 
+            event_type={
+                "approve":"approval.approved",
+                "return":"approval.returned",
+                "reject":"approval.rejected",
+            }[decision]
+
             cur.execute(
                 f"""
                 INSERT INTO {schema}.ops_events(
@@ -159642,15 +176429,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 """,
                 (
                     str(uuid.uuid4()),
-                    f"approval.{decision}d"
-                        if decision=="approve"
-                        else "approval.rejected",
+                    event_type,
                     str(task["request_id"]),
                     task["request_no"],
                     actor_user_id,
                     decision,
                     psycopg2.extras.Json({
                         "approval_task_id":task_id,
+                        "step_no":task["step_no"],
+                        "step_name":task["step_name"],
                         "comment":comment,
                     }),
                 ),
@@ -159882,7 +176669,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 department_id=req.get("department_id"),
                 branch_id=req.get("branch_id"),
                 project_id=req.get("project_id"),
-                cost_center_id=req.get("cost_center_id"),
+                cost_center_id=req.get("cost_centre_id"),
             )
 
             if financial.get("source")=="no_approved_budget":
@@ -159943,11 +176730,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     financial_commitments,ops_commitments,committed_amount,
                     available_before,available_after,
                     result,control_mode,override_required,message,
-                    source_json,checked_by_user_id
+                    source_json,checked_by_user_id,
+                    request_revision_no
                 )
                 VALUES(
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
                 )
                 RETURNING *;
                 """,
@@ -159999,6 +176787,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     req["request_no"],
                     actor_user_id,
                     psycopg2.extras.Json(row),
+                    int(req.get("revision_no") or 1),
                 ),
             )
 
@@ -160209,63 +176998,201 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return dict(cur.fetchone())
 
-    def build_ops_requisition_payload(self,company_id:int,request_id:int):
-        row=self.get_ops_request(company_id,request_id)
-
-        if not row:
-            raise ValueError("Request not found.")
-
+    def build_ops_requisition_payload(
+        self,
+        company_id:int,
+        request_id:int,
+        *,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
         schema=self.company_schema(company_id)
 
-        company=self.fetch_one(
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.build_ops_requisition_payload(
+                    company_id,
+                    request_id,
+                    cur=tx,
+                )
+
+        cur.execute(
+            f"""
+            SELECT
+                r.*,
+                rt.code AS request_type_code,
+                rt.name AS request_type_name,
+                d.name AS department_name,
+                b.name AS branch_name,
+                cc.code AS cost_centre_code,
+                cc.name AS cost_centre_name,
+                trim(concat_ws(' ',u.first_name,u.last_name)) AS requester_name
+            FROM {schema}.ops_requests r
+            JOIN {schema}.ops_request_types rt
+            ON rt.id=r.request_type_id
+            LEFT JOIN public.company_departments d
+            ON d.id=r.department_id
+            LEFT JOIN public.company_branches b
+            ON b.id=r.branch_id
+            LEFT JOIN public.company_cost_centres cc
+            ON cc.id=r.cost_centre_id
+            LEFT JOIN public.users u
+            ON u.id=r.requested_by_user_id
+            WHERE r.company_id=%s
+            AND r.id=%s
+            LIMIT 1;
+            """,
+            (company_id,request_id),
+        )
+
+        request_row=cur.fetchone()
+
+        if not request_row:
+            raise ValueError("Request not found.")
+
+        request_row=dict(request_row)
+
+        cur.execute(
+            f"""
+            SELECT *
+            FROM {schema}.ops_request_items
+            WHERE request_id=%s
+            ORDER BY line_no,id;
+            """,
+            (request_id,),
+        )
+
+        request_row["items"]=[
+            dict(row)
+            for row in cur.fetchall()
+        ]
+
+        cur.execute(
             """
-            SELECT id,name,system_company_code,company_reg_no,tin,vat,
-                company_email,company_phone,physical_address,currency
+            SELECT
+                id,name,system_company_code,
+                company_reg_no,tin,vat,
+                company_email,company_phone,
+                physical_address,currency,
+                logo_url
             FROM public.companies
             WHERE id=%s
             LIMIT 1;
             """,
-            (int(company_id),),
-        ) or {}
+            (company_id,),
+        )
 
-        budget=self.fetch_one(
+        company=dict(cur.fetchone() or {})
+
+        cur.execute(
             f"""
-            SELECT *
-            FROM {schema}.ops_budget_checks
-            WHERE request_id=%s
-            ORDER BY checked_at DESC,id DESC
+            SELECT bc.*
+            FROM {schema}.ops_budget_checks bc
+            WHERE bc.request_id=%s
+            AND bc.request_revision_no=%s
+            ORDER BY bc.checked_at DESC,bc.id DESC
             LIMIT 1;
             """,
-            (int(request_id),),
-        ) or {}
+            (
+                request_id,
+                int(request_row.get("revision_no") or 1),
+            ),
+        )
 
-        decisions=self.fetch_all(
+        budget=dict(cur.fetchone() or {})
+
+        cur.execute(
+            f"""
+            SELECT
+                fr.*,
+                cc.code AS cost_centre_code,
+                cc.name AS cost_centre_name,
+                trim(concat_ws(' ',u.first_name,u.last_name)) AS reviewer_name
+            FROM {schema}.ops_finance_reviews fr
+            LEFT JOIN public.company_cost_centres cc
+            ON cc.id=fr.cost_centre_id
+            LEFT JOIN public.users u
+            ON u.id=fr.reviewer_user_id
+            WHERE fr.request_id=%s
+            AND fr.request_revision_no=%s
+            ORDER BY fr.updated_at DESC,fr.id DESC
+            LIMIT 1;
+            """,
+            (request_id,),
+            int(request_row.get("revision_no") or 1),
+        )
+
+        finance_review=dict(cur.fetchone() or {})
+
+        cur.execute(
             f"""
             SELECT
                 d.*,
-                trim(concat_ws(' ',u.first_name,u.last_name)) AS decided_by_name,
-                ws.name AS step_name
+                ws.name AS step_name,
+                ws.step_no,
+                trim(concat_ws(' ',u.first_name,u.last_name)) AS decided_by_name
             FROM {schema}.ops_approval_decisions d
-            JOIN {schema}.ops_approval_tasks t ON t.id=d.approval_task_id
-            JOIN {schema}.ops_workflow_steps ws ON ws.id=t.workflow_step_id
-            LEFT JOIN public.users u ON u.id=d.decided_by_user_id
+            JOIN {schema}.ops_approval_tasks t
+            ON t.id=d.approval_task_id
+            JOIN {schema}.ops_workflow_steps ws
+            ON ws.id=t.workflow_step_id
+            LEFT JOIN public.users u
+            ON u.id=d.decided_by_user_id
             WHERE d.request_id=%s
-            ORDER BY d.decided_at;
+            AND d.request_revision_no=%s
+            ORDER BY d.decided_at,d.id;
             """,
-            (int(request_id),),
-        ) or []
+            (request_id,),
+            int(request_row.get("revision_no") or 1),
+        )
+
+        approvals=[
+            dict(row)
+            for row in cur.fetchall()
+        ]
 
         return {
             "document":{
-                "type":row.get("document_type") or "PURCHASE_REQUISITION",
-                "number":row["request_no"],
-                "version":1,
+                "type":
+                    request_row.get("document_type")
+                    or "GENERAL_REQUISITION",
+
+                "number":request_row["request_no"],
+
+                "revision_no":
+                    int(request_row.get("revision_no") or 1),
             },
             "company":company,
-            "request":row,
+            "request":request_row,
             "budget":budget,
-            "approvals":decisions,
+            "finance_review":finance_review,
+            "approvals":approvals,
         }
+
+    def get_ops_request_audit_trail(
+        self,
+        company_id:int,
+        request_id:int,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(
+            f"""
+            SELECT
+                e.*,
+                trim(concat_ws(' ',u.first_name,u.last_name)) AS actor_name
+            FROM {schema}.ops_events e
+            LEFT JOIN public.users u
+            ON u.id=e.actor_user_id
+            WHERE e.entity_type='request'
+            AND e.entity_id=%s
+            ORDER BY e.created_at,e.id;
+            """,
+            (str(request_id),),
+        ) or []
 
     def snapshot_ops_requisition(
         self,
@@ -160273,67 +177200,448 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         request_id:int,
         *,
         actor_user_id:int,
+        document_status=None,
+        cur=None,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.snapshot_ops_requisition(
+                    company_id,
+                    request_id,
+                    actor_user_id=actor_user_id,
+                    document_status=document_status,
+                    cur=tx,
+                )
+
+        payload=self.build_ops_requisition_payload(
+            company_id,
+            request_id,
+            cur=cur,
+        )
+
+        document_type=payload["document"]["type"]
+        revision_no=int(payload["document"]["revision_no"] or 1)
+
+        request_status=payload["request"].get("status") or "draft"
+
+        document_status=document_status or (
+            "approved"
+            if request_status=="approved"
+            else "submitted"
+            if request_status in {"submitted","pending_approval"}
+            else "draft"
+        )
+
+        cur.execute(
+            f"""
+            SELECT COALESCE(MAX(version_no),0) AS version_no
+            FROM {schema}.ops_documents
+            WHERE entity_type='request'
+            AND entity_id=%s
+            AND document_type=%s
+            AND request_revision_no=%s;
+            """,
+            (
+                request_id,
+                document_type,
+                revision_no,
+            ),
+        )
+
+        version_no=int(
+            (cur.fetchone() or {}).get("version_no")
+            or 0
+        )+1
+
+        cur.execute(
+            f"""
+            UPDATE {schema}.ops_documents
+            SET is_current=FALSE,
+                document_status=
+                    CASE
+                        WHEN document_status='approved'
+                        THEN 'superseded'
+                        ELSE document_status
+                    END
+            WHERE entity_type='request'
+            AND entity_id=%s
+            AND document_type=%s
+            AND is_current=TRUE;
+            """,
+            (
+                request_id,
+                document_type,
+            ),
+        )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_documents(
+                company_id,
+                entity_type,
+                entity_id,
+
+                document_type,
+                document_no,
+
+                version_no,
+                request_revision_no,
+
+                template_code,
+                format,
+                document_status,
+
+                generated_by_user_id,
+                approved_at,
+                approved_by_user_id,
+
+                snapshot_json,
+                is_current
+            )
+            VALUES(
+                %s,'request',%s,
+                %s,%s,
+                %s,%s,
+                %s,'snapshot',%s,
+                %s,
+                CASE WHEN %s='approved' THEN NOW() ELSE NULL END,
+                CASE WHEN %s='approved' THEN %s ELSE NULL END,
+                %s,TRUE
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                request_id,
+
+                document_type,
+                payload["document"]["number"],
+
+                version_no,
+                revision_no,
+
+                f"{document_type}_V1",
+                document_status,
+
+                actor_user_id,
+
+                document_status,
+                document_status,
+                actor_user_id,
+
+                psycopg2.extras.Json(payload),
+            ),
+        )
+
+        row=dict(cur.fetchone())
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_events(
+                event_uuid,event_type,module,
+                entity_type,entity_id,entity_ref,
+                actor_user_id,action,after_json
+            )
+            VALUES(
+                %s,'document.snapshot.created','documents',
+                'request',%s,%s,
+                %s,'snapshot',%s
+            );
+            """,
+            (
+                str(uuid.uuid4()),
+                str(request_id),
+                payload["document"]["number"],
+                actor_user_id,
+                psycopg2.extras.Json({
+                    "document_id":row["id"],
+                    "document_type":document_type,
+                    "revision_no":revision_no,
+                    "version_no":version_no,
+                    "document_status":document_status,
+                }),
+            ),
+        )
+
+        return row
+
+    def generate_ops_requisition_document(
+        self,
+        company_id:int,
+        request_id:int,
+        *,
+        actor_user_id:int,
+        format:str,
+        app_root:str,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        format=(format or "").strip().lower()
+
+        if format not in {"pdf","xlsx"}:
+            raise ValueError(
+                "Document format must be PDF or XLSX."
+            )
+
+        request_row=self.get_ops_request(
+            company_id,
+            request_id,
+        )
+
+        if not request_row:
+            raise ValueError("Request not found.")
+
+        if request_row["status"] not in {
+            "pending_approval",
+            "approved",
+        }:
+            raise ValueError(
+                "Only submitted or approved requisitions can be exported."
+            )
+
+        snapshot=self.snapshot_ops_requisition(
+            company_id,
+            request_id,
+            actor_user_id=actor_user_id,
+            document_status=(
+                "approved"
+                if request_row["status"]=="approved"
+                else "submitted"
+            ),
+        )
+
+        payload=snapshot["snapshot_json"]
+
+        if isinstance(payload,str):
+            payload=json.loads(payload)
+
+        request_no=request_row["request_no"]
+        revision_no=int(
+            request_row.get("revision_no")
+            or 1
+        )
+
+        safe_no="".join(
+            c if c.isalnum() or c in "-_" else "_"
+            for c in request_no
+        )
+
+        file_name=(
+            f"{safe_no}_R{revision_no}."
+            f"{format}"
+        )
+
+        output_dir=(
+            Path(app_root)
+            /"static"
+            /"generated"
+            /"ops"
+            /f"company_{company_id}"
+            /"requests"
+            /str(request_id)
+        )
+
+        output_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output_path=output_dir/file_name
+
+        if format=="pdf":
+            build_requisition_pdf(
+                payload,
+                output_path,
+                root_path=app_root,
+            )
+            mime_type="application/pdf"
+
+        else:
+            build_requisition_xlsx(
+                payload,
+                output_path,
+            )
+            mime_type=(
+                "application/"
+                "vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            )
+
+        file_bytes=output_path.read_bytes()
+        checksum=hashlib.sha256(
+            file_bytes
+        ).hexdigest()
+
+        relative_path=str(
+            output_path.relative_to(
+                Path(app_root)
+            )
+        ).replace("\\","/")
+
+        file_url=(
+            f"/api/companies/{company_id}"
+            f"/ops/documents/{snapshot['id']}/download"
+        )
+
+        existing=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_documents
+            WHERE entity_type='request'
+            AND entity_id=%s
+            AND document_type=%s
+            AND request_revision_no=%s
+            AND format=%s
+            AND is_current=TRUE
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (
+                request_id,
+                snapshot["document_type"],
+                revision_no,
+                format,
+            ),
+        )
+
+        if existing:
+            self.execute_sql(
+                f"""
+                UPDATE {schema}.ops_documents
+                SET is_current=FALSE
+                WHERE id=%s;
+                """,
+                (existing["id"],),
+            )
+
+        row=self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_documents(
+                company_id,
+                entity_type,
+                entity_id,
+
+                document_type,
+                document_no,
+
+                version_no,
+                request_revision_no,
+
+                template_code,
+                format,
+                document_status,
+
+                file_name,
+                file_url,
+                storage_path,
+                mime_type,
+                file_size,
+                checksum_sha256,
+
+                generated_by_user_id,
+                approved_at,
+                approved_by_user_id,
+
+                snapshot_json,
+                is_current
+            )
+            VALUES(
+                %s,'request',%s,
+                %s,%s,
+                %s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                %s,
+                CASE WHEN %s='approved' THEN NOW() ELSE NULL END,
+                CASE WHEN %s='approved' THEN %s ELSE NULL END,
+                %s,TRUE
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                request_id,
+
+                snapshot["document_type"],
+                request_no,
+
+                snapshot["version_no"],
+                revision_no,
+
+                snapshot["template_code"],
+                format,
+                snapshot["document_status"],
+
+                file_name,
+                file_url,
+                relative_path,
+                mime_type,
+                len(file_bytes),
+                checksum,
+
+                actor_user_id,
+
+                snapshot["document_status"],
+                snapshot["document_status"],
+                actor_user_id,
+
+                psycopg2.extras.Json(payload),
+            ),
+        )
+
+        return row
+
+    def list_ops_request_documents(
+        self,
+        company_id:int,
+        request_id:int,
     ):
         company_id=int(company_id)
         request_id=int(request_id)
         schema=self.company_schema(company_id)
 
-        payload=self.build_ops_requisition_payload(company_id,request_id)
-        document_type=payload["document"]["type"]
-
-        current=int(self.fetch_val(
+        return self.fetch_all(
             f"""
-            SELECT COALESCE(MAX(version_no),0)
+            SELECT
+                id,
+                document_type,
+                document_no,
+                version_no,
+                request_revision_no,
+                format,
+                document_status,
+                file_name,
+                file_url,
+                mime_type,
+                file_size,
+                checksum_sha256,
+                generated_by_user_id,
+                generated_at,
+                approved_at,
+                is_current
             FROM {schema}.ops_documents
-            WHERE entity_type='request'
+            WHERE company_id=%s
+            AND entity_type='request'
             AND entity_id=%s
-            AND document_type=%s;
+            ORDER BY
+                request_revision_no DESC,
+                generated_at DESC,
+                id DESC;
             """,
-            (request_id,document_type),
-        ) or 0)
-
-        version=current+1
-
-        with self.transaction() as (_conn,cur):
-            cur.execute(
-                f"""
-                UPDATE {schema}.ops_documents
-                SET is_current=FALSE
-                WHERE entity_type='request'
-                AND entity_id=%s
-                AND document_type=%s;
-                """,
-                (request_id,document_type),
-            )
-
-            cur.execute(
-                f"""
-                INSERT INTO {schema}.ops_documents(
-                    company_id,entity_type,entity_id,
-                    document_type,document_no,version_no,
-                    template_code,format,
-                    generated_by_user_id,snapshot_json,is_current
-                )
-                VALUES(
-                    %s,'request',%s,%s,%s,%s,
-                    %s,'snapshot',%s,%s,TRUE
-                )
-                RETURNING *;
-                """,
-                (
-                    company_id,
-                    request_id,
-                    document_type,
-                    payload["document"]["number"],
-                    version,
-                    f"{document_type}_V1",
-                    actor_user_id,
-                    psycopg2.extras.Json(payload),
-                ),
-            )
-
-            return dict(cur.fetchone())
-
+            (
+                company_id,
+                request_id,
+            ),
+        ) or []
+        
     def seed_ops_industry_organisation(self,company_id:int,*,actor_user_id=None,force=False):
         company_id=int(company_id)
 
@@ -160480,6 +177788,549 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "template_key":template["key"],
             "template_version":template["version"],
         }
+
+    def list_company_cost_centres(self,company_id:int):
+        company_id=int(company_id)
+
+        return self.fetch_all(
+            """
+            SELECT
+                cc.*,
+                d.name AS department_name,
+                b.name AS branch_name,
+                p.name AS parent_name
+            FROM public.company_cost_centres cc
+            LEFT JOIN public.company_departments d
+            ON d.id=cc.department_id
+            LEFT JOIN public.company_branches b
+            ON b.id=cc.branch_id
+            LEFT JOIN public.company_cost_centres p
+            ON p.id=cc.parent_cost_centre_id
+            WHERE cc.company_id=%s
+            AND cc.is_active=TRUE
+            ORDER BY cc.sort_order,cc.name;
+            """,
+            (company_id,),
+        ) or []
+
+
+    def create_company_cost_centre(
+        self,
+        company_id:int,
+        payload:dict,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        payload=payload or {}
+
+        code=str(payload.get("code") or "").strip().upper()
+        name=str(payload.get("name") or "").strip()
+
+        if not code:
+            raise ValueError("Cost centre code is required.")
+
+        if not name:
+            raise ValueError("Cost centre name is required.")
+
+        return self.fetch_one(
+            """
+            INSERT INTO public.company_cost_centres(
+                company_id,code,name,description,
+                department_id,branch_id,manager_user_id,
+                parent_cost_centre_id,sort_order,
+                created_by_user_id
+            )
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+            """,
+            (
+                company_id,
+                code,
+                name,
+                (payload.get("description") or "").strip() or None,
+                payload.get("department_id"),
+                payload.get("branch_id"),
+                payload.get("manager_user_id"),
+                payload.get("parent_cost_centre_id"),
+                int(payload.get("sort_order") or 0),
+                actor_user_id,
+            ),
+        )
+
+    def get_ops_finance_metadata(self,company_id:int):
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        accounts=self.fetch_all(
+            f"""
+            SELECT id,code,name,section,category,subcategory
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND posting=TRUE
+            ORDER BY code;
+            """,
+            (company_id,),
+        ) or []
+
+        cost_centres=self.list_company_cost_centres(company_id)
+
+        return {
+            "accounts":accounts,
+            "cost_centres":cost_centres,
+            "classifications":[
+                {"code":"opex","name":"Operating expenditure"},
+                {"code":"capex","name":"Capital expenditure"},
+                {"code":"inventory","name":"Inventory / Stock"},
+                {"code":"prepayment","name":"Prepayment"},
+                {"code":"lease","name":"Lease"},
+                {"code":"project_cost","name":"External project cost"},
+                {"code":"other","name":"Other"},
+            ],
+            "tax_treatments":[
+                {"code":"standard","name":"Standard VAT"},
+                {"code":"zero_rated","name":"Zero-rated"},
+                {"code":"exempt","name":"Exempt"},
+                {"code":"no_vat","name":"No VAT"},
+                {"code":"reverse_charge","name":"Reverse charge"},
+                {"code":"review_required","name":"Further tax review required"},
+            ],
+        }
+
+    def get_ops_finance_review(
+        self,
+        company_id:int,
+        request_id:int,
+        *,
+        approval_task_id=None,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        schema=self.company_schema(company_id)
+
+        params=[request_id]
+        task_filter=""
+
+        if approval_task_id:
+            task_filter=" AND fr.approval_task_id=%s"
+            params.append(int(approval_task_id))
+
+        review=self.fetch_one(
+            f"""
+            SELECT
+                fr.*,
+                cc.code AS cost_centre_code,
+                cc.name AS cost_centre_name,
+                trim(concat_ws(' ',u.first_name,u.last_name)) AS reviewer_name
+            FROM {schema}.ops_finance_reviews fr
+            LEFT JOIN public.company_cost_centres cc
+            ON cc.id=fr.cost_centre_id
+            LEFT JOIN public.users u
+            ON u.id=fr.reviewer_user_id
+            WHERE fr.request_id=%
+            AND fr.request_revision_no=rq.revision_no
+            {task_filter}
+            ORDER BY fr.created_at DESC
+            LIMIT 1;
+            """,
+            tuple(params),
+        )
+
+        request_row=self.get_ops_request(company_id,request_id)
+
+        if not request_row:
+            raise ValueError("Request not found.")
+
+        budget=self.fetch_one(
+            f"""
+            SELECT bc.*
+            FROM {schema}.ops_budget_checks bc
+            JOIN {schema}.ops_requests r
+            ON r.id=bc.request_id
+            WHERE bc.request_id=%s
+            AND bc.request_revision_no=r.revision_no
+            ORDER BY bc.checked_at DESC,bc.id DESC
+            LIMIT 1;
+            """,
+            (request_id,),
+        )
+        return {
+            "review":review,
+            "request":request_row,
+            "budget":budget,
+            "metadata":self.get_ops_finance_metadata(company_id),
+        }
+
+    def save_ops_finance_review(
+        self,
+        company_id:int,
+        request_id:int,
+        payload:dict,
+        *,
+        actor_user_id:int,
+        approval_task_id:int,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        actor_user_id=int(actor_user_id)
+        approval_task_id=int(approval_task_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        classification=str(payload.get("classification") or "").strip().lower()
+        account_code=str(payload.get("account_code") or "").strip()
+        cost_centre_id=payload.get("cost_centre_id")
+        project_id=payload.get("project_id")
+        tax_treatment=str(payload.get("tax_treatment") or "").strip().lower()
+
+        allowed_classifications={
+            "opex","capex","inventory",
+            "prepayment","lease",
+            "project_cost","other",
+        }
+
+        allowed_tax={
+            "standard","zero_rated","exempt",
+            "no_vat","reverse_charge",
+            "review_required",
+        }
+
+        if classification not in allowed_classifications:
+            raise ValueError("Financial classification is required.")
+
+        if not account_code:
+            raise ValueError("GL account is required.")
+
+        if tax_treatment not in allowed_tax:
+            raise ValueError("Tax treatment is required.")
+
+        task=self.fetch_one(
+            f"""
+            SELECT
+                t.id,
+                t.request_id,
+                t.request_revision_no,
+                t.workflow_instance_id,
+                t.assigned_to_user_id,
+                t.status,
+                ws.step_type,
+                ws.approver_role_code
+            FROM {schema}.ops_approval_tasks t
+            JOIN {schema}.ops_workflow_steps ws
+            ON ws.id=t.workflow_step_id
+            WHERE t.company_id=%s
+            AND t.id=%s
+            AND t.request_id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                approval_task_id,
+                request_id,
+            ),
+        ) or {}
+
+        if not task:
+            raise ValueError("Finance approval task not found.")
+
+        if int(task["assigned_to_user_id"])!=actor_user_id:
+            raise PermissionError(
+                "This Finance review is not assigned to you."
+            )
+
+        current_revision=self.fetch_val(
+            f"""
+            SELECT revision_no
+            FROM {schema}.ops_requests
+            WHERE id=%s;
+            """,
+            (task["request_id"],),
+        )
+
+        if int(current_revision or 0)!=int(task.get("request_revision_no") or 0):
+            raise ValueError(
+                "This approval belongs to an older request revision and can no longer be actioned."
+            )
+
+        is_finance=(
+            task.get("step_type")=="review"
+            or str(task.get("approver_role_code") or "").upper()
+            in {
+                "FINANCE_REVIEWER",
+                "FINANCE_MANAGER",
+                "CFO",
+                "ACCOUNTANT",
+            }
+        )
+
+        if not is_finance:
+            raise ValueError(
+                "This approval stage is not a Finance review."
+            )
+
+        account=self.fetch_one(
+            f"""
+            SELECT id,code,name
+            FROM {schema}.coa
+            WHERE company_id=%s
+            AND code=%s
+            AND posting=TRUE
+            LIMIT 1;
+            """,
+            (company_id,account_code),
+        ) or {}
+
+        if not account:
+            raise ValueError("Invalid posting GL account.")
+
+        if cost_centre_id:
+            valid_cost_centre=self.fetch_one(
+                """
+                SELECT id
+                FROM public.company_cost_centres
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE;
+                """,
+                (
+                    company_id,
+                    int(cost_centre_id),
+                ),
+            )
+
+            if not valid_cost_centre:
+                raise ValueError("Invalid cost centre.")
+
+        before=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_finance_reviews
+            WHERE approval_task_id=%s
+            LIMIT 1;
+            """,
+            (approval_task_id,),
+        )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_finance_reviews(
+                    company_id,
+                    request_id,
+                    request_revision_no,
+                    workflow_instance_id,
+                    approval_task_id,
+                    reviewer_user_id,
+                    status,
+
+                    classification,
+                    account_code,
+                    account_name,
+                    cost_centre_id,
+                    project_id,
+                    tax_treatment,
+
+                    gl_verified,
+                    tax_verified,
+                    documents_verified,
+
+                    coding_json,
+                    updated_at
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,'pending',
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,
+                    %s,NOW()
+                )
+                ON CONFLICT(approval_task_id)
+                WHERE approval_task_id IS NOT NULL
+                DO UPDATE SET
+                    reviewer_user_id=EXCLUDED.reviewer_user_id,
+                    classification=EXCLUDED.classification,
+                    account_code=EXCLUDED.account_code,
+                    account_name=EXCLUDED.account_name,
+                    cost_centre_id=EXCLUDED.cost_centre_id,
+                    project_id=EXCLUDED.project_id,
+                    tax_treatment=EXCLUDED.tax_treatment,
+                    gl_verified=EXCLUDED.gl_verified,
+                    tax_verified=EXCLUDED.tax_verified,
+                    documents_verified=EXCLUDED.documents_verified,
+                    coding_json=EXCLUDED.coding_json,
+                    updated_at=NOW()
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    request_id,
+                    int(task.get("request_revision_no") or 1),
+                    task["workflow_instance_id"],
+                    approval_task_id,
+                    actor_user_id,
+
+                    classification,
+                    account["code"],
+                    account["name"],
+                    int(cost_centre_id) if cost_centre_id else None,
+                    int(project_id) if project_id else None,
+                    tax_treatment,
+
+                    bool(payload.get("gl_verified")),
+                    bool(payload.get("tax_verified")),
+                    bool(payload.get("documents_verified")),
+
+                    psycopg2.extras.Json({
+                        "classification":classification,
+                        "account_code":account["code"],
+                        "account_name":account["name"],
+                        "cost_centre_id":cost_centre_id,
+                        "project_id":project_id,
+                        "tax_treatment":tax_treatment,
+                    }),
+                ),
+            )
+
+            review=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_requests
+                SET financial_classification=%s,
+                    primary_gl_account_code=%s,
+                    primary_gl_account_name=%s,
+                    cost_centre_id=%s,
+                    project_id=%s,
+                    tax_treatment=%s,
+                    finance_coded_at=NOW(),
+                    finance_coded_by_user_id=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    classification,
+                    account["code"],
+                    account["name"],
+                    int(cost_centre_id) if cost_centre_id else None,
+                    int(project_id) if project_id else None,
+                    tax_treatment,
+                    actor_user_id,
+                    actor_user_id,
+                    request_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_request_items
+                SET gl_account_code=COALESCE(gl_account_code,%s),
+                    gl_account_name=COALESCE(gl_account_name,%s),
+                    cost_centre_id=COALESCE(cost_centre_id,%s),
+                    financial_classification=COALESCE(financial_classification,%s),
+                    tax_treatment=COALESCE(tax_treatment,%s)
+                WHERE request_id=%s;
+                """,
+                (
+                    account["code"],
+                    account["name"],
+                    int(cost_centre_id) if cost_centre_id else None,
+                    classification,
+                    tax_treatment,
+                    request_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,event_type,module,
+                    entity_type,entity_id,entity_ref,
+                    actor_user_id,action,
+                    before_json,after_json
+                )
+                SELECT
+                    %s,'finance.coding.updated','finance',
+                    'request',%s,r.request_no,
+                    %s,'financial_classification',
+                    %s,%s
+                FROM {schema}.ops_requests r
+                WHERE r.id=%s;
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(request_id),
+                    actor_user_id,
+                    psycopg2.extras.Json(before or {}),
+                    psycopg2.extras.Json(review),
+                    request_id,
+                ),
+            )
+
+        return self.get_ops_finance_review(
+            company_id,
+            request_id,
+            approval_task_id=approval_task_id,
+        )
+
+
+    def validate_ops_finance_review(
+        self,
+        company_id:int,
+        request_id:int,
+        *,
+        approval_task_id:int,
+    ):
+        company_id=int(company_id)
+        request_id=int(request_id)
+        approval_task_id=int(approval_task_id)
+        schema=self.company_schema(company_id)
+
+        review=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_finance_reviews
+            WHERE request_id=%s
+            AND approval_task_id=%s
+            LIMIT 1;
+            """,
+            (
+                request_id,
+                approval_task_id,
+            ),
+        ) or {}
+
+        if not review:
+            raise ValueError(
+                "Complete the Finance review before approval."
+            )
+
+        missing=[]
+
+        if not review.get("classification"):
+            missing.append("financial classification")
+
+        if not review.get("account_code"):
+            missing.append("GL account")
+
+        if not review.get("tax_treatment"):
+            missing.append("tax treatment")
+
+        if not bool(review.get("gl_verified")):
+            missing.append("GL verification")
+
+        if not bool(review.get("tax_verified")):
+            missing.append("tax review")
+
+        if not bool(review.get("documents_verified")):
+            missing.append("supporting-document review")
+
+        if missing:
+            raise ValueError(
+                "Finance review is incomplete: "
+                +", ".join(missing)+"."
+            )
+
+        return review
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

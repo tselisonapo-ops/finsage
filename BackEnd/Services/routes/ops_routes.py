@@ -1,4 +1,6 @@
-from flask import Blueprint,jsonify,request,g,current_app
+from pathlib import Path
+
+from flask import Blueprint,current_app,jsonify,request,send_file,g
 from BackEnd.Services.db_service import db_service
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.ops_auth import require_ops_access,require_ops_permission
@@ -64,8 +66,90 @@ def ops_setup(company_id):
             """,
             (int(company_id),),
         ) or [],
+        "governance":db_service.get_ops_governance_config(company_id),
     }),200
 
+# ============================================================
+# FINANCE REVIEW
+# ============================================================
+
+@ops_bp.get("/finance/metadata")
+@require_auth
+@require_ops_permission("finance.review.view")
+def finance_metadata(company_id):
+    return jsonify(
+        db_service.get_ops_finance_metadata(company_id)
+    ),200
+
+
+@ops_bp.get("/requests/<int:request_id>/finance-review")
+@require_auth
+@require_ops_permission("finance.review.view")
+def finance_review(company_id,request_id):
+    task_id=request.args.get("approval_task_id")
+
+    try:
+        row=db_service.get_ops_finance_review(
+            company_id,
+            request_id,
+            approval_task_id=int(task_id) if task_id else None,
+        )
+        return jsonify(row),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),404
+
+
+@ops_bp.patch("/requests/<int:request_id>/finance-review")
+@require_auth
+@require_ops_permission("finance.review.edit")
+def save_finance_review(company_id,request_id):
+    body=request.get_json(silent=True) or {}
+    task_id=body.get("approval_task_id")
+
+    if not task_id:
+        return jsonify({
+            "error":"approval_task_id is required."
+        }),400
+
+    try:
+        row=db_service.save_ops_finance_review(
+            company_id,
+            request_id,
+            body,
+            actor_user_id=_uid(),
+            approval_task_id=int(task_id),
+        )
+        return jsonify(row),200
+
+    except PermissionError as e:
+        return jsonify({"error":str(e)}),403
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.get("/cost-centres")
+@require_auth
+@require_ops_permission("cost_centres.view")
+def cost_centres(company_id):
+    return jsonify({
+        "rows":db_service.list_company_cost_centres(company_id)
+    }),200
+
+
+@ops_bp.post("/cost-centres")
+@require_auth
+@require_ops_permission("cost_centres.manage")
+def create_cost_centre(company_id):
+    try:
+        row=db_service.create_company_cost_centre(
+            company_id,
+            request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
 # ============================================================
 # SETTINGS
 # ============================================================
@@ -99,6 +183,34 @@ def update_settings(company_id):
 
     return jsonify(row),200
 
+# ============================================================
+# GOVERNANCE
+# ============================================================
+
+@ops_bp.get("/governance")
+@require_auth
+@require_ops_permission("governance.view")
+def governance(company_id):
+    return jsonify(
+        db_service.get_ops_governance_config(company_id)
+    ),200
+
+
+@ops_bp.put("/governance")
+@require_auth
+@require_ops_permission("governance.manage")
+def save_governance(company_id):
+    try:
+        row=db_service.save_ops_governance_config(
+            company_id,
+            request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+    
 # ============================================================
 # DEPARTMENTS
 # ============================================================
@@ -342,6 +454,25 @@ def get_request(company_id,request_id):
 
     return jsonify(row),200
 
+@ops_bp.patch("/requests/<int:request_id>")
+@require_auth
+@require_ops_permission("requests.update_own")
+def update_request(company_id,request_id):
+    try:
+        row=db_service.update_ops_request(
+            company_id,
+            request_id,
+            request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+        return jsonify(row),200
+
+    except PermissionError as e:
+        return jsonify({"error":str(e)}),403
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
 @ops_bp.post("/requests/<int:request_id>/submit")
 @require_auth
 @require_ops_permission("requests.submit")
@@ -419,10 +550,13 @@ def get_request_budget_check(company_id,request_id):
 
     row=db_service.fetch_one(
         f"""
-        SELECT *
-        FROM {schema}.ops_budget_checks
-        WHERE request_id=%s
-        ORDER BY checked_at DESC,id DESC
+        SELECT bc.*
+        FROM {schema}.ops_budget_checks bc
+        JOIN {schema}.ops_requests r
+          ON r.id=bc.request_id
+        WHERE bc.request_id=%s
+          AND bc.request_revision_no=r.revision_no
+        ORDER BY bc.checked_at DESC,bc.id DESC
         LIMIT 1;
         """,
         (int(request_id),),
@@ -550,3 +684,107 @@ def ops_finance_accounts(company_id):
     ) or []
 
     return jsonify({"rows":rows}),200
+
+# ============================================================
+# REQUEST DOCUMENTS
+# ============================================================
+
+@ops_bp.get("/requests/<int:request_id>/documents")
+@require_auth
+@require_ops_permission("documents.view")
+def request_documents(company_id,request_id):
+    return jsonify({
+        "rows":db_service.list_ops_request_documents(
+            company_id,
+            request_id,
+        )
+    }),200
+
+
+@ops_bp.post("/requests/<int:request_id>/documents/export")
+@require_auth
+@require_ops_permission("documents.export")
+def export_request_document(company_id,request_id):
+    body=request.get_json(silent=True) or {}
+    format=(body.get("format") or "").strip().lower()
+
+    try:
+        row=db_service.generate_ops_requisition_document(
+            company_id,
+            request_id,
+            actor_user_id=_uid(),
+            format=format,
+            app_root=current_app.root_path,
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.get("/documents/<int:document_id>/download")
+@require_auth
+@require_ops_permission("documents.download")
+def download_ops_document(company_id,document_id):
+    schema=db_service.company_schema(company_id)
+
+    row=db_service.fetch_one(
+        f"""
+        SELECT *
+        FROM {schema}.ops_documents
+        WHERE company_id=%s
+          AND id=%s
+          AND storage_path IS NOT NULL
+        LIMIT 1;
+        """,
+        (
+            int(company_id),
+            int(document_id),
+        ),
+    )
+
+    if not row:
+        return jsonify({
+            "error":"Document not found."
+        }),404
+
+    path=(
+        Path(current_app.root_path)
+        /row["storage_path"]
+    ).resolve()
+
+    root=Path(
+        current_app.root_path
+    ).resolve()
+
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return jsonify({
+            "error":"Invalid document path."
+        }),400
+
+    if not path.exists():
+        return jsonify({
+            "error":"Document file is missing."
+        }),404
+
+    return send_file(
+        path,
+        mimetype=row.get("mime_type"),
+        as_attachment=True,
+        download_name=row.get("file_name")
+        or path.name,
+    )
+
+@ops_bp.get("/requests/<int:request_id>/audit")
+@require_auth
+@require_ops_access
+def request_audit(company_id,request_id):
+    return jsonify({
+        "rows":db_service.get_ops_request_audit_trail(
+            company_id,
+            request_id,
+        )
+    }),200

@@ -1670,3 +1670,1287 @@ def migration_lease_preview(company_id:int,project_id:int,dataset_id:int):
         return jsonify({"ok":False,"error":str(error)}),400
     except Exception as error:
         return _error("Lease migration preview failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/loans",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_loans(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        rows=db_service.migration_loan_datasets(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(rows),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Loan migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/loans/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_loan_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_loan_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(result),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_loan_settings_save(
+                    company_id,project_id,dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Loan migration settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/loans/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_loan_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_loan_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Loan migration mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/loans/references",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_loan_references(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_loan_reference_save(
+                    company_id,project_id,dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "references":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Loan reference mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/loans/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_loan_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_loan_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Loan migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/revenue/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_revenue_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_revenue_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(result),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_revenue_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Revenue migration settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/revenue/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_revenue_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_revenue_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Revenue migration mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/revenue/references",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_revenue_references(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_revenue_reference_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "references":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Revenue reference mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/revenue/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_revenue_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_revenue_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Revenue migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/accrual-deferrals",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_accrual_deferrals(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        rows=db_service.migration_accrual_datasets(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(rows),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Accrual/deferral migration retrieval failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/accrual-deferrals/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_accrual_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            result=db_service.migration_accrual_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(result),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_accrual_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Accrual migration settings failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/accrual-deferrals/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_accrual_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_accrual_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Accrual migration mapping failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/accrual-deferrals/references",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_accrual_references(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                result=db_service.migration_accrual_reference_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "references":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Accrual reference mapping failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/accrual-deferrals/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_accrual_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        result=db_service.migration_accrual_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(result),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Accrual migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_payroll_datasets(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Payroll migration retrieval failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_payroll_settings_get(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_payroll_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll migration settings failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_mapping(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        mapping=db_service.migration_payroll_mapping_get(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll migration mapping failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/references",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_references(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                references=db_service.migration_payroll_reference_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "references":_json_safe(references),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll reference mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_preview(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_payroll_preview(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/items",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_items(
+    company_id:int,
+    project_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_payroll_item_datasets(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Payroll item migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/items/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_item_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_payroll_item_settings_get(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_payroll_item_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll item settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/items/mapping",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_item_mapping(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_payroll_items_mapping_get(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        body=_body()
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_payroll_item_mapping_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    body.get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll item mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/items/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_items_preview(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_payroll_items_preview(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll item preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/leave-balances",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_leave_balances(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_payroll_leave_datasets(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Payroll leave migration retrieval failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/employee-loans",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_employee_loans(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_payroll_loan_datasets(
+            company_id,project_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Employee loan migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/leave-balances/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_leave_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_payroll_leave_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_payroll_leave_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Payroll leave settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/leave-balances/mapping",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_leave_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_payroll_leave_mapping_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_payroll_leave_type_mapping_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    (_body().get("mappings") or []),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Payroll leave mapping failed",
+            error,
+            status=500,
+        )
+
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/leave-balances/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_leave_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_payroll_leave_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Payroll leave preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/employee-loans/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_employee_loan_settings(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_payroll_loan_settings_get(
+                company_id,project_id,dataset_id
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_payroll_loan_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Employee loan settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/employee-loans/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_employee_loan_mapping(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        mapping=db_service.migration_payroll_loan_mapping_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Employee loan mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/employee-loans/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_employee_loan_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_payroll_employee_loans_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error(
+            "Employee loan preview failed",
+            error,
+            status=500,
+        )
