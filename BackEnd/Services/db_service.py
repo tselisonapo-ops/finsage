@@ -33478,6 +33478,144 @@ class DatabaseService:
             END IF;
         END $$;
 
+       -- 2) inventory_tx
+        CREATE TABLE IF NOT EXISTS {schema}.inventory_tx (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+            tx_date DATE NOT NULL,
+            tx_type TEXT NOT NULL DEFAULT 'adjustment',  -- receipt|sale|adjustment|issue_to_job|transfer|count
+            status TEXT NOT NULL DEFAULT 'draft',        -- draft|posted|void
+            ref TEXT NULL,
+            notes TEXT NULL,
+            source TEXT NULL,                            -- ap_bill|pos|invoice|manual|job|stocktake
+            source_id INT NULL,
+            posted_journal_id INT NULL,
+            posted_at TIMESTAMPTZ NULL,
+            posted_by INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        -- Legacy-safe
+        ALTER TABLE {schema}.inventory_tx ADD COLUMN IF NOT EXISTS company_id INT;
+        UPDATE {schema}.inventory_tx SET company_id = {company_id} WHERE company_id IS NULL;
+        ALTER TABLE {schema}.inventory_tx ALTER COLUMN company_id SET DEFAULT {company_id};
+        ALTER TABLE {schema}.inventory_tx ALTER COLUMN company_id SET NOT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS created_by INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
+        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
+        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
+
+        -- Optional: link to purchase_orders header if you want header-level match
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS po_id INT NULL;
+
+        -- Optional: invoice reference captured at receipt time (if it came with goods)
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS supplier_invoice_no TEXT NULL;
+
+        -- Optional: GRNI/billing status
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS grni_status TEXT NOT NULL DEFAULT 'unbilled';
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS grni_type TEXT NOT NULL DEFAULT 'inventory';
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS funding_type TEXT NOT NULL DEFAULT 'supplier_credit',
+        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_inventory_tx_bank_account_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (bank_account_id)
+            REFERENCES %I.company_bank_accounts(id)
+            ON DELETE SET NULL',
+            '{schema}',
+            '{schema}_inventory_tx_bank_account_fk',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_inventory_tx_grni_type_ck'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.inventory_tx
+                    ADD CONSTRAINT %I
+                    CHECK (grni_type IN (''inventory'', ''asset''))',
+                    '{schema}',
+                    '{schema}_inventory_tx_grni_type_ck'
+                );
+            END IF;
+        END $$;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_inventory_tx_receive_ref_uniq
+        ON {schema}.inventory_tx(company_id, lower(trim(ref)))
+        WHERE lower(tx_type) = 'receipt' AND ref IS NOT NULL AND trim(ref) <> '';
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_vendor_idx
+        ON {schema}.inventory_tx(company_id, vendor_id, tx_type, tx_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_po_idx
+        ON {schema}.inventory_tx(company_id, po_id);
+                
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_date_idx
+        ON {schema}.inventory_tx(company_id, tx_date);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_status_idx
+        ON {schema}.inventory_tx(company_id, status);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_source_idx
+        ON {schema}.inventory_tx(company_id, source, source_id);
+
+        -- ✅ ONE TRUE idempotency rule (drop old wrong index and recreate correct one)
+        DO $$
+        BEGIN
+        IF EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = '{schema}'
+            AND indexname  = '{schema}_inventory_tx_source_uniq'
+        ) THEN
+            EXECUTE format('DROP INDEX %I.%I', '{schema}', '{schema}_inventory_tx_source_uniq');
+        END IF;
+
+        EXECUTE format(
+            'CREATE UNIQUE INDEX %I
+            ON %I.inventory_tx(company_id, source, source_id)
+            WHERE source IS NOT NULL AND source_id IS NOT NULL',
+            '{schema}_inventory_tx_source_uniq',
+            '{schema}'
+        );
+        END $$;
+        
         -- ==================================================
         -- OPTIONAL: Vendor Documents (compliance attachments)
         -- ==================================================
@@ -44300,144 +44438,6 @@ class DatabaseService:
                 '{schema}', '{schema}_items_nonneg_chk'
             );
         END IF;
-        END $$;
-
-        -- 2) inventory_tx
-        CREATE TABLE IF NOT EXISTS {schema}.inventory_tx (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-            tx_date DATE NOT NULL,
-            tx_type TEXT NOT NULL DEFAULT 'adjustment',  -- receipt|sale|adjustment|issue_to_job|transfer|count
-            status TEXT NOT NULL DEFAULT 'draft',        -- draft|posted|void
-            ref TEXT NULL,
-            notes TEXT NULL,
-            source TEXT NULL,                            -- ap_bill|pos|invoice|manual|job|stocktake
-            source_id INT NULL,
-            posted_journal_id INT NULL,
-            posted_at TIMESTAMPTZ NULL,
-            posted_by INT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        );
-
-        -- Legacy-safe
-        ALTER TABLE {schema}.inventory_tx ADD COLUMN IF NOT EXISTS company_id INT;
-        UPDATE {schema}.inventory_tx SET company_id = {company_id} WHERE company_id IS NULL;
-        ALTER TABLE {schema}.inventory_tx ALTER COLUMN company_id SET DEFAULT {company_id};
-        ALTER TABLE {schema}.inventory_tx ALTER COLUMN company_id SET NOT NULL;
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS created_by INT NULL;
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS source_company_id INT NULL,
-        ADD COLUMN IF NOT EXISTS engagement_company_id INT NULL,
-        ADD COLUMN IF NOT EXISTS engagement_id INT NULL,
-        ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
-
-        -- Optional: link to purchase_orders header if you want header-level match
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS po_id INT NULL;
-
-        -- Optional: invoice reference captured at receipt time (if it came with goods)
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS supplier_invoice_no TEXT NULL;
-
-        -- Optional: GRNI/billing status
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS grni_status TEXT NOT NULL DEFAULT 'unbilled';
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS grni_type TEXT NOT NULL DEFAULT 'inventory';
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS funding_type TEXT NOT NULL DEFAULT 'supplier_credit',
-        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
-
-        ALTER TABLE {schema}.inventory_tx
-        ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
-
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_inventory_tx_bank_account_fk'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (bank_account_id)
-            REFERENCES %I.company_bank_accounts(id)
-            ON DELETE SET NULL',
-            '{schema}',
-            '{schema}_inventory_tx_bank_account_fk',
-            '{schema}'
-            );
-        END IF;
-        END $$;
-
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_inventory_tx_grni_type_ck'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.inventory_tx
-                    ADD CONSTRAINT %I
-                    CHECK (grni_type IN (''inventory'', ''asset''))',
-                    '{schema}',
-                    '{schema}_inventory_tx_grni_type_ck'
-                );
-            END IF;
-        END $$;
-
-        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_inventory_tx_receive_ref_uniq
-        ON {schema}.inventory_tx(company_id, lower(trim(ref)))
-        WHERE lower(tx_type) = 'receipt' AND ref IS NOT NULL AND trim(ref) <> '';
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_vendor_idx
-        ON {schema}.inventory_tx(company_id, vendor_id, tx_type, tx_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_po_idx
-        ON {schema}.inventory_tx(company_id, po_id);
-                
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_date_idx
-        ON {schema}.inventory_tx(company_id, tx_date);
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_company_status_idx
-        ON {schema}.inventory_tx(company_id, status);
-
-        CREATE INDEX IF NOT EXISTS {schema}_inventory_tx_source_idx
-        ON {schema}.inventory_tx(company_id, source, source_id);
-
-        -- ✅ ONE TRUE idempotency rule (drop old wrong index and recreate correct one)
-        DO $$
-        BEGIN
-        IF EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname = '{schema}'
-            AND indexname  = '{schema}_inventory_tx_source_uniq'
-        ) THEN
-            EXECUTE format('DROP INDEX %I.%I', '{schema}', '{schema}_inventory_tx_source_uniq');
-        END IF;
-
-        EXECUTE format(
-            'CREATE UNIQUE INDEX %I
-            ON %I.inventory_tx(company_id, source, source_id)
-            WHERE source IS NOT NULL AND source_id IS NOT NULL',
-            '{schema}_inventory_tx_source_uniq',
-            '{schema}'
-        );
         END $$;
 
         -- 3) inventory_layers
