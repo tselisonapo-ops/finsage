@@ -25300,7 +25300,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 11
+    OPS_MIGRATION_VERSION = 13
     def ensure_company_ops(
         self,
         company_id:int,
@@ -26868,6 +26868,9 @@ class DatabaseService:
 
 
         ALTER TABLE {schema}.ops_requests
+            DROP CONSTRAINT IF EXISTS chk_ops_request_status;
+
+        ALTER TABLE {schema}.ops_requests
             ADD CONSTRAINT chk_ops_request_status
             CHECK(status IN(
                 'draft',
@@ -27187,69 +27190,455 @@ class DatabaseService:
         WHERE status IN('pending','active');
 
         -- ============================================================
-        -- FINFLOW PHASE 3A — PROCUREMENT FOUNDATION
+        -- FINFLOW PROCUREMENT SETTINGS — CANONICAL TABLE
         -- ============================================================
 
-        -- ------------------------------------------------------------
-        -- PROCUREMENT SETTINGS
-        -- ------------------------------------------------------------
-
         CREATE TABLE IF NOT EXISTS {schema}.ops_procurement_settings(
-            id SERIAL PRIMARY KEY,
+            id BIGSERIAL PRIMARY KEY,
+
             company_id INT NOT NULL DEFAULT {company_id},
 
+            -- --------------------------------------------------------
+            -- CORE PROCUREMENT
+            -- --------------------------------------------------------
+
             procurement_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+
             default_currency TEXT NULL,
 
             require_approved_request BOOLEAN NOT NULL DEFAULT TRUE,
             allow_direct_purchase BOOLEAN NOT NULL DEFAULT FALSE,
-            allow_emergency_override BOOLEAN NOT NULL DEFAULT TRUE,
-            allow_sole_source BOOLEAN NOT NULL DEFAULT TRUE,
 
-            vendor_compliance_required BOOLEAN NOT NULL DEFAULT FALSE,
+            -- --------------------------------------------------------
+            -- QUOTATION / SOURCING RULES
+            -- --------------------------------------------------------
+
+            default_quote_requirement INT NOT NULL DEFAULT 3,
+            minimum_quotes_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_single_source BOOLEAN NOT NULL DEFAULT TRUE,
+            require_single_source_reason BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_emergency_procurement BOOLEAN NOT NULL DEFAULT TRUE,
+            require_emergency_reason BOOLEAN NOT NULL DEFAULT TRUE,
+
+            require_vendor_qualification BOOLEAN NOT NULL DEFAULT FALSE,
+            require_vendor_compliance BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_restricted_vendor BOOLEAN NOT NULL DEFAULT FALSE,
+
             block_unverified_vendors BOOLEAN NOT NULL DEFAULT FALSE,
+
+            require_quote_comparison BOOLEAN NOT NULL DEFAULT TRUE,
+            require_selection_reason BOOLEAN NOT NULL DEFAULT TRUE,
 
             default_quote_validity_days INT NOT NULL DEFAULT 30,
             default_rfq_response_days INT NOT NULL DEFAULT 7,
 
-            procurement_sender_name TEXT NULL,
-            procurement_sender_email TEXT NULL,
-            procurement_reply_to TEXT NULL,
+            -- --------------------------------------------------------
+            -- PURCHASE ORDER RULES
+            -- --------------------------------------------------------
 
-            email_provider TEXT NOT NULL DEFAULT 'system',
+            po_required BOOLEAN NOT NULL DEFAULT TRUE,
+
+            allow_po_bypass BOOLEAN NOT NULL DEFAULT FALSE,
+            require_po_bypass_reason BOOLEAN NOT NULL DEFAULT TRUE,
+
+            -- --------------------------------------------------------
+            -- PROCUREMENT EMAIL
+            -- --------------------------------------------------------
+
+            procurement_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
+            sender_name TEXT NULL,
+            sender_email TEXT NULL,
+            reply_to_email TEXT NULL,
+
+            email_provider TEXT NOT NULL DEFAULT 'smtp',
+
             smtp_host TEXT NULL,
-            smtp_port INT NULL,
-            smtp_security TEXT NULL,
+            smtp_port INT NOT NULL DEFAULT 587,
             smtp_username TEXT NULL,
-            smtp_secret_ref TEXT NULL,
+
+            smtp_password_encrypted TEXT NULL,
+
+            smtp_security TEXT NOT NULL DEFAULT 'starttls',
+            smtp_timeout_seconds INT NOT NULL DEFAULT 30,
+
+            -- --------------------------------------------------------
+            -- AUTOMATION
+            -- --------------------------------------------------------
 
             auto_send_rfq BOOLEAN NOT NULL DEFAULT FALSE,
             auto_send_po BOOLEAN NOT NULL DEFAULT FALSE,
             send_quote_reminders BOOLEAN NOT NULL DEFAULT TRUE,
 
+            -- --------------------------------------------------------
+            -- RFQ EMAIL TEMPLATES
+            -- --------------------------------------------------------
+
+            rfq_subject_template TEXT NOT NULL DEFAULT
+                'Request for Quotation — {{rfq_no}} — {{company_name}}',
+
+            rfq_body_template TEXT NOT NULL DEFAULT
+                'Dear {{vendor_name}},
+
+        {{company_name}} invites you to submit a quotation for {{request_title}}.
+
+        RFQ Reference: {{rfq_no}}
+        Closing Date: {{closing_date}}
+
+        Please use the secure vendor portal link below to review the request and submit your quotation.
+
+        {{portal_link}}
+
+        Regards,
+        {{sender_name}}',
+
+            -- --------------------------------------------------------
+            -- METADATA / AUDIT
+            -- --------------------------------------------------------
+
             metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
 
             created_by_user_id INT NULL,
             updated_by_user_id INT NULL,
+
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
             UNIQUE(company_id),
 
-            CHECK(email_provider IN(
+            CONSTRAINT chk_ops_procurement_default_quote_requirement
+                CHECK(default_quote_requirement >= 0),
+
+            CONSTRAINT chk_ops_procurement_quote_validity_days
+                CHECK(default_quote_validity_days >= 0),
+
+            CONSTRAINT chk_ops_procurement_rfq_response_days
+                CHECK(default_rfq_response_days >= 0),
+
+            CONSTRAINT chk_ops_procurement_smtp_port
+                CHECK(
+                    smtp_port > 0
+                    AND smtp_port <= 65535
+                ),
+
+            CONSTRAINT chk_ops_procurement_smtp_timeout
+                CHECK(smtp_timeout_seconds > 0),
+
+            CONSTRAINT chk_ops_procurement_email_provider
+                CHECK(
+                    email_provider IN(
+                        'system',
+                        'smtp'
+                    )
+                ),
+
+            CONSTRAINT chk_ops_procurement_smtp_security
+                CHECK(
+                    smtp_security IN(
+                        'none',
+                        'starttls',
+                        'ssl'
+                    )
+                )
+        );
+
+
+        -- ============================================================
+        -- EXISTING TENANT UPGRADE
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD COLUMN IF NOT EXISTS procurement_enabled
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS default_currency
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS require_approved_request
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS allow_direct_purchase
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS default_quote_requirement
+                INT NOT NULL DEFAULT 3,
+
+            ADD COLUMN IF NOT EXISTS minimum_quotes_enabled
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS allow_single_source
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS require_single_source_reason
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS allow_emergency_procurement
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS require_emergency_reason
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS require_vendor_qualification
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS require_vendor_compliance
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS allow_restricted_vendor
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS block_unverified_vendors
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS require_quote_comparison
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS require_selection_reason
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS default_quote_validity_days
+                INT NOT NULL DEFAULT 30,
+
+            ADD COLUMN IF NOT EXISTS default_rfq_response_days
+                INT NOT NULL DEFAULT 7,
+
+            ADD COLUMN IF NOT EXISTS po_required
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS allow_po_bypass
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS require_po_bypass_reason
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS procurement_email_enabled
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS sender_name
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS sender_email
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS reply_to_email
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS email_provider
+                TEXT NOT NULL DEFAULT 'smtp',
+
+            ADD COLUMN IF NOT EXISTS smtp_host
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS smtp_port
+                INT NOT NULL DEFAULT 587,
+
+            ADD COLUMN IF NOT EXISTS smtp_username
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS smtp_password_encrypted
+                TEXT NULL,
+
+            ADD COLUMN IF NOT EXISTS smtp_security
+                TEXT NOT NULL DEFAULT 'starttls',
+
+            ADD COLUMN IF NOT EXISTS smtp_timeout_seconds
+                INT NOT NULL DEFAULT 30,
+
+            ADD COLUMN IF NOT EXISTS auto_send_rfq
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS auto_send_po
+                BOOLEAN NOT NULL DEFAULT FALSE,
+
+            ADD COLUMN IF NOT EXISTS send_quote_reminders
+                BOOLEAN NOT NULL DEFAULT TRUE,
+
+            ADD COLUMN IF NOT EXISTS rfq_subject_template
+                TEXT NOT NULL DEFAULT
+                'Request for Quotation — {{rfq_no}} — {{company_name}}',
+
+            ADD COLUMN IF NOT EXISTS rfq_body_template
+                TEXT NOT NULL DEFAULT
+                'Dear {{vendor_name}},
+
+        {{company_name}} invites you to submit a quotation for {{request_title}}.
+
+        RFQ Reference: {{rfq_no}}
+        Closing Date: {{closing_date}}
+
+        Please use the secure vendor portal link below to review the request and submit your quotation.
+
+        {{portal_link}}
+
+        Regards,
+        {{sender_name}}',
+
+            ADD COLUMN IF NOT EXISTS metadata_json
+                JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            ADD COLUMN IF NOT EXISTS created_by_user_id
+                INT NULL,
+
+            ADD COLUMN IF NOT EXISTS updated_by_user_id
+                INT NULL,
+
+            ADD COLUMN IF NOT EXISTS created_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            ADD COLUMN IF NOT EXISTS updated_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+
+        -- ============================================================
+        -- MIGRATE OLD COLUMN VALUES
+        -- ============================================================
+
+        UPDATE {schema}.ops_procurement_settings
+        SET
+            sender_name = COALESCE(
+                sender_name,
+                procurement_sender_name
+            ),
+            sender_email = COALESCE(
+                sender_email,
+                procurement_sender_email
+            ),
+            reply_to_email = COALESCE(
+                reply_to_email,
+                procurement_reply_to
+            )
+        WHERE
+            sender_name IS NULL
+            OR sender_email IS NULL
+            OR reply_to_email IS NULL;
+
+
+        -- ============================================================
+        -- NORMALISE EXISTING VALUES
+        -- ============================================================
+
+        UPDATE {schema}.ops_procurement_settings
+        SET
+            smtp_security='starttls'
+        WHERE smtp_security IS NULL
+        OR smtp_security NOT IN(
+                'none',
+                'starttls',
+                'ssl'
+        );
+
+        UPDATE {schema}.ops_procurement_settings
+        SET
+            email_provider='smtp'
+        WHERE email_provider IS NULL
+        OR email_provider NOT IN(
                 'system',
                 'smtp'
-            )),
+        );
 
+
+        -- ============================================================
+        -- REBUILD CANONICAL CONSTRAINTS
+        -- ============================================================
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_default_quote_requirement;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_default_quote_requirement
+            CHECK(default_quote_requirement >= 0);
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_quote_validity_days;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_quote_validity_days
+            CHECK(default_quote_validity_days >= 0);
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_rfq_response_days;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_rfq_response_days
+            CHECK(default_rfq_response_days >= 0);
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_smtp_port;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_smtp_port
             CHECK(
-                smtp_security IS NULL
-                OR smtp_security IN(
+                smtp_port > 0
+                AND smtp_port <= 65535
+            );
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_smtp_timeout;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_smtp_timeout
+            CHECK(smtp_timeout_seconds > 0);
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_email_provider;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_email_provider
+            CHECK(
+                email_provider IN(
+                    'system',
+                    'smtp'
+                )
+            );
+
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            DROP CONSTRAINT IF EXISTS chk_ops_procurement_smtp_security;
+
+        ALTER TABLE {schema}.ops_procurement_settings
+            ADD CONSTRAINT chk_ops_procurement_smtp_security
+            CHECK(
+                smtp_security IN(
                     'none',
                     'starttls',
                     'ssl'
                 )
-            )
-        );
+            );
+
+
+        -- ============================================================
+        -- INDEX
+        -- ============================================================
+
+        CREATE INDEX IF NOT EXISTS ops_procurement_settings_company_idx
+        ON {schema}.ops_procurement_settings(company_id);
+
+
+        -- ============================================================
+        -- INITIAL SETTINGS ROW
+        -- ============================================================
+
+        INSERT INTO {schema}.ops_procurement_settings(
+            company_id,
+            default_currency,
+            created_by_user_id,
+            updated_by_user_id
+        )
+        SELECT
+            {company_id},
+            c.currency,
+            c.owner_user_id,
+            c.owner_user_id
+        FROM public.companies c
+        WHERE c.id={company_id}
+        ON CONFLICT(company_id) DO NOTHING;
 
         -- ------------------------------------------------------------
         -- PROCUREMENT POLICY
@@ -27655,21 +28044,6 @@ class DatabaseService:
         AND is_active=TRUE;
 
         -- ------------------------------------------------------------
-        -- SETTINGS SEED
-        -- ------------------------------------------------------------
-
-        INSERT INTO {schema}.ops_procurement_settings(
-            company_id,
-            default_currency
-        )
-        SELECT
-            {company_id},
-            c.currency
-        FROM public.companies c
-        WHERE c.id={company_id}
-        ON CONFLICT(company_id) DO NOTHING;
-
-        -- ------------------------------------------------------------
         -- DEFAULT PROCUREMENT POLICY
         -- ------------------------------------------------------------
 
@@ -27692,96 +28066,6 @@ class DatabaseService:
             TRUE
         )
         ON CONFLICT(company_id,code) DO NOTHING;
-
-        -- ============================================================
-        -- FINFLOW PHASE 3A.4 — PROCUREMENT SETTINGS + EMAIL
-        -- ============================================================
-
-        CREATE TABLE IF NOT EXISTS {schema}.ops_procurement_settings(
-            id BIGSERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-
-            default_currency TEXT NULL,
-
-            default_quote_requirement INT NOT NULL DEFAULT 3,
-            minimum_quotes_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-
-            allow_single_source BOOLEAN NOT NULL DEFAULT TRUE,
-            require_single_source_reason BOOLEAN NOT NULL DEFAULT TRUE,
-
-            allow_emergency_procurement BOOLEAN NOT NULL DEFAULT TRUE,
-            require_emergency_reason BOOLEAN NOT NULL DEFAULT TRUE,
-
-            require_vendor_qualification BOOLEAN NOT NULL DEFAULT FALSE,
-            require_vendor_compliance BOOLEAN NOT NULL DEFAULT FALSE,
-            allow_restricted_vendor BOOLEAN NOT NULL DEFAULT FALSE,
-
-            require_quote_comparison BOOLEAN NOT NULL DEFAULT TRUE,
-            require_selection_reason BOOLEAN NOT NULL DEFAULT TRUE,
-
-            po_required BOOLEAN NOT NULL DEFAULT TRUE,
-            allow_po_bypass BOOLEAN NOT NULL DEFAULT FALSE,
-            require_po_bypass_reason BOOLEAN NOT NULL DEFAULT TRUE,
-
-            procurement_email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-
-            sender_name TEXT NULL,
-            sender_email TEXT NULL,
-            reply_to_email TEXT NULL,
-
-            smtp_host TEXT NULL,
-            smtp_port INT NOT NULL DEFAULT 587,
-            smtp_username TEXT NULL,
-            smtp_password_encrypted TEXT NULL,
-
-            smtp_security TEXT NOT NULL DEFAULT 'starttls',
-            smtp_timeout_seconds INT NOT NULL DEFAULT 30,
-
-            rfq_subject_template TEXT NOT NULL DEFAULT
-                'Request for Quotation — {{rfq_no}} — {{company_name}}',
-
-            rfq_body_template TEXT NOT NULL DEFAULT
-                'Dear {{vendor_name}},
-
-        {{company_name}} invites you to submit a quotation for {{request_title}}.
-
-        RFQ Reference: {{rfq_no}}
-        Closing Date: {{closing_date}}
-
-        Please use the secure vendor portal link below to review the request and submit your quotation.
-
-        {{portal_link}}
-
-        Regards,
-        {{sender_name}}',
-
-            created_by_user_id INT NULL,
-            updated_by_user_id INT NULL,
-
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            UNIQUE(company_id),
-
-            CHECK(default_quote_requirement>=0),
-
-            CHECK(
-                smtp_security IN(
-                    'none',
-                    'starttls',
-                    'ssl'
-                )
-            ),
-
-            CHECK(
-                smtp_port>0
-                AND smtp_port<=65535
-            )
-        );
-
-        CREATE INDEX IF NOT EXISTS ops_procurement_settings_company_idx
-        ON {schema}.ops_procurement_settings(company_id);
-
 
         CREATE TABLE IF NOT EXISTS {schema}.ops_procurement_email_tests(
             id BIGSERIAL PRIMARY KEY,
@@ -27880,12 +28164,12 @@ class DatabaseService:
             updated_by_user_id
         )
         SELECT
-            %s,
+            {company_id},
             c.currency,
             c.owner_user_id,
             c.owner_user_id
         FROM public.companies c
-        WHERE c.id=%s
+        WHERE c.id={company_id}
         ON CONFLICT(company_id) DO NOTHING;
         """
 
