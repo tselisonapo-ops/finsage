@@ -31977,6 +31977,17 @@ class DatabaseService:
         -- Schema
         -- ==================================================
         CREATE SCHEMA IF NOT EXISTS {schema};
+        
+        -- ==================================================
+        -- SHARED TRIGGER FUNCTIONS
+        -- ==================================================
+        CREATE OR REPLACE FUNCTION {schema}.touch_updated_at()
+        RETURNS trigger AS $$
+        BEGIN
+            NEW.updated_at = NOW();
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
 
         -- ==================================================
         -- COA
@@ -49020,16 +49031,6 @@ class DatabaseService:
             );
         END IF;
         END $ck_support_valid$;
-
-        -- ==================================================
-        -- OPTIONAL: shared "touch updated_at" trigger function
-        -- ==================================================
-        CREATE OR REPLACE FUNCTION {schema}.touch_updated_at()
-        RETURNS trigger AS $$
-        BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END; $$ LANGUAGE plpgsql;
 
         -- ==================================================
         -- IFRS 15: REVENUE CONTRACTS

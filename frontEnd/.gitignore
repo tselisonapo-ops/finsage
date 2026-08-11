@@ -1,20 +1,69 @@
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+BackEnd/Services/.env
+BackEnd/Services/.env.*
+!BackEnd/Services/.env.example
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+virtualenv/
+
+# =========================
 # Logs
-logs
+# =========================
+logs/
 *.log
+*.log.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist-ssr
+# =========================
+# Generated / debug files
+# =========================
+tenant_bootstrap_company_*.sql
+tenant_bootstrap_*.sql
+signup_debug.log
+
+# =========================
+# Node / frontend
+# =========================
+node_modules/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# Keep dist only if you DO NOT commit builds
+# dist/
+
+# =========================
+# Editor / OS
+# =========================
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
