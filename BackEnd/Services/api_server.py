@@ -10959,48 +10959,101 @@ def get_inventory_tx(cid: int, tx_id: int):
 @require_auth
 def inventory_on_hand(cid: int):
     company_id = int(cid)
+
     user, err = _company_auth_or_403(company_id)
-    if err: return err
+    if err:
+        return err
 
     schema = _schema(company_id)
 
-    as_of = _to_iso(request.args.get("as_of"))  # optional
+    as_of = _to_iso(request.args.get("as_of"))
     q = (request.args.get("q") or "").strip()
 
-    where_items = ["i.company_id=%s", "i.is_active=TRUE"]
-    params = [company_id]
-
-    if q:
-        where_items.append("(LOWER(i.sku) LIKE LOWER(%s) OR LOWER(i.name) LIKE LOWER(%s) OR LOWER(coalesce(i.barcode,'')) LIKE LOWER(%s))")
-        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
-
-    # layers-based onhand: sum(qty_in) - sum(qty_out)
+    # ---------------------------------------------------------
+    # Build JOIN parameters first because JOIN placeholders
+    # appear before WHERE placeholders in the SQL.
+    # ---------------------------------------------------------
+    join_params = []
     layer_date_filter = ""
+
     if as_of:
         layer_date_filter = "AND l.tx_date <= %s"
-        params.append(as_of)
+        join_params.append(as_of)
+
+    # ---------------------------------------------------------
+    # WHERE parameters
+    # ---------------------------------------------------------
+    where_items = [
+        "i.company_id=%s",
+        "i.is_active=TRUE",
+    ]
+
+    where_params = [company_id]
+
+    if q:
+        where_items.append(
+            """
+            (
+                LOWER(i.sku) LIKE LOWER(%s)
+                OR LOWER(i.name) LIKE LOWER(%s)
+                OR LOWER(COALESCE(i.barcode,'')) LIKE LOWER(%s)
+            )
+            """
+        )
+
+        like_q = f"%{q}%"
+        where_params.extend([
+            like_q,
+            like_q,
+            like_q,
+        ])
 
     sql = f"""
-    SELECT
-      i.id as item_id,
-      i.sku,
-      i.name,
-      i.barcode,
-      i.unit,
-      i.track_stock,
-      COALESCE(SUM(l.qty_in),0) - COALESCE(SUM(l.qty_out),0) AS on_hand
-    FROM {schema}.inventory_items i
-    LEFT JOIN {schema}.inventory_layers l
-      ON l.company_id=i.company_id
-     AND l.item_id=i.id
-     {layer_date_filter}
-    WHERE {" AND ".join(where_items)}
-    GROUP BY i.id, i.sku, i.name, i.barcode, i.unit, i.track_stock
-    ORDER BY i.name ASC, i.id ASC
-    """
-    rows = db_service.fetch_all(sql, tuple(params)) or []
-    return jsonify({"items": rows, "as_of": as_of}), 200
+        SELECT
+            i.id AS item_id,
+            i.sku,
+            i.name,
+            i.barcode,
+            i.unit,
+            i.track_stock,
 
+            COALESCE(SUM(l.qty_in), 0)
+            -
+            COALESCE(SUM(l.qty_out), 0) AS on_hand
+
+        FROM {schema}.inventory_items i
+
+        LEFT JOIN {schema}.inventory_layers l
+            ON l.company_id = i.company_id
+           AND l.item_id = i.id
+           {layer_date_filter}
+
+        WHERE {" AND ".join(where_items)}
+
+        GROUP BY
+            i.id,
+            i.sku,
+            i.name,
+            i.barcode,
+            i.unit,
+            i.track_stock
+
+        ORDER BY
+            i.name ASC,
+            i.id ASC
+    """
+
+    # IMPORTANT:
+    # Placeholder order must match SQL order:
+    # JOIN params first, then WHERE params.
+    params = tuple(join_params + where_params)
+
+    rows = db_service.fetch_all(sql, params) or []
+
+    return jsonify({
+        "items": rows,
+        "as_of": as_of,
+    }), 200
 
 # =====================================================
 # 4) REORDER alerts

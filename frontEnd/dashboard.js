@@ -122086,6 +122086,22 @@ function closeProjectCreateModal() {
   document.getElementById("projectCreateModal")?.classList.add("hidden");
 }
 
+function toDateInputValue(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+
+  // already yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 async function submitProjectCreate() {
   const cid = getActiveCompanyId?.() || CURRENT_COMPANY_ID;
   if (!cid) return;

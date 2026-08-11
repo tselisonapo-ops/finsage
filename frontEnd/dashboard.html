@@ -9616,6 +9616,113 @@ tbody tr:hover {
   white-space:normal;
   word-break:break-word;
 }
+
+/* =========================================================
+   Revenue Contract - Billing Milestones
+   Allow milestone table to use full two-column workspace
+   ========================================================= */
+
+@media (min-width: 1280px) {
+  #revBillingConfigWrap:has(#revMilestoneFields:not(.hidden)) {
+    width: calc(200% + 1rem);
+    max-width: calc(200% + 1rem);
+    position: relative;
+    z-index: 2;
+  }
+
+  #revMilestoneFields,
+  #revMilestoneTableWrap {
+    width: 100%;
+    max-width: none;
+  }
+}
+@media (max-width: 1279px) {
+  .rev-milestone-table-container {
+    overflow-x: auto;
+  }
+
+  .rev-milestone-table {
+    min-width: 900px;
+    table-layout: auto;
+  }
+}
+.rev-milestone-table-container {
+  width: 100%;
+  overflow: visible;
+}
+
+.rev-milestone-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.rev-milestone-table th,
+.rev-milestone-table td {
+  vertical-align: middle;
+}
+
+/* Code */
+.rev-milestone-table th:nth-child(1),
+.rev-milestone-table td:nth-child(1) {
+  width: 9%;
+}
+
+/* Description */
+.rev-milestone-table th:nth-child(2),
+.rev-milestone-table td:nth-child(2) {
+  width: 17%;
+}
+
+/* Trigger */
+.rev-milestone-table th:nth-child(3),
+.rev-milestone-table td:nth-child(3) {
+  width: 12%;
+}
+
+/* Amount */
+.rev-milestone-table th:nth-child(4),
+.rev-milestone-table td:nth-child(4) {
+  width: 10%;
+}
+
+/* Percent */
+.rev-milestone-table th:nth-child(5),
+.rev-milestone-table td:nth-child(5) {
+  width: 8%;
+}
+
+/* Certificate */
+.rev-milestone-table th:nth-child(6),
+.rev-milestone-table td:nth-child(6) {
+  width: 11%;
+}
+
+/* Approval */
+.rev-milestone-table th:nth-child(7),
+.rev-milestone-table td:nth-child(7) {
+  width: 11%;
+}
+
+/* Expected date */
+.rev-milestone-table th:nth-child(8),
+.rev-milestone-table td:nth-child(8) {
+  width: 13%;
+}
+
+/* Action */
+.rev-milestone-table th:nth-child(9),
+.rev-milestone-table td:nth-child(9) {
+  width: 9%;
+}
+
+.rev-milestone-table input,
+.rev-milestone-table select,
+.rev-milestone-table textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
   </style>
 
 </head>
@@ -14350,21 +14457,17 @@ tbody tr:hover {
 
                           <!-- ADD THIS BELOW -->
                           <div id="revMilestoneTableWrap" class="mt-4 border rounded-lg bg-white p-3">
-                            <div class="flex items-center justify-between gap-3 mb-2">
+                            <div class="flex items-center justify-between gap-3 mb-3">
                               <div>
                                 <div class="text-sm font-semibold text-slate-700">Billing Milestones</div>
-                                <div class="text-[11px] text-slate-500">
-                                  Define contract billing milestones before progress or invoicing happens.
-                                </div>
+                                <div class="text-[11px] text-slate-500">Define contract billing milestones before progress or invoicing happens.</div>
                               </div>
 
-                              <button id="revAddMilestoneRow" type="button" class="btn">
-                                Add Milestone
-                              </button>
+                              <button id="revAddMilestoneRow" type="button" class="btn">Add Milestone</button>
                             </div>
 
-                            <div class="overflow-auto border rounded-lg">
-                              <table class="min-w-[900px] w-full text-sm">
+                            <div class="rev-milestone-table-container border rounded-lg">
+                              <table class="rev-milestone-table w-full text-sm">
                                 <thead class="bg-slate-50 text-xs text-slate-500">
                                   <tr>
                                     <th class="px-3 py-2 text-left">Code</th>
@@ -26320,9 +26423,8 @@ tbody tr:hover {
 <div id="fs-react-drawer-root"></div>
 <script src="config.js"></script>
 
-<link rel="stylesheet" href="/assets/hostMount.css?v=20260811b" />
-
-<script type="module" src="/assets/hostMount.js?v=20260811b"></script>
+<link rel="stylesheet" href="./dist/assets/hostMount.css?v=20260811b" />
+<script type="module" src="./dist/assets/hostMount.js?v=20260811b"></script>
 
 <script src="/dashboard.js?v=20260811a" defer></script>
 <script src="/js/corporate-structure.js?v=20260807a" defer></script>

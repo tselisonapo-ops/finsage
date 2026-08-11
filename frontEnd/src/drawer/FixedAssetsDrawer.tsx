@@ -1255,7 +1255,7 @@ export default function FixedAssetsDrawer({ open, args, onClose, onResolve }: Pr
         onResolve({ action: "close" });
         onClose();
       }}
-      width={980}
+      width={1080}
     >
       {/* Context */}
       {args && (

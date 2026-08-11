@@ -107,10 +107,10 @@
 }
 
 /* ✅ the actual drawer panel is SOLID white */
-.fs-drawer-panel{
+.fs-drawer-panel {
   position: absolute;
-  top: 24px;
-  bottom: 24px;
+  top: 16px;
+  bottom: 4px;
   background: var(--fs-surface);
   border: 1px solid var(--fs-border-subtle);
   border-radius: 18px;
@@ -118,14 +118,22 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 20px);
 }
 
 /* positions */
-.fs-drawer--right{ right: 24px; }
-.fs-drawer--left{ left: 24px; }
-.fs-drawer--center{
+.fs-drawer--right {
+  right: 16px;
+}
+
+.fs-drawer--left {
+  left: 16px;
+}
+
+.fs-drawer--center {
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-48%);
 }
 
 /* header */
@@ -158,4 +166,13 @@
   padding: 14px 16px 18px;
   overflow: auto;
   background: #fff; /* ✅ important */
+}
+
+.fs-drawer-body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #fff;
 }
