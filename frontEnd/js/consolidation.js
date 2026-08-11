@@ -19,6 +19,10 @@
     adjustedTb: null,
     acquisition: null,
     equityMethod: null,
+    closeControl: null,
+    finalTb: null, 
+    groupStatement: null, 
+    groupStatementKey: "balance-sheet",
   };
 
   function companyId() {
@@ -277,6 +281,24 @@
 
       const eqTab = document.getElementById("grEquityMethodTab");
       if (eqTab) eqTab.disabled = false;
+
+      const fxTab = document.getElementById("grTranslationTab");
+      if (fxTab) fxTab.disabled = false;
+
+      const controlTab = document.getElementById("grControlTab");
+      if (controlTab) controlTab.disabled = false;
+
+      const finalTbTab = document.getElementById("grFinalTbTab");
+      const statementsTab = document.getElementById("grStatementsTab");
+
+      if (finalTbTab) finalTbTab.disabled = false;
+
+      if (statementsTab) {
+        statementsTab.disabled = !(
+          state.selectedRun?.run?.close_status === "closed" &&
+          state.selectedRun?.run?.final_tb_status === "generated"
+        );
+      }
 
       document
         .querySelector('[data-group-panel="runs"]')
@@ -662,6 +684,17 @@
     const equityMethod = 
       document.getElementById("groupEquityMethodWorkspace");
 
+    const translation = 
+      document.getElementById("groupTranslationWorkspace");
+
+    const controls = 
+      document.getElementById("groupControlWorkspace");
+
+    const finalTb = 
+      document.getElementById("groupFinalTbWorkspace");
+    const statements = 
+      document.getElementById("groupStatementsWorkspace");
+
       document.querySelectorAll(".group-reporting-tab").forEach(btn => {
         const active = btn.dataset.groupTab === tab;
 
@@ -768,6 +801,77 @@
       return;
     }
 
+    if (tab === "translation") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.add("hidden");
+      equityMethod?.classList.add("hidden");
+      translation?.classList.remove("hidden");
+      loadTranslationWorkspace();
+      return;
+    }
+
+    if (tab === "controls") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      translation?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.add("hidden");
+      equityMethod?.classList.add("hidden");
+      controls?.classList.remove("hidden");
+      loadGroupControls();
+      return;
+    }
+
+    if (tab === "final-tb") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      translation?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.add("hidden");
+      equityMethod?.classList.add("hidden");
+      controls?.classList.add("hidden");
+      statements?.classList.add("hidden");
+      finalTb?.classList.remove("hidden");
+      loadFinalGroupTb();
+      return;
+    }
+
+    if (tab === "statements") {
+      runs?.classList.add("hidden");
+      runWorkspace?.classList.add("hidden");
+      mapping?.classList.add("hidden");
+      translation?.classList.add("hidden");
+      precon?.classList.add("hidden");
+      adjustments?.classList.add("hidden");
+      intercompany?.classList.add("hidden");
+      eliminations?.classList.add("hidden");
+      adjustedTb?.classList.add("hidden");
+      acquisition?.classList.add("hidden");
+      equityMethod?.classList.add("hidden");
+      controls?.classList.add("hidden");
+      finalTb?.classList.add("hidden");
+      statements?.classList.remove("hidden");
+      loadGroupStatement(state.groupStatementKey || "balance-sheet");
+      return;
+    }
+
     mapping?.classList.add("hidden");
     precon?.classList.add("hidden");
     adjustments?.classList.add("hidden");
@@ -776,6 +880,10 @@
     adjustedTb?.classList.add("hidden");
     acquisition?.classList.add("hidden");
     equityMethod?.classList.add("hidden");
+    translation?.classList.add("hidden");
+    controls?.classList.add(hidden);
+    finalTb?.classList.add("hidden");
+    statements?.classList.add("hidden");
     
 
     if (state.selectedRun) {
@@ -3554,6 +3662,787 @@
     }
   }
 
+  async function loadTranslationWorkspace() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.translation = await apiFetch(
+        ENDPOINTS.consolidation.translation(cid,runId),
+        { method: "GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] translation load failed:",e);
+      state.translation = { items: [], summary: {} };
+    }
+
+    renderTranslationWorkspace();
+  }
+  function renderTranslationWorkspace() {
+    const d = state.translation || {}, s = d.summary || {}, rows = d.items || [];
+    const set = (id,v) => { const el = document.getElementById(id); if (el) el.textContent = String(v); };
+
+    set("grFxTotal",s.total || 0);
+    set("grFxForeign",s.foreign || 0);
+    set("grFxApproved",s.approved || 0);
+    set("grFxCta",money(s.cta));
+
+    const host = document.getElementById("grTranslationList");
+    if (!host) return;
+
+    host.innerHTML = rows.length ? rows.map(w => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold">${esc(w.entity_name)}</span>
+            <span class="rounded bg-slate-100 px-2 py-0.5 text-[10px] uppercase">${esc(w.status)}</span>
+          </div>
+
+          <div class="mt-1 text-xs text-slate-500">
+            ${esc(w.functional_currency)} → ${esc(w.reporting_currency)}
+          </div>
+
+          <div class="mt-2 flex gap-4 text-xs text-slate-600">
+            <span>Closing <strong>${Number(w.closing_rate || 0).toFixed(6)}</strong></span>
+            <span>Average <strong>${Number(w.average_rate || 0).toFixed(6)}</strong></span>
+            <span>Historical <strong>${Number(w.default_historical_rate || 0).toFixed(6)}</strong></span>
+            <span>Difference <strong>${money(w.translation_difference)}</strong></span>
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" data-gr-fx-open="${w.id}"
+            class="border rounded px-2 py-1 text-xs">Open</button>
+
+          ${w.status === "translated" ? `
+            <button type="button" data-gr-fx-review="${w.id}"
+              class="border rounded px-2 py-1 text-xs">Review</button>
+          ` : ""}
+
+          ${w.status === "reviewed" ? `
+            <button type="button" data-gr-fx-approve="${w.id}"
+              class="rounded bg-slate-900 text-white px-2 py-1 text-xs">Approve</button>
+          ` : ""}
+        </div>
+      </div>
+    `).join("") : `
+      <div class="px-4 py-10 text-center text-sm text-slate-500">
+        Translation workpapers have not been prepared.
+      </div>
+    `;
+
+    bindTranslationActions();
+  }
+
+
+  async function prepareTranslation() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.prepareTranslation(cid,runId),
+        { method: "POST", body: JSON.stringify({}) }
+      );
+      alert(res?.message || "Translation prepared.");
+      await loadTranslationWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to prepare translation.");
+    }
+  }
+
+
+  async function openTranslationWorkpaper(id) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.translationWorkpaper(cid,runId,id),
+        { method: "GET" }
+      );
+      renderTranslationModal(data);
+    } catch (e) {
+      alert(e?.message || "Failed to load translation workpaper.");
+    }
+  }
+
+
+  function renderTranslationModal(data) {
+    const w = data?.workpaper || {};
+    const body = document.getElementById("grFxModalBody");
+
+    document.getElementById("grFxModalTitle").textContent =
+      `${w.entity_name || ""} Translation`;
+
+    document.getElementById("grFxModalMeta").textContent =
+      `${w.functional_currency || ""} → ${w.reporting_currency || ""}`;
+
+    if (body) body.innerHTML = `
+      <form id="grFxForm">
+        <input type="hidden" name="workpaper_id" value="${esc(w.id)}" />
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Closing rate</label>
+            <input name="closing_rate" type="number" step="0.00000001"
+              value="${esc(w.closing_rate || 1)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Average rate</label>
+            <input name="average_rate" type="number" step="0.00000001"
+              value="${esc(w.average_rate || 1)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1">Historical rate</label>
+            <input name="default_historical_rate" type="number" step="0.00000001"
+              value="${esc(w.default_historical_rate || 1)}"
+              class="w-full border rounded px-3 py-2 text-sm text-right" />
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="submit" class="border rounded px-4 py-2 text-sm">Save Rates</button>
+          <button id="btnTranslateEntity" type="button"
+            class="rounded bg-slate-900 text-white px-4 py-2 text-sm">
+            Translate
+          </button>
+        </div>
+      </form>
+    `;
+
+    const modal = document.getElementById("groupTranslationModal");
+    modal?.classList.remove("hidden");
+    modal?.classList.add("flex");
+
+    bindTranslationModal(w.id);
+  }
+  function bindTranslationModal(id) {
+    const form = document.getElementById("grFxForm");
+
+    form?.addEventListener("submit",async e => {
+      e.preventDefault();
+
+      const cid = companyId(), runId = state.selectedRun?.run?.id;
+      const fd = new FormData(form);
+
+      try {
+        await apiFetch(
+          ENDPOINTS.consolidation.translationWorkpaper(cid,runId,id),
+          {
+            method:"PATCH",
+            body:JSON.stringify({
+              closing_rate:Number(fd.get("closing_rate") || 0),
+              average_rate:Number(fd.get("average_rate") || 0),
+              default_historical_rate:Number(fd.get("default_historical_rate") || 0),
+            }),
+          }
+        );
+        alert("Translation rates saved.");
+      } catch (e) {
+        alert(e?.message || "Failed to save rates.");
+      }
+    });
+
+    document.getElementById("btnTranslateEntity")?.addEventListener("click",async () => {
+      const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+      try {
+        const fd = new FormData(form);
+
+        await apiFetch(
+          ENDPOINTS.consolidation.translationWorkpaper(cid,runId,id),
+          {
+            method:"PATCH",
+            body:JSON.stringify({
+              closing_rate:Number(fd.get("closing_rate") || 0),
+              average_rate:Number(fd.get("average_rate") || 0),
+              default_historical_rate:Number(fd.get("default_historical_rate") || 0),
+            }),
+          }
+        );
+
+        const res = await apiFetch(
+          ENDPOINTS.consolidation.translateEntity(cid,runId,id),
+          { method:"POST",body:JSON.stringify({}) }
+        );
+
+        alert(res?.message || "Entity translated.");
+
+        const modal = document.getElementById("groupTranslationModal");
+        modal?.classList.add("hidden");
+        modal?.classList.remove("flex");
+
+        await loadTranslationWorkspace();
+      } catch (e) {
+        alert(e?.message || "Translation failed.");
+      }
+    });
+  }
+
+
+  async function setTranslationStatus(id,status) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.translationStatus(cid,runId,id),
+        { method:"POST",body:JSON.stringify({ status }) }
+      );
+      alert(res?.message || "Translation updated.");
+      await loadTranslationWorkspace();
+    } catch (e) {
+      alert(e?.message || "Failed to update translation.");
+    }
+  }
+
+  function bindTranslationActions() {
+    document.querySelectorAll("[data-gr-fx-open]").forEach(btn =>
+      btn.onclick = () => openTranslationWorkpaper(Number(btn.dataset.grFxOpen))
+    );
+
+    document.querySelectorAll("[data-gr-fx-review]").forEach(btn =>
+      btn.onclick = () => setTranslationStatus(Number(btn.dataset.grFxReview),"reviewed")
+    );
+
+    document.querySelectorAll("[data-gr-fx-approve]").forEach(btn =>
+      btn.onclick = () => setTranslationStatus(Number(btn.dataset.grFxApprove),"approved")
+    );
+  }
+
+
+  const prepareFxBtn = document.getElementById("btnPrepareTranslation");
+  const closeFxBtn = document.getElementById("btnCloseTranslationModal");
+
+  if (prepareFxBtn && prepareFxBtn.dataset.bound !== "1") {
+    prepareFxBtn.dataset.bound = "1";
+    prepareFxBtn.addEventListener("click",prepareTranslation);
+  }
+
+  if (closeFxBtn && closeFxBtn.dataset.bound !== "1") {
+    closeFxBtn.dataset.bound = "1";
+    closeFxBtn.addEventListener("click",() => {
+      const modal = document.getElementById("groupTranslationModal");
+      modal?.classList.add("hidden");
+      modal?.classList.remove("flex");
+    });
+  }
+
+  async function loadGroupControls() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.closeControl = await apiFetch(
+        ENDPOINTS.consolidation.controls(cid,runId),
+        { method:"GET" }
+      );
+    } catch (e) {
+      console.error("[Consolidation] control check failed:",e);
+      state.closeControl = {
+        ready:false,
+        checks:[],
+        blocking_count:0,
+      };
+    }
+
+    renderGroupControls();
+  }
+  function renderGroupControls() {
+    const d = state.closeControl || {}, checks = d.checks || [];
+    const summary = document.getElementById("grControlSummary");
+    const host = document.getElementById("grControlChecks");
+
+    if (summary) summary.innerHTML = d.ready ? `
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <div class="text-lg font-semibold text-emerald-700">Ready for Group Reporting</div>
+          <div class="mt-1 text-sm text-slate-500">
+            All blocking consolidation controls have passed.
+          </div>
+        </div>
+        <span class="rounded bg-emerald-50 text-emerald-700 px-3 py-1.5 text-xs font-medium">
+          READY
+        </span>
+      </div>
+    ` : `
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <div class="text-lg font-semibold text-amber-700">Consolidation Not Ready</div>
+          <div class="mt-1 text-sm text-slate-500">
+            ${Number(d.blocking_count || 0)} blocking control${Number(d.blocking_count || 0) === 1 ? "" : "s"} remain.
+          </div>
+        </div>
+        <span class="rounded bg-amber-50 text-amber-700 px-3 py-1.5 text-xs font-medium">
+          BLOCKED
+        </span>
+      </div>
+    `;
+
+    if (!host) return;
+
+    host.innerHTML = checks.map(c => `
+      <div class="px-4 py-4 flex items-start justify-between gap-4">
+        <div>
+          <div class="text-sm font-semibold text-slate-800">
+            ${esc(c.check_name)}
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            ${esc(c.message || "")}
+          </div>
+        </div>
+
+        <span class="rounded px-2 py-1 text-[10px] uppercase ${
+          c.status === "pass"
+            ? "bg-emerald-50 text-emerald-700"
+            : c.status === "warning"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-red-50 text-red-700"
+        }">
+          ${esc(c.status)}
+        </span>
+      </div>
+    `).join("");
+  }
+
+  async function closeConsolidationRun() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    const validation = await apiFetch(
+      ENDPOINTS.consolidation.controls(cid,runId),
+      { method:"GET" }
+    );
+
+    state.closeControl = validation;
+    renderGroupControls();
+
+    if (!validation?.ready) {
+      alert("Consolidation cannot be closed while blocking controls remain.");
+      return;
+    }
+
+    if (!confirm(
+      "Close this consolidation run?\n\n" +
+      "It will be marked ready for Group Financial Statements."
+    )) return;
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.closeRun(cid,runId),
+        { method:"POST",body:JSON.stringify({}) }
+      );
+
+      alert(res?.message || "Consolidation closed.");
+      await openRun(runId);
+      await loadGroupControls();
+    } catch (e) {
+      alert(e?.message || "Failed to close consolidation.");
+    }
+  }
+
+  async function validateFinalGroupTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return null;
+
+    try {
+      const data = await apiFetch(
+        ENDPOINTS.consolidation.validateFinalTb(cid,runId),
+        { method:"GET" }
+      );
+
+      renderFinalTbValidation(data);
+      return data;
+    } catch (e) {
+      alert(e?.message || "Final TB validation failed.");
+      return null;
+    }
+  }
+  function renderFinalTbValidation(data) {
+    const host = document.getElementById("grFinalTbValidation");
+    if (!host) return;
+
+    host.classList.remove("hidden");
+
+    if (data?.ready) {
+      host.innerHTML = `
+        <div>
+          <div class="text-sm font-semibold text-emerald-700">Ready to generate Final Group TB</div>
+          <div class="mt-1 text-xs text-slate-500">
+            Consolidation layers required for group reporting are complete.
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    const issues = data?.issues || [];
+
+    host.innerHTML = `
+      <div class="text-sm font-semibold text-slate-800">
+        ${issues.length} issue${issues.length===1 ? "" : "s"} must be resolved
+      </div>
+
+      <div class="mt-3 space-y-2">
+        ${issues.map(i => `
+          <div class="rounded bg-slate-50 px-3 py-2">
+            <div class="text-xs font-medium text-slate-700">
+              ${esc((i.code || "").replaceAll("_"," "))}
+            </div>
+            <div class="text-xs text-slate-500">${esc(i.message || "")}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  async function generateFinalGroupTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    const validation = await validateFinalGroupTb();
+    if (!validation?.ready) {
+      alert("Resolve the Final Group TB validation issues first.");
+      return;
+    }
+
+    try {
+      const res = await apiFetch(
+        ENDPOINTS.consolidation.generateFinalTb(cid,runId),
+        { method:"POST",body:JSON.stringify({}) }
+      );
+
+      state.finalTb = res?.data || null;
+
+      alert(
+        res?.message ||
+        "Final Consolidated Trial Balance generated."
+      );
+
+      renderFinalGroupTb();
+
+      await openRun(runId);
+
+    } catch (e) {
+      alert(
+        e?.message ||
+        "Failed to generate Final Consolidated Trial Balance."
+      );
+    }
+  }
+
+  async function loadFinalGroupTb() {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    try {
+      state.finalTb = await apiFetch(
+        ENDPOINTS.consolidation.finalTb(cid,runId),
+        { method:"GET" }
+      );
+    } catch (e) {
+      state.finalTb = {
+        header:null,
+        rows:[],
+        summary:{},
+      };
+    }
+
+    renderFinalGroupTb();
+  }
+  function renderFinalGroupTb() {
+    const d = state.finalTb || {}, s = d.summary || {}, rows = d.rows || [];
+    const set = (id,v) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(v);
+    };
+
+    set("grFinalAccounts",s.account_count || 0);
+    set("grFinalDebit",money(s.final_debit));
+    set("grFinalCredit",money(s.final_credit));
+    set("grFinalDifference",money(s.difference));
+
+    const body = document.getElementById("grFinalTbBody");
+    if (!body) return;
+
+    if (!d.header) {
+      body.innerHTML = `
+        <tr>
+          <td colspan="6" class="px-4 py-10 text-center text-slate-500">
+            Final Consolidated Trial Balance has not been generated.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    body.innerHTML = rows.map(r => `
+      <tr class="border-t">
+        <td class="px-4 py-3">
+          <div class="font-medium text-slate-800">
+            ${esc(r.code)} · ${esc(r.name)}
+          </div>
+          <div class="text-[11px] text-slate-500">
+            ${esc(r.section || "")}${r.category ? ` · ${esc(r.category)}` : ""}
+          </div>
+        </td>
+
+        <td class="px-4 py-3 text-right tabular-nums">
+          ${money(r.adjusted_balance)}
+        </td>
+
+        <td class="px-4 py-3 text-right tabular-nums">
+          ${money(r.acquisition_balance)}
+        </td>
+
+        <td class="px-4 py-3 text-right tabular-nums">
+          ${money(r.equity_method_balance)}
+        </td>
+
+        <td class="px-4 py-3 text-right tabular-nums">
+          ${money(r.translation_balance)}
+        </td>
+
+        <td class="px-4 py-3 text-right tabular-nums font-semibold">
+          ${money(r.final_balance)}
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  async function loadGroupStatement(statementKey = "balance-sheet") {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    if (!cid || !runId) return;
+
+    state.groupStatementKey = statementKey;
+
+    document.querySelectorAll("[data-gr-statement]").forEach(btn => {
+      const active = btn.dataset.grStatement === statementKey;
+      btn.classList.toggle("bg-slate-900",active);
+      btn.classList.toggle("text-white",active);
+      btn.classList.toggle("bg-white",!active);
+    });
+
+    const host = document.getElementById("grStatementPreview");
+    const status = document.getElementById("grStatementStatus");
+
+    if (host) {
+      host.innerHTML = `
+        <div class="px-4 py-12 text-center text-sm text-slate-500">
+          Loading statement...
+        </div>
+      `;
+    }
+
+    try {
+      state.groupStatement = await apiFetch(
+        ENDPOINTS.consolidation.groupStatement(
+          cid,runId,statementKey
+        ),
+        { method:"GET" }
+      );
+
+      status?.classList.add("hidden");
+      renderGroupStatementPreview();
+
+    } catch (e) {
+      state.groupStatement = null;
+
+      if (status) {
+        status.classList.remove("hidden");
+        status.innerHTML = `
+          <div class="text-sm font-semibold text-slate-800">
+            Statement unavailable
+          </div>
+          <div class="mt-1 text-xs text-slate-500">
+            ${esc(e?.message || "Unable to build this group statement.")}
+          </div>
+        `;
+      }
+
+      if (host) host.innerHTML = "";
+    }
+  }
+
+  function statementValue(values = {}, key = "cur") {
+    return money(values?.[key] ?? 0);
+  }
+
+  function statementRowsTable(rows = [], columns = []) {
+    return `
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th class="text-left px-4 py-3">Description</th>
+              ${columns.map(c => `
+                <th class="text-right px-4 py-3">${esc(c.label || c.key)}</th>
+              `).join("")}
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map(r => `
+              <tr class="border-t ${r.row_type==="total" ? "font-semibold" : ""}">
+                <td class="px-4 py-3">${esc(r.label || r.name || "")}</td>
+                ${columns.map(c => `
+                  <td class="px-4 py-3 text-right tabular-nums">
+                    ${statementValue(r.values,c.key)}
+                  </td>
+                `).join("")}
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderGroupStatementPreview() {
+    const p = state.groupStatement || {};
+    const host = document.getElementById("grStatementPreview");
+    if (!host) return;
+
+    const cols = p.columns || [{ key:"cur",label:"Amount" }];
+    const statement = String(p?.meta?.statement || "").toLowerCase();
+
+    if (statement === "bs" || statement === "balance_sheet") {
+      const rows = [];
+
+      const push = (label,section) => {
+        if (!section) return;
+
+        rows.push({
+          label,
+          values:{},
+          row_type:"header",
+        });
+
+        (section.lines || []).forEach(x =>
+          rows.push({
+            label:x.name || x.label,
+            values:x.values || {},
+          })
+        );
+
+        if (section.totals) {
+          rows.push({
+            label:`Total ${label}`,
+            values:section.totals.values || section.totals,
+            row_type:"total",
+          });
+        }
+      };
+
+      push("Current assets",p.assets?.current_assets);
+      push("Non-current assets",p.assets?.non_current_assets);
+
+      if (p.assets?.totals) rows.push({
+        label:p.assets.totals.label || "Total assets",
+        values:p.assets.totals.values || {},
+        row_type:"total",
+      });
+
+      push("Equity",p.equity_and_liabilities?.equity);
+      push("Non-current liabilities",p.equity_and_liabilities?.non_current_liabilities);
+      push("Current liabilities",p.equity_and_liabilities?.current_liabilities);
+
+      if (p.equity_and_liabilities?.totals) rows.push({
+        label:p.equity_and_liabilities.totals.label || "Total equity and liabilities",
+        values:p.equity_and_liabilities.totals.values || {},
+        row_type:"total",
+      });
+
+      host.innerHTML = statementRowsTable(rows,cols);
+      return;
+    }
+
+    if (p.rows?.length) {
+      host.innerHTML = statementRowsTable(
+        p.rows.map(r => ({
+          ...r,
+          row_type:r.key==="closing_balance" ? "total" : r.row_type,
+        })),
+        cols
+      );
+      return;
+    }
+
+    const rows = [];
+
+    (p.blocks || p.sections || []).forEach(sec => {
+      rows.push({
+        label:sec.label || sec.key,
+        values:{},
+        row_type:"header",
+      });
+
+      (sec.lines || []).forEach(x => rows.push({
+        label:x.name || x.label,
+        values:x.values || {},
+      }));
+
+      if (sec.values) rows.push({
+        label:sec.label || sec.key,
+        values:sec.values,
+        row_type:"total",
+      });
+
+      if (sec.totals) rows.push({
+        label:`Total ${sec.label || ""}`,
+        values:sec.totals.values || sec.totals,
+        row_type:"total",
+      });
+    });
+
+    if (p.net_result) rows.push({
+      label:p.net_result.label || "Profit for the year",
+      values:p.net_result.values || {},
+      row_type:"total",
+    });
+
+    if (p.net_change) rows.push({
+      label:p.net_change.label || "Net change",
+      values:p.net_change.values || {},
+      row_type:"total",
+    });
+
+    host.innerHTML = statementRowsTable(rows,cols);
+  }
+
+  async function exportGroupStatement(format) {
+    const cid = companyId(), runId = state.selectedRun?.run?.id;
+    const statement = state.groupStatementKey || "balance-sheet";
+    if (!cid || !runId) return;
+
+    const reportKey = {
+      "balance-sheet": "group_balance_sheet",
+      "income-statement": "group_income_statement",
+      "cash-flow": "group_cash_flow",
+      "socie": "group_socie",
+    }[statement];
+
+    if (!reportKey) return;
+
+    try {
+      const exportUrl =
+        `${ENDPOINTS.consolidation.groupStatementExport(cid,runId,statement)}` +
+        `?format=${encodeURIComponent(format)}`;
+
+      const url = await getReportExportUrl(
+        cid,
+        reportKey,
+        exportUrl
+      );
+
+      window.open(url,"_blank","noopener");
+    } catch (e) {
+      alert(e?.message || "Failed to prepare group statement export.");
+    }
+  }
+
   function bindConsolidationScreen() {
     const newBtn = document.getElementById("btnNewConsolidationRun");
     const closeBtn = document.getElementById("btnCloseGroupRunModal");
@@ -3631,6 +4520,13 @@
     const prepareEqBtn = document.getElementById("btnPrepareEquityMethod");
     const generateEqBtn = document.getElementById("btnGenerateEquityMethodJournals");
     const closeEqBtn = document.getElementById("btnCloseEquityMethodModal");
+    const refreshControlsBtn = document.getElementById("btnRefreshGroupControls");
+    const closeConsolidationBtn = document.getElementById("btnCloseConsolidation");
+
+    const validateFinalBtn = document.getElementById("btnValidateFinalTb");
+    const generateFinalBtn = document.getElementById("btnGenerateFinalTb");
+    const groupPdfBtn = document.getElementById("btnGroupStatementPdf");
+    const groupXlsxBtn = document.getElementById("btnGroupStatementXlsx");
 
     if (newBtn && newBtn.dataset.bound !== "1") {
       newBtn.dataset.bound = "1";
@@ -3668,6 +4564,11 @@
         state.adjustedTb = null;
         state.acquisition = null;
         state.equityMethod = null;
+        state.translation = null;
+        state.closeControl = null;
+        state.finalTb = null;
+        state.groupStatement = null;
+        state.groupStatementKey = "balance-sheet";
 
         [
           "grAccountMappingTab", 
@@ -3678,6 +4579,10 @@
           "grAdjustedTbTab",
           "grAcquisitionTab",
           "grEquityMethodTab",
+          "grTranslationTab",
+          "grControlTab",
+          "grFinalTbTab",
+          "grStatementsTab",
         ].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.disabled = true;
@@ -3692,6 +4597,10 @@
           "groupAdjustedTbWorkspace",
           "groupAcquisitionWorkspace",
           "groupEquityMethodWorkspace",
+          "groupTranslationWorkspace",
+          "groupControlWorkspace",
+          "groupFinalTbWorkspace",
+          "groupStatementsWorkspace",
         ].forEach(id =>
           document.getElementById(id)?.classList.add("hidden")
         );
@@ -3939,6 +4848,49 @@
         modal?.classList.add("hidden");
         modal?.classList.remove("flex");
       });
+    }
+
+    if (refreshControlsBtn && refreshControlsBtn.dataset.bound !== "1") {
+      refreshControlsBtn.dataset.bound = "1";
+      refreshControlsBtn.addEventListener("click",loadGroupControls);
+    }
+
+    if (closeConsolidationBtn && closeConsolidationBtn.dataset.bound !== "1") {
+      closeConsolidationBtn.dataset.bound = "1";
+      closeConsolidationBtn.addEventListener("click",closeConsolidationRun);
+    }
+
+    if (validateFinalBtn && validateFinalBtn.dataset.bound !== "1") {
+      validateFinalBtn.dataset.bound = "1";
+      validateFinalBtn.addEventListener("click",validateFinalGroupTb);
+    }
+
+    if (generateFinalBtn && generateFinalBtn.dataset.bound !== "1") {
+      generateFinalBtn.dataset.bound = "1";
+      generateFinalBtn.addEventListener("click",generateFinalGroupTb);
+    }
+
+    document.querySelectorAll("[data-gr-statement]").forEach(btn => {
+      if (btn.dataset.bound === "1") return;
+
+      btn.dataset.bound = "1";
+      btn.addEventListener("click",() =>
+        loadGroupStatement(btn.dataset.grStatement)
+      );
+    });
+
+    if (groupPdfBtn && groupPdfBtn.dataset.bound !== "1") {
+      groupPdfBtn.dataset.bound = "1";
+      groupPdfBtn.addEventListener("click",() =>
+        exportGroupStatement("pdf")
+      );
+    }
+
+    if (groupXlsxBtn && groupXlsxBtn.dataset.bound !== "1") {
+      groupXlsxBtn.dataset.bound = "1";
+      groupXlsxBtn.addEventListener("click",() =>
+        exportGroupStatement("xlsx")
+      );
     }
   }
 

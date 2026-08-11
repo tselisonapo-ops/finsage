@@ -1124,6 +1124,51 @@ const ENDPOINTS = {
 
     generateEquityMethodJournals: (companyId,runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/journals/generate`,
+  
+    translation: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation`,
+
+    prepareTranslation: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/prepare`,
+
+    translationWorkpaper: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}`,
+
+    translateEntity: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}/translate`,
+
+    translationStatus: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}/status`,
+  
+    controls: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/controls`,
+
+    closeRun: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/close`,
+
+    reopenRun: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/reopen`,
+  
+    finalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb`,
+
+    validateFinalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb/validate`,
+
+    generateFinalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb/generate`,
+
+    groupStatements: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements`,
+
+    groupStatement: (companyId,runId,statement) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements/${encodeURIComponent(statement)}`,
+
+    groupStatementExport: (companyId,runId,statement) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements/${encodeURIComponent(statement)}/export`,
+  
+    reportsExportToken: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/reports/export-token`,
   },
 
 
@@ -1894,6 +1939,51 @@ const ENDPOINTS = {
 
     payrollEmployeeLoanPreview:(companyId,projectId,datasetId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/preview`,  
+  
+    payrollHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/history`,
+
+    payrollHistorySettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/settings`,
+
+    payrollHistoryMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/mapping`,
+
+    payrollHistoryPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/preview`,
+  
+    payrollReconciliation:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/reconciliation`,
+
+    payrollReconciliationHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/reconciliation/history`,
+  
+    products:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/products`,
+
+    productSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/settings`,
+
+    productTypes:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/types`,
+
+    productMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/mapping`,
+
+    productPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/preview`,
+  
+    productAccounting:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounting`,
+
+    productAccounts:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounts`,
+
+    productVat:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/vat`,
+
+    productAccountingPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounting/preview`,  
   },
 
   ifrs9: {
@@ -121413,6 +121503,27 @@ async function populateProjectCustomerDropdown() {
   `;
 }
 
+function applyProjectTypeBehaviour() {
+  const type = document.getElementById("projectType")?.value || "customer_project";
+  const mode = document.getElementById("projectAccountingMode");
+  const customer = document.getElementById("projectCustomerId");
+  const billing = document.getElementById("projectBillingEnabled");
+  const revenue = document.getElementById("projectRevenueEnabled");
+
+  const customerProject = ["customer_project", "construction", "implementation"].includes(type);
+  const internalProject = ["internal_project", "marketing", "research", "maintenance"].includes(type);
+  const capitalProject = type === "capital_project";
+
+  if (customer) customer.required = type === "customer_project";
+
+  if (capitalProject && mode?.value === "contract") mode.value = "capital";
+  if (internalProject && mode?.value === "contract") mode.value = "expense";
+
+  if (billing && !customerProject) billing.checked = false;
+  if (revenue && !customerProject) revenue.checked = false;
+}
+window.applyProjectTypeBehaviour = applyProjectTypeBehaviour;
+
 async function bindProjectsScreen(name = "projects") {
   applyProjectNamingLabels?.();
   bindProjectOperationalModalsOnce?.();
@@ -121420,7 +121531,8 @@ async function bindProjectsScreen(name = "projects") {
   const btnRefresh = document.getElementById("projectRefreshBtn");
   const q = document.getElementById("projectSearch");
   const status = document.getElementById("projectStatus");
-
+  const type = document.getElementById("projectTypeFilter");
+  const accountingMode = document.getElementById("projectAccountingModeFilter");
   if (btnRefresh && btnRefresh.dataset.bound !== "1") {
     btnRefresh.dataset.bound = "1";
     btnRefresh.addEventListener("click", () => loadProjects());
@@ -121445,6 +121557,13 @@ async function bindProjectsScreen(name = "projects") {
     status.addEventListener("change", () => loadProjects());
   }
 
+  [type, accountingMode].forEach(el => {
+    if (el && el.dataset.bound !== "1") {
+      el.dataset.bound = "1";
+      el.addEventListener("change", () => loadProjects());
+    }
+  });
+
   await loadProjects();
 }
 
@@ -121456,10 +121575,13 @@ async function loadProjects({ limit = 50, offset = 0 } = {}) {
 
   const q = (document.getElementById("projectSearch")?.value || "").trim();
   const status = (document.getElementById("projectStatus")?.value || "").trim();
-
+  const projectType = document.getElementById("projectTypeFilter")?.value || "";
+  const accountingMode = document.getElementById("projectAccountingModeFilter")?.value || "";
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
+  if (projectType) params.set("project_type", projectType);
+  if (accountingMode) params.set("accounting_mode", accountingMode);
   params.set("limit", String(limit));
   params.set("offset", String(offset));
 
@@ -121487,13 +121609,17 @@ function renderProjectsTable(items) {
     return;
   }
 
-  const row = (p) => `
-    <tr class="border-b hover:bg-slate-50 cursor-pointer"
-        data-project-id="${esc(String(p.id))}">
+  const row = p => `
+    <tr class="border-b hover:bg-slate-50 cursor-pointer" data-project-id="${esc(String(p.id))}">
       <td class="px-2 py-2">${esc(p.project_code || "")}</td>
-      <td class="px-2 py-2">${esc(p.project_name || "")}</td>
-      <td class="px-2 py-2">${esc(p.customer_name || "")}</td>
+      <td class="px-2 py-2">
+        <div class="font-medium">${esc(p.project_name || "")}</div>
+        <div class="text-[10px] text-slate-400">${esc((p.project_type || "").replaceAll("_", " "))}</div>
+      </td>
+      <td class="px-2 py-2">${esc(p.customer_name || "Internal")}</td>
+      <td class="px-2 py-2">${esc((p.accounting_mode || "contract").replaceAll("_", " "))}</td>
       <td class="px-2 py-2">${esc(p.status || "")}</td>
+      <td class="px-2 py-2 text-right">${Number(p.progress_percent || 0).toFixed(0)}%</td>
       <td class="px-2 py-2 text-right">${fmtMoney(p.contract_value || 0)}</td>
       <td class="px-2 py-2 text-right">${fmtMoney(p.budget_lines_total || 0)}</td>
       <td class="px-2 py-2 text-right">${esc(String(p.task_count || 0))}</td>
@@ -121507,8 +121633,10 @@ function renderProjectsTable(items) {
           <tr class="text-slate-600">
             <th class="text-left px-2 py-2">Code</th>
             <th class="text-left px-2 py-2">Project</th>
-            <th class="text-left px-2 py-2">Customer</th>
+            <th class="text-left px-2 py-2">Customer / Owner</th>
+            <th class="text-left px-2 py-2">Accounting</th>
             <th class="text-left px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Progress</th>
             <th class="text-right px-2 py-2">Contract</th>
             <th class="text-right px-2 py-2">Budget</th>
             <th class="text-right px-2 py-2">Tasks</th>
@@ -121523,7 +121651,6 @@ function renderProjectsTable(items) {
     tr.addEventListener("click", () => loadProjectDetail(Number(tr.dataset.projectId)));
   });
 }
-
 window.renderProjectsTable = renderProjectsTable;
 
 async function loadProjectDetail(projectId) {
@@ -121780,6 +121907,7 @@ function bindProjectCreateModalOnce() {
   document.getElementById("projectCreateCloseBtn")?.addEventListener("click", closeProjectCreateModal);
   document.getElementById("projectCreateCancelBtn")?.addEventListener("click", closeProjectCreateModal);
   document.getElementById("projectCreateSaveBtn")?.addEventListener("click", submitProjectCreate);
+  document.getElementById("projectType")?.addEventListener("change", applyProjectTypeBehaviour);
 }
 
 async function openProjectCreateModal(project = null) {
@@ -121788,40 +121916,50 @@ async function openProjectCreateModal(project = null) {
 
   const isEdit = !!project?.id;
   const today = new Date().toISOString().slice(0, 10);
-
-  [
-    "projectCode",
-    "projectName",
-    "projectCustomerId",
-    "projectExpectedEndDate",
-    "projectContractValue",
-    "projectLocation",
-    "projectNotes",
-  ].forEach(id => {
+  const set = (id, value = "") => {
     const el = document.getElementById(id);
-    if (el) el.value = "";
-  });
+    if (el) el.value = value ?? "";
+  };
+  const check = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = value !== false;
+  };
 
-  let hidden = document.getElementById("projectId");
-  if (!hidden) {
-    hidden = document.createElement("input");
-    hidden.type = "hidden";
-    hidden.id = "projectId";
-    document.getElementById("projectCreateModal")?.appendChild(hidden);
-  }
+  set("projectId", isEdit ? project.id : "");
+  set("projectCode", project?.project_code);
+  set("projectName", project?.project_name);
+  set("projectType", project?.project_type || "customer_project");
+  set("projectAccountingMode", project?.accounting_mode || "contract");
+  set("projectPriority", project?.priority || "normal");
+  set("projectCustomerId", project?.customer_id);
+  set("projectManagerUserId", project?.project_manager_user_id);
+  set("projectSponsorUserId", project?.sponsor_user_id || project?.owner_user_id);
+  set("projectDepartmentId", project?.department_id);
+  set("projectBusinessUnit", project?.business_unit);
+  set("projectCreateStatus", project?.status || "draft");
+  set("projectProgressPercent", project?.progress_percent || 0);
+  set("projectStartDate", project?.start_date || today);
+  set("projectExpectedEndDate", project?.expected_end_date);
+  set("projectBaselineStartDate", project?.baseline_start_date || project?.start_date || today);
+  set("projectBaselineEndDate", project?.baseline_end_date || project?.expected_end_date);
+  set("projectContractValue", project?.contract_value || 0);
+  set("projectBudgetValue", project?.budget_value || 0);
+  set("projectBaselineBudgetValue", project?.baseline_budget_value || project?.budget_value || 0);
+  set("projectBillingMethod", project?.billing_method || "milestone");
+  set("projectWipAccountCode", project?.wip_account_code);
+  set("projectRevenueAccountCode", project?.revenue_account_code);
+  set("projectCostAccountCode", project?.cost_account_code);
+  set("projectLocation", project?.location);
+  set("projectDescription", project?.description);
+  set("projectNotes", project?.notes);
 
-  hidden.value = isEdit ? String(project.id) : "";
+  check("projectBillingEnabled", project ? project.billing_enabled : true);
+  check("projectRevenueEnabled", project ? project.revenue_enabled : true);
+  check("projectInventoryEnabled", project ? project.inventory_enabled : true);
+  check("projectTimeEnabled", project ? project.allow_time_entries : true);
+  check("projectExpensesEnabled", project ? project.allow_expenses : true);
 
-  document.getElementById("projectCode").value = project?.project_code || "";
-  document.getElementById("projectName").value = project?.project_name || "";
-  document.getElementById("projectCustomerId").value = project?.customer_id || "";
-  document.getElementById("projectStartDate").value = project?.start_date || today;
-  document.getElementById("projectExpectedEndDate").value = project?.expected_end_date || "";
-  document.getElementById("projectContractValue").value = project?.contract_value || "";
-  document.getElementById("projectLocation").value = project?.location || "";
-  document.getElementById("projectNotes").value = project?.notes || "";
-  document.getElementById("projectCreateStatus").value = project?.status || "draft";
-  document.getElementById("projectBillingMethod").value = project?.billing_method || "milestone";
+  applyProjectTypeBehaviour();
 
   const saveBtn = document.getElementById("projectCreateSaveBtn");
   if (saveBtn) saveBtn.textContent = isEdit ? "Update Project" : "Save Project";
@@ -121840,18 +121978,44 @@ async function submitProjectCreate() {
 
   const projectId = Number(document.getElementById("projectId")?.value || 0);
   const isEdit = !!projectId;
+  const val = id => document.getElementById(id)?.value;
+  const num = id => Number(val(id) || 0);
+  const nullableInt = id => num(id) || null;
+  const checked = id => !!document.getElementById(id)?.checked;
 
   const payload = {
-    project_code: document.getElementById("projectCode")?.value?.trim(),
-    project_name: document.getElementById("projectName")?.value?.trim(),
-    customer_id: Number(document.getElementById("projectCustomerId")?.value || 0) || null,
-    status: document.getElementById("projectCreateStatus")?.value || "draft",
-    start_date: document.getElementById("projectStartDate")?.value || null,
-    expected_end_date: document.getElementById("projectExpectedEndDate")?.value || null,
-    contract_value: Number(document.getElementById("projectContractValue")?.value || 0),
-    billing_method: document.getElementById("projectBillingMethod")?.value || "milestone",
-    location: document.getElementById("projectLocation")?.value?.trim(),
-    notes: document.getElementById("projectNotes")?.value?.trim(),
+    project_code: val("projectCode")?.trim(),
+    project_name: val("projectName")?.trim(),
+    project_type: val("projectType") || "customer_project",
+    accounting_mode: val("projectAccountingMode") || "contract",
+    priority: val("projectPriority") || "normal",
+    customer_id: nullableInt("projectCustomerId"),
+    project_manager_user_id: nullableInt("projectManagerUserId"),
+    sponsor_user_id: nullableInt("projectSponsorUserId"),
+    owner_user_id: nullableInt("projectSponsorUserId"),
+    department_id: nullableInt("projectDepartmentId"),
+    business_unit: val("projectBusinessUnit")?.trim() || null,
+    status: val("projectCreateStatus") || "draft",
+    progress_percent: num("projectProgressPercent"),
+    start_date: val("projectStartDate") || null,
+    expected_end_date: val("projectExpectedEndDate") || null,
+    baseline_start_date: val("projectBaselineStartDate") || null,
+    baseline_end_date: val("projectBaselineEndDate") || null,
+    contract_value: num("projectContractValue"),
+    budget_value: num("projectBudgetValue"),
+    baseline_budget_value: num("projectBaselineBudgetValue"),
+    billing_method: val("projectBillingMethod") || "milestone",
+    billing_enabled: checked("projectBillingEnabled"),
+    revenue_enabled: checked("projectRevenueEnabled"),
+    inventory_enabled: checked("projectInventoryEnabled"),
+    allow_time_entries: checked("projectTimeEnabled"),
+    allow_expenses: checked("projectExpensesEnabled"),
+    wip_account_code: val("projectWipAccountCode")?.trim() || null,
+    revenue_account_code: val("projectRevenueAccountCode")?.trim() || null,
+    cost_account_code: val("projectCostAccountCode")?.trim() || null,
+    location: val("projectLocation")?.trim() || null,
+    description: val("projectDescription")?.trim() || null,
+    notes: val("projectNotes")?.trim() || null,
   };
 
   if (!payload.project_code || !payload.project_name) {
@@ -121859,31 +122023,48 @@ async function submitProjectCreate() {
     return;
   }
 
+  if (payload.project_type === "customer_project" && !payload.customer_id) {
+    setElText("projectCreateMsg", "Select a customer for a customer project.");
+    return;
+  }
+
+  if (payload.accounting_mode === "contract" && !payload.customer_id) {
+    setElText("projectCreateMsg", "Contract accounting requires a customer.");
+    return;
+  }
+
+  if (["contract", "wip", "capital"].includes(payload.accounting_mode) &&
+      payload.inventory_enabled && !payload.wip_account_code) {
+    setElText("projectCreateMsg", "Configure a WIP/CIP account for this accounting mode.");
+    return;
+  }
+
+  if (["expense", "none"].includes(payload.accounting_mode) &&
+      payload.inventory_enabled && !payload.cost_account_code) {
+    setElText("projectCreateMsg", "Configure a cost/expense account for material issues.");
+    return;
+  }
+
   setElText("projectCreateMsg", isEdit ? "Updating project..." : "Saving project...");
 
   try {
     await apiFetch(
-      isEdit
-        ? ENDPOINTS.projects.update(cid, projectId)
-        : ENDPOINTS.projects.create(cid),
-      {
-        method: isEdit ? "PATCH" : "POST",
-        body: JSON.stringify(payload),
-      }
+      isEdit ? ENDPOINTS.projects.update(cid, projectId) : ENDPOINTS.projects.create(cid),
+      { method: isEdit ? "PATCH" : "POST", body: JSON.stringify(payload) }
     );
 
     closeProjectCreateModal();
+    await loadProjects();
 
-    await loadProjects?.();
-
-    if (isEdit) {
-      await loadProjectDetail(projectId);
-    }
+    if (isEdit) await loadProjectDetail(projectId);
   } catch (err) {
-    const msg = err?.message || (isEdit ? "Failed to update project." : "Failed to create project.");
-    setElText("projectCreateMsg", msg);
+    setElText(
+      "projectCreateMsg",
+      err?.message || (isEdit ? "Failed to update project." : "Failed to create project.")
+    );
   }
 }
+
 window.openProjectCreateModal = openProjectCreateModal;
 window.closeProjectCreateModal = closeProjectCreateModal;
 window.submitProjectCreate = submitProjectCreate;

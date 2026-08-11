@@ -111,7 +111,7 @@ def build_requisition_pdf(payload,output_path,*,root_path=None):
     styles=getSampleStyleSheet()
 
     title_style=ParagraphStyle(
-        "FinFlowTitle",
+        "FinSage NexusTitle",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
         fontSize=14,
@@ -121,7 +121,7 @@ def build_requisition_pdf(payload,output_path,*,root_path=None):
     )
 
     small=ParagraphStyle(
-        "FinFlowSmall",
+        "FinSage NexusSmall",
         parent=styles["Normal"],
         fontSize=7.5,
         leading=10,
@@ -129,14 +129,14 @@ def build_requisition_pdf(payload,output_path,*,root_path=None):
     )
 
     body=ParagraphStyle(
-        "FinFlowBody",
+        "FinSage NexusBody",
         parent=styles["Normal"],
         fontSize=8,
         leading=11,
     )
 
     section=ParagraphStyle(
-        "FinFlowSection",
+        "FinSage NexusSection",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
         fontSize=8,
@@ -152,7 +152,7 @@ def build_requisition_pdf(payload,output_path,*,root_path=None):
         topMargin=13*mm,
         bottomMargin=13*mm,
         title=meta["title"],
-        author="FinFlow",
+        author="FinSage Nexus",
     )
 
     story=[]
@@ -454,7 +454,7 @@ def build_requisition_pdf(payload,output_path,*,root_path=None):
 
     story.append(
         Paragraph(
-            "This document was prepared and approved electronically through FinFlow.",
+            "This document was prepared and approved electronically through FinSage Nexus.",
             small,
         )
     )

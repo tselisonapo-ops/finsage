@@ -1,7 +1,11 @@
 from flask import Blueprint, current_app, g, jsonify, request
 from BackEnd.Services.auth_middleware import require_auth
 from BackEnd.Services.db_service import db_service
-
+from BackEnd.Services.utils.view_token import verify_report_export_token
+from BackEnd.Services.reporting.statement_exporters import (
+    export_statement_pdf,
+    export_statement_xlsx,
+)
 consolidation_bp = Blueprint("consolidation", __name__)
 
 
@@ -18,6 +22,41 @@ def _company_access(company_id: int):
         )
 
     return user, None
+
+def _deny_group_export_access(
+    company_id: int,
+    run_id: int,
+    expected_report_key: str,
+):
+    token = (request.args.get("t") or "").strip()
+
+    if not token:
+        return jsonify({
+            "ok":False,
+            "error":"Missing export token",
+        }),401
+
+    verified = verify_report_export_token(token)
+
+    if not verified:
+        return jsonify({
+            "ok":False,
+            "error":"Invalid or expired export token",
+        }),401
+
+    if int(verified.get("company_id") or 0)!=int(company_id):
+        return jsonify({
+            "ok":False,
+            "error":"Token company mismatch",
+        }),403
+
+    if str(verified.get("report_key") or "")!=expected_report_key:
+        return jsonify({
+            "ok":False,
+            "error":"Token report mismatch",
+        }),403
+
+    return None
 
 @consolidation_bp.route(
     "/api/companies/<int:company_id>/consolidation/runs",
@@ -1452,3 +1491,407 @@ def api_generate_group_equity_method_journals(company_id: int,run_id: int):
     except Exception as e:
         current_app.logger.exception("api_generate_group_equity_method_journals failed")
         return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/translation/prepare",
+    methods=["POST"],
+)
+@require_auth
+def api_prepare_group_translation(company_id: int,run_id: int):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.prepare_group_translation_workpapers(
+            company_id,run_id,user_id=user.get("id")
+        )
+        return jsonify({
+            "message":f"{out['workpapers']} translation workpaper(s) prepared",
+            "data":out,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_prepare_group_translation failed")
+        return jsonify({"message":str(e)}),500
+    
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/translation",
+    methods=["GET"],
+)
+@require_auth
+def api_group_translation_workspace(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_translation_workspace(company_id,run_id)
+        ),200
+    except Exception as e:
+        current_app.logger.exception("api_group_translation_workspace failed")
+        return jsonify({"message":str(e)}),500
+    
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/translation/<int:workpaper_id>",
+    methods=["GET","PATCH"],
+)
+@require_auth
+def api_group_translation_workpaper(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        if request.method == "GET":
+            out = db_service.get_group_translation_workpaper(
+                company_id,run_id,workpaper_id
+            )
+            if not out:
+                return jsonify({"message":"Translation workpaper not found"}),404
+            return jsonify(out),200
+
+        out = db_service.save_group_translation_rates(
+            company_id,run_id,workpaper_id,
+            request.get_json(silent=True) or {},
+        )
+        return jsonify({
+            "message":"Translation rates saved",
+            "data":out,
+        }),200
+
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_translation_workpaper failed")
+        return jsonify({"message":str(e)}),500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/translation/<int:workpaper_id>/translate",
+    methods=["POST"],
+)
+@require_auth
+def api_translate_group_entity(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.translate_group_entity_tb(
+            company_id,run_id,workpaper_id
+        )
+        return jsonify({
+            "message":"Entity trial balance translated",
+            "workpaper":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_translate_group_entity failed")
+        return jsonify({"message":str(e)}),500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/translation/<int:workpaper_id>/status",
+    methods=["POST"],
+)
+@require_auth
+def api_group_translation_status(
+    company_id: int,
+    run_id: int,
+    workpaper_id: int,
+):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    status = (
+        (request.get_json(silent=True) or {}).get("status") or ""
+    ).strip().lower()
+
+    if status not in {"translated","reviewed","approved"}:
+        return jsonify({"message":"Invalid translation status"}),400
+
+    try:
+        row = db_service.set_group_translation_status(
+            company_id,run_id,workpaper_id,status,
+            user_id=user.get("id"),
+        )
+        return jsonify({
+            "message":f"Translation moved to {status}",
+            "workpaper":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_translation_status failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/controls",
+    methods=["GET"],
+)
+@require_auth
+def api_group_consolidation_controls(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.validate_group_consolidation_close(company_id,run_id)
+        ),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_consolidation_controls failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/close",
+    methods=["POST"],
+)
+@require_auth
+def api_close_group_consolidation(company_id: int,run_id: int):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.close_group_consolidation_run(
+            company_id,run_id,user_id=user.get("id")
+        )
+        return jsonify({
+            "message":"Consolidation run closed and ready for group reporting",
+            "run":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_close_group_consolidation failed")
+        return jsonify({"message":str(e)}),500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/reopen",
+    methods=["POST"],
+)
+@require_auth
+def api_reopen_group_consolidation(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        row = db_service.reopen_group_consolidation_run(
+            company_id,run_id
+        )
+        return jsonify({
+            "message":"Consolidation run reopened",
+            "run":row,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_reopen_group_consolidation failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/final-tb/validate",
+    methods=["GET"],
+)
+@require_auth
+def api_validate_group_final_tb(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.validate_group_final_tb(
+                company_id,run_id
+            )
+        ),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_validate_group_final_tb failed")
+        return jsonify({"message":str(e)}),500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/final-tb/generate",
+    methods=["POST"],
+)
+@require_auth
+def api_generate_group_final_tb(company_id: int,run_id: int):
+    user,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        out = db_service.generate_group_final_tb(
+            company_id,
+            run_id,
+            user_id=user.get("id"),
+        )
+        return jsonify({
+            "message":"Final Consolidated Trial Balance generated",
+            "data":out,
+        }),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_generate_group_final_tb failed")
+        return jsonify({"message":str(e)}),500
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/final-tb",
+    methods=["GET"],
+)
+@require_auth
+def api_get_group_final_tb(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.get_group_final_tb(
+                company_id,run_id
+            )
+        ),200
+    except Exception as e:
+        current_app.logger.exception("api_get_group_final_tb failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/statements/<statement_key>",
+    methods=["GET"],
+)
+@require_auth
+def api_group_statement(
+    company_id: int,
+    run_id: int,
+    statement_key: str,
+):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    allowed = {
+        "balance-sheet",
+        "income-statement",
+        "cash-flow",
+        "socie",
+    }
+
+    if statement_key not in allowed:
+        return jsonify({"message":"Unsupported group statement"}),404
+
+    try:
+        out = db_service.build_group_statement(
+            company_id,
+            run_id,
+            statement_key,
+        )
+        return jsonify(out),200
+
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_statement failed")
+        return jsonify({"message":str(e)}),500
+
+
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/statements",
+    methods=["GET"],
+)
+@require_auth
+def api_group_statement_pack(company_id: int,run_id: int):
+    _,deny = _company_access(company_id)
+    if deny: return deny
+
+    try:
+        return jsonify(
+            db_service.build_group_financial_statement_pack(
+                company_id,run_id
+            )
+        ),200
+    except ValueError as e:
+        return jsonify({"message":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_group_statement_pack failed")
+        return jsonify({"message":str(e)}),500
+
+@consolidation_bp.route(
+    "/api/companies/<int:company_id>/consolidation/runs/<int:run_id>/statements/<statement_key>/export",
+    methods=["GET"],
+)
+def api_export_group_statement(
+    company_id: int,
+    run_id: int,
+    statement_key: str,
+):
+    report_keys = {
+        "balance-sheet":"group_balance_sheet",
+        "income-statement":"group_income_statement",
+        "cash-flow":"group_cash_flow",
+        "socie":"group_socie",
+    }
+
+    report_key = report_keys.get(statement_key)
+
+    if not report_key:
+        return jsonify({
+            "ok":False,
+            "error":"Unsupported group statement",
+        }),404
+
+    deny = _deny_group_export_access(
+        company_id,
+        run_id,
+        report_key,
+    )
+    if deny: return deny
+
+    fmt = (request.args.get("format") or "xlsx").lower()
+
+    if fmt not in {"xlsx","pdf"}:
+        return jsonify({
+            "ok":False,
+            "error":"Unsupported export format. Use xlsx or pdf.",
+        }),400
+
+    try:
+        payload = db_service.build_group_statement(
+            company_id,
+            run_id,
+            statement_key,
+        )
+
+        filename = {
+            "balance-sheet":"group_balance_sheet",
+            "income-statement":"group_income_statement",
+            "cash-flow":"group_cash_flow",
+            "socie":"group_socie",
+        }[statement_key]
+
+        if fmt=="pdf":
+            return export_statement_pdf(
+                payload,
+                filename=f"{filename}.pdf",
+            )
+
+        return export_statement_xlsx(
+            payload,
+            filename=f"{filename}.xlsx",
+        )
+
+    except ValueError as e:
+        return jsonify({"ok":False,"error":str(e)}),400
+    except Exception as e:
+        current_app.logger.exception("api_export_group_statement failed")
+        return jsonify({"ok":False,"error":str(e)}),500

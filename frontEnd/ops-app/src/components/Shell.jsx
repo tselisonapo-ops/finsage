@@ -1,32 +1,24 @@
-
 import {
-  Bell,
-  Building2,
-  CheckSquare,
-  ChevronDown,
-  FileText,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  ShieldCheck,
-  Users
+  Bell,Building2,CheckSquare,ChevronDown,FileText,
+  LayoutDashboard,LogOut,Settings,ShieldCheck,
+  ShoppingCart,Users,WalletCards
 } from "lucide-react";
-
 import {useNavigate} from "react-router-dom";
 import {clearSession} from "../api/api";
-import {WalletCards} from "lucide-react";
+
 export default function Shell({session,active="setup",children}){
   const nav=useNavigate();
 
   const items=[
     ["dashboard",LayoutDashboard,"Overview","/"],
-    ["team",Users,"People","/setup"],
+    ["team",Users,"People","/people"],
     ["requests",FileText,"Requests","/requests"],
     ["approvals",CheckSquare,"Approvals","/approvals"],
-    ["organisation",Building2,"Organisation","/setup"],
-    ["governance",ShieldCheck,"Governance","/setup"],
-    ["settings",Settings,"Settings","/setup"],
+    ["procurement",ShoppingCart,"Procurement","/procurement"],
     ["budget",WalletCards,"Budget control","/budget"],
+    ["organisation",Building2,"Organisation","/organisation"],
+    ["governance",ShieldCheck,"Governance","/governance"],
+    ["settings",Settings,"Settings","/settings"],
   ];
 
   function logout(){
@@ -37,10 +29,10 @@ export default function Shell({session,active="setup",children}){
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-orb">F</div>
+        <div className="brand">
+          <div className="brand-mark">F</div>
           <div>
-            <strong>FinFlow</strong>
+            <strong>FinSage Nexus</strong>
             <small>by FinSphere</small>
           </div>
         </div>
@@ -49,9 +41,7 @@ export default function Shell({session,active="setup",children}){
           <span className="nav-label">WORKSPACE</span>
 
           {items.map(([key,Icon,label,path])=>(
-            <button key={key}
-              className={`nav-item ${active===key?"active":""}`}
-              onClick={()=>nav(path)}>
+            <button key={key} className={`nav-item ${active===key?"active":""}`} onClick={()=>nav(path)}>
               <Icon size={18}/>
               <span>{label}</span>
             </button>
@@ -64,9 +54,7 @@ export default function Shell({session,active="setup",children}){
           </div>
 
           <div className="user-copy">
-            <strong>
-              {session?.first_name} {session?.last_name}
-            </strong>
+            <strong>{session?.first_name} {session?.last_name}</strong>
             <small>{session?.position_title||session?.company_role}</small>
           </div>
 

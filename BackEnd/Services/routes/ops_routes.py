@@ -33,7 +33,7 @@ def _audit_meta():
 def ops_session(company_id):
     ctx=db_service.get_ops_session_context(company_id,_uid())
     if not ctx:
-        return jsonify({"error":"FinFlow session unavailable"}),404
+        return jsonify({"error":"FinSage Nexus session unavailable"}),404
     return jsonify(ctx),200
 
 @ops_bp.get("/setup")
@@ -331,6 +331,20 @@ def create_position(company_id):
 
     return jsonify(row),201
 
+@ops_bp.patch("/positions/<int:position_id>")
+@require_auth
+@require_ops_permission("positions.manage")
+def update_position(company_id,position_id):
+    try:
+        row=db_service.update_company_position(
+            company_id,
+            position_id,
+            request.get_json(silent=True) or {},
+        )
+        return jsonify(row),200
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+    
 # ============================================================
 # TEAM / ROLES
 # ============================================================
@@ -788,3 +802,285 @@ def request_audit(company_id,request_id):
             request_id,
         )
     }),200
+
+@ops_bp.get("/procurement")
+@require_auth
+@require_ops_permission("procurement.view")
+def procurement_cases(company_id):
+    status=(request.args.get("status") or "").strip() or None
+
+    return jsonify({
+        "rows":db_service.list_ops_procurement_cases(
+            company_id,
+            status=status,
+        )
+    }),200
+
+@ops_bp.get("/procurement/policies")
+@require_auth
+@require_ops_permission("procurement.policy.view")
+def procurement_policies(company_id):
+    return jsonify({
+        "rows":db_service.list_ops_procurement_policies(
+            company_id
+        )
+    }),200
+
+
+@ops_bp.post("/procurement/policies")
+@require_auth
+@require_ops_permission("procurement.policy.manage")
+def create_procurement_policy(company_id):
+    try:
+        row=db_service.create_ops_procurement_policy(
+            company_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.patch("/procurement/policies/<int:policy_id>")
+@require_auth
+@require_ops_permission("procurement.policy.manage")
+def update_procurement_policy(company_id,policy_id):
+    try:
+        row=db_service.update_ops_procurement_policy(
+            company_id,
+            policy_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.patch(
+    "/procurement/policies/<int:policy_id>/rules/<int:rule_id>"
+)
+@require_auth
+@require_ops_permission("procurement.policy.manage")
+def update_procurement_policy_rule(
+    company_id,
+    policy_id,
+    rule_id,
+):
+    try:
+        row=db_service.update_ops_procurement_policy_rule(
+            company_id,
+            policy_id,
+            rule_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+    
+@ops_bp.post("/procurement/policies/<int:policy_id>/rules")
+@require_auth
+@require_ops_permission("procurement.policy.manage")
+def create_procurement_policy_rule(company_id,policy_id):
+    try:
+        row=db_service.create_ops_procurement_policy_rule(
+            company_id,
+            policy_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+
+@ops_bp.get("/procurement/vendors")
+@require_auth
+@require_ops_permission("procurement.vendor.view")
+def procurement_vendors(company_id):
+    preferred=request.args.get("preferred")
+
+    if preferred is None:
+        preferred_value=None
+    else:
+        preferred_value=preferred.lower() in {
+            "1","true","yes"
+        }
+
+    return jsonify({
+        "rows":db_service.list_ops_procurement_vendors(
+            company_id,
+            search=(
+                request.args.get("search")
+                or ""
+            ).strip() or None,
+
+            procurement_status=(
+                request.args.get(
+                    "procurement_status"
+                )
+                or ""
+            ).strip() or None,
+
+            qualification_status=(
+                request.args.get(
+                    "qualification_status"
+                )
+                or ""
+            ).strip() or None,
+
+            preferred=preferred_value,
+        )
+    }),200
+
+@ops_bp.get("/procurement/vendors/<int:vendor_id>")
+@require_auth
+@require_ops_permission("procurement.vendor.view")
+def procurement_vendor(company_id,vendor_id):
+    try:
+        return jsonify(
+            db_service.get_ops_procurement_vendor(
+                company_id,
+                vendor_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+@ops_bp.post(
+    "/procurement/vendors/<int:vendor_id>/contacts"
+)
+@require_auth
+@require_ops_permission("procurement.vendor.manage")
+def create_procurement_vendor_contact(
+    company_id,
+    vendor_id,
+):
+    try:
+        row=db_service.create_ops_vendor_contact(
+            company_id,
+            vendor_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.patch(
+    "/procurement/vendors/<int:vendor_id>/contacts/<int:contact_id>"
+)
+@require_auth
+@require_ops_permission("procurement.vendor.manage")
+def update_procurement_vendor_contact(
+    company_id,
+    vendor_id,
+    contact_id,
+):
+    try:
+        row=db_service.update_ops_vendor_contact(
+            company_id,
+            vendor_id,
+            contact_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+    
+@ops_bp.patch("/procurement/vendors/<int:vendor_id>")
+@require_auth
+@require_ops_permission("procurement.vendor.manage")
+def update_procurement_vendor(company_id,vendor_id):
+    try:
+        row=db_service.save_ops_vendor_profile(
+            company_id,
+            vendor_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+@ops_bp.get("/procurement/settings")
+@require_auth
+@require_ops_permission("procurement.settings.view")
+def procurement_settings(company_id):
+    try:
+        return jsonify(
+            db_service.get_ops_procurement_settings(
+                company_id
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.patch("/procurement/settings")
+@require_auth
+@require_ops_permission("procurement.settings.manage")
+def update_procurement_settings(company_id):
+    try:
+        row=db_service.save_ops_procurement_settings(
+            company_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/procurement/settings/test-email")
+@require_auth
+@require_ops_permission("procurement.email.test")
+def test_procurement_email(company_id):
+    body=request.get_json(silent=True) or {}
+
+    try:
+        row=db_service.test_ops_procurement_email(
+            company_id,
+            recipient_email=body.get(
+                "recipient_email"
+            ),
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400

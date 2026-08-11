@@ -18,7 +18,7 @@ export default function DashboardPage(){
     opsApi.session(companyId).then(setSession);
   },[]);
 
-  if(!session) return <div className="loading-screen">Opening FinFlow…</div>;
+  if(!session) return <div className="loading-screen">Opening FinSage Nexus…</div>;
 
   return (
     <Shell session={session} active="dashboard">
@@ -89,7 +89,7 @@ export default function DashboardPage(){
           <div className="section-heading">
             <div>
               <h2>Access</h2>
-              <p>Your current FinFlow authority.</p>
+              <p>Your current FinSage Nexus authority.</p>
             </div>
             <ShieldCheck/>
           </div>

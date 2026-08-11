@@ -41,7 +41,7 @@ export default function SignInPage(){
 
     }catch(err){
       if(err.status===403)
-        setError("Your account does not currently have access to FinFlow.");
+        setError("Your account does not currently have access to FinSage Nexus.");
       else
         setError(err.message||"Unable to sign in.");
     }finally{
@@ -65,7 +65,7 @@ export default function SignInPage(){
         <div className="auth-feature-card">
           <span className="status-dot"/>
           <div>
-            <strong>FinFlow</strong>
+            <strong>FinSage Nexus</strong>
             <small>Internal Operations Workspace</small>
           </div>
         </div>

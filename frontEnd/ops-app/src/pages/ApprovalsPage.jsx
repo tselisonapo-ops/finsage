@@ -686,7 +686,7 @@ export default function ApprovalsPage(){
               <div className="approval-governance-note">
                 <UserRound size={15}/>
                 <span>
-                  This task was assigned through FinFlow governance.
+                  This task was assigned through FinSage Nexus governance.
                   Approval authority is determined by the configured workflow, not by this screen.
                 </span>
               </div>

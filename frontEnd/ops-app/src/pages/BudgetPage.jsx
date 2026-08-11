@@ -150,7 +150,7 @@ export default function BudgetPage(){
           <div className="card-icon"><Plus/></div>
 
           <h3>Add budget rule</h3>
-          <p>Define when FinFlow warns, escalates or blocks spending.</p>
+          <p>Define when FinSage Nexus warns, escalates or blocks spending.</p>
 
           <label>Rule name</label>
           <input

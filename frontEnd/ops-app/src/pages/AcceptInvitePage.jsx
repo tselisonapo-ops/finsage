@@ -46,7 +46,7 @@ export default function AcceptInvitePage(){
       <section className="auth-brand">
         <div className="brand-mark"><Sparkles/></div>
         <div>
-          <span className="eyebrow">FINFLOW</span>
+          <span className="eyebrow">FinSage Nexus</span>
           <h1>Your workspace<br/>is ready for you.</h1>
           <p>Accept your invitation and join your organisation.</p>
         </div>

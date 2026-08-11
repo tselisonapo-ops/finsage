@@ -147,7 +147,7 @@ from BackEnd.Services.coa_service import (
 )
 from BackEnd.Services.validation import validate_company_payload, get_currency_for_country
 from BackEnd.Services.countries import load_countries
-from BackEnd.Services.emailer import send_mail
+from BackEnd.Services.emailer import send_mail,send_company_mail
 from BackEnd.Services.periods import resolve_period
 
 from BackEnd.Services.reporting.cashflow_templates import (
@@ -1811,7 +1811,7 @@ def api_auth_signin():
             or "finsage"
         ).strip().lower()
 
-        is_ops_signin = product in {"ops","finflow"}
+        is_ops_signin = product in {"ops","FinSage Nexus"}
 
         if not email or not password:
             return jsonify({
@@ -1877,9 +1877,9 @@ def api_auth_signin():
 
         if is_ops_signin:
             # =========================================================
-            # FINFLOW SIGN-IN
+            # FinSage Nexus SIGN-IN
             # Always enter the user's OWN/native company.
-            # Never begin FinFlow inside a delegated client workspace.
+            # Never begin FinSage Nexus inside a delegated client workspace.
             # =========================================================
             primary_mem = db_service.fetch_one(
                 """
@@ -2005,7 +2005,7 @@ def api_auth_signin():
         if is_ops_signin:
             if not company_id:
                 return jsonify({
-                    "error":"No primary company is available for FinFlow.",
+                    "error":"No primary company is available for FinSage Nexus.",
                     "code":"OPS_NO_PRIMARY_COMPANY",
                 }),403
 
@@ -2016,7 +2016,7 @@ def api_auth_signin():
 
             if not ops_access:
                 return jsonify({
-                    "error":"Your account does not have FinFlow access.",
+                    "error":"Your account does not have FinSage Nexus access.",
                     "code":"OPS_ACCESS_DENIED",
                     "company_id":company_id,
                 }),403
@@ -2114,7 +2114,7 @@ def api_auth_signin():
         return jsonify({
             "message":"signin OK",
             "token":token,
-            "product":"finflow" if is_ops_signin else "finsage",
+            "product":"FinSage Nexus" if is_ops_signin else "finsage",
             "user":{
                 "id": user_id,
                 "email": user["email"],
@@ -2878,31 +2878,44 @@ def api_create_invite():
         f"Accept your invite: {invite_link}"
     )
 
+    email_sent=False
+    email_error=None
+
     try:
-        send_mail(to_email=email, subject=subject, html_body=html, text_body=text)
-        current_app.logger.info("[INVITE] Sent invite email to %s", email)
+        send_company_mail(
+            company_id=company_id,
+            to_email=email,
+            subject=subject,
+            html_body=html,
+            text_body=text
+        )
+        email_sent=True
+        current_app.logger.info("[INVITE] Sent invite email to %s",email)
     except Exception as e:
-        current_app.logger.warning("[INVITE] EMAIL SEND FAILED for %s: %s", email, e)
+        email_error=str(e)
+        current_app.logger.warning("[INVITE] EMAIL SEND FAILED for %s: %s",email,e)
 
     return jsonify({
-        "message": "Invite created",
-        "email": email,
-        "role": role,
-        "access_scope": access_scope,
-        "invite_link": invite_link,
-        "token": token,
-        "company_id": company_id,
-        "recommended_mode": recommended_mode,
-        "reason": "multi_user_company" if recommended_mode else None,
-    }), 201
+        "message":"Invite created and email sent" if email_sent else "Invite created but email could not be sent",
+        "email":email,
+        "email_sent":email_sent,
+        "email_error":email_error,
+        "role":role,
+        "access_scope":access_scope,
+        "invite_link":invite_link,
+        "token":token,
+        "company_id":company_id,
+        "recommended_mode":recommended_mode,
+        "reason":"multi_user_company" if recommended_mode else None,
+    }),201
 
 @app.route("/api/auth/accept-invite", methods=["POST"])
 def api_accept_invite():
     data = request.get_json(silent=True) or {}
-    token      = (data.get("token") or "").strip()
+    token = (data.get("token") or "").strip()
     first_name = (data.get("firstName") or "").strip()
-    last_name  = (data.get("lastName") or "").strip()
-    password   = data.get("password") or ""
+    last_name = (data.get("lastName") or "").strip()
+    password = data.get("password") or ""
     confirm_pw = data.get("confirmPassword") or ""
 
     if not token:
@@ -2912,10 +2925,7 @@ def api_accept_invite():
 
     current_app.logger.warning(
         "[ACCEPT INVITE DEBUG] token=%s rec_found=%s expires_at=%r now_utc=%r",
-        token,
-        bool(rec),
-        (rec or {}).get("expires_at"),
-        datetime.now(timezone.utc),
+        token, bool(rec), (rec or {}).get("expires_at"), datetime.now(timezone.utc),
     )
 
     state_error = _invite_state_error(rec)
@@ -2923,10 +2933,10 @@ def api_accept_invite():
         msg, code = state_error
         return jsonify({"error": msg}), code
 
-    email        = (rec.get("email") or "").strip().lower()
-    user_role    = (rec.get("role") or "other").strip().lower()
+    email = (rec.get("email") or "").strip().lower()
+    user_role = (rec.get("role") or "other").strip().lower()
     access_scope = (rec.get("access_scope") or "core").strip().lower()
-    company_id   = int(rec.get("company_id") or 0) or None
+    company_id = int(rec.get("company_id") or 0) or None
 
     if access_scope not in ("core", "assignment"):
         access_scope = "core"
@@ -2939,85 +2949,89 @@ def api_accept_invite():
     if not company_id:
         return jsonify({"error": "Invite is missing company link."}), 400
 
-    existing = db_service.fetch_one(
-        """
+    existing = db_service.fetch_one("""
         SELECT id, email, is_confirmed, user_type
         FROM public.users
-        WHERE lower(email)=lower(%s)
-        LIMIT 1
-        """,
-        (email,)
-    )
+        WHERE LOWER(email)=LOWER(%s)
+        LIMIT 1;
+    """, (email,))
 
-    membership_kind = "secondary"
-    is_primary = False
-
+    # =========================================================
+    # EXISTING USER
+    # =========================================================
     if existing:
         user_id = int(existing["id"])
         existing_user_type = (existing.get("user_type") or "").strip() or "Enterprise"
+
+        # Resolve user's current HOME company before touching membership.
+        primary = db_service.fetch_one("""
+            SELECT company_id
+            FROM public.company_users
+            WHERE user_id=%s
+              AND is_active=TRUE
+              AND is_primary=TRUE
+            ORDER BY id
+            LIMIT 1;
+        """, (user_id,))
+
+        # Defensive fallback:
+        # if this is an old account with memberships but no primary flag,
+        # preserve its oldest existing membership as home rather than
+        # automatically promoting the newly invited company.
+        if not primary:
+            existing_membership = db_service.fetch_one("""
+                SELECT company_id
+                FROM public.company_users
+                WHERE user_id=%s
+                  AND is_active=TRUE
+                  AND company_id<>%s
+                ORDER BY joined_at NULLS LAST, id
+                LIMIT 1;
+            """, (user_id, int(company_id)))
+
+            if existing_membership:
+                existing_primary_id = int(existing_membership["company_id"])
+
+                db_service.execute_sql("""
+                    UPDATE public.company_users
+                    SET is_primary=FALSE
+                    WHERE user_id=%s
+                      AND is_primary=TRUE;
+                """, (user_id,))
+
+                db_service.execute_sql("""
+                    UPDATE public.company_users
+                    SET is_primary=TRUE,
+                        membership_kind='primary'
+                    WHERE user_id=%s
+                      AND company_id=%s;
+                """, (user_id, existing_primary_id))
+
+                primary = {"company_id": existing_primary_id}
+
+        # The invited company is secondary when user already has a home company.
+        invite_is_primary = primary is None
 
         db_service.upsert_company_user(
             company_id=int(company_id),
             user_id=user_id,
             role=user_role,
             access_scope=access_scope,
-            membership_kind=membership_kind,
-            is_primary=is_primary,
+            membership_kind="primary" if invite_is_primary else "secondary",
+            is_primary=invite_is_primary,
         )
 
-        has_primary = db_service.fetch_one(
-            """
-            SELECT 1
-            FROM public.company_users
-            WHERE user_id=%s
-              AND is_active=TRUE
-              AND is_primary=TRUE
-            LIMIT 1
-            """,
-            (int(user_id),)
-        )
-
-        if not has_primary:
+        if invite_is_primary:
             db_service.execute_sql(
-                """
-                UPDATE public.company_users
-                SET is_primary = TRUE,
-                    membership_kind = 'primary'
-                WHERE company_id = %s
-                  AND user_id = %s
-                """,
-                (int(company_id), int(user_id))
+                "UPDATE public.users SET company_id=%s WHERE id=%s",
+                (int(company_id), user_id),
             )
-            try:
-                db_service.execute_sql(
-                    "UPDATE public.users SET company_id=%s WHERE id=%s",
-                    (int(company_id), int(user_id))
-                )
-            except Exception:
-                pass
+            jwt_company_id = int(company_id)
+        else:
+            jwt_company_id = int(primary["company_id"])
 
-        db_service.apply_ops_invite_context(
-            token=token,
-            user_id=user_id,
-        )
-
-        db_service.mark_invite_accepted(
-            token=token,
-            user_id=user_id,
-        )
-        primary = db_service.fetch_one(
-            """
-            SELECT company_id
-            FROM public.company_users
-            WHERE user_id=%s
-              AND is_active=TRUE
-              AND is_primary=TRUE
-            LIMIT 1
-            """,
-            (int(user_id),)
-        )
-
-        jwt_company_id = int(primary["company_id"]) if primary else int(company_id)
+        db_service.apply_ops_invite_context(token=token, user_id=user_id)
+        db_service.mark_invite_accepted(token=token, user_id=user_id)
 
         jwt_token = make_jwt(
             user_id=user_id,
@@ -3034,10 +3048,14 @@ def api_accept_invite():
             "role": user_role,
             "access_scope": access_scope,
             "companyId": company_id,
+            "primaryCompanyId": jwt_company_id,
             "token": jwt_token,
             "existingUser": True,
         }), 200
 
+    # =========================================================
+    # NEW USER
+    # =========================================================
     if not first_name or not last_name:
         return jsonify({"error": "First name and last name are required."}), 400
 
@@ -3064,6 +3082,8 @@ def api_accept_invite():
         company_id=company_id,
     )
 
+    # First company membership = HOME company.
+    # access_scope remains exactly what the inviter selected.
     db_service.upsert_company_user(
         company_id=int(company_id),
         user_id=int(new_id),
@@ -3073,15 +3093,9 @@ def api_accept_invite():
         is_primary=True,
     )
 
-    db_service.apply_ops_invite_context(
-        token=token,
-        user_id=int(new_id),
-    )
+    db_service.apply_ops_invite_context(token=token, user_id=int(new_id))
+    db_service.mark_invite_accepted(token=token, user_id=int(new_id))
 
-    db_service.mark_invite_accepted(
-        token=token,
-        user_id=int(new_id),
-    )
     jwt_token = make_jwt(
         user_id=new_id,
         email=email,
@@ -3097,6 +3111,7 @@ def api_accept_invite():
         "role": user_role,
         "access_scope": access_scope,
         "companyId": company_id,
+        "primaryCompanyId": company_id,
         "token": jwt_token,
         "existingUser": False,
     }), 200

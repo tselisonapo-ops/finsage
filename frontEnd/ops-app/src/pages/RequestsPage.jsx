@@ -146,7 +146,7 @@ export default function RequestsPage(){
               <FileText/>
               <h3>No requests yet</h3>
               <p>
-                Your first FinFlow request will appear here.
+                Your first FinSage Nexus request will appear here.
               </p>
             </div>
           )}

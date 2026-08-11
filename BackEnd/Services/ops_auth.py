@@ -9,10 +9,10 @@ def require_ops_access(fn):
         user_id=int(user.get("id") or user.get("user_id") or 0)
 
         if not user_id:
-            return jsonify({"error":"FinFlow authentication required"}),401
+            return jsonify({"error":"FinSage Nexus authentication required"}),401
 
         if not db_service.user_has_ops_access(company_id,user_id):
-            return jsonify({"error":"You do not have access to FinFlow"}),403
+            return jsonify({"error":"You do not have access to FinSage Nexus"}),403
 
         return fn(company_id,*args,**kwargs)
 

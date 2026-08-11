@@ -12864,6 +12864,36 @@
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE company_8.projects
+        ADD COLUMN IF NOT EXISTS accounting_mode TEXT NOT NULL DEFAULT 'contract',
+        ADD COLUMN IF NOT EXISTS project_manager_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS sponsor_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS owner_user_id INT NULL,
+        ADD COLUMN IF NOT EXISTS department_id INT NULL,
+        ADD COLUMN IF NOT EXISTS business_unit TEXT NULL,
+        ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal',
+        ADD COLUMN IF NOT EXISTS progress_percent NUMERIC(9,4) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS baseline_start_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS baseline_end_date DATE NULL,
+        ADD COLUMN IF NOT EXISTS baseline_budget_value NUMERIC(18,2) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS revenue_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS inventory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS allow_time_entries BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS allow_expenses BOOLEAN NOT NULL DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS project_settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        UPDATE company_8.projects
+        SET baseline_start_date = COALESCE(baseline_start_date, start_date),
+            baseline_end_date = COALESCE(baseline_end_date, expected_end_date),
+            baseline_budget_value = CASE
+                WHEN COALESCE(baseline_budget_value, 0) = 0 THEN COALESCE(budget_value, 0)
+                ELSE baseline_budget_value
+            END
+        WHERE baseline_start_date IS NULL
+           OR baseline_end_date IS NULL
+           OR COALESCE(baseline_budget_value, 0) = 0;
+
         CREATE UNIQUE INDEX IF NOT EXISTS company_8_projects_code_uniq
         ON company_8.projects(company_id, lower(trim(project_code)))
         WHERE project_code IS NOT NULL AND trim(project_code) <> '';
@@ -12873,6 +12903,18 @@
 
         CREATE INDEX IF NOT EXISTS company_8_projects_customer_idx
         ON company_8.projects(company_id, customer_id);
+
+        CREATE INDEX IF NOT EXISTS company_8_projects_type_idx
+        ON company_8.projects(company_id, project_type);
+
+        CREATE INDEX IF NOT EXISTS company_8_projects_accounting_mode_idx
+        ON company_8.projects(company_id, accounting_mode);
+
+        CREATE INDEX IF NOT EXISTS company_8_projects_manager_idx
+        ON company_8.projects(company_id, project_manager_user_id);
+
+        CREATE INDEX IF NOT EXISTS company_8_projects_department_idx
+        ON company_8.projects(company_id, department_id);
 
         DO $$
         BEGIN
@@ -12889,6 +12931,57 @@
             CHECK (status IN (''draft'',''approved'',''active'',''on_hold'',''completed'',''cancelled'',''closed''))',
             'company_8',
             'company_8_projects_status_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = 'company_8_projects_accounting_mode_chk'
+            AND n.nspname = 'company_8'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.projects ADD CONSTRAINT %I
+             CHECK (accounting_mode IN (''none'',''expense'',''wip'',''capital'',''contract''))',
+            'company_8',
+            'company_8_projects_accounting_mode_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = 'company_8_projects_priority_chk'
+            AND n.nspname = 'company_8'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.projects ADD CONSTRAINT %I
+             CHECK (priority IN (''low'',''normal'',''high'',''critical''))',
+            'company_8',
+            'company_8_projects_priority_chk'
+            );
+        END IF;
+        END $$;
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = 'company_8_projects_progress_chk'
+            AND n.nspname = 'company_8'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.projects ADD CONSTRAINT %I
+             CHECK (progress_percent >= 0 AND progress_percent <= 100)',
+            'company_8',
+            'company_8_projects_progress_chk'
             );
         END IF;
         END $$;

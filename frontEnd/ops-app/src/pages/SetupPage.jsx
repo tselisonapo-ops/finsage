@@ -22,6 +22,10 @@ export default function SetupPage(){
   const [governanceSaved,setGovernanceSaved]=useState(true);
 
   const [department,setDepartment]=useState({name:"",code:""});
+
+
+  const [editingPositionId,setEditingPositionId]=useState(null);
+
   const [position,setPosition]=useState({
     title:"",
     department_id:"",
@@ -29,6 +33,35 @@ export default function SetupPage(){
     is_department_head:false
   });
 
+  const [selectedDepartmentId,setSelectedDepartmentId]=useState(null);
+
+  const selectedDepartment=useMemo(
+    ()=>data?.departments?.find(
+      d=>String(d.id)===String(selectedDepartmentId)
+    )||null,
+    [data,selectedDepartmentId]
+  );
+
+  const departmentPositions=useMemo(()=>{
+    if(!selectedDepartmentId) return [];
+
+    return (data?.positions||[])
+      .filter(p=>String(p.department_id||"")===String(selectedDepartmentId))
+      .map(p=>({
+        ...p,
+        occupants:(data?.team||[]).filter(u=>String(u.position_id||"")===String(p.id))
+      }))
+      .sort((a,b)=>Number(b.approval_level||0)-Number(a.approval_level||0));
+  },[data,selectedDepartmentId]);
+  const [selectedUser,setSelectedUser]=useState(null);
+
+  const [userAccess,setUserAccess]=useState({
+    department_id:"",
+    position_id:"",
+    branch_id:"",
+    manager_user_id:"",
+    ops_role_codes:[]
+  });
   const [invite,setInvite]=useState({
     email:"",
     department_id:"",
@@ -37,6 +70,15 @@ export default function SetupPage(){
     manager_user_id:"",
     ops_role_code:"REQUESTER"
   });
+
+  const AUTHORITY_LEVELS={
+    0:"No authority",
+    1:"Supervisor",
+    2:"Manager",
+    3:"Senior management",
+    4:"Executive",
+    5:"Organisation head"
+  };
 
   async function load(){
     setError("");
@@ -112,6 +154,14 @@ export default function SetupPage(){
     );
   },[data,invite.department_id]);
 
+  const userPositions=useMemo(()=>{
+    if(!userAccess.department_id) return data?.positions||[];
+
+    return (data?.positions||[]).filter(
+      p=>String(p.department_id||"")===String(userAccess.department_id)
+    );
+  },[data,userAccess.department_id]);
+
   async function addDepartment(e){
     e.preventDefault();
     if(busy) return;
@@ -136,14 +186,38 @@ export default function SetupPage(){
       setDepartment({name:"",code:""});
       await load();
     }catch(err){
-      console.error("[FINFLOW] add department failed",err);
+      console.error("[FinSage Nexus] add department failed",err);
       setError(err.message||"Could not add department.");
     }finally{
       setBusy(false);
     }
   }
 
-  async function addPosition(e){
+  function editUser(u){
+    setSelectedUser(u);
+
+    setUserAccess({
+      department_id:u.department_id||"",
+      position_id:u.position_id||"",
+      branch_id:u.branch_id||"",
+      manager_user_id:u.manager_user_id||"",
+      ops_role_codes:u.ops_roles||[]
+    });
+  } 
+
+  function cancelUserEdit(){
+    setSelectedUser(null);
+
+    setUserAccess({
+      department_id:"",
+      position_id:"",
+      branch_id:"",
+      manager_user_id:"",
+      ops_role_codes:[]
+    });
+  }
+
+  async function savePosition(e,continueAfter=false){
     e.preventDefault();
     if(busy) return;
 
@@ -154,18 +228,33 @@ export default function SetupPage(){
       return;
     }
 
+    const payload={
+      title,
+      department_id:position.department_id
+        ?Number(position.department_id)
+        :null,
+      approval_level:Number(position.approval_level||0),
+      is_department_head:Boolean(position.is_department_head)
+    };
+
     setBusy(true);
     setError("");
 
     try{
-      await opsApi.createPosition(companyId,{
-        title,
-        department_id:position.department_id
-          ?Number(position.department_id)
-          :null,
-        approval_level:Number(position.approval_level||0),
-        is_department_head:Boolean(position.is_department_head)
-      });
+      if(editingPositionId){
+        await opsApi.updatePosition(
+          companyId,
+          editingPositionId,
+          payload
+        );
+      }else{
+        await opsApi.createPosition(
+          companyId,
+          payload
+        );
+      }
+
+      setEditingPositionId(null);
 
       setPosition({
         title:"",
@@ -175,9 +264,86 @@ export default function SetupPage(){
       });
 
       await load();
+      if(continueAfter) setStep(3);
     }catch(err){
-      console.error("[FINFLOW] add position failed",err);
-      setError(err.message||"Could not add position.");
+      console.error("[FinSage Nexus] save position failed",err);
+      setError(err.message||"Could not save position.");
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  function editPosition(p){
+    setEditingPositionId(p.id);
+
+    setPosition({
+      title:p.title||"",
+      department_id:p.department_id||"",
+      approval_level:Number(p.approval_level||0),
+      is_department_head:Boolean(p.is_department_head)
+    });
+  }
+
+  function cancelPositionEdit(){
+    setEditingPositionId(null);
+
+    setPosition({
+      title:"",
+      department_id:"",
+      approval_level:0,
+      is_department_head:false
+    });
+  }
+
+  async function continueFromPositions(){
+    const hasDraft=
+      position.title.trim()||
+      position.department_id||
+      Number(position.approval_level||0)!==0||
+      position.is_department_head||
+      editingPositionId;
+
+    const isSmallScreen=window.matchMedia("(max-width:760px)").matches;
+
+    if(!isSmallScreen||!hasDraft){
+      setStep(3);
+      return;
+    }
+
+    const shouldSave=window.confirm(
+      editingPositionId
+        ?"You have unsaved changes to this position. Save them before continuing?"
+        :"You have position details that have not been added yet. Save this position before continuing?"
+    );
+
+    if(!shouldSave) return;
+
+    await savePosition(
+      {preventDefault:()=>{}},
+      true
+    );
+  }
+
+  async function saveUserAccess(){
+    if(!selectedUser||busy) return;
+
+    setBusy(true);
+    setError("");
+
+    try{
+      await opsApi.updateUserAccess(companyId,selectedUser.user_id,{
+        department_id:userAccess.department_id?Number(userAccess.department_id):null,
+        position_id:userAccess.position_id?Number(userAccess.position_id):null,
+        branch_id:userAccess.branch_id?Number(userAccess.branch_id):null,
+        manager_user_id:userAccess.manager_user_id?Number(userAccess.manager_user_id):null,
+        ops_role_codes:userAccess.ops_role_codes
+      });
+
+      cancelUserEdit();
+      await load();
+    }catch(err){
+      console.error("[FinSage Nexus] update user access failed",err);
+      setError(err.message||"Could not update team member.");
     }finally{
       setBusy(false);
     }
@@ -431,7 +597,7 @@ export default function SetupPage(){
         product_access:{
           finsage:["OWNER","ADMIN","CFO","FINANCE_MANAGER","ACCOUNTANT"]
             .includes(selectedRole),
-          finflow:true,
+          nexus:true,
           finpos:false
         }
       });
@@ -483,10 +649,10 @@ export default function SetupPage(){
     <Shell session={session} active="organisation">
       <div className="page-header">
         <div>
-          <span className="eyebrow dark">FINFLOW SETUP</span>
-          <h1>Build your organisation</h1>
+          <span className="eyebrow dark">FinSage Nexus SETUP</span>
+          <h1>Organisation overview</h1>
           <p>
-            Tell FinFlow how your business is structured.
+            Tell FinSage Nexus how your business is structured.
             Workflows will use this structure automatically.
           </p>
         </div>
@@ -510,39 +676,246 @@ export default function SetupPage(){
 
       {error&&<div className="alert error">{error}</div>}
 
+      {step>=5&&(
+        <section className="organisation-overview">
+          <div className="organisation-overview-head">
+            <div>
+              <span className="eyebrow dark">ORGANISATION</span>
+              <h2>Organisation overview</h2>
+              <p>Departments, positions, people and governance across {session.company_name}.</p>
+            </div>
+
+            <button type="button" className="primary-btn" onClick={()=>setStep(1)}>
+              Manage organisation
+            </button>
+          </div>
+
+          <div className="organisation-summary-grid">
+            <button type="button" className="organisation-summary-card" onClick={()=>setStep(1)}>
+              <Building2 size={20}/>
+              <strong>{data.departments?.length||0}</strong>
+              <span>Departments</span>
+            </button>
+
+            <button type="button" className="organisation-summary-card" onClick={()=>setStep(2)}>
+              <Users size={20}/>
+              <strong>{data.positions?.length||0}</strong>
+              <span>Positions</span>
+            </button>
+
+            <button type="button" className="organisation-summary-card" onClick={()=>setStep(3)}>
+              <UserPlus size={20}/>
+              <strong>{data.team?.length||0}</strong>
+              <span>People</span>
+            </button>
+
+            <button type="button" className="organisation-summary-card" onClick={()=>setStep(4)}>
+              <ShieldCheck size={20}/>
+              <strong>{governance?.mode?governance.mode.replace(/^./,c=>c.toUpperCase()):"Not set"}</strong>
+              <span>Governance</span>
+            </button>
+          </div>
+
+          <div className="organisation-overview-grid">
+            <div className="organisation-overview-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Departments</h2>
+                  <p>Organisation structure and assigned positions.</p>
+                </div>
+                <Building2/>
+              </div>
+
+              <div className="organisation-department-list">
+                {(data.departments||[]).map(d=>{
+                  const deptPositions=(data.positions||[]).filter(p=>String(p.department_id||"")===String(d.id));
+                  const deptPeople=(data.team||[]).filter(u=>String(u.department_id||"")===String(d.id));
+
+                  return(
+                    <button type="button" className="organisation-department-row" key={d.id} onClick={()=>{setSelectedDepartmentId(d.id);setStep(1);}}>
+                      <div className="department-icon">{(d.name?.[0]||"D").toUpperCase()}</div>
+
+                      <div className="organisation-department-info">
+                        <strong>{d.name}</strong>
+                        <small>{d.code||"No code"}</small>
+                      </div>
+
+                      <div className="organisation-department-counts">
+                        <span>{deptPositions.length} position{deptPositions.length===1?"":"s"}</span>
+                        <span>{deptPeople.length} people</span>
+                      </div>
+
+                      <ChevronRight size={17}/>
+                    </button>
+                  );
+                })}
+
+                {!data.departments?.length&&(
+                  <div className="empty-state">
+                    <Building2 size={28}/>
+                    <strong>No departments configured</strong>
+                    <p>Add departments to start building your organisation structure.</p>
+                    <button type="button" className="primary-btn" onClick={()=>setStep(1)}>Add department</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="organisation-overview-panel">
+              <div className="section-heading">
+                <div>
+                  <h2>Organisation-wide positions</h2>
+                  <p>Positions that are not assigned to a specific department.</p>
+                </div>
+                <Users/>
+              </div>
+
+              <div className="organisation-wide-list">
+                {(data.positions||[])
+                  .filter(p=>!p.department_id)
+                  .sort((a,b)=>Number(b.approval_level||0)-Number(a.approval_level||0))
+                  .map(p=>(
+                    <div className="organisation-wide-row" key={p.id}>
+                      <div>
+                        <strong>{p.title}</strong>
+                        <small>{AUTHORITY_LEVELS[Number(p.approval_level)||0]}</small>
+                      </div>
+
+                      <span className="level-pill">
+                        Level {Number(p.approval_level)||0}
+                      </span>
+                    </div>
+                  ))}
+
+                {!(data.positions||[]).some(p=>!p.department_id)&&(
+                  <div className="empty-state compact">
+                    <strong>No organisation-wide positions</strong>
+                    <p>Positions such as CEO or COO can appear here.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {step===1&&(
         <section className="setup-grid">
           <div className="setup-main">
-            <div className="section-heading">
-              <div>
-                <h2>Departments</h2>
-                <p>Create the teams that make up {session.company_name}.</p>
-              </div>
-              <Building2/>
-            </div>
-
-            <div className="department-grid">
-              {data.departments.map(d=>(
-                <article className="department-card" key={d.id}>
-                  <div className="department-icon">
-                    {(d.name?.[0]||"D").toUpperCase()}
-                  </div>
+            {!selectedDepartment?(
+              <>
+                <div className="section-heading">
                   <div>
-                    <strong>{d.name}</strong>
-                    <small>{d.code||"No code"}</small>
+                    <h2>Departments</h2>
+                    <p>Create the teams that make up {session.company_name}.</p>
                   </div>
-                  <ChevronRight size={18}/>
-                </article>
-              ))}
-
-              {!data.departments.length&&(
-                <div className="empty-state">
-                  <Building2 size={28}/>
-                  <strong>No departments yet</strong>
-                  <p>Create your first department.</p>
+                  <Building2/>
                 </div>
-              )}
-            </div>
+
+                <div className="department-grid">
+                  {data.departments.map(d=>(
+                    <button type="button" className="department-card" key={d.id} onClick={()=>setSelectedDepartmentId(d.id)}>
+                      <div className="department-icon">{(d.name?.[0]||"D").toUpperCase()}</div>
+                      <div>
+                        <strong>{d.name}</strong>
+                        <small>{d.code||"No code"}</small>
+                      </div>
+                      <ChevronRight size={18}/>
+                    </button>
+                  ))}
+
+                  {!data.departments.length&&(
+                    <div className="empty-state">
+                      <Building2 size={28}/>
+                      <strong>No departments yet</strong>
+                      <p>Create your first department.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ):(
+              <>
+                <div className="department-detail-head">
+                  <button type="button" className="ghost-btn" onClick={()=>setSelectedDepartmentId(null)}>
+                    ← All departments
+                  </button>
+
+                  <div className="department-detail-title">
+                    <div className="department-icon">
+                      {(selectedDepartment.name?.[0]||"D").toUpperCase()}
+                    </div>
+
+                    <div>
+                      <h2>{selectedDepartment.name}</h2>
+                      <p>
+                        {selectedDepartment.code||"No code"} · {departmentPositions.length} position
+                        {departmentPositions.length===1?"":"s"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="department-position-list">
+                  {departmentPositions.map(p=>(
+                    <article className="department-position-card" key={p.id}>
+                      <div className="department-position-main">
+                        <div>
+                          <strong>{p.title}</strong>
+
+                          <span className="level-pill">
+                            Level {Number(p.approval_level)||0} · {
+                              AUTHORITY_LEVELS[Number(p.approval_level)||0]
+                            }
+                          </span>
+                        </div>
+
+                        {p.is_department_head&&(
+                          <span className="department-head-pill">
+                            Department head
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="department-occupants">
+                        {p.occupants?.length?p.occupants.map(u=>(
+                          <div className="department-occupant" key={u.company_user_id}>
+                            <div className="avatar">
+                              {(u.first_name?.[0]||u.email?.[0]||"U").toUpperCase()}
+                            </div>
+
+                            <div className="department-occupant-person">
+                              <strong>
+                                {`${u.first_name||""} ${u.last_name||""}`.trim()||u.email}
+                              </strong>
+                              <small>{u.email}</small>
+                            </div>
+
+                            <div className="role-pills">
+                              {(u.ops_roles||[]).map(role=>(
+                                <span key={role}>{role.replaceAll("_"," ")}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )):(
+                          <div className="position-vacant">
+                            <span>Vacant</span>
+                            <small>No person currently occupies this position.</small>
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+
+                  {!departmentPositions.length&&(
+                    <div className="empty-state">
+                      <Users size={28}/>
+                      <strong>No positions in this department</strong>
+                      <p>Create positions and assign them to {selectedDepartment.name}.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           <form className="setup-side-card" onSubmit={addDepartment}>
@@ -574,11 +947,7 @@ export default function SetupPage(){
           </form>
 
           <div className="setup-next">
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={()=>setStep(2)}
-            >
+            <button type="button" className="primary-btn" onClick={()=>setStep(2)}>
               Continue <ArrowRight size={17}/>
             </button>
           </div>
@@ -598,23 +967,41 @@ export default function SetupPage(){
 
             <div className="position-table">
               {data.positions.map(p=>(
-                <div className="position-row" key={p.id}>
+                <div
+                  className={`position-row ${
+                    editingPositionId===p.id?"editing":""
+                  }`}
+                  key={p.id}
+                >
                   <div>
                     <strong>{p.title}</strong>
                     <small>{p.department_name||"Organisation-wide"}</small>
                   </div>
 
-                  <span className="level-pill">
-                    Level {p.approval_level||0}
+                  <span
+                    className="level-pill"
+                    title={AUTHORITY_LEVELS[Number(p.approval_level)||0]}
+                  >
+                    Level {Number(p.approval_level)||0} · {
+                      AUTHORITY_LEVELS[Number(p.approval_level)||0]
+                    }
                   </span>
+
+                  <button
+                    type="button"
+                    className="position-edit-btn"
+                    onClick={()=>editPosition(p)}
+                  >
+                    Edit
+                  </button>
                 </div>
               ))}
             </div>
           </div>
 
-          <form className="setup-side-card" onSubmit={addPosition}>
+          <form className="setup-side-card" onSubmit={savePosition}>
             <div className="card-icon"><Plus/></div>
-            <h3>Add position</h3>
+            <h3>{editingPositionId?"Edit position":"Add position"}</h3>
 
             <label>Position title</label>
             <input value={position.title}
@@ -631,10 +1018,24 @@ export default function SetupPage(){
             </select>
 
             <label>Authority level</label>
-            <input type="number" min="0"
+            <select
               value={position.approval_level}
-              onChange={e=>setPosition(x=>({...x,approval_level:e.target.value}))}/>
+              onChange={e=>setPosition(x=>({
+                ...x,
+                approval_level:Number(e.target.value)
+              }))}
+            >
+              <option value={0}>Level 0 — No approval authority</option>
+              <option value={1}>Level 1 — Supervisor / Team lead</option>
+              <option value={2}>Level 2 — Manager / Department authority</option>
+              <option value={3}>Level 3 — Senior management</option>
+              <option value={4}>Level 4 — Executive</option>
+              <option value={5}>Level 5 — Organisation head</option>
+            </select>
 
+            <small className="field-help">
+              Determines approval hierarchy and escalation. It does not grant system permissions.
+            </small>
             <label className="check-row">
               <input type="checkbox"
                 checked={position.is_department_head}
@@ -642,9 +1043,30 @@ export default function SetupPage(){
               Department head
             </label>
 
-            <button type="submit" className="primary-btn" disabled={busy}>
-              {busy?"Saving...":"Add position"}
-            </button>
+            <div className="position-form-actions">
+              {editingPositionId&&(
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={cancelPositionEdit}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+              )}
+
+              <button
+                type="submit"
+                className="primary-btn"
+                disabled={busy}
+              >
+                {busy
+                  ?"Saving..."
+                  :editingPositionId
+                    ?"Save changes"
+                    :"Add position"}
+              </button>
+            </div>
           </form>
 
           <div className="setup-next">
@@ -656,11 +1078,7 @@ export default function SetupPage(){
               Back
             </button>
 
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={()=>setStep(3)}
-            >
+            <button type="button" className="primary-btn" onClick={continueFromPositions} disabled={busy}>
               Continue <ArrowRight size={17}/>
             </button>
           </div>
@@ -679,29 +1097,151 @@ export default function SetupPage(){
             </div>
 
             <div className="team-list">
-              {data.team.map(u=>(
-                <article className="team-card" key={u.company_user_id}>
-                  <div className="avatar large">
-                    {(u.first_name?.[0]||u.email?.[0]||"U").toUpperCase()}
-                  </div>
+              {data.team.map(u=>{
+                const isSelected=selectedUser?.user_id===u.user_id;
 
-                  <div className="team-person">
-                    <strong>{u.first_name} {u.last_name}</strong>
-                    <small>{u.email}</small>
-                  </div>
+                return(
+                  <div className={`team-card-wrap ${isSelected?"active":""}`} key={u.company_user_id}>
+                    <button type="button" className="team-card" onClick={()=>isSelected?cancelUserEdit():editUser(u)}>
+                      <div className="avatar large">
+                        {(u.first_name?.[0]||u.email?.[0]||"U").toUpperCase()}
+                      </div>
 
-                  <div className="team-meta">
-                    <strong>{u.position_title||u.company_role}</strong>
-                    <small>{u.department_name||"No department"}</small>
-                  </div>
+                      <div className="team-person">
+                        <strong>{u.first_name} {u.last_name}</strong>
+                        <small>{u.email}</small>
+                      </div>
 
-                  <div className="role-pills">
-                    {(u.ops_roles||[]).map(r=>
-                      <span key={r}>{r.replaceAll("_"," ")}</span>
+                      <div className="team-meta">
+                        <strong>{u.position_title||u.company_role}</strong>
+                        <small>{u.department_name||"No department"}</small>
+                      </div>
+
+                      <div className="role-pills">
+                        {(u.ops_roles||[]).map(r=>
+                          <span key={r}>{r.replaceAll("_"," ")}</span>
+                        )}
+                      </div>
+
+                      <ChevronRight className={`team-expand-icon ${isSelected?"open":""}`} size={17}/>
+                    </button>
+
+                    {isSelected&&(
+                      <div className="user-access-editor">
+                        <div className="user-access-head">
+                          <div>
+                            <span className="eyebrow dark">ORGANISATION ASSIGNMENT</span>
+                            <h3>{`${u.first_name||""} ${u.last_name||""}`.trim()||u.email}</h3>
+                            <p>Assign this person to the organisation structure and FinSage Nexus roles.</p>
+                          </div>
+
+                          <button type="button" className="ghost-btn" onClick={cancelUserEdit}>Close</button>
+                        </div>
+
+                        <div className="user-access-grid">
+                          <div className="user-access-field">
+                            <label>Department</label>
+                            <select value={userAccess.department_id} onChange={e=>setUserAccess(x=>({...x,department_id:e.target.value,position_id:""}))}>
+                              <option value="">No department</option>
+                              {data.departments.map(d=>
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              )}
+                            </select>
+                          </div>
+
+                          <div className="user-access-field">
+                            <label>Position</label>
+                            <select value={userAccess.position_id} onChange={e=>setUserAccess(x=>({...x,position_id:e.target.value}))}>
+                              <option value="">No position</option>
+                              {userPositions.map(p=>
+                                <option key={p.id} value={p.id}>{p.title}</option>
+                              )}
+                            </select>
+                          </div>
+
+                          <div className="user-access-field">
+                            <label>Branch</label>
+                            <select value={userAccess.branch_id} onChange={e=>setUserAccess(x=>({...x,branch_id:e.target.value}))}>
+                              <option value="">All / Head office</option>
+                              {data.branches.map(b=>
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              )}
+                            </select>
+                          </div>
+
+                          <div className="user-access-field">
+                            <label>Manager</label>
+                            <select value={userAccess.manager_user_id} onChange={e=>setUserAccess(x=>({...x,manager_user_id:e.target.value}))}>
+                              <option value="">No manager</option>
+                              {data.team
+                                .filter(member=>member.user_id!==u.user_id)
+                                .map(member=>
+                                  <option key={member.user_id} value={member.user_id}>
+                                    {`${member.first_name||""} ${member.last_name||""}`.trim()||member.email}
+                                  </option>
+                                )}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="user-role-editor">
+                          <div className="user-role-head">
+                            <div>
+                              <label>FinSage Nexus roles</label>
+                              <small>Select one or more roles for this team member.</small>
+                            </div>
+
+                            <span>{userAccess.ops_role_codes.length} selected</span>
+                          </div>
+
+                          <div className="user-role-grid">
+                            {data.roles
+                              .filter(r=>r.code!=="OWNER"||u.ops_roles?.includes("OWNER"))
+                              .map(r=>{
+                                const checked=userAccess.ops_role_codes.includes(r.code);
+
+                                return(
+                                  <label className={`user-role-option ${checked?"selected":""}`} key={r.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={e=>setUserAccess(x=>({
+                                        ...x,
+                                        ops_role_codes:e.target.checked
+                                          ?[...new Set([...x.ops_role_codes,r.code])]
+                                          :x.ops_role_codes.filter(code=>code!==r.code)
+                                      }))}
+                                    />
+
+                                    <span>
+                                      <strong>{r.name}</strong>
+                                      <small>{r.code.replaceAll("_"," ")}</small>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                          </div>
+                        </div>
+
+                        <div className="user-access-actions">
+                          <button type="button" className="ghost-btn" onClick={cancelUserEdit} disabled={busy}>Cancel</button>
+                          <button type="button" className="primary-btn" onClick={saveUserAccess} disabled={busy}>
+                            {busy?"Saving...":"Save assignment"}
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
-                </article>
-              ))}
+                );
+              })}
+
+              {!data.team.length&&(
+                <div className="empty-state">
+                  <Users size={28}/>
+                  <strong>No team members yet</strong>
+                  <p>Invite people to start building your organisation.</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -710,17 +1250,10 @@ export default function SetupPage(){
             <h3>Invite team member</h3>
 
             <label>Email</label>
-            <input type="email" value={invite.email}
-              onChange={e=>setInvite(x=>({...x,email:e.target.value}))}
-              required placeholder="person@company.com"/>
+            <input type="email" value={invite.email} onChange={e=>setInvite(x=>({...x,email:e.target.value}))} required placeholder="person@company.com"/>
 
             <label>Department</label>
-            <select value={invite.department_id}
-              onChange={e=>setInvite(x=>({
-                ...x,
-                department_id:e.target.value,
-                position_id:""
-              }))}>
+            <select value={invite.department_id} onChange={e=>setInvite(x=>({...x,department_id:e.target.value,position_id:""}))}>
               <option value="">No department</option>
               {data.departments.map(d=>
                 <option key={d.id} value={d.id}>{d.name}</option>
@@ -728,17 +1261,15 @@ export default function SetupPage(){
             </select>
 
             <label>Position</label>
-            <select value={invite.position_id}
-              onChange={e=>setInvite(x=>({...x,position_id:e.target.value}))}>
+            <select value={invite.position_id} onChange={e=>setInvite(x=>({...x,position_id:e.target.value}))}>
               <option value="">No position</option>
               {positions.map(p=>
                 <option key={p.id} value={p.id}>{p.title}</option>
               )}
             </select>
 
-            <label>FinFlow role</label>
-            <select value={invite.ops_role_code}
-              onChange={e=>setInvite(x=>({...x,ops_role_code:e.target.value}))}>
+            <label>FinSage Nexus role</label>
+            <select value={invite.ops_role_code} onChange={e=>setInvite(x=>({...x,ops_role_code:e.target.value}))}>
               {data.roles
                 .filter(r=>r.code!=="OWNER")
                 .map(r=>
@@ -747,37 +1278,24 @@ export default function SetupPage(){
             </select>
 
             <label>Branch</label>
-            <select value={invite.branch_id}
-              onChange={e=>setInvite(x=>({...x,branch_id:e.target.value}))}>
+            <select value={invite.branch_id} onChange={e=>setInvite(x=>({...x,branch_id:e.target.value}))}>
               <option value="">All / Head office</option>
               {data.branches.map(b=>
                 <option key={b.id} value={b.id}>{b.name}</option>
               )}
             </select>
 
-            <button
-              type="submit"
-              className="primary-btn"
-              disabled={busy}
-            >
+            <button type="submit" className="primary-btn" disabled={busy}>
               {busy?"Sending...":"Send invitation"}
             </button>
           </form>
 
           <div className="setup-next">
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={()=>setStep(2)}
-            >
+            <button type="button" className="ghost-btn" onClick={()=>setStep(2)}>
               Back
             </button>
 
-            <button
-              type="button"
-              className="primary-btn"
-              onClick={()=>setStep(4)}
-            >
+            <button type="button" className="primary-btn" onClick={()=>setStep(4)}>
               Continue <ArrowRight size={17}/>
             </button>
           </div>
@@ -788,7 +1306,7 @@ export default function SetupPage(){
         <section>
           <div className="governance-heading">
             <ShieldCheck size={34}/>
-            <h2>How controlled should FinFlow be?</h2>
+            <h2>How controlled should FinSage Nexus be?</h2>
             <p>Choose a governance model, then configure exactly who approves requests.</p>
           </div>
 
@@ -898,7 +1416,7 @@ export default function SetupPage(){
                           >
                             <option value="requester_manager">Requester's manager</option>
                             <option value="department_head">Department manager / head</option>
-                            <option value="role">FinFlow role</option>
+                            <option value="role">FinSage Nexus role</option>
                             <option value="position">Organisation position</option>
                             <option value="owner">Business owner</option>
                           </select>
@@ -907,7 +1425,7 @@ export default function SetupPage(){
 
                       {approval.approver_type==="role"&&(
                         <div>
-                          <label>FinFlow role</label>
+                          <label>FinSage Nexus role</label>
                           <select
                             value={approval.approver_role_code||""}
                             onChange={e=>

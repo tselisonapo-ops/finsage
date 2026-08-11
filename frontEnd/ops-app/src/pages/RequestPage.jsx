@@ -514,7 +514,7 @@ export default function RequestPage(){
 
               <p>
                 {isNew
-                  ?"Complete the request while FinFlow builds the official document beside you."
+                  ?"Complete the request while FinSage Nexus builds the official document beside you."
                   :`${existing?.request_no} · ${existing?.request_type_name}`}
               </p>
             </div>
@@ -641,7 +641,7 @@ export default function RequestPage(){
                   <div className="req-section-icon"><Building2 size={17}/></div>
                   <div>
                     <h3>Organisation</h3>
-                    <p>Prefilled from your FinFlow profile.</p>
+                    <p>Prefilled from your FinSage Nexus profile.</p>
                   </div>
                 </div>
 
@@ -1354,11 +1354,11 @@ function GeneralTemplate(props){
   );
 }
 
-function DocumentFooter({text="This document was prepared and approved electronically through FinFlow."}){
+function DocumentFooter({text="This document was prepared and approved electronically through FinSage Nexus."}){
   return (
     <footer className="doc-footer">
       <span>{text}</span>
-      <strong>FinFlow · FinSphere</strong>
+      <strong>FinSage Nexus · FinSphere</strong>
     </footer>
   );
 }

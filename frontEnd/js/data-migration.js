@@ -260,6 +260,37 @@
     payrollEmployeeLoansLoaded:false,
     payrollEmployeeLoansSaving:false,
     payrollEmployeeLoansPreviewLoading:false,
+
+    payrollHistory:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    },
+    payrollHistoryLoaded:false,
+    payrollHistorySaving:false,
+    payrollHistoryPreviewLoading:false,
+
+    payrollReconciliation:null,
+    payrollReconciliationHistory:[],
+    payrollReconciliationLoaded:false,
+    payrollReconciliationRunning:false,
+
+    products:{
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+      accounting:null,
+      accountingPreview:null,
+    },
+    productsLoaded:false,
+    productsSaving:false,
+    productsAccountingSaving:false,
+    productsPreviewLoading:false,
+    productsAccountingPreviewLoading:false,
   };
 
   function defaultProject() {
@@ -674,8 +705,11 @@
       await loadPayrollMapping(state.project.id,{renderAfter:false});
       await loadPayrollItems(state.project.id,{renderAfter:false});
       await loadPayrollLeave(state.project.id,{renderAfter:false});
-      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false});      
-
+      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false});
+      await loadPayrollHistory(state.project.id,{renderAfter:false});
+      await loadPayrollReconciliation(state.project.id,{renderAfter:false});
+      await loadProducts(state.project.id,{renderAfter:false});
+      
       state.dirty = false;
       state.scopeDirty = false;
 
@@ -944,8 +978,10 @@
       await loadPayrollMapping(state.project.id,{renderAfter:false});
       await loadPayrollItems(state.project.id,{renderAfter:false});
       await loadPayrollLeave(state.project.id,{renderAfter:false});
-      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false})
-
+      await loadPayrollEmployeeLoans(state.project.id,{renderAfter:false});
+      await loadPayrollHistory(state.project.id,{renderAfter:false});
+      await loadPayrollReconciliation(state.project.id,{renderAfter:false});
+      await loadProducts(state.project.id,{renderAfter:false});
       log(`Configured dataset ${dataset.dataset_name}`);
       notify("Dataset configuration saved.");
 
@@ -1619,6 +1655,16 @@
 
       "save-payroll-employee-loan-settings":savePayrollEmployeeLoanSettings,
       "preview-payroll-employee-loans":previewPayrollEmployeeLoans,
+      "save-payroll-history-settings":savePayrollHistorySettings,
+      "preview-payroll-history":previewPayrollHistory,
+      "run-payroll-reconciliation":runPayrollReconciliation,
+
+      "save-product-settings":saveProductSettings,
+      "save-product-types":saveProductTypes,
+      "preview-products":previewProducts,
+      "save-product-accounts":saveProductAccounts,
+      "save-product-vat":saveProductVat,
+      "preview-product-accounting":previewProductAccounting,
       previous,
       next,
     };
@@ -2052,6 +2098,84 @@
       return;
     }
 
+    if(element.id==="mwPayrollHistoryDataset"){
+      loadPayrollHistoryDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-payroll-history-setting]")){
+      const field=element.dataset.mwPayrollHistorySetting;
+
+      if(state.payrollHistory.settings){
+        state.payrollHistory.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.id==="mwProductDataset"){
+      loadProductDataset(Number(element.value));
+      return;
+    }
+
+    if(element.matches("[data-mw-product-setting]")){
+      const field=element.dataset.mwProductSetting;
+
+      if(state.products.settings){
+        state.products.settings[field]=element.type==="checkbox"
+          ?element.checked
+          :element.value;
+      }
+
+      return;
+    }
+
+    if(element.matches("[data-mw-product-account]")){
+      const index=Number(element.dataset.mwProductAccount);
+      const row=state.products.accounting?.accounts?.items?.[index];
+
+      if(row){
+        const target=(state.products.accounting?.accounts?.targets||[])
+          .find(item=>Number(item.id)===Number(element.value));
+
+        row.target_account_id=target?.id||null;
+        row.target_account_code=target?.code||null;
+        row.target_account_name=target?.name||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-product-vat]")){
+      const index=Number(element.dataset.mwProductVat);
+      const row=state.products.accounting?.vat?.items?.[index];
+
+      if(row){
+        row.target_vat_code=element.value||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
+    if(element.matches("[data-mw-product-type]")){
+      const index=Number(element.dataset.mwProductType);
+      const row=state.products.mapping?.type_mapping?.items?.[index];
+
+      if(row){
+        row.item_kind=element.value||null;
+        row.is_approved=false;
+      }
+
+      render();
+      return;
+    }
+
     if (
       element.matches(
         "[data-mw-dataset-field]"
@@ -2390,6 +2514,37 @@
     state.payrollEmployeeLoansLoaded=false;
     state.payrollEmployeeLoansSaving=false;
     state.payrollEmployeeLoansPreviewLoading=false;
+
+    state.payrollHistory={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+    };
+    state.payrollHistoryLoaded=false;
+    state.payrollHistorySaving=false;
+    state.payrollHistoryPreviewLoading=false;
+
+    state.payrollReconciliation=null;
+    state.payrollReconciliationHistory=[];
+    state.payrollReconciliationLoaded=false;
+    state.payrollReconciliationRunning=false;
+
+    state.products={
+      datasets:[],
+      datasetId:null,
+      settings:null,
+      mapping:null,
+      preview:null,
+      accounting:null,
+      accountingPreview:null,
+    };
+    state.productsLoaded=false;
+    state.productsSaving=false;
+    state.productsAccountingSaving=false;
+    state.productsPreviewLoading=false;
+    state.productsAccountingPreviewLoading=false;
     log("New migration project prepared");
     render();
   }
@@ -3704,22 +3859,6 @@
     }
   }
 
-  function moduleMappingView(){
-    const hasPpe=state.ppe.datasets?.length;
-
-    return `
-      <div>
-        <div class="mw-inline" style="margin-bottom:14px">
-          ${hasPpe?`<span class="mw-badge info">PPE</span>`:""}
-        </div>
-
-        ${hasPpe
-          ?ppeMappingView()
-          :`<div class="mw-empty">No module-specific mappings are required yet.</div>`
-        }
-      </div>
-    `;
-  }
 
   function ppeMappingView(){
     const datasets=state.ppe.datasets||[];
@@ -4190,28 +4329,6 @@
       state.leasePreviewLoading=false;
       render();
     }
-  }
-
-  function moduleMappingView(){
-    const hasPpe=Boolean(state.ppe.datasets?.length);
-    const hasLeases=Boolean(state.leases.datasets?.length);
-
-    return `
-      <div>
-        <div class="mw-inline" style="margin-bottom:14px">
-          ${hasPpe?`<button class="mw-btn" data-mw-module-tab="ppe">PPE</button>`:""}
-          ${hasLeases?`<button class="mw-btn" data-mw-module-tab="leases">IFRS 16 Leases</button>`:""}
-        </div>
-
-        ${hasPpe?ppeMappingView():""}
-        ${hasLeases?leaseMigrationView():""}
-
-        ${!hasPpe&&!hasLeases
-          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
-          :""
-        }
-      </div>
-    `;
   }
 
   function leaseMigrationView(){
@@ -4940,25 +5057,6 @@
     }
   }
 
-  function moduleMappingView(){
-    const hasPpe=Boolean(state.ppe.datasets?.length);
-    const hasLeases=Boolean(state.leases.datasets?.length);
-    const hasLoans=Boolean(state.loans.datasets?.length);
-
-    return `
-      <div>
-        ${hasPpe?ppeMappingView():""}
-        ${hasLeases?leaseMigrationView():""}
-        ${hasLoans?loanMigrationView():""}
-
-        ${!hasPpe&&!hasLeases&&!hasLoans
-          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
-          :""
-        }
-      </div>
-    `;
-  }
-
   function loanMigrationView(){
     const datasets=state.loans.datasets||[];
     const settings=state.loans.settings;
@@ -5518,27 +5616,6 @@
       state.revenuePreviewLoading=false;
       render();
     }
-  }
-
-  function moduleMappingView(){
-    const hasPpe=Boolean(state.ppe.datasets?.length);
-    const hasLeases=Boolean(state.leases.datasets?.length);
-    const hasLoans=Boolean(state.loans.datasets?.length);
-    const hasRevenue=Boolean(state.revenue.datasets?.length);
-
-    return `
-      <div>
-        ${hasPpe?ppeMappingView():""}
-        ${hasLeases?leaseMigrationView():""}
-        ${hasLoans?loanMigrationView():""}
-        ${hasRevenue?revenueMigrationView():""}
-
-        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue
-          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
-          :""
-        }
-      </div>
-    `;
   }
 
   function revenueMigrationView(){
@@ -6234,29 +6311,6 @@
     }
   }
 
-  function moduleMappingView(){
-    const hasPpe=Boolean(state.ppe.datasets?.length);
-    const hasLeases=Boolean(state.leases.datasets?.length);
-    const hasLoans=Boolean(state.loans.datasets?.length);
-    const hasRevenue=Boolean(state.revenue.datasets?.length);
-    const hasAccruals=Boolean(state.accruals.datasets?.length);
-
-    return `
-      <div>
-        ${hasPpe?ppeMappingView():""}
-        ${hasLeases?leaseMigrationView():""}
-        ${hasLoans?loanMigrationView():""}
-        ${hasRevenue?revenueMigrationView():""}
-        ${hasAccruals?accrualMigrationView():""}
-
-        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals
-          ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
-          :""
-        }
-      </div>
-    `;
-  }
-
   function accrualMigrationView(){
     const datasets=state.accruals.datasets||[];
     const settings=state.accruals.settings;
@@ -6903,17 +6957,29 @@
     const hasRevenue=Boolean(state.revenue.datasets?.length);
     const hasAccruals=Boolean(state.accruals.datasets?.length);
     const hasPayroll=Boolean(state.payroll.datasets?.length);
+    const hasProducts=Boolean(state.products.datasets?.length);
 
     return `
       <div>
+        <div class="mw-inline" style="margin-bottom:14px">
+          ${hasPpe?`<span class="mw-badge info">PPE</span>`:""}
+          ${hasLeases?`<span class="mw-badge info">Leases</span>`:""}
+          ${hasLoans?`<span class="mw-badge info">Loans</span>`:""}
+          ${hasRevenue?`<span class="mw-badge info">Revenue</span>`:""}
+          ${hasAccruals?`<span class="mw-badge info">Accruals</span>`:""}
+          ${hasPayroll?`<span class="mw-badge info">Payroll</span>`:""}
+          ${hasProducts?`<span class="mw-badge info">Products & Services</span>`:""}
+        </div>
+
         ${hasPpe?ppeMappingView():""}
         ${hasLeases?leaseMigrationView():""}
         ${hasLoans?loanMigrationView():""}
         ${hasRevenue?revenueMigrationView():""}
         ${hasAccruals?accrualMigrationView():""}
         ${hasPayroll?payrollMigrationView():""}
+        ${hasProducts?productMigrationView():""}
 
-        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals&&!hasPayroll
+        ${!hasPpe&&!hasLeases&&!hasLoans&&!hasRevenue&&!hasAccruals&&!hasPayroll&&!hasProducts
           ?`<div class="mw-empty">No module-specific mappings are required yet.</div>`
           :""
         }
@@ -7029,6 +7095,8 @@
         ${payrollItemsMigrationView()}
         ${payrollLeaveMigrationView()}
         ${payrollEmployeeLoansMigrationView()}
+        ${payrollHistoryMigrationView()}
+        ${payrollReconciliationView()}
       </div>
     `;
   }
@@ -8510,6 +8578,1925 @@
     `;
   }
 
+  async function loadPayrollHistory(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payrollHistory={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.payrollHistoryLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollHistory(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.payrollHistory.datasets=response?.datasets||[];
+
+      if(!state.payrollHistory.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.payrollHistory.datasetId)
+      )){
+        state.payrollHistory.datasetId=
+          state.payrollHistory.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.payrollHistory.datasetId){
+        await loadPayrollHistoryDataset(
+          state.payrollHistory.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.payrollHistoryLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      console.error(
+        "[DataMigration] loadPayrollHistory failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+  async function loadPayrollHistoryDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.migrations.payrollHistorySettings(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+
+      apiFetch(
+        ENDPOINTS.migrations.payrollHistoryMapping(
+          companyId(),
+          state.project.id,
+          id
+        )
+      ),
+    ]);
+
+    state.payrollHistory.datasetId=id;
+    state.payrollHistory.settings=settingsResponse?.settings||null;
+    state.payrollHistory.mapping=mappingResponse?.mapping||null;
+    state.payrollHistory.preview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function savePayrollHistorySettings(){
+    if(!state.payrollHistory.datasetId||!state.payrollHistory.settings)return;
+
+    state.payrollHistorySaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollHistorySettings(
+          companyId(),
+          state.project.id,
+          state.payrollHistory.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(
+            state.payrollHistory.settings
+          ),
+        }
+      );
+
+      state.payrollHistory.settings=
+        response?.settings||state.payrollHistory.settings;
+
+      await loadPayrollHistoryDataset(
+        state.payrollHistory.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Historical payroll settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollHistorySaving=false;
+      render();
+    }
+  }
+
+  async function previewPayrollHistory(){
+    if(!state.payrollHistory.datasetId)return;
+
+    state.payrollHistoryPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollHistoryPreview(
+          companyId(),
+          state.project.id,
+          state.payrollHistory.datasetId
+        )
+      );
+
+      state.payrollHistory.preview=
+        response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollHistoryPreviewLoading=false;
+      render();
+    }
+  }
+
+
+  function payrollHistoryMigrationView(){
+    const datasets=state.payrollHistory.datasets||[];
+
+    if(!datasets.length)return "";
+
+    const settings=state.payrollHistory.settings;
+    const mapping=state.payrollHistory.mapping;
+
+    if(!settings||!mapping){
+      return `
+        <div class="mw-empty">
+          Loading historical payroll…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Historical Payroll & Payslips",
+          "Import prior payroll results without recalculating historical tax or changing source payroll values.",
+          `
+            <button class="mw-btn"
+              data-mw-action="save-payroll-history-settings"
+              ${state.payrollHistorySaving?"disabled":""}>
+              ${state.payrollHistorySaving?"Saving…":"Save settings"}
+            </button>
+
+            <button class="mw-btn primary"
+              data-mw-action="preview-payroll-history"
+              ${state.payrollHistoryPreviewLoading?"disabled":""}>
+              ${state.payrollHistoryPreviewLoading?"Reconstructing…":"Reconstruct history"}
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwPayrollHistoryDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.payrollHistory.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Source Layout</label>
+
+            <select class="mw-select"
+              data-mw-payroll-history-setting="source_layout">
+
+              <option value="summary_rows"
+                ${settings.source_layout==="summary_rows"?"selected":""}>
+                Employee Payroll Summary Rows
+              </option>
+
+              <option value="item_rows"
+                ${settings.source_layout==="item_rows"?"selected":""}>
+                Payroll Item Rows
+              </option>
+            </select>
+          </div>
+
+          <div class="mw-field">
+            <label>Default Frequency</label>
+
+            <select class="mw-select"
+              data-mw-payroll-history-setting="default_pay_frequency">
+
+              <option value="weekly"
+                ${settings.default_pay_frequency==="weekly"?"selected":""}>
+                Weekly
+              </option>
+
+              <option value="fortnightly"
+                ${settings.default_pay_frequency==="fortnightly"?"selected":""}>
+                Fortnightly
+              </option>
+
+              <option value="monthly"
+                ${settings.default_pay_frequency==="monthly"?"selected":""}>
+                Monthly
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${payrollHistoryCheck(
+            "Preserve legacy PAYE",
+            "preserve_source_tax"
+          )}
+
+          ${payrollHistoryCheck(
+            "Preserve legacy net pay",
+            "preserve_source_net_pay"
+          )}
+
+          ${payrollHistoryCheck(
+            "Require payroll item mapping",
+            "require_item_mapping"
+          )}
+        </div>
+
+        ${payrollHistoryMappingStatus()}
+        ${payrollHistoryPreviewView()}
+      </div>
+    `;
+  }
+
+  function payrollHistoryCheck(label,field){
+    const checked=Boolean(
+      state.payrollHistory.settings?.[field]
+    );
+
+    return `
+      <label class="mw-check">
+        <input type="checkbox"
+          ${checked?"checked":""}
+          data-mw-payroll-history-setting="${esc(field)}">
+
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function payrollHistoryMappingStatus(){
+    const mapping=state.payrollHistory.mapping||{};
+    const missing=mapping.missing_fields||[];
+
+    return `
+      <div style="margin-top:18px">
+        <h3>Historical Payroll Readiness</h3>
+
+        ${mapping.is_complete
+          ?`
+            <div class="mw-alert ok">
+              Historical payroll fields are mapped and ready for reconstruction.
+            </div>
+          `
+          :`
+            <div class="mw-alert warn">
+              <strong>Missing mapped fields:</strong>
+              ${missing.map(esc).join(", ")}
+            </div>
+          `
+        }
+      </div>
+    `;
+  }
+
+  function payrollHistoryPreviewView(){
+    const preview=state.payrollHistory.preview;
+    if(!preview)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Historical Payroll Reconstruction</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Payroll Runs</span>
+            <strong>${preview.run_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Employee Results</span>
+            <strong>${preview.employee_result_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Gross Pay</span>
+            <strong>${money(preview.total_gross||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>PAYE</span>
+            <strong>${money(preview.total_paye||0)}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Net Pay</span>
+            <strong>${money(preview.total_net||0)}</strong>
+          </div>
+        </div>
+
+        ${(preview.runs||[]).map(
+          payrollHistoryRunCard
+        ).join("")}
+      </div>
+    `;
+  }
+
+  function payrollHistoryRunCard(run){
+    return `
+      <div class="mw-card" style="margin-top:12px">
+        <div class="mw-inline" style="justify-content:space-between">
+          <div>
+            <strong>${esc(run.run_name||run.run_reference)}</strong>
+
+            <div class="mw-muted mw-small">
+              ${esc(run.period_start||"")} → ${esc(run.period_end||"")}
+              ${run.payment_date?` • Paid ${esc(run.payment_date)}`:""}
+            </div>
+          </div>
+
+          <span class="mw-badge ${run.valid?"ok":"error"}">
+            ${run.valid?"Ready":`${run.error_count||0} issue(s)`}
+          </span>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div>
+            <span class="mw-muted mw-small">Employees</span>
+            <div>${Number(run.employee_count||0).toLocaleString()}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Gross Pay</span>
+            <div>${money(run.gross_pay||0)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">PAYE</span>
+            <div>${money(run.paye_amount||0)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Other Deductions</span>
+            <div>${money(run.employee_deductions||0)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Employer Contributions</span>
+            <div>${money(run.employer_contributions||0)}</div>
+          </div>
+
+          <div>
+            <span class="mw-muted mw-small">Net Pay</span>
+            <div><strong>${money(run.net_pay||0)}</strong></div>
+          </div>
+        </div>
+
+        ${payrollHistoryEmployeesTable(run.employees||[])}
+      </div>
+    `;
+  }
+
+  function payrollHistoryEmployeesTable(rows){
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:14px">
+        ${table(
+          [
+            "Employee",
+            "Gross",
+            "PAYE",
+            "Deductions",
+            "Net",
+            "Status",
+          ],
+
+          rows.map(row=>{
+            const employee=row.employee||{};
+            const result=row.result||{};
+
+            return [
+              `
+                <strong>${esc(employee.employee_no||"—")}</strong>
+                ${employee.employee_name
+                  ?`<div class="mw-muted mw-small">${esc(employee.employee_name)}</div>`
+                  :""
+                }
+              `,
+
+              money(result.gross_pay||0),
+              money(result.paye_amount||0),
+              money(result.total_deductions||0),
+
+              `<strong>${money(result.net_pay||0)}</strong>`,
+
+              row.valid
+                ?`<span class="mw-badge ok">Reconciled</span>`
+                :`<span class="mw-badge error">${row.issues?.length||1} issue(s)</span>`,
+            ];
+          }),
+
+          "No employee payroll results."
+        )}
+      </div>
+    `;
+  }
+
+  async function loadPayrollReconciliation(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.payrollReconciliation=null;
+      state.payrollReconciliationHistory=[];
+      state.payrollReconciliationLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const [reconResponse,historyResponse]=await Promise.all([
+        apiFetch(
+          ENDPOINTS.migrations.payrollReconciliation(
+            companyId(),
+            projectId
+          )
+        ),
+
+        apiFetch(
+          ENDPOINTS.migrations.payrollReconciliationHistory(
+            companyId(),
+            projectId
+          )
+        ),
+      ]);
+
+      state.payrollReconciliation=
+        reconResponse?.reconciliation||null;
+
+      state.payrollReconciliationHistory=
+        historyResponse?.history||[];
+
+      state.payrollReconciliationLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+
+      console.error(
+        "[DataMigration] loadPayrollReconciliation failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function runPayrollReconciliation(){
+    if(!state.project?.id)return;
+
+    state.payrollReconciliationRunning=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.payrollReconciliation(
+          companyId(),
+          state.project.id
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({}),
+        }
+      );
+
+      state.payrollReconciliation=
+        response?.reconciliation||null;
+
+      const historyResponse=await apiFetch(
+        ENDPOINTS.migrations.payrollReconciliationHistory(
+          companyId(),
+          state.project.id
+        )
+      );
+
+      state.payrollReconciliationHistory=
+        historyResponse?.history||[];
+
+      if(state.payrollReconciliation?.is_ready){
+        notify("Payroll migration is ready.");
+      }else{
+        notify(
+          `${state.payrollReconciliation?.blocking_error_count||0} payroll migration issue(s) require attention.`
+        );
+      }
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.payrollReconciliationRunning=false;
+      render();
+    }
+  }
+
+  function payrollReconciliationView(){
+    const recon=state.payrollReconciliation;
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Payroll Migration Readiness",
+          "Run a complete cutover assessment across employee master data, payroll setup, leave, employee loans, tax and historical payroll.",
+          `
+            <button class="mw-btn primary"
+              data-mw-action="run-payroll-reconciliation"
+              ${state.payrollReconciliationRunning?"disabled":""}>
+              ${state.payrollReconciliationRunning
+                ?"Running reconciliation…"
+                :"Run payroll reconciliation"
+              }
+            </button>
+          `
+        )}
+
+        ${!recon
+          ?`
+            <div class="mw-empty">
+              Run payroll reconciliation to assess cutover readiness.
+            </div>
+          `
+          :`
+            ${payrollReconciliationSummary(recon)}
+            ${payrollReconciliationChecks(recon)}
+            ${payrollReconciliationModules(recon)}
+            ${payrollReconciliationHistoryView()}
+          `
+        }
+      </div>
+    `;
+  }
+
+  function payrollReconciliationSummary(recon){
+    const ready=Boolean(recon.is_ready);
+    const percent=Number(recon.readiness_percent||0);
+
+    return `
+      <div style="margin-top:16px">
+        <div class="mw-alert ${ready?"ok":"error"}">
+          <div class="mw-inline" style="justify-content:space-between">
+            <div>
+              <strong>
+                ${ready
+                  ?"Payroll migration is ready"
+                  :"Payroll migration is blocked"
+                }
+              </strong>
+
+              <div class="mw-muted mw-small" style="margin-top:4px">
+                ${ready
+                  ?"All blocking payroll cutover controls have passed."
+                  :`${recon.blocking_error_count||0} blocking control(s) require attention.`
+                }
+              </div>
+            </div>
+
+            <span class="mw-badge ${ready?"ok":"error"}">
+              ${percent.toFixed(0)}%
+            </span>
+          </div>
+        </div>
+
+        <div class="mw-progress" style="margin-top:12px">
+          <span style="width:${Math.min(100,Math.max(0,percent))}%"></span>
+        </div>
+      </div>
+    `;
+  }
+
+  function payrollReconciliationChecks(recon){
+    const checks=recon.checks_json||[];
+
+    if(!checks.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Cutover Controls</h3>
+
+        <div class="mw-list" style="margin-top:12px">
+          ${checks.map(check=>`
+            <div class="mw-list-item">
+              <div class="mw-inline" style="justify-content:space-between">
+                <div>
+                  <strong>${esc(check.label)}</strong>
+
+                  ${check.message
+                    ?`<div class="mw-muted mw-small" style="margin-top:4px">
+                        ${esc(check.message)}
+                      </div>`
+                    :""
+                  }
+                </div>
+
+                <span class="mw-badge ${
+                  check.passed
+                    ?"ok"
+                    :check.blocking
+                      ?"error"
+                      :"warn"
+                }">
+                  ${check.passed
+                    ?"Passed"
+                    :check.blocking
+                      ?"Blocking"
+                      :"Warning"
+                  }
+                </span>
+              </div>
+
+              ${(check.value!==null&&check.value!==undefined)
+                ?`
+                  <div class="mw-muted mw-small" style="margin-top:6px">
+                    Actual: ${esc(check.value)}
+                    ${check.expected!==null&&check.expected!==undefined
+                      ?` • Expected: ${esc(check.expected)}`
+                      :""
+                    }
+                  </div>
+                `
+                :""
+              }
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function payrollReconciliationModules(recon){
+    const summary=recon.summary_json||{};
+
+    const employees=summary.employees||{};
+    const items=summary.payroll_items||{};
+    const leave=summary.leave||{};
+    const loans=summary.employee_loans||{};
+    const history=summary.history||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Payroll Opening Position</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Employees Ready</span>
+            <strong>
+              ${employees.ready_count||0}/${employees.employee_count||0}
+            </strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Payroll Items Ready</span>
+            <strong>
+              ${items.ready_count||0}/${items.item_count||0}
+            </strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Leave Balances Ready</span>
+            <strong>
+              ${leave.ready_count||0}/${leave.balance_count||0}
+            </strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Employee Loans Ready</span>
+            <strong>
+              ${loans.ready_count||0}/${loans.loan_count||0}
+            </strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Historical Runs Ready</span>
+            <strong>
+              ${history.ready_count||0}/${history.run_count||0}
+            </strong>
+          </div>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${payrollReconAmount(
+            "Monthly Basic Payroll",
+            employees.total_basic_salary,
+            true
+          )}
+
+          ${payrollReconAmount(
+            "Employee Loan Opening Balance",
+            loans.total_outstanding,
+            true
+          )}
+
+          ${payrollReconAmount(
+            "Leave Opening Balance",
+            leave.total_opening_balance,
+            false
+          )}
+
+          ${payrollReconAmount(
+            "Historical Gross Pay",
+            history.total_gross,
+            true
+          )}
+
+          ${payrollReconAmount(
+            "Historical PAYE",
+            history.total_paye,
+            true
+          )}
+
+          ${payrollReconAmount(
+            "Historical Net Pay",
+            history.total_net,
+            true
+          )}
+        </div>
+
+        ${payrollOrphanEmployeeReferences(summary)}
+      </div>
+    `;
+  }
+
+
+  function payrollReconAmount(label,value,isMoney){
+    return `
+      <div class="mw-card">
+        <div class="mw-muted mw-small">${esc(label)}</div>
+
+        <strong style="display:block;margin-top:5px">
+          ${isMoney
+            ?money(value||0)
+            :Number(value||0).toLocaleString()
+          }
+        </strong>
+      </div>
+    `;
+  }
+
+  function payrollOrphanEmployeeReferences(summary){
+    const rows=summary.orphan_employee_references||[];
+
+    if(!rows.length){
+      return `
+        <div class="mw-alert ok" style="margin-top:14px">
+          All payroll child records reference known employees.
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-alert error" style="margin-top:14px">
+        <strong>Unresolved employee references</strong>
+
+        <div class="mw-table-wrap" style="margin-top:10px">
+          <table class="mw-table">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Dataset</th>
+                <th>Employee Number</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rows.map(row=>`
+                <tr>
+                  <td>${esc(row.source)}</td>
+                  <td>${esc(row.dataset_id)}</td>
+                  <td><strong>${esc(row.employee_no)}</strong></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function payrollReconciliationHistoryView(){
+    const rows=state.payrollReconciliationHistory||[];
+
+    if(!rows.length)return "";
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Reconciliation History</h3>
+
+        ${table(
+          [
+            "Run",
+            "Date",
+            "Employees",
+            "Items",
+            "Leave",
+            "Loans",
+            "History",
+            "Readiness",
+            "Status",
+          ],
+
+          rows.map(row=>[
+            `#${esc(row.id)}`,
+
+            esc(
+              String(row.created_at||"")
+                .replace("T"," ")
+                .slice(0,19)
+            ),
+
+            Number(row.employee_count||0).toLocaleString(),
+
+            Number(row.payroll_item_count||0).toLocaleString(),
+
+            Number(row.leave_balance_count||0).toLocaleString(),
+
+            Number(row.employee_loan_count||0).toLocaleString(),
+
+            Number(row.history_run_count||0).toLocaleString(),
+
+            `${Number(row.readiness_percent||0).toFixed(0)}%`,
+
+            row.is_ready
+              ?`<span class="mw-badge ok">Ready</span>`
+              :`<span class="mw-badge error">${row.blocking_error_count||0} blocking</span>`,
+          ]),
+
+          "No reconciliation runs."
+        )}
+      </div>
+    `;
+  }
+
+  async function loadProducts(projectId,{renderAfter=true}={}){
+    if(!projectId){
+      state.products={
+        datasets:[],
+        datasetId:null,
+        settings:null,
+        mapping:null,
+        preview:null,
+      };
+      state.productsLoaded=false;
+
+      if(renderAfter)render();
+      return;
+    }
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.products(
+          companyId(),
+          projectId
+        )
+      );
+
+      state.products.datasets=
+        response?.datasets||[];
+
+      if(!state.products.datasets.some(
+        item=>Number(item.dataset_id)===Number(state.products.datasetId)
+      )){
+        state.products.datasetId=
+          state.products.datasets[0]?.dataset_id||null;
+      }
+
+      if(state.products.datasetId){
+        await loadProductDataset(
+          state.products.datasetId,
+          {renderAfter:false}
+        );
+      }
+
+      state.productsLoaded=true;
+
+    }catch(error){
+      state.error=errorMessage(error);
+
+      console.error(
+        "[DataMigration] loadProducts failed",
+        error
+      );
+    }
+
+    if(renderAfter)render();
+  }
+
+  async function loadProductDataset(datasetId,{renderAfter=true}={}){
+    const id=Number(datasetId);
+    if(!id)return;
+
+    const [settingsResponse,mappingResponse,accountingResponse]=await Promise.all([
+      apiFetch(ENDPOINTS.migrations.productSettings(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.productMapping(companyId(),state.project.id,id)),
+      apiFetch(ENDPOINTS.migrations.productAccounting(companyId(),state.project.id,id)),
+    ]);
+
+    state.products.datasetId=id;
+    state.products.settings=settingsResponse?.settings||null;
+    state.products.mapping=mappingResponse?.mapping||null;
+    state.products.accounting=accountingResponse?.accounting||null;
+    state.products.preview=null;
+    state.products.accountingPreview=null;
+
+    if(renderAfter)render();
+  }
+
+  async function saveProductSettings(){
+    if(!state.products.datasetId||!state.products.settings)return;
+
+    state.productsSaving=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.productSettings(
+          companyId(),
+          state.project.id,
+          state.products.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify(
+            state.products.settings
+          ),
+        }
+      );
+
+      state.products.settings=
+        response?.settings||state.products.settings;
+
+      await loadProductDataset(
+        state.products.datasetId,
+        {renderAfter:false}
+      );
+
+      notify("Product migration settings saved.");
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.productsSaving=false;
+      render();
+    }
+  }
+
+  async function saveProductTypes(){
+    const rows=
+      state.products.mapping?.type_mapping?.items||[];
+
+    if(!rows.length){
+      notify(
+        "No source product types require mapping."
+      );
+      return;
+    }
+
+    const mappings=[];
+
+    for(const row of rows){
+      if(!row.item_kind){
+        notify(
+          `Select a product type for "${row.source_value}".`
+        );
+        return;
+      }
+
+      mappings.push({
+        source_value:row.source_value,
+        source_label:row.source_label||row.source_value,
+        item_kind:row.item_kind,
+      });
+    }
+
+    state.productsSaving=true;
+    render();
+
+    try{
+      await apiFetch(
+        ENDPOINTS.migrations.productTypes(
+          companyId(),
+          state.project.id,
+          state.products.datasetId
+        ),
+        {
+          method:"PUT",
+          body:JSON.stringify({mappings}),
+        }
+      );
+
+      await loadProductDataset(
+        state.products.datasetId,
+        {renderAfter:false}
+      );
+
+      notify(
+        "Product type mappings saved."
+      );
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.productsSaving=false;
+      render();
+    }
+  }
+
+  async function previewProducts(){
+    if(!state.products.datasetId)return;
+
+    state.productsPreviewLoading=true;
+    render();
+
+    try{
+      const response=await apiFetch(
+        ENDPOINTS.migrations.productPreview(
+          companyId(),
+          state.project.id,
+          state.products.datasetId
+        )
+      );
+
+      state.products.preview=
+        response?.preview||null;
+
+    }catch(error){
+      state.error=errorMessage(error);
+      notify(state.error);
+
+    }finally{
+      state.productsPreviewLoading=false;
+      render();
+    }
+  }
+
+  function productSettingSelect(label,field,options){
+    const value=state.products.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <select class="mw-select"
+          data-mw-product-setting="${esc(field)}">
+
+          ${options.map(([id,name])=>`
+            <option value="${esc(id)}"
+              ${String(value)===String(id)?"selected":""}>
+              ${esc(name)}
+            </option>
+          `).join("")}
+        </select>
+      </div>
+    `;
+  }
+
+  function productSettingInput(label,field,type="text"){
+    const value=state.products.settings?.[field]??"";
+
+    return `
+      <div class="mw-field">
+        <label>${esc(label)}</label>
+
+        <input
+          class="mw-input"
+          type="${esc(type)}"
+          value="${esc(value)}"
+          data-mw-product-setting="${esc(field)}">
+      </div>
+    `;
+  }
+
+  function productSettingCheck(label,field){
+    const checked=Boolean(
+      state.products.settings?.[field]
+    );
+
+    return `
+      <label class="mw-check">
+        <input
+          type="checkbox"
+          ${checked?"checked":""}
+          data-mw-product-setting="${esc(field)}">
+
+        <span>${esc(label)}</span>
+      </label>
+    `;
+  }
+
+  function productMigrationView(){
+    const datasets=state.products.datasets||[];
+    const settings=state.products.settings;
+    const mapping=state.products.mapping;
+
+    if(!datasets.length)return "";
+
+    if(!settings||!mapping){
+      return `
+        <div class="mw-empty">
+          Loading product catalogue mapping…
+        </div>
+      `;
+    }
+
+    return `
+      <div class="mw-card" style="margin-top:18px">
+        ${heading(
+          "Product Catalogue Migration",
+          "Classify and validate inventory items, services, non-stock products and POS menu items before importing stock or POS history.",
+          `
+            <button
+              class="mw-btn"
+              data-mw-action="save-product-settings"
+              ${state.productsSaving?"disabled":""}>
+              Save settings
+            </button>
+
+            ${mapping.type_mapping?.items?.length
+              ?`
+                <button
+                  class="mw-btn"
+                  data-mw-action="save-product-types"
+                  ${state.productsSaving?"disabled":""}>
+                  Save product types
+                </button>
+              `
+              :""
+            }
+
+            <button
+              class="mw-btn primary"
+              data-mw-action="preview-products"
+              ${state.productsPreviewLoading?"disabled":""}>
+              ${state.productsPreviewLoading
+                ?"Validating…"
+                :"Validate catalogue"
+              }
+            </button>
+          `
+        )}
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          <div class="mw-field">
+            <label>Dataset</label>
+
+            <select id="mwProductDataset" class="mw-select">
+              ${datasets.map(dataset=>`
+                <option
+                  value="${dataset.dataset_id}"
+                  ${Number(dataset.dataset_id)===Number(state.products.datasetId)?"selected":""}>
+                  ${esc(dataset.dataset_name)}
+                </option>
+              `).join("")}
+            </select>
+          </div>
+
+          ${productSettingSelect(
+            "Default Product Type",
+            "default_item_kind",
+            [
+              ["inventory","Inventory Item"],
+              ["service","Service"],
+              ["non_stock","Non-stock Product"],
+              ["menu_item","POS Menu Item"],
+            ]
+          )}
+
+          ${productSettingSelect(
+            "Inventory Valuation",
+            "default_valuation_method",
+            [
+              ["AVG","Weighted Average"],
+              ["FIFO","FIFO"],
+            ]
+          )}
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${productSettingInput(
+            "Default Unit",
+            "default_unit"
+          )}
+
+          ${productSettingInput(
+            "Default Currency",
+            "default_currency"
+          )}
+
+          <div class="mw-field">
+            <label>Code Handling</label>
+
+            <div class="mw-list">
+              ${productSettingCheck(
+                "Generate missing item codes",
+                "generate_missing_codes"
+              )}
+
+              ${productSettingCheck(
+                "Preserve source barcodes",
+                "preserve_source_barcodes"
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div class="mw-grid-3" style="margin-top:14px">
+          ${productSettingCheck(
+            "Track inventory by default",
+            "default_track_stock"
+          )}
+
+          ${productSettingCheck(
+            "Taxable by default",
+            "default_is_taxable"
+          )}
+
+          ${productSettingCheck(
+            "Require unique barcodes",
+            "require_unique_barcode"
+          )}
+        </div>
+
+        ${productMappingStatusView()}
+        ${productTypeMappingView()}
+        ${productPreviewView()}
+        ${productAccountingView()}
+      </div>
+    `;
+  }
+
+  function productMappingStatusView(){
+    const mapping=state.products.mapping||{};
+    const missing=mapping.missing_fields||[];
+    const unresolved=mapping.unresolved_types||[];
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Catalogue Readiness</h3>
+
+        ${mapping.is_complete
+          ?`
+            <div class="mw-alert ok">
+              Required product catalogue fields and product classifications are mapped.
+            </div>
+          `
+          :`
+            <div class="mw-alert warn">
+              ${missing.length
+                ?`
+                  <div>
+                    <strong>Missing fields:</strong>
+                    ${missing.map(esc).join(", ")}
+                  </div>
+                `
+                :""
+              }
+
+              ${unresolved.length
+                ?`
+                  <div style="margin-top:5px">
+                    <strong>Unresolved product types:</strong>
+                    ${unresolved.length}
+                  </div>
+                `
+                :""
+              }
+            </div>
+          `
+        }
+      </div>
+    `;
+  }
+
+  function productTypeMappingView(){
+    const rows=
+      state.products.mapping?.type_mapping?.items||[];
+
+    if(!rows.length){
+      return `
+        <div class="mw-alert" style="margin-top:14px">
+          No source product-type values were detected. The default product type will be used.
+        </div>
+      `;
+    }
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Product Type Classification</h3>
+
+        ${table(
+          [
+            "Source Type",
+            "Records",
+            "FinSage Type",
+            "Confidence",
+          ],
+
+          rows.map((row,index)=>[
+            `<strong>${esc(row.source_value)}</strong>`,
+
+            Number(
+              row.sample_count||0
+            ).toLocaleString(),
+
+            `
+              <select
+                class="mw-select"
+                data-mw-product-type="${index}">
+
+                <option value="">
+                  Select type
+                </option>
+
+                ${[
+                  ["inventory","Inventory Item"],
+                  ["service","Service"],
+                  ["non_stock","Non-stock Product"],
+                  ["menu_item","POS Menu Item"],
+                ].map(([value,label])=>`
+                  <option
+                    value="${value}"
+                    ${row.item_kind===value?"selected":""}>
+                    ${label}
+                  </option>
+                `).join("")}
+              </select>
+            `,
+
+            row.item_kind
+              ?`
+                <span class="mw-badge ${row.is_approved?"ok":"info"}">
+                  ${Number(row.confidence||0).toFixed(0)}%
+                </span>
+              `
+              :`
+                <span class="mw-badge warn">
+                  Unclassified
+                </span>
+              `,
+          ]),
+
+          "No source product types detected."
+        )}
+      </div>
+    `;
+  }
+
+  function productPreviewView(){
+    const preview=state.products.preview;
+
+    if(!preview)return "";
+
+    const counts=preview.counts||{};
+
+    return `
+      <div style="margin-top:20px">
+        <h3>Catalogue Preview</h3>
+
+        <div class="mw-summary" style="margin-top:12px">
+          <div class="mw-stat">
+            <span>Records</span>
+            <strong>${preview.record_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Ready</span>
+            <strong>${preview.valid_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Errors</span>
+            <strong>${preview.error_count||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Inventory</span>
+            <strong>${counts.inventory||0}</strong>
+          </div>
+
+          <div class="mw-stat">
+            <span>Services</span>
+            <strong>${counts.service||0}</strong>
+          </div>
+        </div>
+
+        <div class="mw-inline" style="margin-top:12px">
+          <span class="mw-badge info">
+            Non-stock: ${counts.non_stock||0}
+          </span>
+
+          <span class="mw-badge info">
+            Menu items: ${counts.menu_item||0}
+          </span>
+
+          ${counts.unclassified
+            ?`
+              <span class="mw-badge warn">
+                Unclassified: ${counts.unclassified}
+              </span>
+            `
+            :""
+          }
+
+          ${preview.duplicate_code_count
+            ?`
+              <span class="mw-badge error">
+                Duplicate codes: ${preview.duplicate_code_count}
+              </span>
+            `
+            :""
+          }
+
+          ${preview.duplicate_barcode_count
+            ?`
+              <span class="mw-badge error">
+                Duplicate barcodes: ${preview.duplicate_barcode_count}
+              </span>
+            `
+            :""
+          }
+        </div>
+
+        ${productPreviewTable(preview.items||[])}
+      </div>
+    `;
+  }
+
+  function productPreviewTable(rows){
+    return `
+      <div style="margin-top:14px">
+        ${table(
+          [
+            "Code",
+            "Item",
+            "Type",
+            "Category",
+            "Sales Price",
+            "Cost",
+            "VAT",
+            "Target",
+            "Status",
+          ],
+
+          rows.map(row=>{
+            const item=row.item||{};
+            const classification=row.classification||{};
+
+            return [
+              `<strong>${esc(item.code||"—")}</strong>`,
+
+              `
+                <strong>${esc(item.name||"—")}</strong>
+
+                ${item.barcode
+                  ?`
+                    <div class="mw-muted mw-small">
+                      ${esc(item.barcode)}
+                    </div>
+                  `
+                  :""
+                }
+              `,
+
+              productKindBadge(
+                classification.item_kind
+              ),
+
+              esc(item.category||"—"),
+
+              money(item.sales_price||0),
+
+              money(item.purchase_cost||0),
+
+              esc(item.vat_code||"—"),
+
+              esc(
+                classification.target_table||"—"
+              ),
+
+              row.valid
+                ?`
+                  <span class="mw-badge ok">
+                    Ready
+                  </span>
+                `
+                :`
+                  <span class="mw-badge error"
+                    title="${esc((row.issues||[]).join(" • "))}">
+                    ${row.issues?.length||1} issue(s)
+                  </span>
+                `,
+            ];
+          }),
+
+          "No product records available."
+        )}
+      </div>
+    `;
+  }
+
+  function productKindBadge(kind){
+    const labels={
+      inventory:"Inventory",
+      service:"Service",
+      non_stock:"Non-stock",
+      menu_item:"Menu Item",
+    };
+
+    return kind
+      ?`<span class="mw-badge info">${esc(labels[kind]||kind)}</span>`
+      :`<span class="mw-badge warn">Unclassified</span>`;
+  }
+
+async function saveProductAccounts(){
+  const rows=state.products.accounting?.accounts?.items||[];
+  if(!rows.length)return notify("No product accounts require mapping.");
+
+  const invalid=rows.find(row=>!row.target_account_id);
+  if(invalid)return notify(`Select a FinSage account for "${invalid.source_value}".`);
+
+  state.productsAccountingSaving=true;
+  render();
+
+  try{
+    await apiFetch(
+      ENDPOINTS.migrations.productAccounts(
+        companyId(),state.project.id,state.products.datasetId
+      ),
+      {
+        method:"PUT",
+        body:JSON.stringify({
+          mappings:rows.map(row=>({
+            account_role:row.account_role,
+            source_value:row.source_value,
+            source_label:row.source_label,
+            target_account_id:Number(row.target_account_id),
+          })),
+        }),
+      }
+    );
+
+    await loadProductDataset(state.products.datasetId,{renderAfter:false});
+    notify("Product account mappings saved.");
+
+  }catch(error){
+    state.error=errorMessage(error);
+    notify(state.error);
+
+  }finally{
+    state.productsAccountingSaving=false;
+    render();
+  }
+}
+
+async function saveProductVat(){
+  const rows=state.products.accounting?.vat?.items||[];
+  if(!rows.length)return notify("No product VAT treatments require mapping.");
+
+  const invalid=rows.find(row=>!row.target_vat_code);
+  if(invalid)return notify(`Select VAT treatment for "${invalid.source_value}".`);
+
+  state.productsAccountingSaving=true;
+  render();
+
+  try{
+    await apiFetch(
+      ENDPOINTS.migrations.productVat(
+        companyId(),state.project.id,state.products.datasetId
+      ),
+      {
+        method:"PUT",
+        body:JSON.stringify({
+          mappings:rows.map(row=>({
+            source_value:row.source_value,
+            source_label:row.source_label,
+            source_rate:row.source_rate,
+            target_vat_code:row.target_vat_code,
+            target_rate:row.target_rate,
+          })),
+        }),
+      }
+    );
+
+    await loadProductDataset(state.products.datasetId,{renderAfter:false});
+    notify("Product VAT mappings saved.");
+
+  }catch(error){
+    state.error=errorMessage(error);
+    notify(state.error);
+
+  }finally{
+    state.productsAccountingSaving=false;
+    render();
+  }
+}
+
+async function previewProductAccounting(){
+  if(!state.products.datasetId)return;
+
+  state.productsAccountingPreviewLoading=true;
+  render();
+
+  try{
+    const response=await apiFetch(
+      ENDPOINTS.migrations.productAccountingPreview(
+        companyId(),state.project.id,state.products.datasetId
+      )
+    );
+
+    state.products.accountingPreview=response?.preview||null;
+
+  }catch(error){
+    state.error=errorMessage(error);
+    notify(state.error);
+
+  }finally{
+    state.productsAccountingPreviewLoading=false;
+    render();
+  }
+}
+
+
+function productAccountSelect(row,index){
+  const targets=state.products.accounting?.accounts?.targets||[];
+
+  return `
+    <select class="mw-select" data-mw-product-account="${index}">
+      <option value="">Select account</option>
+
+      ${targets.map(account=>`
+        <option value="${account.id}"
+          ${Number(row.target_account_id)===Number(account.id)?"selected":""}>
+          ${esc(`${account.code} — ${account.name}`)}
+        </option>
+      `).join("")}
+    </select>
+  `;
+}
+
+function productAccountRoleLabel(role){
+  return {
+    inventory_asset:"Inventory Asset",
+    sales_revenue:"Sales Revenue",
+    cogs:"Cost of Sales / COGS",
+    service_revenue:"Service Revenue",
+    service_cost:"Service Cost",
+  }[role]||titleCase(role);
+}
+
+function productVatSelect(row,index){
+  const targets=state.products.accounting?.vat?.targets||[];
+
+  return `
+    <select class="mw-select" data-mw-product-vat="${index}">
+      <option value="">Select VAT treatment</option>
+
+      ${targets.map(target=>`
+        <option value="${esc(target.code)}"
+          ${String(row.target_vat_code||"")===String(target.code)?"selected":""}>
+          ${esc(target.label||target.code)}
+        </option>
+      `).join("")}
+    </select>
+  `;
+}
+
+function productAccountingView(){
+  const accounting=state.products.accounting;
+  if(!accounting)return "";
+
+  const accountRows=accounting.accounts?.items||[];
+  const vatRows=accounting.vat?.items||[];
+
+  return `
+    <div style="margin-top:20px">
+      ${heading(
+        "Product Accounting & VAT",
+        "Map source inventory, sales, cost and service accounts plus VAT treatments to FinSage.",
+        `
+          ${accountRows.length
+            ?`<button class="mw-btn" data-mw-action="save-product-accounts" ${state.productsAccountingSaving?"disabled":""}>
+                Save account mappings
+              </button>`
+            :""
+          }
+
+          ${vatRows.length
+            ?`<button class="mw-btn" data-mw-action="save-product-vat" ${state.productsAccountingSaving?"disabled":""}>
+                Save VAT mappings
+              </button>`
+            :""
+          }
+
+          <button class="mw-btn primary"
+            data-mw-action="preview-product-accounting"
+            ${state.productsAccountingPreviewLoading?"disabled":""}>
+            ${state.productsAccountingPreviewLoading?"Validating…":"Validate accounting"}
+          </button>
+        `
+      )}
+
+      ${productAccountingStatusView()}
+      ${productAccountMappingView()}
+      ${productVatMappingView()}
+      ${productAccountingPreviewView()}
+    </div>
+  `;
+}
+
+function productAccountingStatusView(){
+  const accounting=state.products.accounting||{};
+  const accountCount=accounting.unresolved_accounts?.length||0;
+  const vatCount=accounting.unresolved_vat?.length||0;
+
+  if(accounting.is_complete){
+    return `
+      <div class="mw-alert ok" style="margin-top:14px">
+        Product accounting and VAT mappings are complete.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="mw-alert warn" style="margin-top:14px">
+      ${accountCount?`<div><strong>Account mappings requiring review:</strong> ${accountCount}</div>`:""}
+      ${vatCount?`<div><strong>VAT mappings requiring review:</strong> ${vatCount}</div>`:""}
+    </div>
+  `;
+}
+
+function productAccountMappingView(){
+  const rows=state.products.accounting?.accounts?.items||[];
+  if(!rows.length)return "";
+
+  return `
+    <div style="margin-top:18px">
+      <h3>Account Mapping</h3>
+
+      ${table(
+        ["Role","Source Account","Records","FinSage Account","Status"],
+        rows.map((row,index)=>[
+          `<strong>${esc(productAccountRoleLabel(row.account_role))}</strong>`,
+
+          `
+            <strong>${esc(row.source_value)}</strong>
+            ${row.source_label&&row.source_label!==row.source_value
+              ?`<div class="mw-muted mw-small">${esc(row.source_label)}</div>`
+              :""
+            }
+          `,
+
+          Number(row.sample_count||0).toLocaleString(),
+
+          productAccountSelect(row,index),
+
+          row.is_approved
+            ?`<span class="mw-badge ok">Mapped</span>`
+            :row.target_account_id
+              ?`<span class="mw-badge info">Review</span>`
+              :`<span class="mw-badge warn">Unmapped</span>`,
+        ]),
+        "No source product accounts detected."
+      )}
+    </div>
+  `;
+}
+
+function productVatMappingView(){
+  const rows=state.products.accounting?.vat?.items||[];
+  if(!rows.length)return "";
+
+  return `
+    <div style="margin-top:18px">
+      <h3>VAT Treatment Mapping</h3>
+
+      ${table(
+        ["Source VAT","Source Rate","Records","FinSage VAT","Status"],
+        rows.map((row,index)=>[
+          `<strong>${esc(row.source_value)}</strong>`,
+
+          row.source_rate!==null&&row.source_rate!==undefined
+            ?`${Number(row.source_rate).toFixed(2)}%`
+            :"—",
+
+          Number(row.sample_count||0).toLocaleString(),
+
+          productVatSelect(row,index),
+
+          row.is_approved
+            ?`<span class="mw-badge ok">Mapped</span>`
+            :row.target_vat_code
+              ?`<span class="mw-badge info">Review</span>`
+              :`<span class="mw-badge warn">Unmapped</span>`,
+        ]),
+        "No VAT treatments detected."
+      )}
+    </div>
+  `;
+}
+
+function productAccountingPreviewView(){
+  const preview=state.products.accountingPreview;
+  if(!preview)return "";
+
+  return `
+    <div style="margin-top:18px">
+      <h3>Accounting Validation</h3>
+
+      <div class="mw-summary" style="margin-top:12px">
+        <div class="mw-stat">
+          <span>Records</span>
+          <strong>${preview.record_count||0}</strong>
+        </div>
+
+        <div class="mw-stat">
+          <span>Ready</span>
+          <strong>${preview.valid_count||0}</strong>
+        </div>
+
+        <div class="mw-stat">
+          <span>Errors</span>
+          <strong>${preview.error_count||0}</strong>
+        </div>
+
+        <div class="mw-stat">
+          <span>Warnings</span>
+          <strong>${preview.warning_count||0}</strong>
+        </div>
+      </div>
+
+      ${table(
+        ["Item","Type","Inventory / Revenue","Cost","VAT","Status"],
+        (preview.items||[]).map(row=>[
+          `
+            <strong>${esc(row.item_code||"—")}</strong>
+            <div class="mw-muted mw-small">${esc(row.item_name||"")}</div>
+          `,
+
+          productKindBadge(row.item_kind),
+
+          esc(
+            row.accounts?.inventory_account||
+            row.accounts?.income_account||
+            row.accounts?.revenue_account||
+            "—"
+          ),
+
+          esc(
+            row.accounts?.cogs_account||
+            row.accounts?.cost_account||
+            "—"
+          ),
+
+          esc(row.vat?.target_vat_code||"—"),
+
+          row.valid
+            ?`<span class="mw-badge ok">Ready</span>`
+            :`<span class="mw-badge error" title="${esc((row.issues||[]).join(" • "))}">
+                ${row.issues?.length||1} issue(s)
+              </span>`,
+        ]),
+        "No product accounting preview available."
+      )}
+    </div>
+  `;
+}
   function toggleScopeEntity(
     code,
     selected
@@ -10139,17 +12126,56 @@
       !state.referenceMappingDirty
     );
 
-    const checks=[
-      projectSaved,
-      projectConfigured,
-      sourceConfigured,
-      scopeConfigured,
-      filesUploaded,
-      datasetsConfigured,
-      detectionComplete,
-      fieldMappingComplete,
-      referenceMappingComplete,
-    ];
+    const payrollSelected=Boolean(
+      state.payroll.datasets?.length||
+      state.payrollItems.datasets?.length||
+      state.payrollLeave.datasets?.length||
+      state.payrollEmployeeLoans.datasets?.length||
+      state.payrollHistory.datasets?.length
+    );
+
+    const payrollReady=
+      !payrollSelected||
+      Boolean(state.payrollReconciliation?.is_ready);
+
+    const productsSelected=Boolean(
+      state.products.datasets?.length
+    );
+
+    const productsReady=
+      !productsSelected||
+      Boolean(
+        state.products.mapping?.is_complete &&
+        state.products.preview &&
+        Number(state.products.preview.error_count||0)===0
+      );
+
+
+      const productCatalogueReady=Boolean(
+        state.products.mapping?.is_complete &&
+        state.products.preview &&
+        Number(state.products.preview.error_count||0)===0
+      );
+
+      const productAccountingReady=Boolean(
+        state.products.accounting?.is_complete &&
+        state.products.accountingPreview &&
+        Number(state.products.accountingPreview.error_count||0)===0
+      );
+
+      const checks=[
+        projectSaved,
+        projectConfigured,
+        sourceConfigured,
+        scopeConfigured,
+        filesUploaded,
+        datasetsConfigured,
+        detectionComplete,
+        fieldMappingComplete,
+        referenceMappingComplete,
+        ...(payrollSelected?[payrollReady]:[]),
+        ...(productsSelected?[productsReady]:[]),
+      ];
 
     const percentage = Math.round(
       checks.filter(Boolean).length /
@@ -10174,7 +12200,7 @@
     const controls =
       $("#mwControls");
 
-    if (controls) {
+    if(controls){
       controls.innerHTML=[
         control("Project saved",projectSaved),
         control("Project configured",projectConfigured),
@@ -10185,6 +12211,9 @@
         control("Source detection completed",detectionComplete),
         control("Field mapping completed",fieldMappingComplete),
         control("Account and reference mapping completed",referenceMappingComplete),
+        control("Payroll migration reconciled",payrollReady),
+        ...(productsSelected?[control("Product catalogue validated",productsReady)]:[]),
+        ...(productsSelected?[control("Product accounting & VAT validated",productAccountingReady)]:[]),
       ].join("");
     }
 

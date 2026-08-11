@@ -34,6 +34,8 @@ def list_projects_route(cid: int):
 
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "").strip()
+    project_type = (request.args.get("project_type") or "").strip()
+    accounting_mode = (request.args.get("accounting_mode") or "").strip()
     customer_id = request.args.get("customer_id", type=int)
 
     limit = int(request.args.get("limit") or 50)
@@ -44,6 +46,8 @@ def list_projects_route(cid: int):
         q=q,
         status=status,
         customer_id=customer_id,
+        project_type=project_type,
+        accounting_mode=accounting_mode,
         limit=limit,
         offset=offset,
     )

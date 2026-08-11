@@ -2954,3 +2954,631 @@ def migration_payroll_employee_loan_preview(company_id:int,project_id:int,datase
             error,
             status=500,
         )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/history",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_history(
+    company_id:int,
+    project_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_payroll_history_datasets(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Historical payroll migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/history/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_payroll_history_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_payroll_history_settings_get(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_payroll_history_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Historical payroll settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/history/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_history_mapping(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        mapping=db_service.migration_payroll_history_mapping_get(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Historical payroll mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/payroll/history/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_history_preview(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_payroll_history_preview(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Historical payroll preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/reconciliation",
+    methods=["GET","POST","OPTIONS"],
+)
+@require_auth
+def migration_payroll_reconciliation(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            reconciliation=db_service.migration_payroll_reconciliation_get(
+                company_id,
+                project_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "reconciliation":_json_safe(reconciliation),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                reconciliation=db_service.migration_payroll_reconciliation_build(
+                    company_id,
+                    project_id,
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "reconciliation":_json_safe(reconciliation),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Payroll migration reconciliation failed",
+            error,
+            status=500,
+        )
+
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/payroll/reconciliation/history",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_payroll_reconciliation_history(company_id:int,project_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        rows=db_service.migration_payroll_reconciliation_list(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "history":_json_safe(rows),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Payroll reconciliation history failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/products",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_products(
+    company_id:int,
+    project_id:int,
+):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        datasets=db_service.migration_product_datasets(
+            company_id,
+            project_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "datasets":_json_safe(datasets),
+        }),200
+
+    except Exception as error:
+        return _error(
+            "Product migration retrieval failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/settings",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_product_settings(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            settings=db_service.migration_product_settings_get(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "settings":_json_safe(settings),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                settings=db_service.migration_product_settings_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    _body(),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "settings":_json_safe(settings),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Product migration settings failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/types",
+    methods=["GET","PUT","OPTIONS"],
+)
+@require_auth
+def migration_product_types(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        if request.method=="GET":
+            mapping=db_service.migration_product_types_detect(
+                company_id,
+                project_id,
+                dataset_id,
+            )
+
+            return jsonify({
+                "ok":True,
+                "mapping":_json_safe(mapping),
+            }),200
+
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                mapping=db_service.migration_product_type_mapping_save(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    (_body().get("mappings") or []),
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Product type mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/mapping",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_product_mapping(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        mapping=db_service.migration_product_mapping_get(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "mapping":_json_safe(mapping),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Product migration mapping failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_product_preview(
+    company_id:int,
+    project_id:int,
+    dataset_id:int,
+):
+    if request.method=="OPTIONS":
+        return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_product_preview(
+            company_id,
+            project_id,
+            dataset_id,
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({
+            "ok":False,
+            "error":str(error),
+        }),400
+
+    except Exception as error:
+        return _error(
+            "Product migration preview failed",
+            error,
+            status=500,
+        )
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/accounting",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_product_accounting(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        accounting=db_service.migration_product_accounting_get(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "accounting":_json_safe(accounting),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Product accounting mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/accounts",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_product_accounts(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                accounts=db_service.migration_product_account_mappings_save(
+                    company_id,project_id,dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "accounts":_json_safe(accounts),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Product account mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/vat",
+    methods=["PUT","OPTIONS"],
+)
+@require_auth
+def migration_product_vat(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        with db_service._conn_cursor() as (conn,cur):
+            try:
+                vat=db_service.migration_product_vat_mappings_save(
+                    company_id,project_id,dataset_id,
+                    _body().get("mappings") or [],
+                    user_id=_user_id(),
+                    cur=cur,
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+        return jsonify({
+            "ok":True,
+            "vat":_json_safe(vat),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Product VAT mapping failed",error,status=500)
+
+@data_migration_bp.route(
+    "/api/companies/<int:company_id>/migrations/projects/<int:project_id>/datasets/<int:dataset_id>/products/accounting/preview",
+    methods=["GET","OPTIONS"],
+)
+@require_auth
+def migration_product_accounting_preview(company_id:int,project_id:int,dataset_id:int):
+    if request.method=="OPTIONS":return _options()
+
+    deny=_guard(company_id)
+    if deny:return deny
+
+    try:
+        preview=db_service.migration_product_accounting_preview(
+            company_id,project_id,dataset_id
+        )
+
+        return jsonify({
+            "ok":True,
+            "preview":_json_safe(preview),
+        }),200
+
+    except ValueError as error:
+        return jsonify({"ok":False,"error":str(error)}),400
+
+    except Exception as error:
+        return _error("Product accounting preview failed",error,status=500)

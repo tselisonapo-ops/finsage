@@ -85,7 +85,7 @@ export const authApi={
     body:{
       email,
       password,
-      product:"finflow"
+      product:"FinSage Nexus"
     }
   }),
   acceptInvite:payload=>request("/api/auth/accept-invite",{
@@ -123,6 +123,12 @@ export const opsApi={
   createPosition:(companyId,payload)=>request(`${base(companyId)}/positions`,{
     method:"POST",body:payload
   }),
+
+  updatePosition:(companyId,positionId,payload)=>
+    request(
+      `${base(companyId)}/positions/${encodeURIComponent(positionId)}`,
+      {method:"PATCH",body:payload}
+    ),
 
   updateUserAccess:(companyId,userId,payload)=>request(
     `${base(companyId)}/users/${encodeURIComponent(userId)}/access`,
@@ -281,4 +287,123 @@ export const opsApi={
 
   requestAudit:(companyId,requestId)=>
     request(`${base(companyId)}/requests/${encodeURIComponent(requestId)}/audit`),
+
+  procurement:(companyId,{status=""}={})=>{
+    const params=new URLSearchParams();
+    if(status) params.set("status",status);
+    const qs=params.toString();
+
+    return request(
+      `${base(companyId)}/procurement${qs?`?${qs}`:""}`
+    );
+  },
+
+  procurementSettings:companyId=>
+    request(`${base(companyId)}/procurement/settings`),
+
+  updateProcurementSettings:(companyId,payload)=>
+    request(`${base(companyId)}/procurement/settings`,{
+      method:"PATCH",
+      body:JSON.stringify(payload)
+    }),
+
+  procurementPolicies:companyId=>
+    request(`${base(companyId)}/procurement/policies`),
+
+  createProcurementPolicy:(companyId,payload)=>
+    request(`${base(companyId)}/procurement/policies`,{
+      method:"POST",
+      body:JSON.stringify(payload)
+    }),
+
+  createProcurementPolicyRule:(companyId,policyId,payload)=>
+    request(
+      `${base(companyId)}/procurement/policies/${encodeURIComponent(policyId)}/rules`,
+      {
+        method:"POST",
+        body:JSON.stringify(payload)
+      }
+    ),
+
+  procurementVendors:companyId=>
+    request(`${base(companyId)}/procurement/vendors`),
+
+  updateProcurementVendor:(companyId,vendorId,payload)=>
+    request(
+      `${base(companyId)}/procurement/vendors/${encodeURIComponent(vendorId)}`,
+      {
+        method:"PATCH",
+        body:JSON.stringify(payload)
+      }
+    ),
+
+  procurementVendors:(companyId,filters={})=>{
+    const params=new URLSearchParams();
+
+    Object.entries(filters).forEach(([key,value])=>{
+      if(value!==""&&value!==null&&value!==undefined)
+        params.set(key,value);
+    });
+
+    const qs=params.toString();
+
+    return request(
+      `${base(companyId)}/procurement/vendors${qs?`?${qs}`:""}`
+    );
+  },
+
+  procurementVendor:(companyId,vendorId)=>
+    request(
+      `${base(companyId)}/procurement/vendors/${encodeURIComponent(vendorId)}`
+    ),
+
+  updateProcurementVendor:(companyId,vendorId,payload)=>
+    request(
+      `${base(companyId)}/procurement/vendors/${encodeURIComponent(vendorId)}`,
+      {
+        method:"PATCH",
+        body:payload
+      }
+    ),
+
+  createProcurementVendorContact:(companyId,vendorId,payload)=>
+    request(
+      `${base(companyId)}/procurement/vendors/${encodeURIComponent(vendorId)}/contacts`,
+      {
+        method:"POST",
+        body:payload
+      }
+    ),
+
+  updateProcurementVendorContact:(companyId,vendorId,contactId,payload)=>
+    request(
+      `${base(companyId)}/procurement/vendors/${encodeURIComponent(vendorId)}/contacts/${encodeURIComponent(contactId)}`,
+      {
+        method:"PATCH",
+        body:payload
+      }
+    ),
+
+  procurementSettings:companyId=>
+    request(
+      `${base(companyId)}/procurement/settings`
+    ),
+
+  updateProcurementSettings:(companyId,payload)=>
+    request(
+      `${base(companyId)}/procurement/settings`,
+      {
+        method:"PATCH",
+        body:payload
+      }
+    ),
+
+  testProcurementEmail:(companyId,recipient_email)=>
+    request(
+      `${base(companyId)}/procurement/settings/test-email`,
+      {
+        method:"POST",
+        body:{recipient_email}
+      }
+    ),
 };
