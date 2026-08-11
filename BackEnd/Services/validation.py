@@ -165,7 +165,7 @@ def validate_vat(country_code: str, vat: Optional[str]) -> bool:
 # Country → Currency (ISO 4217) quick map
 # ==========================================
 COUNTRY_CURRENCY: Dict[str, str] = {
-    "ZA": "USD", "LS": "LSL", "BW": "BWP", "NA": "NAD", "ZW": "ZWL",
+    "ZA": "ZAR", "LS": "LSL", "BW": "BWP", "NA": "NAD", "ZW": "ZWL",
     "GB": "GBP", "IE": "EUR", "DE": "EUR", "FR": "EUR", "ES": "EUR",
     "IT": "EUR", "NL": "EUR", "BE": "EUR", "PT": "EUR", "PL": "PLN",
     "RO": "RON", "SE": "SEK", "DK": "DKK", "FI": "EUR", "NO": "NOK",
