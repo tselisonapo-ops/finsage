@@ -25300,7 +25300,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 10
+    OPS_MIGRATION_VERSION = 11
     def ensure_company_ops(
         self,
         company_id:int,
@@ -25745,6 +25745,7 @@ class DatabaseService:
             approver_type TEXT NULL,
             approver_role_code TEXT NULL,
             approver_user_id INT NULL,
+
             approver_position_id INT NULL
                 REFERENCES public.company_positions(id)
                 ON DELETE SET NULL,
@@ -25760,15 +25761,17 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-            UNIQUE(workflow_version_id,step_no),
+            UNIQUE(workflow_version_id, step_no),
 
             CONSTRAINT chk_ops_workflow_step_type
-                CHECK(step_type IN(
-                    'approval',
-                    'review',
-                    'notification',
-                    'system'
-                )),
+                CHECK(
+                    step_type IN(
+                        'approval',
+                        'review',
+                        'notification',
+                        'system'
+                    )
+                ),
 
             CONSTRAINT chk_ops_workflow_approver_type
                 CHECK(
@@ -25784,17 +25787,31 @@ class DatabaseService:
                 ),
 
             CONSTRAINT chk_ops_workflow_approval_mode
-                CHECK(approval_mode IN('single','all','majority'))
+                CHECK(
+                    approval_mode IN(
+                        'single',
+                        'all',
+                        'majority'
+                    )
+                )
         );
 
-        CREATE INDEX IF NOT EXISTS idx_ops_workflow_steps_position
-        ON {schema}.ops_workflow_steps(approver_position_id)
-        WHERE approver_position_id IS NOT NULL;
+
+        -- --------------------------------------------------------
+        -- Upgrade existing tenant tables created before
+        -- approver_position_id existed.
+        -- --------------------------------------------------------
 
         ALTER TABLE {schema}.ops_workflow_steps
             ADD COLUMN IF NOT EXISTS approver_position_id INT NULL
                 REFERENCES public.company_positions(id)
                 ON DELETE SET NULL;
+
+
+        -- --------------------------------------------------------
+        -- Rebuild approver type constraint so older tenants also
+        -- accept position-based workflow approvers.
+        -- --------------------------------------------------------
 
         ALTER TABLE {schema}.ops_workflow_steps
             DROP CONSTRAINT IF EXISTS chk_ops_workflow_approver_type;
@@ -25813,8 +25830,14 @@ class DatabaseService:
                 )
             );
 
-        ALTER TABLE {schema}.ops_workflow_instances
-            ADD COLUMN IF NOT EXISTS request_revision_no INT NOT NULL DEFAULT 1;
+
+        -- --------------------------------------------------------
+        -- Index only AFTER the column is guaranteed to exist.
+        -- --------------------------------------------------------
+
+        CREATE INDEX IF NOT EXISTS idx_ops_workflow_steps_position
+            ON {schema}.ops_workflow_steps(approver_position_id)
+            WHERE approver_position_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS {schema}.ops_workflow_conditions (
             id BIGSERIAL PRIMARY KEY,
@@ -26026,6 +26049,9 @@ class DatabaseService:
                 ))
         );
 
+        ALTER TABLE {schema}.ops_workflow_instances
+            ADD COLUMN IF NOT EXISTS request_revision_no
+                INT NOT NULL DEFAULT 1;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_ops_request_running_workflow
         ON {schema}.ops_workflow_instances(request_id)
@@ -26669,9 +26695,11 @@ class DatabaseService:
 
         CREATE TABLE IF NOT EXISTS {schema}.ops_budget_allocations (
             id BIGSERIAL PRIMARY KEY,
+
             company_id INT NOT NULL DEFAULT {company_id},
 
             budget_id INT NOT NULL,
+
             account_code TEXT NOT NULL,
 
             department_id INT NULL
@@ -26682,34 +26710,162 @@ class DatabaseService:
                 REFERENCES public.company_branches(id)
                 ON DELETE CASCADE,
 
-            cost_center_id BIGINT NULL,
+            cost_centre_id BIGINT NULL
+                REFERENCES public.company_cost_centres(id)
+                ON DELETE CASCADE,
 
             period_month DATE NULL,
 
-            allocation_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            allocation_amount NUMERIC(18,2)
+                NOT NULL DEFAULT 0,
 
             notes TEXT NULL,
 
             created_by_user_id INT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            created_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
+
+            updated_at TIMESTAMPTZ
+                NOT NULL DEFAULT NOW(),
 
             CONSTRAINT chk_ops_budget_allocation_amount
-                CHECK(allocation_amount>=0)
+                CHECK(allocation_amount >= 0)
         );
+
+
+        -- --------------------------------------------------------
+        -- LEGACY COLUMN MIGRATION
+        --
+        -- Older versions used:
+        --     cost_center_id
+        --
+        -- Canonical FinSage naming is now:
+        --     cost_centre_id
+        --
+        -- Rename it instead of creating two competing columns.
+        -- --------------------------------------------------------
+
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'ops_budget_allocations'
+                AND column_name = 'cost_center_id'
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'ops_budget_allocations'
+                AND column_name = 'cost_centre_id'
+            )
+            THEN
+                ALTER TABLE {schema}.ops_budget_allocations
+                    RENAME COLUMN cost_center_id
+                    TO cost_centre_id;
+            END IF;
+        END
+        $$;
+
+
+        -- --------------------------------------------------------
+        -- Ensure all expected columns exist for old tenant schemas.
+        -- --------------------------------------------------------
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS company_id
+                INT NOT NULL DEFAULT {company_id};
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS budget_id
+                INT;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS account_code
+                TEXT;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS department_id
+                INT NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS branch_id
+                INT NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS cost_centre_id
+                BIGINT NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS period_month
+                DATE NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS allocation_amount
+                NUMERIC(18,2) NOT NULL DEFAULT 0;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS notes
+                TEXT NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS created_by_user_id
+                INT NULL;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS created_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD COLUMN IF NOT EXISTS updated_at
+                TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+
+        -- --------------------------------------------------------
+        -- Make sure the cost centre FK exists.
+        -- Using a specifically named constraint avoids relying on
+        -- PostgreSQL-generated constraint names.
+        -- --------------------------------------------------------
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            DROP CONSTRAINT IF EXISTS fk_ops_budget_allocations_cost_centre;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD CONSTRAINT fk_ops_budget_allocations_cost_centre
+            FOREIGN KEY (cost_centre_id)
+            REFERENCES public.company_cost_centres(id)
+            ON DELETE CASCADE;
+
+
+        -- --------------------------------------------------------
+        -- Repair allocation amount constraint for older schemas.
+        -- --------------------------------------------------------
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            DROP CONSTRAINT IF EXISTS chk_ops_budget_allocation_amount;
+
+        ALTER TABLE {schema}.ops_budget_allocations
+            ADD CONSTRAINT chk_ops_budget_allocation_amount
+            CHECK(allocation_amount >= 0);
+
+
+        -- --------------------------------------------------------
+        -- Index only after every indexed column definitely exists.
+        -- --------------------------------------------------------
 
         CREATE INDEX IF NOT EXISTS ops_budget_allocations_lookup_idx
-        ON {schema}.ops_budget_allocations(
-            company_id,budget_id,account_code,
-            department_id,branch_id,cost_center_id
-        );
+            ON {schema}.ops_budget_allocations(
+                company_id,
+                budget_id,
+                account_code,
+                department_id,
+                branch_id,
+                cost_centre_id
+            );
 
-        -- ============================================================
-        -- FinSage Nexus PHASE 2D — APPROVAL REVIEW STATES
-        -- ============================================================
-
-        ALTER TABLE {schema}.ops_requests
-            DROP CONSTRAINT IF EXISTS chk_ops_request_status;
 
         ALTER TABLE {schema}.ops_requests
             ADD CONSTRAINT chk_ops_request_status
@@ -26889,53 +27045,6 @@ class DatabaseService:
                 'rejected',
                 'superseded'
             ));
-
-        -- ============================================================
-        -- BUDGET ALLOCATION
-        -- FinSage remains owner of the approved budget.
-        -- This table apportions that budget operationally.
-        -- ============================================================
-
-        CREATE TABLE IF NOT EXISTS {schema}.ops_budget_allocations (
-            id BIGSERIAL PRIMARY KEY,
-            company_id INT NOT NULL DEFAULT {company_id},
-
-            budget_id INT NOT NULL,
-
-            account_code TEXT NOT NULL,
-
-            department_id INT NULL
-                REFERENCES public.company_departments(id) ON DELETE CASCADE,
-
-            branch_id INT NULL
-                REFERENCES public.company_branches(id) ON DELETE CASCADE,
-
-            cost_centre_id BIGINT NULL
-                REFERENCES public.company_cost_centres(id) ON DELETE CASCADE,
-
-            period_month DATE NULL,
-
-            allocation_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
-
-            notes TEXT NULL,
-
-            created_by_user_id INT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-            CONSTRAINT chk_ops_budget_allocation_amount
-                CHECK(allocation_amount>=0)
-        );
-
-        CREATE INDEX IF NOT EXISTS ops_budget_allocations_lookup_idx
-        ON {schema}.ops_budget_allocations(
-            company_id,
-            budget_id,
-            account_code,
-            department_id,
-            branch_id,
-            cost_centre_id
-        );
 
         -- ============================================================
         -- PHASE 2E PERMISSIONS
