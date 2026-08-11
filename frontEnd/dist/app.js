@@ -60,7 +60,20 @@ function updateCountryFieldHints(countryCode) {
  * Static Industry Catalog  (front-end only)
  * =======================================================*/
 const INDUSTRY_CATALOG = {
-  "Agriculture": [],
+  "Agriculture": [
+    "Crop Farming",
+    "Livestock Farming",
+    "Mixed Farming",
+    "Dairy Farming",
+    "Poultry Farming",
+    "Horticulture",
+    "Fruit Farming",
+    "Forestry & Plantations",
+    "Aquaculture",
+    "Beekeeping",
+    "Game & Wildlife Farming",
+    "Agricultural Support Services"
+  ],
 
   "Automotive Services": [
     "Auto Repair Workshop",

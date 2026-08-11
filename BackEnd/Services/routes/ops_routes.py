@@ -1084,3 +1084,189 @@ def test_procurement_email(company_id):
         return jsonify({
             "error":str(e)
         }),400
+@ops_bp.post("/procurement/<int:case_id>/sourcing")
+@require_auth
+@require_ops_permission("sourcing.create")
+def create_sourcing_event(company_id,case_id):
+    try:
+        row=db_service.create_ops_sourcing_event(
+            company_id,
+            case_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/sourcing/<int:event_id>")
+@require_auth
+@require_ops_permission("sourcing.view")
+def sourcing_event(company_id,event_id):
+    try:
+        return jsonify(
+            db_service.get_ops_sourcing_event(
+                company_id,
+                event_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404
+
+
+@ops_bp.patch("/sourcing/<int:event_id>")
+@require_auth
+@require_ops_permission("sourcing.edit")
+def update_sourcing_event(company_id,event_id):
+    try:
+        row=db_service.update_ops_sourcing_event(
+            company_id,
+            event_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.patch(
+    "/sourcing/<int:event_id>/items/<int:item_id>"
+)
+@require_auth
+@require_ops_permission("sourcing.edit")
+def update_sourcing_item(
+    company_id,
+    event_id,
+    item_id,
+):
+    try:
+        row=db_service.update_ops_sourcing_item(
+            company_id,
+            event_id,
+            item_id,
+            payload=request.get_json(silent=True) or {},
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.get("/sourcing/<int:event_id>/eligible-vendors")
+@require_auth
+@require_ops_permission("sourcing.vendor.manage")
+def eligible_sourcing_vendors(
+    company_id,
+    event_id,
+):
+    return jsonify({
+        "rows":
+            db_service.list_ops_eligible_sourcing_vendors(
+                company_id,
+                event_id,
+            )
+    }),200
+
+
+@ops_bp.post(
+    "/sourcing/<int:event_id>/vendors/<int:vendor_id>"
+)
+@require_auth
+@require_ops_permission("sourcing.vendor.manage")
+def add_sourcing_vendor(
+    company_id,
+    event_id,
+    vendor_id,
+):
+    try:
+        row=db_service.add_ops_sourcing_vendor(
+            company_id,
+            event_id,
+            vendor_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),201
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.delete(
+    "/sourcing/<int:event_id>/vendors/<int:vendor_id>"
+)
+@require_auth
+@require_ops_permission("sourcing.vendor.manage")
+def remove_sourcing_vendor(
+    company_id,
+    event_id,
+    vendor_id,
+):
+    try:
+        return jsonify(
+            db_service.remove_ops_sourcing_vendor(
+                company_id,
+                event_id,
+                vendor_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+
+@ops_bp.post("/sourcing/<int:event_id>/issue")
+@require_auth
+@require_ops_permission("sourcing.issue")
+def issue_sourcing_rfq(company_id,event_id):
+    try:
+        row=db_service.issue_ops_rfq(
+            company_id,
+            event_id,
+            actor_user_id=_uid(),
+        )
+
+        return jsonify(row),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),400
+
+@ops_bp.get("/procurement/<int:case_id>")
+@require_auth
+@require_ops_permission("procurement.view")
+def procurement_case(company_id,case_id):
+    try:
+        return jsonify(
+            db_service.get_ops_procurement_case(
+                company_id,
+                case_id,
+            )
+        ),200
+
+    except ValueError as e:
+        return jsonify({
+            "error":str(e)
+        }),404

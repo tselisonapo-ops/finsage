@@ -19768,7 +19768,7 @@ class DatabaseService:
             migration_version=self.IAS41_MIGRATION_VERSION,
         )
 
-    MIGRATION_WORKSPACE_MIGRATION_VERSION = 14
+    MIGRATION_WORKSPACE_MIGRATION_VERSION = 15
     def ensure_schema_migration(
         self,
         company_id: int,
@@ -23468,6 +23468,221 @@ class DatabaseService:
 
         ALTER TABLE {schema}.migration_product_settings
         ADD COLUMN IF NOT EXISTS require_vat_mapping BOOLEAN NOT NULL DEFAULT TRUE;
+
+        CREATE TABLE IF NOT EXISTS {schema}.inventory_locations (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            location_type TEXT NOT NULL DEFAULT 'warehouse',
+
+            parent_location_id INT NULL,
+
+            address_line1 TEXT NULL,
+            address_line2 TEXT NULL,
+            city TEXT NULL,
+            region TEXT NULL,
+            country_code TEXT NULL,
+
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            allow_sales BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_purchases BOOLEAN NOT NULL DEFAULT TRUE,
+            allow_transfers BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+            notes TEXT NULL,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT ck_inventory_location_type
+                CHECK(location_type IN(
+                    'warehouse',
+                    'store',
+                    'stockroom',
+                    'bin',
+                    'transit',
+                    'virtual',
+                    'other'
+                )),
+
+            CONSTRAINT fk_inventory_location_parent
+                FOREIGN KEY(parent_location_id)
+                REFERENCES {schema}.inventory_locations(id)
+                ON DELETE SET NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_inventory_location_code_uq
+        ON {schema}.inventory_locations(company_id,LOWER(code));
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_location_parent_idx
+        ON {schema}.inventory_locations(company_id,parent_location_id);
+
+        CREATE INDEX IF NOT EXISTS {schema}_inventory_location_active_idx
+        ON {schema}.inventory_locations(company_id,is_active);
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS location_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx
+        ADD COLUMN IF NOT EXISTS destination_location_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS location_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_tx_lines
+        ADD COLUMN IF NOT EXISTS destination_location_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_transactions
+        ADD COLUMN IF NOT EXISTS location_id INT NULL;
+
+        ALTER TABLE {schema}.inventory_transactions
+        ADD COLUMN IF NOT EXISTS destination_location_id INT NULL;
+
+        CREATE TABLE IF NOT EXISTS {schema}.inventory_settings (
+            id SERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            default_location_id INT NULL,
+
+            valuation_method TEXT NOT NULL DEFAULT 'AVG',
+
+            allow_negative_stock BOOLEAN NOT NULL DEFAULT FALSE,
+            require_location BOOLEAN NOT NULL DEFAULT TRUE,
+
+            batch_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            expiry_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            serial_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
+            stock_count_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            reorder_alerts_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+
+            default_reorder_level NUMERIC(18,4) NOT NULL DEFAULT 0,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_inventory_settings_company
+                UNIQUE(company_id),
+
+            CONSTRAINT ck_inventory_settings_valuation
+                CHECK(valuation_method IN('AVG','FIFO')),
+
+            CONSTRAINT ck_inventory_settings_reorder
+                CHECK(default_reorder_level>=0),
+
+            CONSTRAINT fk_inventory_settings_location
+                FOREIGN KEY(default_location_id)
+                REFERENCES {schema}.inventory_locations(id)
+                ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_settings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+
+            default_location_id BIGINT NULL,
+
+            valuation_method TEXT NOT NULL DEFAULT 'AVG',
+
+            allow_negative_stock BOOLEAN NOT NULL DEFAULT FALSE,
+            require_location BOOLEAN NOT NULL DEFAULT TRUE,
+
+            batch_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            expiry_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            serial_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+
+            create_unmapped_locations BOOLEAN NOT NULL DEFAULT TRUE,
+
+            settings_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_migration_inventory_settings
+                UNIQUE(company_id,project_id),
+
+            CONSTRAINT fk_migration_inventory_settings_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_inventory_settings_valuation
+                CHECK(valuation_method IN('AVG','FIFO'))
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.migration_inventory_location_mappings (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            project_id BIGINT NOT NULL,
+            dataset_id BIGINT NOT NULL,
+
+            source_code TEXT NULL,
+            source_name TEXT NOT NULL,
+            source_type TEXT NULL,
+
+            target_location_id BIGINT NULL,
+            target_code TEXT NULL,
+            target_name TEXT NULL,
+
+            mapping_action TEXT NOT NULL DEFAULT 'create',
+            mapping_method TEXT NOT NULL DEFAULT 'manual',
+
+            confidence NUMERIC(6,2) NOT NULL DEFAULT 0,
+            is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id BIGINT NULL,
+            updated_by_user_id BIGINT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT fk_migration_inventory_location_project
+                FOREIGN KEY(project_id)
+                REFERENCES {schema}.migration_projects(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT fk_migration_inventory_location_dataset
+                FOREIGN KEY(dataset_id)
+                REFERENCES {schema}.migration_source_datasets(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT ck_migration_inventory_location_action
+                CHECK(mapping_action IN(
+                    'map',
+                    'create',
+                    'ignore'
+                )),
+
+            CONSTRAINT ck_migration_inventory_location_method
+                CHECK(mapping_method IN(
+                    'auto',
+                    'manual'
+                ))
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_migration_inventory_location_uq
+        ON {schema}.migration_inventory_location_mappings(
+            company_id,
+            project_id,
+            dataset_id,
+            LOWER(source_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS {schema}_migration_inventory_location_target_idx
+        ON {schema}.migration_inventory_location_mappings(
+            company_id,
+            target_location_id
+        );
         """
 
         self.execute_ddl(
@@ -23477,6 +23692,75 @@ class DatabaseService:
             migration_version=self.MIGRATION_WORKSPACE_MIGRATION_VERSION,
         )
 
+        warehouse_fields=[
+            ("location_code","Location Code","text",False,True,
+            ["location code","warehouse code","store code","branch code","code"],10),
+
+            ("location_name","Location Name","text",True,False,
+            ["location name","warehouse","warehouse name","store","store name","location"],20),
+
+            ("location_type","Location Type","text",False,False,
+            ["location type","warehouse type","store type","type"],30),
+
+            ("parent_location","Parent Location","text",False,False,
+            ["parent location","parent warehouse","parent store"],40),
+
+            ("address_line1","Address Line 1","text",False,False,
+            ["address","address line 1","street address"],50),
+
+            ("address_line2","Address Line 2","text",False,False,
+            ["address line 2"],60),
+
+            ("city","City","text",False,False,
+            ["city","town"],70),
+
+            ("region","Region","text",False,False,
+            ["region","province","state","district"],80),
+
+            ("country_code","Country","text",False,False,
+            ["country","country code"],90),
+
+            ("is_default","Default Location","boolean",False,False,
+            ["default","default location","primary warehouse"],100),
+
+            ("allow_sales","Allow Sales","boolean",False,False,
+            ["allow sales","sales location"],110),
+
+            ("allow_purchases","Allow Purchases","boolean",False,False,
+            ["allow purchases","purchase location"],120),
+
+            ("is_active","Active","boolean",False,False,
+            ["active","is active","enabled"],130),
+
+            ("notes","Notes","text",False,False,
+            ["notes","comments","remarks"],900),
+        ]
+
+
+        for field_code,label,data_type,is_required,is_key,aliases,sort_order in warehouse_fields:
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_field_definitions(
+                    entity_code,field_code,label,data_type,is_required,is_key,
+                    aliases_json,sort_order,is_active,updated_at
+                )
+                VALUES(
+                    'warehouses',%s,%s,%s,%s,%s,%s::jsonb,%s,TRUE,NOW()
+                )
+                ON CONFLICT(entity_code,field_code)
+                DO UPDATE SET
+                    label=EXCLUDED.label,
+                    data_type=EXCLUDED.data_type,
+                    is_required=EXCLUDED.is_required,
+                    is_key=EXCLUDED.is_key,
+                    aliases_json=EXCLUDED.aliases_json,
+                    sort_order=EXCLUDED.sort_order,
+                    is_active=TRUE,
+                    updated_at=NOW()
+            """,(
+                field_code,label,data_type,is_required,is_key,
+                self._migration_json_dump(aliases,[]),sort_order
+            ),cur=cur)
+            
         product_fields=[
             ("item_code","Item Code","text",False,True,
             ["item code","code","product code","service code","sku","stock code"],10),
@@ -25300,7 +25584,7 @@ class DatabaseService:
         )
 
     
-    OPS_MIGRATION_VERSION = 13
+    OPS_MIGRATION_VERSION = 14
     def ensure_company_ops(
         self,
         company_id:int,
@@ -27061,6 +27345,12 @@ class DatabaseService:
             ('cost_centres.manage','Manage cost centres','organisation','Create and update organisation cost centres'),
             ('budget.allocations.view','View budget allocations','budget','View operational allocations of approved budgets'),
             ('budget.allocations.manage','Manage budget allocations','budget','Allocate approved budget amounts operationally')
+            ('sourcing.view','View sourcing events','procurement','View RFQs and sourcing events'),
+            ('sourcing.create','Create sourcing events','procurement','Create sourcing events from approved requisitions'),
+            ('sourcing.edit','Edit sourcing events','procurement','Edit draft sourcing events and RFQs'),
+            ('sourcing.vendor.manage','Manage sourcing vendors','procurement','Select vendors for sourcing events'),
+            ('sourcing.issue','Issue RFQs','procurement','Issue RFQs to selected vendors'),
+            ('sourcing.close','Close RFQs','procurement','Close sourcing events for evaluation'),
         ON CONFLICT(code)
         DO UPDATE SET
             name=EXCLUDED.name,
@@ -28171,6 +28461,255 @@ class DatabaseService:
         FROM public.companies c
         WHERE c.id={company_id}
         ON CONFLICT(company_id) DO NOTHING;
+
+        -- ============================================================
+        -- FINFLOW PHASE 3B — SOURCING EVENT + RFQ
+        -- ============================================================
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_events(
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            procurement_case_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_procurement_cases(id)
+                ON DELETE RESTRICT,
+
+            request_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_requests(id)
+                ON DELETE RESTRICT,
+
+            request_revision_no INT NOT NULL DEFAULT 1,
+
+            sourcing_no TEXT NOT NULL,
+            rfq_no TEXT NULL,
+
+            sourcing_method TEXT NOT NULL DEFAULT 'rfq',
+
+            title TEXT NOT NULL,
+            description TEXT NULL,
+
+            issue_date DATE NULL,
+            closing_date DATE NULL,
+            required_delivery_date DATE NULL,
+
+            delivery_address TEXT NULL,
+
+            currency_code TEXT NULL,
+
+            minimum_quotes INT NOT NULL DEFAULT 0,
+
+            require_quote_comparison BOOLEAN NOT NULL DEFAULT TRUE,
+            require_selection_approval BOOLEAN NOT NULL DEFAULT FALSE,
+
+            exception_type TEXT NULL,
+            exception_reason TEXT NULL,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            terms_text TEXT NULL,
+            submission_instructions TEXT NULL,
+            evaluation_notes TEXT NULL,
+
+            version_no INT NOT NULL DEFAULT 1,
+
+            issued_at TIMESTAMPTZ NULL,
+            issued_by_user_id INT NULL,
+
+            closed_at TIMESTAMPTZ NULL,
+            closed_by_user_id INT NULL,
+
+            created_by_user_id INT NULL,
+            updated_by_user_id INT NULL,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(company_id,sourcing_no),
+            UNIQUE(company_id,rfq_no),
+
+            CHECK(
+                sourcing_method IN(
+                    'direct',
+                    'quotation',
+                    'rfq',
+                    'tender',
+                    'framework',
+                    'single_source',
+                    'emergency'
+                )
+            ),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'ready',
+                    'issued',
+                    'open',
+                    'closed',
+                    'evaluation',
+                    'awarded',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_events_case_idx
+        ON {schema}.ops_sourcing_events(
+            procurement_case_id,
+            status
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_events_request_idx
+        ON {schema}.ops_sourcing_events(
+            request_id,
+            request_revision_no
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_events_status_idx
+        ON {schema}.ops_sourcing_events(
+            company_id,
+            status,
+            closing_date
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_event_items(
+            id BIGSERIAL PRIMARY KEY,
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            request_item_id BIGINT NULL
+                REFERENCES {schema}.ops_request_items(id)
+                ON DELETE SET NULL,
+
+            line_no INT NOT NULL,
+
+            description TEXT NOT NULL,
+            specification TEXT NULL,
+
+            quantity NUMERIC(18,4) NOT NULL DEFAULT 1,
+            unit_of_measure TEXT NULL,
+
+            estimated_unit_cost NUMERIC(18,2) NOT NULL DEFAULT 0,
+            estimated_total NUMERIC(18,2) NOT NULL DEFAULT 0,
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(sourcing_event_id,line_no)
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_event_items_event_idx
+        ON {schema}.ops_sourcing_event_items(
+            sourcing_event_id,
+            line_no
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_sourcing_event_vendors(
+            id BIGSERIAL PRIMARY KEY,
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            vendor_id INT NOT NULL
+                REFERENCES {schema}.vendors(id)
+                ON DELETE RESTRICT,
+
+            vendor_contact_id BIGINT NULL
+                REFERENCES {schema}.ops_vendor_contacts(id)
+                ON DELETE SET NULL,
+
+            invitation_status TEXT NOT NULL DEFAULT 'selected',
+
+            invited_at TIMESTAMPTZ NULL,
+            invited_by_user_id INT NULL,
+
+            recipient_name TEXT NULL,
+            recipient_email TEXT NULL,
+
+            invitation_email_log_id BIGINT NULL
+                REFERENCES {schema}.ops_procurement_email_log(id)
+                ON DELETE SET NULL,
+
+            response_status TEXT NOT NULL DEFAULT 'not_received',
+
+            metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            created_by_user_id INT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(sourcing_event_id,vendor_id),
+
+            CHECK(
+                invitation_status IN(
+                    'selected',
+                    'ready',
+                    'sent',
+                    'failed',
+                    'withdrawn'
+                )
+            ),
+
+            CHECK(
+                response_status IN(
+                    'not_received',
+                    'viewed',
+                    'started',
+                    'submitted',
+                    'declined'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_sourcing_event_vendors_event_idx
+        ON {schema}.ops_sourcing_event_vendors(
+            sourcing_event_id,
+            invitation_status
+        );
+
+
+        CREATE TABLE IF NOT EXISTS {schema}.ops_rfq_snapshots(
+            id BIGSERIAL PRIMARY KEY,
+
+            company_id INT NOT NULL DEFAULT {company_id},
+
+            sourcing_event_id BIGINT NOT NULL
+                REFERENCES {schema}.ops_sourcing_events(id)
+                ON DELETE CASCADE,
+
+            rfq_no TEXT NOT NULL,
+            version_no INT NOT NULL DEFAULT 1,
+
+            status TEXT NOT NULL DEFAULT 'draft',
+
+            snapshot_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+
+            generated_by_user_id INT NULL,
+            generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            UNIQUE(sourcing_event_id,version_no),
+
+            CHECK(
+                status IN(
+                    'draft',
+                    'issued',
+                    'superseded',
+                    'cancelled'
+                )
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS ops_rfq_snapshots_event_idx
+        ON {schema}.ops_rfq_snapshots(
+            sourcing_event_id,
+            version_no DESC
+        );
         """
 
         self.execute_ddl(
@@ -171823,6 +172362,604 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             ),
         }
 
+    def migration_inventory_location_datasets(
+        self,company_id:int,project_id:int,*,cur=None
+    )->list[dict]:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                d.id AS dataset_id,
+                d.dataset_name,
+                d.record_count,
+                d.column_count,
+                d.dataset_status,
+                f.original_name AS source_file_name
+            FROM {schema}.migration_source_datasets d
+            JOIN {schema}.migration_source_files f
+            ON f.id=d.source_file_id
+            WHERE d.company_id=%s
+            AND d.project_id=%s
+            AND d.entity_code='warehouses'
+            AND d.is_selected=TRUE
+            ORDER BY d.id
+        """,(company_id,project_id),cur=cur) or []
+
+    def migration_inventory_location_targets(
+        self,company_id:int,*,cur=None
+    )->list[dict]:
+        company_id=int(company_id)
+        schema=self.company_schema(company_id)
+
+        return self.fetch_all(f"""
+            SELECT
+                id,
+                code,
+                name,
+                location_type,
+                is_default,
+                is_active
+            FROM {schema}.inventory_locations
+            WHERE company_id=%s
+            ORDER BY
+                is_default DESC,
+                name,
+                code
+        """,(company_id,),cur=cur) or []
+
+    def migration_inventory_settings_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+
+        project=self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.migration_projects
+            WHERE company_id=%s AND id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if not project:
+            raise ValueError("Migration project not found.")
+
+        row=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_settings
+            WHERE company_id=%s AND project_id=%s
+        """,(company_id,project_id),cur=cur)
+
+        if row:
+            row["settings_json"]=self._migration_json(row.get("settings_json"),{})
+            row["metadata_json"]=self._migration_json(row.get("metadata_json"),{})
+            return row
+
+        live=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.inventory_settings
+            WHERE company_id=%s
+            LIMIT 1
+        """,(company_id,),cur=cur) or {}
+
+        return {
+            "company_id":company_id,
+            "project_id":project_id,
+            "default_location_id":live.get("default_location_id"),
+            "valuation_method":live.get("valuation_method") or "AVG",
+            "allow_negative_stock":bool(live.get("allow_negative_stock",False)),
+            "require_location":bool(live.get("require_location",True)),
+            "batch_tracking_enabled":bool(live.get("batch_tracking_enabled",False)),
+            "expiry_tracking_enabled":bool(live.get("expiry_tracking_enabled",False)),
+            "serial_tracking_enabled":bool(live.get("serial_tracking_enabled",False)),
+            "create_unmapped_locations":True,
+            "settings_json":{},
+            "metadata_json":{},
+        }
+
+    def migration_inventory_settings_save(
+        self,company_id:int,project_id:int,data:dict,
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id=int(company_id),int(project_id)
+        schema=self.company_schema(company_id)
+        data=data or {}
+
+        current=self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        valuation=str(
+            data.get("valuation_method")
+            or current.get("valuation_method")
+            or "AVG"
+        ).strip().upper()
+
+        if valuation not in {"AVG","FIFO"}:
+            raise ValueError("Inventory valuation method must be AVG or FIFO.")
+
+        default_location_id=data.get("default_location_id")
+
+        if default_location_id not in (None,""):
+            default_location_id=int(default_location_id)
+
+            exists=self.fetch_val(f"""
+                SELECT 1
+                FROM {schema}.inventory_locations
+                WHERE company_id=%s AND id=%s AND is_active=TRUE
+            """,(company_id,default_location_id),cur=cur)
+
+            if not exists:
+                raise ValueError("Default inventory location was not found.")
+
+        else:
+            default_location_id=None
+
+        self.execute_sql(f"""
+            INSERT INTO {schema}.migration_inventory_settings(
+                company_id,project_id,
+                default_location_id,
+                valuation_method,
+                allow_negative_stock,
+                require_location,
+                batch_tracking_enabled,
+                expiry_tracking_enabled,
+                serial_tracking_enabled,
+                create_unmapped_locations,
+                settings_json,
+                metadata_json,
+                created_by_user_id,
+                updated_by_user_id,
+                created_at,
+                updated_at
+            )
+            VALUES(
+                %s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,
+                %s::jsonb,%s::jsonb,
+                %s,%s,NOW(),NOW()
+            )
+            ON CONFLICT(company_id,project_id)
+            DO UPDATE SET
+                default_location_id=EXCLUDED.default_location_id,
+                valuation_method=EXCLUDED.valuation_method,
+                allow_negative_stock=EXCLUDED.allow_negative_stock,
+                require_location=EXCLUDED.require_location,
+                batch_tracking_enabled=EXCLUDED.batch_tracking_enabled,
+                expiry_tracking_enabled=EXCLUDED.expiry_tracking_enabled,
+                serial_tracking_enabled=EXCLUDED.serial_tracking_enabled,
+                create_unmapped_locations=EXCLUDED.create_unmapped_locations,
+                settings_json=EXCLUDED.settings_json,
+                metadata_json=EXCLUDED.metadata_json,
+                updated_by_user_id=EXCLUDED.updated_by_user_id,
+                updated_at=NOW()
+        """,(
+            company_id,project_id,
+            default_location_id,
+            valuation,
+
+            bool(data.get("allow_negative_stock",current.get("allow_negative_stock",False))),
+            bool(data.get("require_location",current.get("require_location",True))),
+            bool(data.get("batch_tracking_enabled",current.get("batch_tracking_enabled",False))),
+            bool(data.get("expiry_tracking_enabled",current.get("expiry_tracking_enabled",False))),
+            bool(data.get("serial_tracking_enabled",current.get("serial_tracking_enabled",False))),
+            bool(data.get("create_unmapped_locations",current.get("create_unmapped_locations",True))),
+
+            self._migration_json_dump(data.get("settings_json") or current.get("settings_json"),{}),
+            self._migration_json_dump(data.get("metadata_json") or current.get("metadata_json"),{}),
+
+            user_id,user_id,
+        ),cur=cur)
+
+        return self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+    def _migration_inventory_location_type(self,value)->str:
+        value=str(value or "").strip().lower()
+
+        aliases={
+            "warehouse":"warehouse",
+            "wh":"warehouse",
+            "depot":"warehouse",
+
+            "store":"store",
+            "shop":"store",
+            "branch":"store",
+            "retail store":"store",
+
+            "stockroom":"stockroom",
+            "stock room":"stockroom",
+
+            "bin":"bin",
+            "shelf":"bin",
+
+            "transit":"transit",
+            "in transit":"transit",
+
+            "virtual":"virtual",
+        }
+
+        return aliases.get(value,"other")
+
+
+    def migration_inventory_location_rows(
+        self,company_id:int,project_id:int,dataset_id:int,*,limit:int=10000,cur=None
+    )->list[dict]:
+        return self.migration_payroll_normalized_rows(
+            company_id,
+            project_id,
+            dataset_id,
+            limit=limit,
+            cur=cur,
+        )
+
+    def migration_inventory_locations_detect(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        rows=self.migration_inventory_location_rows(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        targets=self.migration_inventory_location_targets(
+            company_id,cur=cur
+        )
+
+        saved=self.fetch_all(f"""
+            SELECT *
+            FROM {schema}.migration_inventory_location_mappings
+            WHERE company_id=%s
+            AND project_id=%s
+            AND dataset_id=%s
+            ORDER BY source_name
+        """,(company_id,project_id,dataset_id),cur=cur) or []
+
+        saved_map={
+            str(row.get("source_name") or "").strip().lower():row
+            for row in saved
+        }
+
+        detected={}
+
+        for item in rows:
+            row=item.get("normalized") or {}
+            name=str(row.get("location_name") or "").strip()
+
+            if not name:continue
+
+            key=name.lower()
+
+            if key not in detected:
+                detected[key]={
+                    "source_code":str(row.get("location_code") or "").strip() or None,
+                    "source_name":name,
+                    "source_type":self._migration_inventory_location_type(
+                        row.get("location_type")
+                    ),
+                    "sample_count":0,
+                    "source_row":row,
+                }
+
+            detected[key]["sample_count"]+=1
+
+        items=[]
+
+        for key,item in detected.items():
+            existing=saved_map.get(key)
+
+            if existing:
+                items.append({**item,**existing})
+                continue
+
+            code=str(item.get("source_code") or "").strip()
+            name=item["source_name"]
+
+            target=next(
+                (
+                    row for row in targets
+                    if code and str(row.get("code") or "").strip().lower()==code.lower()
+                ),
+                None,
+            )
+
+            if not target:
+                target=next(
+                    (
+                        row for row in targets
+                        if str(row.get("name") or "").strip().lower()==name.lower()
+                    ),
+                    None,
+                )
+
+            items.append({
+                **item,
+                "target_location_id":target.get("id") if target else None,
+                "target_code":target.get("code") if target else None,
+                "target_name":target.get("name") if target else None,
+                "mapping_action":"map" if target else "create",
+                "mapping_method":"auto" if target else "manual",
+                "confidence":100 if target else 0,
+                "is_approved":False,
+            })
+
+        return {
+            "dataset_id":dataset_id,
+            "items":items,
+            "targets":targets,
+            "detected_count":len(items),
+            "mapped_count":sum(1 for row in items if row.get("mapping_action")=="map"),
+            "create_count":sum(1 for row in items if row.get("mapping_action")=="create"),
+            "ignored_count":sum(1 for row in items if row.get("mapping_action")=="ignore"),
+            "approved_count":sum(1 for row in items if row.get("is_approved")),
+        }
+
+    def migration_inventory_location_mappings_save(
+        self,company_id:int,project_id:int,dataset_id:int,mappings:list[dict],
+        *,user_id:int|None=None,cur=None
+    )->dict:
+        company_id,project_id,dataset_id=int(company_id),int(project_id),int(dataset_id)
+        schema=self.company_schema(company_id)
+
+        targets=self.migration_inventory_location_targets(
+            company_id,cur=cur
+        )
+
+        for item in mappings or []:
+            name=str(item.get("source_name") or "").strip()
+            code=str(item.get("source_code") or "").strip() or None
+            action=str(item.get("mapping_action") or "create").strip().lower()
+
+            if not name:
+                raise ValueError("Source location name is required.")
+
+            if action not in {"map","create","ignore"}:
+                raise ValueError(f'Invalid location action for "{name}".')
+
+            target=None
+
+            if action=="map":
+                target_id=int(item.get("target_location_id") or 0)
+                target=next((row for row in targets if int(row["id"])==target_id),None)
+
+                if not target:
+                    raise ValueError(f'Select a FinSage location for "{name}".')
+
+            self.execute_sql(f"""
+                INSERT INTO {schema}.migration_inventory_location_mappings(
+                    company_id,project_id,dataset_id,
+                    source_code,source_name,source_type,
+                    target_location_id,target_code,target_name,
+                    mapping_action,mapping_method,
+                    confidence,is_approved,
+                    metadata_json,
+                    created_by_user_id,updated_by_user_id,
+                    created_at,updated_at
+                )
+                VALUES(
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,%s,%s,
+                    %s,'manual',
+                    100,TRUE,
+                    '{{}}'::jsonb,
+                    %s,%s,NOW(),NOW()
+                )
+                ON CONFLICT(
+                    company_id,
+                    project_id,
+                    dataset_id,
+                    LOWER(source_name)
+                )
+                DO NOTHING
+            """,(
+                company_id,project_id,dataset_id,
+                code,name,item.get("source_type"),
+                target.get("id") if target else None,
+                target.get("code") if target else None,
+                target.get("name") if target else None,
+                action,
+                user_id,user_id,
+            ),cur=cur)
+
+            self.execute_sql(f"""
+                UPDATE {schema}.migration_inventory_location_mappings
+                SET
+                    source_code=%s,
+                    source_type=%s,
+                    target_location_id=%s,
+                    target_code=%s,
+                    target_name=%s,
+                    mapping_action=%s,
+                    mapping_method='manual',
+                    confidence=100,
+                    is_approved=TRUE,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND project_id=%s
+                AND dataset_id=%s
+                AND LOWER(source_name)=LOWER(%s)
+            """,(
+                code,
+                item.get("source_type"),
+
+                target.get("id") if target else None,
+                target.get("code") if target else None,
+                target.get("name") if target else None,
+
+                action,
+                user_id,
+
+                company_id,project_id,dataset_id,name,
+            ),cur=cur)
+
+        return self.migration_inventory_locations_detect(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+
+    def migration_inventory_location_preview_row(
+        self,row:dict,*,row_number:int
+    )->dict:
+        issues=[]
+        warnings=[]
+
+        name=str(row.get("location_name") or "").strip()
+        code=str(row.get("location_code") or "").strip()
+
+        if not name:
+            issues.append("Location name is required.")
+
+        if not code:
+            code=f"LOC-MIG-{row_number:04d}"
+            warnings.append("Location code will be generated.")
+
+        location_type=self._migration_inventory_location_type(
+            row.get("location_type")
+        )
+
+        return {
+            "valid":not issues,
+            "issues":issues,
+            "warnings":warnings,
+
+            "location":{
+                "code":code,
+                "name":name,
+                "location_type":location_type,
+
+                "parent_location":
+                    str(row.get("parent_location") or "").strip()
+                    or None,
+
+                "address_line1":
+                    str(row.get("address_line1") or "").strip()
+                    or None,
+
+                "address_line2":
+                    str(row.get("address_line2") or "").strip()
+                    or None,
+
+                "city":
+                    str(row.get("city") or "").strip()
+                    or None,
+
+                "region":
+                    str(row.get("region") or "").strip()
+                    or None,
+
+                "country_code":
+                    str(row.get("country_code") or "").strip().upper()
+                    or None,
+
+                "is_default":
+                    self._migration_bool(row.get("is_default"),False),
+
+                "allow_sales":
+                    self._migration_bool(row.get("allow_sales"),True),
+
+                "allow_purchases":
+                    self._migration_bool(row.get("allow_purchases"),True),
+
+                "is_active":
+                    self._migration_bool(row.get("is_active"),True),
+
+                "notes":
+                    str(row.get("notes") or "").strip()
+                    or None,
+            },
+        }
+
+    def migration_inventory_locations_preview(
+        self,company_id:int,project_id:int,dataset_id:int,*,cur=None
+    )->dict:
+        rows=self.migration_inventory_location_rows(
+            company_id,project_id,dataset_id,cur=cur
+        )
+
+        items=[]
+
+        for index,item in enumerate(rows,start=1):
+            try:
+                preview=self.migration_inventory_location_preview_row(
+                    item.get("normalized") or {},
+                    row_number=index,
+                )
+            except Exception as error:
+                preview={
+                    "valid":False,
+                    "issues":[str(error)],
+                    "warnings":[],
+                    "location":{},
+                }
+
+            items.append({
+                "row_number":index,
+                **preview,
+            })
+
+        codes={}
+        defaults=[]
+
+        for item in items:
+            location=item.get("location") or {}
+            code=str(location.get("code") or "").strip().lower()
+
+            if code:
+                codes.setdefault(code,[]).append(item)
+
+            if location.get("is_default"):
+                defaults.append(item)
+
+        for duplicates in codes.values():
+            if len(duplicates)<=1:continue
+
+            for item in duplicates:
+                item["valid"]=False
+                item["issues"].append(
+                    f'Duplicate location code "{item["location"]["code"]}".'
+                )
+
+        if len(defaults)>1:
+            for item in defaults:
+                item["valid"]=False
+                item["issues"].append(
+                    "Only one inventory location may be marked as default."
+                )
+
+        return {
+            "dataset_id":int(dataset_id),
+            "items":items,
+            "record_count":len(items),
+            "valid_count":sum(1 for row in items if row.get("valid")),
+            "error_count":sum(1 for row in items if not row.get("valid")),
+            "warning_count":sum(len(row.get("warnings") or []) for row in items),
+            "default_count":len(defaults),
+        }
+
+    def migration_inventory_configuration_get(
+        self,company_id:int,project_id:int,*,cur=None
+    )->dict:
+        datasets=self.migration_inventory_location_datasets(
+            company_id,project_id,cur=cur
+        )
+
+        settings=self.migration_inventory_settings_get(
+            company_id,project_id,cur=cur
+        )
+
+        targets=self.migration_inventory_location_targets(
+            company_id,cur=cur
+        )
+
+        return {
+            "datasets":datasets,
+            "settings":settings,
+            "targets":targets,
+        }
+
     # ============================================================
     # IAS 41 AGRICULTURE
     # Phase 1: Settings, mappings and master data
@@ -189697,6 +190834,1569 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
 
             raise
+
+    def create_ops_sourcing_event(
+        self,
+        company_id:int,
+        procurement_case_id:int,
+        *,
+        payload:dict,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        procurement_case_id=int(procurement_case_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT
+                    pc.*,
+                    r.request_no,
+                    r.title,
+                    r.description,
+                    r.required_date,
+                    r.currency_code,
+                    r.revision_no,
+                    r.estimated_amount
+                FROM {schema}.ops_procurement_cases pc
+                JOIN {schema}.ops_requests r
+                ON r.id=pc.request_id
+                WHERE pc.company_id=%s
+                AND pc.id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    procurement_case_id,
+                ),
+            )
+
+            case=dict(cur.fetchone() or {})
+
+            if not case:
+                raise ValueError(
+                    "Procurement case not found."
+                )
+
+            if case["status"] not in {
+                "pending_review",
+                "ready_for_sourcing",
+                "sourcing",
+            }:
+                raise ValueError(
+                    "This procurement case cannot start a new sourcing event."
+                )
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_sourcing_events
+                WHERE procurement_case_id=%s
+                AND status NOT IN(
+                    'cancelled',
+                    'awarded'
+                )
+                ORDER BY id DESC
+                LIMIT 1;
+                """,
+                (procurement_case_id,),
+            )
+
+            existing=cur.fetchone()
+
+            if existing:
+                return dict(existing)
+
+            method=(
+                payload.get("sourcing_method")
+                or case.get("sourcing_method")
+                or "rfq"
+            )
+
+            allowed_methods={
+                "direct",
+                "quotation",
+                "rfq",
+                "tender",
+                "framework",
+                "single_source",
+                "emergency",
+            }
+
+            if method not in allowed_methods:
+                raise ValueError(
+                    "Invalid sourcing method."
+                )
+
+            settings=self.get_ops_procurement_settings(
+                company_id
+            )
+
+            if method=="single_source":
+                if not settings.get(
+                    "allow_single_source"
+                ):
+                    raise ValueError(
+                        "Single-source procurement is disabled."
+                    )
+
+                if (
+                    settings.get(
+                        "require_single_source_reason"
+                    )
+                    and not (
+                        payload.get(
+                            "exception_reason"
+                        )
+                        or ""
+                    ).strip()
+                ):
+                    raise ValueError(
+                        "Single-source justification is required."
+                    )
+
+            if method=="emergency":
+                if not settings.get(
+                    "allow_emergency_procurement"
+                ):
+                    raise ValueError(
+                        "Emergency procurement is disabled."
+                    )
+
+                if (
+                    settings.get(
+                        "require_emergency_reason"
+                    )
+                    and not (
+                        payload.get(
+                            "exception_reason"
+                        )
+                        or ""
+                    ).strip()
+                ):
+                    raise ValueError(
+                        "Emergency procurement justification is required."
+                    )
+
+            cur.execute(
+                f"""
+                SELECT COALESCE(MAX(id),0)+1 AS seq
+                FROM {schema}.ops_sourcing_events;
+                """
+            )
+
+            seq=int(
+                (cur.fetchone() or {}).get("seq")
+                or 1
+            )
+
+            sourcing_no=(
+                f"SRC-{company_id}-{seq:06d}"
+            )
+
+            rfq_no=(
+                f"RFQ-{company_id}-{seq:06d}"
+                if method in {
+                    "quotation",
+                    "rfq",
+                    "tender",
+                }
+                else None
+            )
+
+            minimum_quotes=int(
+                case.get("required_quote_count")
+                or settings.get(
+                    "default_quote_requirement"
+                )
+                or 0
+            )
+
+            if method in {
+                "single_source",
+                "direct",
+                "framework",
+            }:
+                minimum_quotes=1
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_sourcing_events(
+                    company_id,
+                    procurement_case_id,
+                    request_id,
+                    request_revision_no,
+
+                    sourcing_no,
+                    rfq_no,
+
+                    sourcing_method,
+
+                    title,
+                    description,
+
+                    required_delivery_date,
+                    currency_code,
+
+                    minimum_quotes,
+                    require_quote_comparison,
+                    require_selection_approval,
+
+                    exception_type,
+                    exception_reason,
+
+                    terms_text,
+                    submission_instructions,
+
+                    created_by_user_id,
+                    updated_by_user_id
+                )
+                VALUES(
+                    %s,%s,%s,%s,
+                    %s,%s,
+                    %s,
+                    %s,%s,
+                    %s,%s,
+                    %s,%s,%s,
+                    %s,%s,
+                    %s,%s,
+                    %s,%s
+                )
+                RETURNING *;
+                """,
+                (
+                    company_id,
+                    procurement_case_id,
+                    case["request_id"],
+                    int(case.get("revision_no") or 1),
+
+                    sourcing_no,
+                    rfq_no,
+
+                    method,
+
+                    payload.get("title")
+                    or case["title"],
+
+                    payload.get("description")
+                    or case.get("description"),
+
+                    payload.get(
+                        "required_delivery_date"
+                    )
+                    or case.get("required_date"),
+
+                    case.get("currency_code"),
+
+                    minimum_quotes,
+
+                    bool(settings.get(
+                        "require_quote_comparison"
+                    )),
+
+                    bool(
+                        case.get(
+                            "require_vendor_selection_approval"
+                        )
+                    ),
+
+                    method
+                    if method in {
+                        "single_source",
+                        "emergency",
+                    }
+                    else None,
+
+                    (
+                        payload.get(
+                            "exception_reason"
+                        )
+                        or ""
+                    ).strip() or None,
+
+                    payload.get("terms_text"),
+
+                    payload.get(
+                        "submission_instructions"
+                    ),
+
+                    actor_user_id,
+                    actor_user_id,
+                ),
+            )
+
+            event=dict(cur.fetchone())
+
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_request_items
+                WHERE request_id=%s
+                ORDER BY line_no,id;
+                """,
+                (case["request_id"],),
+            )
+
+            request_items=cur.fetchall()
+
+            for index,item in enumerate(
+                request_items,
+                1,
+            ):
+                item=dict(item)
+
+                cur.execute(
+                    f"""
+                    INSERT INTO {schema}.ops_sourcing_event_items(
+                        sourcing_event_id,
+                        request_item_id,
+                        line_no,
+                        description,
+                        quantity,
+                        unit_of_measure,
+                        estimated_unit_cost,
+                        estimated_total
+                    )
+                    VALUES(
+                        %s,%s,%s,%s,
+                        %s,%s,%s,%s
+                    );
+                    """,
+                    (
+                        event["id"],
+                        item["id"],
+                        index,
+                        item["description"],
+                        item.get("quantity") or 1,
+                        item.get("unit_of_measure"),
+                        item.get(
+                            "estimated_unit_cost"
+                        ) or 0,
+                        item.get(
+                            "estimated_total"
+                        ) or 0,
+                    ),
+                )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_procurement_cases
+                SET status='sourcing',
+                    sourcing_method=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s;
+                """,
+                (
+                    method,
+                    actor_user_id,
+                    procurement_case_id,
+                ),
+            )
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.ops_events(
+                    event_uuid,event_type,module,
+                    entity_type,entity_id,entity_ref,
+                    actor_user_id,action,after_json
+                )
+                VALUES(
+                    %s,
+                    'sourcing.event.created',
+                    'procurement',
+                    'sourcing_event',
+                    %s,%s,
+                    %s,
+                    'create',
+                    %s
+                );
+                """,
+                (
+                    str(uuid.uuid4()),
+                    str(event["id"]),
+                    sourcing_no,
+                    actor_user_id,
+                    psycopg2.extras.Json(event),
+                ),
+            )
+
+        return self.get_ops_sourcing_event(
+            company_id,
+            event["id"],
+        )
+
+    def get_ops_sourcing_event(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        schema=self.company_schema(company_id)
+
+        event=self.fetch_one(
+            f"""
+            SELECT
+                se.*,
+
+                pc.case_no,
+
+                r.request_no,
+                r.estimated_amount,
+                r.business_purpose,
+
+                d.name AS department_name,
+                b.name AS branch_name,
+
+                trim(concat_ws(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                )) AS requester_name
+
+            FROM {schema}.ops_sourcing_events se
+
+            JOIN {schema}.ops_procurement_cases pc
+            ON pc.id=se.procurement_case_id
+
+            JOIN {schema}.ops_requests r
+            ON r.id=se.request_id
+
+            LEFT JOIN public.company_departments d
+            ON d.id=r.department_id
+
+            LEFT JOIN public.company_branches b
+            ON b.id=r.branch_id
+
+            LEFT JOIN public.users u
+            ON u.id=r.requested_by_user_id
+
+            WHERE se.company_id=%s
+            AND se.id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not event:
+            raise ValueError(
+                "Sourcing event not found."
+            )
+
+        items=self.fetch_all(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_event_items
+            WHERE sourcing_event_id=%s
+            ORDER BY line_no,id;
+            """,
+            (sourcing_event_id,),
+        ) or []
+
+        vendors=self.fetch_all(
+            f"""
+            SELECT
+                sev.*,
+
+                v.name AS vendor_name,
+                v.email AS vendor_master_email,
+
+                vp.procurement_status,
+                vp.qualification_status,
+                vp.portal_status,
+                vp.preferred,
+                vp.risk_rating
+
+            FROM {schema}.ops_sourcing_event_vendors sev
+
+            JOIN {schema}.vendors v
+            ON v.id=sev.vendor_id
+
+            LEFT JOIN {schema}.ops_vendor_profiles vp
+            ON vp.vendor_id=v.id
+            AND vp.company_id=%s
+
+            WHERE sev.sourcing_event_id=%s
+
+            ORDER BY
+                COALESCE(vp.preferred,FALSE) DESC,
+                v.name;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        ) or []
+
+        return {
+            "event":event,
+            "items":items,
+            "vendors":vendors,
+        }
+
+ 
+    def update_ops_sourcing_event(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        payload:dict,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+        payload=payload or {}
+
+        current=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_events
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not current:
+            raise ValueError(
+                "Sourcing event not found."
+            )
+
+        if current["status"] not in {
+            "draft",
+            "ready",
+        }:
+            raise ValueError(
+                "Only draft or ready sourcing events can be edited."
+            )
+
+        closing_date=payload.get(
+            "closing_date",
+            current.get("closing_date"),
+        )
+
+        issue_date=payload.get(
+            "issue_date",
+            current.get("issue_date"),
+        )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_sourcing_events
+            SET title=%s,
+                description=%s,
+                issue_date=%s,
+                closing_date=%s,
+                required_delivery_date=%s,
+                delivery_address=%s,
+                terms_text=%s,
+                submission_instructions=%s,
+                evaluation_notes=%s,
+                status=%s,
+                updated_by_user_id=%s,
+                updated_at=NOW()
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+            """,
+            (
+                (
+                    payload.get(
+                        "title",
+                        current["title"],
+                    )
+                    or ""
+                ).strip(),
+
+                payload.get(
+                    "description",
+                    current.get("description"),
+                ),
+
+                issue_date,
+                closing_date,
+
+                payload.get(
+                    "required_delivery_date",
+                    current.get(
+                        "required_delivery_date"
+                    ),
+                ),
+
+                payload.get(
+                    "delivery_address",
+                    current.get("delivery_address"),
+                ),
+
+                payload.get(
+                    "terms_text",
+                    current.get("terms_text"),
+                ),
+
+                payload.get(
+                    "submission_instructions",
+                    current.get(
+                        "submission_instructions"
+                    ),
+                ),
+
+                payload.get(
+                    "evaluation_notes",
+                    current.get("evaluation_notes"),
+                ),
+
+                payload.get(
+                    "status",
+                    current["status"],
+                ),
+
+                actor_user_id,
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+    def update_ops_sourcing_item(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        item_id:int,
+        *,
+        payload:dict,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        item_id=int(item_id)
+        schema=self.company_schema(company_id)
+
+        event=self.fetch_one(
+            f"""
+            SELECT status
+            FROM {schema}.ops_sourcing_events
+            WHERE company_id=%s
+            AND id=%s;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not event:
+            raise ValueError(
+                "Sourcing event not found."
+            )
+
+        if event["status"] not in {
+            "draft",
+            "ready",
+        }:
+            raise ValueError(
+                "Issued RFQ lines cannot be edited."
+            )
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.ops_sourcing_event_items
+            SET description=%s,
+                specification=%s,
+                quantity=%s,
+                unit_of_measure=%s
+            WHERE sourcing_event_id=%s
+            AND id=%s
+            RETURNING *;
+            """,
+            (
+                (
+                    payload.get("description")
+                    or ""
+                ).strip(),
+
+                (
+                    payload.get("specification")
+                    or ""
+                ).strip() or None,
+
+                float(
+                    payload.get("quantity")
+                    or 1
+                ),
+
+                (
+                    payload.get("unit_of_measure")
+                    or ""
+                ).strip() or None,
+
+                sourcing_event_id,
+                item_id,
+            ),
+        )
+
+    def list_ops_eligible_sourcing_vendors(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        schema=self.company_schema(company_id)
+
+        settings=self.get_ops_procurement_settings(
+            company_id
+        )
+
+        rows=self.list_ops_procurement_vendors(
+            company_id
+        )
+
+        eligible=[]
+
+        for row in rows:
+            reasons=[]
+
+            if row.get("on_hold"):
+                reasons.append(
+                    "Vendor is on hold."
+                )
+
+            if row.get(
+                "procurement_status"
+            )=="blocked":
+                reasons.append(
+                    "Vendor is blocked for procurement."
+                )
+
+            if (
+                row.get(
+                    "procurement_status"
+                )=="restricted"
+                and not settings.get(
+                    "allow_restricted_vendor"
+                )
+            ):
+                reasons.append(
+                    "Restricted vendors are not permitted."
+                )
+
+            if (
+                settings.get(
+                    "require_vendor_qualification"
+                )
+                and row.get(
+                    "qualification_status"
+                ) not in {
+                    "qualified",
+                    "conditional",
+                }
+            ):
+                reasons.append(
+                    "Vendor is not qualified."
+                )
+
+            if (
+                settings.get(
+                    "require_vendor_compliance"
+                )
+                and str(
+                    row.get(
+                        "compliance_status"
+                    )
+                    or ""
+                ).lower() not in {
+                    "compliant",
+                    "approved",
+                    "valid",
+                }
+            ):
+                reasons.append(
+                    "Vendor compliance is not valid."
+                )
+
+            row=dict(row)
+            row["eligible"]=not reasons
+            row["eligibility_reasons"]=reasons
+
+            eligible.append(row)
+
+        return eligible
+
+    def add_ops_sourcing_vendor(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        vendor_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        vendor_id=int(vendor_id)
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        eligible=self.list_ops_eligible_sourcing_vendors(
+            company_id,
+            sourcing_event_id,
+        )
+
+        vendor=next(
+            (
+                row
+                for row in eligible
+                if int(row["vendor_id"])==vendor_id
+            ),
+            None,
+        )
+
+        if not vendor:
+            raise ValueError(
+                "Vendor not found."
+            )
+
+        if not vendor["eligible"]:
+            raise ValueError(
+                "Vendor is not eligible: "
+                +" ".join(
+                    vendor["eligibility_reasons"]
+                )
+            )
+
+        detail=self.get_ops_procurement_vendor(
+            company_id,
+            vendor_id,
+        )
+
+        contacts=detail.get("contacts") or []
+
+        contact=next(
+            (
+                c for c in contacts
+                if c.get("is_primary")
+                and c.get("contact_type")
+                =="procurement"
+            ),
+            None,
+        )
+
+        if not contact:
+            contact=next(
+                (
+                    c for c in contacts
+                    if c.get("is_primary")
+                    and c.get("contact_type")
+                    =="sales"
+                ),
+                None,
+            )
+
+        if not contact:
+            contact=next(
+                (
+                    c for c in contacts
+                    if c.get("email")
+                ),
+                None,
+            )
+
+        recipient_name=(
+            contact.get("name")
+            if contact
+            else vendor.get("name")
+        )
+
+        recipient_email=(
+            contact.get("email")
+            if contact
+            else vendor.get("email")
+        )
+
+        return self.fetch_one(
+            f"""
+            INSERT INTO {schema}.ops_sourcing_event_vendors(
+                sourcing_event_id,
+                vendor_id,
+                vendor_contact_id,
+                recipient_name,
+                recipient_email,
+                created_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s
+            )
+            ON CONFLICT(sourcing_event_id,vendor_id)
+            DO UPDATE SET
+                vendor_contact_id=
+                    EXCLUDED.vendor_contact_id,
+                recipient_name=
+                    EXCLUDED.recipient_name,
+                recipient_email=
+                    EXCLUDED.recipient_email,
+                invitation_status='selected',
+                updated_at=NOW()
+            RETURNING *;
+            """,
+            (
+                sourcing_event_id,
+                vendor_id,
+                contact.get("id")
+                if contact
+                else None,
+                recipient_name,
+                recipient_email,
+                actor_user_id,
+            ),
+        )
+
+    def remove_ops_sourcing_vendor(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        vendor_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        vendor_id=int(vendor_id)
+        schema=self.company_schema(company_id)
+
+        event=self.fetch_one(
+            f"""
+            SELECT status
+            FROM {schema}.ops_sourcing_events
+            WHERE company_id=%s
+            AND id=%s;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+            ),
+        )
+
+        if not event:
+            raise ValueError(
+                "Sourcing event not found."
+            )
+
+        if event["status"] not in {
+            "draft",
+            "ready",
+        }:
+            raise ValueError(
+                "Vendors cannot be removed after the RFQ is issued."
+            )
+
+        self.execute_sql(
+            f"""
+            DELETE FROM {schema}.ops_sourcing_event_vendors
+            WHERE sourcing_event_id=%s
+            AND vendor_id=%s;
+            """,
+            (
+                sourcing_event_id,
+                vendor_id,
+            ),
+        )
+
+        return {"ok":True}
+
+    def validate_ops_sourcing_event(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+
+        data=self.get_ops_sourcing_event(
+            company_id,
+            sourcing_event_id,
+        )
+
+        event=data["event"]
+        items=data["items"]
+        vendors=data["vendors"]
+
+        errors=[]
+
+        if not event.get("title"):
+            errors.append(
+                "RFQ title is required."
+            )
+
+        if not items:
+            errors.append(
+                "At least one sourcing item is required."
+            )
+
+        if event["sourcing_method"] in {
+            "quotation",
+            "rfq",
+            "tender",
+        }:
+            if not event.get("closing_date"):
+                errors.append(
+                    "Closing date is required."
+                )
+
+            if len(vendors)<int(
+                event.get("minimum_quotes")
+                or 0
+            ):
+                errors.append(
+                    f"At least {event['minimum_quotes']} vendors must be selected."
+                )
+
+        if event["sourcing_method"] in {
+            "single_source",
+            "direct",
+            "framework",
+        } and len(vendors)!=1:
+            errors.append(
+                "This sourcing method requires exactly one selected vendor."
+            )
+
+        missing_email=[
+            row["vendor_name"]
+            for row in vendors
+            if not row.get("recipient_email")
+        ]
+
+        if missing_email:
+            errors.append(
+                "Missing recipient email for: "
+                +", ".join(missing_email)
+            )
+
+        return {
+            "ok":not errors,
+            "errors":errors,
+        }
+
+    def build_ops_rfq_payload(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+    ):
+        company_id=int(company_id)
+
+        data=self.get_ops_sourcing_event(
+            company_id,
+            sourcing_event_id,
+        )
+
+        company=self.fetch_one(
+            """
+            SELECT
+                id,
+                name,
+                system_company_code,
+                company_reg_no,
+                tin,
+                vat,
+                company_email,
+                company_phone,
+                physical_address,
+                currency,
+                logo_url
+            FROM public.companies
+            WHERE id=%s;
+            """,
+            (company_id,),
+        ) or {}
+
+        return {
+            "company":company,
+            "event":data["event"],
+            "items":data["items"],
+            "vendors":data["vendors"],
+        }
+
+    def snapshot_ops_rfq(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        actor_user_id:int,
+        status="draft",
+        cur=None,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        if cur is None:
+            with self.transaction() as (_conn,tx):
+                return self.snapshot_ops_rfq(
+                    company_id,
+                    sourcing_event_id,
+                    actor_user_id=actor_user_id,
+                    status=status,
+                    cur=tx,
+                )
+
+        payload=self.build_ops_rfq_payload(
+            company_id,
+            sourcing_event_id,
+        )
+
+        rfq_no=(
+            payload["event"].get("rfq_no")
+            or payload["event"]["sourcing_no"]
+        )
+
+        cur.execute(
+            f"""
+            SELECT COALESCE(MAX(version_no),0) AS version_no
+            FROM {schema}.ops_rfq_snapshots
+            WHERE sourcing_event_id=%s;
+            """,
+            (sourcing_event_id,),
+        )
+
+        version_no=int(
+            (cur.fetchone() or {}).get(
+                "version_no"
+            )
+            or 0
+        )+1
+
+        if status=="issued":
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_rfq_snapshots
+                SET status='superseded'
+                WHERE sourcing_event_id=%s
+                AND status='issued';
+                """,
+                (sourcing_event_id,),
+            )
+
+        cur.execute(
+            f"""
+            INSERT INTO {schema}.ops_rfq_snapshots(
+                company_id,
+                sourcing_event_id,
+                rfq_no,
+                version_no,
+                status,
+                snapshot_json,
+                generated_by_user_id
+            )
+            VALUES(
+                %s,%s,%s,%s,%s,%s,%s
+            )
+            RETURNING *;
+            """,
+            (
+                company_id,
+                sourcing_event_id,
+                rfq_no,
+                version_no,
+                status,
+                psycopg2.extras.Json(payload),
+                actor_user_id,
+            ),
+        )
+
+        return dict(cur.fetchone())
+
+    def issue_ops_rfq(
+        self,
+        company_id:int,
+        sourcing_event_id:int,
+        *,
+        actor_user_id:int,
+    ):
+        company_id=int(company_id)
+        sourcing_event_id=int(
+            sourcing_event_id
+        )
+        actor_user_id=int(actor_user_id)
+        schema=self.company_schema(company_id)
+
+        validation=self.validate_ops_sourcing_event(
+            company_id,
+            sourcing_event_id,
+        )
+
+        if not validation["ok"]:
+            raise ValueError(
+                " ".join(
+                    validation["errors"]
+                )
+            )
+
+        settings=self.get_ops_procurement_settings(
+            company_id
+        )
+
+        with self.transaction() as (_conn,cur):
+            cur.execute(
+                f"""
+                SELECT *
+                FROM {schema}.ops_sourcing_events
+                WHERE company_id=%s
+                AND id=%s
+                FOR UPDATE;
+                """,
+                (
+                    company_id,
+                    sourcing_event_id,
+                ),
+            )
+
+            event=dict(cur.fetchone() or {})
+
+            if not event:
+                raise ValueError(
+                    "Sourcing event not found."
+                )
+
+            if event["status"] not in {
+                "draft",
+                "ready",
+            }:
+                raise ValueError(
+                    "This sourcing event has already been issued."
+                )
+
+            snapshot=self.snapshot_ops_rfq(
+                company_id,
+                sourcing_event_id,
+                actor_user_id=actor_user_id,
+                status="issued",
+                cur=cur,
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.ops_sourcing_events
+                SET status='issued',
+                    issue_date=COALESCE(
+                        issue_date,
+                        CURRENT_DATE
+                    ),
+                    issued_at=NOW(),
+                    issued_by_user_id=%s,
+                    version_no=%s,
+                    updated_by_user_id=%s,
+                    updated_at=NOW()
+                WHERE id=%s
+                RETURNING *;
+                """,
+                (
+                    actor_user_id,
+                    snapshot["version_no"],
+                    actor_user_id,
+                    sourcing_event_id,
+                ),
+            )
+
+            issued_event=dict(
+                cur.fetchone()
+            )
+
+        # Email after committed RFQ state.
+        #
+        # If an email fails, the RFQ remains issued and the
+        # failed invitation is visible for retry.
+
+        data=self.get_ops_sourcing_event(
+            company_id,
+            sourcing_event_id,
+        )
+
+        email_results=[]
+
+        for vendor in data["vendors"]:
+            recipient=vendor.get(
+                "recipient_email"
+            )
+
+            if not recipient:
+                continue
+
+            subject=(
+                settings.get(
+                    "rfq_subject_template"
+                )
+                or ""
+            )
+
+            body=(
+                settings.get(
+                    "rfq_body_template"
+                )
+                or ""
+            )
+
+            values={
+                "{{company_name}}":
+                    settings.get(
+                        "company_name"
+                    )
+                    or "",
+
+                "{{vendor_name}}":
+                    vendor.get(
+                        "vendor_name"
+                    )
+                    or "",
+
+                "{{rfq_no}}":
+                    issued_event.get(
+                        "rfq_no"
+                    )
+                    or issued_event[
+                        "sourcing_no"
+                    ],
+
+                "{{request_title}}":
+                    issued_event.get(
+                        "title"
+                    )
+                    or "",
+
+                "{{closing_date}}":
+                    str(
+                        issued_event.get(
+                            "closing_date"
+                        )
+                        or ""
+                    ),
+
+                "{{sender_name}}":
+                    settings.get(
+                        "sender_name"
+                    )
+                    or "",
+
+                "{{portal_link}}":
+                    "Vendor portal invitation will be available in Phase 3C.",
+            }
+
+            for token,value in values.items():
+                subject=subject.replace(
+                    token,
+                    value,
+                )
+
+                body=body.replace(
+                    token,
+                    value,
+                )
+
+            try:
+                if settings.get(
+                    "procurement_email_enabled"
+                ):
+                    result=self.send_ops_procurement_email(
+                        company_id,
+                        recipient_email=recipient,
+                        recipient_name=vendor.get(
+                            "recipient_name"
+                        ),
+                        subject=subject,
+                        body=body,
+                        actor_user_id=actor_user_id,
+                        message_type="rfq_invitation",
+                        entity_type="sourcing_event",
+                        entity_id=sourcing_event_id,
+                        vendor_id=vendor["vendor_id"],
+                        metadata={
+                            "rfq_no":
+                                issued_event.get(
+                                    "rfq_no"
+                                ),
+                        },
+                    )
+
+                    self.execute_sql(
+                        f"""
+                        UPDATE {schema}.ops_sourcing_event_vendors
+                        SET invitation_status='sent',
+                            invited_at=NOW(),
+                            invited_by_user_id=%s,
+                            invitation_email_log_id=%s,
+                            updated_at=NOW()
+                        WHERE id=%s;
+                        """,
+                        (
+                            actor_user_id,
+                            result.get(
+                                "email_log_id"
+                            ),
+                            vendor["id"],
+                        ),
+                    )
+
+                    email_results.append({
+                        "vendor_id":
+                            vendor["vendor_id"],
+                        "status":"sent",
+                    })
+
+                else:
+                    self.execute_sql(
+                        f"""
+                        UPDATE {schema}.ops_sourcing_event_vendors
+                        SET invitation_status='ready',
+                            updated_at=NOW()
+                        WHERE id=%s;
+                        """,
+                        (vendor["id"],),
+                    )
+
+                    email_results.append({
+                        "vendor_id":
+                            vendor["vendor_id"],
+                        "status":"ready",
+                    })
+
+            except Exception as exc:
+                self.execute_sql(
+                    f"""
+                    UPDATE {schema}.ops_sourcing_event_vendors
+                    SET invitation_status='failed',
+                        updated_at=NOW()
+                    WHERE id=%s;
+                    """,
+                    (vendor["id"],),
+                )
+
+                email_results.append({
+                    "vendor_id":
+                        vendor["vendor_id"],
+                    "status":"failed",
+                    "error":str(exc),
+                })
+
+        return {
+            "event":self.get_ops_sourcing_event(
+                company_id,
+                sourcing_event_id,
+            ),
+            "snapshot":snapshot,
+            "emails":email_results,
+        }
+
+    def get_ops_procurement_case(
+        self,
+        company_id:int,
+        procurement_case_id:int,
+    ):
+        company_id=int(company_id)
+        procurement_case_id=int(
+            procurement_case_id
+        )
+        schema=self.company_schema(company_id)
+
+        row=self.fetch_one(
+            f"""
+            SELECT
+                pc.*,
+
+                r.request_no,
+                r.title,
+                r.description,
+                r.business_purpose,
+                r.estimated_amount,
+                r.currency_code,
+                r.priority,
+                r.required_date,
+
+                d.name AS department_name,
+                b.name AS branch_name,
+
+                p.name AS policy_name,
+                pr.name AS policy_rule_name,
+
+                trim(concat_ws(
+                    ' ',
+                    u.first_name,
+                    u.last_name
+                )) AS requester_name
+
+            FROM {schema}.ops_procurement_cases pc
+
+            JOIN {schema}.ops_requests r
+            ON r.id=pc.request_id
+
+            LEFT JOIN public.company_departments d
+            ON d.id=r.department_id
+
+            LEFT JOIN public.company_branches b
+            ON b.id=r.branch_id
+
+            LEFT JOIN {schema}.ops_procurement_policies p
+            ON p.id=pc.policy_id
+
+            LEFT JOIN {schema}.ops_procurement_policy_rules pr
+            ON pr.id=pc.policy_rule_id
+
+            LEFT JOIN public.users u
+            ON u.id=r.requested_by_user_id
+
+            WHERE pc.company_id=%s
+            AND pc.id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                procurement_case_id,
+            ),
+        )
+
+        if not row:
+            raise ValueError(
+                "Procurement case not found."
+            )
+
+        event=self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.ops_sourcing_events
+            WHERE procurement_case_id=%s
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (procurement_case_id,),
+        )
+
+        return {
+            "case":row,
+            "sourcing_event":event,
+        }
 
     def healthcheck_company_schema(self, company_id: int) -> Dict[str, Any]:
         schema = f"company_{company_id}"

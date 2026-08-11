@@ -936,18 +936,242 @@ const ENDPOINTS = {
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/year-end-close/reopen`,
   
   companyStructure: {
-      get: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
+    get: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/group-structure`,
 
-      relatedCompanies: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
+    relatedCompanies: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/related-companies`,
 
-      branches: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
+    branches: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/branches`,
 
-      segments: (companyId) =>
-        `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+    segments: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/segments`,
+
+    candidates: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/candidates`,
+
+    profile: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/profile`,
+
+    relationships: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/relationships`,
+
+    relationship: (companyId, relationshipId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/relationships/${encodeURIComponent(relationshipId)}`,
+
+    settings: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/settings`,
+
+    setting: (companyId, key) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/corporate-structure/settings/${encodeURIComponent(key)}`,
+  
+  },
+
+  consolidation: {
+    runs: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs`,
+
+    run: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}`,
+
+    prepare: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/prepare`,
+
+    trialBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/trial-balances`,
+
+    loadAllTrialBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/trial-balances/load-all`,
+
+    entityTrialBalance: (companyId, runId, runEntityId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/entities/${encodeURIComponent(runEntityId)}/trial-balance`,
+
+    loadEntityTrialBalance: (companyId, runId, runEntityId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/entities/${encodeURIComponent(runEntityId)}/trial-balance/load`,
+
+    groupCoa: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa`,
+
+    groupCoaAccount: (companyId, accountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa/${encodeURIComponent(accountId)}`,
+
+    bootstrapGroupCoa: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/group-coa/bootstrap`,
+
+    accountMapping: (companyId, runId, { entityCompanyId, unmappedOnly } = {}) => {
+      const params = new URLSearchParams();
+
+      if (entityCompanyId)
+        params.set("entity_company_id", entityCompanyId);
+
+      if (unmappedOnly)
+        params.set("unmapped_only", "true");
+
+      const qs = params.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping${qs ? `?${qs}` : ""}`;
     },
+
+    autoMapAccounts: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping/auto`,
+
+    accountMappingLine: (companyId, runId, tbLineId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/account-mapping/${encodeURIComponent(tbLineId)}`,
+  
+    createMappingAccount: (companyId, runId, tbLineId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/account-mapping/${encodeURIComponent(tbLineId)}/create-account`,
+  
+    preconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation`,
+
+    validatePreconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation/validate`,
+
+    generatePreconsolidation: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/preconsolidation/generate`,  
+  
+    adjustments: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}/adjustments`,
+
+    adjustment: (companyId, runId, adjustmentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/adjustments/${encodeURIComponent(adjustmentId)}`,
+
+    adjustmentStatus: (companyId, runId, adjustmentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}` +
+      `/consolidation/runs/${encodeURIComponent(runId)}` +
+      `/adjustments/${encodeURIComponent(adjustmentId)}/status`,
+  
+    intercompany: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany`,
+
+    intercompanyBalances: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/balances`,
+
+    intercompanyBalance: (companyId, runId, balanceId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/balances/${encodeURIComponent(balanceId)}`,
+
+    intercompanyRules: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/intercompany/rules`,
+
+    applyIntercompanyRules: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/apply-rules`,
+
+    autoMatchIntercompany: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/intercompany/auto-match`,  
+  
+    eliminations: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations`,
+
+    generateEliminations: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/generate`,
+
+    elimination: (companyId, runId, eliminationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/${encodeURIComponent(eliminationId)}`,
+
+    eliminationStatus: (companyId, runId, eliminationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/eliminations/${encodeURIComponent(eliminationId)}/status`,
+  
+    adjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb`,
+
+    validateAdjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/validate`,
+
+    generateAdjustedTb: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/generate`,
+
+    adjustedTbAccount: (companyId, runId, accountId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/adjusted-tb/accounts/${encodeURIComponent(accountId)}`,  
+  
+    acquisition: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition`,
+
+    prepareAcquisition: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/prepare`,
+
+    acquisitionWorkpaper: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}`,
+
+    calculateAcquisition: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}/calculate`,
+
+    acquisitionStatus: (companyId, runId, workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/acquisition/${encodeURIComponent(workpaperId)}/status`,
+  
+    equityMethod: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method`,
+
+    prepareEquityMethod: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/prepare`,
+
+    equityMethodWorkpaper: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}`,
+
+    calculateEquityMethod: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}/calculate`,
+
+    equityMethodStatus: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/${encodeURIComponent(workpaperId)}/status`,
+
+    generateEquityMethodJournals: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/equity-method/journals/generate`,
+  
+    translation: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation`,
+
+    prepareTranslation: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/prepare`,
+
+    translationWorkpaper: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}`,
+
+    translateEntity: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}/translate`,
+
+    translationStatus: (companyId,runId,workpaperId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/translation/${encodeURIComponent(workpaperId)}/status`,
+  
+    controls: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/controls`,
+
+    closeRun: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/close`,
+
+    reopenRun: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/reopen`,
+  
+    finalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb`,
+
+    validateFinalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb/validate`,
+
+    generateFinalTb: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/final-tb/generate`,
+
+    groupStatements: (companyId,runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements`,
+
+    groupStatement: (companyId,runId,statement) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements/${encodeURIComponent(statement)}`,
+
+    groupStatementExport: (companyId,runId,statement) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/consolidation/runs/${encodeURIComponent(runId)}/statements/${encodeURIComponent(statement)}/export`,
+  
+    reportsExportToken: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/reports/export-token`,
+  },
+
+
   // --- Management packs ---
   managementPacks: (companyId) =>
     `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/management_packs`,
@@ -1450,6 +1674,31 @@ const ENDPOINTS = {
     run: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/runs/${encodeURIComponent(runId)}`,
 
+    runEligibility:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/eligibility`,
+
+    runValidation:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/validation`,
+
+    runEmployeeValidation:(
+      companyId,
+      runId,
+      employeeId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/employees/`+
+      `${encodeURIComponent(employeeId)}/validation`,
+      
+    runAudit:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/audit`,
+
     initialPreview: (companyId, itemId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/accrual-deferrals/items/${encodeURIComponent(itemId)}/initial-preview`,
 
@@ -1470,6 +1719,280 @@ const ENDPOINTS = {
   
     backfillIfrs15: (companyId) =>
       `${API_BASE}/api/companies/${companyId}/accrual-deferrals/backfill-ifrs15`,
+  },
+
+  migrations: {
+    projects: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.status) {
+        query.set("status", String(params.status));
+      }
+
+      if (params.search) {
+        query.set("search", String(params.search));
+      }
+
+      if (params.limit) {
+        query.set("limit", String(params.limit));
+      }
+
+      const suffix = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects${suffix ? `?${suffix}` : ""}`;
+    },
+
+    project: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}`,
+
+    projectStatus: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/status`,
+
+    projectSource: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/source`,
+
+    sourceProfiles: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.include_inactive) {
+        query.set("include_inactive", "true");
+      }
+
+      const suffix = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/source-profiles${suffix ? `?${suffix}` : ""}`;
+    },
+
+    projectScope: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/scope`,
+  
+    projectFiles: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/files`,
+
+    projectFile: (companyId, projectId, fileId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`,
+
+    projectDatasets: (companyId, projectId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets`,
+
+    projectDataset: (companyId, projectId, datasetId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}`,
+  
+    projectDetection:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/detection`,
+  
+    fieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings`,
+
+    autoFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/auto`,
+
+    copyFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/copy`,
+
+    resetFieldMappings:(cid,pid)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(cid)}/migrations/projects/${encodeURIComponent(pid)}/field-mappings/reset`,
+  
+    fieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings`,
+    datasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings`,
+    autoDatasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings/auto`,
+    resetDatasetFieldMappings:(companyId,projectId,datasetId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/field-mappings/reset`,
+    copyFieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings/copy`,
+    validateFieldMappings:(companyId,projectId)=>`${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/field-mappings/validate`,
+  
+    referenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings`,
+
+    scanReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/scan`,
+
+    autoReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/auto`,
+
+    validateReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/validate`,
+
+    resetReferenceMappings:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/reference-mappings/reset`,
+  
+    ppe:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/ppe`,
+
+    ppeSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/settings`,
+
+    ppeMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/mapping`,
+
+    ppeClasses:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/classes`,
+
+    ppePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/ppe/preview`,
+  
+    leases:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/leases`,
+
+    leaseSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/settings`,
+
+    leaseMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/mapping`,
+
+    leaseReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/references`,
+
+    leasePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/leases/preview`,
+  
+    loans:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/loans`,
+
+    loanSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/settings`,
+
+    loanMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/mapping`,
+
+    loanReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/references`,
+
+    loanPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/loans/preview`,
+  
+    revenue:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/revenue`,
+
+    revenueSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/settings`,
+
+    revenueMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/mapping`,
+
+    revenueReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/references`,
+
+    revenuePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/revenue/preview`,
+  
+    accrualDeferrals:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/accrual-deferrals`,
+
+    accrualSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/settings`,
+
+    accrualMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/mapping`,
+
+    accrualReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/references`,
+
+    accrualPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/accrual-deferrals/preview`,
+  
+    payroll:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll`,
+
+    payrollSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/settings`,
+
+    payrollMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/mapping`,
+
+    payrollReferences:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/references`,
+
+    payrollPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/preview`,
+  
+    payrollItems:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/items`,
+
+    payrollItemSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/settings`,
+
+    payrollItemMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/mapping`,
+
+    payrollItemPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/items/preview`,
+  
+    payrollLeaveBalances:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/leave-balances`,
+
+    payrollLeaveSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/settings`,
+
+    payrollLeaveMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/mapping`,
+
+    payrollLeavePreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/leave-balances/preview`,
+
+    payrollEmployeeLoans:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/employee-loans`,
+
+    payrollEmployeeLoanSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/settings`,
+
+    payrollEmployeeLoanMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/mapping`,
+
+    payrollEmployeeLoanPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/employee-loans/preview`,  
+  
+    payrollHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/history`,
+
+    payrollHistorySettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/settings`,
+
+    payrollHistoryMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/mapping`,
+
+    payrollHistoryPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/payroll/history/preview`,
+  
+    payrollReconciliation:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/reconciliation`,
+
+    payrollReconciliationHistory:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/payroll/reconciliation/history`,
+  
+    products:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/products`,
+
+    productSettings:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/settings`,
+
+    productTypes:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/types`,
+
+    productMapping:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/mapping`,
+
+    productPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/preview`,
+  
+    productAccounting:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounting`,
+
+    productAccounts:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounts`,
+
+    productVat:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/vat`,
+
+    productAccountingPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounting/preview`,  
+  
+    inventoryConfiguration:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/configuration`,
+
+    inventoryLocations:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations`,
+
+    inventoryLocationsPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations/preview`,
   },
 
   ifrs9: {
@@ -1509,6 +2032,9 @@ const ENDPOINTS = {
     postEclRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/post`,
   
+    reverseEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/runs/${encodeURIComponent(runId)}/reverse`,
+
     syncTradeReceivables: (companyId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/sync/trade-receivables`,
 
@@ -1529,6 +2055,192 @@ const ENDPOINTS = {
 
     eclCalculate: companyId =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/calculate`,
+  
+    writeoffs: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs`,
+
+    writeoff: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}`,
+
+    writeoffPreview: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/preview-journal`,
+
+    postWriteoff: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}/post`,
+
+    writeoffRecoveries: (companyId, writeoffId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/writeoffs/${encodeURIComponent(writeoffId)}/recoveries`,
+  
+    eclReconciliation: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.from) query.set("from", params.from);
+      if (params.to) query.set("to", params.to);
+      if (params.model_id) query.set("model_id", params.model_id);
+
+      const suffix = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/reconciliation${suffix ? `?${suffix}` : ""}`;
+    },
+
+    eclReconciliationSnapshot: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/reconciliation/snapshot`,
+      
+    updateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}`,
+
+    activateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}/activate`,
+
+    deactivateEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/models/${encodeURIComponent(modelId)}/deactivate`,  
+  
+    eirCalculate: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/eir/calculate`,
+  
+    amortisedCostRuns: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/amortised-cost/runs`,
+
+    amortisedCostCalculate: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/amortised-cost/calculate`,
+
+    amortisedCostRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/amortised-cost/runs/${encodeURIComponent(runId)}`,
+
+    amortisedCostPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/amortised-cost/runs/${encodeURIComponent(runId)}/preview-journal`,
+
+    postAmortisedCostRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/amortised-cost/runs/${encodeURIComponent(runId)}/post`,
+  
+    modifications: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/modifications`,
+
+    modificationCalculate: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/modifications/calculate`,
+
+    modification: (companyId, modificationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/modifications/${encodeURIComponent(modificationId)}`,
+
+    modificationPreview: (companyId, modificationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/modifications/${encodeURIComponent(modificationId)}/preview-journal`,
+
+    postModification: (companyId, modificationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/modifications/${encodeURIComponent(modificationId)}/post`,  
+  
+    derecognitions: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/derecognitions`,
+
+    derecognitionCalculate: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/derecognitions/calculate`,
+
+    derecognition: (companyId, derecognitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/derecognitions/${encodeURIComponent(derecognitionId)}`,
+
+    derecognitionPreview: (companyId, derecognitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/derecognitions/${encodeURIComponent(derecognitionId)}/preview-journal`,
+
+    postDerecognition: (companyId, derecognitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/derecognitions/${encodeURIComponent(derecognitionId)}/post`,
+      
+    fairValueMeasurements: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/fair-value-measurements`,
+
+    fairValueCalculate: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/fair-value-measurements/calculate`,
+
+    fairValueMeasurement: (companyId, measurementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/fair-value-measurements/${encodeURIComponent(measurementId)}`,
+
+    fairValuePreview: (companyId, measurementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/fair-value-measurements/${encodeURIComponent(measurementId)}/preview-journal`,
+
+    postFairValueMeasurement: (companyId, measurementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/fair-value-measurements/${encodeURIComponent(measurementId)}/post`,
+
+    reverseFairValueMeasurement: (companyId, measurementId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/fair-value-measurements/${encodeURIComponent(measurementId)}/reverse`,
+  
+    disclosure: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.preset) query.set("preset", params.preset);
+      if (params.from) query.set("from", params.from);
+      if (params.to) query.set("to", params.to);
+      if (params.as_of) query.set("as_of", params.as_of);
+
+      if (params.include_closed !== undefined) {
+        query.set(
+          "include_closed",
+          params.include_closed ? "1" : "0"
+        );
+      }
+
+      const suffix = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/disclosure${suffix ? `?${suffix}` : ""}`;
+    },
+  
+    generalEclModels: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/general/models`,
+
+    generalEclModel: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/general/models/${encodeURIComponent(modelId)}`,
+
+    generalEclScenarios: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/general/models/${encodeURIComponent(modelId)}/scenarios`,
+
+    generalEclPdCurves: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/general/models/${encodeURIComponent(modelId)}/pd-curves`,
+
+    generalEclLgds: (companyId, modelId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/ecl/general/models/${encodeURIComponent(modelId)}/lgd-assumptions`,
+
+    generalEclStageAssessment: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/ecl/stage-assessment`,
+
+    generalEclAssessments: (companyId, instrumentId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ifrs9/instruments/${encodeURIComponent(instrumentId)}/ecl/assessments`,
+  
+    generalEclCalculate: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/calculate`,
+
+    generalEclRuns: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs`,
+
+    generalEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}`,
+
+    generalEclRunPreview: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/preview-journal`,
+
+    postGeneralEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/post`,
+
+    reverseGeneralEclRun: (companyId, runId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/ifrs9/ecl/general/runs/${encodeURIComponent(
+        runId
+      )}/reverse`,
   },
   // ✅ RESTORED FROM OLDER (your UI needs these)
 
@@ -1645,6 +2357,125 @@ const ENDPOINTS = {
     calculateRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/calculate`,
 
+    submitRun:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/submit`,
+
+    approveRun:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/approve`,
+
+    returnRunToDraft:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/return-to-draft`,
+
+    runAttendance:(
+      companyId,
+      runId,
+      employeeId=""
+    )=>{
+      const params=new URLSearchParams();
+
+      if(employeeId){
+        params.set("employee_id",String(employeeId));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/runs/`+
+        `${encodeURIComponent(runId)}/attendance`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    runAttendanceBulk:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/bulk`,
+
+    generateRunAttendance:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/generate`,
+
+    runAttendanceSummary:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance-summary`,
+
+    runAttendanceRecord:(
+      companyId,
+      runId,
+      attendanceId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/attendance/`+
+      `${encodeURIComponent(attendanceId)}`,
+      
+    runPeriodInputs:(
+      companyId,
+      runId,
+      {
+        employeeId="",
+        status="",
+      }={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(employeeId){
+        params.set(
+          "employee_id",
+          String(employeeId)
+        );
+      }
+
+      if(status){
+        params.set("status",String(status));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/runs/`+
+        `${encodeURIComponent(runId)}/period-inputs`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    runPeriodInput:(
+      companyId,
+      runId,
+      inputId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-inputs/`+
+      `${encodeURIComponent(inputId)}`,
+
+    runPeriodInputAction:(
+      companyId,
+      runId,
+      inputId,
+      action
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-inputs/`+
+      `${encodeURIComponent(inputId)}/`+
+      `${encodeURIComponent(action)}`,
+
+    runPeriodInputSummary:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/period-input-summary`,
+      
     postRun: (companyId, runId) =>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/runs/${encodeURIComponent(runId)}/post`,
 
@@ -1684,6 +2515,186 @@ const ENDPOINTS = {
       return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-context${qs ? `?${qs}` : ""}`;
     },  
 
+    incentiveEvaluations:(
+      companyId,
+      {
+        employeeId="",
+        planId="",
+        status="",
+        dateFrom="",
+        dateTo="",
+      }={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(employeeId){
+        params.set("employee_id",String(employeeId));
+      }
+
+      if(planId){
+        params.set("plan_id",String(planId));
+      }
+
+      if(status){
+        params.set("status",String(status));
+      }
+
+      if(dateFrom){
+        params.set("date_from",String(dateFrom));
+      }
+
+      if(dateTo){
+        params.set("date_to",String(dateTo));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `incentives/evaluations`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    incentiveEvaluation:(companyId,evaluationId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/evaluations/`+
+      `${encodeURIComponent(evaluationId)}`,
+
+    calculateIncentiveEvaluation:(
+      companyId,
+      evaluationId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/evaluations/`+
+      `${encodeURIComponent(evaluationId)}/calculate`,
+
+    incentiveEvaluationAction:(
+      companyId,
+      evaluationId,
+      action
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/evaluations/`+
+      `${encodeURIComponent(evaluationId)}/`+
+      `${encodeURIComponent(action)}`,
+
+    pushIncentiveToPayroll:(
+      companyId,
+      evaluationId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/evaluations/`+
+      `${encodeURIComponent(evaluationId)}/`+
+      `push-to-payroll`,
+
+    removeIncentiveFromPayroll:(
+      companyId,
+      evaluationId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/evaluations/`+
+      `${encodeURIComponent(evaluationId)}/`+
+      `remove-from-payroll`,
+
+    runPayslips:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/payslips`,
+
+    employeePayslip:(
+      companyId,
+      runId,
+      employeeId
+    )=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/employees/`+
+      `${encodeURIComponent(employeeId)}/payslip`,
+      
+    runReconciliation:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/reconciliation`,
+
+    runReversalPreview:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/reversal-preview`,
+
+    reverseRun:(companyId,runId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/runs/`+
+      `${encodeURIComponent(runId)}/reverse`,
+
+    statutoryMappings:(companyId,params={})=>{
+      const qs=new URLSearchParams();
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+      const query=qs.toString();
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `statutory/mappings${query?`?${query}`:""}`;
+    },
+
+    statutoryMapping:(companyId,mappingId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `statutory/mappings/${encodeURIComponent(mappingId)}`,
+
+    statutoryReturns:(companyId,params={})=>{
+      const qs=new URLSearchParams();
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+      const query=qs.toString();
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `statutory/returns${query?`?${query}`:""}`;
+    },
+
+    statutoryReturn:(companyId,returnId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `statutory/returns/${encodeURIComponent(returnId)}`,
+
+    calculateStatutoryReturn:(companyId,returnId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `statutory/returns/${encodeURIComponent(returnId)}/calculate`,
+
+    statutoryReturnAction:(companyId,returnId,action)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `statutory/returns/${encodeURIComponent(returnId)}/`+
+      `${encodeURIComponent(action)}`,
+
+    closeOut:(companyId,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `close-out${query?`?${query}`:""}`;
+    },
     // =====================================================
     // IAS 19 EMPLOYEE BENEFITS
     // =====================================================
@@ -2117,6 +3128,55 @@ const ENDPOINTS = {
     reverseLongTermBenefits:(companyId,runId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/employee-benefits/long-term-runs/${encodeURIComponent(runId)}/reverse`,
 
+    incentivePlans:(companyId,activeOnly=false)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans`+
+      `${activeOnly?"?active_only=true":""}`,
+
+    incentivePlan:(companyId,planId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}`,
+
+    incentiveRules:(companyId,planId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}/rules`,
+
+    incentiveRule:(companyId,planId,ruleId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/plans/${encodeURIComponent(planId)}/rules/`+
+      `${encodeURIComponent(ruleId)}`,
+
+    incentiveAssignments:(
+      companyId,
+      {planId="",employeeId=""}={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(planId)params.set("plan_id",String(planId));
+      if(employeeId){
+        params.set("employee_id",String(employeeId));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/`+
+        `incentives/assignments`+
+        `${qs?`?${qs}`:""}`
+      );
+    },
+
+    incentiveAssignment:(companyId,assignmentId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(companyId)}/payroll/`+
+      `incentives/assignments/`+
+      `${encodeURIComponent(assignmentId)}`,
+
     taxTables: {
       regimes: (companyId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-tables/regimes`,
@@ -2145,6 +3205,55 @@ const ENDPOINTS = {
 
       cloneYear: (companyId, yearId) =>
         `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/payroll/tax-tables/years/${encodeURIComponent(yearId)}/clone`,
+    },
+
+    report:(
+      companyId,
+      reportKey,
+      {
+        runId="",
+        departmentId="",
+        employeeId="",
+        dateFrom="",
+        dateTo="",
+      }={}
+    )=>{
+      const params=new URLSearchParams();
+
+      if(runId){
+        params.set("run_id",String(runId));
+      }
+
+      if(departmentId){
+        params.set(
+          "department_id",
+          String(departmentId)
+        );
+      }
+
+      if(employeeId){
+        params.set(
+          "employee_id",
+          String(employeeId)
+        );
+      }
+
+      if(dateFrom){
+        params.set("date_from",String(dateFrom));
+      }
+
+      if(dateTo){
+        params.set("date_to",String(dateTo));
+      }
+
+      const qs=params.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(companyId)}/payroll/reports/`+
+        `${encodeURIComponent(reportKey)}`+
+        `${qs?`?${qs}`:""}`
+      );
     },
   },
 
@@ -2394,6 +3503,240 @@ const ENDPOINTS = {
 
     assetTaxProfile: (cid, profileId) =>
       `${API_BASE}/api/companies/${cid}/deferred-tax/asset-tax-profiles/${profileId}`,
+  },
+
+  ias41: {
+    setup: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/setup`,
+
+    dashboard: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/dashboard`,
+
+    settings: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/settings`,
+
+    accounts: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/accounts`,
+
+    mappings: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/account-mappings`,
+
+    mapping: (companyId, mappingId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/account-mappings/${encodeURIComponent(mappingId)}`,
+
+    validateMappings: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/account-mappings/validate`,
+
+    locations: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/locations`,
+
+    location: (companyId, locationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/locations/${encodeURIComponent(locationId)}`,
+
+    seasons: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/seasons`,
+
+    season: (companyId, seasonId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/seasons/${encodeURIComponent(seasonId)}`,
+
+    assetClasses: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/asset-classes`,
+
+    assetClass: (companyId, assetClassId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/asset-classes/${encodeURIComponent(assetClassId)}`,
+
+    products: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/products`,
+
+    product: (companyId, productId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/products/${encodeURIComponent(productId)}`,
+
+    inventoryItems: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/inventory-items`,
+
+    batches: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/batches`,
+
+    batch: (companyId, batchId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/batches/${encodeURIComponent(batchId)}`,
+
+    biologicalAssets: (companyId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/biological-assets`,
+
+    biologicalAsset: (companyId, assetId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/biological-assets/${encodeURIComponent(assetId)}`,
+  
+    acquisitions: (companyId, params = {}) => {
+      const query = new URLSearchParams();
+
+      if (params.status) {
+        query.set("status", params.status);
+      }
+
+      if (params.transactionType) {
+        query.set(
+          "transaction_type",
+          params.transactionType
+        );
+      }
+
+      if (params.dateFrom) {
+        query.set("date_from", params.dateFrom);
+      }
+
+      if (params.dateTo) {
+        query.set("date_to", params.dateTo);
+      }
+
+      const qs = query.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions${qs ? `?${qs}` : ""}`;
+    },
+
+    acquisition: (companyId, acquisitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions/${encodeURIComponent(acquisitionId)}`,
+
+    acquisitionPreview: (companyId, acquisitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions/${encodeURIComponent(acquisitionId)}/preview`,
+
+    acquisitionApprove: (companyId, acquisitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions/${encodeURIComponent(acquisitionId)}/approve`,
+
+    acquisitionReturnToDraft: (companyId, acquisitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions/${encodeURIComponent(acquisitionId)}/return-to-draft`,
+
+    acquisitionCancel: (companyId, acquisitionId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/acquisitions/${encodeURIComponent(acquisitionId)}/cancel`,
+  
+    acquisitionPost: function (
+      companyId,
+      acquisitionId
+    ) {
+      return (
+        API_BASE +
+        "/api/companies/" +
+        encodeURIComponent(companyId) +
+        "/ias41/acquisitions/" +
+        encodeURIComponent(acquisitionId) +
+        "/post"
+      );
+    },
+
+    events: (companyId, params = {}) => {
+      const q = new URLSearchParams();
+      if (params.eventGroup) q.set("event_group", params.eventGroup);
+      if (params.eventType) q.set("event_type", params.eventType);
+      if (params.status) q.set("status", params.status);
+      if (params.dateFrom) q.set("date_from", params.dateFrom);
+      if (params.dateTo) q.set("date_to", params.dateTo);
+      const qs = q.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/events${qs ? `?${qs}` : ""}`;
+    },
+
+    event: (companyId, eventId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/events/${encodeURIComponent(eventId)}`,
+
+    eventAction: (companyId, eventId, action) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/events/${encodeURIComponent(eventId)}/${encodeURIComponent(action)}`,
+  
+    valuations: (companyId, params = {}) => {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      if (params.dateFrom) q.set("date_from", params.dateFrom);
+      if (params.dateTo) q.set("date_to", params.dateTo);
+      const qs = q.toString();
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/valuations${qs ? `?${qs}` : ""}`;
+    },
+
+    valuation: (companyId, valuationId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/valuations/${encodeURIComponent(valuationId)}`,
+
+    valuationAction: (companyId, valuationId, action) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/valuations/${encodeURIComponent(valuationId)}/${encodeURIComponent(action)}`,
+  
+    harvests: (companyId, params = {}) => {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      if (params.dateFrom) q.set("date_from", params.dateFrom);
+      if (params.dateTo) q.set("date_to", params.dateTo);
+
+      const qs = q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/harvests${qs ? `?${qs}` : ""}`;
+    },
+
+    harvest: (companyId, harvestId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/harvests/${encodeURIComponent(harvestId)}`,
+
+    harvestAction: (companyId, harvestId, action) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/harvests/${encodeURIComponent(harvestId)}/${encodeURIComponent(action)}`,
+  
+    grants: (companyId, params = {}) => {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      if (params.dateFrom) q.set("date_from", params.dateFrom);
+      if (params.dateTo) q.set("date_to", params.dateTo);
+      const qs = q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grants${qs ? `?${qs}` : ""}`;
+    },
+
+    grant: (companyId, grantId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grants/${encodeURIComponent(grantId)}`,
+
+    grantAction: (companyId, grantId, action) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grants/${encodeURIComponent(grantId)}/${encodeURIComponent(action)}`,
+
+    grantReceipts: (companyId, grantId) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grants/${encodeURIComponent(grantId)}/receipts`,
+
+    grantReceiptAction: (companyId, receiptId, action) =>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/grant-receipts/${encodeURIComponent(receiptId)}/${encodeURIComponent(action)}`,
+  
+    reports:(companyId,params={})=>{
+      const q=new URLSearchParams();
+      if(params.reportKey) q.set("report_key",params.reportKey);
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/reports${qs?`?${qs}`:""}`;
+    },
+
+    report:(companyId,reportKey,params={})=>{
+      const q=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!=="") {
+          q.set(key,value);
+        }
+      });
+
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/reports/${encodeURIComponent(reportKey)}${qs?`?${qs}`:""}`;
+    },
+
+    reportRun:(companyId,reportRunId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/report-runs/${encodeURIComponent(reportRunId)}`,
+  
+    disclosure:(companyId,params={})=>{
+      const q=new URLSearchParams();
+
+      Object.entries(params||{}).forEach(
+        ([key,value])=>{
+          if(
+            value!==undefined
+            &&value!==null
+            &&value!==""
+          ){
+            q.set(key,String(value));
+          }
+        }
+      );
+
+      const qs=q.toString();
+
+      return `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/ias41/disclosure${qs?`?${qs}`:""}`;
+    },
   },
 
   assets: {
@@ -3458,6 +4801,182 @@ const ENDPOINTS = {
   
     exportToken: (cid) =>
       `${API_BASE}/api/companies/${encodeURIComponent(cid)}/reports/export-token`,  
+  
+    payrollEmployeeCostDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params||{}).forEach(
+        ([key,value])=>{
+          if(value!==undefined&&value!==null&&value!==""){
+            qs.set(key,String(value));
+          }
+        }
+      );
+
+      const query=qs.toString();
+
+      return(
+        `${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/employee-costs`+
+        `${query?`?${query}`:""}`
+      );
+    },
+
+    payrollEmployeeCostDisclosureExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/`+
+      `payroll/employee-costs/export`,
+
+    payrollLeaveLiabilityDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/leave-liability`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollBonusProvisionDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/bonus-provision`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollBonusProvisionExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/`+
+      `payroll/bonus-provision/export`,
+
+    payrollLeaveLiabilityExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/`+
+      `payroll/leave-liability/export`,
+  
+    ifrs9Disclosure: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/reports/ifrs9-disclosure`,
+
+    ifrs9DisclosureExport: companyId =>
+      `${API_BASE}/api/companies/${encodeURIComponent(
+        companyId
+      )}/reports/ifrs9-disclosure/export`,
+  
+    payrollTerminationBenefitsDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/termination-benefits`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollTerminationBenefitsExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/`+
+      `payroll/termination-benefits/export`,  
+
+    payrollDefinedContributionDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/defined-contribution`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollDefinedContributionExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/payroll/`+
+      `defined-contribution/export`,
+
+    payrollDefinedBenefitDisclosure:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/defined-benefit`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollDefinedBenefitExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/payroll/`+
+      `defined-benefit/export`,
+
+    payrollStatutoryReturnExport:(cid,returnId)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/payroll/statutory/returns/`+
+      `${encodeURIComponent(returnId)}/export`,  
+  
+    payrollEmployeeBenefitsPack:(cid,params={})=>{
+      const qs=new URLSearchParams();
+
+      Object.entries(params).forEach(([key,value])=>{
+        if(value!==undefined&&value!==null&&value!==""){
+          qs.set(key,String(value));
+        }
+      });
+
+      const query=qs.toString();
+
+      return`${API_BASE}/api/companies/`+
+        `${encodeURIComponent(cid)}/payroll/`+
+        `disclosures/employee-benefits-pack`+
+        `${query?`?${query}`:""}`;
+    },
+
+    payrollEmployeeBenefitsPackExport:(cid)=>
+      `${API_BASE}/api/companies/`+
+      `${encodeURIComponent(cid)}/disclosures/payroll/`+
+      `employee-benefits-pack/export`,  
+  
+    ias41DisclosureExport:(companyId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/disclosures/ias41/export`,  
   },
 
   // --- Dashboard / snapshots ---
@@ -3796,7 +5315,10 @@ const ENDPOINTS = {
 
 window.ENDPOINTS = ENDPOINTS;
 window.endpoints = ENDPOINTS;
-
+window.FinSage = window.FinSage || {};
+window.FinSage.ENDPOINTS = ENDPOINTS;
+window.FinSage.apiFetch = apiFetch;
+window.FinSage.getActiveCompanyId = getActiveCompanyId;
 // ----------------------------
 // Backward-compatible aliases
 // ----------------------------
@@ -6725,6 +8247,16 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
       ],
     },
 
+    {
+      name: "Group Reporting",
+      screen: "group-reporting",
+      icon: "🏢",
+      minRole: "junior",
+      permissionAny: [
+        "can_prepare_financials",
+        "can_view_reports"
+      ],
+    },
     // ==========================
     // STANDARDS
     // ==========================
@@ -6741,6 +8273,17 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
         { name: "Revenue Setup", screen: "revenue-setup", icon: "📐", minRole: "assistant", permission: "can_prepare_financials" },
         { name: "IFRS 9 Financial Instruments", screen: "ifrs9", icon: "💎", minRole: "assistant", permissionAny: ["can_post_journals", "can_prepare_financials", "can_view_reports"] },
         { name: "IAS 12 Deferred Tax", screen: "deferred-tax", icon: "🏛️", minRole: "assistant", permissionAny: ["can_prepare_financials", "can_view_reports", "can_edit_tax_settings"] },
+        {
+          name: "IAS 41 Agriculture",
+          screen: "ias41",
+          icon: "🌾",
+          minRole: "assistant",
+          permissionAny: [
+            "can_post_journals",
+            "can_prepare_financials",
+            "can_view_reports"
+          ],
+        },
       ],
     },
 
@@ -8549,6 +10092,24 @@ const SCREEN_POLICY = {
       "can_post_journals"
     ],
   },
+  ias41: {
+    auth: "private",
+    minRole: "assistant",
+    permissionAny: [
+      "can_post_journals",
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+  },
+
+  "group-reporting": {
+    auth: "private",
+    minRole: "junior",
+    permissionAny: [
+      "can_prepare_financials",
+      "can_view_reports"
+    ],
+  },
 };
 
 
@@ -9944,6 +11505,11 @@ async function switchScreen(name) {
   const isDataMigrationWorkflow =
     name === "data-migration";    
 
+  const isIAS41Workflow =
+    name === "ias41";
+
+  const isGroupReportingWorkflow =
+    name === "group-reporting";
   // 🔐 Auth guard
   let base = "dashboard";
 
@@ -10001,7 +11567,9 @@ async function switchScreen(name) {
   else if (name === "fixed-assets") base = "fixedassets";
   else if (name === "help") base = "help";
   else if (isDeferredTaxWorkflow) base = "deferred-tax";
+  else if (isIAS41Workflow) base = "ias41";
   else if (isDataMigrationWorkflow) base = "data-migration";
+  else if (isGroupReportingWorkflow) base = "group-reporting";
   else base = name.split("-")[0];
 
   // Remember current screen
@@ -10036,6 +11604,29 @@ async function switchScreen(name) {
     }
 
     window.bindDataMigrationScreen?.();
+    return;
+  }
+
+  if (base === "ias41") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[IAS41] company load failed:", e);
+    }
+
+    await window.bindIAS41Screen?.();
+    return;
+  }
+
+  if (base === "group-reporting") {
+    try {
+      await ensureCompanyDataLoaded?.();
+    } catch (e) {
+      console.warn("[GroupReporting] company load failed:", e);
+    }
+
+    window.bindConsolidationScreen?.();
+    await window.loadConsolidationRuns?.();
     return;
   }
 
@@ -10524,6 +12115,7 @@ async function switchScreen(name) {
     ledger: "General Ledger",
     trial: "Trial Balance",
     reports: "Financial Statements",
+    "group-reporting": "Group Reporting & Consolidation",
     vat: "VAT & Tax",
     "tax-recon": "Income Tax Workspace",
     company: "Company & Setup",
@@ -10545,6 +12137,7 @@ async function switchScreen(name) {
     payroll: "Payroll",
     budgeting: "Planning & Performance",
     "deferred-tax": "IAS 12 Deferred Tax",
+    ias41: "IAS 41 Agriculture",
     inventory: "Inventory & Services",
     customers: "Customers",
     vendors: "Vendors",
@@ -12258,86 +13851,99 @@ function toIsoDateOnly(value) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-window.bindCompanyLogoUploader = function bindCompanyLogoUploader(companyId) {
-  const btn = document.getElementById("btnUploadLogo");
-  const file = document.getElementById("cpLogoFile");
-  const msg  = document.getElementById("cpLogoMsg");
-  const prev = document.getElementById("cpLogoPreview");
-  const fb   = document.getElementById("cpLogoFallback");
-  const hiddenUrl = document.getElementById("cpLogoUrl");
-  const btnRemove = document.getElementById("btnRemoveLogo");
+window.bindCompanyLogoUploader=function bindCompanyLogoUploader(companyId){
+  const btn=document.getElementById("btnUploadLogo");
+  const file=document.getElementById("cpLogoFile");
+  const msg=document.getElementById("cpLogoMsg");
+  const prev=document.getElementById("cpLogoPreview");
+  const fb=document.getElementById("cpLogoFallback");
+  const hiddenUrl=document.getElementById("cpLogoUrl");
+  const btnRemove=document.getElementById("btnRemoveLogo");
 
-  if (!btn || !file) return;
-  if (btn.dataset.bound === "1") return; // prevent double binding
-  btn.dataset.bound = "1";
+  if(!btn||!file) return;
+  if(btn.dataset.bound==="1") return;
+  btn.dataset.bound="1";
 
-  const setPreview = (url) => {
-    if (hiddenUrl) hiddenUrl.value = url || "";
-    if (prev && url) {
-      prev.src = url;
+  const bustCache=url=>{
+    if(!url) return "";
+    try{
+      const u=new URL(url,window.location.origin);
+      u.searchParams.set("t",Date.now());
+      return u.pathname+u.search+u.hash;
+    }catch{
+      return `${url}${url.includes("?")?"&":"?"}t=${Date.now()}`;
+    }
+  };
+
+  const setPreview=url=>{
+    if(hiddenUrl) hiddenUrl.value=url||"";
+
+    if(prev&&url){
+      prev.src=bustCache(url);
       prev.classList.remove("hidden");
       fb?.classList.add("hidden");
-    } else {
-      prev?.classList.add("hidden");
+    }else{
+      if(prev){
+        prev.removeAttribute("src");
+        prev.classList.add("hidden");
+      }
       fb?.classList.remove("hidden");
     }
   };
 
-  btn.addEventListener("click", () => file.click());
+  btn.addEventListener("click",()=>file.click());
 
-  file.addEventListener("change", async () => {
-    const f = file.files?.[0];
-    if (!f) return;
+  file.addEventListener("change",async()=>{
+    const f=file.files?.[0];
+    if(!f) return;
 
-    msg && (msg.textContent = "Uploading…");
+    msg&&(msg.textContent="Uploading…");
 
-    try {
-      const fd = new FormData();
-      fd.append("logo", f);
+    try{
+      const fd=new FormData();
+      fd.append("logo",f);
 
-      const res = await apiFetch(ENDPOINTS.companyLogo(companyId), {
-        method: "POST",
-        body: fd,
+      const res=await apiFetch(ENDPOINTS.companyLogo(companyId),{
+        method:"POST",
+        body:fd
       });
 
-      // bust cache
-      const url = (res.logo_url || "").trim();
-      const cacheBusted = url ? `${url}?t=${Date.now()}` : "";
-      setPreview(cacheBusted);
+      const url=(res?.logo_url||"").trim();
+      setPreview(url);
 
-      // also update CURRENT_COMPANY if present
-      if (typeof CURRENT_COMPANY !== "undefined" && CURRENT_COMPANY) {
-        CURRENT_COMPANY.logo_url = url;
-      }
+      if(typeof CURRENT_COMPANY!=="undefined"&&CURRENT_COMPANY)
+        CURRENT_COMPANY.logo_url=url;
 
-      msg && (msg.textContent = "Logo uploaded");
-    } catch (e) {
-      console.error("Logo upload failed:", e);
-      msg && (msg.textContent = e?.message || "Upload failed");
-    } finally {
-      file.value = "";
+      msg&&(msg.textContent="Logo uploaded");
+    }catch(e){
+      console.error("Logo upload failed:",e);
+      msg&&(msg.textContent=e?.message||"Upload failed");
+    }finally{
+      file.value="";
     }
   });
 
-  if (btnRemove) {
-    btnRemove.addEventListener("click", async () => {
-      msg && (msg.textContent = "Removing…");
-      try {
-        await apiFetch(ENDPOINTS.companyLogo(companyId), { method: "DELETE" });
+  if(btnRemove){
+    btnRemove.addEventListener("click",async()=>{
+      msg&&(msg.textContent="Removing…");
+
+      try{
+        await apiFetch(ENDPOINTS.companyLogo(companyId),{method:"DELETE"});
         setPreview("");
-        if (typeof CURRENT_COMPANY !== "undefined" && CURRENT_COMPANY) {
-          CURRENT_COMPANY.logo_url = null;
-        }
-        msg && (msg.textContent = "Removed");
-      } catch (e) {
-        msg && (msg.textContent = e?.message || "Failed to remove");
+
+        if(typeof CURRENT_COMPANY!=="undefined"&&CURRENT_COMPANY)
+          CURRENT_COMPANY.logo_url=null;
+
+        msg&&(msg.textContent="Removed");
+      }catch(e){
+        console.error("Logo remove failed:",e);
+        msg&&(msg.textContent=e?.message||"Failed to remove");
       }
     });
   }
 
-  // if company already loaded
-  const existing = (window.CURRENT_COMPANY?.logo_url || "").trim();
-  if (existing) setPreview(`${existing}?t=${Date.now()}`);
+  const existing=(window.CURRENT_COMPANY?.logo_url||"").trim();
+  if(existing) setPreview(existing);
 };
 
 function hydrateMyCompanyView(company) {
@@ -12781,7 +14387,20 @@ window.loadCompanyProfile = loadCompanyProfile;
   }
 
 const INDUSTRY_CATALOG = {
-  "Agriculture": [],
+  "Agriculture": [
+    "Crop Farming",
+    "Livestock Farming",
+    "Mixed Farming",
+    "Dairy Farming",
+    "Poultry Farming",
+    "Horticulture",
+    "Fruit Farming",
+    "Forestry & Plantations",
+    "Aquaculture",
+    "Beekeeping",
+    "Game & Wildlife Farming",
+    "Agricultural Support Services"
+  ],
 
   "Automotive Services": [
     "Auto Repair Workshop",
@@ -15133,68 +16752,81 @@ function renderAnalysisDots(activeView) {
   }).join("");
 }
 
-function resetAnalysisProgress() {
-  analysisProgressValue = 0;
+const ENABLE_ANALYSIS_AUTO_ROTATION=false;
 
-  const bar = document.getElementById("analysisProgress");
-  if (bar) bar.style.width = "0%";
+function resetAnalysisProgress(){
+  analysisProgressValue=0;
+
+  const bar=document.getElementById("analysisProgress");
+  if(bar)bar.style.width=ENABLE_ANALYSIS_AUTO_ROTATION?"0%":"100%";
 
   clearInterval(analysisProgressTimer);
+  if(!ENABLE_ANALYSIS_AUTO_ROTATION)return;
 
-  analysisProgressTimer = setInterval(() => {
-    analysisProgressValue += 2;
+  analysisProgressTimer=setInterval(()=>{
+    analysisProgressValue+=2;
 
-    const progressBar = document.getElementById("analysisProgress");
-    if (progressBar) {
-      progressBar.style.width = `${Math.min(analysisProgressValue, 100)}%`;
+    const progressBar=document.getElementById("analysisProgress");
+    if(progressBar){
+      progressBar.style.width=`${Math.min(analysisProgressValue,100)}%`;
     }
 
-    if (analysisProgressValue >= 100) {
+    if(analysisProgressValue>=100){
       clearInterval(analysisProgressTimer);
     }
-  }, 80);
+  },80);
 }
 
-async function switchAnalysisViewAuto(view) {
-  window.__FS_ANALYSIS_VIEW__ = view;
+async function switchAnalysisViewAuto(view){
+  if(!ENABLE_ANALYSIS_AUTO_ROTATION)return;
+
+  window.FS_ANALYSIS_VIEW=view;
   setAnalysisTabState(view);
   renderAnalysisDots(view);
   resetAnalysisProgress();
 
-  const periodKey = document.getElementById("fsPeriodFilter")?.value || "this_month";
+  const periodKey=document.getElementById("fsPeriodFilter")?.value||"this_month";
   await renderAnalysisWidget(periodKey);
 }
 
-function startAnalysisAutoRotation() {
+function startAnalysisAutoRotation(){
   clearInterval(analysisAutoTimer);
   clearInterval(analysisProgressTimer);
 
-  const currentView = window.__FS_ANALYSIS_VIEW__ || "cash";
-  analysisAutoIndex = Math.max(0, ANALYSIS_AUTO_VIEWS.indexOf(currentView));
+  if(!ENABLE_ANALYSIS_AUTO_ROTATION){
+    const bar=document.getElementById("analysisProgress");
+    if(bar)bar.style.display="none";
+    return;
+  }
+
+  const currentView=window.FS_ANALYSIS_VIEW||"cash";
+  analysisAutoIndex=Math.max(0,ANALYSIS_AUTO_VIEWS.indexOf(currentView));
 
   renderAnalysisDots(currentView);
   resetAnalysisProgress();
 
-  analysisAutoTimer = setInterval(async () => {
-    analysisAutoIndex = (analysisAutoIndex + 1) % ANALYSIS_AUTO_VIEWS.length;
+  analysisAutoTimer=setInterval(async()=>{
+    analysisAutoIndex=(analysisAutoIndex+1)%ANALYSIS_AUTO_VIEWS.length;
     await switchAnalysisViewAuto(ANALYSIS_AUTO_VIEWS[analysisAutoIndex]);
-  }, 4000);
+  },4000);
 }
 
-function stopAnalysisAutoRotation() {
+function stopAnalysisAutoRotation(){
   clearInterval(analysisAutoTimer);
   clearInterval(analysisProgressTimer);
 }
 
-function bindAnalysisAutoRotationPause() {
-  const card = document.getElementById("analysisChartWrap")?.closest(".card");
-  if (!card) return;
+function bindAnalysisAutoRotationPause(){
+  if(!ENABLE_ANALYSIS_AUTO_ROTATION)return;
 
-  card.addEventListener("mouseenter", stopAnalysisAutoRotation);
-  card.addEventListener("mouseleave", startAnalysisAutoRotation);
+  const card=document.getElementById("analysisChartWrap")?.closest(".card");
+  if(!card)return;
+
+  card.addEventListener("mouseenter",stopAnalysisAutoRotation);
+  card.addEventListener("mouseleave",startAnalysisAutoRotation);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded",()=>{
   bindAnalysisAutoRotationPause();
   startAnalysisAutoRotation();
 });
@@ -26902,16 +28534,47 @@ async function exportStatement(stmtType, format) {
   }
 
   let url = "";
-  const reportKeyMap = {
-    pnl: "income_statement",
-    bs: "balance_sheet",
-    socie: "socie",
-    cf: "cash_flow",
-    tb: "trial_balance",
+  const reportKeyMap={
+    pnl:"income_statement",
+    bs:"balance_sheet",
+    socie:"socie",
+    cf:"cash_flow",
+    tb:"trial_balance",
 
-    ppe_disclosure: "ppe_disclosure",
-    lease_disclosure: "lease_disclosure",
-    revenue_disclosure: "revenue_disclosure",
+    ppe_disclosure:"ppe_disclosure",
+    lease_disclosure:"lease_disclosure",
+    revenue_disclosure:"revenue_disclosure",
+    ip_disclosure:"ip_disclosure",
+    ia_disclosure:"ia_disclosure",
+    ifrs9_disclosure:"ifrs9_disclosure",
+
+    payroll_employee_cost_disclosure:
+      "payroll_employee_cost_disclosure",
+
+    ias19_leave_liability:
+      "ias19_leave_liability",
+
+    ias19_bonus_provision:
+      "ias19_bonus_provision",
+
+    ias19_termination_benefits:
+      "ias19_termination_benefits",
+
+    ias19_defined_contribution:
+      "ias19_defined_contribution",
+
+    ias19_defined_benefit:
+      "ias19_defined_benefit",
+
+    ias19_defined_contribution:
+      "ias19_defined_contribution_disclosure",
+
+    ias19_defined_benefit:
+      "ias19_defined_benefit_disclosure",
+    payroll_statutory_return:"payroll_statutory_return",
+
+    ias19_employee_benefits_pack:
+      "ias19_employee_benefits_pack",
   };
 
   switch (t) {
@@ -26938,13 +28601,19 @@ async function exportStatement(stmtType, format) {
       if (pack === "ias16_ppe") {
         url = ENDPOINTS.reports.ppeDisclosureExport(cid);
         window.__notesReportKey = "ppe_disclosure";
+      }else if(pack==="ias41_agriculture"){
+        url= ENDPOINTS.reports.ias41DisclosureExport(cid);
+        window.__notesReportKey="ias41_disclosure";
       } else if (
         pack === "ifrs16_lessee" ||
         pack === "ifrs16_lessor"
       ) {
         url = ENDPOINTS.reports.leaseDisclosureExport(cid);
         window.__notesReportKey = "lease_disclosure";
-      } else if (pack === "ifrs15_revenue") {
+      } else if (pack === "ifrs9_financial_instruments") {
+        url = ENDPOINTS.reports.ifrs9DisclosureExport(cid);
+        window.__notesReportKey ="ifrs9_disclosure";          
+      }else if (pack === "ifrs15_revenue") {
         url = ENDPOINTS.reports.revenueDisclosureExport(cid);
         window.__notesReportKey = "revenue_disclosure";
       } else if (pack === "ias40_ip") {
@@ -26953,7 +28622,35 @@ async function exportStatement(stmtType, format) {
       } else if (pack === "ias38_ia") {
         url = ENDPOINTS.reports.iaDisclosureExport(cid);
         window.__notesReportKey = "ia_disclosure";
-      } else {
+      } else if(pack==="ias19_employee_costs"){
+        url=ENDPOINTS.reports.payrollEmployeeCostDisclosureExport(cid);
+        window.__notesReportKey= "payroll_employee_cost_disclosure";
+      } else if(pack==="ias19_employee_costs"){
+        url=ENDPOINTS.reports
+          .payrollEmployeeCostDisclosureExport(cid);
+        window.__notesReportKey= "payroll_employee_cost_disclosure";
+      }else if(pack==="ias19_leave_liability"){
+        url=ENDPOINTS.reports.payrollLeaveLiabilityExport(cid);
+        window.__notesReportKey= "ias19_leave_liability";
+      }else if(pack==="ias19_bonus_provision"){
+        url=ENDPOINTS.reports.payrollBonusProvisionExport(cid);
+        window.__notesReportKey= "ias19_bonus_provision";
+      } else if (pack === "ifrs9_financial_instruments") {
+        url = ENDPOINTS.reports.ifrs9DisclosureExport(cid);
+        window.__notesReportKey ="ifrs9_disclosure";
+      }else if(pack==="ias19_termination_benefits"){
+        url=ENDPOINTS.reports.payrollTerminationBenefitsExport(cid);
+        window.__notesReportKey="ias19_termination_benefits";
+      }else if(pack==="ias19_defined_contribution"){
+        url=ENDPOINTS.reports.payrollDefinedContributionExport(cid);
+        window.__notesReportKey="ias19_defined_contribution";
+      }else if(pack==="ias19_defined_benefit"){
+        url=ENDPOINTS.reports.payrollDefinedBenefitExport(cid);
+        window.__notesReportKey="ias19_defined_benefit";
+      }else if(pack==="ias19_employee_benefits_pack"){
+        url=ENDPOINTS.reports.payrollEmployeeBenefitsPackExport(cid);
+        window.__notesReportKey="ias19_employee_benefits_pack";
+      }else{
         return alert(`Notes export is not configured for: ${pack}`);
       }
 
@@ -28566,6 +30263,1783 @@ function buildIFRS16NotesQuery(period, perspective) {
   return q;
 }
 
+function renderPayrollEmployeeCostDisclosureHTML(
+  payload
+){
+  const disclosure=
+    payload?.disclosure||payload||{};
+
+  const summary=disclosure.summary||{};
+  const sections=disclosure.sections||{};
+  const totals=disclosure.totals||{};
+  const note=payload?.note||{};
+
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(
+      undefined,
+      {
+        minimumFractionDigits:2,
+        maximumFractionDigits:2,
+      }
+    );
+
+  const simpleRows=rows=>{
+    if(!rows?.length){
+      return`
+        <tr>
+          <td colspan="2">
+            No amounts were reported.
+          </td>
+        </tr>`;
+    }
+
+    return rows.map(row=>`
+      <tr>
+        <td>
+          ${escapeHtml(
+            row.label||row.code||""
+          )}
+        </td>
+
+        <td class="num">
+          ${moneyValue(row.amount)}
+        </td>
+      </tr>
+    `).join("");
+  };
+
+  const departments=
+    sections.department_analysis?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          ${escapeHtml(
+            disclosure.title||
+            "Employee benefit expense"
+          )}
+        </h2>
+
+        <p class="text-sm text-slate-600 mt-1">
+          IAS 19 employee costs generated from
+          posted payroll runs.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employees
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Gross pay
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(summary.gross_pay)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employer contributions
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.employer_contributions
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Total employee cost
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              totals.employee_benefit_expense
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Short-term employee benefits
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">
+                  Description
+                </th>
+                <th class="text-right">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${simpleRows(
+                sections.earnings?.rows||[]
+              )}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th class="text-left">
+                  Short-term employee benefits
+                </th>
+                <th class="text-right">
+                  ${moneyValue(
+                    totals
+                      .short_term_employee_benefits
+                  )}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Employer contributions
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">
+                  Description
+                </th>
+                <th class="text-right">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${simpleRows(
+                sections
+                  .employer_contributions
+                  ?.rows||[]
+              )}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th class="text-left">
+                  Employer contributions
+                </th>
+                <th class="text-right">
+                  ${moneyValue(
+                    totals.employer_contributions
+                  )}
+                </th>
+              </tr>
+
+              <tr>
+                <th class="text-left">
+                  Total employee benefit expense
+                </th>
+                <th class="text-right">
+                  ${moneyValue(
+                    totals.employee_benefit_expense
+                  )}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Employee costs by department
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">
+                  Department
+                </th>
+                <th class="text-right">
+                  Employees
+                </th>
+                <th class="text-right">
+                  Gross pay
+                </th>
+                <th class="text-right">
+                  Employer contributions
+                </th>
+                <th class="text-right">
+                  Total employee cost
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${departments.length
+                ?departments.map(row=>`
+                  <tr>
+                    <td>
+                      ${escapeHtml(
+                        row.department||"Unassigned"
+                      )}
+                    </td>
+                    <td class="text-right">
+                      ${Number(
+                        row.employee_count||0
+                      )}
+                    </td>
+                    <td class="text-right">
+                      ${moneyValue(row.gross_pay)}
+                    </td>
+                    <td class="text-right">
+                      ${moneyValue(
+                        row.employer_contributions
+                      )}
+                    </td>
+                    <td class="text-right">
+                      ${moneyValue(
+                        row.total_employee_cost
+                      )}
+                    </td>
+                  </tr>
+                `).join("")
+                :`
+                  <tr>
+                    <td colspan="5">
+                      No department analysis available.
+                    </td>
+                  </tr>
+                `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+}
+
+function renderPayrollLeaveLiabilityHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const note=payload?.note||{};
+  const summary=d.summary||{};
+  const movement=d.movement||{};
+  const sections=d.sections||{};
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+
+  const movementRows=[
+    ["Opening liability",movement.opening_liability],
+    ["Current service cost",movement.current_service_cost],
+    ["Leave utilised",-Number(
+      movement.leave_taken_amount||0
+    )],
+    ["Adjustments",movement.adjustment_amount],
+    ["Closing liability",movement.closing_liability],
+  ];
+
+  const typeRows=sections.by_leave_type?.rows||[];
+  const deptRows=sections.by_department?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          Leave pay liability
+        </h2>
+        <p class="text-sm text-slate-600 mt-1">
+          IAS 19 accumulated leave obligation.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employees
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Leave types
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.leave_type_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Closing days
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.closing_days||0)
+              .toFixed(2)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Leave liability
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(summary.closing_liability)}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Liability reconciliation
+        </h3>
+        <table class="w-full text-sm">
+          <tbody>
+            ${movementRows.map(([label,value],index)=>`
+              <tr class="${index===4?"font-bold":""}">
+                <td>${escapeHtml(label)}</td>
+                <td class="text-right">
+                  ${moneyValue(value)}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Leave liability by type
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Leave type</th>
+              <th class="text-right">Days</th>
+              <th class="text-right">Liability</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${typeRows.length?typeRows.map(row=>`
+              <tr>
+                <td>${escapeHtml(row.leave_type||"")}</td>
+                <td class="text-right">
+                  ${Number(row.closing_days||0).toFixed(2)}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(row.liability_amount)}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="3">No leave liability data.</td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Leave liability by department
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Department</th>
+              <th class="text-right">Employees</th>
+              <th class="text-right">Days</th>
+              <th class="text-right">Liability</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${deptRows.length?deptRows.map(row=>`
+              <tr>
+                <td>
+                  ${escapeHtml(
+                    row.department||"Unassigned"
+                  )}
+                </td>
+                <td class="text-right">
+                  ${Number(row.employee_count||0)}
+                </td>
+                <td class="text-right">
+                  ${Number(row.closing_days||0).toFixed(2)}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(row.liability_amount)}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="4">No department data.</td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+function renderPayrollBonusProvisionHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const note=payload?.note||{};
+  const summary=d.summary||{};
+  const movement=d.movement||{};
+  const sections=d.sections||{};
+
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+
+  const movementRows=[
+    ["Opening provision",movement.opening_provision],
+    [
+      "Current-period charge",
+      movement.current_period_charge,
+    ],
+    ["Amounts paid",-Number(
+      movement.amount_paid||0
+    )],
+    ["Amounts reversed",-Number(
+      movement.amount_reversed||0
+    )],
+    ["Other adjustments",movement.adjustment_amount],
+    ["Closing provision",movement.closing_provision],
+  ];
+
+  const schemeRows=sections.by_scheme?.rows||[];
+  const departmentRows=
+    sections.by_department?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          Bonus provision
+        </h2>
+        <p class="text-sm text-slate-600 mt-1">
+          IAS 19 employee bonus obligation.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employees
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Bonus schemes
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.scheme_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Eligible remuneration
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.eligible_remuneration
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Closing provision
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.closing_provision
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Provision reconciliation
+        </h3>
+        <table class="w-full text-sm">
+          <tbody>
+            ${movementRows.map(([label,value],index)=>`
+              <tr class="${
+                index===movementRows.length-1
+                  ?"font-bold"
+                  :""
+              }">
+                <td>${escapeHtml(label)}</td>
+                <td class="text-right">
+                  ${moneyValue(value)}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Bonus provision by scheme
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Scheme</th>
+              <th class="text-right">Employees</th>
+              <th class="text-right">
+                Eligible remuneration
+              </th>
+              <th class="text-right">Provision</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${schemeRows.length?schemeRows.map(row=>`
+              <tr>
+                <td>
+                  ${escapeHtml(
+                    row.scheme_name||
+                    row.scheme_code||
+                    ""
+                  )}
+                </td>
+                <td class="text-right">
+                  ${Number(row.employee_count||0)}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(
+                    row.eligible_remuneration
+                  )}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(row.provision_amount)}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="4">
+                  No bonus-scheme data.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Bonus provision by department
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Department</th>
+              <th class="text-right">Employees</th>
+              <th class="text-right">
+                Eligible remuneration
+              </th>
+              <th class="text-right">Provision</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${departmentRows.length
+              ?departmentRows.map(row=>`
+                <tr>
+                  <td>
+                    ${escapeHtml(
+                      row.department||"Unassigned"
+                    )}
+                  </td>
+                  <td class="text-right">
+                    ${Number(row.employee_count||0)}
+                  </td>
+                  <td class="text-right">
+                    ${moneyValue(
+                      row.eligible_remuneration
+                    )}
+                  </td>
+                  <td class="text-right">
+                    ${moneyValue(
+                      row.provision_amount
+                    )}
+                  </td>
+                </tr>
+              `).join("")
+              :`
+                <tr>
+                  <td colspan="4">
+                    No department data.
+                  </td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+function buildIFRS9NotesQuery(period) {
+  const p = period?.params || period || {};
+  const q = { include_closed: "1" };
+
+  if (p.from && p.to) {
+    q.from = p.from;
+    q.to = p.to;
+    q.as_of = p.as_of || p.to;
+  } else {
+    q.preset =
+      p.preset ||
+      document.getElementById("stmtPreset")?.value ||
+      "this_year";
+  }
+
+  return q;
+}
+
+function renderIFRS9DisclosureHTML(payload = {}) {
+  const meta = payload.meta || {};
+  const sections = payload.sections || [];
+  const period = meta.period || {};
+
+  const sectionHtml = sections.map(section => {
+    const columns = section.columns || [
+      { key: "amount", label: "Amount" },
+    ];
+
+    const rows = section.rows || [];
+
+    return `
+      <div class="border rounded-lg p-3">
+        <div class="font-semibold mb-2">
+          ${escHtml(section.title || "")}
+        </div>
+
+        ${
+          rows.length
+            ? `
+              <div class="overflow-auto">
+                <table class="w-full text-xs border">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="p-2 border text-left">
+                        Description
+                      </th>
+
+                      ${columns.map(column => `
+                        <th class="p-2 border text-right">
+                          ${escHtml(column.label || column.key)}
+                        </th>
+                      `).join("")}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${rows.map(row => `
+                      <tr class="${
+                        ["subtotal", "total"].includes(row.row_type)
+                          ? "font-semibold"
+                          : ""
+                      }">
+                        <td class="p-2 border">
+                          ${escHtml(row.label || "")}
+                        </td>
+
+                        ${columns.map(column => {
+                          const value = row.values?.[column.key];
+
+                          return `
+                            <td class="p-2 border text-right">
+                              ${
+                                value === null ||
+                                value === undefined ||
+                                value === ""
+                                  ? ""
+                                  : fmtMoney(value)
+                              }
+                            </td>
+                          `;
+                        }).join("")}
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <div class="text-xs text-slate-500">
+                No disclosure data for this section.
+              </div>
+            `
+        }
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="space-y-3">
+      <div>
+        <h3 class="font-bold text-slate-800">
+          ${escHtml(
+            meta.report_name ||
+            "Financial Instruments Disclosure"
+          )}
+        </h3>
+
+        <div class="text-xs text-slate-500 mt-1">
+          ${escHtml(meta.standard || "IFRS 9")}
+          ${
+            period.from && period.to
+              ? ` · ${escHtml(period.from)} to ${escHtml(period.to)}`
+              : ""
+          }
+        </div>
+      </div>
+
+      ${sectionHtml || `
+        <div class="text-xs text-slate-500">
+          No IFRS 9 disclosure information found.
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function renderPayrollTerminationBenefitsHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const note=payload?.note||{};
+  const summary=d.summary||{};
+  const movement=d.movement||{};
+  const sections=d.sections||{};
+
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+
+  const movementRows=[
+    ["Opening obligation",movement.opening_obligation],
+    [
+      "Current-period charge",
+      movement.current_period_charge,
+    ],
+    ["Benefits paid",-Number(
+      movement.benefits_paid||0
+    )],
+    ["Amounts reversed",-Number(
+      movement.amount_reversed||0
+    )],
+    ["Other adjustments",movement.adjustment_amount],
+    ["Closing obligation",movement.closing_obligation],
+  ];
+
+  const typeRows=
+    sections.by_benefit_type?.rows||[];
+
+  const departmentRows=
+    sections.by_department?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          Termination benefits
+        </h2>
+        <p class="text-sm text-slate-600 mt-1">
+          IAS 19 termination benefit obligations.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employees
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Plans
+          </span>
+          <strong class="block mt-1">
+            ${Number(summary.plan_count||0)}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Gross benefits
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.gross_benefit_amount
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Outstanding obligation
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.closing_obligation
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Obligation reconciliation
+        </h3>
+        <table class="w-full text-sm">
+          <tbody>
+            ${movementRows.map(([label,value],index)=>`
+              <tr class="${
+                index===movementRows.length-1
+                  ?"font-bold"
+                  :""
+              }">
+                <td>${escapeHtml(label)}</td>
+                <td class="text-right">
+                  ${moneyValue(value)}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Termination benefits by type
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Benefit type</th>
+              <th class="text-right">Employees</th>
+              <th class="text-right">
+                Gross benefit
+              </th>
+              <th class="text-right">Paid</th>
+              <th class="text-right">
+                Outstanding
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${typeRows.length?typeRows.map(row=>`
+              <tr>
+                <td>
+                  ${escapeHtml(
+                    row.benefit_type||""
+                  )}
+                </td>
+                <td class="text-right">
+                  ${Number(row.employee_count||0)}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(
+                    row.gross_benefit_amount
+                  )}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(row.amount_paid)}
+                </td>
+                <td class="text-right">
+                  ${moneyValue(
+                    row.outstanding_obligation
+                  )}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="5">
+                  No termination benefit data.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Termination benefits by department
+        </h3>
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="text-left">Department</th>
+              <th class="text-right">Employees</th>
+              <th class="text-right">
+                Gross benefit
+              </th>
+              <th class="text-right">Paid</th>
+              <th class="text-right">
+                Outstanding
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${departmentRows.length
+              ?departmentRows.map(row=>`
+                <tr>
+                  <td>
+                    ${escapeHtml(
+                      row.department||"Unassigned"
+                    )}
+                  </td>
+                  <td class="text-right">
+                    ${Number(row.employee_count||0)}
+                  </td>
+                  <td class="text-right">
+                    ${moneyValue(
+                      row.gross_benefit_amount
+                    )}
+                  </td>
+                  <td class="text-right">
+                    ${moneyValue(row.amount_paid)}
+                  </td>
+                  <td class="text-right">
+                    ${moneyValue(
+                      row.outstanding_obligation
+                    )}
+                  </td>
+                </tr>
+              `).join("")
+              :`
+                <tr>
+                  <td colspan="5">
+                    No department data.
+                  </td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+function benefitMoney(value){
+  return Number(value||0).toLocaleString(
+    undefined,
+    {
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    }
+  );
+}
+
+function benefitTable(headers,rows){
+  return`
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr>
+            ${headers.map(x=>`
+              <th class="${x.num?"text-right":"text-left"}">
+                ${escapeHtml(x.label)}
+              </th>
+            `).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length?rows.map(row=>`
+            <tr>
+              ${headers.map(x=>`
+                <td class="${x.num?"text-right":""}">
+                  ${x.money
+                    ?benefitMoney(row[x.key])
+                    :escapeHtml(
+                        row[x.key]??""
+                      )}
+                </td>
+              `).join("")}
+            </tr>
+          `).join(""):`
+            <tr>
+              <td colspan="${headers.length}">
+                No disclosure data.
+              </td>
+            </tr>
+          `}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderPayrollDcDisclosureHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const note=payload?.note||{};
+  const s=d.summary||{};
+  const plans=d.sections?.by_plan?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <h2 class="text-xl font-bold">
+        Defined-contribution plans
+      </h2>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 my-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">Plans</span>
+          <strong class="block mt-1">
+            ${Number(s.plan_count||0)}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">Employees</span>
+          <strong class="block mt-1">
+            ${Number(s.employee_count||0)}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employer contributions
+          </span>
+          <strong class="block mt-1">
+            ${benefitMoney(s.employer_contribution)}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Total payable
+          </span>
+          <strong class="block mt-1">
+            ${benefitMoney(s.total_payable)}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">Disclosure wording</h3>
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Contributions by plan
+        </h3>
+        ${benefitTable([
+          {key:"plan_name",label:"Plan"},
+          {
+            key:"employee_count",
+            label:"Employees",
+            num:true,
+          },
+          {
+            key:"pensionable_remuneration",
+            label:"Pensionable remuneration",
+            num:true,
+            money:true,
+          },
+          {
+            key:"employee_contribution",
+            label:"Employee contribution",
+            num:true,
+            money:true,
+          },
+          {
+            key:"employer_contribution",
+            label:"Employer contribution",
+            num:true,
+            money:true,
+          },
+          {
+            key:"total_contribution",
+            label:"Total",
+            num:true,
+            money:true,
+          },
+        ],plans)}
+      </div>
+    </section>`;
+}
+
+function renderPayrollDbDisclosureHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const note=payload?.note||{};
+  const s=d.summary||{};
+  const plans=d.sections?.plans?.rows||[];
+  const assumptions=
+    d.sections?.assumptions?.rows||[];
+
+  return`
+    <section class="fs-note-render">
+      <h2 class="text-xl font-bold">
+        Defined-benefit plans
+      </h2>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 my-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">DBO</span>
+          <strong class="block mt-1">
+            ${benefitMoney(
+              s.defined_benefit_obligation
+            )}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Plan assets
+          </span>
+          <strong class="block mt-1">
+            ${benefitMoney(s.plan_assets)}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Net liability
+          </span>
+          <strong class="block mt-1">
+            ${benefitMoney(
+              s.net_defined_benefit_liability
+            )}
+          </strong>
+        </div>
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            OCI remeasurement
+          </span>
+          <strong class="block mt-1">
+            ${benefitMoney(
+              s.oci_remeasurement_amount
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">Disclosure wording</h3>
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Defined-benefit plans
+        </h3>
+        ${benefitTable([
+          {key:"plan_name",label:"Plan"},
+          {
+            key:"active_members",
+            label:"Members",
+            num:true,
+          },
+          {
+            key:"closing_dbo",
+            label:"DBO",
+            num:true,
+            money:true,
+          },
+          {
+            key:"closing_plan_assets",
+            label:"Plan assets",
+            num:true,
+            money:true,
+          },
+          {
+            key:"net_defined_benefit_liability",
+            label:"Net liability",
+            num:true,
+            money:true,
+          },
+          {
+            key:"profit_or_loss_amount",
+            label:"P/L",
+            num:true,
+            money:true,
+          },
+          {
+            key:"oci_remeasurement_amount",
+            label:"OCI",
+            num:true,
+            money:true,
+          },
+        ],plans)}
+      </div>
+
+      <div class="card p-4">
+        <h3 class="font-bold mb-2">
+          Significant actuarial assumptions
+        </h3>
+        ${benefitTable([
+          {key:"plan_name",label:"Plan"},
+          {
+            key:"assumption_label",
+            label:"Assumption",
+          },
+          {
+            key:"numeric_value",
+            label:"Value",
+            num:true,
+          },
+          {key:"unit",label:"Unit"},
+          {
+            key:"text_value",
+            label:"Additional information",
+          },
+        ],assumptions)}
+      </div>
+    </section>`;
+}
+
+function renderPayrollEmployeeBenefitsPackHTML(payload){
+  const pack=payload?.pack||payload||{};
+  const note=payload?.note||{};
+  const summary=pack.summary||{};
+  const sections=pack.sections||{};
+  const readiness=pack.readiness||{};
+  const moneyValue=value=>
+    Number(value||0).toLocaleString(undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2,
+    });
+
+  const amountTable=section=>{
+    const rows=section?.rows||[];
+
+    return`
+      <table class="w-full text-sm">
+        <tbody>
+          ${rows.map(row=>`
+            <tr class="${
+              row.row_type==="total"
+                ?"font-bold"
+                :""
+            }">
+              <td>${escapeHtml(row.label||"")}</td>
+              <td class="text-right">
+                ${moneyValue(row.amount)}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`;
+  };
+
+  const checks=readiness.checks||[];
+
+  return`
+    <section class="fs-note-render">
+      <div class="mb-4">
+        <h2 class="text-xl font-bold">
+          Employee benefits
+        </h2>
+        <p class="text-sm text-slate-600 mt-1">
+          Combined IAS 19 disclosure pack.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employee benefit expense
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.total_employee_benefit_expense
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Employee benefit liabilities
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary
+                .total_employee_benefit_liabilities
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Defined-benefit asset
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.net_defined_benefit_asset
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            OCI remeasurement
+          </span>
+          <strong class="block mt-1">
+            ${moneyValue(
+              summary.oci_remeasurement
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Disclosure wording
+        </h3>
+
+        <div class="whitespace-pre-wrap text-sm leading-6">
+          ${escapeHtml(
+            note.content_text||
+            note.system_draft||
+            ""
+          )}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div class="card p-4">
+          <h3 class="font-bold mb-2">
+            Employee benefit expense
+          </h3>
+          ${amountTable(sections.expense)}
+        </div>
+
+        <div class="card p-4">
+          <h3 class="font-bold mb-2">
+            Employee benefit liabilities
+          </h3>
+          ${amountTable(sections.liabilities)}
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-2">
+          Other comprehensive income
+        </h3>
+        ${amountTable(
+          sections.other_comprehensive_income
+        )}
+      </div>
+
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold">
+            Disclosure readiness
+          </h3>
+
+          <span class="pill">
+            ${readiness.ready
+              ?readiness.has_warnings
+                ?"Ready with warnings"
+                :"Ready"
+              :"Not ready"}
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">Check</th>
+                <th class="text-left">Status</th>
+                <th class="text-left">Message</th>
+                <th class="text-right">Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${checks.length?checks.map(check=>`
+                <tr>
+                  <td>
+                    ${escapeHtml(check.label||"")}
+                  </td>
+                  <td>
+                    <span class="pill">
+                      ${escapeHtml(
+                        String(check.status||"")
+                          .replaceAll("_"," ")
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    ${escapeHtml(check.message||"")}
+                  </td>
+                  <td class="text-right">
+                    ${check.amount==null
+                      ?"—"
+                      :moneyValue(check.amount)}
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="4">
+                    No readiness checks available.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+}
+
+function ias41NoteMoney(value){
+  return Number(value||0).toLocaleString(
+    undefined,{
+      minimumFractionDigits:2,
+      maximumFractionDigits:2
+    }
+  );
+}
+
+function renderIAS41DisclosureHTML(payload){
+  const d=payload?.disclosure||payload||{};
+  const period=payload?.meta?.period||d?.period||{};
+  const classes=d.biological_asset_classes||[];
+  const recon=d.carrying_amount_reconciliation||{};
+  const fv=d.fair_value_gain_loss||{};
+  const harvest=d.harvest||{};
+  const grants=d.government_grants||{};
+  const closing=d.closing_balance||{};
+
+  const movementRows=[
+    ["Opening carrying amount",recon.opening_carrying_amount],
+    ["Purchases",recon.purchases],
+    ["Births",recon.births],
+    ["Planting",recon.planting],
+    ["Other additions",recon.other_additions],
+    ["Fair-value gains",recon.fair_value_gains],
+    ["Fair-value losses",-Number(recon.fair_value_losses||0)],
+    ["Harvest transfers",-Number(recon.harvest_transfer||0)],
+    ["Mortality",-Number(recon.mortality_loss||0)],
+    ["Closing carrying amount",recon.closing_carrying_amount],
+  ];
+
+  return`
+    <section class="fs-note-render">
+      <h2 class="text-xl font-bold">
+        Agriculture
+      </h2>
+
+      <p class="text-sm text-slate-500 mt-1">
+        IAS 41 Agriculture
+        ${period.from&&period.to
+          ?` · ${escapeHtml(period.from)} to ${escapeHtml(period.to)}`
+          :""
+        }
+      </p>
+
+      <div class="card p-4 mt-4">
+        <h3 class="font-bold mb-2">
+          Accounting policy
+        </h3>
+
+        <div class="text-sm leading-6">
+          Biological assets are measured at fair value less
+          costs to sell. Agricultural produce is measured at
+          fair value less costs to sell at the point of harvest,
+          after which IAS 2 Inventories applies.
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 my-4">
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Biological asset classes
+          </span>
+          <strong class="block mt-1">
+            ${classes.length}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Closing carrying amount
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              closing.carrying_amount
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Fair-value gains
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              fv.gain_amount
+            )}
+          </strong>
+        </div>
+
+        <div class="card p-3">
+          <span class="text-xs text-slate-500">
+            Produce at harvest
+          </span>
+          <strong class="block mt-1">
+            ${ias41NoteMoney(
+              harvest.inventory_value
+            )}
+          </strong>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-3">
+          Biological assets by class
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr>
+                <th class="text-left">Class</th>
+                <th class="text-left">Nature</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Fair value</th>
+                <th class="text-right">Costs to sell</th>
+                <th class="text-right">Carrying amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${classes.length
+                ?classes.map(row=>`
+                  <tr>
+                    <td>
+                      ${escapeHtml(
+                        row.class_name||""
+                      )}
+                    </td>
+
+                    <td>
+                      ${escapeHtml(
+                        String(
+                          row.asset_nature||""
+                        ).replaceAll("_"," ")
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${Number(
+                        row.quantity||0
+                      ).toLocaleString()}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.fair_value
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.costs_to_sell
+                      )}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(
+                        row.carrying_amount
+                      )}
+                    </td>
+                  </tr>
+                `).join("")
+                :`
+                  <tr>
+                    <td colspan="6">
+                      No biological assets for this period.
+                    </td>
+                  </tr>
+                `
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <h3 class="font-bold mb-3">
+          Carrying amount reconciliation
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <tbody>
+              ${movementRows.map(
+                ([label,value],index)=>`
+                  <tr class="${
+                    index===movementRows.length-1
+                      ?"font-bold"
+                      :""
+                  }">
+                    <td>
+                      ${escapeHtml(label)}
+                    </td>
+
+                    <td class="text-right">
+                      ${ias41NoteMoney(value)}
+                    </td>
+                  </tr>
+                `
+              ).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <h3 class="font-bold mb-3">
+            Fair-value changes
+          </h3>
+
+          <div class="flex justify-between">
+            <span>Gains</span>
+            <strong>
+              ${ias41NoteMoney(
+                fv.gain_amount
+              )}
+            </strong>
+          </div>
+
+          <div class="flex justify-between mt-2">
+            <span>Losses</span>
+            <strong>
+              ${ias41NoteMoney(
+                fv.loss_amount
+              )}
+            </strong>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <h3 class="font-bold mb-3">
+            Government grants
+          </h3>
+
+          <div class="flex justify-between">
+            <span>Recognised</span>
+            <strong>
+              ${ias41NoteMoney(
+                grants.recognised_amount
+              )}
+            </strong>
+          </div>
+
+          <div class="flex justify-between mt-2">
+            <span>Outstanding</span>
+            <strong>
+              ${ias41NoteMoney(
+                grants.outstanding_amount
+              )}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 const NOTES_REGISTRY = {
   ifrs16_lessee: {
     label: "IFRS 16 Lessee disclosures",
@@ -28711,6 +32185,66 @@ const NOTES_REGISTRY = {
     }
   },
 
+  ias41_agriculture:{
+    label:"IAS 41 Agriculture",
+
+    fetch:async(cid,period)=>{
+      const p=period?.params||period||{};
+      const q={};
+
+      if(p.from&&p.to){
+        q.from=p.from;
+        q.to=p.to;
+      }else{
+        q.preset=
+          p.preset
+          ||period?.preset
+          ||document.getElementById(
+            "stmtPreset"
+          )?.value
+          ||"this_year";
+      }
+
+      if(p.to){
+        q.as_of=p.to;
+      }
+
+      const url=ENDPOINTS.ias41.disclosure(
+        cid,
+        q
+      );
+
+      const response=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      const disclosure=
+        response?.disclosure
+        ||response?.data
+        ||response;
+
+      const payload={
+        ...response,
+        disclosure,
+      };
+
+      return{
+        data:payload,
+        html:
+          renderIAS41DisclosureHTML(
+            payload
+          ),
+        meta:{
+          q,
+          period,
+          disclosure_key:
+            "ias41_agriculture",
+        },
+      };
+    },
+  },
+
   ias38_ia: {
     label: "IAS 38 Intangible Assets disclosures",
     fetch: async (cid, period) => {
@@ -28744,6 +32278,273 @@ const NOTES_REGISTRY = {
         meta: { q, period_meta: payload?.period_meta || null },
       };
     }
+  },
+
+  ias19_employee_costs:{
+    label:"IAS 19 Employee benefit expense",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+      };
+
+      const url=
+        ENDPOINTS.reports
+          .payrollEmployeeCostDisclosure(
+            cid,
+            params
+          );
+
+      const data=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:
+          renderPayrollEmployeeCostDisclosureHTML(
+            data
+          ),
+        meta:{
+          period,
+          disclosure_key:
+            "payroll_employee_costs",
+        },
+      };
+    },
+  },
+
+  ias19_bonus_provision:{
+    label:"IAS 19 Bonus provision",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+
+      const url=
+        ENDPOINTS.reports
+          .payrollBonusProvisionDisclosure(
+            cid,
+            params
+          );
+
+      const data=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:renderPayrollBonusProvisionHTML(data),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_bonus_provision",
+        },
+      };
+    },
+  },
+
+  ias19_leave_liability:{
+    label:"IAS 19 Leave pay liability",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+
+      const url=
+        ENDPOINTS.reports
+          .payrollLeaveLiabilityDisclosure(
+            cid,
+            params
+          );
+
+      const data=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:renderPayrollLeaveLiabilityHTML(data),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_leave_liability",
+        },
+      };
+    },
+  },
+
+  ias19_termination_benefits:{
+    label:"IAS 19 Termination benefits",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+
+      const url=ENDPOINTS.reports
+        .payrollTerminationBenefitsDisclosure(
+          cid,
+          params
+        );
+
+      const data=await window.apiFetch(
+        url,
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:
+          renderPayrollTerminationBenefitsHTML(
+            data
+          ),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_termination_benefits",
+        },
+      };
+    },
+  },
+
+  ias19_defined_contribution:{
+    label:"IAS 19 Defined-contribution plans",
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+      };
+      const data=await window.apiFetch(
+        ENDPOINTS.reports
+          .payrollDefinedContributionDisclosure(
+            cid,
+            params
+          ),
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:renderPayrollDcDisclosureHTML(data),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_defined_contribution",
+        },
+      };
+    },
+  },
+
+  ias19_defined_benefit:{
+    label:"IAS 19 Defined-benefit plans",
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+      const data=await window.apiFetch(
+        ENDPOINTS.reports
+          .payrollDefinedBenefitDisclosure(
+            cid,
+            params
+          ),
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:renderPayrollDbDisclosureHTML(data),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_defined_benefit",
+        },
+      };
+    },
+  },
+
+  ifrs9_financial_instruments: {
+    label: "IFRS 9 Financial Instruments disclosures",
+
+    fetch: async (cid, period) => {
+      const q = buildIFRS9NotesQuery(period);
+      const url = ENDPOINTS.ifrs9.disclosure(cid, q);
+
+      console.log("[IFRS9 DISCLOSURE]", {
+        q,
+        url,
+      });
+
+      const response = await window.apiFetch(url, {
+        method: "GET",
+      });
+
+      const payload = response?.data || response;
+
+      return {
+        data: payload,
+        html: renderIFRS9DisclosureHTML(payload),
+        meta: {
+          q,
+          period,
+        },
+      };
+    },
+  },
+
+  ias19_employee_benefits_pack:{
+    label:"IAS 19 Complete employee benefits note",
+
+    fetch:async(cid,period)=>{
+      const params={
+        preset:period?.preset||"this_year",
+        from:period?.from||"",
+        to:period?.to||"",
+        as_of:period?.to||"",
+      };
+
+      const data=await window.apiFetch(
+        ENDPOINTS.reports
+          .payrollEmployeeBenefitsPack(
+            cid,
+            params
+          ),
+        {method:"GET"}
+      );
+
+      return{
+        data,
+        html:
+          renderPayrollEmployeeBenefitsPackHTML(
+            data
+          ),
+        meta:{
+          period,
+          disclosure_key:
+            "ias19_employee_benefits_pack",
+        },
+      };
+    },
   },
 };
 
@@ -28887,6 +32688,13 @@ function getEditorNoteKeyFromNotesPack() {
     ifrs15_revenue: "ifrs15_revenue_policy",
     ias40_ip: "ias40_ip_policy",
     ias38_ia: "ias38_ia_policy",
+    ias19_employee_costs: "ias19_employee_cost_disclosure",
+    ias19_leave_liability: "ias19_leave_liability_disclosure",
+    ias19_bonus_provision: "ias19_bonus_provision_disclosure",
+    ifrs9_financial_instruments: "ifrs9_financial_instruments_policy",
+    ias19_termination_benefits: "ias19_termination_benefits_disclosure",
+    ias19_employee_benefits_pack: "ias19_employee_benefits_pack",
+    ias41_agriculture: "ias41_agriculture_disclosure",
   };
 
   return map[pack] || "ifrs16_lease_policy";
@@ -34790,11 +38598,20 @@ window.postTerm = async function postTerm() {
     const d = new Date(raw);
     return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  const esc = v => window.escapeHtml ? escapeHtml(String(v ?? "")) :
-    String(v ?? "").replace(/[&<>"']/g, c => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;",
-      '"': "&quot;", "'": "&#039;"
-    }[c]));
+
+  const esc = value => {
+    const text = String(value ?? "");
+
+    return typeof window.escapeHtml === "function"
+      ? window.escapeHtml(text)
+      : text.replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        }[char]));
+  };
 
   const currency = () =>
     state.lease?.currency ||
@@ -36582,948 +40399,7 @@ window.postTerm = async function postTerm() {
 /* =========================================================
    DATA MIGRATION WORKSPACE
 ========================================================= */
-(function dataMigrationWorkspace() {
-  "use strict";
 
-  const $ = (s, r = document) => r.querySelector(s);
-  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-  })[c]);
-  const text = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v ?? ""; };
-  const value = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ""; };
-  const log = msg => state.activity.push(`${new Date().toLocaleTimeString()} — ${msg}`);
-  const money = v => new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: window.CURRENT_COMPANY?.currency || "ZAR"
-  }).format(Number(v || 0));
-  const bytes = n => !n ? "—" : n < 1024 ? `${n} B` : n < 1048576
-    ? `${(n / 1024).toFixed(1)} KB`
-    : `${(n / 1048576).toFixed(1)} MB`;
-  const extension = name => String(name || "").split(".").pop()?.toUpperCase() || "FILE";
-
-  const steps = [
-    ["project", "Project"],
-    ["source", "Source"],
-    ["scope", "Scope"],
-    ["files", "Files"],
-    ["detect", "Detection"],
-    ["mapping", "Field Mapping"],
-    ["accounts", "Account Mapping"],
-    ["validate", "Validation"],
-    ["preview", "Preview"],
-    ["stage", "Staging"],
-    ["reconcile", "Reconcile"],
-    ["commit", "Commit"]
-  ];
-
-  const entities = {
-    chart_of_accounts: "Chart of Accounts",
-    customers: "Customers",
-    vendors: "Vendors",
-    products: "Products and Services",
-    inventory: "Inventory",
-    opening_balances: "Opening Balances",
-    journals: "General Journals",
-    sales_invoices: "Sales Invoices",
-    receipts: "Customer Receipts",
-    supplier_bills: "Supplier Bills",
-    supplier_payments: "Supplier Payments",
-    bank_transactions: "Bank Transactions",
-    fixed_assets: "Fixed Assets",
-    leases: "Lease Contracts",
-    employees: "Employees",
-    payroll_balances: "Payroll Balances"
-  };
-
-  const state = {
-    bound: false,
-    activeStep: "project",
-    project: {
-      id: 1,
-      reference: "MIG-2026-0001",
-      name: "ABC Trading Migration",
-      status: "Draft",
-      sourceSystem: "Sage Pastel",
-      cutoverDate: "2026-07-31",
-      depth: "current"
-    },
-    projects: [
-      { id: 1, name: "ABC Trading Migration" },
-      { id: 2, name: "Demo Retail Import" }
-    ],
-    files: [],
-    selectedEntities: new Set([
-      "chart_of_accounts",
-      "customers",
-      "vendors",
-      "opening_balances",
-      "sales_invoices"
-    ]),
-    detected: [],
-    fieldMappings: [],
-    accountMappings: [],
-    issues: [],
-    preview: null,
-    staged: false,
-    reconciliation: [],
-    committed: false,
-    activity: ["Workspace initialised"]
-  };
-
-  const unresolvedErrors = () =>
-    state.issues.filter(x => x.severity === "error" && x.status !== "resolved").length;
-
-  const reconPassed = () =>
-    state.reconciliation.length > 0 &&
-    state.reconciliation.every(x => Number(x.difference) === 0);
-
-  const readiness = () => {
-    const checks = [
-      state.files.length,
-      state.detected.length,
-      state.fieldMappings.length,
-      state.accountMappings.length,
-      state.issues.length && unresolvedErrors() === 0,
-      state.preview,
-      state.staged,
-      reconPassed()
-    ];
-    return Math.round(checks.filter(Boolean).length / checks.length * 100);
-  };
-
-  function bindDataMigrationScreen() {
-    const root = $("#migrationWorkspace");
-    if (!root) return console.warn("[DataMigration] #migrationWorkspace not found");
-
-    if (!state.bound) {
-      state.bound = true;
-      root.addEventListener("click", handleClick);
-      root.addEventListener("change", handleChange);
-      $("#mwFileInput")?.addEventListener("change", e => {
-        addFiles(e.target.files);
-        e.target.value = "";
-      });
-    }
-
-    render();
-  }
-
-  function handleClick(e) {
-    const step = e.target.closest("[data-mw-step]")?.dataset.mwStep;
-    if (step) return go(step);
-
-    const action = e.target.closest("[data-mw-action]")?.dataset.mwAction;
-    if (!action) return;
-
-    ({
-      "new-project": newProject,
-      "save-project": saveProject,
-      previous,
-      next,
-      "choose-files": () => $("#mwFileInput")?.click(),
-      "run-detection": runDetection,
-      "auto-map-fields": autoMapFields,
-      "auto-map-accounts": autoMapAccounts,
-      "run-validation": runValidation,
-      "resolve-errors": resolveErrors,
-      "generate-preview": generatePreview,
-      "stage-import": stageImport,
-      "run-reconciliation": runReconciliation,
-      "commit-import": commitImport,
-      "rollback-import": rollbackImport
-    })[action]?.();
-  }
-
-  function handleChange(e) {
-    const el = e.target;
-
-    if (el.id === "mwProjectSelect") return loadProject(Number(el.value));
-
-    if (el.id === "mwSourceSystem") {
-      state.project.sourceSystem = el.value;
-      log(`Source system changed to ${el.value}`);
-      return render();
-    }
-
-    if (el.id === "mwCutoverDate") {
-      state.project.cutoverDate = el.value;
-      log(`Cutover date changed to ${el.value}`);
-      return render();
-    }
-
-    if (el.id === "mwMigrationDepth") {
-      state.project.depth = el.value;
-      log("Migration depth updated");
-      return render();
-    }
-
-    if (el.matches("[data-mw-entity]")) {
-      el.checked
-        ? state.selectedEntities.add(el.value)
-        : state.selectedEntities.delete(el.value);
-
-      log(`Scope updated: ${entities[el.value]}`);
-      return render();
-    }
-
-    if (el.matches("[data-mw-target-field]")) {
-      const row = state.fieldMappings.find(x => x.source === el.dataset.mwTargetField);
-      if (row) row.target = el.value;
-    }
-
-    if (el.matches("[data-mw-target-account]")) {
-      const row = state.accountMappings.find(x => x.sourceCode === el.dataset.mwTargetAccount);
-      if (row) row.target = el.value;
-    }
-  }
-
-  function render() {
-    renderSelectors();
-    renderSummary();
-    renderStepper();
-    renderMain();
-    renderSide();
-    text("mwFooterHint", `Current phase: ${steps.find(x => x[0] === state.activeStep)?.[1] || ""}`);
-  }
-
-  function renderSelectors() {
-    const select = $("#mwProjectSelect");
-
-    if (select) {
-      select.innerHTML = state.projects.map(x => `
-        <option value="${x.id}" ${x.id === state.project.id ? "selected" : ""}>
-          ${esc(x.name)}
-        </option>
-      `).join("");
-    }
-
-    value("mwSourceSystem", state.project.sourceSystem);
-    value("mwCutoverDate", state.project.cutoverDate);
-    value("mwMigrationDepth", state.project.depth);
-  }
-
-  function renderSummary() {
-    text("mwStatus", state.committed ? "Committed" : state.staged ? "Staged" : state.project.status);
-    text("mwFileCount", state.files.length);
-    text("mwRecordCount", state.detected.reduce((n, x) => n + x.records, 0).toLocaleString());
-    text("mwErrorCount", unresolvedErrors());
-    text("mwReconStatus", state.reconciliation.length ? reconPassed() ? "Passed" : "Review" : "Not run");
-  }
-
-  function renderStepper() {
-    const active = steps.findIndex(x => x[0] === state.activeStep);
-
-    $("#mwStepper").innerHTML = steps.map(([id, label], i) => `
-      <button type="button"
-        class="mw-step ${id === state.activeStep ? "active" : ""} ${i < active ? "done" : ""}"
-        data-mw-step="${id}">
-        <small>Phase ${i + 1}</small>
-        <strong>${label}</strong>
-      </button>
-    `).join("");
-  }
-
-  function renderMain() {
-    const renderers = {
-      project: projectView,
-      source: sourceView,
-      scope: scopeView,
-      files: filesView,
-      detect: detectionView,
-      mapping: fieldMappingView,
-      accounts: accountMappingView,
-      validate: validationView,
-      preview: previewView,
-      stage: stagingView,
-      reconcile: reconciliationView,
-      commit: commitView
-    };
-
-    $("#mwMain").innerHTML = renderers[state.activeStep]?.() || "";
-  }
-
-  function projectView() {
-    return `
-      <h2>Migration project</h2>
-      <p class="mw-muted">Create a controlled migration project that can be saved, reviewed and resumed.</p>
-
-      <div class="mw-grid-2">
-        ${field("Project name", state.project.name)}
-        ${field("Migration reference", state.project.reference, true)}
-        ${field("Target company", "Current active company", true)}
-        ${field("Project owner", "Current user", true)}
-      </div>
-
-      <div class="mw-alert warn" style="margin-top:16px">
-        <strong>Control:</strong> Imported records pass through staging before live tables are updated.
-      </div>
-    `;
-  }
-
-  function sourceView() {
-    const sources = [
-      ["Excel / CSV", "Workbooks, exported ledgers and migration templates."],
-      ["Accounting export", "Sage, QuickBooks, Xero and other system exports."],
-      ["JSON / XML", "Structured application exports."],
-      ["SQL extract", "Database exports supplied by an administrator."],
-      ["Opening balances", "Trial balance and subledger opening positions."],
-      ["Manual template", "FinSage standard migration workbook."]
-    ];
-
-    return `
-      <h2>Choose source format</h2>
-      <p class="mw-muted">All supported formats are normalised into one staging model.</p>
-
-      <div class="mw-grid-3">
-        ${sources.map(([title, description], i) => `
-          <div class="mw-card">
-            <span class="mw-badge ${i === 0 ? "info" : ""}">
-              ${i === 0 ? "Recommended" : "Supported"}
-            </span>
-            <h3 style="margin-top:10px">${title}</h3>
-            <p class="mw-muted">${description}</p>
-          </div>
-        `).join("")}
-      </div>
-    `;
-  }
-
-  function scopeView() {
-    return `
-      <h2>Select migration scope</h2>
-      <p class="mw-muted">Choose the records to migrate. Dependencies will be validated before staging.</p>
-
-      <div class="mw-grid-3">
-        ${Object.entries(entities).map(([key, label]) => `
-          <label class="mw-card mw-check">
-            <input type="checkbox" data-mw-entity value="${key}"
-              ${state.selectedEntities.has(key) ? "checked" : ""}>
-            <span>
-              <strong>${label}</strong><br>
-              <small class="mw-muted">${scopeHint(key)}</small>
-            </span>
-          </label>
-        `).join("")}
-      </div>
-    `;
-  }
-
-  function filesView() {
-    return `
-      <h2>Upload source files</h2>
-      <p class="mw-muted">Upload one or more files linked to this migration project.</p>
-
-      <div class="mw-dropzone" data-mw-action="choose-files">
-        <div style="font-size:34px">📤</div>
-        <h3>Choose migration files</h3>
-        <p class="mw-muted">CSV, XLSX, XLS, JSON, XML, SQL or TXT</p>
-        <button type="button" class="mw-btn primary">Browse files</button>
-      </div>
-
-      ${table(
-        ["File", "Type", "Size", "Status"],
-        state.files.map(f => [
-          esc(f.name),
-          esc(f.type || extension(f.name)),
-          bytes(f.size),
-          badge("Ready", "ok")
-        ]),
-        "No source files have been uploaded."
-      )}
-    `;
-  }
-
-  function detectionView() {
-    return `
-      ${heading(
-        "Detect files and entities",
-        "FinSage inspects headings, formats and sample rows to identify each dataset.",
-        button("Run detection", "run-detection", "primary")
-      )}
-
-      ${table(
-        ["Source dataset", "Detected entity", "Records", "Confidence", "Status"],
-        state.detected.map(x => [
-          esc(x.file),
-          entities[x.entity] || esc(x.entity),
-          x.records.toLocaleString(),
-          `${x.confidence}%`,
-          badge("Detected", "ok")
-        ]),
-        "Run detection after adding source files."
-      )}
-    `;
-  }
-
-  function fieldMappingView() {
-    const targets = [
-      "code", "name", "description", "email", "phone",
-      "tax_number", "invoice_date", "due_date",
-      "amount", "balance", "account_code"
-    ];
-
-    return `
-      ${heading(
-        "Field mapping",
-        "Map source columns to FinSage fields.",
-        button("Auto-map fields", "auto-map-fields")
-      )}
-
-      ${table(
-        ["Entity", "Source field", "Sample value", "FinSage field", "Confidence"],
-        state.fieldMappings.map(x => [
-          entities[x.entity] || x.entity,
-          esc(x.source),
-          esc(x.sample),
-          select(
-            targets,
-            x.target,
-            `data-mw-target-field="${esc(x.source)}"`,
-            "Ignore field"
-          ),
-          badge(`${x.confidence}%`, x.confidence > 85 ? "ok" : "warn")
-        ]),
-        "Run source detection and then auto-map the fields."
-      )}
-    `;
-  }
-
-  function accountMappingView() {
-    const targets = [
-      "Cash & Bank",
-      "Accounts Receivable Control",
-      "Inventory",
-      "VAT Output",
-      "Accounts Payable Control",
-      "Revenue from Contracts with Customers",
-      "Cost of Sales",
-      "Operating Expenses",
-      "Retained Earnings"
-    ];
-
-    return `
-      ${heading(
-        "Chart of accounts mapping",
-        "Map source accounts to the current FinSage chart of accounts.",
-        button("Suggest mappings", "auto-map-accounts")
-      )}
-
-      ${table(
-        ["Source code", "Source account", "FinSage account", "Rule", "Status"],
-        state.accountMappings.map(x => [
-          esc(x.sourceCode),
-          esc(x.sourceName),
-          select(
-            targets,
-            x.target,
-            `data-mw-target-account="${esc(x.sourceCode)}"`,
-            "Select account"
-          ),
-          esc(x.rule),
-          badge(x.target ? "Mapped" : "Review", x.target ? "ok" : "warn")
-        ]),
-        "Generate suggested account mappings."
-      )}
-    `;
-  }
-
-  function validationView() {
-    return `
-      ${heading(
-        "Validation centre",
-        "Resolve errors before staging. Warnings can later be approved with an audit note.",
-        `
-          ${button("Resolve demo issues", "resolve-errors")}
-          ${button("Run validation", "run-validation", "primary")}
-        `
-      )}
-
-      ${table(
-        ["Severity", "Entity", "Source row", "Issue", "Status"],
-        state.issues.map(x => [
-          badge(x.severity, x.severity),
-          entities[x.entity] || x.entity,
-          x.row,
-          `<strong>${esc(x.code)}</strong><br><small class="mw-muted">${esc(x.message)}</small>`,
-          badge(x.status, x.status === "resolved" ? "ok" : "warn")
-        ]),
-        "No validation run has been completed."
-      )}
-    `;
-  }
-
-  function previewView() {
-    return `
-      ${heading(
-        "Migration preview",
-        "Review expected records and control totals before staging.",
-        button("Generate preview", "generate-preview", "primary")
-      )}
-
-      ${state.preview ? `
-        <div class="mw-grid-3">
-          ${metric("Customers", state.preview.customers)}
-          ${metric("Vendors", state.preview.vendors)}
-          ${metric("Invoices", state.preview.invoices)}
-          ${metric("Journals", state.preview.journals)}
-          ${metric("Debits", money(state.preview.debits))}
-          ${metric("Credits", money(state.preview.credits))}
-        </div>
-
-        <div class="mw-alert ${state.preview.debits === state.preview.credits ? "ok" : "error"}"
-          style="margin-top:16px">
-          <strong>Trial balance control:</strong>
-          ${state.preview.debits === state.preview.credits
-            ? "Debits and credits agree."
-            : "A trial balance difference was detected."}
-        </div>
-      ` : `<div class="mw-empty">Generate a preview to inspect expected migration totals.</div>`}
-    `;
-  }
-
-  function stagingView() {
-    const blocked = unresolvedErrors() > 0 || !state.preview;
-
-    return `
-      <h2>Stage migration</h2>
-      <p class="mw-muted">Create normalised staging records without affecting live accounting data.</p>
-
-      <div class="mw-alert ${blocked ? "warn" : "ok"}">
-        <strong>${blocked ? "Not ready" : "Ready to stage"}:</strong>
-        ${blocked
-          ? "Generate a preview and resolve all blocking errors."
-          : "Validation and preview controls are complete."}
-      </div>
-
-      <div style="margin-top:18px">
-        <button class="mw-btn primary" data-mw-action="stage-import" ${blocked ? "disabled" : ""}>
-          ${state.staged ? "Rebuild staging batch" : "Create staging batch"}
-        </button>
-      </div>
-    `;
-  }
-
-  function reconciliationView() {
-    return `
-      ${heading(
-        "Migration reconciliation",
-        "Compare source control totals with staged FinSage totals.",
-        `<button class="mw-btn primary" data-mw-action="run-reconciliation"
-          ${state.staged ? "" : "disabled"}>Run reconciliation</button>`
-      )}
-
-      ${table(
-        ["Control", "Source", "Staged", "Difference", "Status"],
-        state.reconciliation.map(x => [
-          esc(x.control),
-          money(x.source),
-          money(x.staged),
-          money(x.difference),
-          badge(Number(x.difference) === 0 ? "Passed" : "Review",
-            Number(x.difference) === 0 ? "ok" : "error")
-        ]),
-        "Stage the migration and then run reconciliation."
-      )}
-    `;
-  }
-
-  function commitView() {
-    const ready = state.staged && reconPassed() && !state.committed;
-
-    return `
-      <h2>Commit migration</h2>
-      <p class="mw-muted">Create live FinSage records from the approved staging batch.</p>
-
-      <div class="mw-alert ${state.committed ? "ok" : ready ? "warn" : "error"}">
-        <strong>
-          ${state.committed ? "Migration committed" : ready ? "Final approval required" : "Commit blocked"}:
-        </strong>
-        ${state.committed
-          ? "The demo migration has been completed."
-          : ready
-            ? "Confirm the cutover date, source totals and reconciliation results."
-            : "Staging and reconciliation must pass before committing."}
-      </div>
-
-      <div class="mw-inline" style="margin-top:18px">
-        <button class="mw-btn success" data-mw-action="commit-import" ${ready ? "" : "disabled"}>
-          Commit migration
-        </button>
-
-        <button class="mw-btn danger" data-mw-action="rollback-import"
-          ${state.staged || state.committed ? "" : "disabled"}>
-          Rollback batch
-        </button>
-      </div>
-    `;
-  }
-
-  function renderSide() {
-    const percent = readiness();
-    const bar = $("#mwReadinessBar");
-
-    if (bar) bar.style.width = `${percent}%`;
-
-    text("mwReadinessText", `${percent}% complete`);
-
-    $("#mwControls").innerHTML = [
-      control("Source files", state.files.length > 0),
-      control("Entities detected", state.detected.length > 0),
-      control("Fields mapped", state.fieldMappings.length > 0),
-      control("Accounts mapped", state.accountMappings.length > 0),
-      control("No blocking errors", state.issues.length > 0 && unresolvedErrors() === 0),
-      control("Preview generated", !!state.preview),
-      control("Staging created", state.staged),
-      control("Reconciliation passed", reconPassed())
-    ].join("");
-
-    $("#mwActivity").innerHTML = state.activity
-      .slice()
-      .reverse()
-      .map(x => `<div>${esc(x)}</div>`)
-      .join("");
-  }
-
-  function addFiles(fileList) {
-    const files = [...(fileList || [])];
-    if (!files.length) return;
-
-    state.files.push(...files.map(f => ({
-      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-      name: f.name,
-      size: f.size,
-      type: f.type || extension(f.name)
-    })));
-
-    log(`${files.length} migration file(s) added`);
-    render();
-  }
-
-  function runDetection() {
-    const files = state.files.length ? state.files : [
-      { name: "Customers.xlsx" },
-      { name: "GL Accounts.csv" },
-      { name: "Invoices.csv" }
-    ];
-
-    const types = ["customers", "chart_of_accounts", "sales_invoices", "vendors"];
-    const counts = [248, 96, 1430, 81];
-    const confidence = [98, 96, 93, 91];
-
-    state.detected = files.map((f, i) => ({
-      file: f.name,
-      entity: types[i % types.length],
-      records: counts[i % counts.length],
-      confidence: confidence[i % confidence.length]
-    }));
-
-    state.fieldMappings = [
-      ["customers", "CustomerCode", "CUST-001", "code", 98],
-      ["customers", "CustomerName", "ABC Retail", "name", 99],
-      ["customers", "VATNo", "4123456789", "tax_number", 89],
-      ["sales_invoices", "InvoiceDate", "2026-07-12", "invoice_date", 97],
-      ["sales_invoices", "TotalIncl", "1850.00", "amount", 94]
-    ].map(([entity, source, sample, target, confidence]) => ({
-      entity, source, sample, target, confidence
-    }));
-
-    log("Source detection completed");
-    render();
-  }
-
-  function autoMapFields() {
-    if (!state.fieldMappings.length) return runDetection();
-    state.fieldMappings.forEach(x => x.confidence = Math.max(x.confidence, 92));
-    log("Field mapping suggestions refreshed");
-    render();
-  }
-
-  function autoMapAccounts() {
-    state.accountMappings = [
-      ["1000", "Bank Account", "Cash & Bank", "Account type and name"],
-      ["1100", "Trade Debtors", "Accounts Receivable Control", "Control account"],
-      ["2000", "Trade Creditors", "Accounts Payable Control", "Control account"],
-      ["4000", "Sales", "Revenue from Contracts with Customers", "Revenue classification"],
-      ["5000", "Cost of Sales", "Cost of Sales", "Expense classification"]
-    ].map(([sourceCode, sourceName, target, rule]) => ({
-      sourceCode, sourceName, target, rule
-    }));
-
-    log("Account mapping suggestions generated");
-    render();
-  }
-
-  function runValidation() {
-    state.issues = [
-      {
-        severity: "error",
-        entity: "sales_invoices",
-        row: 84,
-        code: "CUSTOMER_NOT_FOUND",
-        message: "Customer CUST-991 is missing from the customer dataset.",
-        status: "unresolved"
-      },
-      {
-        severity: "warning",
-        entity: "customers",
-        row: 22,
-        code: "DUPLICATE_TAX_NUMBER",
-        message: "The same tax number is used by two customer records.",
-        status: "unresolved"
-      },
-      {
-        severity: "info",
-        entity: "chart_of_accounts",
-        row: 0,
-        code: "ACCOUNT_NAME_NORMALISED",
-        message: "Three account names will be trimmed and standardised.",
-        status: "resolved"
-      }
-    ];
-
-    log("Validation completed with one blocking error");
-    render();
-  }
-
-  function resolveErrors() {
-    if (!state.issues.length) runValidation();
-    state.issues.forEach(x => x.status = "resolved");
-    log("Demo validation issues resolved");
-    render();
-  }
-
-  function generatePreview() {
-    state.preview = {
-      customers: 248,
-      vendors: 81,
-      invoices: 1430,
-      journals: 612,
-      debits: 1280000,
-      credits: 1280000
-    };
-
-    log("Migration preview generated");
-    render();
-  }
-
-  function stageImport() {
-    if (unresolvedErrors() || !state.preview) {
-      return alert("Resolve blocking errors and generate the preview first.");
-    }
-
-    state.staged = true;
-    state.project.status = "Staged";
-    log("Migration staging batch created");
-    render();
-  }
-
-  function runReconciliation() {
-    if (!state.staged) return alert("Create the staging batch first.");
-
-    state.reconciliation = [
-      ["Trial balance debits", 1280000, 1280000],
-      ["Trial balance credits", 1280000, 1280000],
-      ["Customer balances", 365000, 365000],
-      ["Supplier balances", 142500, 142500],
-      ["Inventory value", 210800, 210800]
-    ].map(([control, source, staged]) => ({
-      control,
-      source,
-      staged,
-      difference: source - staged
-    }));
-
-    log("Migration reconciliation passed");
-    render();
-  }
-
-  function commitImport() {
-    if (!state.staged || !reconPassed()) {
-      return alert("Staging and reconciliation must pass first.");
-    }
-
-    if (!confirm("Commit this migration batch to the live company?")) return;
-
-    state.committed = true;
-    state.project.status = "Committed";
-    log("Migration batch committed");
-    render();
-  }
-
-  function rollbackImport() {
-    if (!state.staged && !state.committed) return;
-    if (!confirm("Rollback this migration batch?")) return;
-
-    state.staged = false;
-    state.committed = false;
-    state.reconciliation = [];
-    state.project.status = "Draft";
-
-    log("Migration batch rolled back");
-    render();
-  }
-
-  function newProject() {
-    const id = Date.now();
-
-    state.project = {
-      id,
-      reference: `MIG-${new Date().getFullYear()}-${String(state.projects.length + 1).padStart(4, "0")}`,
-      name: "New Migration Project",
-      status: "Draft",
-      sourceSystem: "Excel / CSV",
-      cutoverDate: new Date().toISOString().slice(0, 10),
-      depth: "opening"
-    };
-
-    state.projects.push({ id, name: state.project.name });
-
-    Object.assign(state, {
-      files: [],
-      detected: [],
-      fieldMappings: [],
-      accountMappings: [],
-      issues: [],
-      preview: null,
-      staged: false,
-      reconciliation: [],
-      committed: false,
-      activeStep: "project"
-    });
-
-    log("New migration project created");
-    render();
-  }
-
-  function saveProject() {
-    const project = state.projects.find(x => x.id === state.project.id);
-    if (project) project.name = state.project.name;
-
-    log("Migration project saved in demo mode");
-    render();
-    alert("Migration project saved in demo mode.");
-  }
-
-  function loadProject(id) {
-    const project = state.projects.find(x => x.id === id);
-    if (!project) return;
-
-    state.project.id = project.id;
-    state.project.name = project.name;
-
-    log(`Loaded ${project.name}`);
-    render();
-  }
-
-  function go(id) {
-    if (!steps.some(x => x[0] === id)) return;
-    state.activeStep = id;
-    render();
-  }
-
-  function previous() {
-    const i = steps.findIndex(x => x[0] === state.activeStep);
-    if (i > 0) go(steps[i - 1][0]);
-  }
-
-  function next() {
-    const i = steps.findIndex(x => x[0] === state.activeStep);
-    if (i >= 0 && i < steps.length - 1) go(steps[i + 1][0]);
-  }
-
-  function field(label, val, readonly = false) {
-    return `
-      <div class="mw-field">
-        <label>${label}</label>
-        <input class="mw-input" value="${esc(val)}" ${readonly ? "readonly" : ""}>
-      </div>
-    `;
-  }
-
-  function heading(title, description, actions = "") {
-    return `
-      <div class="mw-inline" style="justify-content:space-between">
-        <div>
-          <h2>${title}</h2>
-          <p class="mw-muted">${description}</p>
-        </div>
-        <div class="mw-inline">${actions}</div>
-      </div>
-    `;
-  }
-
-  function button(label, action, style = "") {
-    return `<button class="mw-btn ${style}" data-mw-action="${action}">${label}</button>`;
-  }
-
-  function badge(label, type = "") {
-    return `<span class="mw-badge ${type}">${esc(label)}</span>`;
-  }
-
-  function metric(label, val) {
-    return `<div class="mw-stat"><span>${esc(label)}</span><strong>${esc(val)}</strong></div>`;
-  }
-
-  function control(label, ready) {
-    return `
-      <div class="mw-list-item">
-        ${badge(ready ? "Ready" : "Pending", ready ? "ok" : "warn")}
-        <strong>${esc(label)}</strong>
-      </div>
-    `;
-  }
-
-  function select(options, selected, attrs = "", first = "") {
-    return `
-      <select class="mw-select" ${attrs}>
-        <option value="">${first}</option>
-        ${options.map(x => `
-          <option value="${esc(x)}" ${x === selected ? "selected" : ""}>${esc(x)}</option>
-        `).join("")}
-      </select>
-    `;
-  }
-
-  function table(headers, rows, emptyText) {
-    return `
-      <div class="mw-table-wrap" style="margin-top:16px">
-        <table class="mw-table">
-          <thead>
-            <tr>${headers.map(x => `<th>${x}</th>`).join("")}</tr>
-          </thead>
-          <tbody>
-            ${rows.length
-              ? rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")
-              : `<tr><td colspan="${headers.length}" class="mw-empty">${emptyText}</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
-
-  function scopeHint(entity) {
-    return ({
-      chart_of_accounts: "Required for general ledger mapping.",
-      opening_balances: "Trial balance and subledger balances.",
-      leases: "Lessee and lessor lease contracts.",
-      fixed_assets: "Asset cost and accumulated depreciation.",
-      sales_invoices: "Historical invoices and balances.",
-      bank_transactions: "Imported cashbook and bank history."
-    })[entity] || "Import master records and transaction history.";
-  }
-
-  window.bindDataMigrationScreen = bindDataMigrationScreen;
-
-  window.FS_MIGRATION_WORKSPACE = {
-    bind: bindDataMigrationScreen,
-    open: () => window.switchScreen?.("data-migration"),
-    refresh: render,
-    getState: () => ({
-      ...state,
-      selectedEntities: [...state.selectedEntities]
-    })
-  };
-})();
 
 // IFRS 16 Lease wizard → initial recognition
 async function postLeaseJournal(lease) {
@@ -58353,30 +61229,52 @@ async function saveEditModal() {
   const $ = (id) => document.getElementById(id);
   const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const payrollState = {
-    settings: null,
-    schedule: null,
-    calendars: [],
-    employees: [],
-    taxAuthorities: [],
-    selectedEmployee: null,
-    selectedPaySetupEmployee: null,
-    bound: false,
-    runs: [],
-    selectedRun: null,
-    journalPreview: null,
+  const payrollState={
+    settings:null,
+    schedule:null,
+    calendars:[],
+    employees:[],
+    taxAuthorities:[],
+    selectedEmployee:null,
+    selectedPaySetupEmployee:null,
+    bound:false,
+    runs:[],
+    selectedRun:null,
+    journalPreview:null,
+    runReconciliation:null,
+    reversalPreview:null,
+    runEligibility:null,
+    attendance:[],
+    attendanceSummary:null,
+    periodInputs:[],
+    periodInputSummary:null,
+    runValidation:null,
+    runAudit:[],
+    payslips:[],
+    selectedPayslip:null,
+    incentivePlans:[],
+    selectedIncentivePlan:null,
+    incentiveAssignments:[],
+    incentiveEvaluations:[],
+    selectedIncentiveEvaluation:null,
 
-    setup: {
-      departments: [],
-      positions: [],
-      earning_types: [],
-      deduction_types: [],
-      contribution_types: [],
-      benefit_types: [],
-      leave_types: [],
-      gl_mappings: [],
+    setup:{
+      departments:[],
+      positions:[],
+      earning_types:[],
+      deduction_types:[],
+      contribution_types:[],
+      benefit_types:[],
+      leave_types:[],
+      gl_mappings:[],
     },
-  }
+
+    statutory:{
+      mappings:[],
+      returns:[],
+      selectedReturn:null,
+    },
+  };
 
   payrollState.employeeBenefits = payrollState.employeeBenefits || {
     reportingDate: new Date().toISOString().slice(0, 10),
@@ -61510,16 +64408,28 @@ async function saveEditModal() {
       return;
     }
 
-    await apiFetch(
-      ENDPOINTS.payroll.calculateBonusAccrual(cid(),runId),
-      {method:"POST",body:"{}"}
-    );
+    try{
+      showPayrollStatus("Calculating bonus accrual...","info");
 
-    await openPayrollBonusRun(runId);
-    await loadPayrollBonusWorkspace();
-    await loadPayrollEmployeeBenefitsWorkspace();
-    showPayrollStatus("Bonus accrual calculated.","success");
+      await apiFetch(
+        ENDPOINTS.payroll.calculateBonusAccrual(cid(),runId),
+        {method:"POST",body:"{}"}
+      );
+
+      await openPayrollBonusRun(runId);
+      await loadPayrollBonusWorkspace();
+      await loadPayrollEmployeeBenefitsWorkspace();
+
+      showPayrollStatus("Bonus accrual calculated.","success");
+    }catch(error){
+      showPayrollStatus(
+        error?.message || "Bonus accrual could not be calculated.",
+        "error"
+      );
+      console.error("Bonus accrual calculation failed:",error);
+    }
   }
+
   async function previewPayrollBonusRun(value=null){
     const runId=payrollSelectedBonusRunId(value);
 
@@ -62705,32 +65615,96 @@ async function saveEditModal() {
     showPayrollStatus("Payroll run created.", "success");
   }
 
-  function switchPayrollRunTab(tab) {
+  function switchPayrollRunTab(tab){
     document
       .querySelectorAll("[data-payroll-run-tab]")
-      .forEach(btn => {
+      .forEach(btn=>{
         btn.classList.toggle(
           "active",
-          btn.dataset.payrollRunTab === tab
+          btn.dataset.payrollRunTab===tab
         );
       });
 
-    ["overview", "employees", "journal", "posting"]
-      .forEach(name => {
-        $(`payrollRunPanel${cap(name)}`)
-          ?.classList.toggle("hidden", name !== tab);
-      });
+    [
+      "overview",
+      "employees",
+      "attendance",
+      "inputs",
+      "validation",
+      "payslips",
+      "journal",
+      "posting",
+      "audit",
+    ].forEach(name=>{
+      $(`payrollRunPanel${cap(name)}`)
+        ?.classList.toggle(
+          "hidden",
+          name!==tab
+        );
+    });
 
-    if (
-      tab === "journal" &&
-      payrollState.selectedRun?.id
-    ) {
-      loadInlinePayrollJournal().catch(error => {
-        showPayrollStatus(error.message, "error");
-      });
+    const fail=(error,message)=>{
+      showPayrollStatus(
+        error?.message||message,
+        "error"
+      );
+    };
+
+    if(tab==="attendance"){
+      loadPayrollRunAttendance().catch(error=>
+        fail(
+          error,
+          "Attendance could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="inputs"){
+      loadPayrollRunPeriodInputs().catch(error=>
+        fail(
+          error,
+          "Payroll inputs could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="validation"){
+      loadPayrollRunValidation().catch(error=>
+        fail(
+          error,
+          "Validation could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="payslips"){
+      loadPayrollRunPayslips().catch(error=>
+        fail(
+          error,
+          "Payslips could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="journal"){
+      loadInlinePayrollJournal().catch(error=>
+        fail(
+          error,
+          "Journal preview could not be loaded."
+        )
+      );
+    }
+
+    if(tab==="audit"){
+      loadPayrollRunAudit().catch(error=>
+        fail(
+          error,
+          "Audit history could not be loaded."
+        )
+      );
     }
   }
- 
+
   function payrollSetupPanelId(tab) {
     const map = {
       general: "payrollSetupPanelGeneral",
@@ -63049,27 +66023,61 @@ async function saveEditModal() {
     }
 
     /* ── 3. Run checks ── */
-    const checks = [
-      { label: "Employees included",   ok: (run.employees || []).length > 0 },
-      { label: "Gross pay calculated",  ok: Number(run.gross_pay || 0) > 0 },
-      { label: "Net pay calculated",
-        ok: (run.employees || []).length > 0 &&
-              Number(run.net_pay || 0) > 0 },
-      { label: "Journal posted",        ok: !!run.posted_journal_id },
+    const checks=[
+      {
+        label:"Employees included",
+        ok:(run.employees||[]).length>0,
+      },
+      {
+        label:"Payroll calculated",
+        ok:[
+          "calculated",
+          "approved",
+          "posted",
+        ].includes(status),
+      },
+      {
+        label:"Payroll approved",
+        ok:["approved","posted"].includes(
+          status
+        ),
+      },
+      {
+        label:"Journal posted",
+        ok:Boolean(run.posted_journal_id),
+      },
     ];
 
-    const checksEl = $("payrollRunChecks");
-    if (checksEl) {
-      checksEl.innerHTML = `
+    const checksEl=$("payrollRunChecks");
+
+    if(checksEl){
+      checksEl.innerHTML=`
         <div class="payroll-run-checks">
-          ${checks.map(c => `
-            <div class="payroll-check-item ${c.ok ? "ok" : "fail"}">
-              <span class="check-icon">${c.ok ? "&#10003;" : "&#10005;"}</span>
-              ${esc(c.label)}
+          ${checks.map(check=>`
+            <div class="payroll-check-item ${
+              check.ok?"ok":"fail"
+            }">
+              <span class="check-icon">
+                ${check.ok?"&#10003;":"&#10005;"}
+              </span>
+              ${esc(check.label)}
             </div>
           `).join("")}
         </div>
-      `;
+
+        <button
+          type="button"
+          id="payrollOpenValidationBtn"
+          class="payroll-link"
+        >
+          Open full validation
+        </button>`;
+
+      $("payrollOpenValidationBtn")
+        ?.addEventListener(
+          "click",
+          ()=>switchPayrollRunTab("validation")
+        );
     }
   }
 
@@ -63257,41 +66265,278 @@ async function saveEditModal() {
     });
   }
 
-  function renderPayrollPostingControls(run) {
-    const status = String(run?.status || "draft").toLowerCase();
-    const isPosted = status === "posted";
-    const canPreview = ["calculated", "approved", "posted"]
-      .includes(status);
-    const canPost = ["calculated", "approved"]
-      .includes(status);
+  function renderPayrollPostingControls(run){
+    const status=String(
+      run?.status||"draft"
+    ).toLowerCase();
 
-    if ($("payrollCalculateRunBtn")) {
-      $("payrollCalculateRunBtn").disabled = isPosted;
-    }
+    const isDraft=status==="draft";
+    const isCalculated=status==="calculated";
+    const isSubmitted=(
+      isCalculated&&Boolean(run.submitted_at)
+    );
+    const isApproved=status==="approved";
+    const isPosted=status==="posted";
+    const isReversed=status==="reversed";
 
-    if ($("payrollPreviewJournalBtn")) {
-      $("payrollPreviewJournalBtn").disabled = !canPreview;
-    }
+    const validation=
+      payrollState.runValidation?.summary||{};
 
-    if ($("payrollPostRunBtn")) {
-      $("payrollPostRunBtn").disabled = !canPost;
-      $("payrollPostRunBtn").classList.toggle(
+    const setButton=(
+      id,
+      visible,
+      disabled=false
+    )=>{
+      const button=$(id);
+      if(!button)return;
+
+      button.classList.toggle(
         "hidden",
-        isPosted
+        !visible
+      );
+      button.disabled=Boolean(disabled);
+    };
+
+    setButton(
+      "payrollCalculateRunBtn",
+      isDraft||isCalculated,
+      isSubmitted||isPosted||isReversed
+    );
+
+    setButton(
+      "payrollSubmitRunBtn",
+      isCalculated&&!isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollApproveRunBtn",
+      isSubmitted,
+      !validation.ready_to_approve
+    );
+
+    setButton(
+      "payrollReturnRunBtn",
+      isCalculated||isApproved,
+      false
+    );
+
+    setButton(
+      "payrollPreviewJournalBtn",
+      isCalculated||isApproved||isPosted,
+      false
+    );
+
+    setButton(
+      "payrollPostRunBtn",
+      isApproved,
+      !validation.ready_to_post
+    );
+
+    setButton(
+      "payrollReverseRunBtn",
+      isPosted,
+      false
+    );
+
+    let message="";
+
+    if(isDraft){
+      message=(
+        "Complete attendance and inputs, "
+        +"then calculate payroll."
+      );
+    }else if(isCalculated&&!isSubmitted){
+      message=(
+        "Review validation and submit payroll "
+        +"for approval."
+      );
+    }else if(isSubmitted){
+      message=(
+        "Payroll is awaiting approval."
+      );
+    }else if(isApproved){
+      message=(
+        "Payroll is approved and ready "
+        +"for journal posting."
+      );
+    }else if(isPosted){
+      message=(
+        `Payroll was posted to journal #`+
+        `${run.posted_journal_id||"—"}.`
+      );
+    }else if(isReversed){
+      message=(
+        `Payroll was reversed through journal #`+
+        `${run.reversal_journal_id||"—"}.`
       );
     }
 
-    $("payrollReverseRunBtn")
-      ?.classList.toggle("hidden", !isPosted);
-
     setTxt(
       "payrollPostingMessage",
-      isPosted
-        ? `Payroll was posted to journal #${run.posted_journal_id || "—"}.`
-        : status === "draft"
-          ? "Calculate the payroll run before previewing or posting the journal."
-          : "Review the journal preview before posting payroll."
+      message
     );
+  }
+
+  async function loadPayrollRunEligibility(runId){
+    if(!runId)return null;
+
+    try{
+      const res=await apiFetch(
+        ENDPOINTS.payroll.runEligibility(cid(),runId)
+      );
+
+      payrollState.runEligibility=res?.data||null;
+      renderPayrollRunEligibility();
+      return payrollState.runEligibility;
+    }catch(error){
+      payrollState.runEligibility=null;
+      renderPayrollRunEligibility(error?.message);
+      return null;
+    }
+  }
+
+  function payrollProrationLabel(value){
+    return({
+      working_days:"Working days",
+      calendar_days:"Calendar days",
+      fixed_30_days:"Fixed 30 days",
+      scheduled_hours:"Scheduled hours",
+      actual_hours:"Actual hours",
+      no_proration:"No proration",
+    })[value]||cap(String(value||"working_days")
+      .replaceAll("_"," "));
+  }
+
+  function renderPayrollRunEligibility(error=""){
+    const el=$("payrollRunChecks");
+    if(!el)return;
+
+    if(error){
+      el.innerHTML=`
+        <div class="notice error">
+          ${esc(error)}
+        </div>`;
+      return;
+    }
+
+    const data=payrollState.runEligibility;
+    const summary=data?.summary||{};
+    const items=data?.items||[];
+
+    if(!data){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          Eligibility checks have not been loaded.
+        </p>`;
+      return;
+    }
+
+    const issues=[
+      ...(data.errors||[]).map(message=>({
+        type:"error",
+        message,
+      })),
+      ...(data.warnings||[]).map(message=>({
+        type:"warning",
+        message,
+      })),
+    ];
+
+    el.innerHTML=`
+      <div class="payroll-eligibility-summary">
+        <div>
+          <span>Candidates</span>
+          <strong>${Number(summary.candidate_count||0)}</strong>
+        </div>
+        <div>
+          <span>Eligible</span>
+          <strong>${Number(summary.eligible_count||0)}</strong>
+        </div>
+        <div>
+          <span>Errors</span>
+          <strong>${Number(summary.error_count||0)}</strong>
+        </div>
+        <div>
+          <span>Warnings</span>
+          <strong>${Number(summary.warning_count||0)}</strong>
+        </div>
+      </div>
+
+      ${issues.length?`
+        <div class="payroll-run-check-list">
+          ${issues.map(x=>`
+            <div class="notice ${esc(x.type)}">
+              ${esc(x.message)}
+            </div>
+          `).join("")}
+        </div>
+      `:`
+        <div class="notice success">
+          Employee eligibility checks passed.
+        </div>
+      `}
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Eligible period</th>
+              <th>Basis</th>
+              <th>Days</th>
+              <th>Factor</th>
+              <th>Estimated basic</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.length?items.map(x=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(x.employee_no||"")} —
+                    ${esc(x.employee_name||"")}
+                  </strong>
+                  ${x.error?`
+                    <div class="payroll-muted">
+                      ${esc(x.error)}
+                    </div>
+                  `:""}
+                </td>
+                <td>
+                  ${esc(String(x.eligible_from||"—"))}
+                  –
+                  ${esc(String(x.eligible_to||"—"))}
+                </td>
+                <td>
+                  ${esc(payrollProrationLabel(
+                    x.proration_method
+                  ))}
+                </td>
+                <td>
+                  ${Number(x.eligible_days||0)}
+                  /
+                  ${Number(x.scheduled_days||0)}
+                </td>
+                <td>
+                  ${(
+                    Number(x.proration_factor||0)*100
+                  ).toFixed(2)}%
+                </td>
+                <td class="num">
+                  ${money(x.prorated_basic_amount)}
+                </td>
+              </tr>
+            `).join(""):`
+              <tr>
+                <td colspan="6">
+                  No employees overlap this payroll period.
+                </td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>`;
   }
 
   async function openPayrollRun(runId) {
@@ -63308,6 +66553,7 @@ async function saveEditModal() {
 
     payrollState.selectedRun = run;
 
+    await loadPayrollRunEligibility(runId);
     $("payrollRunDetail")?.classList.remove("hidden");
 
     setTxt(
@@ -63355,6 +66601,11 @@ async function saveEditModal() {
     renderPayrollRunStatus(run);
     renderPayrollPostingControls(run);
 
+    await Promise.all([
+      loadPayrollRunEligibility(runId),
+      loadPayrollRunValidation(),
+    ]);
+
     const journalLink = $("payrollRunJournalLink");
     const noJournal = $("payrollRunNoJournal");
 
@@ -63381,42 +66632,2318 @@ async function saveEditModal() {
     });
   }
 
-  function renderPayrollRunEmployees(run) {
-    const el = $("payrollRunEmployeesList");
-    if (!el) return;
+  function renderPayrollRunEmployees(run){
+    const el=$("payrollRunEmployeesList");
+    if(!el)return;
 
-    const items = run?.employees || [];
+    const items=run?.employees||[];
 
-    if (!items.length) {
-      el.innerHTML = `<p class="payroll-muted">No employees calculated yet.</p>`;
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees calculated yet.
+        </p>`;
       return;
     }
 
-    el.innerHTML = items.map(e => `
-      <div class="payroll-mini-row payroll-mini-row-5">
-        <strong>${esc(e.employee_no || "")} — ${esc(e.first_name || "")} ${esc(e.last_name || "")}</strong>
-        <span>Gross: ${money(e.gross_pay)}</span>
-        <span>Deductions: ${money(e.total_deductions)}</span>
-        <span>Employer: ${money(e.employer_contributions)}</span>
-        <span>Net: ${money(e.net_pay)}</span>
-      </div>
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Eligibility</th>
+              <th>Proration</th>
+              <th>Basic</th>
+              <th>Gross</th>
+              <th>Deductions</th>
+              <th>Employer</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.first_name||"")}
+                    ${esc(item.last_name||"")}
+                  </strong>
+
+                  <div class="payroll-muted">
+                    ${esc(
+                      item.calculation_message||
+                      cap(
+                        item.calculation_status||
+                        item.status||
+                        "calculated"
+                      )
+                    )}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(String(
+                    item.eligible_from||"—"
+                  ).slice(0,10))}
+                  –
+                  ${esc(String(
+                    item.eligible_to||"—"
+                  ).slice(0,10))}
+
+                  <div class="payroll-muted">
+                    ${Number(
+                      item.eligible_days||0
+                    )} of
+                    ${Number(
+                      item.scheduled_days||0
+                    )} days
+                  </div>
+                </td>
+
+                <td>
+                  ${(
+                    Number(
+                      item.proration_factor||0
+                    )*100
+                  ).toFixed(2)}%
+
+                  <div class="payroll-muted">
+                    ${esc(
+                      payrollProrationLabel(
+                        item.proration_method
+                      )
+                    )}
+                  </div>
+                </td>
+
+                <td class="num">
+                  ${money(item.basic_pay)}
+                </td>
+
+                <td class="num">
+                  ${money(item.gross_pay)}
+                </td>
+
+                <td class="num">
+                  ${money(item.total_deductions)}
+                </td>
+
+                <td class="num">
+                  ${money(
+                    item.employer_contributions
+                  )}
+                </td>
+
+                <td class="num">
+                  <strong>
+                    ${money(item.net_pay)}
+                  </strong>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  async function loadPayrollRunAttendance(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
+
+    const [rows,summary]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.runAttendance(
+          cid(),
+          runId
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.runAttendanceSummary(
+          cid(),
+          runId
+        )
+      ),
+    ]);
+
+    payrollState.attendance=rows?.items||[];
+    payrollState.attendanceSummary=
+      summary?.data||null;
+
+    renderPayrollRunAttendance();
+  }
+
+  function renderPayrollRunAttendance(){
+    const el=$("payrollAttendanceList");
+    const summaryEl=$("payrollAttendanceSummary");
+    const items=payrollState.attendance||[];
+    const summary=
+      payrollState.attendanceSummary||{};
+    const totals=summary.totals||{};
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Employees</span>
+          <strong>${Number(totals.employees||0)}</strong>
+        </div>
+        <div>
+          <span>Worked Hours</span>
+          <strong>${Number(
+            totals.worked_hours||0
+          ).toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Overtime</span>
+          <strong>${Number(
+            totals.overtime_hours||0
+          ).toFixed(2)}</strong>
+        </div>
+        <div>
+          <span>Unapproved</span>
+          <strong>${Number(
+            totals.unapproved_count||0
+          )}</strong>
+        </div>`;
+    }
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No attendance has been captured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Employee</th>
+              <th>Type</th>
+              <th>Scheduled</th>
+              <th>Worked</th>
+              <th>Overtime</th>
+              <th>Unpaid</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(x=>`
+              <tr>
+                <td>${esc(String(
+                  x.attendance_date||""
+                ).slice(0,10))}</td>
+                <td>
+                  <strong>
+                    ${esc(x.employee_no||"")} —
+                    ${esc(x.employee_name||"")}
+                  </strong>
+                </td>
+                <td>
+                  ${esc(cap(String(
+                    x.attendance_type||""
+                  ).replaceAll("_"," ")))}
+                </td>
+                <td>${Number(
+                  x.scheduled_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.worked_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.overtime_hours||0
+                ).toFixed(2)}</td>
+                <td>${Number(
+                  x.unpaid_hours||0
+                ).toFixed(2)}</td>
+                <td>
+                  <span class="payroll-pill">
+                    ${x.approved
+                      ?"Approved"
+                      :"Draft"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-edit-attendance="${x.id}"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-delete-attendance="${x.id}"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-attendance]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(x=>
+          Number(x.id)===
+          Number(btn.dataset.editAttendance)
+        );
+
+        editPayrollAttendance(item);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-delete-attendance]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollAttendance(
+          Number(btn.dataset.deleteAttendance)
+        );
+      });
+    });
+  }
+
+  async function editPayrollAttendance(item={}){
+    const run=payrollState.selectedRun;
+    if(!run?.id){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const employees=(
+      payrollState.employees||[]
+    ).filter(employee=>
+      String(employee.employment_status||"")
+        .toLowerCase()!=="inactive"
+    );
+
+    const x=await payrollForm(
+      item.id
+        ?"Edit attendance"
+        :"New attendance",
+      [
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          required:true,
+          value:item.employee_id||"",
+          options:employees.map(employee=>[
+            employee.id,
+            `${employee.employee_no} — `+
+            `${employee.first_name} `+
+            `${employee.last_name}`,
+          ]),
+        },
+        {
+          name:"attendance_date",
+          label:"Date",
+          type:"date",
+          required:true,
+          value:String(
+            item.attendance_date||
+            run.period_start||
+            ""
+          ).slice(0,10),
+        },
+        {
+          name:"attendance_type",
+          label:"Attendance type",
+          type:"select",
+          value:item.attendance_type||"present",
+          options:[
+            ["present","Present"],
+            ["partial_day","Partial day"],
+            ["absent","Absent"],
+            ["paid_leave","Paid leave"],
+            ["unpaid_leave","Unpaid leave"],
+            ["sick_leave","Sick leave"],
+            ["public_holiday","Public holiday"],
+            ["rest_day","Rest day"],
+          ],
+        },
+        {
+          name:"scheduled_hours",
+          label:"Scheduled hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.scheduled_hours??8,
+        },
+        {
+          name:"worked_hours",
+          label:"Worked hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.worked_hours??8,
+        },
+        {
+          name:"overtime_hours",
+          label:"Overtime hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.overtime_hours??0,
+        },
+        {
+          name:"unpaid_hours",
+          label:"Unpaid hours",
+          type:"number",
+          step:"0.25",
+          min:0,
+          value:item.unpaid_hours??0,
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:item.notes||"",
+        },
+        {
+          name:"approved",
+          label:"Approved",
+          type:"checkbox",
+          value:Boolean(item.approved),
+        },
+      ]
+    );
+
+    if(!x)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.runAttendance(
+        cid(),
+        run.id
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(run.id);
+
+    showPayrollStatus(
+      "Attendance saved.",
+      "success"
+    );
+  }
+
+  async function generatePayrollAttendance(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const x=await payrollForm(
+      "Generate attendance schedule",
+      [
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          value:"",
+          placeholder:"All employees",
+          options:(payrollState.employees||[])
+            .map(employee=>[
+              employee.id,
+              `${employee.employee_no} — `+
+              `${employee.first_name} `+
+              `${employee.last_name}`,
+            ]),
+        },
+        {
+          name:"hours_per_day",
+          label:"Hours per working day",
+          type:"number",
+          step:"0.25",
+          min:"0.25",
+          value:8,
+        },
+        {
+          name:"approved",
+          label:"Approve generated attendance",
+          type:"checkbox",
+          value:false,
+        },
+      ]
+    );
+
+    if(!x)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.generateRunAttendance(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(x),
+      }
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Attendance schedule generated.",
+      "success"
+    );
+  }
+
+  async function deletePayrollAttendance(id){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!id)return;
+
+    if(!window.confirm(
+      "Delete this attendance record?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.runAttendanceRecord(
+        cid(),
+        runId,
+        id
+      ),
+      {method:"DELETE"}
+    );
+
+    await loadPayrollRunAttendance();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Attendance record deleted.",
+      "success"
+    );
+  }
+
+  function payrollPeriodInputItems(type){
+    const setup=payrollState.setup||{};
+
+    if(type==="earning"){
+      return setup.earning_types||[];
+    }
+
+    if(type==="deduction"){
+      return setup.deduction_types||[];
+    }
+
+    if(type==="employer_contribution"){
+      return setup.contribution_types||[];
+    }
+
+    return[];
+  }
+
+  function payrollInputTypeLabel(type){
+    return({
+      earning:"Earning",
+      deduction:"Deduction",
+      employer_contribution:
+        "Employer contribution",
+    })[type]||cap(String(type||"")
+      .replaceAll("_"," "));
+  }
+
+  async function loadPayrollRunPeriodInputs(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
+
+    const employeeId=
+      $("payrollPeriodInputEmployeeFilter")
+        ?.value||"";
+
+    const status=
+      $("payrollPeriodInputStatusFilter")
+        ?.value||"";
+
+    const [rows,summary]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.runPeriodInputs(
+          cid(),
+          runId,
+          {employeeId,status}
+        )
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.runPeriodInputSummary(
+          cid(),
+          runId
+        )
+      ),
+    ]);
+
+    payrollState.periodInputs=rows?.items||[];
+    payrollState.periodInputSummary=
+      summary?.data||null;
+
+    fillPayrollPeriodInputEmployeeFilter();
+    renderPayrollRunPeriodInputs();
+  }
+
+  function fillPayrollPeriodInputEmployeeFilter(){
+    const select=$(
+      "payrollPeriodInputEmployeeFilter"
+    );
+
+    if(!select)return;
+
+    const current=select.value;
+    const employees=payrollState.employees||[];
+
+    select.innerHTML=`
+      <option value="">All employees</option>
+      ${employees.map(employee=>`
+        <option value="${employee.id}">
+          ${esc(employee.employee_no||"")} —
+          ${esc(employee.first_name||"")}
+          ${esc(employee.last_name||"")}
+        </option>
+      `).join("")}`;
+
+    select.value=current;
+  }
+
+  function renderPayrollRunPeriodInputs(){
+    const el=$("payrollPeriodInputList");
+    const summaryEl=$("payrollPeriodInputSummary");
+    const items=payrollState.periodInputs||[];
+    const totals=
+      payrollState.periodInputSummary?.totals||{};
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Approved Earnings</span>
+          <strong>
+            ${money(totals.earnings)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Approved Deductions</span>
+          <strong>
+            ${money(totals.deductions)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Employer Contributions</span>
+          <strong>
+            ${money(
+              totals.employer_contributions
+            )}
+          </strong>
+        </div>
+
+        <div>
+          <span>Draft Inputs</span>
+          <strong>
+            ${Number(totals.draft||0)}
+          </strong>
+        </div>`;
+    }
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No payroll inputs have been captured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Input</th>
+              <th>Source</th>
+              <th>Quantity</th>
+              <th>Rate</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.employee_name||"")}
+                  </strong>
+                </td>
+
+                <td>
+                  <strong>
+                    ${esc(item.description||"")}
+                  </strong>
+
+                  <div class="payroll-muted">
+                    ${esc(payrollInputTypeLabel(
+                      item.input_type
+                    ))}
+                    ${item.taxable?" · Taxable":""}
+                    ${item.pensionable
+                      ?" · Pensionable"
+                      :""}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(cap(String(
+                    item.source_module||"manual"
+                  ).replaceAll("_"," ")))}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.quantity||0
+                  ).toFixed(2)}
+                </td>
+
+                <td>
+                  ${money(item.rate)}
+                </td>
+
+                <td class="num">
+                  ${money(item.amount)}
+                </td>
+
+                <td>
+                  <span class="payroll-pill">
+                    ${esc(cap(item.status||"draft"))}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-edit-period-input="${item.id}"
+                  >
+                    Edit
+                  </button>
+
+                  ${item.status!=="approved"?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-approve-period-input="${item.id}"
+                    >
+                      Approve
+                    </button>
+                  `:`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-draft-period-input="${item.id}"
+                    >
+                      Return to Draft
+                    </button>
+                  `}
+
+                  ${!["cancelled","rejected"].includes(
+                    item.status
+                  )?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-cancel-period-input="${item.id}"
+                    >
+                      Cancel
+                    </button>
+                  `:""}
+
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-delete-period-input="${item.id}"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(row=>
+          Number(row.id)===
+          Number(btn.dataset.editPeriodInput)
+        );
+
+        editPayrollPeriodInput(item);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-approve-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.approvePeriodInput),
+          "approve"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-draft-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.draftPeriodInput),
+          "return-to-draft"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-cancel-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        setPayrollPeriodInputStatus(
+          Number(btn.dataset.cancelPeriodInput),
+          "cancel"
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-delete-period-input]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollPeriodInput(
+          Number(btn.dataset.deletePeriodInput)
+        );
+      });
+    });
+  }
+
+  async function editPayrollPeriodInput(item={}){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error("Open a payroll run first.");
+    }
+
+    const employees=payrollState.employees||[];
+
+    const initialType=
+      item.input_type||"earning";
+
+    const fields=[
+      {
+        name:"employee_id",
+        label:"Employee",
+        type:"select",
+        required:true,
+        value:item.employee_id||"",
+        options:employees.map(employee=>[
+          employee.id,
+          `${employee.employee_no} — `+
+          `${employee.first_name} `+
+          `${employee.last_name}`,
+        ]),
+      },
+      {
+        name:"input_type",
+        label:"Input type",
+        type:"select",
+        required:true,
+        value:initialType,
+        options:[
+          ["earning","Earning"],
+          ["deduction","Deduction"],
+          [
+            "employer_contribution",
+            "Employer contribution",
+          ],
+        ],
+        onChange:(value,form)=>{
+          const select=form.elements.item_id;
+          const items=payrollPeriodInputItems(value);
+
+          if(!select)return;
+
+          select.innerHTML=`
+            <option value="">
+              Select payroll item…
+            </option>
+            ${items.map(row=>`
+              <option value="${row.id}">
+                ${esc(row.name||row.code||"")}
+              </option>
+            `).join("")}`;
+        },
+      },
+      {
+        name:"item_id",
+        label:"Payroll item",
+        type:"select",
+        value:item.item_id||"",
+        placeholder:"Select payroll item…",
+        options:payrollPeriodInputItems(
+          initialType
+        ).map(row=>[
+          row.id,
+          row.name||row.code,
+        ]),
+      },
+      {
+        name:"description",
+        label:"Description",
+        type:"text",
+        required:true,
+        value:item.description||"",
+      },
+      {
+        name:"quantity",
+        label:"Quantity",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.quantity??1,
+      },
+      {
+        name:"rate",
+        label:"Rate",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.rate??0,
+      },
+      {
+        name:"amount",
+        label:"Amount",
+        type:"number",
+        step:"0.01",
+        min:0,
+        value:item.amount??0,
+      },
+      {
+        name:"source_module",
+        label:"Source",
+        type:"select",
+        value:item.source_module||"manual",
+        options:[
+          ["manual","Manual"],
+          ["attendance","Attendance"],
+          ["leave","Leave"],
+          ["performance","Performance"],
+          ["commission","Commission"],
+          ["production","Production"],
+          ["timesheet","Timesheet"],
+          ["system","System"],
+        ],
+      },
+      {
+        name:"taxable",
+        label:"Taxable",
+        type:"checkbox",
+        value:Boolean(item.taxable),
+      },
+      {
+        name:"pensionable",
+        label:"Pensionable",
+        type:"checkbox",
+        value:Boolean(item.pensionable),
+      },
+      {
+        name:"notes",
+        label:"Notes",
+        type:"textarea",
+        value:item.notes||"",
+      },
+      {
+        name:"status",
+        label:"Status",
+        type:"select",
+        value:item.status||"draft",
+        options:[
+          ["draft","Draft"],
+          ["approved","Approved"],
+        ],
+      },
+    ];
+
+    const values=await payrollForm(
+      item.id
+        ?"Edit payroll input"
+        :"New payroll input",
+      fields
+    );
+
+    if(!values)return;
+
+    const selected=payrollPeriodInputItems(
+      values.input_type
+    ).find(row=>
+      Number(row.id)===Number(values.item_id)
+    );
+
+    values.item_id=values.item_id
+      ?Number(values.item_id)
+      :null;
+
+    values.code=selected?.code||item.code||null;
+    values.quantity=Number(values.quantity||0);
+    values.rate=Number(values.rate||0);
+    values.amount=Number(values.amount||0);
+
+    const endpoint=item.id
+      ?ENDPOINTS.payroll.runPeriodInput(
+          cid(),
+          runId,
+          item.id
+        )
+      :ENDPOINTS.payroll.runPeriodInputs(
+          cid(),
+          runId
+        );
+
+    await apiFetch(endpoint,{
+      method:item.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollRunPeriodInputs();
+    await loadPayrollRunEligibility(runId);
+
+    showPayrollStatus(
+      "Payroll input saved.",
+      "success"
+    );
+  }
+
+  async function setPayrollPeriodInputStatus(
+    inputId,
+    action
+  ){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!inputId)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.runPeriodInputAction(
+        cid(),
+        runId,
+        inputId,
+        action
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await loadPayrollRunPeriodInputs();
+
+    showPayrollStatus(
+      action==="approve"
+        ?"Payroll input approved."
+        :action==="return-to-draft"
+          ?"Payroll input returned to draft."
+          :"Payroll input cancelled.",
+      "success"
+    );
+  }
+
+  async function deletePayrollPeriodInput(inputId){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!inputId)return;
+
+    if(!window.confirm(
+      "Delete this payroll input?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.runPeriodInput(
+        cid(),
+        runId,
+        inputId
+      ),
+      {method:"DELETE"}
+    );
+
+    await loadPayrollRunPeriodInputs();
+
+    showPayrollStatus(
+      "Payroll input deleted.",
+      "success"
+    );
+  }
+
+  async function loadPayrollRunValidation(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return null;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runValidation(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.runValidation=res?.data||null;
+    renderPayrollRunValidation();
+
+    return payrollState.runValidation;
+  }
+
+  function payrollValidationItems(
+    items,
+    emptyMessage
+  ){
+    if(!items?.length){
+      return`
+        <div class="notice success">
+          ${esc(emptyMessage)}
+        </div>`;
+    }
+
+    return`
+      <div class="payroll-validation-list">
+        ${items.map(item=>`
+          <div class="notice ${esc(
+            item.severity||"info"
+          )}">
+            <strong>
+              ${esc(String(
+                item.code||""
+              ).replaceAll("_"," "))}
+            </strong>
+            <div>${esc(item.message||"")}</div>
+          </div>
+        `).join("")}
+      </div>`;
+  }
+
+  function renderPayrollRunValidation(){
+    const data=payrollState.runValidation||{};
+    const summary=data.summary||{};
+
+    const summaryEl=$("payrollValidationSummary");
+
+    if(summaryEl){
+      summaryEl.innerHTML=`
+        <div>
+          <span>Employees</span>
+          <strong>
+            ${Number(summary.employee_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Errors</span>
+          <strong>
+            ${Number(summary.error_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Warnings</span>
+          <strong>
+            ${Number(summary.warning_count||0)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Information</span>
+          <strong>
+            ${Number(
+              summary.information_count||0
+            )}
+          </strong>
+        </div>`;
+    }
+
+    const readiness=$(
+      "payrollValidationReadiness"
+    );
+
+    if(readiness){
+      const checks=[
+        {
+          label:"Ready to calculate",
+          ok:Boolean(
+            summary.ready_to_calculate
+          ),
+        },
+        {
+          label:"Ready to approve",
+          ok:Boolean(
+            summary.ready_to_approve
+          ),
+        },
+        {
+          label:"Ready to post",
+          ok:Boolean(
+            summary.ready_to_post
+          ),
+        },
+      ];
+
+      readiness.innerHTML=`
+        <div class="payroll-run-checks">
+          ${checks.map(check=>`
+            <div class="payroll-check-item ${
+              check.ok?"ok":"fail"
+            }">
+              <span class="check-icon">
+                ${check.ok?"&#10003;":"&#10005;"}
+              </span>
+              ${esc(check.label)}
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if($("payrollValidationErrors")){
+      $("payrollValidationErrors").innerHTML=
+        payrollValidationItems(
+          data.errors||[],
+          "No validation errors."
+        );
+    }
+
+    if($("payrollValidationWarnings")){
+      $("payrollValidationWarnings").innerHTML=
+        payrollValidationItems(
+          data.warnings||[],
+          "No validation warnings."
+        );
+    }
+
+    if($("payrollValidationInformation")){
+      $("payrollValidationInformation").innerHTML=
+        payrollValidationItems(
+          data.information||[],
+          "No additional information."
+        );
+    }
+
+    renderPayrollEmployeeValidation(
+      data.employees||[]
+    );
+
+    renderPayrollValidationControls();
+  }
+
+  function renderPayrollEmployeeValidation(items){
+    const el=$("payrollEmployeeValidationList");
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees were found for validation.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Errors</th>
+              <th>Warnings</th>
+              <th>Ready</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(
+                      item.employee?.employee_no||""
+                    )} —
+                    ${esc(
+                      item.employee?.employee_name||""
+                    )}
+                  </strong>
+                </td>
+
+                <td>
+                  ${Number(
+                    item.summary?.error_count||0
+                  )}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.summary?.warning_count||0
+                  )}
+                </td>
+
+                <td>
+                  <span class="payroll-pill">
+                    ${item.summary?.ready
+                      ?"Ready"
+                      :"Needs attention"}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-view-employee-validation="${
+                      item.employee?.id||""
+                    }"
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-view-employee-validation]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        showPayrollEmployeeValidation(
+          Number(
+            btn.dataset.viewEmployeeValidation
+          )
+        );
+      });
+    });
+  }
+
+  async function showPayrollEmployeeValidation(
+    employeeId
+  ){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId||!employeeId)return;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runEmployeeValidation(
+        cid(),
+        runId,
+        employeeId
+      )
+    );
+
+    const data=res?.data||{};
+    const employee=data.employee||{};
+
+    const values=await payrollForm(
+      `${employee.employee_no||""} — `+
+      `${employee.employee_name||""}`,
+      [
+        {
+          name:"validation_result",
+          label:"Validation",
+          type:"textarea",
+          readonly:true,
+          backendGenerated:true,
+          value:(data.issues||[])
+            .map(item=>
+              `[${String(
+                item.severity||"info"
+              ).toUpperCase()}] ${item.message}`
+            )
+            .join("\n")
+            ||"No validation issues.",
+        },
+      ],
+      {
+        validation_result:
+          (data.issues||[])
+            .map(item=>
+              `[${String(
+                item.severity||"info"
+              ).toUpperCase()}] ${item.message}`
+            )
+            .join("\n")
+            ||"No validation issues.",
+      }
+    );
+
+    return values;
+  }
+
+  function renderPayrollValidationControls(){
+    const data=payrollState.runValidation||{};
+    const summary=data.summary||{};
+    const status=String(
+      payrollState.selectedRun?.status||"draft"
+    ).toLowerCase();
+
+    const calculate=$("payrollCalculateRunBtn");
+    const post=$("payrollPostRunBtn");
+
+    if(calculate){
+      calculate.disabled=(
+        ["posted","cancelled"].includes(status)
+        ||!summary.ready_to_calculate
+      );
+    }
+
+    if(post){
+      post.disabled=!summary.ready_to_post;
+    }
+  }
+
+  async function loadPayrollRunAudit(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runAudit(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.runAudit=res?.items||[];
+    renderPayrollRunAudit();
+  }
+
+  function renderPayrollRunAudit(){
+    const el=$("payrollRunAuditList");
+    const items=payrollState.runAudit||[];
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No payroll audit entries yet.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Action</th>
+              <th>Status Change</th>
+              <th>Message</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  ${esc(String(
+                    item.created_at||""
+                  ).replace("T"," ").slice(0,19))}
+                </td>
+
+                <td>
+                  <strong>
+                    ${esc(cap(String(
+                      item.action||""
+                    ).replaceAll("_"," ")))}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(item.from_status||"—")}
+                  →
+                  ${esc(item.to_status||"—")}
+                </td>
+
+                <td>
+                  ${esc(item.message||"—")}
+                </td>
+
+                <td>
+                  ${esc(String(item.user_id||"System"))}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  async function loadPayrollRunPayslips(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId)return;
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runPayslips(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.payslips=res?.items||[];
+
+    fillPayrollPayslipDepartmentFilter();
+    renderPayrollRunPayslips();
+  }
+
+  function fillPayrollPayslipDepartmentFilter(){
+    const select=$(
+      "payrollPayslipDepartmentFilter"
+    );
+
+    if(!select)return;
+
+    const current=select.value;
+
+    const departments=[
+      ...new Set(
+        (payrollState.payslips||[])
+          .map(item=>item.department_name)
+          .filter(Boolean)
+      ),
+    ].sort();
+
+    select.innerHTML=`
+      <option value="">All departments</option>
+      ${departments.map(name=>`
+        <option value="${esc(name)}">
+          ${esc(name)}
+        </option>
+      `).join("")}`;
+
+    select.value=current;
+  }
+
+  function payrollFilteredPayslips(){
+    const search=String(
+      $("payrollPayslipSearch")?.value||""
+    ).trim().toLowerCase();
+
+    const department=
+      $("payrollPayslipDepartmentFilter")
+        ?.value||"";
+
+    return(payrollState.payslips||[]).filter(item=>{
+      const haystack=[
+        item.employee_no,
+        item.first_name,
+        item.last_name,
+        item.department_name,
+        item.position_title,
+      ].join(" ").toLowerCase();
+
+      return(
+        (!search||haystack.includes(search))
+        &&(
+          !department
+          ||item.department_name===department
+        )
+      );
+    });
+  }
+
+  function renderPayrollRunPayslips(){
+    const el=$("payrollPayslipList");
+    if(!el)return;
+
+    const items=payrollFilteredPayslips();
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No calculated payslips match the filter.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Department</th>
+              <th>Gross Pay</th>
+              <th>Deductions</th>
+              <th>Net Pay</th>
+              <th>Proration</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.first_name||"")}
+                    ${esc(item.last_name||"")}
+                  </strong>
+
+                  <div class="payroll-muted">
+                    ${esc(item.position_title||"")}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(item.department_name||"—")}
+                </td>
+
+                <td class="num">
+                  ${money(item.gross_pay)}
+                </td>
+
+                <td class="num">
+                  ${money(item.total_deductions)}
+                </td>
+
+                <td class="num">
+                  <strong>
+                    ${money(item.net_pay)}
+                  </strong>
+                </td>
+
+                <td>
+                  ${(
+                    Number(
+                      item.proration_factor||0
+                    )*100
+                  ).toFixed(2)}%
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-open-payslip="${item.employee_id}"
+                  >
+                    Open
+                  </button>
+
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-print-payslip="${item.employee_id}"
+                  >
+                    Print
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-open-payslip]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        openPayrollPayslip(
+          Number(btn.dataset.openPayslip)
+        );
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-print-payslip]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        openPayrollPayslip(
+          Number(btn.dataset.printPayslip),
+          true
+        );
+      });
+    });
+  }
+
+  function payrollPayslipLineRows(items){
+    if(!items?.length){
+      return`
+        <tr>
+          <td colspan="4" class="payroll-muted">
+            No items
+          </td>
+        </tr>`;
+    }
+
+    return items.map(item=>`
+      <tr>
+        <td>
+          ${esc(item.code||"")}
+        </td>
+
+        <td>
+          ${esc(item.description||"")}
+        </td>
+
+        <td class="num">
+          ${item.quantity!=null
+            ?Number(item.quantity).toFixed(2)
+            :"—"}
+          ${item.rate!=null
+            ?` × ${money(item.rate)}`
+            :""}
+        </td>
+
+        <td class="num">
+          ${money(item.amount)}
+        </td>
+      </tr>
     `).join("");
   }
 
-  async function calculateSelectedPayrollRun() {
-    const companyId = cid();
-    const runId = payrollState.selectedRun?.id;
-    if (!runId) throw new Error("Select a payroll run first.");
+  function payrollPayslipHtml(data){
+    const company=data.company||{};
+    const run=data.run||{};
+    const employee=data.employee||{};
+    const eligibility=data.eligibility||{};
+    const totals=data.totals||{};
+    const bank=employee.bank||{};
 
-    const res = await apiFetch(ENDPOINTS.payroll.calculateRun(companyId, runId), {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    return`
+      <article class="payroll-final-payslip">
+        <header class="payroll-final-payslip-head">
+          <div>
+            <h2>${esc(company.name||"Company")}</h2>
 
-    payrollState.selectedRun = res?.data;
-    await loadPayrollRuns();
-    await openPayrollRun(runId);
-    showPayrollStatus("Payroll run calculated.", "success");
+            <p>
+              ${[
+                company.registration_number
+                  ?`Reg: ${company.registration_number}`
+                  :"",
+                company.tax_number
+                  ?`Tax: ${company.tax_number}`
+                  :"",
+                company.vat_number
+                  ?`VAT: ${company.vat_number}`
+                  :"",
+              ].filter(Boolean)
+                .map(esc)
+                .join(" · ")}
+            </p>
+
+            <p>${esc(company.address||"")}</p>
+          </div>
+
+          <div class="payroll-final-payslip-title">
+            <strong>PAYSLIP</strong>
+            <span>${esc(run.run_no||"")}</span>
+            <span>
+              ${esc(String(
+                run.period_start||""
+              ).slice(0,10))}
+              –
+              ${esc(String(
+                run.period_end||""
+              ).slice(0,10))}
+            </span>
+          </div>
+        </header>
+
+        <section class="payroll-final-payslip-meta">
+          <div>
+            <span>Employee</span>
+            <strong>
+              ${esc(employee.employee_name||"")}
+            </strong>
+            <small>
+              ${esc(employee.employee_no||"")}
+            </small>
+          </div>
+
+          <div>
+            <span>Department</span>
+            <strong>
+              ${esc(employee.department_name||"—")}
+            </strong>
+            <small>
+              ${esc(employee.position_title||"")}
+            </small>
+          </div>
+
+          <div>
+            <span>Payment Date</span>
+            <strong>
+              ${esc(String(
+                run.payment_date||""
+              ).slice(0,10))}
+            </strong>
+            <small>${esc(run.frequency||"")}</small>
+          </div>
+
+          <div>
+            <span>Tax Number</span>
+            <strong>
+              ${esc(employee.tax_number||"—")}
+            </strong>
+            <small>
+              ${esc(data.tax?.authority_code||"")}
+            </small>
+          </div>
+        </section>
+
+        <section class="payroll-final-payslip-meta">
+          <div>
+            <span>Eligible Period</span>
+            <strong>
+              ${esc(String(
+                eligibility.eligible_from||"—"
+              ).slice(0,10))}
+              –
+              ${esc(String(
+                eligibility.eligible_to||"—"
+              ).slice(0,10))}
+            </strong>
+          </div>
+
+          <div>
+            <span>Eligible Days</span>
+            <strong>
+              ${Number(
+                eligibility.eligible_days||0
+              ).toFixed(2)}
+              /
+              ${Number(
+                eligibility.scheduled_days||0
+              ).toFixed(2)}
+            </strong>
+          </div>
+
+          <div>
+            <span>Worked Hours</span>
+            <strong>
+              ${Number(
+                eligibility.worked_hours||0
+              ).toFixed(2)}
+            </strong>
+          </div>
+
+          <div>
+            <span>Proration</span>
+            <strong>
+              ${(
+                Number(
+                  eligibility.proration_factor||0
+                )*100
+              ).toFixed(2)}%
+            </strong>
+            <small>
+              ${esc(payrollProrationLabel(
+                eligibility.proration_method
+              ))}
+            </small>
+          </div>
+        </section>
+
+        <section class="payroll-final-payslip-section">
+          <h3>Earnings</h3>
+
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Quantity / Rate</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${payrollPayslipLineRows(
+                data.earnings||[]
+              )}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="3">Gross Pay</th>
+                <th class="num">
+                  ${money(totals.gross_pay)}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+
+        ${data.benefits?.length?`
+          <section class="payroll-final-payslip-section">
+            <h3>Taxable Benefits</h3>
+
+            <table class="payroll-preview-table">
+              <tbody>
+                ${payrollPayslipLineRows(
+                  data.benefits
+                )}
+              </tbody>
+            </table>
+          </section>
+        `:""}
+
+        <section class="payroll-final-payslip-section">
+          <h3>Deductions</h3>
+
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Quantity / Rate</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${payrollPayslipLineRows([
+                ...(data.deductions||[]),
+                ...(data.taxes||[]),
+              ])}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="3">
+                  Total Deductions
+                </th>
+                <th class="num">
+                  ${money(totals.total_deductions)}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+
+        <section class="payroll-final-payslip-net">
+          <span>NET PAY</span>
+          <strong>${money(totals.net_pay)}</strong>
+          <small>${esc(run.currency||"")}</small>
+        </section>
+
+        ${data.employer_contributions?.length?`
+          <section class="payroll-final-payslip-section">
+            <h3>Employer Contributions</h3>
+
+            <table class="payroll-preview-table">
+              <tbody>
+                ${payrollPayslipLineRows(
+                  data.employer_contributions
+                )}
+              </tbody>
+
+              <tfoot>
+                <tr>
+                  <th colspan="3">
+                    Employer Contributions
+                  </th>
+                  <th class="num">
+                    ${money(
+                      totals.employer_contributions
+                    )}
+                  </th>
+                </tr>
+
+                <tr>
+                  <th colspan="3">
+                    Total Employer Cost
+                  </th>
+                  <th class="num">
+                    ${money(totals.employer_cost)}
+                  </th>
+                </tr>
+              </tfoot>
+            </table>
+          </section>
+        `:""}
+
+        <footer class="payroll-final-payslip-foot">
+          <div>
+            <span>Bank</span>
+            <strong>${esc(bank.bank_name||"—")}</strong>
+          </div>
+
+          <div>
+            <span>Account</span>
+            <strong>
+              ${esc(bank.account_number||"—")}
+            </strong>
+          </div>
+
+          <div>
+            <span>Taxable Income</span>
+            <strong>
+              ${money(totals.taxable_income)}
+            </strong>
+          </div>
+
+          <div>
+            <span>Tax Year</span>
+            <strong>
+              ${esc(data.tax?.tax_year_label||"—")}
+            </strong>
+          </div>
+        </footer>
+      </article>`;
+  }
+
+  async function openPayrollPayslip(
+    employeeId,
+    print=false
+  ){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId||!employeeId){
+      throw new Error(
+        "Select a calculated employee payslip."
+      );
+    }
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.employeePayslip(
+        cid(),
+        runId,
+        employeeId
+      )
+    );
+
+    payrollState.selectedPayslip=res?.data||null;
+
+    const el=$("payrollPayslipDetail");
+
+    if(el){
+      el.innerHTML=`
+        <div class="payroll-card">
+          <div class="payroll-card-head">
+            <h3>Employee Payslip</h3>
+
+            <div class="payroll-run-actions">
+              <button
+                id="payrollClosePayslipBtn"
+                type="button"
+                class="payroll-secondary"
+              >
+                Close
+              </button>
+
+              <button
+                id="payrollPrintPayslipBtn"
+                type="button"
+                class="payroll-primary"
+              >
+                Print Payslip
+              </button>
+            </div>
+          </div>
+
+          ${payrollPayslipHtml(
+            payrollState.selectedPayslip
+          )}
+        </div>`;
+
+      $("payrollClosePayslipBtn")
+        ?.addEventListener("click",()=>{
+          payrollState.selectedPayslip=null;
+          el.innerHTML="";
+        });
+
+      $("payrollPrintPayslipBtn")
+        ?.addEventListener(
+          "click",
+          printSelectedPayrollPayslip
+        );
+
+      el.scrollIntoView({
+        behavior:"smooth",
+        block:"start",
+      });
+    }
+
+    if(print){
+      printSelectedPayrollPayslip();
+    }
+  }
+
+  function printSelectedPayrollPayslip(){
+    const data=payrollState.selectedPayslip;
+
+    if(!data){
+      showPayrollStatus(
+        "Open a payslip before printing.",
+        "error"
+      );
+      return;
+    }
+
+    const popup=window.open(
+      "",
+      "_blank",
+      "width=980,height=760"
+    );
+
+    if(!popup){
+      showPayrollStatus(
+        "Allow pop-ups to print the payslip.",
+        "error"
+      );
+      return;
+    }
+
+    popup.document.open();
+
+    popup.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>
+            Payslip ${esc(
+              data.employee?.employee_no||""
+            )} ${esc(data.run?.run_no||"")}
+          </title>
+
+          <style>
+            *{box-sizing:border-box}
+            body{
+              margin:0;
+              padding:24px;
+              font-family:Arial,sans-serif;
+              color:#111827;
+              background:#fff;
+            }
+            .payroll-final-payslip{
+              max-width:900px;
+              margin:0 auto;
+            }
+            .payroll-final-payslip-head{
+              display:flex;
+              justify-content:space-between;
+              gap:24px;
+              border-bottom:2px solid #111827;
+              padding-bottom:16px;
+            }
+            .payroll-final-payslip-head h2{
+              margin:0 0 6px;
+            }
+            .payroll-final-payslip-head p{
+              margin:3px 0;
+              font-size:12px;
+            }
+            .payroll-final-payslip-title{
+              text-align:right;
+              display:grid;
+              gap:5px;
+            }
+            .payroll-final-payslip-title strong{
+              font-size:24px;
+            }
+            .payroll-final-payslip-meta{
+              display:grid;
+              grid-template-columns:repeat(4,1fr);
+              gap:12px;
+              margin-top:16px;
+            }
+            .payroll-final-payslip-meta>div,
+            .payroll-final-payslip-foot>div{
+              padding:10px;
+              border:1px solid #d1d5db;
+            }
+            .payroll-final-payslip-meta span,
+            .payroll-final-payslip-foot span{
+              display:block;
+              font-size:10px;
+              text-transform:uppercase;
+              color:#6b7280;
+            }
+            .payroll-final-payslip-meta strong,
+            .payroll-final-payslip-foot strong{
+              display:block;
+              margin-top:4px;
+            }
+            .payroll-final-payslip-meta small{
+              display:block;
+              margin-top:3px;
+              color:#6b7280;
+            }
+            .payroll-final-payslip-section{
+              margin-top:20px;
+            }
+            .payroll-final-payslip-section h3{
+              margin:0 0 8px;
+              font-size:14px;
+              text-transform:uppercase;
+            }
+            table{
+              width:100%;
+              border-collapse:collapse;
+            }
+            th,td{
+              border:1px solid #d1d5db;
+              padding:8px;
+              font-size:12px;
+              text-align:left;
+            }
+            th{background:#f3f4f6}
+            .num{text-align:right}
+            .payroll-muted{color:#6b7280}
+            .payroll-final-payslip-net{
+              display:flex;
+              align-items:center;
+              justify-content:flex-end;
+              gap:14px;
+              margin-top:18px;
+              padding:16px;
+              background:#111827;
+              color:#fff;
+            }
+            .payroll-final-payslip-net strong{
+              font-size:24px;
+            }
+            .payroll-final-payslip-foot{
+              display:grid;
+              grid-template-columns:repeat(4,1fr);
+              gap:12px;
+              margin-top:20px;
+            }
+            @media print{
+              body{padding:0}
+              @page{
+                size:A4;
+                margin:12mm;
+              }
+            }
+          </style>
+        </head>
+
+        <body>
+          ${payrollPayslipHtml(data)}
+
+          <script>
+            window.addEventListener("load",()=>{
+              window.print();
+            });
+          <\/script>
+        </body>
+      </html>
+    `);
+
+    popup.document.close();
+  }
+
+  async function calculateSelectedPayrollRun(){
+    const companyId=cid();
+    const runId=payrollState.selectedRun?.id;
+    const button=$("payrollCalculateRunBtn");
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    try{
+      if(button){
+        button.disabled=true;
+        button.dataset.originalText||=
+          button.textContent;
+        button.textContent="Calculating…";
+      }
+
+      showPayrollStatus(
+        "Calculating payroll…",
+        "info"
+      );
+
+      const res=await apiFetch(
+        ENDPOINTS.payroll.calculateRun(
+          companyId,
+          runId
+        ),
+        {
+          method:"POST",
+          body:"{}",
+        }
+      );
+
+      payrollState.selectedRun=res?.data||null;
+
+      await Promise.all([
+        loadPayrollRuns(),
+        loadPayrollRunEligibility(runId),
+      ]);
+
+      await openPayrollRun(runId);
+
+      const count=Number(
+        res?.data?.calculated_employee_count||0
+      );
+      const skipped=
+        res?.data?.skipped_employees||[];
+
+      let message=
+        `Payroll calculated for ${count} employee`+
+        `${count===1?"":"s"}.`;
+
+      if(skipped.length){
+        message+=
+          ` ${skipped.length} employee`+
+          `${skipped.length===1?" was":"s were"}`+
+          " skipped.";
+      }
+
+      showPayrollStatus(message,"success");
+      return res?.data;
+
+    }catch(error){
+      showPayrollStatus(
+        error?.message||
+        "Payroll could not be calculated.",
+        "error"
+      );
+
+      throw error;
+
+    }finally{
+      if(button){
+        button.disabled=false;
+        button.textContent=
+          button.dataset.originalText||
+          "Calculate";
+      }
+    }
   }
 
   async function previewSelectedPayrollJournal() {
@@ -63429,6 +68956,410 @@ async function saveEditModal() {
 
     renderPayrollJournalPreview(payrollState.journalPreview);
     $("payrollJournalPreviewModal")?.classList.remove("hidden");
+  }
+
+  async function refreshSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+    if(!runId)return null;
+
+    await openPayrollRun(runId);
+    await loadPayrollRuns();
+
+    return payrollState.selectedRun;
+  }
+
+  async function submitSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    showPayrollStatus(
+      "Submitting payroll for approval…",
+      "info"
+    );
+
+    await apiFetch(
+      ENDPOINTS.payroll.submitRun(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll submitted for approval.",
+      "success"
+    );
+  }
+
+  async function approveSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    const validation=
+      payrollState.runValidation
+      ||await loadPayrollRunValidation();
+
+    if(!validation?.summary?.ready_to_approve){
+      throw new Error(
+        "Resolve payroll validation errors "
+        +"before approval."
+      );
+    }
+
+    if(!window.confirm(
+      "Approve this payroll run? "
+      +"Attendance and payroll inputs will "
+      +"be locked."
+    )){
+      return;
+    }
+
+    showPayrollStatus(
+      "Approving payroll…",
+      "info"
+    );
+
+    await apiFetch(
+      ENDPOINTS.payroll.approveRun(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll approved.",
+      "success"
+    );
+  }
+
+  async function returnSelectedPayrollRun(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    const values=await payrollForm(
+      "Return Payroll to Draft",
+      [
+        {
+          name:"reason",
+          label:"Reason",
+          type:"textarea",
+          required:true,
+          placeholder:
+            "Explain what must be corrected…",
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.returnRunToDraft(
+        cid(),
+        runId
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(values),
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll returned to draft.",
+      "success"
+    );
+  }
+
+
+  async function loadPayrollRunReconciliation(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runReconciliation(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.runReconciliation=
+      res?.data||null;
+
+    renderPayrollRunReconciliation();
+
+    return payrollState.runReconciliation;
+  }
+
+  function renderPayrollRunReconciliation(){
+    const el=$("payrollReconciliationPanel");
+    const data=payrollState.runReconciliation;
+
+    if(!el)return;
+
+    if(!data){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          Reconciliation has not been loaded.
+        </p>`;
+      return;
+    }
+
+    if(data.message&&!data.rows?.length){
+      el.innerHTML=`
+        <div class="notice warning">
+          ${esc(data.message)}
+        </div>`;
+      return;
+    }
+
+    const totals=data.summary||{};
+    const rows=data.rows||[];
+
+    el.innerHTML=`
+      <div class="payroll-kpis">
+        <div>
+          <span>Expected Debits</span>
+          <strong>
+            ${money(totals.expected_debits)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Actual Debits</span>
+          <strong>
+            ${money(totals.actual_debits)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Difference</span>
+          <strong>
+            ${money(totals.difference)}
+          </strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong>
+            ${totals.balanced
+              ?"Reconciled"
+              :"Needs Attention"}
+          </strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Description</th>
+              <th>Expected Debit</th>
+              <th>Actual Debit</th>
+              <th>Expected Credit</th>
+              <th>Actual Credit</th>
+              <th>Difference</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map(row=>`
+              <tr>
+                <td>
+                  ${esc(row.account_code||"")}
+                </td>
+
+                <td>
+                  ${esc(row.description||"")}
+                </td>
+
+                <td class="num">
+                  ${money(row.expected_debit)}
+                </td>
+
+                <td class="num">
+                  ${money(row.actual_debit)}
+                </td>
+
+                <td class="num">
+                  ${money(row.expected_credit)}
+                </td>
+
+                <td class="num">
+                  ${money(row.actual_credit)}
+                </td>
+
+                <td class="num">
+                  <span class="payroll-pill">
+                    ${money(row.difference)}
+                  </span>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  async function loadPayrollReversalPreview(){
+    const runId=payrollState.selectedRun?.id;
+
+    if(!runId){
+      throw new Error(
+        "Select a posted payroll run first."
+      );
+    }
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.runReversalPreview(
+        cid(),
+        runId
+      )
+    );
+
+    payrollState.reversalPreview=res?.data||null;
+
+    return payrollState.reversalPreview;
+  }
+
+  async function reverseSelectedPayrollRun(){
+    const run=payrollState.selectedRun;
+
+    if(!run?.id){
+      throw new Error(
+        "Select a payroll run first."
+      );
+    }
+
+    if(run.status!=="posted"){
+      throw new Error(
+        "Only posted payroll can be reversed."
+      );
+    }
+
+    const preview=await loadPayrollReversalPreview();
+
+    if(!preview?.ready_to_reverse){
+      throw new Error(
+        "Payroll reversal journal is not balanced."
+      );
+    }
+
+    const values=await payrollForm(
+      "Reverse Payroll Run",
+      [
+        {
+          name:"reversal_date",
+          label:"Reversal Date",
+          type:"date",
+          required:true,
+          value:String(
+            run.payment_date||
+            new Date().toISOString().slice(0,10)
+          ).slice(0,10),
+        },
+        {
+          name:"reason",
+          label:"Reversal Reason",
+          type:"textarea",
+          required:true,
+          placeholder:
+            "Explain why this payroll is reversed…",
+        },
+        {
+          name:"reversal_summary",
+          label:"Reversal Journal",
+          type:"textarea",
+          readonly:true,
+          backendGenerated:true,
+          value:[
+            `Source Journal: ${
+              preview.source_journal_id
+            }`,
+            `Debits: ${money(preview.debits)}`,
+            `Credits: ${money(preview.credits)}`,
+            `Difference: ${money(
+              preview.difference
+            )}`,
+          ].join("\n"),
+        },
+      ],
+      {
+        reversal_summary:[
+          `Source Journal: ${
+            preview.source_journal_id
+          }`,
+          `Debits: ${money(preview.debits)}`,
+          `Credits: ${money(preview.credits)}`,
+          `Difference: ${money(
+            preview.difference
+          )}`,
+        ].join("\n"),
+      }
+    );
+
+    if(!values)return;
+
+    if(!window.confirm(
+      "Reverse this posted payroll run? "
+      +"A reversal journal will be posted."
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.reverseRun(
+        cid(),
+        run.id
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          reversal_date:
+            values.reversal_date,
+          reason:values.reason,
+        }),
+      }
+    );
+
+    await refreshSelectedPayrollRun();
+
+    showPayrollStatus(
+      "Payroll run reversed successfully.",
+      "success"
+    );
   }
 
   async function postSelectedPayrollRun() {
@@ -63566,79 +69497,86 @@ async function saveEditModal() {
     }
   }
 
-  async function savePayrollEmployeePaySetup() {
-    const companyId = cid();
-
-    const employeeId = Number(
-      $("payrollPaySetupEmployeeId")?.value || 0
+  async function savePayrollEmployeePaySetup(){
+    const companyId=cid();
+    const employeeId=Number(
+      $("payrollPaySetupEmployeeId")?.value||0
     );
 
-    if (!employeeId) {
+    if(!employeeId){
       throw new Error("Select an employee.");
     }
 
-    const payBasis =
-      $("payrollPayBasis")?.value || "monthly";
+    const payBasis=
+      $("payrollPayBasis")?.value||"monthly";
 
-    const selectedItems =
+    const selectedItems=
       collectPayrollPaySetupItems();
 
     validatePayrollPaySetupItems(selectedItems);
 
-    const payload = {
-      employee_id: employeeId,
+    const effectiveFrom=
+      $("payrollPaySetupEffectiveFrom")?.value||"";
 
-      pay_basis: payBasis,
+    if(!effectiveFrom){
+      throw new Error("Effective from date is required.");
+    }
 
-      basic_earning_type_id:
-        Number(
-          $("payrollBasicEarningTypeId")?.value || 0
-        ) || null,
+    const payload={
+      employee_id:employeeId,
+      pay_basis:payBasis,
 
-      fixed_basic_amount:
-        payBasis === "monthly"
-          ? Number(
-              $("payrollPayBasicAmount")?.value || 0
-            )
-          : 0,
+      basic_earning_type_id:Number(
+        $("payrollBasicEarningTypeId")?.value||0
+      )||null,
 
-      standard_quantity:
-        ["hourly", "daily", "quantity"].includes(
-          payBasis
-        )
-          ? Number(
-              $("payrollPayStandardQuantity")
-                ?.value || 0
-            )
-          : null,
+      fixed_basic_amount:payBasis==="monthly"
+        ?Number($("payrollPayBasicAmount")?.value||0)
+        :0,
 
-      rate:
-        ["hourly", "daily", "quantity"].includes(
-          payBasis
-        )
-          ? Number(
-              $("payrollPayRate")?.value || 0
-            )
-          : null,
+      standard_quantity:[
+        "hourly",
+        "daily",
+        "quantity",
+      ].includes(payBasis)
+        ?Number(
+            $("payrollPayStandardQuantity")?.value||0
+          )
+        :null,
+
+      rate:[
+        "hourly",
+        "daily",
+        "quantity",
+      ].includes(payBasis)
+        ?Number($("payrollPayRate")?.value||0)
+        :null,
 
       tax_treatment:
-        $("payrollPayTaxTreatment")?.value ||
+        $("payrollPayTaxTreatment")?.value||
         "standard",
 
       manual_paye_amount:
-        $("payrollPayTaxTreatment")?.value ===
-        "manual"
-          ? Number(
-              $("payrollManualPayeAmount")
-                ?.value || 0
+        $("payrollPayTaxTreatment")?.value==="manual"
+          ?Number(
+              $("payrollManualPayeAmount")?.value||0
             )
-          : null,
+          :null,
 
-      effective_from:
-        $("payrollPaySetupEffectiveFrom")
-          ?.value || null,
+      proration_method:
+        $("payrollPayProrationMethod")?.value||
+        "working_days",
 
-      items: selectedItems,
+      hours_per_day:Number(
+        $("payrollPayHoursPerDay")?.value||8
+      ),
+
+      attendance_required:Boolean(
+        $("payrollPayAttendanceRequired")?.checked
+      ),
+
+      effective_from:effectiveFrom,
+      items:selectedItems,
     };
 
     await apiFetch(
@@ -63647,10 +69585,12 @@ async function saveEditModal() {
         employeeId
       ),
       {
-        method: "POST",
-        body: JSON.stringify(payload),
+        method:"POST",
+        body:JSON.stringify(payload),
       }
     );
+
+    await loadPayrollEmployeePaySetup(employeeId);
 
     showPayrollStatus(
       "Employee pay setup saved.",
@@ -67157,54 +73097,77 @@ async function saveEditModal() {
     }).join("");
   }
 
-  async function loadPayrollEmployeePaySetup(employeeId) {
-    const companyId = cid();
-
-    const res = await apiFetch(
+  async function loadPayrollEmployeePaySetup(employeeId){
+    const res=await apiFetch(
       ENDPOINTS.payroll.employeePaySetup(
-        companyId,
+        cid(),
         employeeId
       )
     );
 
-    const setup = res?.data || null;
+    const setup=res?.data||null;
 
-    payrollState.selectedPaySetupEmployee =
-      setup;
-
+    payrollState.selectedPaySetupEmployee=setup;
     clearPayrollPaySetupSelections();
 
-    if (!setup?.id) {
+    if(!setup?.id){
+      if($("payrollPayBasis")){
+        $("payrollPayBasis").value="monthly";
+      }
+
+      if($("payrollPayProrationMethod")){
+        $("payrollPayProrationMethod").value=
+          "working_days";
+      }
+
+      if($("payrollPayHoursPerDay")){
+        $("payrollPayHoursPerDay").value="8";
+      }
+
+      if($("payrollPayAttendanceRequired")){
+        $("payrollPayAttendanceRequired").checked=false;
+      }
+
       updatePayrollPayBasisFields();
       updatePayrollPayeFields();
+      renderPayrollPayslipPreview();
       return;
     }
 
-    $("payrollPayBasis").value =
-      setup.pay_basis || "monthly";
+    $("payrollPayBasis").value=
+      setup.pay_basis||"monthly";
 
-    $("payrollBasicEarningTypeId").value =
-      setup.basic_earning_type_id || "";
+    $("payrollBasicEarningTypeId").value=
+      setup.basic_earning_type_id||"";
 
-    $("payrollPayBasicAmount").value =
-      setup.fixed_basic_amount || "";
+    $("payrollPayBasicAmount").value=
+      setup.fixed_basic_amount||"";
 
-    $("payrollPayStandardQuantity").value =
-      setup.standard_quantity || "";
+    $("payrollPayStandardQuantity").value=
+      setup.standard_quantity||"";
 
-    $("payrollPayRate").value =
-      setup.rate || "";
+    $("payrollPayRate").value=
+      setup.rate||"";
 
-    $("payrollPayTaxTreatment").value =
-      setup.tax_treatment || "standard";
+    $("payrollPayTaxTreatment").value=
+      setup.tax_treatment||"standard";
 
-    $("payrollManualPayeAmount").value =
-      setup.manual_paye_amount || "";
+    $("payrollManualPayeAmount").value=
+      setup.manual_paye_amount||"";
 
-    $("payrollPaySetupEffectiveFrom").value =
-      setup.effective_from || "";
+    $("payrollPaySetupEffectiveFrom").value=
+      String(setup.effective_from||"").slice(0,10);
 
-    for (const item of setup.items || []) {
+    $("payrollPayProrationMethod").value=
+      setup.proration_method||"working_days";
+
+    $("payrollPayHoursPerDay").value=
+      setup.hours_per_day||8;
+
+    $("payrollPayAttendanceRequired").checked=
+      Boolean(setup.attendance_required);
+
+    for(const item of setup.items||[]){
       applyPayrollPaySetupItem(item);
     }
 
@@ -67333,167 +73296,132 @@ async function saveEditModal() {
     });
   }
 
-  function switchPayrollTab(tab, options = {}) {
-    const {
-      scroll = true,
-    } = options;
-
-    const validTabs = new Set([
-      "overview",
-      "employees",
-      "calendars",
-      "runs",
-      "employee-benefits",
-      "reports",
-      "tax-admin",
-      "settings",
+  function switchPayrollTab(tab,options={}){
+    const {scroll=true}=options;
+    const validTabs=new Set([
+      "overview","tax-admin","employees","calendars","runs",
+      "employee-benefits","incentives","reports","statutory","settings",
     ]);
 
-    if (!validTabs.has(tab)) {
-      console.warn("Unknown payroll tab:", tab);
-      tab = "overview";
+    if(!validTabs.has(tab)){
+      console.warn("Unknown payroll tab:",tab);
+      tab="overview";
     }
 
-    const isDashboard = tab === "overview";
-
-    const heroActions =
-      document.querySelector(
-        "#screen-payroll .payroll-hero-actions"
-      );
-
-    heroActions?.classList.toggle(
-      "hidden",
-      !isDashboard
-    );
-
-    const mainTabs =
-      document.querySelector(
-        "#screen-payroll .payroll-tabs"
-      );
-
-    const hero =
-      document.querySelector(
-        "#screen-payroll .payroll-hero"
-      );
-
-    hero?.classList.toggle(
-      "payroll-compact-hero",
-      !isDashboard
-    );
-
-    /*
-    * Dashboard:
-    *   show the top payroll navigation.
-    *
-    * Other workspaces:
-    *   hide the top navigation and use the Back button.
-    */
-    mainTabs?.classList.toggle(
-      "payroll-main-nav-hidden",
-      !isDashboard
-    );
-
-    document
-      .querySelectorAll(
-        "#screen-payroll [data-payroll-tab]"
-      )
-      .forEach(button => {
-        button.classList.toggle(
-          "active",
-          button.dataset.payrollTab === tab
-        );
-      });
-
-    const panelMap = {
-      overview: "payrollTabOverview",
-      employees: "payrollTabEmployees",
-      calendars: "payrollTabCalendars",
-      runs: "payrollTabRuns",
-
-      "employee-benefits":
-        "payrollTabEmployeeBenefits",
-
-      reports: "payrollTabReports",
-      "tax-admin": "payrollTabTaxAdmin",
-      settings: "payrollTabSettings",
+    const isDashboard=tab==="overview";
+    const panelMap={
+      overview:"payrollTabOverview",
+      "tax-admin":"payrollTabTaxAdmin",
+      employees:"payrollTabEmployees",
+      calendars:"payrollTabCalendars",
+      runs:"payrollTabRuns",
+      "employee-benefits":"payrollTabEmployeeBenefits",
+      incentives:"payrollTabIncentives",
+      reports:"payrollTabReports",
+      statutory:"payrollTabStatutory",
+      settings:"payrollTabSettings",
     };
 
-    Object.entries(panelMap).forEach(
-      ([name, panelId]) => {
-        $(panelId)?.classList.toggle(
-          "hidden",
-          name !== tab
-        );
-      }
+    const heroActions=document.querySelector(
+      "#screen-payroll .payroll-hero-actions"
+    );
+    const mainTabs=document.querySelector(
+      "#screen-payroll .payroll-tabs"
+    );
+    const hero=document.querySelector(
+      "#screen-payroll .payroll-hero"
+    );
+    const shell=document.querySelector(
+      "#screen-payroll .payroll-shell"
     );
 
-    /*
-    * Make the selected workspace move upward.
-    */
+    heroActions?.classList.toggle("hidden",!isDashboard);
+    mainTabs?.classList.toggle("payroll-main-nav-hidden",!isDashboard);
+    hero?.classList.toggle("payroll-compact-hero",!isDashboard);
+    shell?.classList.toggle("payroll-workspace-open",!isDashboard);
+
     document
-      .querySelector(
-        "#screen-payroll .payroll-shell"
-      )
-      ?.classList.toggle(
-        "payroll-workspace-open",
-        !isDashboard
+      .querySelectorAll("#screen-payroll [data-payroll-tab]")
+      .forEach(button=>
+        button.classList.toggle(
+          "active",
+          button.dataset.payrollTab===tab
+        )
       );
 
-    if (tab === "employees") {
+    Object.entries(panelMap).forEach(([name,panelId])=>
+      $(panelId)?.classList.toggle("hidden",name!==tab)
+    );
+
+    if(tab==="employees"){
       renderPayrollEmployees();
-
-    } else if (tab === "calendars") {
-      loadPayrollCalendars();
-
-    } else if (tab === "runs") {
-      loadPayrollRuns();
-
-    } else if (tab === "employee-benefits") {
+    }else if(tab==="calendars"){
+      loadPayrollCalendars().catch(error=>
+        showPayrollStatus(error?.message||"Calendars could not be loaded.","error")
+      );
+    }else if(tab==="runs"){
+      loadPayrollRuns().catch(error=>
+        showPayrollStatus(error?.message||"Payroll runs could not be loaded.","error")
+      );
+    }else if(tab==="employee-benefits"){
       switchPayrollBenefitTab(
-        payrollState.employeeBenefits?.activeTab ||
-        "overview"
-      ).catch(error => {
-        console.error(
-          "Failed to load employee benefits:",
-          error
-        );
-
-        showPayrollStatus?.(
-          error.message ||
-          "Failed to load employee benefits.",
+        payrollState.employeeBenefits?.activeTab||"overview"
+      ).catch(error=>
+        showPayrollStatus(
+          error?.message||"Employee benefits could not be loaded.",
+          "error"
+        )
+      );
+    }else if(tab==="incentives"){
+      loadPayrollIncentivesWorkspace().catch(error=>{
+        console.error("Payroll incentives failed:",error);
+        showPayrollStatus(
+          error?.message||"Incentives could not be loaded.",
           "error"
         );
       });
-
-    } else if (tab === "reports") {
-      loadPayrollReports().catch(error => {
-        console.error("Payroll reports failed:", error);
-
-        showPayrollStatus?.(
-          error.message || "Failed to load payroll reports.",
+    }else if(tab==="reports"){
+      loadPayrollReports().catch(error=>{
+        console.error("Payroll reports failed:",error);
+        showPayrollStatus(
+          error?.message||"Payroll reports could not be loaded.",
           "error"
         );
       });
-
-    } else if (tab === "tax-admin") {
-      taxAdminInit();
-
-    } else if (tab === "settings") {
-      loadPayrollSettings?.();
+    }else if(tab==="tax-admin"){
+      Promise.resolve(taxAdminInit()).catch(error=>
+        showPayrollStatus(
+          error?.message||"Tax tables could not be loaded.",
+          "error"
+        )
+      );
+    }else if(tab==="statutory"){
+      loadPayrollStatutoryWorkspace().catch(error=>
+        showPayrollStatus(
+          error?.message||"Statutory returns could not be loaded.",
+          "error"
+        )
+      );
+    }else if(tab==="settings"){
+      Promise.resolve(loadPayrollSettings?.()).catch(error=>
+        showPayrollStatus(
+          error?.message||"Payroll settings could not be loaded.",
+          "error"
+        )
+      );
     }
 
-    if (scroll) {
-      const target =
-        isDashboard
-          ? $("payrollTabOverview")
-          : $(panelMap[tab]);
+    if(scroll){
+      const target=isDashboard
+        ?$("payrollTabOverview")
+        :$(panelMap[tab]);
 
-      requestAnimationFrame(() => {
+      requestAnimationFrame(()=>
         target?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      });
+          behavior:"smooth",
+          block:"start",
+        })
+      );
     }
   }
 
@@ -67588,7 +73516,1612 @@ async function saveEditModal() {
       category: "Accounting",
       description: "Payroll control accounts reconciled to the general ledger.",
     },
+    {
+      key:"attendance-report",
+      name:"Attendance Report",
+      category:"Payroll",
+      description:
+        "Attendance, leave, overtime and unpaid hours.",
+    },
+    {
+      key:"payroll-inputs",
+      name:"Payroll Inputs",
+      category:"Payroll",
+      description:
+        "Once-off earnings, deductions and contributions.",
+    },
+    {
+      key:"incentive-report",
+      name:"Performance Incentives",
+      category:"Payroll",
+      description:
+        "Targets, achievement and incentive payments.",
+    },
   ];
+
+  async function loadPayrollIncentivesWorkspace(){
+    const planId=
+      $("payrollIncentiveEvaluationPlanFilter")
+        ?.value||"";
+
+    const status=
+      $("payrollIncentiveEvaluationStatusFilter")
+        ?.value||"";
+
+    const dateFrom=
+      $("payrollIncentiveEvaluationFrom")
+        ?.value||"";
+
+    const dateTo=
+      $("payrollIncentiveEvaluationTo")
+        ?.value||"";
+
+    const [plans,assignments,evaluations]=
+      await Promise.all([
+        apiFetch(
+          ENDPOINTS.payroll.incentivePlans(cid())
+        ),
+        apiFetch(
+          ENDPOINTS.payroll.incentiveAssignments(
+            cid()
+          )
+        ),
+        apiFetch(
+          ENDPOINTS.payroll.incentiveEvaluations(
+            cid(),
+            {
+              planId,
+              status,
+              dateFrom,
+              dateTo,
+            }
+          )
+        ),
+      ]);
+
+    payrollState.incentivePlans=
+      plans?.items||[];
+
+    payrollState.incentiveAssignments=
+      assignments?.items||[];
+
+    payrollState.incentiveEvaluations=
+      evaluations?.items||[];
+
+    fillPayrollIncentiveEvaluationFilters();
+    renderPayrollIncentivePlans();
+    renderPayrollIncentiveAssignments();
+    renderPayrollIncentiveEvaluations();
+  }
+
+  function payrollRewardMethodLabel(value){
+    return({
+      fixed_amount:"Fixed amount",
+      percentage_basic:"% of basic pay",
+      percentage_gross:"% of gross pay",
+      percentage_target:"% of target value",
+    })[value]||cap(String(value||"")
+      .replaceAll("_"," "));
+  }
+
+  function renderPayrollIncentivePlans(){
+    const el=$("payrollIncentivePlansList");
+    const plans=payrollState.incentivePlans||[];
+
+    if(!el)return;
+
+    if(!plans.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No incentive plans configured.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Metric</th>
+              <th>Frequency</th>
+              <th>Payout Basis</th>
+              <th>Rules</th>
+              <th>Employees</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${plans.map(plan=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(plan.code)} — ${esc(plan.name)}
+                  </strong>
+                </td>
+                <td>${esc(plan.metric_name||"—")}</td>
+                <td>
+                  ${esc(cap(plan.frequency||"monthly"))}
+                </td>
+                <td>
+                  ${esc(payrollRewardMethodLabel(
+                    plan.payout_basis
+                  ))}
+                </td>
+                <td>${Number(plan.rule_count||0)}</td>
+                <td>
+                  ${Number(
+                    plan.active_assignment_count||0
+                  )}
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${plan.is_active?"Active":"Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-open-incentive-plan="${plan.id}"
+                  >
+                    Open
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll("[data-edit-incentive-assignment]").forEach(btn=>
+      btn.addEventListener(
+        "click",
+        runPayrollAction(()=>{
+          const item=items.find(row=>
+            Number(row.id)===
+            Number(btn.dataset.editIncentiveAssignment)
+          );
+
+          return editPayrollIncentiveAssignment(item||{});
+        })
+      )
+    );
+  }
+
+  async function editPayrollIncentivePlan(plan={}){
+    const values=await payrollForm(
+      plan.id
+        ?"Edit Incentive Plan"
+        :"New Incentive Plan",
+      [
+        {
+          name:"code",
+          label:"Code",
+          type:"text",
+          required:true,
+          value:plan.code||"",
+        },
+        {
+          name:"name",
+          label:"Name",
+          type:"text",
+          required:true,
+          value:plan.name||"",
+        },
+        {
+          name:"description",
+          label:"Description",
+          type:"textarea",
+          value:plan.description||"",
+        },
+        {
+          name:"frequency",
+          label:"Frequency",
+          type:"select",
+          value:plan.frequency||"monthly",
+          options:[
+            ["weekly","Weekly"],
+            ["fortnightly","Fortnightly"],
+            ["monthly","Monthly"],
+            ["quarterly","Quarterly"],
+            ["annual","Annual"],
+          ],
+        },
+        {
+          name:"metric_name",
+          label:"Performance Metric",
+          type:"text",
+          required:true,
+          value:plan.metric_name||"",
+          placeholder:
+            "Sales, production units, quality score…",
+        },
+        {
+          name:"payout_basis",
+          label:"Default Payout Basis",
+          type:"select",
+          value:plan.payout_basis||"fixed_amount",
+          options:[
+            ["fixed_amount","Fixed amount"],
+            ["percentage_basic","% of basic pay"],
+            ["percentage_gross","% of gross pay"],
+            [
+              "percentage_target",
+              "% of target value",
+            ],
+          ],
+        },
+        {
+          name:"effective_from",
+          label:"Effective From",
+          type:"date",
+          value:String(
+            plan.effective_from||""
+          ).slice(0,10),
+        },
+        {
+          name:"effective_to",
+          label:"Effective To",
+          type:"date",
+          value:String(
+            plan.effective_to||""
+          ).slice(0,10),
+        },
+        {
+          name:"taxable",
+          label:"Taxable",
+          type:"checkbox",
+          value:plan.id
+            ?Boolean(plan.taxable)
+            :true,
+        },
+        {
+          name:"pensionable",
+          label:"Pensionable",
+          type:"checkbox",
+          value:Boolean(plan.pensionable),
+        },
+        {
+          name:"is_active",
+          label:"Active",
+          type:"checkbox",
+          value:plan.id
+            ?Boolean(plan.is_active)
+            :true,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    const endpoint=plan.id
+      ?ENDPOINTS.payroll.incentivePlan(
+          cid(),
+          plan.id
+        )
+      :ENDPOINTS.payroll.incentivePlans(
+          cid()
+        );
+
+    await apiFetch(endpoint,{
+      method:plan.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive plan saved.",
+      "success"
+    );
+  }
+
+  async function openPayrollIncentivePlan(planId){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.incentivePlan(
+        cid(),
+        planId
+      )
+    );
+
+    payrollState.selectedIncentivePlan=
+      res?.data||null;
+
+    renderPayrollIncentivePlanDetail();
+  }
+
+  function renderPayrollIncentivePlanDetail(){
+    const el=$("payrollIncentivePlanDetail");
+    const plan=payrollState.selectedIncentivePlan;
+
+    if(!el||!plan)return;
+
+    const rules=plan.rules||[];
+
+    el.innerHTML=`
+      <div class="payroll-card">
+        <div class="payroll-card-head">
+          <div>
+            <h3>
+              ${esc(plan.code)} — ${esc(plan.name)}
+            </h3>
+            <p class="payroll-muted">
+              ${esc(plan.description||plan.metric_name||"")}
+            </p>
+          </div>
+
+          <div class="payroll-run-actions">
+            <button
+              id="payrollEditIncentivePlanBtn"
+              type="button"
+              class="payroll-secondary dark"
+            >
+              Edit Plan
+            </button>
+
+            <button
+              id="payrollNewIncentiveRuleBtn"
+              type="button"
+              class="payroll-primary"
+            >
+              + Target Range
+            </button>
+          </div>
+        </div>
+
+        <div class="payroll-table-wrap">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Achievement Range</th>
+                <th>Reward Method</th>
+                <th>Reward Value</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${rules.length?rules.map(rule=>`
+                <tr>
+                  <td>
+                    ${Number(
+                      rule.from_percentage||0
+                    ).toFixed(2)}%
+                    –
+                    ${rule.to_percentage==null
+                      ?"No maximum"
+                      :`${Number(
+                          rule.to_percentage
+                        ).toFixed(2)}%`}
+                  </td>
+                  <td>
+                    ${esc(payrollRewardMethodLabel(
+                      rule.reward_method
+                    ))}
+                  </td>
+                  <td>
+                    ${Number(
+                      rule.reward_value||0
+                    ).toFixed(2)}
+                  </td>
+                  <td>
+                    <button
+                      class="payroll-link"
+                      data-edit-incentive-rule="${rule.id}"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="payroll-link"
+                      data-delete-incentive-rule="${rule.id}"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="4">
+                    No target ranges configured.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    $("payrollEditIncentivePlanBtn")
+      ?.addEventListener(
+        "click",
+        ()=>editPayrollIncentivePlan(plan)
+      );
+
+    $("payrollNewIncentiveRuleBtn")
+      ?.addEventListener(
+        "click",
+        ()=>editPayrollIncentiveRule()
+      );
+
+    el.querySelectorAll(
+      "[data-edit-incentive-rule]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const rule=rules.find(x=>
+          Number(x.id)===
+          Number(btn.dataset.editIncentiveRule)
+        );
+
+        editPayrollIncentiveRule(rule);
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-delete-incentive-rule]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        deletePayrollIncentiveRule(
+          Number(btn.dataset.deleteIncentiveRule)
+        );
+      });
+    });
+  }
+
+  async function editPayrollIncentiveRule(rule={}){
+    const plan=payrollState.selectedIncentivePlan;
+    if(!plan?.id)return;
+
+    const values=await payrollForm(
+      rule.id
+        ?"Edit Target Range"
+        :"New Target Range",
+      [
+        {
+          name:"from_percentage",
+          label:"From Achievement %",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:rule.from_percentage??0,
+        },
+        {
+          name:"to_percentage",
+          label:"To Achievement %",
+          type:"number",
+          min:0,
+          step:"0.01",
+          value:rule.to_percentage??"",
+          placeholder:"Leave blank for no maximum",
+        },
+        {
+          name:"reward_method",
+          label:"Reward Method",
+          type:"select",
+          value:rule.reward_method||
+            plan.payout_basis||
+            "fixed_amount",
+          options:[
+            ["fixed_amount","Fixed amount"],
+            ["percentage_basic","% of basic pay"],
+            ["percentage_gross","% of gross pay"],
+            [
+              "percentage_target",
+              "% of target value",
+            ],
+          ],
+        },
+        {
+          name:"reward_value",
+          label:"Reward Value",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:rule.reward_value??0,
+        },
+        {
+          name:"display_order",
+          label:"Display Order",
+          type:"number",
+          min:1,
+          step:1,
+          value:rule.display_order??1,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    values.from_percentage=Number(
+      values.from_percentage||0
+    );
+    values.to_percentage=
+      values.to_percentage===""
+        ?null
+        :Number(values.to_percentage);
+    values.reward_value=Number(
+      values.reward_value||0
+    );
+    values.display_order=Number(
+      values.display_order||1
+    );
+
+    const endpoint=rule.id
+      ?ENDPOINTS.payroll.incentiveRule(
+          cid(),
+          plan.id,
+          rule.id
+        )
+      :ENDPOINTS.payroll.incentiveRules(
+          cid(),
+          plan.id
+        );
+
+    await apiFetch(endpoint,{
+      method:rule.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await openPayrollIncentivePlan(plan.id);
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive target range saved.",
+      "success"
+    );
+  }
+
+  async function deletePayrollIncentiveRule(ruleId){
+    const plan=payrollState.selectedIncentivePlan;
+
+    if(!plan?.id||!ruleId)return;
+
+    if(!window.confirm(
+      "Delete this target range?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.incentiveRule(
+        cid(),
+        plan.id,
+        ruleId
+      ),
+      {method:"DELETE"}
+    );
+
+    await openPayrollIncentivePlan(plan.id);
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive target range deleted.",
+      "success"
+    );
+  }
+
+  function renderPayrollIncentiveAssignments(){
+    const el=$("payrollIncentiveAssignmentsList");
+    const items=payrollState.incentiveAssignments||[];
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No employees assigned to incentive plans.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Plan</th>
+              <th>Target</th>
+              <th>Effective Period</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.employee_name||"")}
+                  </strong>
+                </td>
+                <td>
+                  ${esc(item.plan_code||"")} —
+                  ${esc(item.plan_name||"")}
+                </td>
+                <td>
+                  ${Number(
+                    item.target_value||0
+                  ).toFixed(2)}
+                </td>
+                <td>
+                  ${esc(String(
+                    item.effective_from||""
+                  ).slice(0,10))}
+                  –
+                  ${item.effective_to
+                    ?esc(String(
+                        item.effective_to
+                      ).slice(0,10))
+                    :"Open"}
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${item.is_active?"Active":"Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    class="payroll-link"
+                    data-edit-incentive-assignment="${item.id}"
+                  >
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-edit-incentive-assignment]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(x=>
+          Number(x.id)===
+          Number(
+            btn.dataset.editIncentiveAssignment
+          )
+        );
+
+        editPayrollIncentiveAssignment(item);
+      });
+    });
+  }
+
+  async function editPayrollIncentiveAssignment(
+    assignment={}
+  ){
+    const plans=(payrollState.incentivePlans||[])
+      .filter(plan=>plan.is_active!==false);
+
+    const employees=payrollState.employees||[];
+
+    const values=await payrollForm(
+      assignment.id
+        ?"Edit Incentive Assignment"
+        :"New Incentive Assignment",
+      [
+        {
+          name:"incentive_plan_id",
+          label:"Incentive Plan",
+          type:"select",
+          required:true,
+          value:assignment.incentive_plan_id||"",
+          options:plans.map(plan=>[
+            plan.id,
+            `${plan.code} — ${plan.name}`,
+          ]),
+        },
+        {
+          name:"employee_id",
+          label:"Employee",
+          type:"select",
+          required:true,
+          value:assignment.employee_id||"",
+          options:employees.map(employee=>[
+            employee.id,
+            `${employee.employee_no} — `+
+            `${employee.first_name} `+
+            `${employee.last_name}`,
+          ]),
+        },
+        {
+          name:"target_value",
+          label:"Target Value",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:assignment.target_value??0,
+        },
+        {
+          name:"effective_from",
+          label:"Effective From",
+          type:"date",
+          required:true,
+          value:String(
+            assignment.effective_from||
+            new Date().toISOString().slice(0,10)
+          ).slice(0,10),
+        },
+        {
+          name:"effective_to",
+          label:"Effective To",
+          type:"date",
+          value:String(
+            assignment.effective_to||""
+          ).slice(0,10),
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:assignment.notes||"",
+        },
+        {
+          name:"is_active",
+          label:"Active",
+          type:"checkbox",
+          value:assignment.id
+            ?Boolean(assignment.is_active)
+            :true,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    values.incentive_plan_id=Number(
+      values.incentive_plan_id
+    );
+    values.employee_id=Number(
+      values.employee_id
+    );
+    values.target_value=Number(
+      values.target_value||0
+    );
+
+    const endpoint=assignment.id
+      ?ENDPOINTS.payroll.incentiveAssignment(
+          cid(),
+          assignment.id
+        )
+      :ENDPOINTS.payroll.incentiveAssignments(
+          cid()
+        );
+
+    await apiFetch(endpoint,{
+      method:assignment.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive assignment saved.",
+      "success"
+    );
+  }
+
+  function fillPayrollIncentiveEvaluationFilters(){
+    const select=$(
+      "payrollIncentiveEvaluationPlanFilter"
+    );
+
+    if(!select)return;
+
+    const current=select.value;
+    const plans=payrollState.incentivePlans||[];
+
+    select.innerHTML=`
+      <option value="">All plans</option>
+      ${plans.map(plan=>`
+        <option value="${plan.id}">
+          ${esc(plan.code)} — ${esc(plan.name)}
+        </option>
+      `).join("")}`;
+
+    select.value=current;
+  }
+
+  function renderPayrollIncentiveEvaluations(){
+    const el=$("payrollIncentiveEvaluationsList");
+    const items=payrollState.incentiveEvaluations||[];
+
+    if(!el)return;
+
+    if(!items.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No incentive evaluations found.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Plan</th>
+              <th>Period</th>
+              <th>Target</th>
+              <th>Actual</th>
+              <th>Achievement</th>
+              <th>Incentive</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(item.employee_no||"")} —
+                    ${esc(item.employee_name||"")}
+                  </strong>
+                </td>
+
+                <td>
+                  ${esc(item.plan_code||"")} —
+                  ${esc(item.plan_name||"")}
+                </td>
+
+                <td>
+                  ${esc(String(
+                    item.evaluation_period_start||""
+                  ).slice(0,10))}
+                  –
+                  ${esc(String(
+                    item.evaluation_period_end||""
+                  ).slice(0,10))}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.target_value||0
+                  ).toFixed(2)}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.actual_value||0
+                  ).toFixed(2)}
+                </td>
+
+                <td>
+                  ${Number(
+                    item.achievement_percentage||0
+                  ).toFixed(2)}%
+                </td>
+
+                <td class="num">
+                  ${money(item.final_incentive)}
+                </td>
+
+                <td>
+                  <span class="payroll-pill">
+                    ${esc(cap(item.status||"draft"))}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="payroll-link"
+                    data-open-incentive-evaluation="${item.id}"
+                  >
+                    Open
+                  </button>
+
+                  ${item.status==="approved"?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-push-incentive-evaluation="${item.id}"
+                    >
+                      Add to Payroll
+                    </button>
+                  `:""}
+
+                  ${item.status==="paid"?`
+                    <button
+                      type="button"
+                      class="payroll-link"
+                      data-remove-incentive-evaluation="${item.id}"
+                    >
+                      Remove
+                    </button>
+                  `:""}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    el.querySelectorAll("[data-open-incentive-evaluation]").forEach(btn=>
+      btn.addEventListener(
+        "click",
+        runPayrollAction(()=>
+          openPayrollIncentiveEvaluation(
+            Number(btn.dataset.openIncentiveEvaluation)
+          )
+        )
+      )
+    );
+    el.querySelectorAll(
+      "[data-push-incentive-evaluation]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(row=>
+          Number(row.id)===
+          Number(
+            btn.dataset.pushIncentiveEvaluation
+          )
+        );
+
+        runPayrollAction(
+          ()=>pushPayrollIncentiveEvaluation(item)
+        )();
+      });
+    });
+
+    el.querySelectorAll(
+      "[data-remove-incentive-evaluation]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const item=items.find(row=>
+          Number(row.id)===
+          Number(
+            btn.dataset.removeIncentiveEvaluation
+          )
+        );
+
+        runPayrollAction(
+          ()=>removePayrollIncentiveEvaluation(item)
+        )();
+      });
+    });
+  }
+
+  async function editPayrollIncentiveEvaluation(
+    evaluation={}
+  ){
+    const assignments=(
+      payrollState.incentiveAssignments||[]
+    ).filter(item=>item.is_active!==false);
+
+    if(!assignments.length){
+      throw new Error(
+        "Create an active incentive assignment first."
+      );
+    }
+
+    const runs=(payrollState.runs||[]).filter(run=>
+      ["calculated","approved","posted"].includes(
+        String(run.status||"").toLowerCase()
+      )
+    );
+
+    const today=new Date();
+    const monthStart=new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    ).toISOString().slice(0,10);
+
+    const monthEnd=new Date(
+      today.getFullYear(),
+      today.getMonth()+1,
+      0
+    ).toISOString().slice(0,10);
+
+    const values=await payrollForm(
+      evaluation.id
+        ?"Edit Performance Evaluation"
+        :"New Performance Evaluation",
+      [
+        {
+          name:"incentive_assignment_id",
+          label:"Employee and Plan",
+          type:"select",
+          required:true,
+          value:
+            evaluation.incentive_assignment_id||"",
+          options:assignments.map(item=>[
+            item.id,
+            `${item.employee_no} — `+
+            `${item.employee_name} · `+
+            `${item.plan_code} — ${item.plan_name}`,
+          ]),
+        },
+        {
+          name:"evaluation_period_start",
+          label:"Period Start",
+          type:"date",
+          required:true,
+          value:String(
+            evaluation.evaluation_period_start
+            ||monthStart
+          ).slice(0,10),
+        },
+        {
+          name:"evaluation_period_end",
+          label:"Period End",
+          type:"date",
+          required:true,
+          value:String(
+            evaluation.evaluation_period_end
+            ||monthEnd
+          ).slice(0,10),
+        },
+        {
+          name:"target_value",
+          label:"Target",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:evaluation.target_value??0,
+        },
+        {
+          name:"actual_value",
+          label:"Actual Performance",
+          type:"number",
+          min:0,
+          step:"0.01",
+          required:true,
+          value:evaluation.actual_value??0,
+        },
+        {
+          name:"payroll_run_id",
+          label:"Reference Payroll Run",
+          type:"select",
+          value:evaluation.payroll_run_id||"",
+          placeholder:
+            "Optional unless reward uses gross pay…",
+          options:runs.map(run=>[
+            run.id,
+            `${run.run_no} · `+
+            `${String(run.period_start).slice(0,10)}`+
+            ` – ${String(run.period_end).slice(0,10)}`,
+          ]),
+        },
+        {
+          name:"adjustment_amount",
+          label:"Manual Adjustment",
+          type:"number",
+          step:"0.01",
+          value:evaluation.adjustment_amount??0,
+        },
+        {
+          name:"adjustment_reason",
+          label:"Adjustment Reason",
+          type:"textarea",
+          value:evaluation.adjustment_reason||"",
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:evaluation.notes||"",
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    const assignment=assignments.find(item=>
+      Number(item.id)===
+      Number(values.incentive_assignment_id)
+    );
+
+    if(
+      !evaluation.id
+      &&Number(values.target_value||0)===0
+    ){
+      values.target_value=Number(
+        assignment?.target_value||0
+      );
+    }
+
+    values.incentive_assignment_id=Number(
+      values.incentive_assignment_id
+    );
+
+    values.payroll_run_id=values.payroll_run_id
+      ?Number(values.payroll_run_id)
+      :null;
+
+    values.target_value=Number(
+      values.target_value||0
+    );
+
+    values.actual_value=Number(
+      values.actual_value||0
+    );
+
+    values.adjustment_amount=Number(
+      values.adjustment_amount||0
+    );
+
+    const endpoint=evaluation.id
+      ?ENDPOINTS.payroll.incentiveEvaluation(
+          cid(),
+          evaluation.id
+        )
+      :ENDPOINTS.payroll.incentiveEvaluations(
+          cid()
+        );
+
+    const res=await apiFetch(endpoint,{
+      method:evaluation.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    const saved=res?.data;
+
+    await calculatePayrollIncentiveEvaluation(
+      saved?.id,
+      false
+    );
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Performance evaluation saved and calculated.",
+      "success"
+    );
+  }
+
+  async function openPayrollIncentiveEvaluation(
+    evaluationId
+  ){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.incentiveEvaluation(
+        cid(),
+        evaluationId
+      )
+    );
+
+    const item=res?.data||null;
+    payrollState.selectedIncentiveEvaluation=item;
+
+    if(!item)return;
+
+    const actions=[];
+
+    if(item.status==="draft"){
+      actions.push(
+        ["Edit",()=>editPayrollIncentiveEvaluation(item)],
+        [
+          "Recalculate",
+          ()=>calculatePayrollIncentiveEvaluation(item.id),
+        ],
+        [
+          "Submit",
+          ()=>setPayrollIncentiveEvaluationStatus(
+            item.id,
+            "submit"
+          ),
+        ],
+        [
+          "Delete",
+          ()=>deletePayrollIncentiveEvaluation(item.id),
+        ],
+      );
+    }
+
+    if(item.status==="submitted"){
+      actions.push(
+        [
+          "Approve",
+          ()=>setPayrollIncentiveEvaluationStatus(
+            item.id,
+            "approve"
+          ),
+        ],
+        [
+          "Return to Draft",
+          ()=>setPayrollIncentiveEvaluationStatus(
+            item.id,
+            "return-to-draft"
+          ),
+        ],
+      );
+    }
+
+    if(item.status==="approved"){
+      actions.push(
+        [
+          "Add to Payroll",
+          ()=>pushPayrollIncentiveEvaluation(item),
+        ],
+        [
+          "Return to Draft",
+          ()=>setPayrollIncentiveEvaluationStatus(
+            item.id,
+            "return-to-draft"
+          ),
+        ],
+      );
+    }
+
+    if(item.status==="paid"){
+      actions.push(
+        [
+          "Remove from Payroll",
+          ()=>removePayrollIncentiveEvaluation(item),
+        ],
+      );
+    }
+
+    if(!["paid","cancelled"].includes(item.status)){
+      actions.push(
+        [
+          "Cancel",
+          ()=>setPayrollIncentiveEvaluationStatus(
+            item.id,
+            "cancel"
+          ),
+        ],
+      );
+    }
+
+    const message=[
+      `Employee: ${item.employee_no} — `+
+        `${item.employee_name}`,
+      `Plan: ${item.plan_code} — ${item.plan_name}`,
+      `Metric: ${item.metric_name}`,
+      `Target: ${Number(item.target_value||0)
+        .toFixed(2)}`,
+      `Actual: ${Number(item.actual_value||0)
+        .toFixed(2)}`,
+      `Achievement: ${Number(
+        item.achievement_percentage||0
+      ).toFixed(2)}%`,
+      `Rule: ${item.from_percentage??"—"}% to `+
+        `${item.to_percentage??"No maximum"}`,
+      `Reward: ${payrollRewardMethodLabel(
+        item.reward_method
+      )}`,
+      `Base amount: ${money(item.base_amount)}`,
+      `Calculated: ${money(
+        item.calculated_incentive
+      )}`,
+      `Adjustment: ${money(
+        item.adjustment_amount
+      )}`,
+      `Final incentive: ${money(
+        item.final_incentive
+      )}`,
+      `Status: ${cap(item.status||"draft")}`,
+    ].join("\n");
+
+    const detail=await payrollForm(
+      "Performance Evaluation",
+      [
+        {
+          name:"evaluation_summary",
+          label:"Evaluation Summary",
+          type:"textarea",
+          readonly:true,
+          backendGenerated:true,
+          value:message,
+        },
+        {
+          name:"action",
+          label:"Action",
+          type:"select",
+          placeholder:"Close without action",
+          options:actions.map(
+            ([label],index)=>[
+              String(index),
+              label,
+            ]
+          ),
+        },
+      ],
+      {
+        evaluation_summary:message,
+      }
+    );
+
+    if(
+      detail?.action!==undefined
+      &&detail.action!==""
+    ){
+      const selected=actions[
+        Number(detail.action)
+      ];
+
+      await selected?.[1]?.();
+    }
+  }
+
+  async function calculatePayrollIncentiveEvaluation(
+    evaluationId,
+    notify=true
+  ){
+    if(!evaluationId)return;
+
+    await apiFetch(
+      ENDPOINTS.payroll.calculateIncentiveEvaluation(
+        cid(),
+        evaluationId
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await loadPayrollIncentivesWorkspace();
+
+    if(notify){
+      showPayrollStatus(
+        "Incentive evaluation calculated.",
+        "success"
+      );
+    }
+  }
+
+  async function setPayrollIncentiveEvaluationStatus(
+    evaluationId,
+    action
+  ){
+    if(!evaluationId)return;
+
+    const labels={
+      submit:"submit this evaluation",
+      approve:"approve this evaluation",
+      "return-to-draft":
+        "return this evaluation to draft",
+      cancel:"cancel this evaluation",
+    };
+
+    if(!window.confirm(
+      `Are you sure you want to `+
+      `${labels[action]||action}?`
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.incentiveEvaluationAction(
+        cid(),
+        evaluationId,
+        action
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      action==="submit"
+        ?"Evaluation submitted."
+        :action==="approve"
+          ?"Evaluation approved."
+          :action==="return-to-draft"
+            ?"Evaluation returned to draft."
+            :"Evaluation cancelled.",
+      "success"
+    );
+  }
+
+  async function deletePayrollIncentiveEvaluation(
+    evaluationId
+  ){
+    if(!evaluationId)return;
+
+    if(!window.confirm(
+      "Delete this draft evaluation?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.incentiveEvaluation(
+        cid(),
+        evaluationId
+      ),
+      {method:"DELETE"}
+    );
+
+    await loadPayrollIncentivesWorkspace();
+
+    showPayrollStatus(
+      "Incentive evaluation deleted.",
+      "success"
+    );
+  }
+
+  async function pushPayrollIncentiveEvaluation(
+    evaluation
+  ){
+    if(!evaluation?.id){
+      throw new Error(
+        "Open an incentive evaluation first."
+      );
+    }
+
+    if(evaluation.status!=="approved"){
+      throw new Error(
+        "Approve the evaluation before adding "
+        +"it to payroll."
+      );
+    }
+
+    const runs=(payrollState.runs||[]).filter(run=>{
+      const status=String(
+        run.status||"draft"
+      ).toLowerCase();
+
+      return(
+        ["draft","calculated"].includes(status)
+        &&!run.submitted_at
+      );
+    });
+
+    if(!runs.length){
+      throw new Error(
+        "Create or return a payroll run to draft first."
+      );
+    }
+
+    const earnings=(
+      payrollState.setup?.earning_types||[]
+    ).filter(item=>item.is_active!==false);
+
+    const values=await payrollForm(
+      "Add Incentive to Payroll",
+      [
+        {
+          name:"payroll_run_id",
+          label:"Payroll Run",
+          type:"select",
+          required:true,
+          value:evaluation.payroll_run_id||"",
+          options:runs.map(run=>[
+            run.id,
+            `${run.run_no} · `+
+            `${String(
+              run.period_start||""
+            ).slice(0,10)} – `+
+            `${String(
+              run.period_end||""
+            ).slice(0,10)} · `+
+            `${cap(run.status||"draft")}`,
+          ]),
+        },
+        {
+          name:"earning_type_id",
+          label:"Earning Type",
+          type:"select",
+          value:"",
+          placeholder:
+            "Optional performance incentive earning…",
+          options:earnings.map(item=>[
+            item.id,
+            `${item.code} — ${item.name}`,
+          ]),
+        },
+        {
+          name:"description",
+          label:"Payslip Description",
+          type:"text",
+          required:true,
+          value:
+            `${evaluation.plan_name||"Performance"} `+
+            "Incentive",
+        },
+        {
+          name:"notes",
+          label:"Payroll Notes",
+          type:"textarea",
+          value:
+            `Performance period `+
+            `${String(
+              evaluation.evaluation_period_start||""
+            ).slice(0,10)} to `+
+            `${String(
+              evaluation.evaluation_period_end||""
+            ).slice(0,10)}`,
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    values.payroll_run_id=Number(
+      values.payroll_run_id
+    );
+
+    values.earning_type_id=
+      values.earning_type_id
+        ?Number(values.earning_type_id)
+        :null;
+
+    const earning=earnings.find(item=>
+      Number(item.id)===
+      Number(values.earning_type_id)
+    );
+
+    values.code=
+      earning?.code||
+      "PERFORMANCE_INCENTIVE";
+
+    await apiFetch(
+      ENDPOINTS.payroll.pushIncentiveToPayroll(
+        cid(),
+        evaluation.id
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(values),
+      }
+    );
+
+    await Promise.all([
+      loadPayrollIncentivesWorkspace(),
+      loadPayrollRuns(),
+    ]);
+
+    showPayrollStatus(
+      "Approved incentive added to payroll.",
+      "success"
+    );
+  }
+
+  async function removePayrollIncentiveEvaluation(
+    evaluation
+  ){
+    if(!evaluation?.id)return;
+
+    if(!window.confirm(
+      "Remove this incentive from its payroll run?"
+    )){
+      return;
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.removeIncentiveFromPayroll(
+        cid(),
+        evaluation.id
+      ),
+      {
+        method:"POST",
+        body:"{}",
+      }
+    );
+
+    await Promise.all([
+      loadPayrollIncentivesWorkspace(),
+      loadPayrollRuns(),
+    ]);
+
+    showPayrollStatus(
+      "Incentive removed from payroll.",
+      "success"
+    );
+  }
 
   function payrollReportItems(response) {
     if (Array.isArray(response)) return response;
@@ -68300,50 +75833,228 @@ async function saveEditModal() {
     };
   }
 
-  async function buildPayrollReportData(reportKey, filters) {
-    const runs = filterPayrollReportRuns(payrollState.reports.runs || [], filters);
-    const employees = filterPayrollReportEmployees(
-      payrollState.reports.employees || [],
-      filters
-    );
+  async function buildPayrollReportData(
+    reportKey,
+    filters
+  ){
+    const runId=Number(filters.run_id||0);
 
-    switch (reportKey) {
-      case "payroll-register":
-        return buildPayrollRegisterReport(runs, employees);
+    switch(reportKey){
+      case"payslips":{
+        if(!runId){
+          return{
+            columns:[],
+            rows:[],
+            summary:{},
+            message:
+              "Select one calculated payroll run, "+
+              "then open Payslips from the run workspace.",
+          };
+        }
 
-      case "payroll-summary":
-        return buildPayrollSummaryReport(runs);
+        const res=await apiFetch(
+          ENDPOINTS.payroll.runPayslips(
+            cid(),
+            runId
+          )
+        );
 
-      case "employee-cost":
-        return buildEmployeeCostReport(runs, employees);
+        const rows=(res?.items||[]).map(item=>({
+          employee_no:item.employee_no,
+          employee_name:[
+            item.first_name,
+            item.last_name,
+          ].filter(Boolean).join(" "),
+          department:item.department_name||"",
+          gross_pay:item.gross_pay,
+          total_deductions:item.total_deductions,
+          net_pay:item.net_pay,
+        }));
 
-      case "department-cost":
-        return buildDepartmentCostReport(runs, employees);
-
-      case "leave-liability":
-      case "bonus-provision":
-      case "termination-benefits":
-      case "benefit-disclosure":
-        return buildEmployeeBenefitsReport(reportKey);
-
-      case "tax-report":
-        return buildPayrollTaxReport(runs);
-
-      case "employer-contributions":
-        return buildEmployerContributionReport(runs);
-
-      case "journal-report":
-      case "gl-reconciliation":
-      case "payslips":
-        return {
-          columns: [],
-          rows: [],
-          summary: {},
-          message: `${PAYROLL_REPORT_CATALOGUE.find(item => item.key === reportKey)?.name} requires its dedicated backend report endpoint.`,
+        return{
+          columns:[
+            {
+              key:"employee_no",
+              label:"Employee No.",
+            },
+            {
+              key:"employee_name",
+              label:"Employee",
+            },
+            {
+              key:"department",
+              label:"Department",
+            },
+            {
+              key:"gross_pay",
+              label:"Gross Pay",
+              money:true,
+            },
+            {
+              key:"total_deductions",
+              label:"Deductions",
+              money:true,
+            },
+            {
+              key:"net_pay",
+              label:"Net Pay",
+              money:true,
+            },
+          ],
+          rows,
+          summary:{
+            employees:rows.length,
+            gross_pay:rows.reduce(
+              (sum,row)=>
+                sum+Number(row.gross_pay||0),
+              0
+            ),
+            deductions:rows.reduce(
+              (sum,row)=>
+                sum+Number(
+                  row.total_deductions||0
+                ),
+              0
+            ),
+            net_pay:rows.reduce(
+              (sum,row)=>
+                sum+Number(row.net_pay||0),
+              0
+            ),
+          },
         };
+      }
+
+      case"leave-liability":
+      case"bonus-provision":
+      case"termination-benefits":
+      case"benefit-disclosure":
+        return buildEmployeeBenefitsReport(
+          reportKey
+        );
+
+      case"journal-report":{
+        if(!runId){
+          return{
+            columns:[],
+            rows:[],
+            summary:{},
+            message:
+              "Select one payroll run for the "+
+              "journal report.",
+          };
+        }
+
+        const res=await apiFetch(
+          ENDPOINTS.payroll.journalPreview(
+            cid(),
+            runId
+          )
+        );
+
+        const data=res?.data||res||{};
+
+        return{
+          columns:[
+            {
+              key:"account_code",
+              label:"Account",
+            },
+            {
+              key:"account_name",
+              label:"Account Name",
+            },
+            {
+              key:"description",
+              label:"Description",
+            },
+            {
+              key:"debit",
+              label:"Debit",
+              money:true,
+            },
+            {
+              key:"credit",
+              label:"Credit",
+              money:true,
+            },
+          ],
+          rows:data.lines||[],
+          summary:{
+            debits:Number(data.debits||0),
+            credits:Number(data.credits||0),
+            difference:Number(
+              data.difference||0
+            ),
+            ready_to_post:Boolean(
+              data.ready_to_post
+            ),
+          },
+        };
+      }
+
+      case"gl-reconciliation":{
+        if(!runId){
+          return{
+            columns:[],
+            rows:[],
+            summary:{},
+            message:
+              "Select one posted payroll run for "+
+              "GL reconciliation.",
+          };
+        }
+
+        const res=await apiFetch(
+          ENDPOINTS.payroll.runReconciliation(
+            cid(),
+            runId
+          )
+        );
+
+        return res?.data||{
+          columns:[],
+          rows:[],
+          summary:{},
+        };
+      }
+
+      case"payroll-register":
+      case"payroll-summary":
+      case"employee-cost":
+      case"department-cost":
+      case"tax-report":
+      case"employer-contributions":
+      case"attendance-report":
+      case"payroll-inputs":
+      case"incentive-report":{
+        const res=await apiFetch(
+          ENDPOINTS.payroll.report(
+            cid(),
+            reportKey,
+            {
+              runId:filters.run_id,
+              departmentId:
+                filters.department_id,
+              employeeId:
+                filters.employee_id,
+              dateFrom:filters.date_from,
+              dateTo:filters.date_to,
+            }
+          )
+        );
+
+        return res?.data||{
+          columns:[],
+          rows:[],
+          summary:{},
+        };
+      }
 
       default:
-        throw new Error("Unsupported payroll report.");
+        throw new Error(
+          "Unsupported payroll report."
+        );
     }
   }
 
@@ -68682,7 +76393,23 @@ async function saveEditModal() {
             .replaceAll("_", " ")
             .replace(/\b\w/g, character => character.toUpperCase());
 
-          const display = typeof value === "number" ? money(value) : esc(value);
+          const isCount=(
+            key.endsWith("_count")
+            ||[
+              "employees",
+              "runs",
+              "items",
+              "records",
+              "departments",
+              "evaluations",
+            ].includes(key)
+          );
+
+          const display=typeof value==="number"
+            ?isCount
+              ?Number(value).toLocaleString()
+              :money(value)
+            :esc(value);
 
           return `
             <div>
@@ -68876,6 +76603,476 @@ async function saveEditModal() {
     });
   }
 
+  async function loadPayrollStatutoryWorkspace(){
+    const params={
+      authority_code:
+        $("payrollStatutoryAuthorityFilter")?.value||"",
+      return_type:
+        $("payrollStatutoryTypeFilter")?.value||"",
+      status:
+        $("payrollStatutoryStatusFilter")?.value||"",
+    };
+
+    const [mappings,returns]=await Promise.all([
+      apiFetch(
+        ENDPOINTS.payroll.statutoryMappings(cid())
+      ),
+      apiFetch(
+        ENDPOINTS.payroll.statutoryReturns(
+          cid(),
+          params
+        )
+      ),
+    ]);
+
+    payrollState.statutory.mappings=
+      mappings?.items||[];
+    payrollState.statutory.returns=
+      returns?.items||[];
+
+    renderPayrollStatutoryReturns();
+  }
+
+  function renderPayrollStatutoryReturns(){
+    const el=$("payrollStatutoryReturnsList");
+    const items=payrollState.statutory.returns||[];
+    if(!el)return;
+
+    el.innerHTML=items.length?`
+      <div class="payroll-table-wrap">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Return</th>
+              <th>Authority</th>
+              <th>Type</th>
+              <th>Period</th>
+              <th>Employees</th>
+              <th>Employee Amount</th>
+              <th>Employer Amount</th>
+              <th>Total Payable</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(item=>`
+              <tr>
+                <td><strong>${esc(item.return_no)}</strong></td>
+                <td>${esc(item.authority_code)}</td>
+                <td>
+                  ${esc(cap(
+                    String(item.return_type||"")
+                      .replaceAll("_"," ")
+                  ))}
+                </td>
+                <td>
+                  ${esc(String(item.period_start||"").slice(0,10))}
+                  –
+                  ${esc(String(item.period_end||"").slice(0,10))}
+                </td>
+                <td>${Number(item.employee_count||0)}</td>
+                <td class="num">${money(item.employee_amount)}</td>
+                <td class="num">${money(item.employer_amount)}</td>
+                <td class="num"><strong>${money(item.total_payable)}</strong></td>
+                <td><span class="payroll-pill">${esc(cap(item.status))}</span></td>
+                <td>
+                  <button class="payroll-link"
+                    data-open-statutory-return="${item.id}">
+                    Open
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `:`<p class="payroll-muted">No statutory returns found.</p>`;
+
+    el.querySelectorAll(
+      "[data-open-statutory-return]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        openPayrollStatutoryReturn(
+          Number(btn.dataset.openStatutoryReturn)
+        );
+      });
+    });
+  }
+  async function editPayrollStatutoryReturn(item={}){
+    const values=await payrollForm(
+      item.id?"Edit Statutory Return":"New Statutory Return",
+      [
+        {
+          name:"authority_code",
+          label:"Authority Code",
+          required:true,
+          value:item.authority_code||"DEFAULT",
+        },
+        {
+          name:"return_type",
+          label:"Return Type",
+          type:"select",
+          required:true,
+          value:item.return_type||"payroll_tax",
+          options:[
+            ["payroll_tax","Payroll tax"],
+            ["employer_contributions","Employer contributions"],
+            ["pension","Pension"],
+            ["social_security","Social security"],
+            ["medical_aid","Medical aid"],
+            ["other","Other"],
+          ],
+        },
+        {
+          name:"period_start",
+          label:"Period Start",
+          type:"date",
+          required:true,
+          value:item.period_start||"",
+        },
+        {
+          name:"period_end",
+          label:"Period End",
+          type:"date",
+          required:true,
+          value:item.period_end||"",
+        },
+        {
+          name:"reporting_date",
+          label:"Reporting Date",
+          type:"date",
+          required:true,
+          value:item.reporting_date||item.period_end||"",
+        },
+        {
+          name:"due_date",
+          label:"Due Date",
+          type:"date",
+          value:item.due_date||"",
+        },
+        {
+          name:"currency",
+          label:"Currency",
+          value:item.currency||"LSL",
+        },
+        {
+          name:"notes",
+          label:"Notes",
+          type:"textarea",
+          value:item.notes||"",
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    const endpoint=item.id
+      ?ENDPOINTS.payroll.statutoryReturn(cid(),item.id)
+      :ENDPOINTS.payroll.statutoryReturns(cid());
+
+    await apiFetch(endpoint,{
+      method:item.id?"PATCH":"POST",
+      body:JSON.stringify(values),
+    });
+
+    await loadPayrollStatutoryWorkspace();
+
+    showPayrollStatus(
+      "Statutory return saved.",
+      "success"
+    );
+  }
+
+  async function openPayrollStatutoryReturn(returnId){
+    const res=await apiFetch(
+      ENDPOINTS.payroll.statutoryReturn(
+        cid(),
+        returnId
+      )
+    );
+
+    const item=res?.data||null;
+    payrollState.statutory.selectedReturn=item;
+    renderPayrollStatutoryReturnDetail();
+  }
+
+  function renderPayrollStatutoryReturnDetail(){
+    const el=$("payrollStatutoryReturnDetail");
+    const item=payrollState.statutory.selectedReturn;
+    if(!el||!item)return;
+
+    const actions=[];
+
+    if(["draft","calculated","rejected"].includes(item.status)){
+      actions.push(["Edit",()=>editPayrollStatutoryReturn(item)]);
+    }
+
+    if(["draft","calculated","rejected"].includes(item.status)){
+      actions.push([
+        "Calculate",
+        ()=>calculatePayrollStatutoryReturn(item.id),
+      ]);
+    }
+
+    if(item.status==="calculated"){
+      actions.push([
+        "Approve",
+        ()=>setPayrollStatutoryReturnStatus(
+          item.id,
+          "approve"
+        ),
+      ]);
+    }
+
+    if(item.status==="approved"){
+      actions.push([
+        "Submit",
+        ()=>submitPayrollStatutoryReturn(item),
+      ]);
+    }
+
+    if(item.status==="submitted"){
+      actions.push(
+        [
+          "Accept",
+          ()=>setPayrollStatutoryReturnStatus(
+            item.id,
+            "accept"
+          ),
+        ],
+        [
+          "Reject",
+          ()=>rejectPayrollStatutoryReturn(item),
+        ],
+      );
+    }
+
+    if(["calculated","approved","rejected"].includes(item.status)){
+      actions.push([
+        "Return to Draft",
+        ()=>setPayrollStatutoryReturnStatus(
+          item.id,
+          "return-to-draft"
+        ),
+      ]);
+    }
+
+    actions.push([
+      "Export",
+      ()=>exportPayrollStatutoryReturn(item),
+    ]);
+
+    const lines=item.lines||[];
+
+    el.innerHTML=`
+      <div class="payroll-card mt-4">
+        <div class="payroll-card-head">
+          <div>
+            <h3>
+              ${esc(item.return_no)} —
+              ${esc(item.authority_code)}
+            </h3>
+            <p class="payroll-muted">
+              ${esc(cap(
+                String(item.return_type||"")
+                  .replaceAll("_"," ")
+              ))}
+            </p>
+          </div>
+
+          <div class="payroll-run-actions">
+            ${actions.map((action,index)=>`
+              <button type="button"
+                class="payroll-secondary"
+                data-statutory-action="${index}">
+                ${esc(action[0])}
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="payroll-kpis">
+          <div>
+            <span>Employees</span>
+            <strong>${Number(item.employee_count||0)}</strong>
+          </div>
+          <div>
+            <span>Employee Amount</span>
+            <strong>${money(item.employee_amount)}</strong>
+          </div>
+          <div>
+            <span>Employer Amount</span>
+            <strong>${money(item.employer_amount)}</strong>
+          </div>
+          <div>
+            <span>Total Payable</span>
+            <strong>${money(item.total_payable)}</strong>
+          </div>
+        </div>
+
+        <div class="payroll-table-wrap mt-4">
+          <table class="payroll-preview-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Section</th>
+                <th>Description</th>
+                <th>Gross</th>
+                <th>Taxable</th>
+                <th>Employee</th>
+                <th>Employer</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${lines.length?lines.map(line=>`
+                <tr>
+                  <td>
+                    ${esc(line.employee_no||"")} —
+                    ${esc(line.employee_name||"")}
+                  </td>
+                  <td>${esc(line.schedule_section||"")}</td>
+                  <td>${esc(line.source_description||line.source_code||"")}</td>
+                  <td class="num">${money(line.gross_remuneration)}</td>
+                  <td class="num">${money(line.taxable_remuneration)}</td>
+                  <td class="num">${money(line.employee_amount)}</td>
+                  <td class="num">${money(line.employer_amount)}</td>
+                  <td class="num">${money(line.total_amount)}</td>
+                </tr>
+              `).join(""):`
+                <tr>
+                  <td colspan="8">
+                    Calculate the return to generate its schedule.
+                  </td>
+                </tr>
+              `}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    el.querySelectorAll(
+      "[data-statutory-action]"
+    ).forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        actions[Number(btn.dataset.statutoryAction)]?.[1]?.();
+      });
+    });
+  }
+
+  async function calculatePayrollStatutoryReturn(returnId){
+    await apiFetch(
+      ENDPOINTS.payroll.calculateStatutoryReturn(
+        cid(),
+        returnId
+      ),
+      {method:"POST",body:"{}"}
+    );
+
+    await loadPayrollStatutoryWorkspace();
+    await openPayrollStatutoryReturn(returnId);
+
+    showPayrollStatus(
+      "Statutory return calculated.",
+      "success"
+    );
+  }
+
+  async function setPayrollStatutoryReturnStatus(
+    returnId,
+    action,
+    body={}
+  ){
+    await apiFetch(
+      ENDPOINTS.payroll.statutoryReturnAction(
+        cid(),
+        returnId,
+        action
+      ),
+      {
+        method:"POST",
+        body:JSON.stringify(body),
+      }
+    );
+
+    await loadPayrollStatutoryWorkspace();
+    await openPayrollStatutoryReturn(returnId);
+
+    showPayrollStatus(
+      "Statutory return updated.",
+      "success"
+    );
+  }
+
+  async function submitPayrollStatutoryReturn(item){
+    const values=await payrollForm(
+      "Submit Statutory Return",
+      [
+        {
+          name:"submission_reference",
+          label:"Submission Reference",
+          required:true,
+        },
+        {
+          name:"submission_date",
+          label:"Submission Date",
+          type:"date",
+          required:true,
+          value:new Date().toISOString().slice(0,10),
+        },
+      ]
+    );
+
+    if(!values)return;
+
+    await setPayrollStatutoryReturnStatus(
+      item.id,
+      "submit",
+      values
+    );
+  }
+
+  async function rejectPayrollStatutoryReturn(item){
+    const values=await payrollForm(
+      "Reject Statutory Return",
+      [{
+        name:"rejection_reason",
+        label:"Rejection Reason",
+        type:"textarea",
+        required:true,
+      }]
+    );
+
+    if(!values)return;
+
+    await setPayrollStatutoryReturnStatus(
+      item.id,
+      "reject",
+      values
+    );
+  }
+
+  async function exportPayrollStatutoryReturn(item){
+    if(!item?.id)return;
+
+    const token=await getReportExportToken(
+      "payroll_statutory_return"
+    );
+
+    const url=new URL(
+      ENDPOINTS.reports.payrollStatutoryReturnExport(
+        cid(),
+        item.id
+      ),
+      window.location.origin
+    );
+
+    url.searchParams.set("format","xlsx");
+    url.searchParams.set("export_token",token);
+
+    window.open(url.toString(),"_blank");
+  }
 
   function bindPayrollReportsEvents() {
     $("payrollReportsRefreshBtn")?.addEventListener("click", () => {
@@ -69550,6 +77747,105 @@ async function saveEditModal() {
     };
   }
 
+  async function runPayrollCloseOut(){
+    const filters=readPayrollReportFilters();
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.closeOut(
+        cid(),
+        {
+          preset:filters.preset||"this_year",
+          from:filters.date_from||"",
+          to:filters.date_to||"",
+        }
+      )
+    );
+
+    renderPayrollCloseOut(
+      res?.data||{}
+    );
+  }
+
+  function renderPayrollCloseOut(data){
+    const el=$("payrollCloseOutResults");
+    if(!el)return;
+
+    const checks=data.checks||[];
+
+    if(!checks.length){
+      el.innerHTML=`
+        <p class="payroll-muted">
+          No close-out results are available.
+        </p>`;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="payroll-kpis">
+        <div>
+          <span>Checks</span>
+          <strong>${Number(data.check_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Warnings</span>
+          <strong>${Number(data.warning_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Errors</span>
+          <strong>${Number(data.error_count||0)}</strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+          <strong>
+            ${data.ready
+              ?data.has_warnings
+                ?"Ready with warnings"
+                :"Ready"
+              :"Not ready"}
+          </strong>
+        </div>
+      </div>
+
+      <div class="payroll-table-wrap mt-4">
+        <table class="payroll-preview-table">
+          <thead>
+            <tr>
+              <th>Check</th>
+              <th>Status</th>
+              <th>Message</th>
+              <th>Amount / Difference</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${checks.map(check=>`
+              <tr>
+                <td>
+                  <strong>
+                    ${esc(check.label||"")}
+                  </strong>
+                </td>
+                <td>
+                  <span class="payroll-pill">
+                    ${esc(cap(check.status||""))}
+                  </span>
+                </td>
+                <td>${esc(check.message||"")}</td>
+                <td class="num">
+                  ${check.amount==null
+                    ?"—"
+                    :money(check.amount)}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   function bindPayrollEventsOnce() {
     if (payrollState.bound) return;
     bindPayrollReportsEvents();
@@ -69609,17 +77905,6 @@ async function saveEditModal() {
     document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn => {
       btn.addEventListener("click", () => switchPayrollEmpTab(btn.dataset.payrollEmpTab));
     });
-      
-    document.addEventListener("click", function (event) {
-      const backButton = event.target.closest(
-        "[data-payroll-back-dashboard]"
-      );
-
-      if (!backButton) return;
-
-      event.preventDefault();
-      switchPayrollTab("overview");
-    });
 
     document
       .querySelectorAll("[data-payroll-benefit-tab]")
@@ -69644,14 +77929,124 @@ async function saveEditModal() {
       }
     );
 
+    $("payrollNewAttendanceBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollAttendance()
+        )
+      );
+
+    $("payrollGenerateAttendanceBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          generatePayrollAttendance
+        )
+      );
+
+    $("payrollNewPeriodInputBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollPeriodInput()
+        )
+      );
+
+    $("payrollPeriodInputEmployeeFilter")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollRunPeriodInputs
+        )
+      );
+
+    $("payrollPeriodInputStatusFilter")
+      ?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollRunPeriodInputs
+        )
+      );
+      
     $("payrollLeavePolicyProvisionRequired")?.addEventListener(
       "change",
       togglePayrollLeaveProvisionAccounts
     );
 
+    $("payrollNewIncentiveEvaluationBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollIncentiveEvaluation()
+        )
+      );
+
+    [
+      "payrollIncentiveEvaluationPlanFilter",
+      "payrollIncentiveEvaluationStatusFilter",
+      "payrollIncentiveEvaluationFrom",
+      "payrollIncentiveEvaluationTo",
+    ].forEach(id=>{
+      $(id)?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollIncentivesWorkspace
+        )
+      );
+    });
+
     document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
       btn.addEventListener("click",closePayrollLeavePolicyModal)
     );
+
+    $("payrollRefreshValidationBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunValidation
+        )
+      );
+
+    $("payrollSubmitRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          submitSelectedPayrollRun
+        )
+      );
+
+    $("payrollApproveRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          approveSelectedPayrollRun
+        )
+      );
+
+    $("payrollReturnRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          returnSelectedPayrollRun
+        )
+      );
+
+    $("payrollNewIncentivePlanBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollIncentivePlan()
+        )
+      );
+
+    $("payrollNewIncentiveAssignmentBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollIncentiveAssignment()
+        )
+      );
 
     $("payrollLeavePolicyModal")?.addEventListener("click",e=>{
       if(e.target===e.currentTarget)closePayrollLeavePolicyModal();
@@ -69852,6 +78247,43 @@ async function saveEditModal() {
       updatePayrollPayeFields
     );
 
+    $("payrollRefreshAuditBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunAudit
+        )
+      );
+
+    $("payrollNewStatutoryReturnBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          ()=>editPayrollStatutoryReturn()
+        )
+      );
+
+    $("payrollRunCloseOutBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          runPayrollCloseOut
+        )
+      );
+
+    [
+      "payrollStatutoryAuthorityFilter",
+      "payrollStatutoryTypeFilter",
+      "payrollStatutoryStatusFilter",
+    ].forEach(id=>{
+      $(id)?.addEventListener(
+        "change",
+        runPayrollAction(
+          loadPayrollStatutoryWorkspace
+        )
+      );
+    });
+
     updatePayrollPayBasisFields();
     updatePayrollPayeFields();
 
@@ -69878,17 +78310,20 @@ async function saveEditModal() {
         );
       });
       
-    [
-      "payrollPaySetupEmployeeId",
-      "payrollPayBasis",
-      "payrollBasicEarningTypeId",
-      "payrollPayBasicAmount",
-      "payrollPayStandardQuantity",
-      "payrollPayRate",
-      "payrollPayTaxTreatment",
-      "payrollManualPayeAmount",
-      "payrollPaySetupEffectiveFrom",
-    ].forEach(id => {
+      [
+        "payrollPaySetupEmployeeId",
+        "payrollPayBasis",
+        "payrollBasicEarningTypeId",
+        "payrollPayBasicAmount",
+        "payrollPayStandardQuantity",
+        "payrollPayRate",
+        "payrollPayTaxTreatment",
+        "payrollManualPayeAmount",
+        "payrollPaySetupEffectiveFrom",
+        "payrollPayProrationMethod",
+        "payrollPayHoursPerDay",
+        "payrollPayAttendanceRequired",
+      ].forEach(id=>{
       $(id)?.addEventListener(
         "input",
         renderPayrollPayslipPreview
@@ -70048,6 +78483,42 @@ async function saveEditModal() {
       }
     );
 
+    $("payrollRefreshReconciliationBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunReconciliation
+        )
+      );
+
+    $("payrollReverseRunBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          reverseSelectedPayrollRun
+        )
+      );
+
+    $("payrollRefreshPayslipsBtn")
+      ?.addEventListener(
+        "click",
+        runPayrollAction(
+          loadPayrollRunPayslips
+        )
+      );
+
+    $("payrollPayslipSearch")
+      ?.addEventListener(
+        "input",
+        renderPayrollRunPayslips
+      );
+
+    $("payrollPayslipDepartmentFilter")
+      ?.addEventListener(
+        "change",
+        renderPayrollRunPayslips
+      );
+
     $("payrollSaveScheduleBtn")?.addEventListener(
       "click",
       runPayrollAction(savePayrollSchedule)
@@ -70059,7 +78530,8 @@ async function saveEditModal() {
     );
 
     $("payrollCalendarsGenerateBtn")?.addEventListener(
-      "click", () => runPayrollAction(generatePayrollPeriods)
+      "click",
+      runPayrollAction(generatePayrollPeriods)
     );
 
     $("payrollAddDepartmentBtn")?.addEventListener(
@@ -72548,6 +81020,33 @@ async function saveEditModal() {
     calculation: null,
     selectedModelId: null,
     previewRunId: null,
+    writeoffs: [],
+    reconciliation: null,
+    eirCalculation: null,
+    activeInstrumentId: null,
+    amortisedCostCalculation: null,
+    amortisedCostRuns: [],
+    previewAmortisedCostRunId: null,
+    modificationCalculation: null,
+    modifications: [],
+    previewModificationId: null,
+    derecognitionCalculation: null,
+    derecognitions: [],
+    previewDerecognitionId: null,
+    fairValueCalculation: null,
+    fairValueMeasurements: [],
+    previewFairValueMeasurementId: null,
+    generalEclModels: [],
+    selectedGeneralEclModelId: null,
+    generalEclModel: null,
+    generalEclScenarios: [],
+    generalEclPdCurves: [],
+    generalEclLgds: [],
+    creditRiskProfile: null,
+    stageAssessments: [],
+    generalEclRuns: [],
+    generalEclCalculation: null,
+    previewGeneralEclRunId: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -72566,33 +81065,74 @@ async function saveEditModal() {
   }
 
   function showTab(tab) {
-    document.querySelectorAll("[data-ifrs9-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.ifrs9Tab === tab));
-    $("ifrs9TabRegister")?.classList.toggle("hidden", tab !== "register");
-    $("ifrs9TabEclRuns")?.classList.toggle("hidden", tab !== "ecl-runs");
-    $("ifrs9TabEclModels")?.classList.toggle("hidden", tab !== "ecl-models");
-    $("ifrs9TabAccounts")?.classList.toggle("hidden", tab !== "accounts");
+    document.querySelectorAll("[data-ifrs9-tab]")
+      .forEach(btn=>
+        btn.classList.toggle(
+          "active",
+          btn.dataset.ifrs9Tab===tab
+        )
+      );
+
+    $("ifrs9TabRegister")?.classList.toggle(
+      "hidden",
+      tab!=="register"
+    );
+
+    $("ifrs9TabEclRuns")?.classList.toggle(
+      "hidden",
+      tab!=="ecl-runs"
+    );
+
+    $("ifrs9TabEclModels")?.classList.toggle(
+      "hidden",
+      tab!=="ecl-models"
+    );
+
+    $("ifrs9TabGeneralEcl")?.classList.toggle(
+      "hidden",
+      tab!=="general-ecl"
+    );
+
+    $("ifrs9TabAccounts")?.classList.toggle(
+      "hidden",
+      tab!=="accounts"
+    );
   }
 
   async function loadAll() {
-    const companyId = cid();
+    const companyId=cid();
     if (!companyId) return setMsg("No active company selected.");
 
     setMsg("Loading IFRS 9 data...");
 
     try {
-      const [inst, runs, models, exposure, readiness] = await Promise.all([
+      const [
+        inst,
+        runs,
+        models,
+        exposure,
+        readiness,
+        writeoffs,
+        generalModels,
+      ]=await Promise.all([
         apiFetch(ENDPOINTS.ifrs9.instruments(companyId)),
         apiFetch(ENDPOINTS.ifrs9.eclRuns(companyId)),
         apiFetch(ENDPOINTS.ifrs9.eclModels(companyId)),
         apiFetch(ENDPOINTS.ifrs9.arExposure(companyId)),
         apiFetch(ENDPOINTS.ifrs9.coaReadiness(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.writeoffs(companyId)),
+        apiFetch(ENDPOINTS.ifrs9.generalEclModels(companyId)),
       ]);
 
-      IFRS9.instruments = inst.items || [];
-      IFRS9.eclRuns = runs.items || [];
-      IFRS9.eclModels = models.items || [];
-      IFRS9.arExposure = exposure.items || [];
-      IFRS9.readiness = readiness;
+      IFRS9.instruments=inst.items||[];
+      IFRS9.eclRuns=runs.items||[];
+      IFRS9.eclModels=models.items||[];
+      IFRS9.arExposure=exposure.items||[];
+      IFRS9.readiness=readiness;
+      IFRS9.writeoffs=writeoffs.items||[];
+      IFRS9.generalEclModels=generalModels.items||[];
+      IFRS9.generalEclModels=generalModels.items||[];
+      IFRS9.generalEclRuns=generalRuns.items||[];
 
       renderInstruments();
       renderRuns();
@@ -72600,9 +81140,16 @@ async function saveEditModal() {
       renderArExposure();
       renderModelOptions();
       renderReadiness();
+      applyIfrs9ReadinessControls();
+      renderWriteoffs();
+      renderGeneralEclModels();
+      renderGeneralEclModels();
+      renderGeneralEclRunOptions();
+      renderGeneralEclRuns();
+
       setMsg("");
-    } catch (error) {
-      setMsg(error.message || "Failed to load IFRS 9 data.");
+    } catch(error) {
+      setMsg(error.message||"Failed to load IFRS 9 data.");
     }
   }
 
@@ -72716,8 +81263,43 @@ async function saveEditModal() {
                   <td>${label(row.status)}</td>
                   <td>${row.journal_id || "—"}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" data-ifrs9-view-run="${row.id}">View</button>
-                    ${row.status === "draft" ? `<button class="btn btn-primary btn-sm" data-ifrs9-preview-run="${row.id}">Preview</button>` : ""}
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-view-run="${row.id}"
+                    >
+                      View
+                    </button>
+
+                    ${
+                      row.status === "draft"
+                        ? `
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm"
+                            data-ifrs9-preview-run="${row.id}"
+                          >
+                            Preview
+                          </button>
+                        `
+                        : ""
+                    }
+
+                    ${
+                      row.status === "posted" &&
+                      row.journal_id &&
+                      !row.reversal_journal_id
+                        ? `
+                          <button
+                            type="button"
+                            class="btn btn-danger btn-sm"
+                            data-ifrs9-reverse-run="${row.id}"
+                          >
+                            Reverse
+                          </button>
+                        `
+                        : ""
+                    }
                   </td>
                 </tr>
               `;
@@ -72733,7 +81315,9 @@ async function saveEditModal() {
     if (!el) return;
 
     if (!IFRS9.eclModels.length) {
-      el.innerHTML = `<p class="muted">No ECL models yet.</p>`;
+      el.innerHTML = `
+        <p class="muted">No ECL models yet.</p>
+      `;
       return;
     }
 
@@ -72741,23 +81325,168 @@ async function saveEditModal() {
       <div class="table-responsive">
         <table>
           <thead>
-            <tr><th>Model</th><th>Type</th><th>Applies To</th><th>Basis</th><th>Active</th><th></th></tr>
+            <tr>
+              <th>Model</th>
+              <th>Method</th>
+              <th>Effective From</th>
+              <th>Review Date</th>
+              <th>Status</th>
+              <th>Version</th>
+              <th></th>
+            </tr>
           </thead>
+
           <tbody>
             ${IFRS9.eclModels.map(row => `
               <tr>
-                <td>${row.model_name || "—"}</td>
-                <td>${label(row.model_type)}</td>
-                <td>${label(row.applies_to)}</td>
-                <td>${label(row.basis)}</td>
-                <td>${row.is_active ? "Yes" : "No"}</td>
-                <td><button class="btn btn-secondary btn-sm" data-ifrs9-configure-model="${row.id}">Configure Matrix</button></td>
+                <td>
+                  <strong>${esc(row.model_name || "—")}</strong>
+                  <div class="muted" style="font-size:12px;">
+                    ${esc(row.model_owner || "No model owner")}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(label(row.basis))}
+                </td>
+
+                <td>
+                  ${dateText(row.effective_from)}
+                </td>
+
+                <td>
+                  ${dateText(row.review_date)}
+                </td>
+
+                <td>
+                  <span class="pill ${
+                    row.is_active ? "success" : "warning"
+                  }">
+                    ${
+                      row.is_active
+                        ? "Active"
+                        : esc(label(row.approval_status || "Draft"))
+                    }
+                  </span>
+                </td>
+
+                <td>
+                  ${esc(row.version_no || 1)}
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-configure-model="${row.id}"
+                  >
+                    Configure Matrix
+                  </button>
+
+                  ${
+                    row.is_active
+                      ? `
+                        <button
+                          type="button"
+                          class="btn btn-danger btn-sm"
+                          data-ifrs9-deactivate-model="${row.id}"
+                        >
+                          Deactivate
+                        </button>
+                      `
+                      : `
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-activate-model="${row.id}"
+                        >
+                          Activate
+                        </button>
+                      `
+                  }
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
     `;
+  }
+
+  async function activateIfrs9Model(modelId) {
+    const model = IFRS9.eclModels.find(
+      row => Number(row.id) === Number(modelId)
+    );
+
+    if (!model) {
+      return setMsg("ECL model not found.");
+    }
+
+    if (!confirm(
+      `Activate "${model.model_name}"?\n\n` +
+      "The provision matrix will become available for ECL runs."
+    )) return;
+
+    setMsg("Activating ECL model...");
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.activateEclModel(
+          cid(),
+          modelId,
+        ),
+        {
+          method: "POST",
+          body: "{}",
+        }
+      );
+
+      await loadAll();
+      setMsg("ECL model activated.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to activate ECL model."
+      );
+    }
+  }
+
+  async function deactivateIfrs9Model(modelId) {
+    const model = IFRS9.eclModels.find(
+      row => Number(row.id) === Number(modelId)
+    );
+
+    if (!model) {
+      return setMsg("ECL model not found.");
+    }
+
+    if (!confirm(
+      `Deactivate "${model.model_name}"?\n\n` +
+      "It will no longer be available for new ECL calculations."
+    )) return;
+
+    setMsg("Deactivating ECL model...");
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.deactivateEclModel(
+          cid(),
+          modelId,
+        ),
+        {
+          method: "POST",
+          body: "{}",
+        }
+      );
+
+      await loadAll();
+      setMsg("ECL model deactivated.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to deactivate ECL model."
+      );
+    }
   }
 
   function renderModelOptions() {
@@ -72765,38 +81494,921 @@ async function saveEditModal() {
     if (!select) return;
 
     const current = select.value;
-    const models = IFRS9.eclModels.filter(row => row.is_active && row.applies_to === "trade_receivable");
+    const reportingDate =
+      $("ifrs9EclReportingDate")?.value || "";
+
+    const models = IFRS9.eclModels.filter(row => {
+      if (!row.is_active) return false;
+      if (row.approval_status !== "approved") return false;
+      if (row.model_type !== "simplified") return false;
+      if (row.applies_to !== "trade_receivable") return false;
+      if (row.basis !== "provision_matrix") return false;
+
+      if (
+        reportingDate &&
+        row.effective_from &&
+        reportingDate < String(row.effective_from).slice(0, 10)
+      ) {
+        return false;
+      }
+
+      if (
+        reportingDate &&
+        row.effective_to &&
+        reportingDate > String(row.effective_to).slice(0, 10)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
 
     select.innerHTML = `<option value="">Select an ECL model</option>${models.map(row => `<option value="${row.id}">${row.model_name}</option>`).join("")}`;
     if (models.some(row => String(row.id) === current)) select.value = current;
+  }
+
+  function ifrs9PostingAccounts(kind = "all") {
+    const source =
+      window.COA_CACHE ||
+      window.COMPANY_COA ||
+      window.CHART_OF_ACCOUNTS ||
+      [];
+
+    const accounts = (Array.isArray(source) ? source : [])
+      .map(account => ({
+        ...account,
+
+        code: String(
+          account.code ||
+          account.account_code ||
+          account.template_code ||
+          ""
+        ).trim(),
+
+        name: String(
+          account.name ||
+          account.account_name ||
+          account.description ||
+          ""
+        ).trim(),
+
+        posting: account.posting === undefined
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.posting).toLowerCase()
+            ),
+
+        active: account.is_active === undefined
+          ? true
+          : !["false", "0", "no"].includes(
+              String(account.is_active).toLowerCase()
+            ),
+      }))
+      .filter(account =>
+        account.code &&
+        account.name &&
+        account.posting &&
+        account.active
+      );
+
+    const filtered = accounts.filter(account => {
+      const text = [
+        account.section,
+        account.category,
+        account.role,
+        account.name,
+      ].join(" ").toLowerCase();
+
+      if (kind === "all") return true;
+
+      if (kind === "asset") {
+        return /asset|receivable|debtor|allowance|impairment/.test(text);
+      }
+
+      if (kind === "liability") {
+        return /liabil|payable|creditor|loan/.test(text);
+      }
+
+      if (kind === "expense") {
+        return /expense|loss|cost|impairment|bad debt/.test(text);
+      }
+
+      if (kind === "income") {
+        return /income|revenue|gain|interest received/.test(text);
+      }
+
+      if (kind === "income_expense") {
+        return /income|revenue|gain|expense|loss/.test(text);
+      }
+
+      if (kind === "oci") {
+        return /other comprehensive|\boci\b|reserve|equity/.test(text);
+      }
+
+      return true;
+    });
+
+    return (filtered.length ? filtered : accounts)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+
+  function ifrs9AccountOptions(row) {
+    const selected = String(row.account_code || "");
+
+    const accounts = ifrs9PostingAccounts(
+      row.account_kind || "all"
+    );
+
+    return `
+      <option value="">Select account…</option>
+
+      ${accounts.map(account => `
+        <option
+          value="${esc(account.code)}"
+          title="${esc(account.code)}"
+          ${String(account.code) === selected ? "selected" : ""}
+        >
+          ${esc(account.name)}
+        </option>
+      `).join("")}
+    `;
+  }
+
+
+  function ifrs9PhaseLabel(phase) {
+    const labels = {
+      ecl: "ECL",
+      fair_value: "Fair Value",
+      amortised_cost: "Amortised Cost",
+      derecognition: "Derecognition",
+    };
+
+    return labels[phase] || label(phase);
   }
 
   function renderReadiness() {
     const el = $("ifrs9AccountReadiness");
     if (!el) return;
 
-    const rows = IFRS9.readiness?.items || [];
+    const readiness = IFRS9.readiness || {};
+    const rows = readiness.items || [];
+    const accountCount = ifrs9PostingAccounts().length;
+
+    if (!rows.length) {
+      el.innerHTML = `
+        <p class="muted">
+          IFRS 9 account requirements could not be loaded.
+        </p>
+      `;
+      return;
+    }
 
     el.innerHTML = `
-      <div class="status-banner ${IFRS9.readiness?.ready ? "success" : "warning"}">
-        ${IFRS9.readiness?.ready ? "IFRS 9 account setup is ready." : `${IFRS9.readiness?.missing?.length || 0} account mappings are missing.`}
+      <div class="status-banner ${
+        readiness.ready ? "success" : "warning"
+      }">
+        ${
+          readiness.ready
+            ? "All IFRS 9 posting accounts are configured."
+            : `${readiness.missing?.length || 0} IFRS 9 account mappings are missing or invalid.`
+        }
       </div>
 
-      <div class="table-responsive">
+      ${
+        readiness.ecl_ready
+          ? `
+            <div
+              class="status-banner success"
+              style="margin-top:8px;"
+            >
+              Trade receivables ECL posting is ready.
+            </div>
+          `
+          : `
+            <div
+              class="status-banner warning"
+              style="margin-top:8px;"
+            >
+              ECL posting requires the impairment-loss and
+              trade-receivables allowance accounts.
+            </div>
+          `
+      }
+
+      ${
+        !accountCount
+          ? `
+            <div
+              class="status-banner warning"
+              style="margin-top:8px;"
+            >
+              No posting accounts are available in the
+              chart-of-accounts cache.
+            </div>
+          `
+          : ""
+      }
+
+      <div class="table-responsive" style="margin-top:12px;">
         <table>
-          <thead><tr><th>Purpose</th><th>Account</th><th>Status</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Purpose</th>
+              <th>Workflow</th>
+              <th>Posting Account</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
           <tbody>
             ${rows.map(row => `
+              <tr data-ifrs9-mapping-row="${esc(row.mapping_key)}">
+                <td>
+                  <strong>
+                    ${esc(row.label || label(row.mapping_key))}
+                  </strong>
+
+                  <div class="muted" style="font-size:12px;">
+                    ${esc(row.description || "")}
+                  </div>
+                </td>
+
+                <td>
+                  ${esc(ifrs9PhaseLabel(row.phase))}
+                </td>
+
+                <td style="min-width:280px;">
+                  <select
+                    data-ifrs9-mapping-select="${esc(row.mapping_key)}"
+                    ${accountCount ? "" : "disabled"}
+                  >
+                    ${ifrs9AccountOptions(row)}
+                  </select>
+                </td>
+
+                <td>
+                  <span class="pill ${
+                    row.ok ? "success" : "warning"
+                  }">
+                    ${row.ok ? "Ready" : "Missing"}
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-save-mapping="${esc(row.mapping_key)}"
+                    ${accountCount ? "" : "disabled"}
+                  >
+                    Save
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="screen-actions" style="margin-top:12px;">
+        <button
+          id="ifrs9SaveAllMappingsBtn"
+          type="button"
+          class="btn btn-primary"
+          ${accountCount ? "" : "disabled"}
+        >
+          Save All Mappings
+        </button>
+
+        <button
+          id="ifrs9ReloadReadinessBtn"
+          type="button"
+          class="btn btn-secondary"
+        >
+          Reload Readiness
+        </button>
+      </div>
+    `;
+  }
+
+  async function reloadIfrs9Readiness() {
+    const companyId = cid();
+    if (!companyId) return;
+
+    try {
+      IFRS9.readiness = await apiFetch(
+        ENDPOINTS.ifrs9.coaReadiness(companyId)
+      );
+
+      renderReadiness();
+      setMsg("");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to reload IFRS 9 account readiness."
+      );
+    }
+    renderReadiness();
+  }
+
+  function renderWriteoffs() {
+    const el = $("ifrs9WriteoffList");
+    if (!el) return;
+
+    if (!IFRS9.writeoffs.length) {
+      el.innerHTML = `
+        <p class="muted">No receivable write-offs recorded.</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Invoice</th>
+              <th>Write-Off</th>
+              <th>Allowance Used</th>
+              <th>Additional Loss</th>
+              <th>Recovered</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${IFRS9.writeoffs.map(row => `
               <tr>
-                <td>${label(row.mapping_key)}</td>
-                <td>${row.account?.posting_code || row.account_code || "Not mapped"}</td>
-                <td>${row.ok ? "Ready" : "Missing"}</td>
+                <td>${dateText(row.writeoff_date)}</td>
+                <td>${esc(row.customer_name || "—")}</td>
+                <td>${esc(row.invoice_number || row.invoice_id || "—")}</td>
+                <td>${money(row.writeoff_amount)}</td>
+                <td>${money(row.allowance_used)}</td>
+                <td>${money(row.additional_loss)}</td>
+                <td>${money(row.recovered_amount)}</td>
+                <td>${esc(label(row.status))}</td>
+                <td>
+                  ${
+                    row.status === "draft" ||
+                    row.status === "approved"
+                      ? `
+                        <button
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-post-writeoff="${row.id}"
+                        >
+                          Post
+                        </button>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    row.status === "posted" &&
+                    Number(row.recovered_amount || 0) <
+                    Number(row.writeoff_amount || 0)
+                      ? `
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          data-ifrs9-recover-writeoff="${row.id}"
+                        >
+                          Record Recovery
+                        </button>
+                      `
+                      : ""
+                  }
+                </td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
     `;
+  }
+
+  function renderWriteoffs() {
+    const el = $("ifrs9WriteoffList");
+    if (!el) return;
+
+    if (!IFRS9.writeoffs.length) {
+      el.innerHTML = `
+        <p class="muted">No receivable write-offs recorded.</p>
+      `;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Customer</th>
+              <th>Invoice</th>
+              <th>Write-Off</th>
+              <th>Allowance Used</th>
+              <th>Additional Loss</th>
+              <th>Recovered</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${IFRS9.writeoffs.map(row => `
+              <tr>
+                <td>${dateText(row.writeoff_date)}</td>
+                <td>${esc(row.customer_name || "—")}</td>
+                <td>${esc(row.invoice_number || row.invoice_id || "—")}</td>
+                <td>${money(row.writeoff_amount)}</td>
+                <td>${money(row.allowance_used)}</td>
+                <td>${money(row.additional_loss)}</td>
+                <td>${money(row.recovered_amount)}</td>
+                <td>${esc(label(row.status))}</td>
+                <td>
+                  ${
+                    row.status === "draft" ||
+                    row.status === "approved"
+                      ? `
+                        <button
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-post-writeoff="${row.id}"
+                        >
+                          Post
+                        </button>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    row.status === "posted" &&
+                    Number(row.recovered_amount || 0) <
+                    Number(row.writeoff_amount || 0)
+                      ? `
+                        <button
+                          class="btn btn-secondary btn-sm"
+                          data-ifrs9-recover-writeoff="${row.id}"
+                        >
+                          Record Recovery
+                        </button>
+                      `
+                      : ""
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function loadIfrs9Reconciliation() {
+    const from = $("ifrs9ReconciliationFrom")?.value;
+    const to = $("ifrs9ReconciliationTo")?.value;
+    const button = $("ifrs9LoadReconciliationBtn");
+
+    if (!from || !to) {
+      return alert(
+        "Select the reconciliation start and end dates."
+      );
+    }
+
+    if (from > to) {
+      return alert(
+        "The start date cannot be later than the end date."
+      );
+    }
+
+    const originalText =
+      button?.textContent || "Load Reconciliation";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Loading...";
+    }
+
+    setMsg("Loading ECL allowance reconciliation...");
+
+    try {
+      IFRS9.reconciliation = await apiFetch(
+        ENDPOINTS.ifrs9.eclReconciliation(
+          cid(),
+          { from, to }
+        )
+      );
+
+      renderIfrs9Reconciliation();
+
+      const saveButton =
+        $("ifrs9SaveReconciliationSnapshotBtn");
+
+      if (saveButton) {
+        saveButton.disabled = false;
+      }
+
+      setMsg(
+        IFRS9.reconciliation.balanced
+          ? "ECL allowance reconciliation completed."
+          : "ECL reconciliation loaded with a difference."
+      );
+    } catch (error) {
+      IFRS9.reconciliation = null;
+
+      $("ifrs9ReconciliationBody").innerHTML = "";
+
+      const saveButton =
+        $("ifrs9SaveReconciliationSnapshotBtn");
+
+      if (saveButton) {
+        saveButton.disabled = true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to load ECL reconciliation."
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  function renderIfrs9Reconciliation() {
+    const el = $("ifrs9ReconciliationBody");
+    const data = IFRS9.reconciliation;
+
+    if (!el) return;
+
+    if (!data?.summary) {
+      el.innerHTML = `
+        <p class="muted">
+          Load a reporting period to view the reconciliation.
+        </p>
+      `;
+      return;
+    }
+
+    const s = data.summary;
+
+    el.innerHTML = `
+      <div class="status-banner ${
+        data.balanced ? "success" : "warning"
+      }">
+        ${
+          data.balanced
+            ? "The calculated allowance agrees to the general ledger."
+            : `The reconciliation differs from the ledger by ${money(s.reconciliation_difference)}.`
+        }
+      </div>
+
+      <div class="form-grid" style="margin-top:12px;">
+        <div>
+          <b>Opening Allowance</b>
+          <p>${money(s.opening_allowance)}</p>
+        </div>
+
+        <div>
+          <b>ECL Charges</b>
+          <p>${money(s.ecl_charges)}</p>
+        </div>
+
+        <div>
+          <b>ECL Reversals</b>
+          <p>(${money(s.ecl_reversals)})</p>
+        </div>
+
+        <div>
+          <b>Allowance Used on Write-Offs</b>
+          <p>
+            (${money(s.allowance_used_on_writeoffs)})
+          </p>
+        </div>
+
+        <div>
+          <b>Calculated Closing Allowance</b>
+          <p>${money(s.calculated_closing_allowance)}</p>
+        </div>
+
+        <div>
+          <b>Ledger Closing Allowance</b>
+          <p>${money(s.ledger_closing_allowance)}</p>
+        </div>
+      </div>
+
+      <div class="table-responsive" style="margin-top:16px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Allowance Reconciliation</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr>
+              <td>Opening loss allowance</td>
+              <td>${money(s.opening_allowance)}</td>
+            </tr>
+
+            <tr>
+              <td>ECL impairment raised</td>
+              <td>${money(s.ecl_charges)}</td>
+            </tr>
+
+            <tr>
+              <td>ECL impairment reversed</td>
+              <td>(${money(s.ecl_reversals)})</td>
+            </tr>
+
+            <tr>
+              <td>Allowance used on write-offs</td>
+              <td>
+                (${money(s.allowance_used_on_writeoffs)})
+              </td>
+            </tr>
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th>Closing loss allowance</th>
+              <th>${money(s.calculated_closing_allowance)}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <h4 style="margin-top:18px;">ECL Movements</h4>
+
+      ${
+        data.runs?.length
+          ? `
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Model</th>
+                    <th>Exposure</th>
+                    <th>Charge</th>
+                    <th>Reversal</th>
+                    <th>Closing ECL</th>
+                    <th>Journal</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${data.runs.map(row => `
+                    <tr>
+                      <td>${dateText(row.reporting_date)}</td>
+                      <td>${esc(row.model_name || "—")}</td>
+                      <td>${money(row.total_exposure)}</td>
+                      <td>${money(row.charge)}</td>
+                      <td>${money(row.reversal)}</td>
+                      <td>${money(row.closing_ecl)}</td>
+                      <td>${esc(row.journal_id || "—")}</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          `
+          : `<p class="muted">No posted ECL runs in this period.</p>`
+      }
+
+      <h4 style="margin-top:18px;">Write-Offs and Recoveries</h4>
+
+      <div class="form-grid">
+        <div>
+          <b>Gross Write-Offs</b>
+          <p>${money(s.gross_writeoffs)}</p>
+        </div>
+
+        <div>
+          <b>Additional Write-Off Loss</b>
+          <p>${money(s.additional_writeoff_loss)}</p>
+        </div>
+
+        <div>
+          <b>Recoveries</b>
+          <p>${money(s.recoveries)}</p>
+        </div>
+      </div>
+    `;
+  }
+
+  async function saveIfrs9ReconciliationSnapshot() {
+    const from = $("ifrs9ReconciliationFrom")?.value;
+    const to = $("ifrs9ReconciliationTo")?.value;
+    const year = Number(
+      $("ifrs9ReconciliationYear")?.value || 0
+    );
+
+    if (!IFRS9.reconciliation) {
+      return alert(
+        "Load the ECL reconciliation before saving."
+      );
+    }
+
+    if (!from || !to) {
+      return alert("Select the reporting period.");
+    }
+
+    if (!year) {
+      return alert("Enter the financial year.");
+    }
+
+    const button =
+      $("ifrs9SaveReconciliationSnapshotBtn");
+
+    const originalText =
+      button?.textContent || "Save Snapshot";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.eclReconciliationSnapshot(
+          cid()
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            from,
+            to,
+            financial_year: year,
+          }),
+        }
+      );
+
+      setMsg(
+        `IFRS 9 ECL snapshot saved for financial year ${year}.`
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to save IFRS 9 reconciliation snapshot."
+      );
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+
+  async function saveIfrs9Mapping(mappingKey, options = {}) {
+    const select = document.querySelector(
+      `[data-ifrs9-mapping-select="${CSS.escape(mappingKey)}"]`
+    );
+
+    const accountCode = select?.value || "";
+
+    if (!accountCode) {
+      if (!options.silent) {
+        alert(`Select an account for ${label(mappingKey)}.`);
+      }
+      return false;
+    }
+
+    const button = document.querySelector(
+      `[data-ifrs9-save-mapping="${CSS.escape(mappingKey)}"]`
+    );
+
+    const originalText = button?.textContent || "Save";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.coaMappings(cid()),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            mapping_key: mappingKey,
+            account_code: accountCode,
+            description: label(mappingKey),
+          }),
+        }
+      );
+
+      if (result.readiness) {
+        IFRS9.readiness = result.readiness;
+      }
+
+      if (!options.deferRender) {
+        renderReadiness();
+      }
+
+      if (!options.silent) {
+        setMsg(`${label(mappingKey)} mapping saved.`);
+      }
+
+      return true;
+    } catch (error) {
+      if (!options.silent) {
+        setMsg(
+          error.message ||
+          `Failed to save ${label(mappingKey)} mapping.`
+        );
+      }
+
+      return false;
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+
+  async function saveAllIfrs9Mappings() {
+    const button = $("ifrs9SaveAllMappingsBtn");
+    const selects = [
+      ...document.querySelectorAll(
+        "[data-ifrs9-mapping-select]"
+      ),
+    ];
+
+    const selected = selects
+      .map(select => ({
+        mappingKey: select.dataset.ifrs9MappingSelect,
+        accountCode: select.value,
+      }))
+      .filter(row => row.accountCode);
+
+    if (!selected.length) {
+      return alert("Select at least one IFRS 9 account.");
+    }
+
+    const missingSelections = selects.filter(
+      select => !select.value
+    );
+
+    if (missingSelections.length) {
+      const proceed = confirm(
+        `${missingSelections.length} mappings are still blank. ` +
+        "Save the selected mappings only?"
+      );
+
+      if (!proceed) return;
+    }
+
+    const originalText = button?.textContent || "Save All Mappings";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    setMsg("Saving IFRS 9 account mappings...");
+
+    try {
+      let saved = 0;
+      const failed = [];
+
+      for (const row of selected) {
+        const ok = await saveIfrs9Mapping(
+          row.mappingKey,
+          {
+            silent: true,
+            deferRender: true,
+          }
+        );
+
+        if (ok) saved++;
+        else failed.push(row.mappingKey);
+      }
+
+      await reloadIfrs9Readiness();
+
+      if (failed.length) {
+        setMsg(
+          `${saved} mappings saved. ${failed.length} mappings failed.`
+        );
+      } else {
+        setMsg(`${saved} IFRS 9 account mappings saved.`);
+      }
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
   }
 
   async function discoverFinancialInstruments() {
@@ -72825,10 +82437,16 @@ async function saveEditModal() {
 
     const payload = {
       model_name: $("ifrs9ModelName")?.value.trim(),
-      model_type: $("ifrs9ModelType")?.value || "simplified",
-      applies_to: $("ifrs9ModelAppliesTo")?.value || "trade_receivable",
-      basis: $("ifrs9ModelBasis")?.value || "provision_matrix",
-      is_active: true,
+      model_type: "simplified",
+      applies_to: "trade_receivable",
+      basis: "provision_matrix",
+      effective_from:
+        $("ifrs9ModelEffectiveFrom")?.value || null,
+      review_date:
+        $("ifrs9ModelReviewDate")?.value || null,
+      model_owner:
+        $("ifrs9ModelOwner")?.value.trim() || null,
+      is_active: false,
     };
 
     if (!payload.model_name) return alert("Model name is required.");
@@ -72839,6 +82457,10 @@ async function saveEditModal() {
       await loadAll();
       await configureModel(result.item.id);
       setMsg("ECL model created. Configure its provision matrix below.");
+      $("ifrs9ModelName").value = "";
+      $("ifrs9ModelEffectiveFrom").value = "";
+      $("ifrs9ModelReviewDate").value = "";
+      $("ifrs9ModelOwner").value = "";
     } catch (error) {
       setMsg(error.message || "Failed to create ECL model.");
     }
@@ -72897,8 +82519,62 @@ async function saveEditModal() {
     `;
   }
 
+  function applyIfrs9ReadinessControls() {
+    const ready = Boolean(IFRS9.readiness?.ecl_ready);
+    const calculateBtn = $("ifrs9CalculateEclBtn");
+
+    if (calculateBtn) {
+      calculateBtn.disabled = !ready;
+      calculateBtn.title = ready
+        ? ""
+        : "Configure the required ECL posting accounts first.";
+    }
+  }
+
   function addBand() {
     $("ifrs9BandRows")?.insertAdjacentHTML("beforeend", bandRow());
+  }
+
+  function validateBands(bands) {
+    if (!bands.length) return "At least one ageing band is required.";
+
+    const rows = [...bands].sort((a, b) => a.days_from - b.days_from);
+    const names = new Set();
+
+    for (const row of rows) {
+      const key = row.band_label.toLowerCase();
+
+      if (!row.band_label) return "Every ageing band requires a name.";
+      if (names.has(key)) return `Duplicate ageing band: ${row.band_label}.`;
+      if (!Number.isInteger(row.days_from) || row.days_from < 0)
+        return `${row.band_label}: Days From must be zero or greater.`;
+      if (row.days_to !== null && (!Number.isInteger(row.days_to) || row.days_to < row.days_from))
+        return `${row.band_label}: Days To cannot be less than Days From.`;
+      if (!Number.isFinite(row.loss_rate) || row.loss_rate < 0 || row.loss_rate > 1)
+        return `${row.band_label}: loss rate must be between 0% and 100%.`;
+
+      names.add(key);
+    }
+
+    if (rows[0].days_from !== 0) return "The first ageing band must start at day 0.";
+
+    const openBands = rows.filter(row => row.days_to === null);
+    if (openBands.length !== 1) return "Exactly one open-ended ageing band is required.";
+    if (rows.at(-1).days_to !== null) return "The final ageing band must be open-ended.";
+
+    for (let i = 0; i < rows.length - 1; i++) {
+      const current = rows[i];
+      const next = rows[i + 1];
+
+      if (current.days_to === null)
+        return "Only the final ageing band may be open-ended.";
+      if (next.days_from <= current.days_to)
+        return `Bands ${current.band_label} and ${next.band_label} overlap.`;
+      if (next.days_from !== current.days_to + 1)
+        return `There is a gap between ${current.band_label} and ${next.band_label}.`;
+    }
+
+    return "";
   }
 
   async function saveBands() {
@@ -72911,9 +82587,8 @@ async function saveEditModal() {
       loss_rate: Number(row.querySelector("[data-band-rate]").value || 0) / 100,
     }));
 
-    if (!bands.length) return alert("At least one ageing band is required.");
-    if (bands.some(row => !row.band_label)) return alert("Every ageing band requires a name.");
-    if (bands.some(row => row.days_to !== null && row.days_to < row.days_from)) return alert("Days To cannot be less than Days From.");
+    const validationError = validateBands(bands);
+    if (validationError) return alert(validationError);
 
     try {
       await apiFetch(ENDPOINTS.ifrs9.eclBands(cid(), IFRS9.selectedModelId), {
@@ -72934,6 +82609,17 @@ async function saveEditModal() {
 
     if (!reportingDate) return alert("Reporting date is required.");
     if (!modelId) return alert("Select an ECL model.");
+
+    if (!IFRS9.readiness?.ecl_ready) {
+      showTab("accounts");
+
+      setMsg(
+        "Configure the ECL impairment-loss and " +
+        "trade-receivables allowance accounts before calculating ECL."
+      );
+
+      return;
+    }
 
     setMsg("Calculating expected credit loss...");
 
@@ -73084,6 +82770,25 @@ async function saveEditModal() {
           <div><b>Total ECL</b><p>${money(run.total_ecl)}</p></div>
           <div><b>Movement</b><p>${money(meta.movement_ecl)}</p></div>
           <div><b>Status</b><p>${label(run.status)}</p></div>
+          <div>
+            <b>Posting Journal</b>
+            <p>${esc(run.journal_id || "—")}</p>
+          </div>
+
+          <div>
+            <b>Reversal Journal</b>
+            <p>${esc(run.reversal_journal_id || "—")}</p>
+          </div>
+
+          <div>
+            <b>Reversed At</b>
+            <p>${dateText(run.reversed_at)}</p>
+          </div>
+
+          <div>
+            <b>Reversal Reason</b>
+            <p>${esc(run.reversal_reason || "—")}</p>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -73116,10 +82821,334 @@ async function saveEditModal() {
     }
   }
 
+  function eirCashflowRow(row = {}) {
+    return `
+      <tr data-ifrs9-eir-cashflow>
+        <td>
+          <input
+            data-eir-period
+            type="number"
+            min="1"
+            step="1"
+            value="${Number(row.period_no || 1)}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-eir-date
+            type="date"
+            value="${esc(row.payment_date || "")}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-eir-amount
+            type="number"
+            min="0"
+            step="0.01"
+            value="${Number(row.amount || 0)}"
+          >
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            data-ifrs9-remove-eir-cashflow
+          >
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+  function collectIfrs9EirPayload() {
+    const frequency =
+      $("ifrs9EirFrequency")?.value || "monthly";
+
+    const frequencyPeriods = {
+      monthly: 12,
+      quarterly: 4,
+      semi_annual: 2,
+      annual: 1,
+      irregular: 1,
+    };
+
+    const cashflows = [
+      ...document.querySelectorAll(
+        "[data-ifrs9-eir-cashflow]"
+      ),
+    ].map(row => ({
+      period_no: Number(
+        row.querySelector("[data-eir-period]")?.value || 0
+      ),
+      payment_date:
+        row.querySelector("[data-eir-date]")?.value || null,
+      amount: Number(
+        row.querySelector("[data-eir-amount]")?.value || 0
+      ),
+    }));
+
+    return {
+      effective_date:
+        $("ifrs9EirEffectiveDate")?.value,
+      contractual_rate:
+        Number(
+          $("ifrs9EirContractualRate")?.value || 0
+        ) / 100,
+      initial_principal:
+        Number($("ifrs9EirPrincipal")?.value || 0),
+      payment_frequency: frequency,
+      periods_per_year:
+        frequencyPeriods[frequency] || 1,
+      transaction_costs:
+        Number($("ifrs9EirTransactionCosts")?.value || 0),
+      fees_received:
+        Number($("ifrs9EirFeesReceived")?.value || 0),
+      fees_paid:
+        Number($("ifrs9EirFeesPaid")?.value || 0),
+      premium_amount:
+        Number($("ifrs9EirPremium")?.value || 0),
+      discount_amount:
+        Number($("ifrs9EirDiscount")?.value || 0),
+      maturity_date:
+        $("ifrs9EirMaturityDate")?.value || null,
+      calculation_method: "system",
+      cashflows,
+    };
+  }
+
+  async function calculateIfrs9Eir(instrumentId) {
+    const payload = collectIfrs9EirPayload();
+
+    if (!(payload.initial_principal > 0)) {
+      return alert("Principal must be greater than zero.");
+    }
+
+    if (!payload.cashflows.length) {
+      return alert("Add at least one contractual cash flow.");
+    }
+
+    if (payload.cashflows.some(row =>
+      !Number.isInteger(row.period_no) ||
+      row.period_no <= 0 ||
+      row.amount < 0
+    )) {
+      return alert(
+        "Cash-flow periods and amounts are invalid."
+      );
+    }
+
+    setMsg("Calculating effective interest rate...");
+
+    try {
+      IFRS9.eirCalculation = await apiFetch(
+        ENDPOINTS.ifrs9.eirCalculate(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const result = IFRS9.eirCalculation;
+
+      $("ifrs9EirResult").innerHTML = `
+        <div class="status-banner success">
+          Effective interest rate calculated.
+        </div>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <b>Initial Carrying Amount</b>
+            <p>${money(result.initial_carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Periodic EIR</b>
+            <p>
+              ${(Number(result.periodic_eir || 0) * 100).toFixed(6)}%
+            </p>
+          </div>
+
+          <div>
+            <b>Annual Effective Rate</b>
+            <p>
+              ${Number(result.annual_eir_percent || 0).toFixed(6)}%
+            </p>
+          </div>
+
+          <div>
+            <b>Total Periods</b>
+            <p>${Number(result.total_periods || 0)}</p>
+          </div>
+        </div>
+      `;
+
+      $("ifrs9SaveEirBtn").disabled = false;
+      setMsg("");
+    } catch (error) {
+      IFRS9.eirCalculation = null;
+      $("ifrs9SaveEirBtn").disabled = true;
+
+      setMsg(
+        error.message ||
+        "Effective interest calculation failed."
+      );
+    }
+  }
+
+
+  async function saveIfrs9Eir(instrumentId) {
+    if (!IFRS9.eirCalculation) {
+      return alert(
+        "Calculate the effective interest rate before saving."
+      );
+    }
+
+    const payload = collectIfrs9EirPayload();
+    const button = $("ifrs9SaveEirBtn");
+    const originalText = button?.textContent || "Save EIR";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.eir(cid(), instrumentId),
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg("Effective-interest terms saved.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to save effective-interest terms."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  function modificationCashflowRow(row = {}) {
+    return `
+      <tr data-ifrs9-modification-cashflow>
+        <td>
+          <input
+            data-modification-payment-date
+            type="date"
+            value="${esc(row.payment_date || "")}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-modification-amount
+            type="number"
+            min="0"
+            step="0.01"
+            value="${Number(row.amount || 0)}"
+          >
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            data-ifrs9-remove-modification-cashflow
+          >
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
   async function openInstrument(instrumentId) {
     try {
       const result = await apiFetch(ENDPOINTS.ifrs9.instrument(cid(), instrumentId));
       const item = result.item || {};
+      
+      IFRS9.activeInstrumentId = Number(instrumentId);
+      IFRS9.eirCalculation = null;
+
+      const eirAllowed =
+        item.measurement_category === "amortised_cost" &&
+        item.status === "active";
+
+      const eirHistory =
+        result.effective_interest_terms || [];
+    
+      const amortisedRuns = item.measurement_category === "amortised_cost"
+        ? await apiFetch(
+            ENDPOINTS.ifrs9.amortisedCostRuns(
+              cid(),
+              instrumentId,
+            )
+          )
+        : { items: [] };
+
+      IFRS9.amortisedCostRuns = amortisedRuns.items || [];
+      IFRS9.amortisedCostCalculation = null;
+
+      const modificationResult =
+        item.measurement_category === "amortised_cost"
+          ? await apiFetch(
+              ENDPOINTS.ifrs9.modifications(
+                cid(),
+                instrumentId,
+              )
+            )
+          : { items: [] };
+
+      IFRS9.modifications =
+        modificationResult.items || [];
+
+      IFRS9.modificationCalculation = null;
+
+      const derecognitionResult = await apiFetch(
+        ENDPOINTS.ifrs9.derecognitions(
+          cid(),
+          instrumentId,
+        )
+      );
+
+      IFRS9.derecognitions =
+        derecognitionResult.items || [];
+
+      IFRS9.derecognitionCalculation = null;
+
+      const fairValueResult = ["fvpl", "fvoci"].includes(
+        item.measurement_category
+      )
+        ? await apiFetch(
+            ENDPOINTS.ifrs9.fairValueMeasurements(
+              cid(),
+              instrumentId,
+            )
+          )
+        : { items: [] };
+
+      IFRS9.fairValueMeasurements =
+        fairValueResult.items || [];
+
+      IFRS9.fairValueCalculation = null;
 
       $("ifrs9InstrumentBody").innerHTML = `
         <div class="form-grid">
@@ -73180,11 +83209,2435 @@ async function saveEditModal() {
         </label>
 
         <button class="btn btn-primary" data-ifrs9-save-classification="${item.id}">Save Classification</button>
+      
+        <hr>
+
+        <h3>Effective Interest</h3>
+
+        ${
+          !eirAllowed
+            ? `
+              <div class="status-banner warning">
+                Classify this active instrument as amortised cost
+                before calculating effective interest.
+              </div>
+            `
+            : `
+              <div class="form-grid">
+                <label>
+                  Effective Date
+                  <input
+                    id="ifrs9EirEffectiveDate"
+                    type="date"
+                    value="${new Date().toISOString().slice(0, 10)}"
+                  >
+                </label>
+
+                <label>
+                  Contractual Rate %
+                  <input
+                    id="ifrs9EirContractualRate"
+                    type="number"
+                    min="0"
+                    step="0.000001"
+                    value="${Number(item.contractual_interest_rate || 0) * 100}"
+                  >
+                </label>
+
+                <label>
+                  Principal
+                  <input
+                    id="ifrs9EirPrincipal"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value="${Number(item.original_amount || 0)}"
+                  >
+                </label>
+
+                <label>
+                  Payment Frequency
+                  <select id="ifrs9EirFrequency">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="semi_annual">Semi-Annual</option>
+                    <option value="annual">Annual</option>
+                    <option value="irregular">Irregular</option>
+                  </select>
+                </label>
+
+                <label>
+                  Transaction Costs
+                  <input id="ifrs9EirTransactionCosts"
+                    type="number" min="0" step="0.01" value="0">
+                </label>
+
+                <label>
+                  Fees Received
+                  <input id="ifrs9EirFeesReceived"
+                    type="number" min="0" step="0.01" value="0">
+                </label>
+
+                <label>
+                  Fees Paid
+                  <input id="ifrs9EirFeesPaid"
+                    type="number" min="0" step="0.01" value="0">
+                </label>
+
+                <label>
+                  Premium
+                  <input id="ifrs9EirPremium"
+                    type="number" min="0" step="0.01" value="0">
+                </label>
+
+                <label>
+                  Discount
+                  <input id="ifrs9EirDiscount"
+                    type="number" min="0" step="0.01" value="0">
+                </label>
+
+                <label>
+                  Maturity Date
+                  <input id="ifrs9EirMaturityDate" type="date">
+                </label>
+              </div>
+
+              <div class="card-header-row" style="margin-top:14px;">
+                <h4>Contractual Cash Flows</h4>
+
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  data-ifrs9-add-eir-cashflow
+                >
+                  Add Cash Flow
+                </button>
+              </div>
+
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Payment Date</th>
+                      <th>Contractual Cash Flow</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="ifrs9EirCashflowRows">
+                    ${eirCashflowRow({
+                      period_no: 1,
+                      amount: 0,
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="screen-actions" style="margin-top:12px;">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-ifrs9-calculate-eir="${item.id}"
+                >
+                  Calculate EIR
+                </button>
+
+                <button
+                  id="ifrs9SaveEirBtn"
+                  type="button"
+                  class="btn btn-primary"
+                  data-ifrs9-save-eir="${item.id}"
+                  disabled
+                >
+                  Save EIR
+                </button>
+              </div>
+
+              <div
+                id="ifrs9EirResult"
+                style="margin-top:14px;"
+              ></div>
+            `
+        }
+
+        <h4 style="margin-top:18px;">EIR History</h4>
+
+        ${
+          eirHistory.length
+            ? `
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Effective Date</th>
+                      <th>Contractual Rate</th>
+                      <th>Effective Rate</th>
+                      <th>Initial Carrying Amount</th>
+                      <th>Method</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${eirHistory.map(row => `
+                      <tr>
+                        <td>${dateText(row.effective_date)}</td>
+                        <td>
+                          ${(Number(row.contractual_rate || 0) * 100).toFixed(4)}%
+                        </td>
+                        <td>
+                          ${(Number(row.effective_interest_rate || 0) * 100).toFixed(4)}%
+                        </td>
+                        <td>${money(row.initial_carrying_amount)}</td>
+                        <td>${esc(label(row.calculation_method))}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `<p class="muted">No effective-interest terms recorded.</p>`
+        }
+
+        <hr>
+
+        <h3>Amortised-Cost Measurement</h3>
+
+        ${
+          item.measurement_category !== "amortised_cost"
+            ? `
+              <p class="muted">
+                This instrument is not measured at amortised cost.
+              </p>
+            `
+            : !item.effective_interest_rate
+              ? `
+                <div class="status-banner warning">
+                  Save effective-interest terms before creating
+                  amortised-cost runs.
+                </div>
+              `
+              : `
+                <div class="form-grid">
+                  <label>
+                    Period Start
+                    <input
+                      id="ifrs9AmortPeriodStart"
+                      type="date"
+                    >
+                  </label>
+
+                  <label>
+                    Period End
+                    <input
+                      id="ifrs9AmortPeriodEnd"
+                      type="date"
+                    >
+                  </label>
+
+                  <label>
+                    Day-Count Basis
+                    <select id="ifrs9AmortDayBasis">
+                      <option value="actual_365">Actual / 365</option>
+                      <option value="actual_360">Actual / 360</option>
+                      <option value="30_360">30 / 360</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Cash Received
+                    <input
+                      id="ifrs9AmortCashReceived"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value="0"
+                    >
+                  </label>
+
+                  <label>
+                    Cash Paid
+                    <input
+                      id="ifrs9AmortCashPaid"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value="0"
+                    >
+                  </label>
+                </div>
+
+                <div class="screen-actions" style="margin-top:12px;">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-ifrs9-calculate-amortised-cost="${item.id}"
+                  >
+                    Calculate Period
+                  </button>
+
+                  <button
+                    id="ifrs9CreateAmortisedRunBtn"
+                    type="button"
+                    class="btn btn-primary"
+                    data-ifrs9-create-amortised-run="${item.id}"
+                    disabled
+                  >
+                    Create Run
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9AmortisedCostResult"
+                  style="margin-top:14px;"
+                ></div>
+              `
+        }
+
+        <h4 style="margin-top:18px;">Amortised-Cost Runs</h4>
+
+        ${
+          IFRS9.amortisedCostRuns.length
+            ? `
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Period</th>
+                      <th>Opening</th>
+                      <th>Interest</th>
+                      <th>Cash Flow</th>
+                      <th>Closing</th>
+                      <th>Status</th>
+                      <th>Journal</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${IFRS9.amortisedCostRuns.map(row => `
+                      <tr>
+                        <td>
+                          ${dateText(row.period_start)}
+                          –
+                          ${dateText(row.period_end)}
+                        </td>
+
+                        <td>
+                          ${money(row.opening_carrying_amount)}
+                        </td>
+
+                        <td>
+                          ${money(
+                            Number(row.interest_income || 0) +
+                            Number(row.interest_expense || 0)
+                          )}
+                        </td>
+
+                        <td>
+                          ${money(
+                            Number(row.cash_received || 0) +
+                            Number(row.cash_paid || 0)
+                          )}
+                        </td>
+
+                        <td>
+                          ${money(row.closing_carrying_amount)}
+                        </td>
+
+                        <td>${esc(label(row.status))}</td>
+                        <td>${esc(row.journal_id || "—")}</td>
+
+                        <td>
+                          ${
+                            row.status === "draft"
+                              ? `
+                                <button
+                                  type="button"
+                                  class="btn btn-primary btn-sm"
+                                  data-ifrs9-preview-amortised-run="${row.id}"
+                                >
+                                  Preview
+                                </button>
+                              `
+                              : ""
+                          }
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <p class="muted">
+                No amortised-cost runs recorded.
+              </p>
+            `
+        }
+
+        <hr>
+
+        <h3>Contractual Modifications</h3>
+
+        ${
+          item.measurement_category !== "amortised_cost"
+            ? `
+              <p class="muted">
+                Modification accounting is available only
+                for amortised-cost instruments.
+              </p>
+            `
+            : `
+              <div class="form-grid">
+                <label>
+                  Modification Date
+                  <input
+                    id="ifrs9ModificationDate"
+                    type="date"
+                    value="${new Date().toISOString().slice(0, 10)}"
+                  >
+                </label>
+
+                <label>
+                  Modification Type
+                  <select id="ifrs9ModificationType">
+                    <option value="cashflow_change">
+                      Cash-Flow Change
+                    </option>
+                    <option value="rate_change">
+                      Interest-Rate Change
+                    </option>
+                    <option value="term_extension">
+                      Term Extension
+                    </option>
+                    <option value="term_reduction">
+                      Term Reduction
+                    </option>
+                    <option value="payment_deferral">
+                      Payment Deferral
+                    </option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+
+                <label>
+                  Revised Contractual Rate %
+                  <input
+                    id="ifrs9ModificationRate"
+                    type="number"
+                    min="0"
+                    step="0.000001"
+                  >
+                </label>
+
+                <label>
+                  Revised Maturity Date
+                  <input
+                    id="ifrs9ModificationMaturity"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Substantial Threshold %
+                  <input
+                    id="ifrs9ModificationThreshold"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="10"
+                  >
+                </label>
+
+                <label>
+                  Reason
+                  <input
+                    id="ifrs9ModificationReason"
+                    placeholder="Reason for contractual modification"
+                  >
+                </label>
+              </div>
+
+              <div class="card-header-row" style="margin-top:14px;">
+                <div>
+                  <h4>Revised Contractual Cash Flows</h4>
+                  <p class="muted">
+                    Enter future cash flows from the modification date.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  data-ifrs9-add-modification-cashflow
+                >
+                  Add Cash Flow
+                </button>
+              </div>
+
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Payment Date</th>
+                      <th>Amount</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="ifrs9ModificationCashflowRows">
+                    ${modificationCashflowRow()}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="screen-actions" style="margin-top:12px;">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-ifrs9-calculate-modification="${item.id}"
+                >
+                  Assess Modification
+                </button>
+
+                <button
+                  id="ifrs9CreateModificationBtn"
+                  type="button"
+                  class="btn btn-primary"
+                  data-ifrs9-create-modification="${item.id}"
+                  disabled
+                >
+                  Create Modification
+                </button>
+              </div>
+
+              <div
+                id="ifrs9ModificationResult"
+                style="margin-top:14px;"
+              ></div>
+            `
+        }
+
+        <h4 style="margin-top:18px;">Modification History</h4>
+
+        ${
+          IFRS9.modifications.length
+            ? `
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Old Carrying Amount</th>
+                      <th>Revised PV</th>
+                      <th>Change</th>
+                      <th>Assessment</th>
+                      <th>Status</th>
+                      <th>Journal</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${IFRS9.modifications.map(row => `
+                      <tr>
+                        <td>${dateText(row.modification_date)}</td>
+                        <td>${esc(label(row.modification_type))}</td>
+                        <td>${money(row.old_carrying_amount)}</td>
+                        <td>${money(row.revised_cashflow_pv)}</td>
+                        <td>
+                          ${money(
+                            Number(row.revised_cashflow_pv || 0) -
+                            Number(row.old_carrying_amount || 0)
+                          )}
+                        </td>
+                        <td>
+                          ${
+                            row.derecognition_required
+                              ? "Substantial"
+                              : "Non-substantial"
+                          }
+                        </td>
+                        <td>
+                          ${esc(label(row.journal_status || "Draft"))}
+                        </td>
+                        <td>${esc(row.journal_id || "—")}</td>
+                        <td>
+                          ${
+                            row.journal_status === "draft" &&
+                            !row.derecognition_required
+                              ? `
+                                <button
+                                  type="button"
+                                  class="btn btn-primary btn-sm"
+                                  data-ifrs9-preview-modification="${row.id}"
+                                >
+                                  Preview
+                                </button>
+                              `
+                              : ""
+                          }
+
+                          ${
+                            row.derecognition_required
+                              ? `
+                                <span class="pill warning">
+                                  Derecognition Required
+                                </span>
+                              `
+                              : ""
+                          }
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <p class="muted">
+                No contractual modifications recorded.
+              </p>
+            `
+        }
+
+        <hr>
+
+        <h3>Derecognition and Settlement</h3>
+
+        ${
+          item.status !== "active"
+            ? `
+              <div class="status-banner warning">
+                This instrument is ${esc(label(item.status))}
+                and cannot be derecognised again.
+              </div>
+            `
+            : `
+              <div class="form-grid">
+                <label>
+                  Derecognition Date
+                  <input
+                    id="ifrs9DerecognitionDate"
+                    type="date"
+                    value="${new Date().toISOString().slice(0, 10)}"
+                  >
+                </label>
+
+                <label>
+                  Derecognition Type
+                  <select id="ifrs9DerecognitionType">
+                    <option value="settlement">
+                      Full Settlement
+                    </option>
+
+                    <option value="sale">
+                      Sale
+                    </option>
+
+                    <option value="transfer">
+                      Transfer
+                    </option>
+
+                    <option value="expiry">
+                      Contractual Expiry
+                    </option>
+
+                    <option value="cancellation">
+                      Cancellation
+                    </option>
+
+                    <option value="substantial_modification">
+                      Substantial Modification
+                    </option>
+
+                    <option value="other">
+                      Other
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  Consideration Received
+                  <input
+                    id="ifrs9DerecognitionReceived"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="0"
+                  >
+                </label>
+
+                <label>
+                  Consideration Paid
+                  <input
+                    id="ifrs9DerecognitionPaid"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="0"
+                  >
+                </label>
+
+                <label>
+                  Loss Allowance Released
+                  <input
+                    id="ifrs9DerecognitionAllowance"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="0"
+                  >
+                </label>
+
+                <label>
+                  Settlement Account
+                  <select id="ifrs9DerecognitionAccount">
+                    ${ifrs9SettlementAccountOptions()}
+                  </select>
+                </label>
+
+                <label>
+                  Substantial Modification
+                  <select id="ifrs9DerecognitionModification">
+                    <option value="">
+                      None
+                    </option>
+
+                    ${IFRS9.modifications
+                      .filter(row =>
+                        row.derecognition_required &&
+                        row.journal_status === "draft"
+                      )
+                      .map(row => `
+                        <option value="${row.id}">
+                          ${dateText(row.modification_date)}
+                          — ${esc(label(row.modification_type))}
+                        </option>
+                      `).join("")}
+                  </select>
+                </label>
+
+                <label>
+                  Reason
+                  <input
+                    id="ifrs9DerecognitionReason"
+                    placeholder="Reason for derecognition"
+                  >
+                </label>
+              </div>
+
+              <label
+                style="display:flex;gap:8px;align-items:center;margin-top:12px;"
+              >
+                <input
+                  id="ifrs9CreateReplacementInstrument"
+                  type="checkbox"
+                >
+
+                Create a replacement instrument
+              </label>
+
+              <div
+                id="ifrs9ReplacementInstrumentFields"
+                class="hidden"
+                style="margin-top:12px;"
+              >
+                <div class="form-grid">
+                  <label>
+                    Replacement Instrument Name
+                    <input
+                      id="ifrs9ReplacementInstrumentName"
+                      placeholder="Revised loan agreement"
+                    >
+                  </label>
+
+                  <label>
+                    New Principal / Carrying Amount
+                    <input
+                      id="ifrs9ReplacementAmount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                    >
+                  </label>
+
+                  <label>
+                    Recognition Date
+                    <input
+                      id="ifrs9ReplacementRecognitionDate"
+                      type="date"
+                    >
+                  </label>
+
+                  <label>
+                    Contractual Rate %
+                    <input
+                      id="ifrs9ReplacementContractualRate"
+                      type="number"
+                      min="0"
+                      step="0.000001"
+                    >
+                  </label>
+                </div>
+              </div>
+
+              <div class="screen-actions" style="margin-top:12px;">
+                <button
+                  type="button"
+                  class="btn btn-secondary"
+                  data-ifrs9-calculate-derecognition="${item.id}"
+                >
+                  Calculate Derecognition
+                </button>
+
+                <button
+                  id="ifrs9CreateDerecognitionBtn"
+                  type="button"
+                  class="btn btn-primary"
+                  data-ifrs9-create-derecognition="${item.id}"
+                  disabled
+                >
+                  Create Derecognition
+                </button>
+              </div>
+
+              <div
+                id="ifrs9DerecognitionResult"
+                style="margin-top:14px;"
+              ></div>
+            `
+        }
+
+        <h4 style="margin-top:18px;">
+          Derecognition History
+        </h4>
+
+        ${
+          IFRS9.derecognitions.length
+            ? `
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Carrying Amount</th>
+                      <th>Consideration</th>
+                      <th>Gain / Loss</th>
+                      <th>Status</th>
+                      <th>Journal</th>
+                      <th>Replacement</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${IFRS9.derecognitions.map(row => `
+                      <tr>
+                        <td>
+                          ${dateText(row.derecognition_date)}
+                        </td>
+
+                        <td>
+                          ${esc(label(row.derecognition_type))}
+                        </td>
+
+                        <td>
+                          ${money(row.carrying_amount)}
+                        </td>
+
+                        <td>
+                          ${money(
+                            Number(
+                              row.consideration_received || 0
+                            ) +
+                            Number(
+                              row.consideration_paid || 0
+                            )
+                          )}
+                        </td>
+
+                        <td>
+                          ${money(row.gain_loss)}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            label(
+                              row.journal_status || "draft"
+                            )
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(row.journal_id || "—")}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            row.replacement_instrument_name ||
+                            row.replacement_instrument_id ||
+                            "—"
+                          )}
+                        </td>
+
+                        <td>
+                          ${
+                            row.journal_status === "draft"
+                              ? `
+                                <button
+                                  type="button"
+                                  class="btn btn-primary btn-sm"
+                                  data-ifrs9-preview-derecognition="${row.id}"
+                                >
+                                  Preview
+                                </button>
+                              `
+                              : ""
+                          }
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <p class="muted">
+                No derecognition records.
+              </p>
+            `
+        }
+        <hr>
+
+        <h3>Fair-Value Measurement</h3>
+
+        ${
+          !["fvpl", "fvoci"].includes(
+            item.measurement_category
+          )
+            ? `
+              <p class="muted">
+                This instrument is not classified as FVPL or FVOCI.
+              </p>
+            `
+            : item.status !== "active"
+              ? `
+                <div class="status-banner warning">
+                  Only active instruments may be remeasured.
+                </div>
+              `
+              : `
+                <div class="form-grid">
+                  <label>
+                    Valuation Date
+                    <input
+                      id="ifrs9FairValueDate"
+                      type="date"
+                      value="${new Date().toISOString().slice(0, 10)}"
+                    >
+                  </label>
+
+                  <label>
+                    Current Fair Value
+                    <input
+                      id="ifrs9CurrentFairValue"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value="${Number(item.carrying_amount || 0)}"
+                    >
+                  </label>
+
+                  <label>
+                    Fair-Value Level
+                    <select id="ifrs9FairValueLevel">
+                      <option value="level_1">
+                        Level 1 — Quoted Market Price
+                      </option>
+
+                      <option value="level_2">
+                        Level 2 — Observable Inputs
+                      </option>
+
+                      <option value="level_3">
+                        Level 3 — Unobservable Inputs
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Valuation Method
+                    <select id="ifrs9ValuationMethod">
+                      <option value="quoted_market_price">
+                        Quoted Market Price
+                      </option>
+
+                      <option value="comparable_market">
+                        Comparable Market
+                      </option>
+
+                      <option value="discounted_cashflow">
+                        Discounted Cash Flow
+                      </option>
+
+                      <option value="option_pricing">
+                        Option-Pricing Model
+                      </option>
+
+                      <option value="net_asset_value">
+                        Net Asset Value
+                      </option>
+
+                      <option value="other">
+                        Other
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Valuation Source
+                    <input
+                      id="ifrs9ValuationSource"
+                      placeholder="Exchange, valuer or market source"
+                    >
+                  </label>
+
+                  <label>
+                    Market Reference
+                    <input
+                      id="ifrs9MarketReference"
+                      placeholder="Ticker, quote or valuation reference"
+                    >
+                  </label>
+                </div>
+
+                <label style="display:block;margin-top:12px;">
+                  Valuation Notes
+                  <textarea
+                    id="ifrs9FairValueNotes"
+                    rows="3"
+                    placeholder="Describe assumptions and supporting evidence"
+                  ></textarea>
+                </label>
+
+                <div class="screen-actions" style="margin-top:12px;">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-ifrs9-calculate-fair-value="${item.id}"
+                  >
+                    Calculate Fair Value
+                  </button>
+
+                  <button
+                    id="ifrs9CreateFairValueBtn"
+                    type="button"
+                    class="btn btn-primary"
+                    data-ifrs9-create-fair-value="${item.id}"
+                    disabled
+                  >
+                    Create Measurement
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9FairValueResult"
+                  style="margin-top:14px;"
+                ></div>
+              `
+        }
+
+        <h4 style="margin-top:18px;">
+          Fair-Value History
+        </h4>
+
+        ${
+          IFRS9.fairValueMeasurements.length
+            ? `
+              <div class="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Category</th>
+                      <th>Previous Value</th>
+                      <th>Current Value</th>
+                      <th>Movement</th>
+                      <th>Level</th>
+                      <th>Destination</th>
+                      <th>Status</th>
+                      <th>Journal</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    ${IFRS9.fairValueMeasurements.map(row => `
+                      <tr>
+                        <td>
+                          ${dateText(row.valuation_date)}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            String(
+                              row.measurement_category || ""
+                            ).toUpperCase()
+                          )}
+                        </td>
+
+                        <td>
+                          ${money(row.previous_fair_value)}
+                        </td>
+
+                        <td>
+                          ${money(row.current_fair_value)}
+                        </td>
+
+                        <td>
+                          ${money(row.gain_loss)}
+                        </td>
+
+                        <td>
+                          ${esc(label(row.fair_value_level))}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            label(
+                              row.gain_loss_destination
+                            )
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(
+                            label(
+                              row.journal_status || "draft"
+                            )
+                          )}
+                        </td>
+
+                        <td>
+                          ${esc(row.journal_id || "—")}
+                        </td>
+
+                        <td>
+                          ${
+                            row.journal_status === "draft"
+                              ? `
+                                <button
+                                  type="button"
+                                  class="btn btn-primary btn-sm"
+                                  data-ifrs9-preview-fair-value="${row.id}"
+                                >
+                                  Preview
+                                </button>
+                              `
+                              : ""
+                          }
+
+                          ${
+                            row.journal_status === "posted" &&
+                            !row.reversal_journal_id
+                              ? `
+                                <button
+                                  type="button"
+                                  class="btn btn-danger btn-sm"
+                                  data-ifrs9-reverse-fair-value="${row.id}"
+                                >
+                                  Reverse
+                                </button>
+                              `
+                              : ""
+                          }
+                        </td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `
+            : `
+              <p class="muted">
+                No fair-value measurements recorded.
+              </p>
+            `
+        }   
+
+        <hr>
+
+        <h3>General ECL Credit Risk</h3>
+
+        ${
+          !generalEclAllowed
+            ?`
+              <p class="muted">
+                General ECL applies to active debt instruments
+                measured at amortised cost or FVOCI.
+              </p>
+            `
+            :`
+              <div class="form-grid">
+                <label>
+                  General ECL Model
+                  <select id="ifrs9CreditProfileModel">
+                    <option value="">Select model</option>
+
+                    ${IFRS9.generalEclModels
+                      .filter(model=>
+                        model.applies_to===item.instrument_type
+                      )
+                      .map(model=>`
+                        <option
+                          value="${model.id}"
+                          ${
+                            Number(
+                              IFRS9.creditRiskProfile
+                                ?.general_model_id
+                            )===Number(model.id)
+                              ?"selected":""
+                          }
+                        >
+                          ${esc(model.model_name)}
+                        </option>
+                      `).join("")}
+                  </select>
+                </label>
+
+                <label>
+                  Origination Rating
+                  <input
+                    id="ifrs9OriginationRating"
+                    value="${esc(
+                      IFRS9.creditRiskProfile
+                        ?.origination_rating||""
+                    )}"
+                  >
+                </label>
+
+                <label>
+                  Current Rating
+                  <input
+                    id="ifrs9CurrentRating"
+                    value="${esc(
+                      IFRS9.creditRiskProfile
+                        ?.current_rating||""
+                    )}"
+                  >
+                </label>
+
+                <label>
+                  Origination Lifetime PD %
+                  <input
+                    id="ifrs9OriginationLifetimePd"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.0001"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.origination_lifetime_pd||0
+                      )*100
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Current Lifetime PD %
+                  <input
+                    id="ifrs9CurrentLifetimePd"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.0001"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.current_lifetime_pd||0
+                      )*100
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Credit Limit
+                  <input
+                    id="ifrs9CreditLimit"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.credit_limit||0
+                      )
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Undrawn Commitment
+                  <input
+                    id="ifrs9UndrawnCommitment"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.undrawn_commitment||0
+                      )
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Credit Conversion Factor %
+                  <input
+                    id="ifrs9CreditConversionFactor"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.0001"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.credit_conversion_factor??1
+                      )*100
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Collateral Value
+                  <input
+                    id="ifrs9CollateralValue"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="${
+                      Number(
+                        IFRS9.creditRiskProfile
+                          ?.collateral_value||0
+                      )
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Collateral Type
+                  <input
+                    id="ifrs9CollateralType"
+                    value="${esc(
+                      IFRS9.creditRiskProfile
+                        ?.collateral_type||""
+                    )}"
+                  >
+                </label>
+              </div>
+
+              <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;">
+                <label>
+                  <input
+                    id="ifrs9CreditWatchlist"
+                    type="checkbox"
+                    ${
+                      IFRS9.creditRiskProfile?.watchlist
+                        ?"checked":""
+                    }
+                  >
+                  Watchlist
+                </label>
+
+                <label>
+                  <input
+                    id="ifrs9CreditForbearance"
+                    type="checkbox"
+                    ${
+                      IFRS9.creditRiskProfile?.forbearance
+                        ?"checked":""
+                    }
+                  >
+                  Forbearance
+                </label>
+
+                <label>
+                  <input
+                    id="ifrs9CreditDefault"
+                    type="checkbox"
+                    ${
+                      IFRS9.creditRiskProfile?.default_flag
+                        ?"checked":""
+                    }
+                  >
+                  Default
+                </label>
+
+                <label>
+                  <input
+                    id="ifrs9CreditImpaired"
+                    type="checkbox"
+                    ${
+                      IFRS9.creditRiskProfile?.credit_impaired
+                        ?"checked":""
+                    }
+                  >
+                  Credit Impaired
+                </label>
+              </div>
+
+              <div class="screen-actions" style="margin-top:12px;">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  data-ifrs9-save-credit-profile="${item.id}"
+                >
+                  Save Credit Profile
+                </button>
+              </div>
+
+              <hr>
+
+              <h4>Stage Assessment</h4>
+
+              <div class="form-grid">
+                <label>
+                  Assessment Date
+                  <input
+                    id="ifrs9StageAssessmentDate"
+                    type="date"
+                    value="${
+                      new Date().toISOString().slice(0,10)
+                    }"
+                  >
+                </label>
+
+                <label>
+                  Days Past Due
+                  <input
+                    id="ifrs9StageDaysPastDue"
+                    type="number"
+                    min="0"
+                    value="0"
+                  >
+                </label>
+
+                <label>
+                  Management Override
+                  <select id="ifrs9StageOverride">
+                    <option value="">No override</option>
+                    <option value="1">Stage 1</option>
+                    <option value="2">Stage 2</option>
+                    <option value="3">Stage 3</option>
+                  </select>
+                </label>
+
+                <label>
+                  Override Reason
+                  <input
+                    id="ifrs9StageOverrideReason"
+                    placeholder="Required when overriding"
+                  >
+                </label>
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-ifrs9-assess-stage="${item.id}"
+              >
+                Assess Stage
+              </button>
+
+              <div id="ifrs9StageAssessmentResult"></div>
+
+              <h4 style="margin-top:18px;">
+                Assessment History
+              </h4>
+
+              ${
+                IFRS9.stageAssessments.length
+                  ?`
+                    <div class="table-responsive">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Previous</th>
+                            <th>Stage</th>
+                            <th>Days Past Due</th>
+                            <th>SICR</th>
+                            <th>Default</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          ${IFRS9.stageAssessments.map(row=>`
+                            <tr>
+                              <td>${dateText(row.assessment_date)}</td>
+                              <td>${row.previous_stage||"—"}</td>
+                              <td>Stage ${row.assessed_stage}</td>
+                              <td>${Number(row.days_past_due||0)}</td>
+                              <td>${row.sicr?"Yes":"No"}</td>
+                              <td>${row.default_flag?"Yes":"No"}</td>
+                              <td>${esc(row.assessment_reason||"—")}</td>
+                              <td>${esc(label(row.status))}</td>
+                            </tr>
+                          `).join("")}
+                        </tbody>
+                      </table>
+                    </div>
+                  `
+                  :`<p class="muted">No stage assessments recorded.</p>`
+              }
+            `
+        }
       `;
 
       $("ifrs9InstrumentModal").classList.remove("hidden");
     } catch (error) {
       setMsg(error.message || "Failed to load financial instrument.");
+    }
+  }
+
+  function collectIfrs9ModificationPayload() {
+    const revisedCashflows = [
+      ...document.querySelectorAll(
+        "[data-ifrs9-modification-cashflow]"
+      ),
+    ].map(row => ({
+      payment_date:
+        row.querySelector(
+          "[data-modification-payment-date]"
+        )?.value || null,
+
+      amount: Number(
+        row.querySelector(
+          "[data-modification-amount]"
+        )?.value || 0
+      ),
+    }));
+
+    return {
+      modification_date:
+        $("ifrs9ModificationDate")?.value,
+
+      modification_type:
+        $("ifrs9ModificationType")?.value ||
+        "cashflow_change",
+
+      revised_contractual_rate:
+        $("ifrs9ModificationRate")?.value === ""
+          ? null
+          : Number(
+              $("ifrs9ModificationRate")?.value || 0
+            ) / 100,
+
+      revised_maturity_date:
+        $("ifrs9ModificationMaturity")?.value ||
+        null,
+
+      substantial_threshold:
+        Number(
+          $("ifrs9ModificationThreshold")?.value ||
+          10
+        ) / 100,
+
+      reason:
+        $("ifrs9ModificationReason")
+          ?.value
+          .trim(),
+
+      revised_cashflows: revisedCashflows,
+      day_basis: 365,
+    };
+  }
+
+  async function calculateIfrs9Modification(
+    instrumentId
+  ) {
+    const payload =
+      collectIfrs9ModificationPayload();
+
+    if (!payload.modification_date) {
+      return alert("Modification date is required.");
+    }
+
+    if (!payload.reason) {
+      return alert("Modification reason is required.");
+    }
+
+    if (!payload.revised_cashflows.length) {
+      return alert(
+        "Add at least one revised contractual cash flow."
+      );
+    }
+
+    if (payload.revised_cashflows.some(row =>
+      !row.payment_date ||
+      row.amount < 0
+    )) {
+      return alert(
+        "Every revised cash flow requires a date and valid amount."
+      );
+    }
+
+    setMsg("Assessing contractual modification...");
+
+    try {
+      IFRS9.modificationCalculation =
+        await apiFetch(
+          ENDPOINTS.ifrs9.modificationCalculate(
+            cid(),
+            instrumentId,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+
+      const row =
+        IFRS9.modificationCalculation;
+
+      $("ifrs9ModificationResult").innerHTML = `
+        <div class="status-banner ${
+          row.derecognition_required
+            ? "warning"
+            : "success"
+        }">
+          ${
+            row.derecognition_required
+              ? "The modification is substantial and requires derecognition."
+              : "The modification is non-substantial and can be processed as a carrying-value adjustment."
+          }
+        </div>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <b>Old Carrying Amount</b>
+            <p>${money(row.old_carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Revised Cash-Flow PV</b>
+            <p>${money(row.revised_cashflow_pv)}</p>
+          </div>
+
+          <div>
+            <b>Carrying-Value Change</b>
+            <p>${money(row.carrying_amount_change)}</p>
+          </div>
+
+          <div>
+            <b>Percentage Change</b>
+            <p>
+              ${Number(
+                row.percentage_change_percent || 0
+              ).toFixed(4)}%
+            </p>
+          </div>
+
+          <div>
+            <b>Original EIR</b>
+            <p>
+              ${(Number(
+                row.original_effective_interest_rate || 0
+              ) * 100).toFixed(6)}%
+            </p>
+          </div>
+
+          <div>
+            <b>Assessment</b>
+            <p>
+              ${
+                row.derecognition_required
+                  ? "Substantial"
+                  : "Non-substantial"
+              }
+            </p>
+          </div>
+        </div>
+      `;
+
+      $("ifrs9CreateModificationBtn").disabled =
+        false;
+
+      setMsg("");
+    } catch (error) {
+      IFRS9.modificationCalculation = null;
+
+      if ($("ifrs9CreateModificationBtn")) {
+        $("ifrs9CreateModificationBtn").disabled =
+          true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to assess the modification."
+      );
+    }
+  }
+
+  async function createIfrs9Modification(
+    instrumentId
+  ) {
+    if (!IFRS9.modificationCalculation) {
+      return alert(
+        "Assess the modification before creating it."
+      );
+    }
+
+    const button =
+      $("ifrs9CreateModificationBtn");
+
+    const originalText =
+      button?.textContent || "Create Modification";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating...";
+    }
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.modifications(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(
+            collectIfrs9ModificationPayload()
+          ),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg(
+        result.item?.derecognition_required
+          ? "Substantial modification recorded. Process it through derecognition."
+          : "Non-substantial modification created."
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to create the modification."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  async function previewIfrs9Modification(
+    modificationId
+  ) {
+    try {
+      IFRS9.previewModificationId =
+        Number(modificationId);
+
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.modificationPreview(
+          cid(),
+          modificationId,
+        )
+      );
+
+      const preview = result.preview || {};
+
+      $("ifrs9PreviewBody").innerHTML = `
+        <div class="journal-preview-header">
+          <p>
+            <b>Date:</b>
+            ${dateText(preview.date)}
+          </p>
+
+          <p>
+            <b>Reference:</b>
+            ${esc(preview.ref || "—")}
+          </p>
+
+          <p>
+            <b>Description:</b>
+            ${esc(preview.description || "—")}
+          </p>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(preview.lines || []).map(line => `
+                <tr>
+                  <td>
+                    ${esc(
+                      line.account_name ||
+                      line.account_code ||
+                      "—"
+                    )}
+                  </td>
+                  <td>${esc(line.description || "—")}</td>
+                  <td>${money(line.debit)}</td>
+                  <td>${money(line.credit)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="2">Total</th>
+                <th>${money(preview.dr_total)}</th>
+                <th>${money(preview.cr_total)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9JournalPreviewModal")
+        ?.classList.remove("hidden");
+    } catch (error) {
+      IFRS9.previewModificationId = null;
+
+      setMsg(
+        error.message ||
+        "Failed to preview the modification journal."
+      );
+    }
+  }
+
+  function collectIfrs9AmortisedCostPayload() {
+    return {
+      period_start:
+        $("ifrs9AmortPeriodStart")?.value,
+      period_end:
+        $("ifrs9AmortPeriodEnd")?.value,
+      day_count_basis:
+        $("ifrs9AmortDayBasis")?.value ||
+        "actual_365",
+      cash_received: Number(
+        $("ifrs9AmortCashReceived")?.value || 0
+      ),
+      cash_paid: Number(
+        $("ifrs9AmortCashPaid")?.value || 0
+      ),
+    };
+  }
+
+  async function calculateIfrs9AmortisedCost(
+    instrumentId
+  ) {
+    const payload =
+      collectIfrs9AmortisedCostPayload();
+
+    if (!payload.period_start || !payload.period_end) {
+      return alert(
+        "Select the period start and end dates."
+      );
+    }
+
+    if (payload.period_start > payload.period_end) {
+      return alert(
+        "Period start cannot be later than period end."
+      );
+    }
+
+    setMsg("Calculating amortised cost...");
+
+    try {
+      IFRS9.amortisedCostCalculation =
+        await apiFetch(
+          ENDPOINTS.ifrs9.amortisedCostCalculate(
+            cid(),
+            instrumentId,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+
+      const row =
+        IFRS9.amortisedCostCalculation;
+
+      $("ifrs9AmortisedCostResult").innerHTML = `
+        <div class="status-banner success">
+          Amortised-cost period calculated.
+        </div>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <b>Opening Carrying Amount</b>
+            <p>${money(row.opening_carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Effective Interest</b>
+            <p>
+              ${money(
+                Number(row.interest_income || 0) +
+                Number(row.interest_expense || 0)
+              )}
+            </p>
+          </div>
+
+          <div>
+            <b>Contractual Cash Flow</b>
+            <p>${money(row.contractual_cashflow)}</p>
+          </div>
+
+          <div>
+            <b>Closing Carrying Amount</b>
+            <p>${money(row.closing_carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Days</b>
+            <p>${row.day_count}</p>
+          </div>
+
+          <div>
+            <b>Annual EIR</b>
+            <p>
+              ${(Number(
+                row.effective_interest_rate || 0
+              ) * 100).toFixed(6)}%
+            </p>
+          </div>
+        </div>
+      `;
+
+      $("ifrs9CreateAmortisedRunBtn").disabled =
+        false;
+
+      setMsg("");
+    } catch (error) {
+      IFRS9.amortisedCostCalculation = null;
+
+      if ($("ifrs9CreateAmortisedRunBtn")) {
+        $("ifrs9CreateAmortisedRunBtn").disabled =
+          true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to calculate amortised cost."
+      );
+    }
+  }
+
+  async function createIfrs9AmortisedCostRun(
+    instrumentId
+  ) {
+    if (!IFRS9.amortisedCostCalculation) {
+      return alert(
+        "Calculate the period before creating the run."
+      );
+    }
+
+    const button =
+      $("ifrs9CreateAmortisedRunBtn");
+
+    const originalText =
+      button?.textContent || "Create Run";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.amortisedCostRuns(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(
+            collectIfrs9AmortisedCostPayload()
+          ),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg("Amortised-cost run created.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to create amortised-cost run."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  async function previewIfrs9AmortisedCostRun(
+    runId
+  ) {
+    try {
+      IFRS9.previewAmortisedCostRunId =
+        Number(runId);
+
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.amortisedCostPreview(
+          cid(),
+          runId,
+        )
+      );
+
+      const preview = result.preview || {};
+
+      $("ifrs9PreviewBody").innerHTML = `
+        <div class="journal-preview-header">
+          <p>
+            <b>Date:</b>
+            ${dateText(preview.date)}
+          </p>
+
+          <p>
+            <b>Reference:</b>
+            ${esc(preview.ref || "—")}
+          </p>
+
+          <p>
+            <b>Description:</b>
+            ${esc(preview.description || "—")}
+          </p>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(preview.lines || []).map(line => `
+                <tr>
+                  <td>
+                    ${esc(
+                      line.account_name ||
+                      line.account_code ||
+                      "—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(line.description || "—")}
+                  </td>
+
+                  <td>${money(line.debit)}</td>
+                  <td>${money(line.credit)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="2">Total</th>
+                <th>${money(preview.dr_total)}</th>
+                <th>${money(preview.cr_total)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9JournalPreviewModal")
+        ?.classList.remove("hidden");
+    } catch (error) {
+      IFRS9.previewAmortisedCostRunId = null;
+
+      setMsg(
+        error.message ||
+        "Failed to preview the interest journal."
+      );
+    }
+  }
+
+  function ifrs9SettlementAccountOptions(
+    selectedCode = ""
+  ) {
+    const accounts = ifrs9PostingAccounts("asset")
+      .filter(account => {
+        const text = [
+          account.name,
+          account.role,
+          account.category,
+          account.section,
+        ].join(" ").toLowerCase();
+
+        return /bank|cash|clearing|settlement/.test(
+          text
+        );
+      });
+
+    const source = accounts.length
+      ? accounts
+      : ifrs9PostingAccounts();
+
+    return `
+      <option value="">Select settlement account…</option>
+
+      ${source.map(account => `
+        <option
+          value="${esc(account.code)}"
+          ${
+            String(account.code) ===
+            String(selectedCode)
+              ? "selected"
+              : ""
+          }
+        >
+          ${esc(account.name)}
+        </option>
+      `).join("")}
+    `;
+  }
+
+  function collectIfrs9DerecognitionPayload() {
+    const createReplacement = Boolean(
+      $("ifrs9CreateReplacementInstrument")
+        ?.checked
+    );
+
+    const replacementAmount = Number(
+      $("ifrs9ReplacementAmount")?.value || 0
+    );
+
+    return {
+      derecognition_date:
+        $("ifrs9DerecognitionDate")?.value,
+
+      derecognition_type:
+        $("ifrs9DerecognitionType")?.value ||
+        "settlement",
+
+      consideration_received: Number(
+        $("ifrs9DerecognitionReceived")
+          ?.value || 0
+      ),
+
+      consideration_paid: Number(
+        $("ifrs9DerecognitionPaid")
+          ?.value || 0
+      ),
+
+      allowance_released: Number(
+        $("ifrs9DerecognitionAllowance")
+          ?.value || 0
+      ),
+
+      settlement_account_code:
+        $("ifrs9DerecognitionAccount")
+          ?.value || null,
+
+      modification_id:
+        $("ifrs9DerecognitionModification")
+          ?.value
+          ? Number(
+              $("ifrs9DerecognitionModification")
+                .value
+            )
+          : null,
+
+      reason:
+        $("ifrs9DerecognitionReason")
+          ?.value
+          .trim(),
+
+      create_replacement_instrument:
+        createReplacement,
+
+      replacement_instrument:
+        createReplacement
+          ? {
+              instrument_name:
+                $("ifrs9ReplacementInstrumentName")
+                  ?.value
+                  .trim(),
+
+              recognition_date:
+                $("ifrs9ReplacementRecognitionDate")
+                  ?.value ||
+                $("ifrs9DerecognitionDate")
+                  ?.value,
+
+              original_amount:
+                replacementAmount,
+
+              carrying_amount:
+                replacementAmount,
+
+              contractual_interest_rate:
+                Number(
+                  $("ifrs9ReplacementContractualRate")
+                    ?.value || 0
+                ) / 100,
+            }
+          : {},
+    };
+  }
+
+  async function calculateIfrs9Derecognition(
+    instrumentId
+  ) {
+    const payload =
+      collectIfrs9DerecognitionPayload();
+
+    if (!payload.derecognition_date) {
+      return alert(
+        "Derecognition date is required."
+      );
+    }
+
+    if (!payload.reason) {
+      return alert(
+        "Derecognition reason is required."
+      );
+    }
+
+    if (!payload.settlement_account_code) {
+      return alert(
+        "Select a settlement account."
+      );
+    }
+
+    if (
+      payload.create_replacement_instrument &&
+      (
+        !payload.replacement_instrument
+          .instrument_name ||
+        !(
+          payload.replacement_instrument
+            .original_amount > 0
+        )
+      )
+    ) {
+      return alert(
+        "Enter the replacement instrument name " +
+        "and carrying amount."
+      );
+    }
+
+    setMsg("Calculating derecognition...");
+
+    try {
+      IFRS9.derecognitionCalculation =
+        await apiFetch(
+          ENDPOINTS.ifrs9
+            .derecognitionCalculate(
+              cid(),
+              instrumentId,
+            ),
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+
+      const row =
+        IFRS9.derecognitionCalculation;
+
+      $("ifrs9DerecognitionResult").innerHTML = `
+        <div class="status-banner success">
+          Derecognition calculated.
+        </div>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <b>Carrying Amount</b>
+            <p>${money(row.carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Allowance Released</b>
+            <p>${money(row.allowance_released)}</p>
+          </div>
+
+          <div>
+            <b>Net Carrying Amount</b>
+            <p>${money(row.net_carrying_amount)}</p>
+          </div>
+
+          <div>
+            <b>Consideration</b>
+            <p>
+              ${money(
+                Number(
+                  row.consideration_received || 0
+                ) +
+                Number(
+                  row.consideration_paid || 0
+                )
+              )}
+            </p>
+          </div>
+
+          <div>
+            <b>Gain</b>
+            <p>${money(row.gain)}</p>
+          </div>
+
+          <div>
+            <b>Loss</b>
+            <p>${money(row.loss)}</p>
+          </div>
+        </div>
+      `;
+
+      $("ifrs9CreateDerecognitionBtn")
+        .disabled = false;
+
+      setMsg("");
+    } catch (error) {
+      IFRS9.derecognitionCalculation = null;
+
+      if ($("ifrs9CreateDerecognitionBtn")) {
+        $("ifrs9CreateDerecognitionBtn")
+          .disabled = true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to calculate derecognition."
+      );
+    }
+  }
+
+  async function createIfrs9Derecognition(
+    instrumentId
+  ) {
+    if (!IFRS9.derecognitionCalculation) {
+      return alert(
+        "Calculate derecognition before creating it."
+      );
+    }
+
+    const button =
+      $("ifrs9CreateDerecognitionBtn");
+
+    const originalText =
+      button?.textContent ||
+      "Create Derecognition";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.derecognitions(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(
+            collectIfrs9DerecognitionPayload()
+          ),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg("Derecognition draft created.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to create derecognition."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  async function createIfrs9Derecognition(
+    instrumentId
+  ) {
+    if (!IFRS9.derecognitionCalculation) {
+      return alert(
+        "Calculate derecognition before creating it."
+      );
+    }
+
+    const button =
+      $("ifrs9CreateDerecognitionBtn");
+
+    const originalText =
+      button?.textContent ||
+      "Create Derecognition";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.derecognitions(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(
+            collectIfrs9DerecognitionPayload()
+          ),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg("Derecognition draft created.");
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to create derecognition."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
     }
   }
 
@@ -73208,6 +85661,367 @@ async function saveEditModal() {
       setMsg("Financial instrument classified.");
     } catch (error) {
       setMsg(error.message || "Classification failed.");
+    }
+  }
+
+  function collectIfrs9FairValuePayload() {
+    return {
+      valuation_date:
+        $("ifrs9FairValueDate")?.value,
+
+      current_fair_value: Number(
+        $("ifrs9CurrentFairValue")?.value || 0
+      ),
+
+      fair_value_level:
+        $("ifrs9FairValueLevel")?.value,
+
+      valuation_method:
+        $("ifrs9ValuationMethod")?.value,
+
+      valuation_source:
+        $("ifrs9ValuationSource")
+          ?.value
+          .trim() || null,
+
+      market_reference:
+        $("ifrs9MarketReference")
+          ?.value
+          .trim() || null,
+
+      notes:
+        $("ifrs9FairValueNotes")
+          ?.value
+          .trim() || null,
+
+      observable_inputs: {},
+      unobservable_inputs: {},
+      sensitivity: {},
+    };
+  }
+
+  async function calculateIfrs9FairValue(
+    instrumentId
+  ) {
+    const payload =
+      collectIfrs9FairValuePayload();
+
+    if (!payload.valuation_date) {
+      return alert("Valuation date is required.");
+    }
+
+    if (payload.current_fair_value < 0) {
+      return alert(
+        "Current fair value cannot be negative."
+      );
+    }
+
+    if (!payload.fair_value_level) {
+      return alert(
+        "Select a fair-value hierarchy level."
+      );
+    }
+
+    if (!payload.valuation_method) {
+      return alert(
+        "Select a valuation method."
+      );
+    }
+
+    setMsg("Calculating fair-value movement...");
+
+    try {
+      IFRS9.fairValueCalculation =
+        await apiFetch(
+          ENDPOINTS.ifrs9.fairValueCalculate(
+            cid(),
+            instrumentId,
+          ),
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+
+      const row =
+        IFRS9.fairValueCalculation;
+
+      $("ifrs9FairValueResult").innerHTML = `
+        <div class="status-banner ${
+          Number(row.fair_value_movement || 0) === 0
+            ? "warning"
+            : "success"
+        }">
+          ${
+            Number(row.fair_value_movement || 0) === 0
+              ? "The valuation does not produce a fair-value movement."
+              : "Fair-value movement calculated."
+          }
+        </div>
+
+        <div class="form-grid" style="margin-top:10px;">
+          <div>
+            <b>Previous Fair Value</b>
+            <p>${money(row.previous_fair_value)}</p>
+          </div>
+
+          <div>
+            <b>Current Fair Value</b>
+            <p>${money(row.current_fair_value)}</p>
+          </div>
+
+          <div>
+            <b>Movement</b>
+            <p>${money(row.fair_value_movement)}</p>
+          </div>
+
+          <div>
+            <b>Gain</b>
+            <p>${money(row.gain)}</p>
+          </div>
+
+          <div>
+            <b>Loss</b>
+            <p>${money(row.loss)}</p>
+          </div>
+
+          <div>
+            <b>Recognised In</b>
+            <p>
+              ${esc(
+                label(row.gain_loss_destination)
+              )}
+            </p>
+          </div>
+        </div>
+      `;
+
+      $("ifrs9CreateFairValueBtn").disabled =
+        Number(row.fair_value_movement || 0) === 0;
+
+      setMsg("");
+    } catch (error) {
+      IFRS9.fairValueCalculation = null;
+
+      if ($("ifrs9CreateFairValueBtn")) {
+        $("ifrs9CreateFairValueBtn").disabled =
+          true;
+      }
+
+      setMsg(
+        error.message ||
+        "Failed to calculate fair value."
+      );
+    }
+  }
+
+  async function createIfrs9FairValue(
+    instrumentId
+  ) {
+    if (!IFRS9.fairValueCalculation) {
+      return alert(
+        "Calculate the fair-value movement first."
+      );
+    }
+
+    const button =
+      $("ifrs9CreateFairValueBtn");
+
+    const originalText =
+      button?.textContent ||
+      "Create Measurement";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.fairValueMeasurements(
+          cid(),
+          instrumentId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify(
+            collectIfrs9FairValuePayload()
+          ),
+        }
+      );
+
+      await loadAll();
+      await openInstrument(instrumentId);
+
+      setMsg(
+        "Fair-value measurement created."
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to create fair-value measurement."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  async function previewIfrs9FairValue(
+    measurementId
+  ) {
+    try {
+      IFRS9.previewFairValueMeasurementId =
+        Number(measurementId);
+
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.fairValuePreview(
+          cid(),
+          measurementId,
+        )
+      );
+
+      const preview = result.preview || {};
+
+      $("ifrs9PreviewBody").innerHTML = `
+        <div class="journal-preview-header">
+          <p>
+            <b>Date:</b>
+            ${dateText(preview.date)}
+          </p>
+
+          <p>
+            <b>Reference:</b>
+            ${esc(preview.ref || "—")}
+          </p>
+
+          <p>
+            <b>Description:</b>
+            ${esc(preview.description || "—")}
+          </p>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(preview.lines || []).map(line => `
+                <tr>
+                  <td>
+                    ${esc(
+                      line.account_name ||
+                      line.account_code ||
+                      "—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(line.description || "—")}
+                  </td>
+
+                  <td>${money(line.debit)}</td>
+                  <td>${money(line.credit)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="2">Total</th>
+                <th>${money(preview.dr_total)}</th>
+                <th>${money(preview.cr_total)}</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9JournalPreviewModal")
+        ?.classList.remove("hidden");
+    } catch (error) {
+      IFRS9.previewFairValueMeasurementId =
+        null;
+
+      setMsg(
+        error.message ||
+        "Failed to preview the fair-value journal."
+      );
+    }
+  }
+
+  async function reverseIfrs9FairValue(
+    measurementId
+  ) {
+    const measurement =
+      IFRS9.fairValueMeasurements.find(
+        row =>
+          Number(row.id) ===
+          Number(measurementId)
+      );
+
+    if (!measurement) {
+      return setMsg(
+        "Fair-value measurement not found."
+      );
+    }
+
+    const reason = prompt(
+      "Enter the reason for reversing this fair-value measurement:"
+    )?.trim();
+
+    if (!reason) return;
+
+    if (!confirm(
+      `Reverse fair-value measurement ${measurementId}?\n\n` +
+      `Valuation date: ${dateText(measurement.valuation_date)}\n` +
+      `Movement: ${money(measurement.gain_loss)}\n\n` +
+      "A reversing journal will be posted."
+    )) return;
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.reverseFairValueMeasurement(
+          cid(),
+          measurementId,
+        ),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason,
+            reversal_date: new Date()
+              .toISOString()
+              .slice(0, 10),
+          }),
+        }
+      );
+
+      await loadAll();
+
+      if (IFRS9.activeInstrumentId) {
+        await openInstrument(
+          IFRS9.activeInstrumentId
+        );
+      }
+
+      setMsg(
+        `Fair-value measurement reversed. ` +
+        `Journal: ${result.reversal_journal_id}.`
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        "Failed to reverse fair-value measurement."
+      );
     }
   }
 
@@ -73253,6 +86067,10 @@ async function saveEditModal() {
 
   function closePreview() {
     IFRS9.previewRunId = null;
+    IFRS9.previewAmortisedCostRunId = null;
+    IFRS9.previewDerecognitionId = null;
+    IFRS9.previewFairValueMeasurementId = null;
+    IFRS9.previewGeneralEclRunId=null;
     $("ifrs9JournalPreviewModal")?.classList.add("hidden");
   }
 
@@ -73263,6 +86081,203 @@ async function saveEditModal() {
 
   async function postRun() {
     if (!IFRS9.previewRunId) return;
+
+    if (IFRS9.previewAmortisedCostRunId) {
+      const runId =
+        IFRS9.previewAmortisedCostRunId;
+
+      try {
+        const result = await apiFetch(
+          ENDPOINTS.ifrs9.postAmortisedCostRun(
+            cid(),
+            runId,
+          ),
+          {
+            method: "POST",
+            body: "{}",
+          }
+        );
+
+        IFRS9.previewAmortisedCostRunId = null;
+        closePreview();
+        await loadAll();
+
+        if (IFRS9.activeInstrumentId) {
+          await openInstrument(
+            IFRS9.activeInstrumentId
+          );
+        }
+
+        setMsg(
+          `Effective-interest journal posted: ` +
+          `${result.journal_id}.`
+        );
+      } catch (error) {
+        setMsg(
+          error.message ||
+          "Failed to post effective-interest journal."
+        );
+      }
+
+      return;
+    }
+
+    if (IFRS9.previewModificationId) {
+      const modificationId =
+        IFRS9.previewModificationId;
+
+      try {
+        const result = await apiFetch(
+          ENDPOINTS.ifrs9.postModification(
+            cid(),
+            modificationId,
+          ),
+          {
+            method: "POST",
+            body: "{}",
+          }
+        );
+
+        IFRS9.previewModificationId = null;
+        closePreview();
+        await loadAll();
+
+        if (IFRS9.activeInstrumentId) {
+          await openInstrument(
+            IFRS9.activeInstrumentId
+          );
+        }
+
+        setMsg(
+          `Modification posted. Journal: ` +
+          `${result.journal_id}.`
+        );
+      } catch (error) {
+        setMsg(
+          error.message ||
+          "Failed to post the modification."
+        );
+      }
+
+      return;
+    }
+    
+    if (IFRS9.previewDerecognitionId) {
+      const derecognitionId =
+        IFRS9.previewDerecognitionId;
+
+      try {
+        const result = await apiFetch(
+          ENDPOINTS.ifrs9.postDerecognition(
+            cid(),
+            derecognitionId,
+          ),
+          {
+            method: "POST",
+            body: "{}",
+          }
+        );
+
+        IFRS9.previewDerecognitionId = null;
+
+        closePreview();
+        closeInstrumentModal();
+
+        await loadAll();
+
+        setMsg(
+          result.replacement_instrument?.id
+            ? `Instrument derecognised. Journal ${result.journal_id}; replacement instrument ${result.replacement_instrument.id} created.`
+            : `Instrument derecognised. Journal: ${result.journal_id}.`
+        );
+      } catch (error) {
+        setMsg(
+          error.message ||
+          "Failed to post derecognition."
+        );
+      }
+
+      return;
+    }
+
+    if (IFRS9.previewFairValueMeasurementId) {
+      const measurementId =
+        IFRS9.previewFairValueMeasurementId;
+
+      try {
+        const result = await apiFetch(
+          ENDPOINTS.ifrs9.postFairValueMeasurement(
+            cid(),
+            measurementId,
+          ),
+          {
+            method: "POST",
+            body: "{}",
+          }
+        );
+
+        IFRS9.previewFairValueMeasurementId =
+          null;
+
+        closePreview();
+        await loadAll();
+
+        if (IFRS9.activeInstrumentId) {
+          await openInstrument(
+            IFRS9.activeInstrumentId
+          );
+        }
+
+        setMsg(
+          `Fair-value journal posted: ` +
+          `${result.journal_id}.`
+        );
+      } catch (error) {
+        setMsg(
+          error.message ||
+          "Failed to post the fair-value journal."
+        );
+      }
+
+      return;
+    }
+
+    if (IFRS9.previewGeneralEclRunId) {
+      const runId=
+        IFRS9.previewGeneralEclRunId;
+
+      try {
+        const result=await apiFetch(
+          ENDPOINTS.ifrs9.postGeneralEclRun(
+            cid(),
+            runId
+          ),
+          {
+            method:"POST",
+            body:"{}",
+          }
+        );
+
+        IFRS9.previewGeneralEclRunId=null;
+
+        closePreview();
+        await loadAll();
+        showTab("general-ecl");
+
+        setMsg(
+          `General ECL journal posted: ${
+            result.journal_id
+          }.`
+        );
+      } catch(error) {
+        setMsg(
+          error.message||
+          "Failed to post General ECL journal."
+        );
+      }
+
+      return;
+    }
 
     try {
       await apiFetch(ENDPOINTS.ifrs9.postEclRun(cid(), IFRS9.previewRunId), {
@@ -73275,6 +86290,1828 @@ async function saveEditModal() {
       setMsg("ECL journal posted.");
     } catch (error) {
       setMsg(error.message || "Failed to post ECL journal.");
+    }
+  }
+
+  async function reverseEclRun(runId) {
+    const run = IFRS9.eclRuns.find(
+      item => Number(item.id) === Number(runId)
+    );
+
+    if (!run) {
+      return setMsg("ECL run not found.");
+    }
+
+    if (run.status !== "posted") {
+      return setMsg("Only posted ECL runs can be reversed.");
+    }
+
+    if (run.reversal_journal_id) {
+      return setMsg("This ECL run has already been reversed.");
+    }
+
+    const reason = prompt(
+      "Enter the reason for reversing this ECL run:"
+    )?.trim();
+
+    if (!reason) return;
+
+    const confirmed = confirm(
+      `Reverse ECL run ${runId}?\n\n` +
+      `Reporting date: ${dateText(run.reporting_date)}\n` +
+      `Journal: ${run.journal_id || "—"}\n` +
+      `Reason: ${reason}\n\n` +
+      "A reversing journal will be posted."
+    );
+
+    if (!confirmed) return;
+
+    const button = document.querySelector(
+      `[data-ifrs9-reverse-run="${CSS.escape(String(runId))}"]`
+    );
+
+    const originalText = button?.textContent || "Reverse";
+
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Reversing...";
+    }
+
+    setMsg(`Reversing ECL run ${runId}...`);
+
+    try {
+      const result = await apiFetch(
+        ENDPOINTS.ifrs9.reverseEclRun(cid(), runId),
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason,
+            reversal_date: new Date()
+              .toISOString()
+              .slice(0, 10),
+          }),
+        }
+      );
+
+      await loadAll();
+
+      setMsg(
+        `ECL run ${runId} reversed. ` +
+        `Reversal journal: ${result.reversal_journal_id}.`
+      );
+    } catch (error) {
+      setMsg(
+        error.message ||
+        `Failed to reverse ECL run ${runId}.`
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  }
+
+  function collectGeneralEclModelPayload() {
+    return {
+      model_name:
+        $("ifrs9GeneralModelName")?.value.trim(),
+
+      model_code:
+        $("ifrs9GeneralModelCode")?.value.trim()||null,
+
+      applies_to:
+        $("ifrs9GeneralModelAppliesTo")?.value,
+
+      sicr_method:
+        $("ifrs9GeneralSicrMethod")?.value||"combined",
+
+      stage_2_days_past_due:Number(
+        $("ifrs9GeneralStage2Days")?.value||30
+      ),
+
+      default_definition_days:Number(
+        $("ifrs9GeneralDefaultDays")?.value||90
+      ),
+
+      cure_period_days:Number(
+        $("ifrs9GeneralCureDays")?.value||90
+      ),
+
+      lifetime_horizon_months:Number(
+        $("ifrs9GeneralLifetimeMonths")?.value||120
+      ),
+
+      twelve_month_horizon_months:12,
+      discount_basis:"effective_interest_rate",
+      scenario_method:"probability_weighted",
+
+      effective_from:
+        $("ifrs9GeneralEffectiveFrom")?.value||null,
+
+      review_date:
+        $("ifrs9GeneralReviewDate")?.value||null,
+
+      model_owner:
+        $("ifrs9GeneralModelOwner")?.value.trim()||null,
+    };
+  }
+
+
+  async function createGeneralEclModel() {
+    const payload=collectGeneralEclModelPayload();
+
+    if (!payload.model_name) {
+      return alert("General ECL model name is required.");
+    }
+
+    const button=$("ifrs9CreateGeneralModelBtn");
+    const original=button?.textContent||"Create General ECL Model";
+
+    if (button) {
+      button.disabled=true;
+      button.textContent="Creating...";
+    }
+
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclModels(cid()),
+        {
+          method:"POST",
+          body:JSON.stringify(payload),
+        }
+      );
+
+      [
+        "ifrs9GeneralModelName",
+        "ifrs9GeneralModelCode",
+        "ifrs9GeneralEffectiveFrom",
+        "ifrs9GeneralReviewDate",
+        "ifrs9GeneralModelOwner",
+      ].forEach(id=>{
+        if ($(id)) $(id).value="";
+      });
+
+      await loadAll();
+      await configureGeneralEclModel(result.item.id);
+
+      setMsg(
+        "General ECL model created. Configure scenarios, PD and LGD."
+      );
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to create General ECL model."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled=false;
+        button.textContent=original;
+      }
+    }
+  }
+
+  function renderGeneralEclModels() {
+    const el=$("ifrs9GeneralModelList");
+    if (!el) return;
+
+    const rows=IFRS9.generalEclModels||[];
+
+    if (!rows.length) {
+      el.innerHTML=`
+        <p class="muted">
+          No General ECL models configured.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Applies To</th>
+              <th>SICR</th>
+              <th>Scenarios</th>
+              <th>PD Rows</th>
+              <th>LGD Rules</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map(row=>`
+              <tr>
+                <td>
+                  <strong>${esc(row.model_name||"—")}</strong>
+                  <div class="muted" style="font-size:12px;">
+                    ${esc(row.model_code||"No model code")}
+                  </div>
+                </td>
+
+                <td>${esc(label(row.applies_to))}</td>
+                <td>${esc(label(row.sicr_method))}</td>
+                <td>${Number(row.scenario_count||0)}</td>
+                <td>${Number(row.pd_curve_count||0)}</td>
+                <td>${Number(row.lgd_count||0)}</td>
+
+                <td>
+                  <span class="pill ${
+                    row.is_active?"success":"warning"
+                  }">
+                    ${
+                      row.is_active
+                        ?"Active"
+                        :esc(label(row.approval_status||"draft"))
+                    }
+                  </span>
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-configure-general-model="${row.id}"
+                  >
+                    Configure
+                  </button>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function configureGeneralEclModel(modelId) {
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclModel(
+          cid(),
+          modelId
+        )
+      );
+
+      IFRS9.selectedGeneralEclModelId=Number(modelId);
+      IFRS9.generalEclModel=result.model||null;
+      IFRS9.generalEclScenarios=result.scenarios||[];
+      IFRS9.generalEclPdCurves=result.pd_curves||[];
+      IFRS9.generalEclLgds=result.lgd_assumptions||[];
+
+      $("ifrs9GeneralConfigTitle").textContent=
+        `${result.model?.model_name||"General ECL"} Configuration`;
+
+      $("ifrs9GeneralModelConfig")
+        ?.classList.remove("hidden");
+
+      renderGeneralScenarios();
+      renderGeneralPdCurves();
+      renderGeneralLgds();
+
+      showGeneralConfigTab("scenarios");
+
+      $("ifrs9GeneralModelConfig")
+        ?.scrollIntoView({
+          behavior:"smooth",
+          block:"start",
+        });
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to load General ECL model."
+      );
+    }
+  }
+
+  function showGeneralConfigTab(tab) {
+    document.querySelectorAll(
+      "[data-ifrs9-general-config-tab]"
+    ).forEach(button=>
+      button.classList.toggle(
+        "active",
+        button.dataset.ifrs9GeneralConfigTab===tab
+      )
+    );
+
+    $("ifrs9GeneralScenariosPanel")
+      ?.classList.toggle("hidden",tab!=="scenarios");
+
+    $("ifrs9GeneralPdPanel")
+      ?.classList.toggle("hidden",tab!=="pd-curves");
+
+    $("ifrs9GeneralLgdPanel")
+      ?.classList.toggle("hidden",tab!=="lgd");
+  }
+
+  function generalScenarioRow(row={}) {
+    return `
+      <tr data-ifrs9-general-scenario-row>
+        <td>
+          <input
+            data-general-scenario-code
+            value="${esc(row.scenario_code||"")}"
+            placeholder="base"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-scenario-name
+            value="${esc(row.scenario_name||"")}"
+            placeholder="Base Case"
+          >
+        </td>
+
+        <td>
+          <select data-general-scenario-type>
+            ${["base","upside","downside","severe"]
+              .map(value=>`
+                <option
+                  value="${value}"
+                  ${
+                    value===(row.scenario_type||"base")
+                      ?"selected":""
+                  }
+                >
+                  ${label(value)}
+                </option>
+              `).join("")}
+          </select>
+        </td>
+
+        <td>
+          <input
+            data-general-scenario-weight
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value="${Number(row.probability_weight||0)*100}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-scenario-pd
+            type="number"
+            min="0"
+            step="0.0001"
+            value="${Number(row.pd_multiplier??1)}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-scenario-lgd
+            type="number"
+            min="0"
+            step="0.0001"
+            value="${Number(row.lgd_multiplier??1)}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-scenario-ead
+            type="number"
+            min="0"
+            step="0.0001"
+            value="${Number(row.ead_multiplier??1)}"
+          >
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            data-ifrs9-remove-general-scenario
+          >
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+
+  function renderGeneralScenarios() {
+    const rows=IFRS9.generalEclScenarios.length
+      ?IFRS9.generalEclScenarios
+      :[
+        {
+          scenario_code:"base",
+          scenario_name:"Base Case",
+          scenario_type:"base",
+          probability_weight:0.60,
+          pd_multiplier:1,
+          lgd_multiplier:1,
+          ead_multiplier:1,
+        },
+        {
+          scenario_code:"upside",
+          scenario_name:"Upside",
+          scenario_type:"upside",
+          probability_weight:0.20,
+          pd_multiplier:0.80,
+          lgd_multiplier:0.90,
+          ead_multiplier:1,
+        },
+        {
+          scenario_code:"downside",
+          scenario_name:"Downside",
+          scenario_type:"downside",
+          probability_weight:0.20,
+          pd_multiplier:1.30,
+          lgd_multiplier:1.15,
+          ead_multiplier:1,
+        },
+      ];
+
+    $("ifrs9GeneralScenarioList").innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Weight %</th>
+              <th>PD ×</th>
+              <th>LGD ×</th>
+              <th>EAD ×</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="ifrs9GeneralScenarioRows">
+            ${rows.map(generalScenarioRow).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+
+  async function saveGeneralScenarios() {
+    if (!IFRS9.selectedGeneralEclModelId) {
+      return alert("Select a General ECL model.");
+    }
+
+    const items=[
+      ...document.querySelectorAll(
+        "[data-ifrs9-general-scenario-row]"
+      ),
+    ].map(row=>({
+      scenario_code:
+        row.querySelector(
+          "[data-general-scenario-code]"
+        )?.value.trim(),
+
+      scenario_name:
+        row.querySelector(
+          "[data-general-scenario-name]"
+        )?.value.trim(),
+
+      scenario_type:
+        row.querySelector(
+          "[data-general-scenario-type]"
+        )?.value,
+
+      probability_weight:Number(
+        row.querySelector(
+          "[data-general-scenario-weight]"
+        )?.value||0
+      )/100,
+
+      pd_multiplier:Number(
+        row.querySelector(
+          "[data-general-scenario-pd]"
+        )?.value||1
+      ),
+
+      lgd_multiplier:Number(
+        row.querySelector(
+          "[data-general-scenario-lgd]"
+        )?.value||1
+      ),
+
+      ead_multiplier:Number(
+        row.querySelector(
+          "[data-general-scenario-ead]"
+        )?.value||1
+      ),
+    }));
+
+    const total=items.reduce(
+      (sum,row)=>sum+row.probability_weight,
+      0
+    );
+
+    if (Math.abs(total-1)>0.000001) {
+      return alert(
+        `Scenario weights must total 100%. Current total: ${
+          (total*100).toFixed(2)
+        }%.`
+      );
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclScenarios(
+          cid(),
+          IFRS9.selectedGeneralEclModelId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({items}),
+        }
+      );
+
+      await configureGeneralEclModel(
+        IFRS9.selectedGeneralEclModelId
+      );
+
+      setMsg("General ECL scenarios saved.");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to save General ECL scenarios."
+      );
+    }
+  }
+
+  function generalPdRow(row={}) {
+    return `
+      <tr data-ifrs9-general-pd-row>
+        <td>
+          <input
+            data-general-pd-rating
+            value="${esc(row.rating_grade||"")}"
+            placeholder="Grade A"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-pd-month
+            type="number"
+            min="1"
+            value="${Number(row.period_month||12)}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-pd-marginal
+            type="number"
+            min="0"
+            max="100"
+            step="0.0001"
+            value="${Number(row.marginal_pd||0)*100}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-pd-cumulative
+            type="number"
+            min="0"
+            max="100"
+            step="0.0001"
+            value="${Number(row.cumulative_pd||0)*100}"
+          >
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            data-ifrs9-remove-general-pd
+          >
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+
+  function renderGeneralPdCurves() {
+    $("ifrs9GeneralPdList").innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Rating Grade</th>
+              <th>Month</th>
+              <th>Marginal PD %</th>
+              <th>Cumulative PD %</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody id="ifrs9GeneralPdRows">
+            ${
+              IFRS9.generalEclPdCurves.length
+                ?IFRS9.generalEclPdCurves
+                  .map(generalPdRow).join("")
+                :generalPdRow()
+            }
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+
+  async function saveGeneralPdCurves() {
+    if (!IFRS9.selectedGeneralEclModelId) {
+      return alert("Select a General ECL model.");
+    }
+
+    const items=[
+      ...document.querySelectorAll(
+        "[data-ifrs9-general-pd-row]"
+      ),
+    ].map(row=>({
+      rating_grade:
+        row.querySelector(
+          "[data-general-pd-rating]"
+        )?.value.trim(),
+
+      period_month:Number(
+        row.querySelector(
+          "[data-general-pd-month]"
+        )?.value||0
+      ),
+
+      marginal_pd:Number(
+        row.querySelector(
+          "[data-general-pd-marginal]"
+        )?.value||0
+      )/100,
+
+      cumulative_pd:Number(
+        row.querySelector(
+          "[data-general-pd-cumulative]"
+        )?.value||0
+      )/100,
+    }));
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclPdCurves(
+          cid(),
+          IFRS9.selectedGeneralEclModelId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({items}),
+        }
+      );
+
+      await configureGeneralEclModel(
+        IFRS9.selectedGeneralEclModelId
+      );
+
+      setMsg("General ECL PD curves saved.");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to save General ECL PD curves."
+      );
+    }
+  }
+
+  function generalLgdRow(row={}) {
+    return `
+      <tr data-ifrs9-general-lgd-row>
+        <td>
+          <input
+            data-general-lgd-code
+            value="${esc(row.lgd_code||"")}"
+            placeholder="UNSECURED"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-lgd-name
+            value="${esc(row.lgd_name||"")}"
+            placeholder="Unsecured Loans"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-lgd-collateral
+            value="${esc(row.collateral_type||"")}"
+            placeholder="None"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-lgd-base
+            type="number"
+            min="0"
+            max="100"
+            step="0.0001"
+            value="${Number(row.base_lgd||0)*100}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-lgd-recovery
+            type="number"
+            min="0"
+            max="100"
+            step="0.0001"
+            value="${Number(row.recovery_rate||0)*100}"
+          >
+        </td>
+
+        <td>
+          <input
+            data-general-lgd-delay
+            type="number"
+            min="0"
+            value="${Number(row.recovery_delay_months||0)}"
+          >
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            data-ifrs9-remove-general-lgd
+          >
+            Remove
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+
+
+  function renderGeneralLgds() {
+    $("ifrs9GeneralLgdList").innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Collateral</th>
+              <th>Base LGD %</th>
+              <th>Recovery %</th>
+              <th>Delay Months</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody id="ifrs9GeneralLgdRows">
+            ${
+              IFRS9.generalEclLgds.length
+                ?IFRS9.generalEclLgds
+                  .map(generalLgdRow).join("")
+                :generalLgdRow()
+            }
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+
+  async function saveGeneralLgds() {
+    if (!IFRS9.selectedGeneralEclModelId) {
+      return alert("Select a General ECL model.");
+    }
+
+    const items=[
+      ...document.querySelectorAll(
+        "[data-ifrs9-general-lgd-row]"
+      ),
+    ].map(row=>({
+      lgd_code:
+        row.querySelector(
+          "[data-general-lgd-code]"
+        )?.value.trim(),
+
+      lgd_name:
+        row.querySelector(
+          "[data-general-lgd-name]"
+        )?.value.trim(),
+
+      collateral_type:
+        row.querySelector(
+          "[data-general-lgd-collateral]"
+        )?.value.trim()||null,
+
+      base_lgd:Number(
+        row.querySelector(
+          "[data-general-lgd-base]"
+        )?.value||0
+      )/100,
+
+      recovery_rate:Number(
+        row.querySelector(
+          "[data-general-lgd-recovery]"
+        )?.value||0
+      )/100,
+
+      recovery_delay_months:Number(
+        row.querySelector(
+          "[data-general-lgd-delay]"
+        )?.value||0
+      ),
+
+      recovery_cost_rate:0,
+    }));
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclLgds(
+          cid(),
+          IFRS9.selectedGeneralEclModelId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({items}),
+        }
+      );
+
+      await configureGeneralEclModel(
+        IFRS9.selectedGeneralEclModelId
+      );
+
+      setMsg("General ECL LGD assumptions saved.");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to save General ECL LGD assumptions."
+      );
+    }
+  }
+
+  const generalEclTypes=new Set([
+    "loan_receivable","staff_loan","director_loan","deposit_asset",
+    "bond","note_receivable","other_financial_asset"
+  ]);
+
+  const item=(IFRS9.instruments||[]).find(
+    row=>Number(row.id)===Number(instrumentId)
+  );
+
+  const generalEclAllowed=Boolean(
+    item&&
+    generalEclTypes.has(item.instrument_type)&&
+    ["amortised_cost","fvoci"].includes(item.measurement_category)&&
+    item.status==="active"
+  );
+
+  const generalAssessmentResult=generalEclAllowed
+    ?apiFetch(
+        ENDPOINTS.ifrs9.generalEclAssessments(cid(),instrumentId)
+      )
+    :{profile:null,items:[]};
+
+  IFRS9.creditRiskProfile=generalAssessmentResult.profile||null;
+
+  function renderGeneralEclRunOptions() {
+    const select=$("ifrs9GeneralRunModel");
+    if (!select) return;
+
+    const current=select.value;
+
+    const models=IFRS9.generalEclModels.filter(
+      row=>
+        row.is_active ||
+        row.approval_status==="approved"
+    );
+
+    select.innerHTML=`
+      <option value="">
+        Select General ECL model
+      </option>
+
+      ${models.map(row=>`
+        <option value="${row.id}">
+          ${esc(row.model_name)}
+          — ${esc(label(row.applies_to))}
+        </option>
+      `).join("")}
+    `;
+
+    if (
+      models.some(
+        row=>String(row.id)===current
+      )
+    ) {
+      select.value=current;
+    }
+  }
+
+  async function calculateGeneralEclRun() {
+    const modelId=Number(
+      $("ifrs9GeneralRunModel")?.value||0
+    );
+
+    const reportingDate=
+      $("ifrs9GeneralRunDate")?.value;
+
+    if (!modelId) {
+      return alert(
+        "Select a General ECL model."
+      );
+    }
+
+    if (!reportingDate) {
+      return alert(
+        "Reporting date is required."
+      );
+    }
+
+    const button=
+      $("ifrs9CalculateGeneralRunBtn");
+
+    const originalText=
+      button?.textContent||
+      "Calculate General ECL";
+
+    if (button) {
+      button.disabled=true;
+      button.textContent="Calculating...";
+    }
+
+    setMsg("Calculating General ECL...");
+
+    try {
+      IFRS9.generalEclCalculation=
+        await apiFetch(
+          ENDPOINTS.ifrs9.generalEclCalculate(
+            cid()
+          ),
+          {
+            method:"POST",
+            body:JSON.stringify({
+              model_id:modelId,
+              reporting_date:reportingDate,
+            }),
+          }
+        );
+
+      const data=
+        IFRS9.generalEclCalculation;
+
+      $("ifrs9GeneralGrossExposure").value=
+        Number(
+          data.total_gross_exposure||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralTotalEad").value=
+        Number(
+          data.total_ead||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralTotalEcl").value=
+        Number(
+          data.total_ecl||0
+        ).toFixed(2);
+
+      $("ifrs9GeneralMovementEcl").value=
+        Number(
+          data.movement_ecl||0
+        ).toFixed(2);
+
+      renderGeneralEclCalculation();
+
+      $("ifrs9CreateGeneralRunBtn").disabled=
+        !(data.lines||[]).length;
+
+      setMsg("General ECL calculated.");
+    } catch(error) {
+      IFRS9.generalEclCalculation=null;
+
+      $("ifrs9GeneralRunPreview").innerHTML="";
+
+      if ($("ifrs9CreateGeneralRunBtn")) {
+        $("ifrs9CreateGeneralRunBtn")
+          .disabled=true;
+      }
+
+      setMsg(
+        error.message||
+        "Failed to calculate General ECL."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled=false;
+        button.textContent=originalText;
+      }
+    }
+  }
+
+  function renderGeneralEclCalculation() {
+    const el=$("ifrs9GeneralRunPreview");
+    const data=IFRS9.generalEclCalculation;
+
+    if (!el) return;
+
+    if (!data?.lines?.length) {
+      el.innerHTML=`
+        <p class="muted">
+          No General ECL calculation lines.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="form-grid">
+        <div>
+          <b>Stage 1 Exposure</b>
+          <p>${money(data.stage_1_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 1 ECL</b>
+          <p>${money(data.stage_1_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Stage 2 Exposure</b>
+          <p>${money(data.stage_2_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 2 ECL</b>
+          <p>${money(data.stage_2_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Stage 3 Exposure</b>
+          <p>${money(data.stage_3_exposure)}</p>
+        </div>
+
+        <div>
+          <b>Stage 3 ECL</b>
+          <p>${money(data.stage_3_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Previous ECL</b>
+          <p>${money(data.previous_ecl)}</p>
+        </div>
+
+        <div>
+          <b>Movement</b>
+          <p>${money(data.movement_ecl)}</p>
+        </div>
+      </div>
+
+      <div
+        class="table-responsive"
+        style="margin-top:16px;"
+      >
+        <table>
+          <thead>
+            <tr>
+              <th>Instrument</th>
+              <th>Stage</th>
+              <th>Rating</th>
+              <th>Gross Exposure</th>
+              <th>Total EAD</th>
+              <th>Collateral</th>
+              <th>Net EAD</th>
+              <th>PD</th>
+              <th>LGD</th>
+              <th>ECL</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${data.lines.map(row=>`
+              <tr>
+                <td>
+                  ${esc(
+                    row.instrument_name||"—"
+                  )}
+                </td>
+
+                <td>
+                  Stage ${Number(
+                    row.assessed_stage||1
+                  )}
+                </td>
+
+                <td>
+                  ${esc(row.rating_grade||"—")}
+                </td>
+
+                <td>
+                  ${money(row.gross_exposure)}
+                </td>
+
+                <td>
+                  ${money(row.total_ead)}
+                </td>
+
+                <td>
+                  ${money(
+                    Number(
+                      row.collateral_value||0
+                    )+
+                    Number(
+                      row.guarantee_value||0
+                    )
+                  )}
+                </td>
+
+                <td>
+                  ${money(row.net_ead)}
+                </td>
+
+                <td>
+                  ${(
+                    Number(row.base_pd||0)*100
+                  ).toFixed(4)}%
+                </td>
+
+                <td>
+                  ${(
+                    Number(row.base_lgd||0)*100
+                  ).toFixed(4)}%
+                </td>
+
+                <td>
+                  ${money(
+                    row.expected_credit_loss
+                  )}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+
+          <tfoot>
+            <tr>
+              <th colspan="3">Total</th>
+              <th>
+                ${money(
+                  data.total_gross_exposure
+                )}
+              </th>
+              <th>
+                ${money(data.total_ead)}
+              </th>
+              <th colspan="4"></th>
+              <th>
+                ${money(data.total_ecl)}
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+  }
+
+  async function createGeneralEclRun() {
+    if (!IFRS9.generalEclCalculation) {
+      return alert(
+        "Calculate General ECL first."
+      );
+    }
+
+    const modelId=Number(
+      $("ifrs9GeneralRunModel")?.value||0
+    );
+
+    const reportingDate=
+      $("ifrs9GeneralRunDate")?.value;
+
+    const button=
+      $("ifrs9CreateGeneralRunBtn");
+
+    const originalText=
+      button?.textContent||
+      "Create General ECL Run";
+
+    if (button) {
+      button.disabled=true;
+      button.textContent="Creating...";
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRuns(
+          cid()
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({
+            model_id:modelId,
+            reporting_date:reportingDate,
+            run_type:"period_end",
+          }),
+        }
+      );
+
+      IFRS9.generalEclCalculation=null;
+
+      $("ifrs9GeneralRunPreview").innerHTML="";
+
+      await loadAll();
+      showTab("general-ecl");
+
+      setMsg(
+        "General ECL run created."
+      );
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to create General ECL run."
+      );
+    } finally {
+      if (button?.isConnected) {
+        button.disabled=
+          !IFRS9.generalEclCalculation;
+
+        button.textContent=originalText;
+      }
+    }
+  }
+
+  function renderGeneralEclRuns() {
+    const el=$("ifrs9GeneralRunList");
+    if (!el) return;
+
+    const rows=IFRS9.generalEclRuns||[];
+
+    if (!rows.length) {
+      el.innerHTML=`
+        <p class="muted">
+          No General ECL runs recorded.
+        </p>
+      `;
+      return;
+    }
+
+    el.innerHTML=`
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Model</th>
+              <th>Gross Exposure</th>
+              <th>Stage 1 ECL</th>
+              <th>Stage 2 ECL</th>
+              <th>Stage 3 ECL</th>
+              <th>Total ECL</th>
+              <th>Movement</th>
+              <th>Status</th>
+              <th>Journal</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${rows.map(row=>`
+              <tr>
+                <td>
+                  ${dateText(
+                    row.reporting_date
+                  )}
+                </td>
+
+                <td>
+                  ${esc(row.model_name||"—")}
+                </td>
+
+                <td>
+                  ${money(
+                    row.total_gross_exposure
+                  )}
+                </td>
+
+                <td>
+                  ${money(row.stage_1_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.stage_2_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.stage_3_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.total_ecl)}
+                </td>
+
+                <td>
+                  ${money(row.movement_ecl)}
+                </td>
+
+                <td>
+                  ${esc(label(row.status))}
+                </td>
+
+                <td>
+                  ${esc(row.journal_id||"—")}
+                </td>
+
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-ifrs9-view-general-run="${row.id}"
+                  >
+                    View
+                  </button>
+
+                  ${
+                    row.status==="draft"
+                      ?`
+                        <button
+                          type="button"
+                          class="btn btn-primary btn-sm"
+                          data-ifrs9-preview-general-run="${row.id}"
+                        >
+                          Preview
+                        </button>
+                      `
+                      :""
+                  }
+
+                  ${
+                    row.status==="posted" &&
+                    row.journal_id &&
+                    !row.reversal_journal_id
+                      ?`
+                        <button
+                          type="button"
+                          class="btn btn-danger btn-sm"
+                          data-ifrs9-reverse-general-run="${row.id}"
+                        >
+                          Reverse
+                        </button>
+                      `
+                      :""
+                  }
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function viewGeneralEclRun(runId) {
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRun(
+          cid(),
+          runId
+        )
+      );
+
+      const run=result.run||{};
+      const lines=result.lines||[];
+
+      $("ifrs9InstrumentBody").innerHTML=`
+        <div class="form-grid">
+          <div>
+            <b>Reporting Date</b>
+            <p>${dateText(run.reporting_date)}</p>
+          </div>
+
+          <div>
+            <b>Model</b>
+            <p>${esc(run.model_name||"—")}</p>
+          </div>
+
+          <div>
+            <b>Gross Exposure</b>
+            <p>
+              ${money(run.total_gross_exposure)}
+            </p>
+          </div>
+
+          <div>
+            <b>Total ECL</b>
+            <p>${money(run.total_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Previous ECL</b>
+            <p>${money(run.previous_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Movement</b>
+            <p>${money(run.movement_ecl)}</p>
+          </div>
+
+          <div>
+            <b>Status</b>
+            <p>${esc(label(run.status))}</p>
+          </div>
+
+          <div>
+            <b>Journal</b>
+            <p>${esc(run.journal_id||"—")}</p>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Instrument</th>
+                <th>Stage</th>
+                <th>Gross</th>
+                <th>Total EAD</th>
+                <th>Net EAD</th>
+                <th>PD</th>
+                <th>LGD</th>
+                <th>ECL</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${lines.map(line=>`
+                <tr>
+                  <td>
+                    ${esc(
+                      line.instrument_name||"—"
+                    )}
+                  </td>
+                  <td>
+                    Stage ${line.assessed_stage}
+                  </td>
+                  <td>
+                    ${money(line.gross_exposure)}
+                  </td>
+                  <td>
+                    ${money(line.total_ead)}
+                  </td>
+                  <td>
+                    ${money(line.net_ead)}
+                  </td>
+                  <td>
+                    ${(
+                      Number(line.base_pd||0)*100
+                    ).toFixed(4)}%
+                  </td>
+                  <td>
+                    ${(
+                      Number(line.base_lgd||0)*100
+                    ).toFixed(4)}%
+                  </td>
+                  <td>
+                    ${money(
+                      line.expected_credit_loss
+                    )}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9InstrumentModal")
+        ?.classList.remove("hidden");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to load General ECL run."
+      );
+    }
+  }
+
+  async function previewGeneralEclRun(runId) {
+    try {
+      IFRS9.previewGeneralEclRunId=
+        Number(runId);
+
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclRunPreview(
+          cid(),
+          runId
+        )
+      );
+
+      const preview=result.preview||{};
+
+      $("ifrs9PreviewBody").innerHTML=`
+        <div class="journal-preview-header">
+          <p>
+            <b>Date:</b>
+            ${dateText(preview.date)}
+          </p>
+
+          <p>
+            <b>Reference:</b>
+            ${esc(preview.ref||"—")}
+          </p>
+
+          <p>
+            <b>Description:</b>
+            ${esc(preview.description||"—")}
+          </p>
+        </div>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${(preview.lines||[]).map(line=>`
+                <tr>
+                  <td>
+                    ${esc(
+                      line.account_name||
+                      line.account_code||
+                      "—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${esc(
+                      line.description||"—"
+                    )}
+                  </td>
+
+                  <td>
+                    ${money(line.debit)}
+                  </td>
+
+                  <td>
+                    ${money(line.credit)}
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+
+            <tfoot>
+              <tr>
+                <th colspan="2">Total</th>
+                <th>
+                  ${money(preview.dr_total)}
+                </th>
+                <th>
+                  ${money(preview.cr_total)}
+                </th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+
+      $("ifrs9JournalPreviewModal")
+        ?.classList.remove("hidden");
+    } catch(error) {
+      IFRS9.previewGeneralEclRunId=null;
+
+      setMsg(
+        error.message||
+        "Failed to preview General ECL journal."
+      );
+    }
+  }
+
+  async function reverseGeneralEclRun(runId) {
+    const run=IFRS9.generalEclRuns.find(
+      row=>Number(row.id)===Number(runId)
+    );
+
+    if (!run) {
+      return setMsg(
+        "General ECL run not found."
+      );
+    }
+
+    const reason=prompt(
+      "Enter the reason for reversing this General ECL run:"
+    )?.trim();
+
+    if (!reason) return;
+
+    if (!confirm(
+      `Reverse General ECL run ${runId}?\n\n`+
+      `Reporting date: ${
+        dateText(run.reporting_date)
+      }\n`+
+      `Movement: ${
+        money(run.movement_ecl)
+      }\n`+
+      `Journal: ${
+        run.journal_id||"—"
+      }\n\n`+
+      "A reversing journal will be posted."
+    )) return;
+
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.reverseGeneralEclRun(
+          cid(),
+          runId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify({
+            reason,
+            reversal_date:new Date()
+              .toISOString()
+              .slice(0,10),
+          }),
+        }
+      );
+
+      await loadAll();
+      showTab("general-ecl");
+
+      setMsg(
+        `General ECL run reversed. Journal: ${
+          result.reversal_journal_id
+        }.`
+      );
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to reverse General ECL run."
+      );
+    }
+  }
+
+  function collectCreditRiskProfile() {
+    return {
+      general_model_id:Number(
+        $("ifrs9CreditProfileModel")?.value||0
+      )||null,
+
+      origination_rating:
+        $("ifrs9OriginationRating")?.value.trim()||null,
+
+      current_rating:
+        $("ifrs9CurrentRating")?.value.trim()||null,
+
+      origination_lifetime_pd:Number(
+        $("ifrs9OriginationLifetimePd")?.value||0
+      )/100,
+
+      current_lifetime_pd:Number(
+        $("ifrs9CurrentLifetimePd")?.value||0
+      )/100,
+
+      credit_limit:Number(
+        $("ifrs9CreditLimit")?.value||0
+      ),
+
+      undrawn_commitment:Number(
+        $("ifrs9UndrawnCommitment")?.value||0
+      ),
+
+      credit_conversion_factor:Number(
+        $("ifrs9CreditConversionFactor")?.value||100
+      )/100,
+
+      collateral_value:Number(
+        $("ifrs9CollateralValue")?.value||0
+      ),
+
+      collateral_type:
+        $("ifrs9CollateralType")?.value.trim()||null,
+
+      watchlist:Boolean(
+        $("ifrs9CreditWatchlist")?.checked
+      ),
+
+      forbearance:Boolean(
+        $("ifrs9CreditForbearance")?.checked
+      ),
+
+      default_flag:Boolean(
+        $("ifrs9CreditDefault")?.checked
+      ),
+
+      credit_impaired:Boolean(
+        $("ifrs9CreditImpaired")?.checked
+      ),
+    };
+  }
+
+
+  async function saveCreditRiskProfile(instrumentId) {
+    const payload=collectCreditRiskProfile();
+
+    if (!payload.general_model_id) {
+      return alert("Select a General ECL model.");
+    }
+
+    try {
+      await apiFetch(
+        ENDPOINTS.ifrs9.generalEclAssessments(
+          cid(),
+          instrumentId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify(payload),
+        }
+      );
+
+      await openInstrument(instrumentId);
+      setMsg("Credit-risk profile saved.");
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to save credit-risk profile."
+      );
+    }
+  }
+
+
+  async function assessGeneralEclStage(instrumentId) {
+    const overrideValue=
+      $("ifrs9StageOverride")?.value;
+
+    const payload={
+      assessment_date:
+        $("ifrs9StageAssessmentDate")?.value,
+
+      days_past_due:Number(
+        $("ifrs9StageDaysPastDue")?.value||0
+      ),
+
+      override_stage:
+        overrideValue?Number(overrideValue):null,
+
+      override_reason:
+        $("ifrs9StageOverrideReason")
+          ?.value.trim()||null,
+    };
+
+    if (!payload.assessment_date) {
+      return alert("Assessment date is required.");
+    }
+
+    if (
+      payload.override_stage &&
+      !payload.override_reason
+    ) {
+      return alert(
+        "Enter a reason for the stage override."
+      );
+    }
+
+    try {
+      const result=await apiFetch(
+        ENDPOINTS.ifrs9.generalEclStageAssessment(
+          cid(),
+          instrumentId
+        ),
+        {
+          method:"POST",
+          body:JSON.stringify(payload),
+        }
+      );
+
+      const row=result.item||{};
+
+      $("ifrs9StageAssessmentResult").innerHTML=`
+        <div class="status-banner ${
+          Number(row.assessed_stage)===1
+            ?"success":"warning"
+        }" style="margin-top:12px;">
+          Assessed as Stage ${row.assessed_stage}.
+          ${esc(row.assessment_reason||"")}
+        </div>
+      `;
+
+      await openInstrument(instrumentId);
+      setMsg(`Instrument assessed as Stage ${row.assessed_stage}.`);
+    } catch(error) {
+      setMsg(
+        error.message||
+        "Failed to assess the ECL stage."
+      );
     }
   }
 
@@ -73295,10 +88132,126 @@ async function saveEditModal() {
       $("ifrs9PreviewPostBtn")?.addEventListener("click", postRun);
       $("ifrs9InstrumentCloseBtn")?.addEventListener("click", closeInstrumentModal);
       $("ifrs9InstrumentCancelBtn")?.addEventListener("click", closeInstrumentModal);
+      $("ifrs9EclReportingDate")?.addEventListener("change", renderModelOptions);
+      $("ifrs9CreateGeneralModelBtn")?.addEventListener("click", createGeneralEclModel);
+      $("ifrs9SaveGeneralScenariosBtn")?.addEventListener("click", saveGeneralScenarios);
+      $("ifrs9SaveGeneralPdBtn")?.addEventListener("click", saveGeneralPdCurves);
+      $("ifrs9SaveGeneralLgdBtn")?.addEventListener("click", saveGeneralLgds);
+      $("ifrs9CalculateGeneralRunBtn")?.addEventListener("click", calculateGeneralEclRun);
+      $("ifrs9CreateGeneralRunBtn")?.addEventListener( "click", createGeneralEclRun);
+
+      const today = new Date();
+      const year = today.getFullYear();
+
+      if ($("ifrs9ReconciliationTo")) {
+        $("ifrs9ReconciliationTo").value ||= today
+          .toISOString()
+          .slice(0, 10);
+      }
+
+      if ($("ifrs9ReconciliationFrom")) {
+        $("ifrs9ReconciliationFrom").value ||=
+          `${year}-01-01`;
+      }
+
+      if ($("ifrs9ReconciliationYear")) {
+        $("ifrs9ReconciliationYear").value ||= year;
+      }
+
+      if ($("ifrs9GeneralRunDate")) {
+        $("ifrs9GeneralRunDate").value||=
+          new Date()
+            .toISOString()
+            .slice(0,10);
+      }
+
+      document.addEventListener("change", event => {
+        if (
+          event.target.id ===
+          "ifrs9CreateReplacementInstrument"
+        ) {
+          $("ifrs9ReplacementInstrumentFields")
+            ?.classList.toggle(
+              "hidden",
+              !event.target.checked
+            );
+
+          IFRS9.derecognitionCalculation = null;
+
+          if ($("ifrs9CreateDerecognitionBtn")) {
+            $("ifrs9CreateDerecognitionBtn")
+              .disabled = true;
+          }
+        }
+
+        if (
+          event.target.id ===
+          "ifrs9DerecognitionModification"
+        ) {
+          const hasModification = Boolean(
+            event.target.value
+          );
+
+          if (hasModification) {
+            $("ifrs9DerecognitionType").value =
+              "substantial_modification";
+
+            $("ifrs9CreateReplacementInstrument")
+              .checked = true;
+
+            $("ifrs9ReplacementInstrumentFields")
+              ?.classList.remove("hidden");
+          }
+        }
+        if (
+          [
+            "ifrs9FairValueDate",
+            "ifrs9CurrentFairValue",
+            "ifrs9FairValueLevel",
+            "ifrs9ValuationMethod",
+            "ifrs9ValuationSource",
+            "ifrs9MarketReference",
+            "ifrs9FairValueNotes",
+          ].includes(event.target.id)
+        ) {
+          IFRS9.fairValueCalculation = null;
+
+          if ($("ifrs9CreateFairValueBtn")) {
+            $("ifrs9CreateFairValueBtn").disabled =
+              true;
+          }
+        }
+      });
 
       document.addEventListener("click", async event => {
         const tab = event.target.closest("[data-ifrs9-tab]");
         if (tab) return showTab(tab.dataset.ifrs9Tab);
+
+        const saveMapping = event.target.closest(
+          "[data-ifrs9-save-mapping]"
+        );
+
+        if (saveMapping) {
+          return saveIfrs9Mapping(
+            saveMapping.dataset.ifrs9SaveMapping
+          );
+        }
+
+        const saveAllMappings = event.target.closest(
+          "#ifrs9SaveAllMappingsBtn"
+        );
+
+        if (saveAllMappings) {
+          return saveAllIfrs9Mappings();
+        }
+
+        const reloadReadiness = event.target.closest(
+          "#ifrs9ReloadReadinessBtn"
+        );
+
+        if (reloadReadiness) {
+          return reloadIfrs9Readiness();
+        }
 
         const model = event.target.closest("[data-ifrs9-configure-model]");
         if (model) return configureModel(Number(model.dataset.ifrs9ConfigureModel));
@@ -73317,7 +88270,529 @@ async function saveEditModal() {
 
         const preview = event.target.closest("[data-ifrs9-preview-run]");
         if (preview) return previewRun(Number(preview.dataset.ifrs9PreviewRun));
+      
+        const reverseRun = event.target.closest(
+          "[data-ifrs9-reverse-run]"
+        );
+
+        if (reverseRun) {
+          return reverseEclRun(
+            Number(reverseRun.dataset.ifrs9ReverseRun)
+          );
+        }    
+        if (event.target.closest("#ifrs9NewWriteoffBtn")) {
+          return createIfrs9Writeoff();
+        }
+
+        const postWriteoff = event.target.closest(
+          "[data-ifrs9-post-writeoff]"
+        );
+
+        if (postWriteoff) {
+          return postIfrs9Writeoff(
+            Number(postWriteoff.dataset.ifrs9PostWriteoff)
+          );
+        }
+
+        const recoverWriteoff = event.target.closest(
+          "[data-ifrs9-recover-writeoff]"
+        );
+
+        if (recoverWriteoff) {
+          return recoverIfrs9Writeoff(
+            Number(recoverWriteoff.dataset.ifrs9RecoverWriteoff)
+          );
+        }
+
+        if (
+          event.target.closest(
+            "#ifrs9LoadReconciliationBtn"
+          )
+        ) {
+          return loadIfrs9Reconciliation();
+        }
+
+        if (event.target.closest("[data-ifrs9-add-eir-cashflow]")) {
+          const body = $("ifrs9EirCashflowRows");
+          const count = body?.querySelectorAll(
+            "[data-ifrs9-eir-cashflow]"
+          ).length || 0;
+
+          body?.insertAdjacentHTML(
+            "beforeend",
+            eirCashflowRow({
+              period_no: count + 1,
+              amount: 0,
+            })
+          );
+
+          return;
+        }
+
+        const removeEirCashflow = event.target.closest(
+          "[data-ifrs9-remove-eir-cashflow]"
+        );
+
+        if (removeEirCashflow) {
+          const rows = document.querySelectorAll(
+            "[data-ifrs9-eir-cashflow]"
+          );
+
+          if (rows.length <= 1) {
+            return alert(
+              "At least one contractual cash flow is required."
+            );
+          }
+
+          removeEirCashflow
+            .closest("[data-ifrs9-eir-cashflow]")
+            ?.remove();
+
+          IFRS9.eirCalculation = null;
+          if ($("ifrs9SaveEirBtn")) {
+            $("ifrs9SaveEirBtn").disabled = true;
+          }
+
+          return;
+        }
+
+        const calculateEir = event.target.closest(
+          "[data-ifrs9-calculate-eir]"
+        );
+
+        if (calculateEir) {
+          return calculateIfrs9Eir(
+            Number(calculateEir.dataset.ifrs9CalculateEir)
+          );
+        }
+
+        const saveEir = event.target.closest(
+          "[data-ifrs9-save-eir]"
+        );
+
+        if (saveEir) {
+          return saveIfrs9Eir(
+            Number(saveEir.dataset.ifrs9SaveEir)
+          );
+        }
+
+        if (
+          event.target.closest(
+            "#ifrs9SaveReconciliationSnapshotBtn"
+          )
+        ) {
+          return saveIfrs9ReconciliationSnapshot();
+        }
+
+        const calculateAmortised = event.target.closest(
+          "[data-ifrs9-calculate-amortised-cost]"
+        );
+
+        if (calculateAmortised) {
+          return calculateIfrs9AmortisedCost(
+            Number(
+              calculateAmortised
+                .dataset
+                .ifrs9CalculateAmortisedCost
+            )
+          );
+        }
+
+        const createAmortised = event.target.closest(
+          "[data-ifrs9-create-amortised-run]"
+        );
+
+        if (createAmortised) {
+          return createIfrs9AmortisedCostRun(
+            Number(
+              createAmortised
+                .dataset
+                .ifrs9CreateAmortisedRun
+            )
+          );
+        }
+
+        const previewAmortised = event.target.closest(
+          "[data-ifrs9-preview-amortised-run]"
+        );
+
+        if (previewAmortised) {
+          return previewIfrs9AmortisedCostRun(
+            Number(
+              previewAmortised
+                .dataset
+                .ifrs9PreviewAmortisedRun
+            )
+          );
+        }
+
+        if (
+          event.target.closest(
+            "[data-ifrs9-add-modification-cashflow]"
+          )
+        ) {
+          $("ifrs9ModificationCashflowRows")
+            ?.insertAdjacentHTML(
+              "beforeend",
+              modificationCashflowRow()
+            );
+
+          IFRS9.modificationCalculation = null;
+
+          if ($("ifrs9CreateModificationBtn")) {
+            $("ifrs9CreateModificationBtn").disabled =
+              true;
+          }
+
+          return;
+        }
+
+        const removeModificationCashflow =
+          event.target.closest(
+            "[data-ifrs9-remove-modification-cashflow]"
+          );
+
+        if (removeModificationCashflow) {
+          const rows = document.querySelectorAll(
+            "[data-ifrs9-modification-cashflow]"
+          );
+
+          if (rows.length <= 1) {
+            return alert(
+              "At least one revised cash flow is required."
+            );
+          }
+
+          removeModificationCashflow
+            .closest(
+              "[data-ifrs9-modification-cashflow]"
+            )
+            ?.remove();
+
+          IFRS9.modificationCalculation = null;
+
+          if ($("ifrs9CreateModificationBtn")) {
+            $("ifrs9CreateModificationBtn").disabled =
+              true;
+          }
+
+          return;
+        }
+
+        const calculateModification =
+          event.target.closest(
+            "[data-ifrs9-calculate-modification]"
+          );
+
+        if (calculateModification) {
+          return calculateIfrs9Modification(
+            Number(
+              calculateModification
+                .dataset
+                .ifrs9CalculateModification
+            )
+          );
+        }
+
+        const createModification =
+          event.target.closest(
+            "[data-ifrs9-create-modification]"
+          );
+
+        if (createModification) {
+          return createIfrs9Modification(
+            Number(
+              createModification
+                .dataset
+                .ifrs9CreateModification
+            )
+          );
+        }
+
+        const previewModification =
+          event.target.closest(
+            "[data-ifrs9-preview-modification]"
+          );
+
+        if (previewModification) {
+          return previewIfrs9Modification(
+            Number(
+              previewModification
+                .dataset
+                .ifrs9PreviewModification
+            )
+          );
+        }
+
+        const generalConfigTab=event.target.closest(
+          "[data-ifrs9-general-config-tab]"
+        );
+
+        if (generalConfigTab) {
+          return showGeneralConfigTab(
+            generalConfigTab.dataset.ifrs9GeneralConfigTab
+          );
+        }
+
+        const configureGeneral=event.target.closest(
+          "[data-ifrs9-configure-general-model]"
+        );
+
+        if (configureGeneral) {
+          return configureGeneralEclModel(
+            Number(
+              configureGeneral
+                .dataset
+                .ifrs9ConfigureGeneralModel
+            )
+          );
+        }
+
+        if (
+          event.target.closest(
+            "[data-ifrs9-add-general-scenario]"
+          )
+        ) {
+          $("ifrs9GeneralScenarioRows")
+            ?.insertAdjacentHTML(
+              "beforeend",
+              generalScenarioRow()
+            );
+
+          return;
+        }
+
+        const removeScenario=event.target.closest(
+          "[data-ifrs9-remove-general-scenario]"
+        );
+
+        if (removeScenario) {
+          removeScenario
+            .closest("[data-ifrs9-general-scenario-row]")
+            ?.remove();
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "[data-ifrs9-add-general-pd]"
+          )
+        ) {
+          $("ifrs9GeneralPdRows")
+            ?.insertAdjacentHTML(
+              "beforeend",
+              generalPdRow()
+            );
+
+          return;
+        }
+
+        const removePd=event.target.closest(
+          "[data-ifrs9-remove-general-pd]"
+        );
+
+        if (removePd) {
+          removePd
+            .closest("[data-ifrs9-general-pd-row]")
+            ?.remove();
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            "[data-ifrs9-add-general-lgd]"
+          )
+        ) {
+          $("ifrs9GeneralLgdRows")
+            ?.insertAdjacentHTML(
+              "beforeend",
+              generalLgdRow()
+            );
+
+          return;
+        }
+
+        const removeLgd=event.target.closest(
+          "[data-ifrs9-remove-general-lgd]"
+        );
+
+        if (removeLgd) {
+          removeLgd
+            .closest("[data-ifrs9-general-lgd-row]")
+            ?.remove();
+
+          return;
+        }
+
+        const saveProfile=event.target.closest(
+          "[data-ifrs9-save-credit-profile]"
+        );
+
+        if (saveProfile) {
+          return saveCreditRiskProfile(
+            Number(saveProfile.dataset.ifrs9SaveCreditProfile)
+          );
+        }
+
+        const assessStage=event.target.closest(
+          "[data-ifrs9-assess-stage]"
+        );
+
+        if (assessStage) {
+          return assessGeneralEclStage(
+            Number(assessStage.dataset.ifrs9AssessStage)
+          );
+        }       
       });
+
+      const calculateDerecognition =
+        event.target.closest(
+          "[data-ifrs9-calculate-derecognition]"
+        );
+
+      if (calculateDerecognition) {
+        return calculateIfrs9Derecognition(
+          Number(
+            calculateDerecognition
+              .dataset
+              .ifrs9CalculateDerecognition
+          )
+        );
+      }
+
+      const createDerecognition =
+        event.target.closest(
+          "[data-ifrs9-create-derecognition]"
+        );
+
+      if (createDerecognition) {
+        return createIfrs9Derecognition(
+          Number(
+            createDerecognition
+              .dataset
+              .ifrs9CreateDerecognition
+          )
+        );
+      }
+
+      const previewDerecognition =
+        event.target.closest(
+          "[data-ifrs9-preview-derecognition]"
+        );
+
+      if (previewDerecognition) {
+        return previewIfrs9Derecognition(
+          Number(
+            previewDerecognition
+              .dataset
+              .ifrs9PreviewDerecognition
+          )
+        );
+      }
+
+      const calculateFairValue =
+        event.target.closest(
+          "[data-ifrs9-calculate-fair-value]"
+        );
+
+      if (calculateFairValue) {
+        return calculateIfrs9FairValue(
+          Number(
+            calculateFairValue
+              .dataset
+              .ifrs9CalculateFairValue
+          )
+        );
+      }
+
+      const createFairValue =
+        event.target.closest(
+          "[data-ifrs9-create-fair-value]"
+        );
+
+      if (createFairValue) {
+        return createIfrs9FairValue(
+          Number(
+            createFairValue
+              .dataset
+              .ifrs9CreateFairValue
+          )
+        );
+      }
+
+      const previewFairValue =
+        event.target.closest(
+          "[data-ifrs9-preview-fair-value]"
+        );
+
+      if (previewFairValue) {
+        return previewIfrs9FairValue(
+          Number(
+            previewFairValue
+              .dataset
+              .ifrs9PreviewFairValue
+          )
+        );
+      }
+
+      const reverseFairValue =
+        event.target.closest(
+          "[data-ifrs9-reverse-fair-value]"
+        );
+
+      if (reverseFairValue) {
+        return reverseIfrs9FairValue(
+          Number(
+            reverseFairValue
+              .dataset
+              .ifrs9ReverseFairValue
+          )
+        );
+      }
+
+      const viewGeneralRun=event.target.closest(
+        "[data-ifrs9-view-general-run]"
+      );
+
+      if (viewGeneralRun) {
+        return viewGeneralEclRun(
+          Number(
+            viewGeneralRun
+              .dataset
+              .ifrs9ViewGeneralRun
+          )
+        );
+      }
+
+      const previewGeneralRun=event.target.closest(
+        "[data-ifrs9-preview-general-run]"
+      );
+
+      if (previewGeneralRun) {
+        return previewGeneralEclRun(
+          Number(
+            previewGeneralRun
+              .dataset
+              .ifrs9PreviewGeneralRun
+          )
+        );
+      }
+
+      const reverseGeneralRun=event.target.closest(
+        "[data-ifrs9-reverse-general-run]"
+      );
+
+      if (reverseGeneralRun) {
+        return reverseGeneralEclRun(
+          Number(
+            reverseGeneralRun
+              .dataset
+              .ifrs9ReverseGeneralRun
+          )
+        );
+      }
     }
 
     showTab("register");
@@ -106037,6 +121512,27 @@ async function populateProjectCustomerDropdown() {
   `;
 }
 
+function applyProjectTypeBehaviour() {
+  const type = document.getElementById("projectType")?.value || "customer_project";
+  const mode = document.getElementById("projectAccountingMode");
+  const customer = document.getElementById("projectCustomerId");
+  const billing = document.getElementById("projectBillingEnabled");
+  const revenue = document.getElementById("projectRevenueEnabled");
+
+  const customerProject = ["customer_project", "construction", "implementation"].includes(type);
+  const internalProject = ["internal_project", "marketing", "research", "maintenance"].includes(type);
+  const capitalProject = type === "capital_project";
+
+  if (customer) customer.required = type === "customer_project";
+
+  if (capitalProject && mode?.value === "contract") mode.value = "capital";
+  if (internalProject && mode?.value === "contract") mode.value = "expense";
+
+  if (billing && !customerProject) billing.checked = false;
+  if (revenue && !customerProject) revenue.checked = false;
+}
+window.applyProjectTypeBehaviour = applyProjectTypeBehaviour;
+
 async function bindProjectsScreen(name = "projects") {
   applyProjectNamingLabels?.();
   bindProjectOperationalModalsOnce?.();
@@ -106044,7 +121540,8 @@ async function bindProjectsScreen(name = "projects") {
   const btnRefresh = document.getElementById("projectRefreshBtn");
   const q = document.getElementById("projectSearch");
   const status = document.getElementById("projectStatus");
-
+  const type = document.getElementById("projectTypeFilter");
+  const accountingMode = document.getElementById("projectAccountingModeFilter");
   if (btnRefresh && btnRefresh.dataset.bound !== "1") {
     btnRefresh.dataset.bound = "1";
     btnRefresh.addEventListener("click", () => loadProjects());
@@ -106069,6 +121566,13 @@ async function bindProjectsScreen(name = "projects") {
     status.addEventListener("change", () => loadProjects());
   }
 
+  [type, accountingMode].forEach(el => {
+    if (el && el.dataset.bound !== "1") {
+      el.dataset.bound = "1";
+      el.addEventListener("change", () => loadProjects());
+    }
+  });
+
   await loadProjects();
 }
 
@@ -106080,10 +121584,13 @@ async function loadProjects({ limit = 50, offset = 0 } = {}) {
 
   const q = (document.getElementById("projectSearch")?.value || "").trim();
   const status = (document.getElementById("projectStatus")?.value || "").trim();
-
+  const projectType = document.getElementById("projectTypeFilter")?.value || "";
+  const accountingMode = document.getElementById("projectAccountingModeFilter")?.value || "";
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
+  if (projectType) params.set("project_type", projectType);
+  if (accountingMode) params.set("accounting_mode", accountingMode);
   params.set("limit", String(limit));
   params.set("offset", String(offset));
 
@@ -106111,13 +121618,17 @@ function renderProjectsTable(items) {
     return;
   }
 
-  const row = (p) => `
-    <tr class="border-b hover:bg-slate-50 cursor-pointer"
-        data-project-id="${esc(String(p.id))}">
+  const row = p => `
+    <tr class="border-b hover:bg-slate-50 cursor-pointer" data-project-id="${esc(String(p.id))}">
       <td class="px-2 py-2">${esc(p.project_code || "")}</td>
-      <td class="px-2 py-2">${esc(p.project_name || "")}</td>
-      <td class="px-2 py-2">${esc(p.customer_name || "")}</td>
+      <td class="px-2 py-2">
+        <div class="font-medium">${esc(p.project_name || "")}</div>
+        <div class="text-[10px] text-slate-400">${esc((p.project_type || "").replaceAll("_", " "))}</div>
+      </td>
+      <td class="px-2 py-2">${esc(p.customer_name || "Internal")}</td>
+      <td class="px-2 py-2">${esc((p.accounting_mode || "contract").replaceAll("_", " "))}</td>
       <td class="px-2 py-2">${esc(p.status || "")}</td>
+      <td class="px-2 py-2 text-right">${Number(p.progress_percent || 0).toFixed(0)}%</td>
       <td class="px-2 py-2 text-right">${fmtMoney(p.contract_value || 0)}</td>
       <td class="px-2 py-2 text-right">${fmtMoney(p.budget_lines_total || 0)}</td>
       <td class="px-2 py-2 text-right">${esc(String(p.task_count || 0))}</td>
@@ -106131,8 +121642,10 @@ function renderProjectsTable(items) {
           <tr class="text-slate-600">
             <th class="text-left px-2 py-2">Code</th>
             <th class="text-left px-2 py-2">Project</th>
-            <th class="text-left px-2 py-2">Customer</th>
+            <th class="text-left px-2 py-2">Customer / Owner</th>
+            <th class="text-left px-2 py-2">Accounting</th>
             <th class="text-left px-2 py-2">Status</th>
+            <th class="text-right px-2 py-2">Progress</th>
             <th class="text-right px-2 py-2">Contract</th>
             <th class="text-right px-2 py-2">Budget</th>
             <th class="text-right px-2 py-2">Tasks</th>
@@ -106147,7 +121660,6 @@ function renderProjectsTable(items) {
     tr.addEventListener("click", () => loadProjectDetail(Number(tr.dataset.projectId)));
   });
 }
-
 window.renderProjectsTable = renderProjectsTable;
 
 async function loadProjectDetail(projectId) {
@@ -106175,25 +121687,39 @@ function renderProjectDetail(p) {
 
   const tasks = p.tasks || [];
   const budget = p.budget_lines || [];
+  const projectType = String(p.project_type || "customer_project").replaceAll("_", " ");
+  const accountingMode = String(p.accounting_mode || "contract").replaceAll("_", " ");
+  const progress = Number(p.progress_percent || 0);
+  const internal = !p.customer_id;
+
+  const feature = (enabled, label) => `
+    <span class="inline-flex items-center px-2 py-1 rounded border text-[10px] ${enabled ? "" : "opacity-50"}">
+      ${enabled ? "✓" : "—"} ${esc(label)}
+    </span>
+  `;
 
   mount.innerHTML = `
     <div class="mt-4 border rounded p-3 text-xs">
 
-      <div class="flex items-center justify-between mb-3">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
         <div>
           <div class="font-bold text-sm">
             ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
           </div>
-          <div class="text-slate-500">
-            ${esc(p.customer_name || "No customer")} • ${esc(p.status || "")}
+
+          <div class="text-slate-500 mt-1">
+            ${esc(p.customer_name || (internal ? "Internal Project" : "No customer"))}
+            • ${esc(projectType)}
+            • ${esc(p.status || "")}
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <button class="px-3 py-1 text-xs border rounded"
                   data-project-edit="${esc(String(p.id))}">
             Edit Project
           </button>
+
           <button class="px-3 py-1 text-xs border rounded"
                   data-project-task-new="${esc(String(p.id))}">
             + Task
@@ -106204,44 +121730,139 @@ function renderProjectDetail(p) {
             + Budget Line
           </button>
 
-          <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
-                  data-project-issue="${esc(String(p.id))}">
-            Issue Materials
-          </button>
+          ${p.inventory_enabled !== false ? `
+            <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
+                    data-project-issue="${esc(String(p.id))}">
+              Issue Materials
+            </button>
+          ` : ""}
         </div>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Project Type</div>
+          <div class="font-semibold capitalize">${esc(projectType)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Accounting</div>
+          <div class="font-semibold capitalize">${esc(accountingMode)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Priority</div>
+          <div class="font-semibold capitalize">${esc(p.priority || "normal")}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Progress</div>
+          <div class="font-semibold">${progress.toFixed(0)}%</div>
+          <div class="w-full h-1.5 bg-slate-100 rounded mt-1 overflow-hidden">
+            <div class="h-full bg-[var(--fs-navy)]"
+                 style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+          </div>
+        </div>
+
         <div class="border rounded p-2">
           <div class="text-slate-500">Contract Value</div>
           <div class="font-semibold">${fmtMoney(p.contract_value || 0)}</div>
         </div>
+
         <div class="border rounded p-2">
           <div class="text-slate-500">Budget</div>
-          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || p.budget_value || 0)}</div>
         </div>
+
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+
         <div class="border rounded p-2">
-          <div class="text-slate-500">Tasks</div>
-          <div class="font-semibold">${esc(String(tasks.length))}</div>
+          <div class="text-slate-500 mb-1">Ownership</div>
+          <div><span class="text-slate-500">Manager:</span> ${esc(String(p.project_manager_user_id || "—"))}</div>
+          <div><span class="text-slate-500">Sponsor:</span> ${esc(String(p.sponsor_user_id || p.owner_user_id || "—"))}</div>
+          <div><span class="text-slate-500">Department:</span> ${esc(String(p.department_id || "—"))}</div>
+          <div><span class="text-slate-500">Business Unit:</span> ${esc(p.business_unit || "—")}</div>
         </div>
+
         <div class="border rounded p-2">
-          <div class="text-slate-500">Billing</div>
-          <div class="font-semibold">${esc(p.billing_method || "")}</div>
+          <div class="text-slate-500 mb-1">Current Schedule</div>
+          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.start_date) || p.start_date || "—")}</div>
+          <div><span class="text-slate-500">Expected End:</span> ${esc(toDateInputValue?.(p.expected_end_date) || p.expected_end_date || "—")}</div>
+          <div><span class="text-slate-500">Actual End:</span> ${esc(toDateInputValue?.(p.actual_end_date) || p.actual_end_date || "—")}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500 mb-1">Baseline</div>
+          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.baseline_start_date) || p.baseline_start_date || "—")}</div>
+          <div><span class="text-slate-500">End:</span> ${esc(toDateInputValue?.(p.baseline_end_date) || p.baseline_end_date || "—")}</div>
+          <div><span class="text-slate-500">Budget:</span> ${fmtMoney(p.baseline_budget_value || 0)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500 mb-1">Accounting Setup</div>
+          <div><span class="text-slate-500">WIP / CIP:</span> ${esc(p.wip_account_code || "—")}</div>
+          <div><span class="text-slate-500">Revenue:</span> ${esc(p.revenue_account_code || "—")}</div>
+          <div><span class="text-slate-500">Cost:</span> ${esc(p.cost_account_code || "—")}</div>
+          <div><span class="text-slate-500">Billing:</span> ${esc(p.billing_method || "—")}</div>
+        </div>
+
+      </div>
+
+      <div class="border rounded p-2 mb-3">
+        <div class="text-slate-500 mb-2">Enabled Project Features</div>
+
+        <div class="flex flex-wrap gap-2">
+          ${feature(p.billing_enabled !== false, "Billing")}
+          ${feature(p.revenue_enabled !== false, "Revenue")}
+          ${feature(p.inventory_enabled !== false, "Inventory")}
+          ${feature(p.allow_time_entries !== false, "Timesheets")}
+          ${feature(p.allow_expenses !== false, "Expenses")}
         </div>
       </div>
 
+      ${p.description || p.location || p.notes ? `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Location</div>
+            <div>${esc(p.location || "—")}</div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Description</div>
+            <div class="whitespace-pre-wrap">${esc(p.description || "—")}</div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Notes</div>
+            <div class="whitespace-pre-wrap">${esc(p.notes || "—")}</div>
+          </div>
+        </div>
+      ` : ""}
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+
         <div class="border rounded p-2">
-          <div class="font-semibold mb-2">Tasks</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Tasks</div>
+            <div class="text-slate-500">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+          </div>
+
           ${renderProjectTasksMini(tasks)}
         </div>
 
         <div class="border rounded p-2">
-          <div class="font-semibold mb-2">Budget Lines</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Budget Lines</div>
+            <div class="text-slate-500">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+          </div>
+
           ${renderProjectBudgetMini(budget)}
         </div>
-      </div>
 
+      </div>
     </div>
   `;
 
@@ -106268,9 +121889,7 @@ function renderProjectDetail(p) {
       const id = Number(btn.dataset.taskEdit);
       const task = (p.tasks || []).find(x => Number(x.id) === id);
 
-      if (task) {
-        openProjectTaskModal(p.id, task);
-      }
+      if (task) openProjectTaskModal(p.id, task);
     });
   });
 
@@ -106281,9 +121900,7 @@ function renderProjectDetail(p) {
       const id = Number(btn.dataset.budgetEdit);
       const line = (p.budget_lines || []).find(x => Number(x.id) === id);
 
-      if (line) {
-        openProjectBudgetModal(p.id, line);
-      }
+      if (line) openProjectBudgetModal(p.id, line);
     });
   });
 }
@@ -106404,6 +122021,7 @@ function bindProjectCreateModalOnce() {
   document.getElementById("projectCreateCloseBtn")?.addEventListener("click", closeProjectCreateModal);
   document.getElementById("projectCreateCancelBtn")?.addEventListener("click", closeProjectCreateModal);
   document.getElementById("projectCreateSaveBtn")?.addEventListener("click", submitProjectCreate);
+  document.getElementById("projectType")?.addEventListener("change", applyProjectTypeBehaviour);
 }
 
 async function openProjectCreateModal(project = null) {
@@ -106412,40 +122030,50 @@ async function openProjectCreateModal(project = null) {
 
   const isEdit = !!project?.id;
   const today = new Date().toISOString().slice(0, 10);
-
-  [
-    "projectCode",
-    "projectName",
-    "projectCustomerId",
-    "projectExpectedEndDate",
-    "projectContractValue",
-    "projectLocation",
-    "projectNotes",
-  ].forEach(id => {
+  const set = (id, value = "") => {
     const el = document.getElementById(id);
-    if (el) el.value = "";
-  });
+    if (el) el.value = value ?? "";
+  };
+  const check = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = value !== false;
+  };
 
-  let hidden = document.getElementById("projectId");
-  if (!hidden) {
-    hidden = document.createElement("input");
-    hidden.type = "hidden";
-    hidden.id = "projectId";
-    document.getElementById("projectCreateModal")?.appendChild(hidden);
-  }
+  set("projectId", isEdit ? project.id : "");
+  set("projectCode", project?.project_code);
+  set("projectName", project?.project_name);
+  set("projectType", project?.project_type || "customer_project");
+  set("projectAccountingMode", project?.accounting_mode || "contract");
+  set("projectPriority", project?.priority || "normal");
+  set("projectCustomerId", project?.customer_id);
+  set("projectManagerUserId", project?.project_manager_user_id);
+  set("projectSponsorUserId", project?.sponsor_user_id || project?.owner_user_id);
+  set("projectDepartmentId", project?.department_id);
+  set("projectBusinessUnit", project?.business_unit);
+  set("projectCreateStatus", project?.status || "draft");
+  set("projectProgressPercent", project?.progress_percent || 0);
+  set("projectStartDate", project?.start_date || today);
+  set("projectExpectedEndDate", project?.expected_end_date);
+  set("projectBaselineStartDate", project?.baseline_start_date || project?.start_date || today);
+  set("projectBaselineEndDate", project?.baseline_end_date || project?.expected_end_date);
+  set("projectContractValue", project?.contract_value || 0);
+  set("projectBudgetValue", project?.budget_value || 0);
+  set("projectBaselineBudgetValue", project?.baseline_budget_value || project?.budget_value || 0);
+  set("projectBillingMethod", project?.billing_method || "milestone");
+  set("projectWipAccountCode", project?.wip_account_code);
+  set("projectRevenueAccountCode", project?.revenue_account_code);
+  set("projectCostAccountCode", project?.cost_account_code);
+  set("projectLocation", project?.location);
+  set("projectDescription", project?.description);
+  set("projectNotes", project?.notes);
 
-  hidden.value = isEdit ? String(project.id) : "";
+  check("projectBillingEnabled", project ? project.billing_enabled : true);
+  check("projectRevenueEnabled", project ? project.revenue_enabled : true);
+  check("projectInventoryEnabled", project ? project.inventory_enabled : true);
+  check("projectTimeEnabled", project ? project.allow_time_entries : true);
+  check("projectExpensesEnabled", project ? project.allow_expenses : true);
 
-  document.getElementById("projectCode").value = project?.project_code || "";
-  document.getElementById("projectName").value = project?.project_name || "";
-  document.getElementById("projectCustomerId").value = project?.customer_id || "";
-  document.getElementById("projectStartDate").value = project?.start_date || today;
-  document.getElementById("projectExpectedEndDate").value = project?.expected_end_date || "";
-  document.getElementById("projectContractValue").value = project?.contract_value || "";
-  document.getElementById("projectLocation").value = project?.location || "";
-  document.getElementById("projectNotes").value = project?.notes || "";
-  document.getElementById("projectCreateStatus").value = project?.status || "draft";
-  document.getElementById("projectBillingMethod").value = project?.billing_method || "milestone";
+  applyProjectTypeBehaviour();
 
   const saveBtn = document.getElementById("projectCreateSaveBtn");
   if (saveBtn) saveBtn.textContent = isEdit ? "Update Project" : "Save Project";
@@ -106464,18 +122092,44 @@ async function submitProjectCreate() {
 
   const projectId = Number(document.getElementById("projectId")?.value || 0);
   const isEdit = !!projectId;
+  const val = id => document.getElementById(id)?.value;
+  const num = id => Number(val(id) || 0);
+  const nullableInt = id => num(id) || null;
+  const checked = id => !!document.getElementById(id)?.checked;
 
   const payload = {
-    project_code: document.getElementById("projectCode")?.value?.trim(),
-    project_name: document.getElementById("projectName")?.value?.trim(),
-    customer_id: Number(document.getElementById("projectCustomerId")?.value || 0) || null,
-    status: document.getElementById("projectCreateStatus")?.value || "draft",
-    start_date: document.getElementById("projectStartDate")?.value || null,
-    expected_end_date: document.getElementById("projectExpectedEndDate")?.value || null,
-    contract_value: Number(document.getElementById("projectContractValue")?.value || 0),
-    billing_method: document.getElementById("projectBillingMethod")?.value || "milestone",
-    location: document.getElementById("projectLocation")?.value?.trim(),
-    notes: document.getElementById("projectNotes")?.value?.trim(),
+    project_code: val("projectCode")?.trim(),
+    project_name: val("projectName")?.trim(),
+    project_type: val("projectType") || "customer_project",
+    accounting_mode: val("projectAccountingMode") || "contract",
+    priority: val("projectPriority") || "normal",
+    customer_id: nullableInt("projectCustomerId"),
+    project_manager_user_id: nullableInt("projectManagerUserId"),
+    sponsor_user_id: nullableInt("projectSponsorUserId"),
+    owner_user_id: nullableInt("projectSponsorUserId"),
+    department_id: nullableInt("projectDepartmentId"),
+    business_unit: val("projectBusinessUnit")?.trim() || null,
+    status: val("projectCreateStatus") || "draft",
+    progress_percent: num("projectProgressPercent"),
+    start_date: val("projectStartDate") || null,
+    expected_end_date: val("projectExpectedEndDate") || null,
+    baseline_start_date: val("projectBaselineStartDate") || null,
+    baseline_end_date: val("projectBaselineEndDate") || null,
+    contract_value: num("projectContractValue"),
+    budget_value: num("projectBudgetValue"),
+    baseline_budget_value: num("projectBaselineBudgetValue"),
+    billing_method: val("projectBillingMethod") || "milestone",
+    billing_enabled: checked("projectBillingEnabled"),
+    revenue_enabled: checked("projectRevenueEnabled"),
+    inventory_enabled: checked("projectInventoryEnabled"),
+    allow_time_entries: checked("projectTimeEnabled"),
+    allow_expenses: checked("projectExpensesEnabled"),
+    wip_account_code: val("projectWipAccountCode")?.trim() || null,
+    revenue_account_code: val("projectRevenueAccountCode")?.trim() || null,
+    cost_account_code: val("projectCostAccountCode")?.trim() || null,
+    location: val("projectLocation")?.trim() || null,
+    description: val("projectDescription")?.trim() || null,
+    notes: val("projectNotes")?.trim() || null,
   };
 
   if (!payload.project_code || !payload.project_name) {
@@ -106483,31 +122137,48 @@ async function submitProjectCreate() {
     return;
   }
 
+  if (payload.project_type === "customer_project" && !payload.customer_id) {
+    setElText("projectCreateMsg", "Select a customer for a customer project.");
+    return;
+  }
+
+  if (payload.accounting_mode === "contract" && !payload.customer_id) {
+    setElText("projectCreateMsg", "Contract accounting requires a customer.");
+    return;
+  }
+
+  if (["contract", "wip", "capital"].includes(payload.accounting_mode) &&
+      payload.inventory_enabled && !payload.wip_account_code) {
+    setElText("projectCreateMsg", "Configure a WIP/CIP account for this accounting mode.");
+    return;
+  }
+
+  if (["expense", "none"].includes(payload.accounting_mode) &&
+      payload.inventory_enabled && !payload.cost_account_code) {
+    setElText("projectCreateMsg", "Configure a cost/expense account for material issues.");
+    return;
+  }
+
   setElText("projectCreateMsg", isEdit ? "Updating project..." : "Saving project...");
 
   try {
     await apiFetch(
-      isEdit
-        ? ENDPOINTS.projects.update(cid, projectId)
-        : ENDPOINTS.projects.create(cid),
-      {
-        method: isEdit ? "PATCH" : "POST",
-        body: JSON.stringify(payload),
-      }
+      isEdit ? ENDPOINTS.projects.update(cid, projectId) : ENDPOINTS.projects.create(cid),
+      { method: isEdit ? "PATCH" : "POST", body: JSON.stringify(payload) }
     );
 
     closeProjectCreateModal();
+    await loadProjects();
 
-    await loadProjects?.();
-
-    if (isEdit) {
-      await loadProjectDetail(projectId);
-    }
+    if (isEdit) await loadProjectDetail(projectId);
   } catch (err) {
-    const msg = err?.message || (isEdit ? "Failed to update project." : "Failed to create project.");
-    setElText("projectCreateMsg", msg);
+    setElText(
+      "projectCreateMsg",
+      err?.message || (isEdit ? "Failed to update project." : "Failed to create project.")
+    );
   }
 }
+
 window.openProjectCreateModal = openProjectCreateModal;
 window.closeProjectCreateModal = closeProjectCreateModal;
 window.submitProjectCreate = submitProjectCreate;

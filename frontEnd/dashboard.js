@@ -1984,6 +1984,15 @@ const ENDPOINTS = {
 
     productAccountingPreview:(companyId,projectId,datasetId)=>
       `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/products/accounting/preview`,  
+  
+    inventoryConfiguration:(companyId,projectId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/inventory/configuration`,
+
+    inventoryLocations:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations`,
+
+    inventoryLocationsPreview:(companyId,projectId,datasetId)=>
+      `${API_BASE}/api/companies/${encodeURIComponent(companyId)}/migrations/projects/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetId)}/inventory/locations/preview`,
   },
 
   ifrs9: {
@@ -121678,25 +121687,39 @@ function renderProjectDetail(p) {
 
   const tasks = p.tasks || [];
   const budget = p.budget_lines || [];
+  const projectType = String(p.project_type || "customer_project").replaceAll("_", " ");
+  const accountingMode = String(p.accounting_mode || "contract").replaceAll("_", " ");
+  const progress = Number(p.progress_percent || 0);
+  const internal = !p.customer_id;
+
+  const feature = (enabled, label) => `
+    <span class="inline-flex items-center px-2 py-1 rounded border text-[10px] ${enabled ? "" : "opacity-50"}">
+      ${enabled ? "✓" : "—"} ${esc(label)}
+    </span>
+  `;
 
   mount.innerHTML = `
     <div class="mt-4 border rounded p-3 text-xs">
 
-      <div class="flex items-center justify-between mb-3">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
         <div>
           <div class="font-bold text-sm">
             ${esc(p.project_code || "")} — ${esc(p.project_name || "")}
           </div>
-          <div class="text-slate-500">
-            ${esc(p.customer_name || "No customer")} • ${esc(p.status || "")}
+
+          <div class="text-slate-500 mt-1">
+            ${esc(p.customer_name || (internal ? "Internal Project" : "No customer"))}
+            • ${esc(projectType)}
+            • ${esc(p.status || "")}
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <button class="px-3 py-1 text-xs border rounded"
                   data-project-edit="${esc(String(p.id))}">
             Edit Project
           </button>
+
           <button class="px-3 py-1 text-xs border rounded"
                   data-project-task-new="${esc(String(p.id))}">
             + Task
@@ -121707,44 +121730,139 @@ function renderProjectDetail(p) {
             + Budget Line
           </button>
 
-          <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
-                  data-project-issue="${esc(String(p.id))}">
-            Issue Materials
-          </button>
+          ${p.inventory_enabled !== false ? `
+            <button class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded"
+                    data-project-issue="${esc(String(p.id))}">
+              Issue Materials
+            </button>
+          ` : ""}
         </div>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-3">
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Project Type</div>
+          <div class="font-semibold capitalize">${esc(projectType)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Accounting</div>
+          <div class="font-semibold capitalize">${esc(accountingMode)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Priority</div>
+          <div class="font-semibold capitalize">${esc(p.priority || "normal")}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500">Progress</div>
+          <div class="font-semibold">${progress.toFixed(0)}%</div>
+          <div class="w-full h-1.5 bg-slate-100 rounded mt-1 overflow-hidden">
+            <div class="h-full bg-[var(--fs-navy)]"
+                 style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+          </div>
+        </div>
+
         <div class="border rounded p-2">
           <div class="text-slate-500">Contract Value</div>
           <div class="font-semibold">${fmtMoney(p.contract_value || 0)}</div>
         </div>
+
         <div class="border rounded p-2">
           <div class="text-slate-500">Budget</div>
-          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+          <div class="font-semibold">${fmtMoney(p?.totals?.budget_total || p.budget_value || 0)}</div>
         </div>
+
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+
         <div class="border rounded p-2">
-          <div class="text-slate-500">Tasks</div>
-          <div class="font-semibold">${esc(String(tasks.length))}</div>
+          <div class="text-slate-500 mb-1">Ownership</div>
+          <div><span class="text-slate-500">Manager:</span> ${esc(String(p.project_manager_user_id || "—"))}</div>
+          <div><span class="text-slate-500">Sponsor:</span> ${esc(String(p.sponsor_user_id || p.owner_user_id || "—"))}</div>
+          <div><span class="text-slate-500">Department:</span> ${esc(String(p.department_id || "—"))}</div>
+          <div><span class="text-slate-500">Business Unit:</span> ${esc(p.business_unit || "—")}</div>
         </div>
+
         <div class="border rounded p-2">
-          <div class="text-slate-500">Billing</div>
-          <div class="font-semibold">${esc(p.billing_method || "")}</div>
+          <div class="text-slate-500 mb-1">Current Schedule</div>
+          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.start_date) || p.start_date || "—")}</div>
+          <div><span class="text-slate-500">Expected End:</span> ${esc(toDateInputValue?.(p.expected_end_date) || p.expected_end_date || "—")}</div>
+          <div><span class="text-slate-500">Actual End:</span> ${esc(toDateInputValue?.(p.actual_end_date) || p.actual_end_date || "—")}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500 mb-1">Baseline</div>
+          <div><span class="text-slate-500">Start:</span> ${esc(toDateInputValue?.(p.baseline_start_date) || p.baseline_start_date || "—")}</div>
+          <div><span class="text-slate-500">End:</span> ${esc(toDateInputValue?.(p.baseline_end_date) || p.baseline_end_date || "—")}</div>
+          <div><span class="text-slate-500">Budget:</span> ${fmtMoney(p.baseline_budget_value || 0)}</div>
+        </div>
+
+        <div class="border rounded p-2">
+          <div class="text-slate-500 mb-1">Accounting Setup</div>
+          <div><span class="text-slate-500">WIP / CIP:</span> ${esc(p.wip_account_code || "—")}</div>
+          <div><span class="text-slate-500">Revenue:</span> ${esc(p.revenue_account_code || "—")}</div>
+          <div><span class="text-slate-500">Cost:</span> ${esc(p.cost_account_code || "—")}</div>
+          <div><span class="text-slate-500">Billing:</span> ${esc(p.billing_method || "—")}</div>
+        </div>
+
+      </div>
+
+      <div class="border rounded p-2 mb-3">
+        <div class="text-slate-500 mb-2">Enabled Project Features</div>
+
+        <div class="flex flex-wrap gap-2">
+          ${feature(p.billing_enabled !== false, "Billing")}
+          ${feature(p.revenue_enabled !== false, "Revenue")}
+          ${feature(p.inventory_enabled !== false, "Inventory")}
+          ${feature(p.allow_time_entries !== false, "Timesheets")}
+          ${feature(p.allow_expenses !== false, "Expenses")}
         </div>
       </div>
 
+      ${p.description || p.location || p.notes ? `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Location</div>
+            <div>${esc(p.location || "—")}</div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Description</div>
+            <div class="whitespace-pre-wrap">${esc(p.description || "—")}</div>
+          </div>
+
+          <div class="border rounded p-2">
+            <div class="text-slate-500">Notes</div>
+            <div class="whitespace-pre-wrap">${esc(p.notes || "—")}</div>
+          </div>
+        </div>
+      ` : ""}
+
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+
         <div class="border rounded p-2">
-          <div class="font-semibold mb-2">Tasks</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Tasks</div>
+            <div class="text-slate-500">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+          </div>
+
           ${renderProjectTasksMini(tasks)}
         </div>
 
         <div class="border rounded p-2">
-          <div class="font-semibold mb-2">Budget Lines</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Budget Lines</div>
+            <div class="text-slate-500">${fmtMoney(p?.totals?.budget_total || 0)}</div>
+          </div>
+
           ${renderProjectBudgetMini(budget)}
         </div>
-      </div>
 
+      </div>
     </div>
   `;
 
@@ -121771,9 +121889,7 @@ function renderProjectDetail(p) {
       const id = Number(btn.dataset.taskEdit);
       const task = (p.tasks || []).find(x => Number(x.id) === id);
 
-      if (task) {
-        openProjectTaskModal(p.id, task);
-      }
+      if (task) openProjectTaskModal(p.id, task);
     });
   });
 
@@ -121784,9 +121900,7 @@ function renderProjectDetail(p) {
       const id = Number(btn.dataset.budgetEdit);
       const line = (p.budget_lines || []).find(x => Number(x.id) === id);
 
-      if (line) {
-        openProjectBudgetModal(p.id, line);
-      }
+      if (line) openProjectBudgetModal(p.id, line);
     });
   });
 }

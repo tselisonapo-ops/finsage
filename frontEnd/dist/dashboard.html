@@ -22,7 +22,6 @@
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <link rel="icon" href="data:,">
 
 <style>
   :root{
@@ -3217,6 +3216,153 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-final-payslip{
+  max-width:950px;
+  margin:16px auto 0;
+  padding:24px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:14px;
+  background:#fff;
+}
+
+.payroll-final-payslip-head{
+  display:flex;
+  justify-content:space-between;
+  gap:24px;
+  padding-bottom:16px;
+  border-bottom:2px solid #1f2937;
+}
+
+.payroll-final-payslip-head h2{
+  margin:0 0 6px;
+}
+
+.payroll-final-payslip-head p{
+  margin:3px 0;
+  font-size:12px;
+}
+
+.payroll-final-payslip-title{
+  display:grid;
+  gap:4px;
+  text-align:right;
+}
+
+.payroll-final-payslip-title strong{
+  font-size:24px;
+}
+
+.payroll-final-payslip-meta,
+.payroll-final-payslip-foot{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+
+.payroll-final-payslip-meta>div,
+.payroll-final-payslip-foot>div{
+  padding:10px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:8px;
+}
+
+.payroll-final-payslip-meta span,
+.payroll-final-payslip-foot span{
+  display:block;
+  font-size:11px;
+  opacity:.65;
+}
+
+.payroll-final-payslip-meta strong,
+.payroll-final-payslip-foot strong{
+  display:block;
+  margin-top:4px;
+}
+
+.payroll-final-payslip-meta small{
+  display:block;
+  margin-top:3px;
+  opacity:.65;
+}
+
+.payroll-final-payslip-section{
+  margin-top:18px;
+}
+
+.payroll-final-payslip-section h3{
+  margin:0 0 8px;
+  font-size:14px;
+}
+
+.payroll-final-payslip-net{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:14px;
+  margin-top:18px;
+  padding:16px;
+  border-radius:10px;
+  background:#172033;
+  color:#fff;
+}
+
+.payroll-final-payslip-net strong{
+  font-size:25px;
+}
+
+@media(max-width:760px){
+  .payroll-final-payslip-head{
+    display:block;
+  }
+
+  .payroll-final-payslip-title{
+    margin-top:12px;
+    text-align:left;
+  }
+
+  .payroll-final-payslip-meta,
+  .payroll-final-payslip-foot{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+.payroll-eligibility-summary{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-bottom:12px;
+}
+
+.payroll-eligibility-summary>div{
+  padding:10px;
+  border:1px solid var(--border,#dbe3ea);
+  border-radius:10px;
+}
+
+.payroll-eligibility-summary span{
+  display:block;
+  font-size:12px;
+  opacity:.7;
+}
+
+.payroll-eligibility-summary strong{
+  display:block;
+  margin-top:4px;
+  font-size:18px;
+}
+
+.payroll-run-check-list{
+  display:grid;
+  gap:8px;
+  margin-bottom:12px;
+}
+
+@media(max-width:760px){
+  .payroll-eligibility-summary{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
 .payroll-modal{
   position:fixed;
   inset:0;
@@ -6579,7 +6725,227 @@ body.payroll-modal-open{
 .hidden {
   display: none !important;
 }
+/* =========================================================
+   PAYROLL INCENTIVES WORKSPACE
+   ========================================================= */
 
+#payrollTabIncentives{
+  display:grid;
+  gap:18px;
+}
+
+#payrollTabIncentives.hidden{
+  display:none!important;
+}
+
+#payrollTabIncentives>.payroll-section-navigation{
+  display:flex;
+  align-items:flex-start;
+  gap:18px;
+  padding:18px 20px;
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+  background:linear-gradient(135deg,#fff 0%,#f8fbff 100%);
+  box-shadow:0 8px 24px rgba(15,23,42,.04);
+}
+
+#payrollTabIncentives>.payroll-section-navigation h3{
+  margin:0 0 4px;
+  color:#0f2f50;
+  font-size:20px;
+  font-weight:800;
+}
+
+#payrollTabIncentives>.payroll-section-navigation p{
+  margin:0;
+}
+
+#payrollTabIncentives>.payroll-card{
+  margin:0;
+  overflow:hidden;
+  border:1px solid #e1e8f0;
+  border-radius:15px;
+  background:#fff;
+  box-shadow:0 10px 28px rgba(15,42,67,.045);
+}
+
+#payrollTabIncentives>.payroll-card>.payroll-card-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding-bottom:16px;
+  margin-bottom:16px;
+  border-bottom:1px solid #edf1f5;
+}
+
+#payrollTabIncentives .payroll-card-head h3{
+  margin:0 0 5px;
+  color:#102a43;
+  font-size:16px;
+  font-weight:800;
+}
+
+#payrollTabIncentives .payroll-card-head p{
+  margin:0;
+}
+
+#payrollTabIncentives .payroll-filters{
+  display:grid;
+  grid-template-columns:
+    minmax(180px,1.2fr)
+    minmax(150px,.8fr)
+    minmax(150px,.8fr)
+    minmax(150px,.8fr);
+  gap:12px;
+  padding:14px;
+  margin-bottom:16px;
+  border:1px solid #e5ebf2;
+  border-radius:12px;
+  background:#f8fafc;
+}
+
+#payrollTabIncentives .payroll-filters select,
+#payrollTabIncentives .payroll-filters input{
+  width:100%;
+  min-width:0;
+  min-height:40px;
+  padding:9px 11px;
+  border:1px solid #d7e0ea;
+  border-radius:9px;
+  background:#fff;
+  color:#243b53;
+  font:inherit;
+  outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+
+#payrollTabIncentives .payroll-filters select:focus,
+#payrollTabIncentives .payroll-filters input:focus{
+  border-color:#2d6cdf;
+  box-shadow:0 0 0 3px rgba(45,108,223,.12);
+}
+
+#payrollTabIncentives .payroll-table-wrap{
+  overflow-x:auto;
+  overflow-y:hidden;
+  border:1px solid #e5eaf0;
+  border-radius:11px;
+}
+
+#payrollTabIncentives .payroll-preview-table{
+  min-width:820px;
+}
+
+#payrollTabIncentives .payroll-preview-table th{
+  background:#f4f7fb;
+  color:#53657a;
+}
+
+#payrollTabIncentives .payroll-preview-table td{
+  vertical-align:middle;
+}
+
+#payrollTabIncentives .payroll-preview-table td:first-child strong{
+  font-family:inherit;
+  letter-spacing:normal;
+}
+
+#payrollTabIncentives .payroll-preview-table td:last-child{
+  white-space:nowrap;
+}
+
+#payrollTabIncentives .payroll-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:30px;
+  margin:2px;
+  padding:5px 9px;
+  border:1px solid #d8e3ee;
+  border-radius:7px;
+  background:#fff;
+  color:#075f9d;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:800;
+  text-decoration:none;
+  transition:background .15s,border-color .15s,transform .1s;
+}
+
+#payrollTabIncentives .payroll-link:hover{
+  border-color:#91b5d2;
+  background:#f0f7fc;
+}
+
+#payrollTabIncentives .payroll-link:active{
+  transform:translateY(1px);
+}
+
+#payrollTabIncentives .payroll-pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:72px;
+  min-height:25px;
+  padding:4px 9px;
+  border-radius:999px;
+  background:#edf4ff;
+  color:#145da0;
+  font-size:10px;
+  font-weight:800;
+  text-transform:capitalize;
+}
+
+#payrollIncentivePlanDetail:empty{
+  display:none;
+}
+
+#payrollIncentivePlanDetail:not(:empty){
+  margin-top:18px;
+  padding-top:18px;
+  border-top:1px solid #edf1f5;
+}
+
+#payrollIncentivePlanDetail>.payroll-card{
+  margin:0;
+  border:1px solid #dfe8f2;
+  border-radius:12px;
+  background:#fbfdff;
+  box-shadow:none;
+}
+
+#payrollTabIncentives .payroll-muted:only-child{
+  margin:0;
+  padding:24px;
+  border:1px dashed #ccd8e5;
+  border-radius:10px;
+  background:#fafcff;
+  color:#8291a3;
+  text-align:center;
+}
+
+@media(max-width:1000px){
+  #payrollTabIncentives .payroll-filters{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:650px){
+  #payrollTabIncentives>.payroll-section-navigation,
+  #payrollTabIncentives>.payroll-card>.payroll-card-head{
+    flex-direction:column;
+  }
+
+  #payrollTabIncentives .payroll-filters{
+    grid-template-columns:1fr;
+  }
+
+  #payrollTabIncentives .payroll-primary,
+  #payrollTabIncentives .payroll-secondary{
+    width:100%;
+  }
+}
 /* =========================================================
    IAS 12 DEFERRED TAX SCREEN
    Consolidated responsive styling
@@ -9110,6 +9476,146 @@ tbody tr:hover {
 .lsm-wide-table {
   min-width: 1900px;
 }
+
+/* =========================================================
+   GROUP REPORTING — TAB BUTTONS
+   ========================================================= */
+
+#screen-group-reporting .group-reporting-tab{
+  appearance:none;
+  border:1px solid #dbe3ee;
+  border-radius:9px;
+  background:#fff;
+  color:#475569;
+  padding:9px 14px;
+  font-size:13px;
+  font-weight:600;
+  line-height:1;
+  cursor:pointer;
+  transition:
+    background .16s ease,
+    border-color .16s ease,
+    color .16s ease,
+    box-shadow .16s ease,
+    transform .16s ease;
+}
+
+#screen-group-reporting .group-reporting-tab:hover:not(:disabled){
+  background:#f8fafc;
+  border-color:#94a3b8;
+  color:#0f172a;
+  box-shadow:0 2px 6px rgba(15,23,42,.08);
+  transform:translateY(-1px);
+}
+
+#screen-group-reporting .group-reporting-tab[data-group-tab="runs"].font-medium,
+#screen-group-reporting .group-reporting-tab.border-slate-900{
+  background:#0f172a;
+  border-color:#0f172a;
+  color:#fff;
+  box-shadow:0 2px 6px rgba(15,23,42,.18);
+}
+
+#screen-group-reporting .group-reporting-tab:focus-visible{
+  outline:3px solid rgba(59,130,246,.2);
+  outline-offset:2px;
+}
+
+#screen-group-reporting .group-reporting-tab:disabled{
+  background:#f8fafc;
+  border-color:#e2e8f0;
+  color:#94a3b8;
+  cursor:not-allowed;
+  box-shadow:none;
+  transform:none;
+  opacity:.72;
+}
+
+#screen-group-reporting .group-reporting-tab.active{
+  background:#0f172a;
+  border-color:#0f172a;
+  color:#fff;
+  box-shadow:0 2px 6px rgba(15,23,42,.18);
+}
+
+/* =========================================================
+   GROUP REPORTING — FULL WIDTH
+   ========================================================= */
+
+#screen-group-reporting{
+  width:100%;
+  max-width:none;
+}
+
+#screen-group-reporting > div{
+  width:100%;
+  max-width:none !important;
+}
+
+#screen-group-reporting .group-reporting-panel,
+#screen-group-reporting #groupRunWorkspace,
+#screen-group-reporting #groupMappingWorkspace{
+  width:100%;
+  max-width:none;
+}
+
+#screen-group-reporting .group-reporting-panel > *,
+#screen-group-reporting #groupRunWorkspace > *,
+#screen-group-reporting #groupMappingWorkspace > *{
+  width:100%;
+}
+
+#screen-group-reporting table{
+  width:100%;
+}
+
+#screen-group-reporting .overflow-x-auto{
+  width:100%;
+}
+
+#screen-group-reporting .grid > .rounded-xl.border.bg-white{
+  min-height:92px;
+  padding:18px 20px;
+}
+
+/* =========================================================
+   CORPORATE STRUCTURE — GROUP MEMBERS
+   ========================================================= */
+
+.group-member-card{
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+
+.group-member-card:hover{
+  border-color:#cbd5e1;
+  box-shadow:0 3px 10px rgba(15,23,42,.05);
+}
+
+.group-member-stat{
+  min-width:0;
+  border:1px solid #eef2f7;
+  border-radius:9px;
+  background:#f8fafc;
+  padding:10px 11px;
+}
+
+.group-member-stat>span{
+  display:block;
+  margin-bottom:4px;
+  font-size:10px;
+  line-height:1.2;
+  color:#94a3b8;
+}
+
+.group-member-stat>strong{
+  display:block;
+  font-size:12px;
+  line-height:1.3;
+  font-weight:600;
+  color:#334155;
+  white-space:normal;
+  word-break:break-word;
+}
   </style>
 
 </head>
@@ -10723,14 +11229,42 @@ tbody tr:hover {
             </div>
 
             <div class="mw-toolbar">
-              <div class="mw-field"><label>Migration project</label><select id="mwProjectSelect" class="mw-select"></select></div>
-              <div class="mw-field"><label>Source system</label><select id="mwSourceSystem" class="mw-select">
-                <option>Sage Pastel</option><option>QuickBooks</option><option>Xero</option><option>Excel / CSV</option><option>SQL database</option><option>Other</option>
-              </select></div>
-              <div class="mw-field"><label>Cutover date</label><input id="mwCutoverDate" class="mw-input" type="date" value="2026-07-31"></div>
-              <div class="mw-field"><label>Migration depth</label><select id="mwMigrationDepth" class="mw-select">
-                <option value="opening">Opening balances only</option><option value="current">Current financial year</option><option value="two-years">Two years</option><option value="full">Full history</option>
-              </select></div>
+              <div class="mw-field">
+                <label>Migration project</label>
+                <select id="mwProjectSelect" class="mw-select"></select>
+              </div>
+
+              <div class="mw-field">
+                <label>Source system</label>
+                <select id="mwSourceSystem" class="mw-select">
+                  <option value="sage_pastel">Sage Pastel</option>
+                  <option value="sage_business_cloud">Sage Business Cloud</option>
+                  <option value="quickbooks">QuickBooks</option>
+                  <option value="xero">Xero</option>
+                  <option value="excel_csv">Excel / CSV</option>
+                  <option value="sql_database">SQL database</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div class="mw-field">
+                <label>Cutover date</label>
+                <input
+                  id="mwCutoverDate"
+                  class="mw-input"
+                  type="date"
+                >
+              </div>
+
+              <div class="mw-field">
+                <label>Migration depth</label>
+                <select id="mwMigrationDepth" class="mw-select">
+                  <option value="opening">Opening balances only</option>
+                  <option value="current_year">Current financial year</option>
+                  <option value="two_years">Two years</option>
+                  <option value="full_history">Full history</option>
+                </select>
+              </div>
             </div>
 
             <div class="mw-summary">
@@ -10848,6 +11382,17 @@ tbody tr:hover {
                   <option value="ifrs15_revenue">IFRS 15 Revenue disclosures</option>
                   <option value="ias40_ip">IAS 40 — Investment Property</option>
                   <option value="ias38_ia">IAS 38 — Intangible Assets</option>
+                  <option value="ifrs9_financial_instruments">IFRS 9 — Financial Instruments</option>
+                  <option value="ias41_agriculture">IAS 41 — Agriculture</option>
+                  <optgroup label="Employee Benefits">
+                    <option value="ias19_employee_costs">IAS 19 — Employee benefit expense</option>
+                    <option value="ias19_leave_liability_policy">IAS 19 — Leave benefits policy</option>
+                    <option value="ias19_bonus_provision">IAS 19 — Bonus provision</option>
+                    <option value="ias19_termination_benefits">IAS 19 — Termination benefits</option>
+                    <option value="ias19_defined_contribution">IAS 19 — Defined-contribution plans</option>
+                    <option value="ias19_defined_benefit">IAS 19 — Defined-benefit plans</option>
+                    <option value="ias19_employee_benefits_pack">IAS 19 — Complete employee benefits note</option>
+                  </optgroup>
                 </select>
 
                 <button id="generateNotesBtn"
@@ -10872,9 +11417,25 @@ tbody tr:hover {
                 <div class="flex flex-wrap gap-2 items-center">
                   <select id="fsNoteKey" class="px-3 py-2 border rounded text-sm">
                     <option value="ias16_ppe_policy">IAS 16 PPE policy note</option>
+                    <option value="ias41_agriculture_disclosure">IAS 41 — Agriculture disclosure</option>
                     <optgroup label="IFRS 16 Leases">
                       <option value="ifrs16_lease_policy">Lessee lease policy note</option>
                       <option value="ifrs16_lessor_lease_policy">Lessor lease policy note</option>
+                    </optgroup>
+                    <optgroup label="Employee Benefits">
+                      <option value="ias19_employee_cost_policy">IAS 19 — Employee benefits policy</option>
+                      <option value="ias19_leave_liability_policy">IAS 19 — Leave benefits policy</option>
+                      <option value="ias19_leave_liability">IAS 19 — Leave pay liability</option>
+                      <option value="ias19_employee_cost_disclosure">IAS 19 — Employee benefit expense</option>
+                      <option value="ias19_bonus_provision_policy">IAS 19 — Employee bonus policy</option>
+                      <option value="ias19_bonus_provision_disclosure">IAS 19 — Bonus provision</option>
+                      <option value="ias19_termination_benefits_policy">IAS 19 — Termination benefits policy</option>
+                      <option value="ias19_termination_benefits_disclosure">IAS 19 — Termination benefit obligation</option>
+                      <option value="ias19_defined_contribution_policy">IAS 19 — Defined-contribution policy</option>
+                      <option value="ias19_defined_contribution_disclosure">IAS 19 — Defined-contribution plans</option>
+                      <option value="ias19_defined_benefit_policy">IAS 19 — Defined-benefit policy</option>
+                      <option value="ias19_defined_benefit_disclosure">IAS 19 — Defined-benefit plans</option>
+                      <option value="ias19_employee_benefits_pack">IAS 19 — Complete employee benefits note</option>
                     </optgroup>
                     <option value="ifrs15_revenue_policy">IFRS 15 revenue policy note</option>
                     <option value="ifrs15_revenue_disclosure">IFRS 15 revenue disclosure note</option>
@@ -10882,6 +11443,7 @@ tbody tr:hover {
                     <option value="ias40_ip_disclosure">IAS 40 — Investment property disclosures</option>
                     <option value="ias38_ia_policy">IAS 38 — Intangible assets policy</option>
                     <option value="ias38_ia_disclosure">IAS 38 — Intangible assets disclosures</option>                  
+                    <option value="ifrs9_financial_instruments_policy">IFRS 9 financial instruments policy</option>
                   </select>
 
                   <button id="loadFsNoteBtn" class="btn">Load</button>
@@ -11528,6 +12090,7 @@ tbody tr:hover {
             <button class="tab active" data-ifrs9-tab="register">Register</button>
             <button class="tab" data-ifrs9-tab="ecl-runs">ECL Runs</button>
             <button class="tab" data-ifrs9-tab="ecl-models">ECL Models</button>
+            <button class="tab"data-ifrs9-tab="general-ecl">General ECL</button>
             <button class="tab" data-ifrs9-tab="accounts">Account Setup</button>
           </div>
 
@@ -11612,6 +12175,91 @@ tbody tr:hover {
               <h3>ECL Runs</h3>
               <div id="ifrs9EclRunList"></div>
             </div>
+
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>Receivable Write-Offs</h3>
+                  <p class="muted">
+                    Write off receivables where there is no reasonable expectation of recovery.
+                  </p>
+                </div>
+
+                <button
+                  id="ifrs9NewWriteoffBtn"
+                  type="button"
+                  class="btn btn-primary"
+                >
+                  New Write-Off
+                </button>
+              </div>
+
+              <div id="ifrs9WriteoffList"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>ECL Allowance Reconciliation</h3>
+                  <p class="muted">
+                    Reconcile the opening loss allowance, impairment movements,
+                    write-offs and closing allowance.
+                  </p>
+                </div>
+
+                <div class="screen-actions">
+                  <button
+                    id="ifrs9LoadReconciliationBtn"
+                    type="button"
+                    class="btn btn-secondary"
+                  >
+                    Load Reconciliation
+                  </button>
+
+                  <button
+                    id="ifrs9SaveReconciliationSnapshotBtn"
+                    type="button"
+                    class="btn btn-primary"
+                    disabled
+                  >
+                    Save Snapshot
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  From
+                  <input
+                    id="ifrs9ReconciliationFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  To
+                  <input
+                    id="ifrs9ReconciliationTo"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Financial Year
+                  <input
+                    id="ifrs9ReconciliationYear"
+                    type="number"
+                    min="2000"
+                    max="2200"
+                  >
+                </label>
+              </div>
+
+              <div
+                id="ifrs9ReconciliationBody"
+                style="margin-top:16px;"
+              ></div>
+            </div>
           </div>
 
           <div id="ifrs9TabEclModels" class="ifrs9-tab-panel hidden">
@@ -11627,29 +12275,80 @@ tbody tr:hover {
                 <label>
                   Model Type
                   <select id="ifrs9ModelType">
-                    <option value="simplified">Simplified</option>
-                    <option value="general">General</option>
-                    <option value="manual">Manual</option>
+                    <option value="simplified">
+                      Simplified
+                    </option>
+
+                    <option value="general" disabled>
+                      General — Phase 2
+                    </option>
+
+                    <option value="manual" disabled>
+                      Manual — Phase 2
+                    </option>
                   </select>
                 </label>
 
                 <label>
                   Applies To
                   <select id="ifrs9ModelAppliesTo">
-                    <option value="trade_receivable">Trade Receivables</option>
-                    <option value="loan_receivable">Loan Receivables</option>
-                    <option value="deposit_asset">Deposit Assets</option>
-                    <option value="other_financial_asset">Other Financial Assets</option>
+                    <option value="trade_receivable">
+                      Trade Receivables
+                    </option>
+
+                    <option value="loan_receivable" disabled>
+                      Loan Receivables — Phase 2
+                    </option>
+
+                    <option value="deposit_asset" disabled>
+                      Deposit Assets — Phase 2
+                    </option>
+
+                    <option value="other_financial_asset" disabled>
+                      Other Financial Assets — Phase 2
+                    </option>
                   </select>
                 </label>
 
                 <label>
                   Basis
                   <select id="ifrs9ModelBasis">
-                    <option value="provision_matrix">Provision Matrix</option>
-                    <option value="pd_lgd_ead">PD / LGD / EAD</option>
-                    <option value="manual">Manual</option>
+                    <option value="provision_matrix">
+                      Provision Matrix
+                    </option>
+
+                    <option value="pd_lgd_ead" disabled>
+                      PD / LGD / EAD — Phase 2
+                    </option>
+
+                    <option value="manual" disabled>
+                      Manual — Phase 2
+                    </option>
                   </select>
+                </label>
+
+                <label>
+                  Effective From
+                  <input
+                    id="ifrs9ModelEffectiveFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Review Date
+                  <input
+                    id="ifrs9ModelReviewDate"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Model Owner
+                  <input
+                    id="ifrs9ModelOwner"
+                    placeholder="Finance Manager"
+                  >
                 </label>
               </div>
 
@@ -11674,6 +12373,389 @@ tbody tr:hover {
               <div id="ifrs9BandList"></div>
 
               <button id="ifrs9SaveBandsBtn" class="btn btn-primary">Save Provision Matrix</button>
+            </div>
+          </div>
+
+          <div
+            id="ifrs9TabGeneralEcl"
+            class="ifrs9-tab-panel hidden"
+          >
+            <div class="card">
+              <div class="card-header-row">
+                <div>
+                  <h3>General ECL Models</h3>
+                  <p class="muted">
+                    Stage 1, Stage 2 and Stage 3 ECL models for
+                    loans, deposits, bonds and other financial assets.
+                  </p>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Model Name
+                  <input
+                    id="ifrs9GeneralModelName"
+                    placeholder="Loan Receivables General ECL"
+                  >
+                </label>
+
+                <label>
+                  Model Code
+                  <input
+                    id="ifrs9GeneralModelCode"
+                    placeholder="LOAN-ECL-01"
+                  >
+                </label>
+
+                <label>
+                  Applies To
+                  <select id="ifrs9GeneralModelAppliesTo">
+                    <option value="loan_receivable">
+                      Loan Receivables
+                    </option>
+                    <option value="staff_loan">
+                      Staff Loans
+                    </option>
+                    <option value="director_loan">
+                      Director Loans
+                    </option>
+                    <option value="deposit_asset">
+                      Deposit Assets
+                    </option>
+                    <option value="bond">
+                      Bonds
+                    </option>
+                    <option value="note_receivable">
+                      Notes Receivable
+                    </option>
+                    <option value="other_financial_asset">
+                      Other Financial Assets
+                    </option>
+                    <option value="fvoci_debt">
+                      FVOCI Debt Instruments
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  SICR Method
+                  <select id="ifrs9GeneralSicrMethod">
+                    <option value="combined">Combined</option>
+                    <option value="days_past_due">Days Past Due</option>
+                    <option value="credit_rating">Credit Rating</option>
+                    <option value="pd_change">PD Change</option>
+                    <option value="watchlist">Watchlist</option>
+                  </select>
+                </label>
+
+                <label>
+                  Stage 2 Backstop Days
+                  <input
+                    id="ifrs9GeneralStage2Days"
+                    type="number"
+                    min="0"
+                    value="30"
+                  >
+                </label>
+
+                <label>
+                  Default Days
+                  <input
+                    id="ifrs9GeneralDefaultDays"
+                    type="number"
+                    min="1"
+                    value="90"
+                  >
+                </label>
+
+                <label>
+                  Cure Period Days
+                  <input
+                    id="ifrs9GeneralCureDays"
+                    type="number"
+                    min="0"
+                    value="90"
+                  >
+                </label>
+
+                <label>
+                  Lifetime Horizon Months
+                  <input
+                    id="ifrs9GeneralLifetimeMonths"
+                    type="number"
+                    min="1"
+                    value="120"
+                  >
+                </label>
+
+                <label>
+                  Effective From
+                  <input
+                    id="ifrs9GeneralEffectiveFrom"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Review Date
+                  <input
+                    id="ifrs9GeneralReviewDate"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  Model Owner
+                  <input
+                    id="ifrs9GeneralModelOwner"
+                    placeholder="Finance Manager"
+                  >
+                </label>
+              </div>
+
+              <button
+                id="ifrs9CreateGeneralModelBtn"
+                type="button"
+                class="btn btn-primary"
+              >
+                Create General ECL Model
+              </button>
+            </div>
+
+            <div class="card">
+              <h3>General ECL Models</h3>
+              <div id="ifrs9GeneralModelList"></div>
+            </div>
+
+            <div
+              id="ifrs9GeneralModelConfig"
+              class="hidden"
+            >
+              <div class="card">
+                <div class="card-header-row">
+                  <div>
+                    <h3 id="ifrs9GeneralConfigTitle">
+                      General ECL Configuration
+                    </h3>
+                    <p class="muted">
+                      Configure probability-weighted scenarios,
+                      PD curves and LGD assumptions.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="tabs">
+                  <button
+                    type="button"
+                    class="tab active"
+                    data-ifrs9-general-config-tab="scenarios"
+                  >
+                    Scenarios
+                  </button>
+
+                  <button
+                    type="button"
+                    class="tab"
+                    data-ifrs9-general-config-tab="pd-curves"
+                  >
+                    PD Curves
+                  </button>
+
+                  <button
+                    type="button"
+                    class="tab"
+                    data-ifrs9-general-config-tab="lgd"
+                  >
+                    LGD Assumptions
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralScenariosPanel"
+                  class="ifrs9-general-config-panel"
+                >
+                  <div class="card-header-row">
+                    <h4>Economic Scenarios</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-scenario
+                    >
+                      Add Scenario
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralScenarioList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralScenariosBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save Scenarios
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralPdPanel"
+                  class="ifrs9-general-config-panel hidden"
+                >
+                  <div class="card-header-row">
+                    <h4>Probability of Default Curves</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-pd
+                    >
+                      Add PD Row
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralPdList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralPdBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save PD Curves
+                  </button>
+                </div>
+
+                <div
+                  id="ifrs9GeneralLgdPanel"
+                  class="ifrs9-general-config-panel hidden"
+                >
+                  <div class="card-header-row">
+                    <h4>Loss Given Default Assumptions</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-ifrs9-add-general-lgd
+                    >
+                      Add LGD
+                    </button>
+                  </div>
+
+                  <div id="ifrs9GeneralLgdList"></div>
+
+                  <button
+                    id="ifrs9SaveGeneralLgdBtn"
+                    type="button"
+                    class="btn btn-primary"
+                  >
+                    Save LGD Assumptions
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Create General ECL Run</h3>
+
+              <p class="muted">
+                Calculate Stage 1, Stage 2 and Stage 3 ECL for
+                instruments assigned to a General ECL model.
+              </p>
+
+              <div class="form-grid">
+                <label>
+                  Reporting Date
+                  <input
+                    id="ifrs9GeneralRunDate"
+                    type="date"
+                  >
+                </label>
+
+                <label>
+                  General ECL Model
+                  <select id="ifrs9GeneralRunModel">
+                    <option value="">
+                      Select General ECL model
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  Gross Exposure
+                  <input
+                    id="ifrs9GeneralGrossExposure"
+                    type="number"
+                    step="0.01"
+                    value="0"
+                    readonly
+                  >
+                </label>
+
+                <label>
+                  Total EAD
+                  <input
+                    id="ifrs9GeneralTotalEad"
+                    type="number"
+                    step="0.01"
+                    value="0"
+                    readonly
+                  >
+                </label>
+
+                <label>
+                  Total ECL
+                  <input
+                    id="ifrs9GeneralTotalEcl"
+                    type="number"
+                    step="0.01"
+                    value="0"
+                    readonly
+                  >
+                </label>
+
+                <label>
+                  ECL Movement
+                  <input
+                    id="ifrs9GeneralMovementEcl"
+                    type="number"
+                    step="0.01"
+                    value="0"
+                    readonly
+                  >
+                </label>
+              </div>
+
+              <div
+                class="screen-actions"
+                style="margin-top:12px;"
+              >
+                <button
+                  id="ifrs9CalculateGeneralRunBtn"
+                  type="button"
+                  class="btn btn-secondary"
+                >
+                  Calculate General ECL
+                </button>
+
+                <button
+                  id="ifrs9CreateGeneralRunBtn"
+                  type="button"
+                  class="btn btn-primary"
+                  disabled
+                >
+                  Create General ECL Run
+                </button>
+              </div>
+
+              <div
+                id="ifrs9GeneralRunPreview"
+                style="margin-top:16px;"
+              ></div>
+            </div>
+
+            <div class="card">
+              <h3>General ECL Runs</h3>
+              <div id="ifrs9GeneralRunList"></div>
             </div>
           </div>
 
@@ -11713,22 +12795,6 @@ tbody tr:hover {
 
             <div class="modal-footer">
               <button id="ifrs9InstrumentCancelBtn" class="btn btn-secondary">Close</button>
-            </div>
-          </div>
-        </div>
-
-        <div id="ifrs9JournalPreviewModal" class="modal hidden">
-          <div class="modal-content wide">
-            <div class="modal-header">
-              <h2>Journal Preview</h2>
-              <button id="ifrs9PreviewCloseBtn" class="btn btn-light">×</button>
-            </div>
-
-            <div id="ifrs9PreviewBody"></div>
-
-            <div class="modal-footer">
-              <button id="ifrs9PreviewPostBtn" class="btn btn-primary">Post Journal</button>
-              <button id="ifrs9PreviewCancelBtn" class="btn btn-secondary">Cancel</button>
             </div>
           </div>
         </div>
@@ -16241,7 +17307,7 @@ tbody tr:hover {
 
             <div class="flex items-center justify-between">
               <div>
-                <h3 class="font-bold text-base">Projects</h3>
+                <h3 id="projectScreenTitle" class="font-bold text-base">Projects</h3>
                 <div class="text-xs text-slate-500">
                   Job costing, material issues, budgets, and project profitability
                 </div>
@@ -16294,31 +17360,91 @@ tbody tr:hover {
             <div id="projectCreateOverlay" class="absolute inset-0 bg-black/40"></div>
 
             <div class="absolute inset-0 flex items-center justify-center p-4">
-              <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4">
-                <div class="flex items-center justify-between mb-3">
+              <div class="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-y-auto p-4">
+
+                <div class="flex items-center justify-between mb-4">
                   <div>
-                    <div class="font-bold text-base">New Project</div>
-                    <div class="text-xs text-slate-500">Create a project/job for costing and material issues</div>
+                    <div class="font-bold text-base">Project Setup</div>
+                    <div class="text-xs text-slate-500">Project management and project accounting setup</div>
                   </div>
                   <button id="projectCreateCloseBtn" class="text-sm px-2 py-1 border rounded">✕</button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <input id="projectId" type="hidden">
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+
                   <label>
                     <div class="text-slate-500 mb-1">Project Code</div>
                     <input id="projectCode" class="w-full border rounded px-2 py-2" placeholder="PRJ-001">
                   </label>
 
-                  <label>
+                  <label class="md:col-span-2">
                     <div class="text-slate-500 mb-1">Project Name</div>
-                    <input id="projectName" class="w-full border rounded px-2 py-2" placeholder="Line construction project">
+                    <input id="projectName" class="w-full border rounded px-2 py-2" placeholder="Project name">
                   </label>
 
                   <label>
-                    <div class="text-slate-500 mb-1">Customer ID</div>
-                    <select id="projectCustomerId" class="w-full border rounded px-2 py-2">
-                      <option value="">Select customer...</option>
+                    <div class="text-slate-500 mb-1">Project Type</div>
+                    <select id="projectType" class="w-full border rounded px-2 py-2">
+                      <option value="customer_project">Customer Project</option>
+                      <option value="internal_project">Internal Project</option>
+                      <option value="capital_project">Capital Project</option>
+                      <option value="implementation">Implementation</option>
+                      <option value="construction">Construction</option>
+                      <option value="research">Research</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="marketing">Marketing</option>
+                      <option value="other">Other</option>
                     </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Accounting Mode</div>
+                    <select id="projectAccountingMode" class="w-full border rounded px-2 py-2">
+                      <option value="contract">Contract / Revenue</option>
+                      <option value="wip">WIP</option>
+                      <option value="expense">Expense</option>
+                      <option value="capital">Capital / CIP</option>
+                      <option value="none">Operational Only</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Priority</div>
+                    <select id="projectPriority" class="w-full border rounded px-2 py-2">
+                      <option value="low">Low</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Customer</div>
+                    <select id="projectCustomerId" class="w-full border rounded px-2 py-2">
+                      <option value="">No customer / internal project</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Project Manager User ID</div>
+                    <input id="projectManagerUserId" type="number" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Sponsor / Owner User ID</div>
+                    <input id="projectSponsorUserId" type="number" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Department ID</div>
+                    <input id="projectDepartmentId" type="number" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Business Unit</div>
+                    <input id="projectBusinessUnit" class="w-full border rounded px-2 py-2">
                   </label>
 
                   <label>
@@ -16327,7 +17453,40 @@ tbody tr:hover {
                       <option value="draft">Draft</option>
                       <option value="approved">Approved</option>
                       <option value="active">Active</option>
+                      <option value="on_hold">On Hold</option>
+                      <option value="completed">Completed</option>
+                      <option value="closed">Closed</option>
                     </select>
+                  </label>
+
+                  <label class="block text-[11px] text-slate-500 mt-2 mb-1">Project Type</label>
+                  <select id="projectTypeFilter" class="w-full border rounded px-2 py-1 text-xs">
+                    <option value="">All types</option>
+                    <option value="customer_project">Customer Project</option>
+                    <option value="internal_project">Internal Project</option>
+                    <option value="capital_project">Capital Project</option>
+                    <option value="implementation">Implementation</option>
+                    <option value="construction">Construction</option>
+                    <option value="research">Research</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="other">Other</option>
+                  </select>
+
+                  <label class="block text-[11px] text-slate-500 mt-2 mb-1">Accounting</label>
+                  <select id="projectAccountingModeFilter" class="w-full border rounded px-2 py-1 text-xs">
+                    <option value="">All modes</option>
+                    <option value="contract">Contract</option>
+                    <option value="wip">WIP</option>
+                    <option value="expense">Expense</option>
+                    <option value="capital">Capital</option>
+                    <option value="none">Operational Only</option>
+                  </select>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Progress %</div>
+                    <input id="projectProgressPercent" type="number" min="0" max="100" step="0.01"
+                          class="w-full border rounded px-2 py-2">
                   </label>
 
                   <label>
@@ -16341,8 +17500,28 @@ tbody tr:hover {
                   </label>
 
                   <label>
+                    <div class="text-slate-500 mb-1">Baseline Start</div>
+                    <input id="projectBaselineStartDate" type="date" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Baseline End</div>
+                    <input id="projectBaselineEndDate" type="date" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
                     <div class="text-slate-500 mb-1">Contract Value</div>
                     <input id="projectContractValue" type="number" step="0.01" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Budget Value</div>
+                    <input id="projectBudgetValue" type="number" step="0.01" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Baseline Budget</div>
+                    <input id="projectBaselineBudgetValue" type="number" step="0.01" class="w-full border rounded px-2 py-2">
                   </label>
 
                   <label>
@@ -16351,25 +17530,76 @@ tbody tr:hover {
                       <option value="milestone">Milestone</option>
                       <option value="time_and_materials">Time & Materials</option>
                       <option value="fixed_price">Fixed Price</option>
+                      <option value="progress">Progress</option>
+                      <option value="none">No Billing</option>
                     </select>
                   </label>
 
-                  <label class="md:col-span-2">
+                  <label>
+                    <div class="text-slate-500 mb-1">WIP / CIP Account</div>
+                    <input id="projectWipAccountCode" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Revenue Account</div>
+                    <input id="projectRevenueAccountCode" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label>
+                    <div class="text-slate-500 mb-1">Cost / Expense Account</div>
+                    <input id="projectCostAccountCode" class="w-full border rounded px-2 py-2">
+                  </label>
+
+                  <label class="md:col-span-3">
                     <div class="text-slate-500 mb-1">Location</div>
                     <input id="projectLocation" class="w-full border rounded px-2 py-2">
                   </label>
 
-                  <label class="md:col-span-2">
+                  <div class="md:col-span-3 grid grid-cols-2 md:grid-cols-5 gap-2 border rounded p-3">
+                    <label class="flex items-center gap-2">
+                      <input id="projectBillingEnabled" type="checkbox">
+                      <span>Billing</span>
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input id="projectRevenueEnabled" type="checkbox">
+                      <span>Revenue</span>
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input id="projectInventoryEnabled" type="checkbox">
+                      <span>Inventory</span>
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input id="projectTimeEnabled" type="checkbox">
+                      <span>Timesheets</span>
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input id="projectExpensesEnabled" type="checkbox">
+                      <span>Expenses</span>
+                    </label>
+                  </div>
+
+                  <label class="md:col-span-3">
+                    <div class="text-slate-500 mb-1">Description</div>
+                    <textarea id="projectDescription" class="w-full border rounded px-2 py-2" rows="2"></textarea>
+                  </label>
+
+                  <label class="md:col-span-3">
                     <div class="text-slate-500 mb-1">Notes</div>
                     <textarea id="projectNotes" class="w-full border rounded px-2 py-2" rows="3"></textarea>
                   </label>
+
                 </div>
 
                 <div id="projectCreateMsg" class="mt-3 text-xs text-slate-500"></div>
 
                 <div class="flex justify-end gap-2 mt-4">
                   <button id="projectCreateCancelBtn" class="px-3 py-2 text-xs border rounded">Cancel</button>
-                  <button id="projectCreateSaveBtn" class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
+                  <button id="projectCreateSaveBtn"
+                          class="px-3 py-2 text-xs bg-[var(--fs-navy)] text-white rounded">
                     Save Project
                   </button>
                 </div>
@@ -16517,6 +17747,69 @@ tbody tr:hover {
               </div>
 
             </div>
+          </div>
+        </section>
+
+        <!-- =========================================================
+            IAS 41 AGRICULTURE
+        ========================================================== -->
+        <section id="screen-ias41" class="screen hidden">
+          <div id="ias41App" class="space-y-4">
+
+            <div class="card p-4">
+              <div class="flex items-start justify-between gap-4 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">🌾</span>
+
+                  <div>
+                    <h2 class="text-xl font-bold">
+                      IAS 41 Agriculture
+                    </h2>
+
+                    <p class="text-sm text-slate-500 mt-1">
+                      Biological assets, agricultural produce,
+                      fair-value measurement, harvest and disclosures.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span id="ias41CompanyBadge" class="pill">
+                    No company selected
+                  </span>
+
+                  <span id="ias41SetupBadge" class="pill">
+                    Setup not checked
+                  </span>
+
+                  <button
+                    id="ias41RefreshBtn"
+                    type="button"
+                    class="btn"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card p-3 overflow-x-auto">
+              <div
+                id="ias41Tabs"
+                class="flex items-center gap-2 min-w-max"
+                role="tablist"
+                aria-label="IAS 41 workspaces"
+              ></div>
+            </div>
+
+            <div id="ias41Workspace" class="min-h-[420px]"></div>
+
+            <div
+              id="ias41ModalHost"
+              class="fixed inset-0 z-[120] hidden"
+              aria-hidden="true"
+            ></div>
+
           </div>
         </section>
 
@@ -16784,7 +18077,7 @@ tbody tr:hover {
 
                       <div class="flex items-center gap-3">
                         <div class="w-14 h-14 rounded-lg border bg-white flex items-center justify-center overflow-hidden">
-                          <img id="cpLogoPreview" src="" alt="Logo" class="w-full h-full object-contain hidden" />
+                          <img id="cpLogoPreview" alt="Company logo" class="w-full h-full object-contain hidden" />
                           <div id="cpLogoFallback" class="text-[10px] text-slate-400">No logo</div>
                         </div>
 
@@ -17046,7 +18339,7 @@ tbody tr:hover {
                 <div>
                   <h4 class="font-semibold text-slate-800">Corporate structure</h4>
                   <p class="text-xs text-slate-500 mt-1">
-                    Register subsidiaries, joint ventures, associates, branches, and reportable segments.
+                    Define subsidiaries, joint ventures, associates, branches and reportable segments used by Group Reporting.
                   </p>
                 </div>
 
@@ -17059,14 +18352,197 @@ tbody tr:hover {
                 </button>
               </div>
 
-              <!-- Entry card -->
+              <!-- Group reporting profile -->
               <div class="mt-4 rounded-xl border bg-white p-4 shadow-sm">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                  <div class="md:col-span-2">
-                    <label class="block text-[11px] text-slate-500 mb-1" for="relatedCompanyType">
-                      Add structure item
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <h5 class="text-sm font-semibold text-slate-800">Group reporting profile</h5>
+                    <p class="text-xs text-slate-500 mt-1">
+                      Configure the parent entity and group-level reporting defaults.
+                    </p>
+                  </div>
+
+                  <span
+                    id="groupProfileStatus"
+                    class="text-[11px] rounded bg-slate-100 px-2 py-1 text-slate-600"
+                  >
+                    Not configured
+                  </span>
+                </div>
+
+                <form id="groupReportingProfileForm" class="mt-4">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Profile name</label>
+                      <input
+                        name="profile_name"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                        placeholder="e.g. SmartAfro Group"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Group name</label>
+                      <input
+                        name="group_name"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Reporting currency</label>
+                      <input
+                        name="reporting_currency"
+                        maxlength="3"
+                        class="w-full border rounded px-3 py-2 text-sm uppercase"
+                        placeholder="LSL"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Year-end month</label>
+                      <input
+                        name="financial_year_end_month"
+                        type="number"
+                        min="1"
+                        max="12"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Year-end day</label>
+                      <input
+                        name="financial_year_end_day"
+                        type="number"
+                        min="1"
+                        max="31"
+                        class="w-full border rounded px-3 py-2 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] text-slate-500 mb-1">Default method</label>
+                      <select
+                        name="default_consolidation_method"
+                        class="w-full border rounded px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">Entity specific</option>
+                        <option value="full">Full consolidation</option>
+                        <option value="equity">Equity method</option>
+                        <option value="proportionate">Proportionate</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <label class="flex items-center gap-2">
+                      <input name="enable_intercompany" type="checkbox" checked />
+                      Intercompany
                     </label>
-                    <select id="relatedCompanyType" class="w-full border rounded px-3 py-2 text-sm">
+
+                    <label class="flex items-center gap-2">
+                      <input name="enable_fx_translation" type="checkbox" checked />
+                      FX translation
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input name="enable_nci" type="checkbox" checked />
+                      NCI
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input name="enable_equity_method" type="checkbox" checked />
+                      Equity method
+                    </label>
+
+                    <label class="flex items-center gap-2">
+                      <input name="enable_segment_reporting" type="checkbox" />
+                      Segments
+                    </label>
+                  </div>
+
+                  <div class="mt-4 flex justify-end">
+                    <button
+                      type="submit"
+                      class="rounded px-3 py-2 text-sm bg-slate-900 text-white hover:bg-slate-800"
+                    >
+                      Save group profile
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Structure actions -->
+              <div class="mt-4 flex items-center justify-between gap-3">
+                <div>
+                  <h5 class="text-sm font-semibold text-slate-800">Group members</h5>
+                  <p class="text-xs text-slate-500 mt-1">
+                    Companies, branches and segments included in this group structure.
+                  </p>
+                </div>
+
+                <button
+                  id="btnAddCorporateStructureItem"
+                  type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800"
+                >
+                  + Add structure item
+                </button>
+              </div>
+
+              <!-- Structure entry form — hidden until Add is clicked -->
+              <div
+                id="corporateStructureEntryPanel"
+                class="hidden mt-4 rounded-xl border bg-white p-4 shadow-sm"
+              >
+                <div class="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h5 class="text-sm font-semibold text-slate-800">
+                      Add structure item
+                    </h5>
+                    <p class="text-xs text-slate-500 mt-1">
+                      Create a new entity or link an existing company to the group.
+                    </p>
+                  </div>
+
+                  <button
+                    id="btnCloseCorporateStructureForm"
+                    type="button"
+                    class="border rounded-lg px-3 py-2 text-sm bg-white hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Action
+                    </label>
+
+                    <select
+                      id="corporateStructureAction"
+                      class="w-full border rounded px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="create">Create new entity</option>
+                      <option value="link">Link existing company</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      class="block text-[11px] text-slate-500 mb-1"
+                      for="relatedCompanyType"
+                    >
+                      Structure item
+                    </label>
+
+                    <select
+                      id="relatedCompanyType"
+                      class="w-full border rounded px-3 py-2 text-sm bg-white"
+                    >
                       <option value="subsidiary">Subsidiary</option>
                       <option value="joint_venture">Joint venture</option>
                       <option value="associate">Associate</option>
@@ -17090,33 +18566,75 @@ tbody tr:hover {
                 <div id="corporateStructureFormHost" class="mt-4"></div>
               </div>
 
-              <!-- Saved items -->
-              <div class="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-4">
-                <div class="xl:col-span-2 rounded-xl border bg-white p-4 shadow-sm">
-                  <div class="flex items-center justify-between">
-                    <h5 class="text-sm font-semibold text-slate-700">Related legal entities</h5>
-                    <span id="relatedEntitiesCount" class="text-[11px] text-slate-500">0 items</span>
+              <!-- Saved group members -->
+              <div class="mt-4 space-y-4">
+
+                <!-- Main group members -->
+                <div class="rounded-xl border bg-white p-4 shadow-sm">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h5 class="text-sm font-semibold text-slate-700">
+                        Group members
+                      </h5>
+                      <p class="text-xs text-slate-500 mt-1">
+                        Subsidiaries, associates, joint ventures and registered branch entities.
+                      </p>
+                    </div>
+
+                    <span
+                      id="relatedEntitiesCount"
+                      class="text-[11px] rounded bg-slate-100 px-2 py-1 text-slate-500"
+                    >
+                      0 items
+                    </span>
                   </div>
-                  <div id="relatedCompaniesList" class="mt-3 space-y-2"></div>
+
+                  <div id="relatedCompaniesList" class="mt-4 space-y-3"></div>
                 </div>
 
-                <div class="rounded-xl border bg-white p-4 shadow-sm">
-                  <div>
-                    <h5 class="text-sm font-semibold text-slate-700">Internal branches</h5>
-                    <span id="branchCount" class="text-[11px] text-slate-500">0 items</span>
-                  </div>
-                  <div id="companyBranchesList" class="mt-3 space-y-2"></div>
+                <!-- Supporting structure -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-                  <div class="mt-5">
-                    <h5 class="text-sm font-semibold text-slate-700">Segments</h5>
-                    <span id="segmentCount" class="text-[11px] text-slate-500">0 items</span>
+                  <div class="rounded-xl border bg-white p-4 shadow-sm">
+                    <div class="flex items-center justify-between">
+                      <h5 class="text-sm font-semibold text-slate-700">
+                        Internal branches
+                      </h5>
+
+                      <span
+                        id="branchCount"
+                        class="text-[11px] text-slate-500"
+                      >
+                        0 items
+                      </span>
+                    </div>
+
+                    <div id="companyBranchesList" class="mt-3 space-y-2"></div>
                   </div>
-                  <div id="companySegmentsList" class="mt-3 space-y-2"></div>
+
+                  <div class="rounded-xl border bg-white p-4 shadow-sm">
+                    <div class="flex items-center justify-between">
+                      <h5 class="text-sm font-semibold text-slate-700">
+                        Segments
+                      </h5>
+
+                      <span
+                        id="segmentCount"
+                        class="text-[11px] text-slate-500"
+                      >
+                        0 items
+                      </span>
+                    </div>
+
+                    <div id="companySegmentsList" class="mt-3 space-y-2"></div>
+                  </div>
+
                 </div>
               </div>
 
               <div class="mt-3 text-xs text-slate-500">
-                Consolidation rules such as eliminations, foreign currency translation, and non-controlling interests can be layered in later.
+                This structure determines which entities participate in Group Reporting.
+                Consolidation runs and accounting calculations are managed separately.
               </div>
             </div>
 
@@ -17683,6 +19201,1537 @@ tbody tr:hover {
           </div>
         </section>
 
+        <section
+          id="screen-group-reporting"
+          class="screen hidden"
+          data-screen="group-reporting"
+        >
+          <div class="w-full max-w-none px-6 lg:px-8 py-6">
+
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-slate-900">
+                  Group Reporting
+                </h2>
+
+                <p class="mt-1 text-sm text-slate-500">
+                  Prepare and manage consolidated financial reporting across group entities.
+                </p>
+              </div>
+
+              <button
+                id="btnNewConsolidationRun"
+                type="button"
+                class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm"
+              >
+                New consolidation run
+              </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="mt-6">
+              <div class="flex gap-2 text-sm flex-wrap">
+                <button type="button" class="group-reporting-tab active" data-group-tab="runs">Consolidation Runs</button>
+                <button type="button" id="grAccountMappingTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="mapping" disabled>Account Mapping</button>
+                <button type="button" id="grPreconsolidationTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="preconsolidation" disabled>Pre-Consolidation TB</button>
+                <button type="button" id="grAdjustmentsTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="adjustments" disabled>Adjustments</button>
+                <button type="button" id="grIntercompanyTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="intercompany" disabled>Intercompany</button>
+                <button type="button" id="grEliminationsTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="eliminations" disabled>Eliminations</button>
+                <button type="button" id="grAdjustedTbTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="adjusted-tb" disabled>Adjusted Group TB</button>
+                <button type="button" id="grAcquisitionTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="acquisition" disabled>Acquisition &amp; NCI</button>
+                <button type="button" id="grEquityMethodTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="equity-method" disabled>Associates &amp; JVs</button>
+                <button type="button" id="grTranslationTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="translation" disabled>FX Translation</button>
+                <button type="button" id="grFinalTbTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="final-tb" disabled>Final Group TB</button>
+                <button type="button" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="statements" disabled>Group Statements</button>
+                <button type="button" id="grControlTab" class="group-reporting-tab pb-3 text-slate-500" data-group-tab="controls" disabled> Control & Close</button>
+              </div>
+            </div>
+
+            <!-- Runs -->
+            <div class="group-reporting-panel mt-5" data-group-panel="runs">
+
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Total runs</div>
+                  <div id="grTotalRuns" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Draft</div>
+                  <div id="grDraftRuns" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Prepared</div>
+                  <div id="grPreparedRuns" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved / Locked</div>
+                  <div id="grFinalRuns" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b">
+                  <h3 class="text-sm font-semibold text-slate-800">
+                    Consolidation runs
+                  </h3>
+                </div>
+
+                <div id="groupConsolidationRunsList" class="divide-y"></div>
+              </div>
+
+            </div>
+
+            <div
+              id="groupRunWorkspace"
+              class="hidden mt-5"
+            >
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div class="flex items-start gap-3">
+                  <button
+                    id="btnBackToConsolidationRuns"
+                    type="button"
+                    class="border rounded-lg px-3 py-2 text-sm bg-white hover:bg-slate-50"
+                  >
+                    ← Runs
+                  </button>
+
+                  <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <h3
+                        id="groupRunWorkspaceTitle"
+                        class="text-lg font-semibold text-slate-900"
+                      >
+                        Consolidation run
+                      </h3>
+
+                      <span
+                        id="groupRunWorkspaceStatus"
+                        class="rounded bg-slate-100 text-slate-600 px-2 py-1 text-[10px] uppercase"
+                      >
+                        —
+                      </span>
+                    </div>
+
+                    <div
+                      id="groupRunWorkspacePeriod"
+                      class="mt-1 text-xs text-slate-500"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="flex gap-2">
+                  <button
+                    id="btnRefreshGroupTB"
+                    type="button"
+                    class="border rounded-lg px-3 py-2 text-sm bg-white hover:bg-slate-50"
+                  >
+                    Refresh
+                  </button>
+
+                  <button
+                    id="btnLoadAllGroupTB"
+                    type="button"
+                    class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white"
+                  >
+                    Load all trial balances
+                  </button>
+                </div>
+              </div>
+
+              <!-- readiness cards -->
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Entities</div>
+                  <div id="grTbTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Ready</div>
+                  <div id="grTbReady" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Warnings</div>
+                  <div id="grTbWarnings" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Blocked / Pending</div>
+                  <div id="grTbBlocked" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <h4 class="text-sm font-semibold text-slate-800">
+                        Entity trial balances
+                      </h4>
+                      <p class="text-xs text-slate-500 mt-1">
+                        Load and validate each entity before group account mapping.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Entity</th>
+                        <th class="text-left px-4 py-3">Type</th>
+                        <th class="text-left px-4 py-3">Method</th>
+                        <th class="text-right px-4 py-3">Debit</th>
+                        <th class="text-right px-4 py-3">Credit</th>
+                        <th class="text-right px-4 py-3">Difference</th>
+                        <th class="text-left px-4 py-3">Readiness</th>
+                        <th class="text-right px-4 py-3">Actions</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="groupTbEntitiesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div
+              id="groupMappingWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="mapping"
+            >
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">
+                    Group Account Mapping
+                  </h3>
+
+                  <p id="grMappingRunMeta" class="mt-1 text-xs text-slate-500">
+                    Map entity accounts into the group reporting chart.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button
+                    id="btnBootstrapGroupCoa"
+                    type="button"
+                    class="border rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    Bootstrap Parent COA
+                  </button>
+
+                  <button
+                    id="btnAutoMapGroupAccounts"
+                    type="button"
+                    class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white"
+                  >
+                    Auto Map
+                  </button>
+                </div>
+              </div>
+
+              <!-- Mapping summary -->
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Accounts</div>
+                  <div id="grMapTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Mapped</div>
+                  <div id="grMapMapped" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Unmapped</div>
+                  <div id="grMapUnmapped" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Completion</div>
+                  <div id="grMapPercent" class="mt-1 text-xl font-semibold">0%</div>
+                </div>
+              </div>
+
+              <!-- Filters -->
+              <div class="rounded-xl border bg-white p-4 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                  <div>
+                    <label class="block text-[11px] text-slate-500 mb-1">
+                      Entity
+                    </label>
+
+                    <select
+                      id="grMappingEntityFilter"
+                      class="w-full border rounded px-3 py-2 text-sm bg-white"
+                    >
+                      <option value="">All entities</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="flex items-center gap-2 text-sm pb-2">
+                      <input
+                        id="grMappingUnmappedOnly"
+                        type="checkbox"
+                      />
+                      Show unmapped only
+                    </label>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <button
+                      id="btnRefreshGroupMapping"
+                      type="button"
+                      class="border rounded px-3 py-2 text-sm bg-white"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Mapping table -->
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Entity</th>
+                        <th class="text-left px-4 py-3">Source account</th>
+                        <th class="text-left px-4 py-3">Role</th>
+                        <th class="text-right px-4 py-3">Balance</th>
+                        <th class="text-left px-4 py-3">Group account</th>
+                        <th class="text-left px-4 py-3">Source</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="grMappingBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div
+              id="groupPreconWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="preconsolidation"
+            >
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">
+                    Pre-Consolidation Trial Balance
+                  </h3>
+
+                  <p id="grPreconMeta" class="mt-1 text-xs text-slate-500">
+                    Combined mapped trial balances before consolidation adjustments and eliminations.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button
+                    id="btnValidatePrecon"
+                    type="button"
+                    class="border rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    Validate
+                  </button>
+
+                  <button
+                    id="btnGeneratePrecon"
+                    type="button"
+                    class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white"
+                  >
+                    Generate
+                  </button>
+                </div>
+              </div>
+
+              <!-- readiness -->
+              <div
+                id="grPreconValidation"
+                class="hidden rounded-xl border bg-white p-4 mb-5"
+              ></div>
+
+              <!-- totals -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Group accounts</div>
+                  <div id="grPreconAccounts" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Total Debit</div>
+                  <div id="grPreconDebit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Total Credit</div>
+                  <div id="grPreconCredit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Difference</div>
+                  <div id="grPreconDifference" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 class="text-sm font-semibold text-slate-800">
+                        Group Working Trial Balance
+                      </h4>
+                      <p class="mt-1 text-xs text-slate-500">
+                        Entity balances mapped to the Group Chart of Accounts.
+                      </p>
+                    </div>
+
+                    <input
+                      id="grPreconSearch"
+                      type="search"
+                      placeholder="Search account..."
+                      class="border rounded px-3 py-2 text-sm w-64"
+                    />
+                  </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm whitespace-nowrap">
+                    <thead
+                      id="grPreconHead"
+                      class="bg-slate-50 text-xs text-slate-500"
+                    ></thead>
+
+                    <tbody id="grPreconBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div
+              id="groupAdjustmentsWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="adjustments"
+            >
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">
+                    Consolidation Adjustments
+                  </h3>
+
+                  <p class="mt-1 text-xs text-slate-500">
+                    Group-only journals for IFRS alignment, audit adjustments and reclassifications.
+                  </p>
+                </div>
+
+                <button
+                  id="btnNewGroupAdjustment"
+                  type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  New Adjustment
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Adjustments</div>
+                  <div id="grAdjTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Draft</div>
+                  <div id="grAdjDraft" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Reviewed</div>
+                  <div id="grAdjReviewed" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grAdjApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="groupAdjustmentsList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupIntercompanyWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="intercompany">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Intercompany Reconciliation</h3>
+                  <p class="mt-1 text-xs text-slate-500">Identify, match and reconcile balances between group entities before elimination.</p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnApplyIcRules" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">Apply Rules</button>
+                  <button id="btnAutoMatchIc" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">Auto Match</button>
+                  <button id="btnNewIcBalance" type="button" class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white">Add Balance</button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Declarations</div><div id="grIcBalances" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Matched</div><div id="grIcMatched" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Unmatched</div><div id="grIcUnmatched" class="mt-1 text-xl font-semibold">0</div></div>
+                <div class="rounded-xl border bg-white p-4"><div class="text-xs text-slate-500">Variances</div><div id="grIcVariance" class="mt-1 text-xl font-semibold">0</div></div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden mb-5">
+                <div class="px-4 py-3 border-b">
+                  <h4 class="text-sm font-semibold text-slate-800">Intercompany balances</h4>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Entity</th>
+                        <th class="text-left px-4 py-3">Counterparty</th>
+                        <th class="text-left px-4 py-3">Account</th>
+                        <th class="text-left px-4 py-3">Nature</th>
+                        <th class="text-right px-4 py-3">Amount</th>
+                        <th class="text-left px-4 py-3">Status</th>
+                        <th class="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="grIcBalancesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b"><h4 class="text-sm font-semibold text-slate-800">Matches & variances</h4></div>
+                <div id="grIcMatchesList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupEliminationsWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="eliminations">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Intercompany Eliminations</h3>
+                  <p class="mt-1 text-xs text-slate-500">Generate and approve group-only elimination journals from reconciled intercompany matches.</p>
+                </div>
+
+                <button id="btnGenerateEliminations" type="button" class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                  Generate Eliminations
+                </button>
+              </div>
+
+              <div id="grEliminationWarning" class="hidden rounded-xl border bg-white p-4 mb-5"></div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Eliminations</div>
+                  <div id="grElimTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Draft</div>
+                  <div id="grElimDraft" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Reviewed</div>
+                  <div id="grElimReviewed" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grElimApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grEliminationsList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupAdjustedTbWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="adjusted-tb">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Adjusted Group Trial Balance</h3>
+                  <p id="grAdjustedTbMeta" class="mt-1 text-xs text-slate-500">
+                    Pre-consolidation balances plus approved group adjustments and eliminations.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnValidateAdjustedTb" type="button" class="border rounded-lg px-3 py-2 text-sm bg-white">
+                    Validate
+                  </button>
+
+                  <button id="btnGenerateAdjustedTb" type="button" class="rounded-lg px-3 py-2 text-sm bg-slate-900 text-white">
+                    Generate
+                  </button>
+                </div>
+              </div>
+
+              <div id="grAdjustedTbValidation" class="hidden rounded-xl border bg-white p-4 mb-5"></div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Accounts</div>
+                  <div id="grAdjustedAccounts" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Debit</div>
+                  <div id="grAdjustedDebit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Credit</div>
+                  <div id="grAdjustedCredit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Difference</div>
+                  <div id="grAdjustedDifference" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="px-4 py-3 border-b flex items-center justify-between gap-3">
+                  <div>
+                    <h4 class="text-sm font-semibold text-slate-800">Consolidation Working Trial Balance</h4>
+                    <p class="mt-1 text-xs text-slate-500">Click an account to inspect the underlying entity balances and journals.</p>
+                  </div>
+
+                  <input id="grAdjustedTbSearch" type="search" placeholder="Search account..." class="border rounded px-3 py-2 text-sm w-64" />
+                </div>
+
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm whitespace-nowrap">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Group Account</th>
+                        <th class="text-right px-4 py-3">Pre-Con</th>
+                        <th class="text-right px-4 py-3">Adjustments</th>
+                        <th class="text-right px-4 py-3">Eliminations</th>
+                        <th class="text-right px-4 py-3">Final Balance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="grAdjustedTbBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div id="groupAcquisitionWorkspace" class="group-reporting-panel hidden mt-5" data-group-panel="acquisition">
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Acquisition Accounting & NCI</h3>
+                  <p class="mt-1 text-xs text-slate-500">Calculate acquisition-date net assets, goodwill, post-acquisition movements and non-controlling interests.</p>
+                </div>
+
+                <button id="btnPrepareAcquisition" type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                  Prepare Workpapers
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Subsidiaries</div>
+                  <div id="grAcqTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grAcqApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Goodwill</div>
+                  <div id="grAcqGoodwill" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Closing NCI</div>
+                  <div id="grAcqNci" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grAcquisitionList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupEquityMethodWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="equity-method">
+
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Associates & Joint Ventures</h3>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Equity-method accounting for associates and joint ventures included in the consolidation run.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnPrepareEquityMethod" type="button"
+                    class="border rounded-lg bg-white px-4 py-2 text-sm">
+                    Prepare Workpapers
+                  </button>
+
+                  <button id="btnGenerateEquityMethodJournals" type="button"
+                    class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                    Generate Journals
+                  </button>
+                </div>
+              </div>
+
+              <div id="grEquityMethodIssues"
+                class="hidden mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Investments</div>
+                  <div id="grEqTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Associates</div>
+                  <div id="grEqAssociates" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Joint Ventures</div>
+                  <div id="grEqJvs" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Share of Profit/(Loss)</div>
+                  <div id="grEqProfit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Closing Investment</div>
+                  <div id="grEqInvestment" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grEquityMethodList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupTranslationWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="translation">
+
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Foreign Currency Translation</h3>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Translate entity trial balances from functional currency into the group reporting currency.
+                  </p>
+                </div>
+
+                <button id="btnPrepareTranslation" type="button"
+                  class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                  Prepare Translation
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Entities</div>
+                  <div id="grFxTotal" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Foreign Currency</div>
+                  <div id="grFxForeign" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Approved</div>
+                  <div id="grFxApproved" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Translation Difference</div>
+                  <div id="grFxCta" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grTranslationList" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupControlWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="controls">
+
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Consolidation Control & Close</h3>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Final readiness checks before Group Financial Statements can be generated.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnRefreshGroupControls" type="button"
+                    class="border rounded-lg bg-white px-4 py-2 text-sm">
+                    Run Checks
+                  </button>
+
+                  <button id="btnCloseConsolidation" type="button"
+                    class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                    Close Consolidation
+                  </button>
+                </div>
+              </div>
+
+              <div id="grControlSummary" class="rounded-xl border bg-white p-5 mb-5"></div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div id="grControlChecks" class="divide-y"></div>
+              </div>
+            </div>
+
+            <div id="groupFinalTbWorkspace"
+              class="group-reporting-panel hidden mt-5"
+              data-group-panel="final-tb">
+
+              <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 class="text-lg font-semibold text-slate-900">Final Consolidated Trial Balance</h3>
+                  <p class="mt-1 text-xs text-slate-500">
+                    Canonical reporting balances after consolidation, acquisition accounting, equity method and translation.
+                  </p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button id="btnValidateFinalTb" type="button"
+                    class="border rounded-lg bg-white px-4 py-2 text-sm">
+                    Validate
+                  </button>
+
+                  <button id="btnGenerateFinalTb" type="button"
+                    class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm">
+                    Generate Final TB
+                  </button>
+                </div>
+              </div>
+
+              <div id="grFinalTbValidation"
+                class="hidden rounded-xl border bg-white p-4 mb-5"></div>
+
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Accounts</div>
+                  <div id="grFinalAccounts" class="mt-1 text-xl font-semibold">0</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Debit</div>
+                  <div id="grFinalDebit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Final Credit</div>
+                  <div id="grFinalCredit" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+
+                <div class="rounded-xl border bg-white p-4">
+                  <div class="text-xs text-slate-500">Difference</div>
+                  <div id="grFinalDifference" class="mt-1 text-lg font-semibold">0.00</div>
+                </div>
+              </div>
+
+              <div class="rounded-xl border bg-white overflow-hidden">
+                <div class="overflow-x-auto">
+                  <table class="w-full text-sm whitespace-nowrap">
+                    <thead class="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th class="text-left px-4 py-3">Group Account</th>
+                        <th class="text-right px-4 py-3">Adjusted TB</th>
+                        <th class="text-right px-4 py-3">Acquisition</th>
+                        <th class="text-right px-4 py-3">Equity Method</th>
+                        <th class="text-right px-4 py-3">CTA</th>
+                        <th class="text-right px-4 py-3">Final</th>
+                      </tr>
+                    </thead>
+
+                    <tbody id="grFinalTbBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div id="groupStatementsWorkspace"
+          class="group-reporting-panel hidden mt-5"
+          data-group-panel="statements">
+
+          <div class="flex items-start justify-between gap-4 mb-5">
+            <div>
+              <h3 class="text-lg font-semibold text-slate-900">Group Financial Statements</h3>
+              <p class="mt-1 text-xs text-slate-500">
+                Financial statements generated from the closed consolidation run and Final Group Trial Balance.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2 mb-5">
+            <button type="button" data-gr-statement="balance-sheet"
+              class="gr-statement-btn border rounded-lg bg-white px-3 py-2 text-sm">
+              Financial Position
+            </button>
+
+            <button type="button" data-gr-statement="income-statement"
+              class="gr-statement-btn border rounded-lg bg-white px-3 py-2 text-sm">
+              Profit or Loss
+            </button>
+
+            <button type="button" data-gr-statement="cash-flow"
+              class="gr-statement-btn border rounded-lg bg-white px-3 py-2 text-sm">
+              Cash Flows
+            </button>
+
+            <button type="button" data-gr-statement="socie"
+              class="gr-statement-btn border rounded-lg bg-white px-3 py-2 text-sm">
+              Changes in Equity
+            </button>
+
+            <div class="ml-auto flex gap-2">
+              <button id="btnGroupStatementPdf" type="button"
+                class="border rounded-lg bg-white px-3 py-2 text-sm">
+                PDF
+              </button>
+
+              <button id="btnGroupStatementXlsx" type="button"
+                class="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm">
+                Excel
+              </button>
+            </div>
+          </div>
+
+          <div id="grStatementStatus"
+            class="hidden rounded-xl border bg-white p-4 mb-4"></div>
+
+          <div id="grStatementPreview"
+            class="rounded-xl border bg-white overflow-hidden"></div>
+        </div>
+
+        <div id="groupTranslationModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+
+          <div class="w-full max-w-4xl max-h-[92vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grFxModalTitle" class="font-semibold text-slate-900">Translation Workpaper</h3>
+                <div id="grFxModalMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseTranslationModal" type="button"
+                class="border rounded px-3 py-1.5 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div id="grFxModalBody" class="p-5 overflow-auto"></div>
+          </div>
+        </div>
+
+        <div id="groupEquityMethodModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+
+          <div class="w-full max-w-6xl max-h-[92vh] bg-white rounded-xl shadow-xl flex flex-col">
+
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grEqModalTitle" class="font-semibold text-slate-900">Equity Method Workpaper</h3>
+                <div id="grEqModalMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseEquityMethodModal" type="button"
+                class="border rounded px-3 py-1.5 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div id="grEqModalBody" class="p-5 overflow-auto"></div>
+          </div>
+        </div>
+
+      <div id="groupAcquisitionModal"
+        class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+
+        <div class="w-full max-w-6xl max-h-[92vh] bg-white rounded-xl shadow-xl flex flex-col">
+
+          <div class="flex items-center justify-between px-5 py-4 border-b">
+            <div>
+              <h3 id="grAcqModalTitle" class="font-semibold text-slate-900">Acquisition Workpaper</h3>
+              <div id="grAcqModalMeta" class="mt-1 text-xs text-slate-500"></div>
+            </div>
+
+            <button id="btnCloseAcquisitionModal" type="button"
+              class="border rounded px-3 py-1.5 text-xs">
+              Close
+            </button>
+          </div>
+
+          <div id="grAcqModalBody" class="p-5 overflow-auto"></div>
+        </div>
+      </div>
+
+        <div id="groupAdjustedTbModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-5xl max-h-[90vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grAdjustedDetailTitle" class="font-semibold text-slate-900">Account Detail</h3>
+                <div id="grAdjustedDetailMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseAdjustedTbModal" type="button" class="border rounded px-3 py-1.5 text-xs">Close</button>
+            </div>
+
+            <div id="grAdjustedDetailBody" class="p-5 overflow-auto"></div>
+          </div>
+        </div>
+
+        <div id="groupEliminationModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 id="grElimModalTitle" class="font-semibold text-slate-900">Elimination Journal</h3>
+                <div id="grElimModalMeta" class="mt-1 text-xs text-slate-500"></div>
+              </div>
+
+              <button id="btnCloseEliminationModal" type="button" class="border rounded px-3 py-1.5 text-xs">
+                Close
+              </button>
+            </div>
+
+            <div class="overflow-auto flex-1">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th class="text-left px-4 py-3">Entity</th>
+                    <th class="text-left px-4 py-3">Group Account</th>
+                    <th class="text-left px-4 py-3">Description</th>
+                    <th class="text-right px-4 py-3">Debit</th>
+                    <th class="text-right px-4 py-3">Credit</th>
+                  </tr>
+                </thead>
+                <tbody id="grElimModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="groupRunModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4"
+        >
+          <div class="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">
+                  New consolidation run
+                </h3>
+                <p class="text-xs text-slate-500 mt-1">
+                  Define the reporting period before loading group entities.
+                </p>
+              </div>
+
+              <button
+                id="btnCloseGroupRunModal"
+                type="button"
+                class="border rounded px-3 py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <form id="groupRunForm" class="p-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Run name
+                  </label>
+                  <input
+                    name="run_name"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="Optional"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Period start
+                  </label>
+                  <input
+                    name="period_start"
+                    type="date"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Period end
+                  </label>
+                  <input
+                    name="period_end"
+                    type="date"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Reporting date
+                  </label>
+                  <input
+                    name="reporting_date"
+                    type="date"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Reporting currency
+                  </label>
+                  <input
+                    name="reporting_currency"
+                    maxlength="3"
+                    class="w-full border rounded px-3 py-2 text-sm uppercase"
+                  />
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    name="notes"
+                    class="w-full border rounded px-3 py-2 text-sm min-h-[72px]"
+                  ></textarea>
+                </div>
+
+              </div>
+
+              <div class="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  id="btnCancelGroupRun"
+                  class="border rounded px-4 py-2 text-sm"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  class="rounded bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  Create run
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+
+        <div
+          id="groupTbModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4"
+        >
+          <div class="w-full max-w-6xl max-h-[90vh] bg-white rounded-xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between gap-3 px-5 py-4 border-b">
+              <div>
+                <h3 id="groupTbModalTitle" class="font-semibold text-slate-900">
+                  Entity Trial Balance
+                </h3>
+                <div id="groupTbModalMeta" class="text-xs text-slate-500 mt-1"></div>
+              </div>
+
+              <button
+                id="btnCloseGroupTbModal"
+                type="button"
+                class="border rounded px-3 py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <div class="overflow-auto flex-1">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-slate-50 text-xs text-slate-500">
+                  <tr>
+                    <th class="text-left px-4 py-3">Account</th>
+                    <th class="text-left px-4 py-3">Name</th>
+                    <th class="text-right px-4 py-3">Debit</th>
+                    <th class="text-right px-4 py-3">Credit</th>
+                    <th class="text-right px-4 py-3">Balance</th>
+                  </tr>
+                </thead>
+
+                <tbody id="groupTbModalBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="groupCoaModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4"
+        >
+          <div class="w-full max-w-xl rounded-xl bg-white shadow-xl">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">
+                  Create Group Account
+                </h3>
+
+                <p class="text-xs text-slate-500 mt-1">
+                  Add an account that does not exist in the parent COA.
+                </p>
+              </div>
+
+              <button
+                id="btnCloseGroupCoaModal"
+                type="button"
+                class="border rounded px-3 py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <form id="groupCoaForm" class="p-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Code
+                  </label>
+
+                  <input
+                    name="code"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Name
+                  </label>
+
+                  <input
+                    name="name"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Section
+                  </label>
+
+                  <input
+                    name="section"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Category
+                  </label>
+
+                  <input
+                    name="category"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Subcategory
+                  </label>
+
+                  <input
+                    name="subcategory"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Role
+                  </label>
+
+                  <input
+                    name="role"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Reporting description
+                  </label>
+
+                  <input
+                    name="reporting_description"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div class="mt-5 flex justify-end">
+                <button
+                  type="submit"
+                  class="rounded bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  Create account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div
+          id="groupAdjustmentModal"
+          class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4"
+        >
+          <div class="w-full max-w-5xl max-h-[90vh] rounded-xl bg-white shadow-xl flex flex-col">
+
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">
+                  Consolidation Adjustment
+                </h3>
+
+                <p class="text-xs text-slate-500 mt-1">
+                  This journal affects group reporting only.
+                </p>
+              </div>
+
+              <button
+                id="btnCloseGroupAdjustmentModal"
+                type="button"
+                class="border rounded px-3 py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <form id="groupAdjustmentForm" class="p-5 overflow-auto">
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Date
+                  </label>
+
+                  <input
+                    name="adjustment_date"
+                    type="date"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Type
+                  </label>
+
+                  <select
+                    name="adjustment_type"
+                    class="w-full border rounded px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="consolidation_adjustment">Consolidation adjustment</option>
+                    <option value="gaap_alignment">GAAP / IFRS alignment</option>
+                    <option value="reclassification">Reclassification</option>
+                    <option value="audit_adjustment">Audit adjustment</option>
+                    <option value="late_adjustment">Late adjustment</option>
+                    <option value="acquisition_adjustment">Acquisition adjustment</option>
+                    <option value="policy_alignment">Policy alignment</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Reference
+                  </label>
+
+                  <input
+                    name="reference"
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div class="md:col-span-4">
+                  <label class="block text-[11px] text-slate-500 mb-1">
+                    Description
+                  </label>
+
+                  <input
+                    name="description"
+                    required
+                    class="w-full border rounded px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div class="mt-5 overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-slate-50 text-xs text-slate-500">
+                    <tr>
+                      <th class="text-left px-3 py-2">Entity</th>
+                      <th class="text-left px-3 py-2">Group Account</th>
+                      <th class="text-left px-3 py-2">Description</th>
+                      <th class="text-right px-3 py-2">Debit</th>
+                      <th class="text-right px-3 py-2">Credit</th>
+                      <th class="w-10"></th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="groupAdjustmentLines"></tbody>
+                </table>
+              </div>
+
+              <div class="mt-3 flex items-center justify-between">
+                <button
+                  id="btnAddGroupAdjustmentLine"
+                  type="button"
+                  class="border rounded px-3 py-2 text-sm bg-white"
+                >
+                  + Add Line
+                </button>
+
+                <div class="flex gap-6 text-sm">
+                  <span>
+                    Debit:
+                    <strong id="grAdjDebitTotal">0.00</strong>
+                  </span>
+
+                  <span>
+                    Credit:
+                    <strong id="grAdjCreditTotal">0.00</strong>
+                  </span>
+
+                  <span>
+                    Difference:
+                    <strong id="grAdjDifference">0.00</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div class="mt-5 flex justify-end">
+                <button
+                  type="submit"
+                  class="rounded bg-slate-900 text-white px-4 py-2 text-sm"
+                >
+                  Save Draft
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div id="groupIcModal" class="fixed inset-0 z-[9999] hidden bg-black/40 items-center justify-center p-4">
+          <div class="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+            <div class="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 class="font-semibold text-slate-900">Intercompany Balance</h3>
+                <p class="text-xs text-slate-500 mt-1">Identify the portion of an account attributable to another group entity.</p>
+              </div>
+              <button id="btnCloseIcModal" type="button" class="border rounded px-3 py-1.5 text-xs">Close</button>
+            </div>
+
+            <form id="groupIcForm" class="p-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Entity</label>
+                  <select name="run_entity_id" id="grIcEntity" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Counterparty</label>
+                  <select name="counterparty_run_entity_id" id="grIcCounterparty" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">Group Account</label>
+                  <select name="group_account_id" id="grIcAccount" required class="w-full border rounded px-3 py-2 text-sm bg-white"></select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Nature</label>
+                  <select name="nature" required class="w-full border rounded px-3 py-2 text-sm bg-white">
+                    <option value="receivable">Receivable</option>
+                    <option value="payable">Payable</option>
+                    <option value="loan_receivable">Loan receivable</option>
+                    <option value="loan_payable">Loan payable</option>
+                    <option value="revenue">Revenue</option>
+                    <option value="expense">Expense / purchase</option>
+                    <option value="interest_income">Interest income</option>
+                    <option value="interest_expense">Interest expense</option>
+                    <option value="dividend_income">Dividend income</option>
+                    <option value="dividend_payable">Dividend payable</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">IC Amount</label>
+                  <input name="amount" type="number" min="0.01" step="0.01" required class="w-full border rounded px-3 py-2 text-sm text-right" />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] text-slate-500 mb-1">Reference</label>
+                  <input name="reference" class="w-full border rounded px-3 py-2 text-sm" />
+                </div>
+
+                <div class="flex items-end">
+                  <label class="flex items-center gap-2 pb-2 text-sm">
+                    <input name="save_rule" type="checkbox" />
+                    Remember as dedicated IC account
+                  </label>
+                </div>
+
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-slate-500 mb-1">Notes</label>
+                  <textarea name="notes" class="w-full border rounded px-3 py-2 text-sm min-h-[70px]"></textarea>
+                </div>
+              </div>
+
+              <div class="mt-5 flex justify-end">
+                <button type="submit" class="rounded bg-slate-900 text-white px-4 py-2 text-sm">Save Balance</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
         <!-- Inventory -->
         <section id="screen-inventory" class="screen">
           <div class="card p-4">
@@ -17722,9 +20771,10 @@ tbody tr:hover {
             <button data-payroll-tab="calendars">Calendars</button>
             <button data-payroll-tab="runs">Runs</button>
             <button data-payroll-tab="employee-benefits">Employee Benefits</button>
+            <button data-payroll-tab="incentives">Incentives</button>
             <button data-payroll-tab="reports">Reports</button>
+            <button type="button" data-payroll-tab="statutory">Statutory Returns</button>
             <button data-payroll-tab="settings">Settings</button>
-            
           </div>
 
           <div id="payrollTabOverview" class="payroll-panel">
@@ -18029,6 +21079,34 @@ tbody tr:hover {
 
                 <button
                   type="button"
+                  data-payroll-run-tab="attendance"
+                >
+                  Attendance
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="inputs"
+                >
+                  Inputs
+                </button>                
+              
+                <button
+                  type="button"
+                  data-payroll-run-tab="validation"
+                >
+                  Validation
+                </button>
+                
+                <button
+                  type="button"
+                  data-payroll-run-tab="payslips"
+                >
+                  Payslips
+                </button>
+
+                <button
+                  type="button"
                   data-payroll-run-tab="journal"
                 >
                   Journal
@@ -18039,6 +21117,13 @@ tbody tr:hover {
                   data-payroll-run-tab="posting"
                 >
                   Posting
+                </button>
+
+                <button
+                  type="button"
+                  data-payroll-run-tab="audit"
+                >
+                  Audit
                 </button>
               </div>
 
@@ -18073,6 +21158,183 @@ tbody tr:hover {
                 </div>
 
                 <div id="payrollRunEmployeesList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelAttendance"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Attendance</h3>
+                    <p class="payroll-muted">
+                      Capture work, absence, leave and unpaid time
+                      for this payroll period.
+                    </p>
+                  </div>
+
+                  <div class="payroll-run-actions">
+                    <button
+                      id="payrollGenerateAttendanceBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Generate Schedule
+                    </button>
+
+                    <button
+                      id="payrollNewAttendanceBtn"
+                      type="button"
+                      class="payroll-primary"
+                    >
+                      + Attendance
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  id="payrollAttendanceSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollAttendanceList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelInputs"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Inputs</h3>
+                    <p class="payroll-muted">
+                      Capture once-off earnings, deductions and
+                      employer contributions for this run.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollNewPeriodInputBtn"
+                    type="button"
+                    class="payroll-primary"
+                  >
+                    + Payroll Input
+                  </button>
+                </div>
+
+                <div
+                  id="payrollPeriodInputFilters"
+                  class="payroll-filters"
+                >
+                  <select id="payrollPeriodInputEmployeeFilter">
+                    <option value="">All employees</option>
+                  </select>
+
+                  <select id="payrollPeriodInputStatusFilter">
+                    <option value="">All statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div
+                  id="payrollPeriodInputSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollPeriodInputList"></div>
+              </div>
+
+              <div
+                id="payrollRunPanelValidation"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Validation</h3>
+                    <p class="payroll-muted">
+                      Review errors, warnings and information before
+                      approving or posting payroll.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshValidationBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Validation
+                  </button>
+                </div>
+
+                <div
+                  id="payrollValidationSummary"
+                  class="payroll-kpis"
+                ></div>
+
+                <div id="payrollValidationReadiness"></div>
+
+                <div class="payroll-run-overview-grid">
+                  <div class="payroll-run-info-card">
+                    <h4>Errors</h4>
+                    <div id="payrollValidationErrors"></div>
+                  </div>
+
+                  <div class="payroll-run-info-card">
+                    <h4>Warnings</h4>
+                    <div id="payrollValidationWarnings"></div>
+                  </div>
+                </div>
+
+                <div class="payroll-run-info-card">
+                  <h4>Information</h4>
+                  <div id="payrollValidationInformation"></div>
+                </div>
+
+                <div class="payroll-run-info-card">
+                  <h4>Employee Validation</h4>
+                  <div id="payrollEmployeeValidationList"></div>
+                </div>
+              </div>
+
+              <div
+                id="payrollRunPanelPayslips"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payslips</h3>
+                    <p class="payroll-muted">
+                      Review and print employee payslips generated from
+                      this payroll calculation.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshPayslipsBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Payslips
+                  </button>
+                </div>
+
+                <div class="payroll-filters">
+                  <input
+                    id="payrollPayslipSearch"
+                    type="search"
+                    placeholder="Search employee…"
+                  >
+
+                  <select id="payrollPayslipDepartmentFilter">
+                    <option value="">All departments</option>
+                  </select>
+                </div>
+
+                <div id="payrollPayslipList"></div>
+                <div id="payrollPayslipDetail"></div>
               </div>
 
               <div
@@ -18121,6 +21383,30 @@ tbody tr:hover {
                     </button>
 
                     <button
+                      id="payrollSubmitRunBtn"
+                      type="button"
+                      class="payroll-secondary dark hidden"
+                    >
+                      Submit for Approval
+                    </button>
+
+                    <button
+                      id="payrollApproveRunBtn"
+                      type="button"
+                      class="payroll-primary hidden"
+                    >
+                      Approve Payroll
+                    </button>
+
+                    <button
+                      id="payrollReturnRunBtn"
+                      type="button"
+                      class="payroll-secondary hidden"
+                    >
+                      Return to Draft
+                    </button>
+
+                    <button
                       id="payrollPreviewJournalBtn"
                       type="button"
                       class="payroll-secondary dark"
@@ -18145,7 +21431,169 @@ tbody tr:hover {
                     </button>
                   </div>
                 </div>
+
+                <div class="payroll-card">
+                  <div class="payroll-card-head">
+                    <div>
+                      <h3>GL Reconciliation</h3>
+                      <p class="payroll-muted">
+                        Compare the payroll journal preview with the
+                        posted general-ledger journal.
+                      </p>
+                    </div>
+
+                    <button
+                      id="payrollRefreshReconciliationBtn"
+                      type="button"
+                      class="payroll-secondary dark"
+                    >
+                      Reconcile
+                    </button>
+                  </div>
+
+                  <div id="payrollReconciliationPanel"></div>
+                </div>
               </div>
+
+              <div
+                id="payrollRunPanelAudit"
+                class="payroll-run-panel hidden"
+              >
+                <div class="payroll-section-head">
+                  <div>
+                    <h3>Payroll Audit History</h3>
+                    <p class="payroll-muted">
+                      Calculation, approval, posting and correction
+                      history for this payroll run.
+                    </p>
+                  </div>
+
+                  <button
+                    id="payrollRefreshAuditBtn"
+                    type="button"
+                    class="payroll-secondary dark"
+                  >
+                    Refresh Audit
+                  </button>
+                </div>
+
+                <div id="payrollRunAuditList"></div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="payrollTabIncentives"
+            class="payroll-panel hidden"
+          >
+            <div class="payroll-section-navigation">
+              <button
+                type="button"
+                class="payroll-back-btn"
+                data-payroll-back-dashboard
+              >
+                ← Back to Payroll Dashboard
+              </button>
+
+              <div>
+                <h3>Performance Incentives</h3>
+                <p class="payroll-muted">
+                  Configure incentive plans, target ranges and
+                  employee assignments.
+                </p>
+              </div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Incentive Plans</h3>
+                  <p class="payroll-muted">
+                    Define the metric and general payout basis.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentivePlanBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Incentive Plan
+                </button>
+              </div>
+
+              <div id="payrollIncentivePlansList"></div>
+              <div id="payrollIncentivePlanDetail"></div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Employee Assignments</h3>
+                  <p class="payroll-muted">
+                    Assign employees to plans and set their targets.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentiveAssignmentBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Assignment
+                </button>
+              </div>
+
+              <div id="payrollIncentiveAssignmentsList"></div>
+            </div>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Performance Evaluations</h3>
+                  <p class="payroll-muted">
+                    Capture actual performance, calculate incentives
+                    and approve monthly results.
+                  </p>
+                </div>
+
+                <button
+                  id="payrollNewIncentiveEvaluationBtn"
+                  type="button"
+                  class="payroll-primary"
+                >
+                  + Evaluation
+                </button>
+              </div>
+
+              <div class="payroll-filters">
+                <select id="payrollIncentiveEvaluationPlanFilter">
+                  <option value="">All plans</option>
+                </select>
+
+                <select id="payrollIncentiveEvaluationStatusFilter">
+                  <option value="">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="approved">Approved</option>
+                  <option value="paid">Paid</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+
+                <input
+                  id="payrollIncentiveEvaluationFrom"
+                  type="date"
+                  aria-label="Evaluation date from"
+                >
+
+                <input
+                  id="payrollIncentiveEvaluationTo"
+                  type="date"
+                  aria-label="Evaluation date to"
+                >
+              </div>
+
+              <div id="payrollIncentiveEvaluationsList"></div>
             </div>
           </div>
 
@@ -18696,6 +22144,37 @@ tbody tr:hover {
                         Effective From
                         <input id="payrollPaySetupEffectiveFrom" type="date">
                       </label>
+
+                      <label>
+                        Proration Method
+                        <select id="payrollPayProrationMethod">
+                          <option value="working_days">Working days</option>
+                          <option value="calendar_days">Calendar days</option>
+                          <option value="fixed_30_days">Fixed 30 days</option>
+                          <option value="scheduled_hours">Scheduled hours</option>
+                          <option value="actual_hours">Actual hours</option>
+                          <option value="no_proration">No proration</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Normal Hours Per Day
+                        <input
+                          id="payrollPayHoursPerDay"
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          value="8"
+                        >
+                      </label>
+
+                      <label class="payroll-check-label">
+                        <input
+                          id="payrollPayAttendanceRequired"
+                          type="checkbox"
+                        >
+                        Attendance required before payroll calculation
+                      </label>
                     </div>
                   </div>
 
@@ -19172,6 +22651,9 @@ tbody tr:hover {
                     <option value="department-cost">Department Cost</option>
                     <option value="tax-report">Payroll Tax Report</option>
                     <option value="employer-contributions">Employer Contributions</option>
+                    <option value="attendance-report">Attendance Report</option>
+                    <option value="payroll-inputs">Payroll Inputs</option>
+                    <option value="incentive-report">Performance Incentives</option>
                     <option value="leave-liability">Leave Liability</option>
                     <option value="bonus-provision">Bonus Provision</option>
                     <option value="termination-benefits">Termination Benefits</option>
@@ -19281,6 +22763,25 @@ tbody tr:hover {
                 <div id="payrollReportInsights" class="payroll-insights-list"></div>
               </article>
             </section>
+
+            <div class="payroll-card">
+              <div class="payroll-card-head">
+                <div>
+                  <h3>Payroll Period Close-out</h3>
+                  <p class="payroll-muted">
+                    Check posted payroll, provisions, pension runs
+                    and IAS 19 disclosure readiness.
+                  </p>
+                </div>
+
+                <button id="payrollRunCloseOutBtn"
+                  type="button" class="payroll-primary">
+                  Run Close-out Check
+                </button>
+              </div>
+
+              <div id="payrollCloseOutResults"></div>
+            </div>
           </div>
 
           <div id="payrollReportPreviewModal" class="modal hidden">
@@ -21999,7 +25500,7 @@ tbody tr:hover {
       <div class="flex items-center justify-between mb-3">
         <div>
           <div class="font-bold text-base">Issue Materials to Project</div>
-          <div class="text-xs text-slate-500">Consumes inventory and posts Dr Project WIP / Cr Inventory</div>
+          <div class="text-xs text-slate-500">Consumes inventory and posts the cost according to the project's accounting mode</div>
         </div>
         <button id="projectIssueCloseBtn" class="text-sm px-2 py-1 border rounded">✕</button>
       </div>
@@ -22816,14 +26317,18 @@ tbody tr:hover {
     ></iframe>
   </div>
 </div>
-
-<!-- React Drawer Host (PPE / Fixed Assets) -->
 <div id="fs-react-drawer-root"></div>
-
 <script src="config.js"></script>
-<link rel="stylesheet" href="./assets/hostMount.css" />
-<script type="module" src="./assets/hostMount.js"></script>
-<script src="/dashboard.js?v=20260805c" defer></script>
+
+<link rel="stylesheet" href="/assets/hostMount.css?v=20260811b" />
+
+<script type="module" src="/assets/hostMount.js?v=20260811b"></script>
+
+<script src="/dashboard.js?v=20260811a" defer></script>
+<script src="/js/corporate-structure.js?v=20260807a" defer></script>
+<script src="/js/consolidation.js?v=20260807a" defer></script>
+<script src="/ias41.js"></script>
+<script src="/js/data-migration.js"></script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {

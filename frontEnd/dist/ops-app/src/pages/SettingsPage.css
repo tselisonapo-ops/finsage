@@ -1,0 +1,520 @@
+.settings-page{
+  min-height:100vh;
+  background:#f5f7fa;
+  color:#182230;
+  padding:30px;
+}
+
+.settings-topbar{
+  max-width:1500px;
+  margin:0 auto 24px;
+}
+
+.settings-eyebrow{
+  color:#6b7280;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.14em;
+}
+
+.settings-topbar h1{
+  margin:5px 0 7px;
+  font-size:32px;
+  letter-spacing:-.035em;
+}
+
+.settings-topbar p{
+  margin:0;
+  max-width:760px;
+  color:#667085;
+  line-height:1.6;
+}
+
+.settings-shell{
+  max-width:1500px;
+  margin:auto;
+  display:grid;
+  grid-template-columns:265px minmax(0,1fr);
+  background:#fff;
+  border:1px solid #e3e8ef;
+  border-radius:18px;
+  overflow:hidden;
+  min-height:720px;
+  box-shadow:0 4px 18px rgba(16,24,40,.04);
+}
+
+.settings-sidebar{
+  background:#fbfcfd;
+  border-right:1px solid #e6eaf0;
+  padding:22px 14px;
+}
+
+.settings-nav-group{
+  margin-bottom:25px;
+}
+
+.settings-nav-title{
+  padding:0 11px;
+  margin-bottom:8px;
+  color:#98a2b3;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+
+.settings-nav-item{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 11px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:#475467;
+  font-size:13px;
+  font-weight:600;
+  text-align:left;
+  cursor:pointer;
+  transition:.18s ease;
+}
+
+.settings-nav-item:hover{
+  background:#f0f4f7;
+}
+
+.settings-nav-item.active{
+  background:#eafafa;
+  color:#087c7c;
+}
+
+.settings-nav-icon{
+  width:22px;
+  text-align:center;
+  font-size:14px;
+}
+
+.settings-content{
+  padding:30px;
+  min-width:0;
+}
+
+.settings-content-header{
+  margin-bottom:23px;
+  padding-bottom:20px;
+  border-bottom:1px solid #edf0f3;
+}
+
+.settings-content-header h2{
+  margin:0 0 6px;
+  font-size:24px;
+  letter-spacing:-.025em;
+}
+
+.settings-content-header p{
+  margin:0;
+  color:#667085;
+  font-size:14px;
+}
+
+.settings-card{
+  background:#fff;
+  border:1px solid #e3e8ef;
+  border-radius:14px;
+  padding:22px;
+  margin-bottom:18px;
+}
+
+.settings-card-header{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-start;
+  margin-bottom:20px;
+}
+
+.settings-card-header h3,
+.email-delivery-card h3{
+  margin:0 0 5px;
+  font-size:17px;
+}
+
+.settings-card-header p,
+.email-delivery-card p{
+  margin:0;
+  color:#667085;
+  font-size:13px;
+  line-height:1.5;
+}
+
+.settings-form-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+}
+
+.settings-field{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+
+.settings-field-full{
+  grid-column:1/-1;
+}
+
+.settings-field>span{
+  color:#344054;
+  font-size:12px;
+  font-weight:700;
+}
+
+.settings-field input{
+  width:100%;
+  box-sizing:border-box;
+  padding:11px 12px;
+  border:1px solid #d0d5dd;
+  border-radius:9px;
+  background:#fff;
+  color:#182230;
+  font-size:13px;
+  outline:none;
+  transition:.18s;
+}
+
+.settings-field input:focus{
+  border-color:#12a8a8;
+  box-shadow:0 0 0 3px rgba(18,168,168,.10);
+}
+
+.settings-field small{
+  color:#667085;
+  font-size:11px;
+}
+
+.inline-help{
+  margin-left:6px;
+  font-weight:500;
+}
+
+.verification-badge,
+.password-badge{
+  padding:6px 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:700;
+  white-space:nowrap;
+}
+
+.verification-badge.verified{
+  color:#067647;
+  background:#ecfdf3;
+}
+
+.verification-badge.pending{
+  color:#b54708;
+  background:#fff7ed;
+}
+
+.password-badge{
+  color:#175cd3;
+  background:#eff8ff;
+}
+
+.email-status-strip{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;
+  overflow:hidden;
+  border:1px solid #e3e8ef;
+  border-radius:13px;
+  background:#e3e8ef;
+  margin-bottom:18px;
+}
+
+.email-status-item{
+  background:#fff;
+  padding:14px 16px;
+}
+
+.email-status-item span,
+.email-status-item strong{
+  display:block;
+}
+
+.email-status-item span{
+  color:#667085;
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  margin-bottom:5px;
+}
+
+.email-status-item strong{
+  font-size:12px;
+}
+
+.status-good{
+  color:#067647;
+}
+
+.status-warning{
+  color:#b54708;
+}
+
+.smtp-security{
+  margin-top:22px;
+  border-top:1px solid #edf0f3;
+  padding-top:20px;
+}
+
+.smtp-security-title{
+  margin-bottom:10px;
+  font-size:12px;
+  font-weight:700;
+}
+
+.smtp-security-options{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
+
+.smtp-security-options button{
+  border:1px solid #d7dce2;
+  border-radius:10px;
+  background:#fff;
+  text-align:left;
+  padding:12px;
+  cursor:pointer;
+  color:#344054;
+}
+
+.smtp-security-options button.active{
+  border-color:#12a8a8;
+  background:#f0fdfd;
+  box-shadow:0 0 0 2px rgba(18,168,168,.07);
+}
+
+.smtp-security-options strong,
+.smtp-security-options span{
+  display:block;
+}
+
+.smtp-security-options strong{
+  font-size:12px;
+  margin-bottom:3px;
+}
+
+.smtp-security-options span{
+  color:#667085;
+  font-size:10px;
+}
+
+.email-delivery-card{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:30px;
+}
+
+.email-delivery-card small{
+  display:block;
+  margin-top:7px;
+  color:#98a2b3;
+  font-size:11px;
+}
+
+.settings-switch{
+  position:relative;
+  width:50px;
+  height:28px;
+  flex:none;
+}
+
+.settings-switch input{
+  opacity:0;
+  width:0;
+  height:0;
+}
+
+.settings-switch span{
+  position:absolute;
+  inset:0;
+  border-radius:999px;
+  background:#d0d5dd;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.settings-switch span:before{
+  content:"";
+  position:absolute;
+  width:22px;
+  height:22px;
+  left:3px;
+  top:3px;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.18);
+  transition:.2s;
+}
+
+.settings-switch input:checked + span{
+  background:#12a8a8;
+}
+
+.settings-switch input:checked + span:before{
+  transform:translateX(22px);
+}
+
+.settings-alert{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:12px 14px;
+  border-radius:9px;
+  margin-bottom:16px;
+  font-size:12px;
+}
+
+.settings-alert-error{
+  background:#fef3f2;
+  color:#b42318;
+}
+
+.settings-alert-success{
+  background:#ecfdf3;
+  color:#067647;
+}
+
+.settings-section-label{
+  color:#98a2b3;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.1em;
+}
+
+.email-test-result h4{
+  margin:7px 0 4px;
+}
+
+.email-test-result p{
+  margin:0;
+  color:#667085;
+  font-size:12px;
+}
+
+.email-test-error{
+  margin-top:10px;
+  padding:9px;
+  background:#fff1f0;
+  border-radius:7px;
+  color:#b42318;
+  font-size:11px;
+}
+
+.settings-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top:20px;
+}
+
+.settings-btn{
+  padding:10px 16px;
+  border-radius:9px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.settings-btn-secondary{
+  border:1px solid #d0d5dd;
+  background:#fff;
+  color:#344054;
+}
+
+.settings-btn-primary{
+  border:1px solid #12a8a8;
+  background:#12a8a8;
+  color:#fff;
+}
+
+.settings-btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+.settings-placeholder{
+  min-height:420px;
+  border:1px dashed #d0d5dd;
+  border-radius:14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-direction:column;
+  text-align:center;
+  padding:30px;
+}
+
+.settings-placeholder-icon{
+  font-size:30px;
+  margin-bottom:10px;
+}
+
+.settings-placeholder h3{
+  margin:0 0 6px;
+}
+
+.settings-placeholder p{
+  margin:0 0 8px;
+  color:#667085;
+}
+
+.settings-placeholder span{
+  color:#98a2b3;
+  font-size:12px;
+}
+
+.settings-loading{
+  text-align:center;
+  padding:60px;
+  color:#667085;
+}
+
+@media(max-width:1050px){
+  .settings-shell{
+    grid-template-columns:220px minmax(0,1fr);
+  }
+
+  .email-status-strip{
+    grid-template-columns:1fr 1fr;
+  }
+}
+
+@media(max-width:800px){
+  .settings-page{
+    padding:15px;
+  }
+
+  .settings-shell{
+    display:block;
+  }
+
+  .settings-sidebar{
+    border-right:0;
+    border-bottom:1px solid #e6eaf0;
+  }
+
+  .settings-form-grid,
+  .smtp-security-options{
+    grid-template-columns:1fr;
+  }
+
+  .settings-content{
+    padding:20px;
+  }
+}

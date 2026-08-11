@@ -98,6 +98,7 @@ from BackEnd.Services.credit_policy import (
     normalize_policy_mode, 
     normalize_role
 )
+from BackEnd.Services.emailer import _send_smtp
 from BackEnd.Services.routes.invoice_routes import build_invoice_journal_lines  # wherever yours lives
 from BackEnd.Services.company import apply_mode_defaults, company_policy, recommend_mode_after_invite
 from BackEnd.Services.reporting.balance_sheet_templates import get_balance_sheet_v3_exact
@@ -1263,6 +1264,45 @@ def build_user_allowed_companies(user_id: int):
         primary_company_id = int(rows[0]["id"])
 
     return rows, sorted(set(allowed_company_ids)), primary_company_id
+
+
+def _require_company_email_admin(company_id:int):
+    user=getattr(g,"current_user",{}) or {}
+    user_id=int(user.get("id") or user.get("user_id") or 0)
+
+    if not user_id:
+        return jsonify({"error":"Not authenticated."}),401
+
+    membership=db_service.fetch_one(
+        """
+        SELECT role,is_active
+        FROM public.company_users
+        WHERE company_id=%s
+          AND user_id=%s
+          AND is_active=TRUE
+        LIMIT 1;
+        """,
+        (int(company_id),user_id),
+    )
+
+    if not membership:
+        return jsonify({"error":"You do not have access to this company."}),403
+
+    role=(membership.get("role") or "").strip().lower()
+
+    if role not in {
+        "owner",
+        "admin",
+        "cfo",
+        "manager",
+        "senior",
+    }:
+        return jsonify({
+            "error":"You are not authorised to manage company email settings."
+        }),403
+
+    return None
+
 
 @app.route("/api/auth/signup", methods=["POST"])
 def api_auth_signup():
@@ -3115,7 +3155,227 @@ def api_accept_invite():
         "token": jwt_token,
         "existingUser": False,
     }), 200
+# ============================================================
+# COMPANY EMAIL SETTINGS
+# ============================================================
 
+@app.route(
+    "/api/companies/<int:company_id>/email-settings",
+    methods=["GET"],
+)
+@require_auth
+def api_get_company_email_settings(company_id):
+    deny=_require_company_email_admin(company_id)
+    if deny:
+        return deny
+
+    try:
+        row=db_service.get_company_email_settings(company_id)
+        return jsonify(row or {}),200
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[COMPANY EMAIL] Failed to load settings company=%s",
+            company_id,
+        )
+        return jsonify({"error":str(e)}),500
+
+
+@app.route(
+    "/api/companies/<int:company_id>/email-settings",
+    methods=["PATCH"],
+)
+@require_auth
+def api_save_company_email_settings(company_id):
+    deny=_require_company_email_admin(company_id)
+    if deny:
+        return deny
+
+    payload=request.get_json(silent=True) or {}
+
+    try:
+        row=db_service.save_company_email_settings(
+            company_id,
+            payload=payload,
+        )
+
+        return jsonify(row or {}),200
+
+    except ValueError as e:
+        return jsonify({"error":str(e)}),400
+
+    except Exception as e:
+        current_app.logger.exception(
+            "[COMPANY EMAIL] Failed to save settings company=%s",
+            company_id,
+        )
+        return jsonify({"error":str(e)}),500
+
+
+@app.route(
+    "/api/companies/<int:company_id>/email-settings/test",
+    methods=["POST"],
+)
+@require_auth
+def api_test_company_email_settings(company_id):
+    deny=_require_company_email_admin(company_id)
+    if deny:
+        return deny
+
+    body=request.get_json(silent=True) or {}
+    recipient=(body.get("recipient_email") or "").strip().lower()
+
+    if not recipient:
+        return jsonify({
+            "error":"recipient_email is required."
+        }),400
+
+    cfg=db_service.get_company_email_settings_internal(
+        company_id
+    )
+
+    if not cfg:
+        return jsonify({
+            "error":"Company email settings have not been configured."
+        }),400
+
+    required={
+        "sender_email":cfg.get("sender_email"),
+        "smtp_host":cfg.get("smtp_host"),
+        "smtp_port":cfg.get("smtp_port"),
+        "smtp_username":cfg.get("smtp_username"),
+        "smtp_password_encrypted":cfg.get(
+            "smtp_password_encrypted"
+        ),
+    }
+
+    missing=[
+        key
+        for key,value in required.items()
+        if not value
+    ]
+
+    if missing:
+        return jsonify({
+            "error":"Email configuration is incomplete.",
+            "missing":missing,
+        }),400
+
+    try:
+        password=db_service._decrypt_secret(
+            cfg.get("smtp_password_encrypted")
+        )
+
+        company=db_service.get_company_profile(
+            company_id
+        ) or {}
+
+        company_name=(
+            company.get("name")
+            or cfg.get("sender_name")
+            or "Your company"
+        )
+
+        subject=f"FinSage email test - {company_name}"
+
+        html=f"""
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033">
+            <h2>Company email connected successfully</h2>
+
+            <p>
+                This test confirms that FinSage can send email
+                through the SMTP account configured for
+                <strong>{company_name}</strong>.
+            </p>
+
+            <p>
+                <strong>Sender:</strong>
+                {cfg.get("sender_email")}
+            </p>
+
+            <p>
+                You can now enable this account for company
+                communications.
+            </p>
+
+            <p style="color:#667085;font-size:12px">
+                Sent automatically by FinSage.
+            </p>
+        </div>
+        """
+
+        text=(
+            f"Company email connected successfully.\n\n"
+            f"FinSage successfully sent this message through "
+            f"the SMTP account configured for {company_name}.\n\n"
+            f"Sender: {cfg.get('sender_email')}"
+        )
+
+        _send_smtp(
+            host=cfg.get("smtp_host") or "",
+            port=int(cfg.get("smtp_port") or 465),
+            user=cfg.get("smtp_username") or "",
+            password=password or "",
+            mail_from=cfg.get("sender_email") or "",
+            from_name=(
+                cfg.get("sender_name")
+                or company_name
+                or "FinSage"
+            ),
+            to_email=recipient,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            reply_to=(
+                cfg.get("reply_to_email")
+                or cfg.get("sender_email")
+            ),
+            use_ssl=bool(cfg.get("use_ssl",True)),
+            use_tls=bool(cfg.get("use_tls",False)),
+        )
+
+        status=db_service.set_company_email_test_status(
+            company_id,
+            verified=True,
+            error=None,
+        )
+
+        current_app.logger.info(
+            "[COMPANY EMAIL] SMTP verified company=%s recipient=%s",
+            company_id,
+            recipient,
+        )
+
+        return jsonify({
+            "message":"Test email sent successfully.",
+            "recipient_email":recipient,
+            "is_verified":True,
+            **(status or {}),
+        }),200
+
+    except Exception as e:
+        error=str(e)
+
+        try:
+            status=db_service.set_company_email_test_status(
+                company_id,
+                verified=False,
+                error=error,
+            )
+        except Exception:
+            status={}
+
+        current_app.logger.warning(
+            "[COMPANY EMAIL] SMTP test failed company=%s: %s",
+            company_id,
+            error,
+        )
+
+        return jsonify({
+            "error":error,
+            "is_verified":False,
+            **(status or {}),
+        }),400
 # ────────────────────────────────────────────────────────────────
 # COA template + company endpoints
 # ────────────────────────────────────────────────────────────────
