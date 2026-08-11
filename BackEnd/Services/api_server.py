@@ -283,6 +283,23 @@ app.config["db_service"] = db_service
 app.config["GET_DB_CONNECTION"] = get_db_connection
 app.config["GET_TRIAL_BALANCE_FN"] = getattr(db_service, "get_trial_balance", None)
 
+import logging
+from logging.handlers import RotatingFileHandler
+
+signup_log_handler = RotatingFileHandler(
+    "/home/finspher/Finsage-Web-App/signup_debug.log",
+    maxBytes=2_000_000,
+    backupCount=2,
+)
+
+signup_log_handler.setLevel(logging.INFO)
+signup_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(message)s"
+))
+
+app.logger.addHandler(signup_log_handler)
+app.logger.setLevel(logging.INFO)
+
 bank_service = BankService(db_service)
 
 origins = app.config.get("FRONTEND_ORIGINS", [])
