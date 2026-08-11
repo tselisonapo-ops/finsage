@@ -1412,6 +1412,13 @@ def api_auth_signup():
             sub_industry = sub_key
             sub_industry_slug = slugify(sub_industry)
 
+    current_app.logger.info(
+        "SIGNUP DEBUG email=%r first_name=%r last_name=%r role=%r",
+        email,
+        first_name,
+        last_name,
+        user_role,
+    )
 
     # 1) Create the user (unconfirmed)
     try:
@@ -1429,10 +1436,28 @@ def api_auth_signup():
             trial_end_date=str(date.today() + timedelta(days=30)),
             company_id=None,
         )
-    except UniqueViolation:
-        current_app.logger.info(f"Signup attempt with existing email: {email}")
+    except UniqueViolation as e:
+        constraint = getattr(getattr(e, "diag", None), "constraint_name", None)
+        detail = getattr(getattr(e, "diag", None), "message_detail", None)
+
+        current_app.logger.exception(
+            "Signup unique violation email=%s constraint=%s detail=%s",
+            email,
+            constraint,
+            detail,
+        )
+
+        if constraint == "users_email_key":
+            return jsonify({
+                "error": "A user with this email address already exists. Please sign in instead.",
+                "constraint": constraint,
+                "detail": detail,
+            }), 409
+
         return jsonify({
-            "error": "A user with this email address already exists. Please sign in instead."
+            "error": "Registration failed because a unique database value already exists.",
+            "constraint": constraint,
+            "detail": detail,
         }), 409
     except Exception:
         current_app.logger.exception("Signup failed")
