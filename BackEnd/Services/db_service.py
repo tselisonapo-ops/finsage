@@ -53886,9 +53886,11 @@ class DatabaseService:
             print("[/TENANT-FORMAT-FAIL]\n")
             raise
 
-        if int(company_id)==8:
-            debug_path="tenant_bootstrap_company_8.sql"
-            with open(debug_path,"w",encoding="utf-8") as file:file.write(ddl_bootstrap_sql)
+        # Optional bootstrap SQL dump for debugging
+        if os.getenv("TENANT_BOOTSTRAP_DEBUG","").strip().lower() in ("1","true","yes"):
+            debug_path=f"tenant_bootstrap_{schema}.sql"
+            with open(debug_path,"w",encoding="utf-8") as file:
+                file.write(ddl_bootstrap_sql)
             print(f"[BOOT][DEBUG SQL] wrote {debug_path}")
 
         with self._conn_cursor() as (conn,cur):
@@ -53903,8 +53905,7 @@ class DatabaseService:
                     migration_version=BOOTSTRAP_MIGRATION_VERSION,
                 )
 
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT
                         to_regclass(%s) AS writeoffs,
                         to_regclass(%s) AS recoveries,
@@ -53912,16 +53913,14 @@ class DatabaseService:
                         to_regclass(%s) AS scenarios,
                         to_regclass(%s) AS pd_curves,
                         to_regclass(%s) AS lgd_assumptions
-                    """,
-                    (
-                        f"{schema}.ifrs9_writeoffs",
-                        f"{schema}.ifrs9_writeoff_recoveries",
-                        f"{schema}.ifrs9_general_ecl_models",
-                        f"{schema}.ifrs9_general_ecl_scenarios",
-                        f"{schema}.ifrs9_general_ecl_pd_curves",
-                        f"{schema}.ifrs9_general_ecl_lgd_assumptions",
-                    ),
-                )
+                """,(
+                    f"{schema}.ifrs9_writeoffs",
+                    f"{schema}.ifrs9_writeoff_recoveries",
+                    f"{schema}.ifrs9_general_ecl_models",
+                    f"{schema}.ifrs9_general_ecl_scenarios",
+                    f"{schema}.ifrs9_general_ecl_pd_curves",
+                    f"{schema}.ifrs9_general_ecl_lgd_assumptions",
+                ))
                 print("[BOOT][IFRS9 TABLE CHECK]",cur.fetchone())
 
                 print(f"CHECKING MIGRATION {schema}:ap v{AP_MIGRATION_VERSION}")
@@ -53938,13 +53937,13 @@ class DatabaseService:
                 print(f"CHECKING MIGRATION {schema}:forecast v{self.FORECAST_MIGRATION_VERSION}")
                 self.ensure_company_forecast(int(company_id),cur=cur)
 
-                print(f"CHECKING MIGRATION {schema}:migration v{self.MIGRATION_WORKSPACE_MIGRATION_VERSION}")
+                print(f"CHECKING MIGRATION {schema}:migration_workspace v{self.MIGRATION_WORKSPACE_MIGRATION_VERSION}")
                 self.ensure_schema_migration(int(company_id),cur=cur)
 
                 print(f"CHECKING MIGRATION {schema}:ias41 v{self.IAS41_MIGRATION_VERSION}")
                 self.ensure_company_biological_assets(int(company_id),cur=cur)
 
-                print(f"CHECKING MIGRATION {schema}:operations v{self.OPS_MIGRATION_VERSION }")
+                print(f"CHECKING MIGRATION {schema}:operations v{self.OPS_MIGRATION_VERSION}")
                 self.ensure_company_ops(int(company_id),cur=cur)
 
                 print(f"RUNNING SAFE TENANT SYNC {schema}")
@@ -53960,6 +53959,7 @@ class DatabaseService:
             except Exception as error:
                 import traceback
                 conn.rollback()
+
                 print(f"\n[BOOT][DDL-ERROR] company={company_id} schema={schema}")
                 print("error =",repr(error))
                 traceback.print_exc()
@@ -54322,17 +54322,28 @@ class DatabaseService:
         """
         Runs DDL statements safely.
 
-        - Optional advisory xact lock (lock_key) to serialize schema bootstraps.
-        - Optional migration guard (migration_key + migration_version) so DDL runs only once.
-        - SAVEPOINT per statement so one failure doesn't abort the entire transaction.
-        - Skips comment-only / empty statements.
+        Rules:
+        - Optional advisory transaction lock.
+        - Migration version may skip execution ONLY when:
+            1. recorded version >= requested version, AND
+            2. every CREATE TABLE declared by this DDL actually exists.
+        - Missing tables force the DDL to rerun even when the version is marked applied.
+        - Each statement runs under a SAVEPOINT.
+        - A failed statement prevents the migration from being marked applied.
         """
+
+        import re
+
         ddl = (ddl or "").strip()
         if not ddl:
             return
 
+        # ============================================================
+        # PostgreSQL-aware SQL splitter
+        # ============================================================
         def _split_sql_postgres(sql: str) -> list[str]:
-            sql = (sql or "")
+            sql = sql or ""
+
             out: list[str] = []
             buf: list[str] = []
 
@@ -54349,75 +54360,106 @@ class DatabaseService:
                 ch = sql[i]
                 nxt = sql[i + 1] if i + 1 < n else ""
 
-                # ----------------------------
-                # Handle exiting comments
-                # ----------------------------
+                # ----------------------------------------------------
+                # Existing line comment
+                # ----------------------------------------------------
                 if in_line_comment:
-                    # end line comment at newline
                     if ch == "\n":
                         in_line_comment = False
-                        buf.append(ch)  # keep newline to not glue words
+                        buf.append(ch)
+
                     i += 1
                     continue
 
+                # ----------------------------------------------------
+                # Existing block comment
+                # ----------------------------------------------------
                 if in_block_comment:
-                    # end block comment at */
                     if ch == "*" and nxt == "/":
                         in_block_comment = False
                         i += 2
                     else:
                         i += 1
+
                     continue
 
-                # ----------------------------
-                # Enter comments (only if not in string/dollar)
-                # ----------------------------
+                # ----------------------------------------------------
+                # Enter comments
+                # ----------------------------------------------------
                 if not in_squote and dollar_tag is None:
                     if ch == "-" and nxt == "-":
                         in_line_comment = True
                         i += 2
                         continue
+
                     if ch == "/" and nxt == "*":
                         in_block_comment = True
                         i += 2
                         continue
 
-                # ----------------------------
-                # Dollar-quoted blocks (only if not in single quote)
-                # ----------------------------
+                # ----------------------------------------------------
+                # PostgreSQL dollar quoted blocks
+                # ----------------------------------------------------
                 if not in_squote and ch == "$":
                     j = i + 1
-                    while j < n and sql[j] != "$" and (sql[j].isalnum() or sql[j] == "_"):
+
+                    while (
+                        j < n
+                        and sql[j] != "$"
+                        and (
+                            sql[j].isalnum()
+                            or sql[j] == "_"
+                        )
+                    ):
                         j += 1
+
                     if j < n and sql[j] == "$":
-                        tag = sql[i : j + 1]
+                        tag = sql[i:j + 1]
+
                         if dollar_tag is None:
                             dollar_tag = tag
                             buf.append(tag)
                             i = j + 1
                             continue
+
                         elif sql.startswith(dollar_tag, i):
                             buf.append(dollar_tag)
                             i += len(dollar_tag)
                             dollar_tag = None
                             continue
 
-                # ----------------------------
-                # Single quotes (only if not inside dollar block)
-                # ----------------------------
+                # ----------------------------------------------------
+                # Single quoted strings
+                # ----------------------------------------------------
                 if dollar_tag is None and ch == "'":
+                    # PostgreSQL escaped single quote: ''
+                    if (
+                        in_squote
+                        and nxt == "'"
+                    ):
+                        buf.append(ch)
+                        buf.append(nxt)
+                        i += 2
+                        continue
+
                     in_squote = not in_squote
                     buf.append(ch)
                     i += 1
                     continue
 
-                # ----------------------------
+                # ----------------------------------------------------
                 # Statement terminator
-                # ----------------------------
-                if ch == ";" and not in_squote and dollar_tag is None:
+                # ----------------------------------------------------
+                if (
+                    ch == ";"
+                    and not in_squote
+                    and dollar_tag is None
+                ):
                     stmt = "".join(buf).strip()
+
                     if stmt:
                         out.append(stmt)
+
                     buf = []
                     i += 1
                     continue
@@ -54426,6 +54468,7 @@ class DatabaseService:
                 i += 1
 
             last = "".join(buf).strip()
+
             if last:
                 out.append(last)
 
@@ -54433,174 +54476,347 @@ class DatabaseService:
 
         statements = _split_sql_postgres(ddl)
 
+        # ============================================================
+        # Migration bookkeeping
+        # ============================================================
         def _ensure_migrations_table(cursor):
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS public.schema_migrations (
-                migration_key TEXT PRIMARY KEY,
-                version INT NOT NULL,
-                applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            """)
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.schema_migrations (
+                    migration_key TEXT PRIMARY KEY,
+                    version INT NOT NULL,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """
+            )
 
+        # ============================================================
+        # Discover tables expected from THIS DDL
+        # ============================================================
+        def _expected_tables() -> list[tuple[str, str]]:
+            expected: list[tuple[str, str]] = []
+            seen = set()
+
+            pattern = re.compile(
+                r"""
+                ^\s*
+                CREATE\s+TABLE
+                \s+
+                (?:IF\s+NOT\s+EXISTS\s+)?
+                (?:
+                    "?(?P<schema>[A-Za-z_][A-Za-z0-9_]*)"?\.
+                )?
+                "?(?P<table>[A-Za-z_][A-Za-z0-9_]*)"?
+                """,
+                re.IGNORECASE | re.VERBOSE,
+            )
+
+            for stmt in statements:
+                match = pattern.search(stmt)
+
+                if not match:
+                    continue
+
+                table_schema = match.group("schema")
+                table_name = match.group("table")
+
+                # For tenant migrations, infer schema from migration key
+                # when CREATE TABLE isn't explicitly schema-qualified.
+                if not table_schema:
+                    if (
+                        migration_key
+                        and migration_key.startswith("company_")
+                        and ":" in migration_key
+                    ):
+                        table_schema = migration_key.split(":", 1)[0]
+                    else:
+                        table_schema = "public"
+
+                key = (
+                    table_schema,
+                    table_name,
+                )
+
+                if key not in seen:
+                    seen.add(key)
+                    expected.append(key)
+
+            return expected
+
+        expected_tables = _expected_tables()
+
+        # ============================================================
+        # Verify ALL expected tables actually exist
+        # ============================================================
+        def _all_expected_tables_exist(cursor) -> bool:
+            if not expected_tables:
+                return True
+
+            missing = []
+
+            for table_schema, table_name in expected_tables:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = %s
+                    AND table_name = %s
+                    LIMIT 1;
+                    """,
+                    (
+                        table_schema,
+                        table_name,
+                    ),
+                )
+
+                if cursor.fetchone() is None:
+                    missing.append(
+                        f"{table_schema}.{table_name}"
+                    )
+
+            if missing:
+                preview = ", ".join(missing[:10])
+
+                if len(missing) > 10:
+                    preview += (
+                        f", ... +{len(missing) - 10} more"
+                    )
+
+                print(
+                    f"[MIG] {migration_key or '<unversioned>'}: "
+                    f"{len(missing)} expected table(s) missing: "
+                    f"{preview}"
+                )
+
+                return False
+
+            return True
+
+        # ============================================================
+        # Decide whether migration can genuinely be skipped
+        # ============================================================
         def _already_applied(cursor) -> bool:
-            if not migration_key or migration_version is None:
+            if (
+                not migration_key
+                or migration_version is None
+            ):
                 return False
 
             _ensure_migrations_table(cursor)
 
-            # ------------------------------------------------------------
-            # ✅ Safety: if this is a tenant migration, verify required tables exist.
-            # If missing, we must rerun DDL even if migrations table says "applied".
-            # ------------------------------------------------------------
-            try:
-                # migration_key examples: "company_7:bootstrap", "company_7:ap"
-                if migration_key.startswith("company_") and ":" in migration_key:
-                    schema = migration_key.split(":", 1)[0]  # e.g. "company_7"
-
-                    if migration_key.endswith(":bootstrap"):
-                        cursor.execute(
-                            """
-                            SELECT 1
-                            FROM information_schema.tables
-                            WHERE table_schema = %s
-                              AND table_name = 'coa'
-                            LIMIT 1;
-                            """,
-                            (schema,),
-                        )
-                        coa_exists = cursor.fetchone() is not None
-
-                        cursor.execute(
-                            """
-                            SELECT 1
-                            FROM pg_proc p
-                            JOIN pg_namespace n ON n.oid = p.pronamespace
-                            WHERE n.nspname = %s
-                              AND p.proname = 'fn_assert_asset_company'
-                            LIMIT 1;
-                            """,
-                            (schema,),
-                        )
-                        fn_exists = cursor.fetchone() is not None
-
-                        if not coa_exists or not fn_exists:
-                            print(
-                                f"[MIG] {migration_key} marked applied, but bootstrap objects missing "
-                                f"(coa_exists={coa_exists}, fn_exists={fn_exists}) -> rerun"
-                            )
-                            return False
-
-                    if migration_key.endswith(":ap"):
-                        required_ap_tables = (
-                            "bills",
-                            "bill_lines",
-                            "vendor_payments",
-                            "vendor_payment_allocations",
-                        )
-
-                        for table_name in required_ap_tables:
-                            cursor.execute(
-                                """
-                                SELECT 1
-                                FROM information_schema.tables
-                                WHERE table_schema = %s
-                                  AND table_name = %s
-                                LIMIT 1;
-                                """,
-                                (schema, table_name),
-                            )
-                            exists = cursor.fetchone() is not None
-                            if not exists:
-                                print(
-                                    f"[MIG] {migration_key} marked applied, but {schema}.{table_name} missing -> rerun"
-                                )
-                                return False
-
-            except Exception as e:
-                # If introspection fails, be safe: rerun DDL
-                print(f"[MIG][WARN] table-exists check failed for {migration_key}: {e} -> rerun")
-                return False
-
-            # ------------------------------------------------------------
-            # Normal migration guard
-            # ------------------------------------------------------------
             cursor.execute(
-                "SELECT version FROM public.schema_migrations WHERE migration_key=%s;",
+                """
+                SELECT version
+                FROM public.schema_migrations
+                WHERE migration_key=%s;
+                """,
                 (migration_key,),
             )
+
             row = cursor.fetchone()
+
             if not row:
                 return False
 
-            v = row.get("version") if isinstance(row, dict) else row[0]
-            return int(v or 0) >= int(migration_version)
+            existing_version = (
+                row.get("version")
+                if isinstance(row, dict)
+                else row[0]
+            )
+
+            if int(existing_version or 0) < int(migration_version):
+                return False
+
+            # --------------------------------------------------------
+            # CRITICAL:
+            # Version is current, but do not trust it blindly.
+            # Every CREATE TABLE from this DDL must exist.
+            # --------------------------------------------------------
+            if not _all_expected_tables_exist(cursor):
+                print(
+                    f"[MIG] {migration_key} version "
+                    f"{existing_version} recorded, but schema is incomplete "
+                    f"-> rerunning DDL"
+                )
+
+                return False
+
+            print(
+                f"[MIG] {migration_key} v{existing_version} "
+                f"already applied and all "
+                f"{len(expected_tables)} expected table(s) exist -> skip"
+            )
+
+            return True
 
         def _mark_applied(cursor):
-            if not migration_key or migration_version is None:
+            if (
+                not migration_key
+                or migration_version is None
+            ):
                 return
+
             _ensure_migrations_table(cursor)
+
             cursor.execute(
                 """
-                INSERT INTO public.schema_migrations (migration_key, version)
+                INSERT INTO public.schema_migrations (
+                    migration_key,
+                    version
+                )
                 VALUES (%s, %s)
-                ON CONFLICT (migration_key) DO UPDATE
-                SET version = GREATEST(public.schema_migrations.version, EXCLUDED.version),
+
+                ON CONFLICT (migration_key)
+                DO UPDATE SET
+                    version = GREATEST(
+                        public.schema_migrations.version,
+                        EXCLUDED.version
+                    ),
                     applied_at = NOW();
                 """,
-                (migration_key, int(migration_version)),
+                (
+                    migration_key,
+                    int(migration_version),
+                ),
             )
 
         def _advisory_xact_lock(cursor):
             if not lock_key:
                 return
-            cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s));", (lock_key,))
+
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s));",
+                (lock_key,),
+            )
 
         def _is_effectively_empty(stmt: str) -> bool:
             lines = []
+
             for line in (stmt or "").splitlines():
                 s = line.strip()
+
                 if not s:
                     continue
+
                 if s.startswith("--"):
                     continue
+
                 lines.append(s)
+
             return len(lines) == 0
 
+        # ============================================================
+        # Execute migration
+        # ============================================================
         def _run(cursor, conn=None):
-            # If caller supplies a cursor, assume caller owns the transaction + locking
             if conn is not None:
                 _advisory_xact_lock(cursor)
 
             if _already_applied(cursor):
                 return
 
-            for i, stmt in enumerate(statements, start=1):
+            failed_statements = []
+
+            for i, stmt in enumerate(
+                statements,
+                start=1,
+            ):
                 if _is_effectively_empty(stmt):
                     continue
 
                 sp = f"sp_{i}"
-                cursor.execute(f"SAVEPOINT {sp};")
-                try:
-                    head = " ".join(stmt.split())[:140]
-                    print(f"[EXEC-DDL] #{i}/{len(statements)} -> {head}")
-                    cursor.execute(stmt)
-                except Exception as e:
-                    cursor.execute(f"ROLLBACK TO SAVEPOINT {sp};")
-                    cursor.execute(f"RELEASE SAVEPOINT {sp};")
-                    print(f"[EXEC-DDL][WARN] stmt #{i} failed (skipped): {e}")
-                    continue
-                cursor.execute(f"RELEASE SAVEPOINT {sp};")
 
+                cursor.execute(
+                    f"SAVEPOINT {sp};"
+                )
+
+                try:
+                    head = " ".join(
+                        stmt.split()
+                    )[:180]
+
+                    print(
+                        f"[EXEC-DDL] "
+                        f"#{i}/{len(statements)} -> {head}"
+                    )
+
+                    cursor.execute(stmt)
+
+                except Exception as error:
+                    cursor.execute(
+                        f"ROLLBACK TO SAVEPOINT {sp};"
+                    )
+
+                    cursor.execute(
+                        f"RELEASE SAVEPOINT {sp};"
+                    )
+
+                    failed_statements.append(
+                        (
+                            i,
+                            str(error),
+                        )
+                    )
+
+                    print(
+                        f"[EXEC-DDL][ERROR] "
+                        f"stmt #{i} failed: {error}"
+                    )
+
+                    # IMPORTANT:
+                    # Do not silently continue and later mark
+                    # an incomplete migration as applied.
+                    raise
+
+                else:
+                    cursor.execute(
+                        f"RELEASE SAVEPOINT {sp};"
+                    )
+
+            # --------------------------------------------------------
+            # Verify tables AFTER execution too.
+            # --------------------------------------------------------
+            if not _all_expected_tables_exist(cursor):
+                raise RuntimeError(
+                    f"DDL migration {migration_key or '<unversioned>'} "
+                    f"finished but one or more expected tables are missing."
+                )
+
+            # Only mark after successful execution + validation
             _mark_applied(cursor)
-            if conn:
+
+            if conn is not None:
                 conn.commit()
 
+            print(
+                f"[MIG][OK] "
+                f"{migration_key or '<unversioned>'} "
+                f"v{migration_version if migration_version is not None else '-'} "
+                f"completed; "
+                f"{len(expected_tables)} expected table(s) verified."
+            )
+
+        # ============================================================
+        # Caller-owned transaction
+        # ============================================================
         if cur is not None:
-            _run(cur, conn=None)
+            _run(
+                cur,
+                conn=None,
+            )
             return
 
-        with self._conn_cursor() as (conn, cur2):
-            _run(cur2, conn=conn)
+        # ============================================================
+        # Self-owned transaction
+        # ============================================================
+        with self._conn_cursor() as (
+            conn,
+            cur2,
+        ):
+            _run(
+                cur2,
+                conn=conn,
+            )
             return
 
     def ensure_company_coa_table(db_service, company_id: int) -> None:
