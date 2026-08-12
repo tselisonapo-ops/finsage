@@ -95455,12 +95455,31 @@ async function saveInvItemFromModal() {
   const oldText = btn?.textContent || "Save Material";
   const editingId = Number(window._INV_EDITING_ITEM_ID || 0) || null;
 
-  console.log("[INVENTORY SAVE]", {
-    company_id: cid,
-    editing_id: editingId,
-    mode: editingId ? "UPDATE" : "CREATE",
-    payload,
+  console.group("=== INVENTORY ITEM SAVE TRACE ===");
+  console.log("Mode:", editingId ? "UPDATE" : "CREATE");
+  console.log("Company ID:", cid);
+  console.log("Item ID:", editingId);
+
+  console.log("Raw sales price input:", {
+    value: document.getElementById("invItemSalesPrice")?.value,
+    valueAsNumber: document.getElementById("invItemSalesPrice")?.valueAsNumber,
   });
+
+  console.log("Parsed payload values:", {
+    sales_price: payload.sales_price,
+    purchase_cost: payload.purchase_cost,
+    reorder_level: payload.reorder_level,
+  });
+
+  console.log("FULL PAYLOAD:", JSON.parse(JSON.stringify(payload)));
+
+  if (editingId) {
+    console.log("PUT URL:", ENDPOINTS.inventory.item(cid, editingId));
+  } else {
+    console.log("POST URL:", ENDPOINTS.inventory.createItem(cid));
+  }
+
+  console.groupEnd();
 
   try {
     showInvItemModalMsg(editingId ? "Updating…" : "Saving…");
@@ -95473,6 +95492,12 @@ async function saveInvItemFromModal() {
     let saved;
 
     if (editingId) {
+      console.log("[INV UPDATE] sending PUT", {
+        item_id: editingId,
+        sales_price: payload.sales_price,
+        payload,
+      });
+
       saved = await apiFetch(
         ENDPOINTS.inventory.item(cid, editingId),
         {
@@ -95481,6 +95506,11 @@ async function saveInvItemFromModal() {
         }
       );
     } else {
+      console.log("[INV CREATE] sending POST", {
+        sales_price: payload.sales_price,
+        payload,
+      });
+
       saved = await apiFetch(
         ENDPOINTS.inventory.createItem(cid),
         {
@@ -95490,8 +95520,8 @@ async function saveInvItemFromModal() {
       );
     }
 
-    console.log("[INVENTORY SAVE RESPONSE]", saved);
-
+    console.log("[INV SAVE RESPONSE]", saved);
+    console.log("[INV SAVE RESPONSE sales_price]", saved?.sales_price);
     showInvItemModalMsg(
       editingId ? "Material updated ✔" : "Material created ✔",
       "ok"

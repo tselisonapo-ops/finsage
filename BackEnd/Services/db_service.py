@@ -70484,6 +70484,18 @@ class DatabaseService:
             sets.append(f"{col}=%s")
             params.append(v)
 
+            print(
+                "[INV DB UPDATE BUILT]",
+                {
+                    "company_id": company_id,
+                    "item_id": item_id,
+                    "incoming_sales_price": patch.get("sales_price"),
+                    "sets": sets,
+                    "params": params,
+                },
+                flush=True,
+            )
+
         if not sets:
             return existing
 
@@ -70495,7 +70507,22 @@ class DatabaseService:
         WHERE company_id=%s AND id=%s
         RETURNING *;
         """
-        return self.fetch_one(sql, tuple(params))
+        print("[INV DB UPDATE SQL]", sql, flush=True)
+        print("[INV DB UPDATE PARAMS]", params, flush=True)
+
+        updated = self.fetch_one(sql, tuple(params))
+
+        print(
+            "[INV DB UPDATE RESULT]",
+            {
+                "id": (updated or {}).get("id"),
+                "sales_price": (updated or {}).get("sales_price"),
+                "reorder_level": (updated or {}).get("reorder_level"),
+            },
+            flush=True,
+        )
+
+        return updated
 
     def get_inventory_item(self, company_id: int, item_id: int):
         schema = f"company_{int(company_id)}"

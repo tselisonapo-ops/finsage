@@ -10981,9 +10981,22 @@ def update_inventory_item(cid: int, item_id: int):
     raw = request.get_json(silent=True) or {}
     schema = f"company_{company_id}"
 
+    print("\n=== INVENTORY UPDATE API TRACE ===", flush=True)
+    print("company_id:", company_id, flush=True)
+    print("item_id:", item_id, flush=True)
+    print("raw sales_price:", raw.get("sales_price"), flush=True)
+    print("raw reorder_level:", raw.get("reorder_level"), flush=True)
+    print("raw payload:", raw, flush=True)
+
     cols, meta = _split_item_payload(raw, INVENTORY_ITEM_COLS)
     cols["auto_generate_barcode"] = raw.get("auto_generate_barcode")
-    
+
+    print("cols sales_price:", cols.get("sales_price"), flush=True)
+    print("cols reorder_level:", cols.get("reorder_level"), flush=True)
+    print("cols after split:", cols, flush=True)
+    print("meta after split:", meta, flush=True)
+    print("==================================\n", flush=True)
+
     # normalize sku/barcode if present
     sku = _norm_str(cols.get("sku")) if "sku" in cols else ""
     barcode = _norm_str(cols.get("barcode")) if "barcode" in cols else ""
@@ -11028,6 +11041,18 @@ def update_inventory_item(cid: int, item_id: int):
     before_item = db_service.get_inventory_item(company_id, item_id) or {}
     if not before_item:
         return jsonify({"error": "Inventory item not found"}), 404
+
+    print(
+        "[INV UPDATE BEFORE DB]",
+        {
+            "company_id": company_id,
+            "item_id": item_id,
+            "sales_price": cols.get("sales_price"),
+            "reorder_level": cols.get("reorder_level"),
+            "cols": cols,
+        },
+        flush=True,
+    )
 
     # ✅ Update
     db_service.update_inventory_item(company_id, item_id, cols)
