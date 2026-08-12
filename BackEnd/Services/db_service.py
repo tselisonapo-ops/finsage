@@ -37539,7 +37539,7 @@ class DatabaseService:
                 );
             END IF;
         END
-        $fk_leases_tax_treatment_rule$
+        $fk_leases_tax_treatment_rule$;
 
         CREATE INDEX IF NOT EXISTS
         {schema}_leases_tax_treatment_rule_idx
