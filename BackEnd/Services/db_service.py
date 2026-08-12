@@ -32041,7 +32041,17 @@ class DatabaseService:
             migration_version=self.FORECAST_MIGRATION_VERSION,
         )
         
-    def ensure_company_schema(self, company_id: int) -> None:
+    def ensure_company_schema(self, company_id: int, *args, **kwargs):
+        import traceback
+
+        print(
+            f"\n[ENSURE-COMPANY-SCHEMA-CALLED] company={company_id}",
+            flush=True,
+        )
+
+        traceback.print_stack(limit=12)
+
+        # existing function continues below...
         schema = f"company_{company_id}"
 
         ddl_bootstrap = """
