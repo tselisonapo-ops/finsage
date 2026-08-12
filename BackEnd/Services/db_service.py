@@ -27808,25 +27808,63 @@ class DatabaseService:
         -- MIGRATE OLD COLUMN VALUES
         -- ============================================================
 
-        UPDATE {schema}.ops_procurement_settings
-        SET
-            sender_name = COALESCE(
-                sender_name,
-                procurement_sender_name
-            ),
-            sender_email = COALESCE(
-                sender_email,
-                procurement_sender_email
-            ),
-            reply_to_email = COALESCE(
-                reply_to_email,
-                procurement_reply_to
-            )
-        WHERE
-            sender_name IS NULL
-            OR sender_email IS NULL
-            OR reply_to_email IS NULL;
+        DO $migrate_ops_procurement_sender_fields$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='{schema}'
+                AND table_name='ops_procurement_settings'
+                AND column_name='procurement_sender_name'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.ops_procurement_settings
+                    SET sender_name=COALESCE(
+                        sender_name,
+                        procurement_sender_name
+                    )
+                    WHERE sender_name IS NULL',
+                    '{schema}'
+                );
+            END IF;
 
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='{schema}'
+                AND table_name='ops_procurement_settings'
+                AND column_name='procurement_sender_email'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.ops_procurement_settings
+                    SET sender_email=COALESCE(
+                        sender_email,
+                        procurement_sender_email
+                    )
+                    WHERE sender_email IS NULL',
+                    '{schema}'
+                );
+            END IF;
+
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='{schema}'
+                AND table_name='ops_procurement_settings'
+                AND column_name='procurement_reply_to'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.ops_procurement_settings
+                    SET reply_to_email=COALESCE(
+                        reply_to_email,
+                        procurement_reply_to
+                    )
+                    WHERE reply_to_email IS NULL',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $migrate_ops_procurement_sender_fields$;
 
         -- ============================================================
         -- NORMALISE EXISTING VALUES
