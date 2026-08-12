@@ -26176,7 +26176,7 @@ class DatabaseService:
                 ON DELETE SET NULL,
 
             project_id INT NULL,
-            cost_center_id INT NULL,
+            cost_centre_id BIGINT NULL,
 
             gl_account_id INT NULL,
 
@@ -26231,7 +26231,7 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS primary_gl_account_code TEXT NULL,
             ADD COLUMN IF NOT EXISTS primary_gl_account_name TEXT NULL,
             ADD COLUMN IF NOT EXISTS business_purpose TEXT NULL;
-
+            
         CREATE INDEX IF NOT EXISTS ops_requests_status_idx
         ON {schema}.ops_requests(company_id,status);
 
@@ -26271,6 +26271,11 @@ class DatabaseService:
 
             UNIQUE(request_id,line_no)
         );
+
+        ALTER TABLE {schema}.ops_request_items
+            ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
+            ADD COLUMN IF NOT EXISTS financial_classification TEXT NULL,
+            ADD COLUMN IF NOT EXISTS tax_treatment TEXT NULL;
 
         ALTER TABLE {schema}.ops_request_items
             ADD COLUMN IF NOT EXISTS gl_account_code TEXT NULL,
@@ -27234,6 +27239,28 @@ class DatabaseService:
         -- FinSage Nexus PHASE 2E — FINANCE REVIEW & CLASSIFICATION
         -- ============================================================
 
+        DO $ops_requests_cost_centre_migration$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='{schema}'
+                AND table_name='ops_requests'
+                AND column_name='cost_center_id'
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema='{schema}'
+                AND table_name='ops_requests'
+                AND column_name='cost_centre_id'
+            ) THEN
+                ALTER TABLE {schema}.ops_requests
+                RENAME COLUMN cost_center_id TO cost_centre_id;
+            END IF;
+        END
+        $ops_requests_cost_centre_migration$;
+
         ALTER TABLE {schema}.ops_requests
             ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
             ADD COLUMN IF NOT EXISTS financial_classification TEXT NULL,
@@ -27241,10 +27268,6 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS finance_coded_at TIMESTAMPTZ NULL,
             ADD COLUMN IF NOT EXISTS finance_coded_by_user_id INT NULL;
 
-        ALTER TABLE {schema}.ops_request_items
-            ADD COLUMN IF NOT EXISTS cost_centre_id BIGINT NULL,
-            ADD COLUMN IF NOT EXISTS financial_classification TEXT NULL,
-            ADD COLUMN IF NOT EXISTS tax_treatment TEXT NULL;
 
         ALTER TABLE {schema}.ops_requests
             DROP CONSTRAINT IF EXISTS chk_ops_financial_classification;
@@ -27344,13 +27367,13 @@ class DatabaseService:
             ('cost_centres.view','View cost centres','organisation','View organisation cost centres'),
             ('cost_centres.manage','Manage cost centres','organisation','Create and update organisation cost centres'),
             ('budget.allocations.view','View budget allocations','budget','View operational allocations of approved budgets'),
-            ('budget.allocations.manage','Manage budget allocations','budget','Allocate approved budget amounts operationally')
+            ('budget.allocations.manage','Manage budget allocations','budget','Allocate approved budget amounts operationally'),
             ('sourcing.view','View sourcing events','procurement','View RFQs and sourcing events'),
             ('sourcing.create','Create sourcing events','procurement','Create sourcing events from approved requisitions'),
             ('sourcing.edit','Edit sourcing events','procurement','Edit draft sourcing events and RFQs'),
             ('sourcing.vendor.manage','Manage sourcing vendors','procurement','Select vendors for sourcing events'),
             ('sourcing.issue','Issue RFQs','procurement','Issue RFQs to selected vendors'),
-            ('sourcing.close','Close RFQs','procurement','Close sourcing events for evaluation'),
+            ('sourcing.close','Close RFQs','procurement','Close sourcing events for evaluation')
         ON CONFLICT(code)
         DO UPDATE SET
             name=EXCLUDED.name,
