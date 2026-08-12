@@ -95434,15 +95434,23 @@ async function saveInvItemFromModal() {
   if (!name) return showInvItemModalMsg("Name is required.", "error");
 
   const payload = {
-    sku,
-    name,
-    barcode: (document.getElementById("invItemBarcode")?.value || "").trim(),
-    auto_generate_barcode: !!document.getElementById("invItemAutoBarcode")?.checked,
-    category: (document.getElementById("invItemCategory")?.value || "").trim(),
-    unit: (document.getElementById("invItemUnit")?.value || "").trim(),
-    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim(),
-    sales_price: num("invItemSalesPrice"),
-    reorder_level: num("invItemReorder"),
+    sku: document.getElementById("invItemSku")?.value?.trim() || "",
+    name: document.getElementById("invItemName")?.value?.trim() || "",
+    barcode,
+    auto_generate_barcode: autoBarcode,
+    category: document.getElementById("invItemCategory")?.value?.trim() || "",
+    unit: document.getElementById("invItemUnit")?.value?.trim() || "",
+    vat_code: document.getElementById("invItemVatCode")?.value?.trim() || "",
+    sales_price: Number(
+      String(document.getElementById("invItemSalesPrice")?.value || "0")
+        .replace(/,/g, "")
+        .trim()
+    ) || 0,
+    reorder_level: Number(
+      String(document.getElementById("invItemReorder")?.value || "0")
+        .replace(/,/g, "")
+        .trim()
+    ) || 0,
     track_stock: !!document.getElementById("invItemTrackStock")?.checked,
     is_taxable: !!document.getElementById("invItemTaxable")?.checked,
     is_active: !!document.getElementById("invItemActive")?.checked,
