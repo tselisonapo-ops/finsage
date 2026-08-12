@@ -33536,27 +33536,6 @@ class DatabaseService:
         ALTER TABLE {schema}.inventory_tx
         ADD COLUMN IF NOT EXISTS bank_account_id INT NULL;
 
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid = c.connamespace
-            WHERE c.conname = '{schema}_inventory_tx_bank_account_fk'
-            AND n.nspname = '{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (bank_account_id)
-            REFERENCES %I.company_bank_accounts(id)
-            ON DELETE SET NULL',
-            '{schema}',
-            '{schema}_inventory_tx_bank_account_fk',
-            '{schema}'
-            );
-        END IF;
-        END $$;
 
         DO $$
         BEGIN
@@ -33615,7 +33594,7 @@ class DatabaseService:
             '{schema}'
         );
         END $$;
-        
+
         -- ==================================================
         -- OPTIONAL: Vendor Documents (compliance attachments)
         -- ==================================================
@@ -33674,22 +33653,6 @@ class DatabaseService:
         END IF;
         END $$;
 
-        DO $$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c
-            JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.inventory_tx
-            ADD CONSTRAINT %I
-            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
-            ON DELETE SET NULL',
-            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
-            );
-        END IF;
-        END $$;
 
         -- ==================================================
         -- VENDORS: user FK
@@ -37384,6 +37347,29 @@ class DatabaseService:
         ON {schema}.company_bank_accounts(company_id)
         WHERE is_default_payments=TRUE;
 
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid = c.connamespace
+            WHERE c.conname = '{schema}_inventory_tx_bank_account_fk'
+            AND n.nspname = '{schema}'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (bank_account_id)
+            REFERENCES %I.company_bank_accounts(id)
+            ON DELETE SET NULL',
+            '{schema}',
+            '{schema}_inventory_tx_bank_account_fk',
+            '{schema}'
+            );
+        END IF;
+        END $$;
+
         CREATE TABLE IF NOT EXISTS {schema}.bank_transactions (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {company_id},
@@ -37554,6 +37540,25 @@ class DatabaseService:
             END IF;
         END
         $fk_leases_tax_treatment_rule$;
+
+        DO $fk_lease_payments_lessor$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid=c.connamespace
+                WHERE c.conname='fk_lease_payments_lessor'
+                AND n.nspname='{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lease_payments
+                    ADD CONSTRAINT fk_lease_payments_lessor
+                    FOREIGN KEY (lessor_id) REFERENCES %I.lessors(id)',
+                    '{schema}', '{schema}'
+                );
+            END IF;
+        END
+        $fk_lease_payments_lessor$;
 
         CREATE INDEX IF NOT EXISTS
         {schema}_leases_tax_treatment_rule_idx
@@ -38381,25 +38386,6 @@ class DatabaseService:
             END IF;
         END
         $fk_lease_payments_schedule$;
-
-        DO $fk_lease_payments_lessor$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid=c.connamespace
-                WHERE c.conname='fk_lease_payments_lessor'
-                AND n.nspname='{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lease_payments
-                    ADD CONSTRAINT fk_lease_payments_lessor
-                    FOREIGN KEY (lessor_id) REFERENCES %I.lessors(id)',
-                    '{schema}', '{schema}'
-                );
-            END IF;
-        END
-        $fk_lease_payments_lessor$;
 
         DO $fk_lease_payments_reverses$
         BEGIN
@@ -43166,41 +43152,6 @@ class DatabaseService:
                 ON n.oid = c.connamespace
                 WHERE n.nspname = '{schema}'
                 AND c.conname =
-                    'asset_tax_profiles_default_rule_fk'
-            ) THEN
-                ALTER TABLE {schema}.asset_tax_profiles
-                ADD CONSTRAINT asset_tax_profiles_default_rule_fk
-                FOREIGN KEY (default_rule_id)
-                REFERENCES public.tax_allowance_rules(id)
-                ON DELETE SET NULL;
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n
-                ON n.oid = c.connamespace
-                WHERE n.nspname = '{schema}'
-                AND c.conname =
-                    'asset_tax_profiles_override_rule_fk'
-            ) THEN
-                ALTER TABLE {schema}.asset_tax_profiles
-                ADD CONSTRAINT asset_tax_profiles_override_rule_fk
-                FOREIGN KEY (override_rule_id)
-                REFERENCES {schema}.asset_tax_rule_overrides(id)
-                ON DELETE SET NULL;
-            END IF;
-        END $$;
-
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n
-                ON n.oid = c.connamespace
-                WHERE n.nspname = '{schema}'
-                AND c.conname =
                     'ck_asset_tax_profile_rule_source'
             ) THEN
                 ALTER TABLE {schema}.asset_tax_profiles
@@ -44660,6 +44611,23 @@ class DatabaseService:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        DO $$
+        BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_namespace n ON n.oid=c.connamespace
+            WHERE n.nspname='{schema}' AND c.conname='{schema}_inv_tx_po_fk'
+        ) THEN
+            EXECUTE format(
+            'ALTER TABLE %I.inventory_tx
+            ADD CONSTRAINT %I
+            FOREIGN KEY (po_id) REFERENCES %I.purchase_orders(id)
+            ON DELETE SET NULL',
+            '{schema}', '{schema}_inv_tx_po_fk', '{schema}'
+            );
+        END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.inventory_landed_costs (
             id SERIAL PRIMARY KEY,
@@ -50559,7 +50527,9 @@ class DatabaseService:
                     FOREIGN KEY (loan_id)
                     REFERENCES %I.loans(id)
                     ON DELETE SET NULL',
-                    '{schema}', '{schema}_ifrs9_instr_loan_fk', '{schema}'
+                    '{schema}',
+                    '{schema}_ifrs9_instr_loan_fk',
+                    '{schema}'
                 );
             END IF;
 
@@ -50575,7 +50545,9 @@ class DatabaseService:
                     FOREIGN KEY (customer_id)
                     REFERENCES %I.customers(id)
                     ON DELETE SET NULL',
-                    '{schema}', '{schema}_ifrs9_instr_customer_fk', '{schema}'
+                    '{schema}',
+                    '{schema}_ifrs9_instr_customer_fk',
+                    '{schema}'
                 );
             END IF;
 
@@ -50591,23 +50563,9 @@ class DatabaseService:
                     FOREIGN KEY (vendor_id)
                     REFERENCES %I.vendors(id)
                     ON DELETE SET NULL',
-                    '{schema}', '{schema}_ifrs9_instr_vendor_fk', '{schema}'
-                );
-            END IF;
-
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = '{schema}_ifrs9_instr_bill_fk'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.ifrs9_financial_instruments
-                    ADD CONSTRAINT %I
-                    FOREIGN KEY (bill_id)
-                    REFERENCES %I.bills(id)
-                    ON DELETE SET NULL',
-                    '{schema}', '{schema}_ifrs9_instr_bill_fk', '{schema}'
+                    '{schema}',
+                    '{schema}_ifrs9_instr_vendor_fk',
+                    '{schema}'
                 );
             END IF;
         END $$;
@@ -53272,7 +53230,26 @@ class DatabaseService:
                     effective_from
                 )
         );
-    
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                ON n.oid = c.connamespace
+                WHERE n.nspname = '{schema}'
+                AND c.conname =
+                    'asset_tax_profiles_override_rule_fk'
+            ) THEN
+                ALTER TABLE {schema}.asset_tax_profiles
+                ADD CONSTRAINT asset_tax_profiles_override_rule_fk
+                FOREIGN KEY (override_rule_id)
+                REFERENCES {schema}.asset_tax_rule_overrides(id)
+                ON DELETE SET NULL;
+            END IF;
+        END $$;
+        
         CREATE INDEX IF NOT EXISTS
         {schema}_asset_tax_rule_override_authority_idx
         ON {schema}.asset_tax_rule_overrides (
@@ -53382,6 +53359,28 @@ class DatabaseService:
                 );
             END IF;
         END $uq_bills_id_company$;
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = '{schema}_ifrs9_instr_bill_fk'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.ifrs9_financial_instruments
+                    ADD CONSTRAINT %I
+                    FOREIGN KEY (bill_id)
+                    REFERENCES %I.bills(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}_ifrs9_instr_bill_fk',
+                    '{schema}'
+                );
+            END IF;
+        END $$;
 
         -- ✅ legacy-safe (if bills existed before these columns)
         DO $uq_bills_vendor_number$
