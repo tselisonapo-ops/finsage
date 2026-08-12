@@ -95433,14 +95433,17 @@ async function saveInvItemFromModal() {
   if (!sku) return showInvItemModalMsg("SKU is required.", "error");
   if (!name) return showInvItemModalMsg("Name is required.", "error");
 
+  const barcode = (document.getElementById("invItemBarcode")?.value || "").trim();
+  const autoBarcode = !!document.getElementById("invItemAutoBarcode")?.checked;
+
   const payload = {
-    sku: document.getElementById("invItemSku")?.value?.trim() || "",
-    name: document.getElementById("invItemName")?.value?.trim() || "",
+    sku,
+    name,
     barcode,
     auto_generate_barcode: autoBarcode,
-    category: document.getElementById("invItemCategory")?.value?.trim() || "",
-    unit: document.getElementById("invItemUnit")?.value?.trim() || "",
-    vat_code: document.getElementById("invItemVatCode")?.value?.trim() || "",
+    category: (document.getElementById("invItemCategory")?.value || "").trim(),
+    unit: (document.getElementById("invItemUnit")?.value || "").trim(),
+    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim(),
     sales_price: Number(
       String(document.getElementById("invItemSalesPrice")?.value || "0")
         .replace(/,/g, "")
