@@ -37539,26 +37539,7 @@ class DatabaseService:
                 );
             END IF;
         END
-        $fk_leases_tax_treatment_rule$;
-
-        DO $fk_lease_payments_lessor$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid=c.connamespace
-                WHERE c.conname='fk_lease_payments_lessor'
-                AND n.nspname='{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lease_payments
-                    ADD CONSTRAINT fk_lease_payments_lessor
-                    FOREIGN KEY (lessor_id) REFERENCES %I.lessors(id)',
-                    '{schema}', '{schema}'
-                );
-            END IF;
-        END
-        $fk_lease_payments_lessor$;
+        $fk_leases_tax_treatment_rule$
 
         CREATE INDEX IF NOT EXISTS
         {schema}_leases_tax_treatment_rule_idx
