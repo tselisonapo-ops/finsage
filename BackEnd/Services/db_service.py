@@ -29275,27 +29275,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS {schema}_payroll_benefit_company_idx
             ON {schema}.payroll_benefit_types(company_id);
 
-        ALTER TABLE {schema}.payroll_benefit_plans
-            ADD COLUMN IF NOT EXISTS employee_deduction_type_id BIGINT,
-            ADD COLUMN IF NOT EXISTS employer_contribution_type_id BIGINT,
-            ADD COLUMN IF NOT EXISTS calculation_source TEXT
-                NOT NULL DEFAULT 'payroll_actual';
-
-        ALTER TABLE {schema}.payroll_benefit_plans
-            DROP CONSTRAINT IF EXISTS
-                chk_payroll_benefit_plan_calculation_source;
-
-        ALTER TABLE {schema}.payroll_benefit_plans
-            ADD CONSTRAINT
-                chk_payroll_benefit_plan_calculation_source
-            CHECK(
-                calculation_source IN(
-                    'payroll_actual',
-                    'setup_estimate',
-                    'percentage'
-                )
-            );
-
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_benefits (
             id SERIAL PRIMARY KEY,
             company_id INTEGER NOT NULL,
@@ -30763,14 +30742,6 @@ class DatabaseService:
                 TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
         ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            ADD COLUMN IF NOT EXISTS updated_at
-                TIMESTAMPTZ NOT NULL DEFAULT NOW();
-
-        ALTER TABLE {schema}.payroll_bonus_accrual_runs
-            ADD COLUMN IF NOT EXISTS posted_at TIMESTAMPTZ,
-            ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
             DROP CONSTRAINT IF EXISTS
                 fk_payroll_bonus_assignment_scheme;
 
@@ -30941,6 +30912,27 @@ class DatabaseService:
             ADD COLUMN IF NOT EXISTS payable_account_code TEXT,
             ADD COLUMN IF NOT EXISTS effective_from DATE,
             ADD COLUMN IF NOT EXISTS effective_to DATE;
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            ADD COLUMN IF NOT EXISTS employee_deduction_type_id BIGINT,
+            ADD COLUMN IF NOT EXISTS employer_contribution_type_id BIGINT,
+            ADD COLUMN IF NOT EXISTS calculation_source TEXT
+                NOT NULL DEFAULT 'payroll_actual';
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            DROP CONSTRAINT IF EXISTS
+                chk_payroll_benefit_plan_calculation_source;
+
+        ALTER TABLE {schema}.payroll_benefit_plans
+            ADD CONSTRAINT
+                chk_payroll_benefit_plan_calculation_source
+            CHECK(
+                calculation_source IN(
+                    'payroll_actual',
+                    'setup_estimate',
+                    'percentage'
+                )
+            );
 
         CREATE INDEX IF NOT EXISTS idx_payroll_benefit_plans_company
             ON {schema}.payroll_benefit_plans(company_id,plan_type,is_active);
