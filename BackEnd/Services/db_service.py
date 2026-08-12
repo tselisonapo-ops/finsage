@@ -48009,18 +48009,25 @@ class DatabaseService:
         -- Anti-duplicate: same contract + same date + type (non-void)
         DO $uq_lessor_mods_contract_date_type$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_lessor_mods_contract_date_type'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_lessor_mods_contract_date_type
-            ON %I.lessor_lease_modifications(lessor_lease_id, modification_date, change_type)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END $uq_lessor_mods_contract_date_type$;
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname='{schema}'
+                AND indexname='uq_lessor_mods_contract_date_type'
+            ) THEN
+                EXECUTE format(
+                    'CREATE UNIQUE INDEX uq_lessor_mods_contract_date_type
+                    ON %I.lessor_lease_modifications(
+                        lessor_lease_id,
+                        modification_date,
+                        change_type
+                    )
+                    WHERE status <> ''void''',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $uq_lessor_mods_contract_date_type$;
 
         -- Indexes
         CREATE INDEX IF NOT EXISTS {schema}_lessor_receipts_receipt_idx
