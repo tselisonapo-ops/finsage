@@ -55529,6 +55529,34 @@ class DatabaseService:
             print(f"Error fetching COA for company {company_id}: {e}")
             return []
 
+    def get_company_currency(
+        self,
+        company_id: int,
+        default: str = "ZAR",
+        cur=None,
+    ) -> str:
+        sql = """
+            SELECT currency
+            FROM public.companies
+            WHERE id = %s
+            LIMIT 1;
+        """
+
+        if cur is not None:
+            cur.execute(sql, (int(company_id),))
+            row = cur.fetchone()
+
+            if isinstance(row, dict):
+                currency = row.get("currency")
+            elif row:
+                currency = row[0]
+            else:
+                currency = None
+        else:
+            row = self.fetch_one(sql, (int(company_id),))
+            currency = row.get("currency") if row else None
+
+        return str(currency or default).strip().upper() or default
 
     def get_company(self, company_id: int) -> Optional[Dict[str, Any]]:
         sql = """
@@ -56545,18 +56573,43 @@ class DatabaseService:
 
         is_reversal = bool(entry.get("is_reversal") or False)
 
-        # ✅ NEW (replaces reversed_journal_id)
+        # Reversal linkage
         reversal_of_journal_id = entry.get("reversal_of_journal_id")
-        reversed_by_journal_id = entry.get("reversed_by_journal_id")  # optional on insert
+        reversed_by_journal_id = entry.get("reversed_by_journal_id")
+
+        # Currency priority:
+        # 1. Explicit journal currency
+        # 2. Company's configured currency
+        # 3. ZAR fallback
+        currency = str(
+            entry.get("currency")
+            or self.get_company_currency(company_id)
+            or "ZAR"
+        ).strip().upper()
 
         sql = f"""
         INSERT INTO {schema}.journal
-        (date, ref, description, gross_amount, net_amount, vat_amount,
-        is_reversal, reversal_of_journal_id, reversed_by_journal_id,
-        source, source_id)
-        VALUES (%s, %s, %s, %s, %s, %s,
-                %s, %s, %s,
-                %s, %s)
+        (
+            date,
+            ref,
+            description,
+            gross_amount,
+            net_amount,
+            vat_amount,
+            is_reversal,
+            reversal_of_journal_id,
+            reversed_by_journal_id,
+            source,
+            source_id,
+            currency
+        )
+        VALUES
+        (
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s,
+            %s
+        )
         RETURNING id;
         """
 
@@ -56572,12 +56625,16 @@ class DatabaseService:
             reversed_by_journal_id,
             entry.get("source"),
             entry.get("source_id"),
+            currency,
         )
 
         if cur is not None:
             cur.execute(sql, params)
             row = cur.fetchone()
-            return int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
+            return int(
+                (row.get("id") if isinstance(row, dict) else row[0])
+                or 0
+            )
 
         return int(self.execute_sql(sql, params) or 0)
 

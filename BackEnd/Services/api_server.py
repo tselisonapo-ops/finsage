@@ -11,7 +11,8 @@ from werkzeug.exceptions import HTTPException
 import psycopg2.extras
 from werkzeug.utils import secure_filename
 import openpyxl
-
+import psycopg2
+from psycopg2 import errors as pg_errors
 ALLOWED_LOGO_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # ----------------------------------------------------------------
@@ -9122,43 +9123,305 @@ def api_journal(company_id: int):
         return jsonify({"ok": True, "journal_id": journal_id}), 200
 
     except ValueError as e:
-        msg = str(e)
+        msg = str(e or "").strip() or "Journal validation failed."
+
+        # ============================================================
+        # PERIOD LOCKED
+        # ============================================================
         if msg.startswith("PERIOD_LOCKED|"):
             parts = msg.split("|")
 
-            # optional: base currency fallback here too
             try:
                 ctx = get_company_context(db_service, company_id) or {}
                 base_ccy = ctx.get("currency")
             except Exception:
                 base_ccy = None
 
-            db_service.audit_log(
-                company_id=company_id,
-                actor_user_id=int(current_user.get("id") or 0),
-                module="gl",
-                action="post_journal_failed",
-                severity="warning",
-                entity_type="journal",
-                entity_id="",
-                entity_ref=None,
-                amount=float((entry or {}).get("gross_amount") or 0.0),
-                currency=((entry or {}).get("currency") or base_ccy),
-                before_json=entry if isinstance(entry, dict) else {},
-                after_json={},
-                message=str(e),
-                source="api",
-            )
+            try:
+                db_service.audit_log(
+                    company_id=company_id,
+                    actor_user_id=int(current_user.get("id") or 0),
+                    module="gl",
+                    action="post_journal_failed",
+                    severity="warning",
+                    entity_type="journal",
+                    entity_id="",
+                    entity_ref=None,
+                    amount=float((entry or {}).get("gross_amount") or 0.0),
+                    currency=((entry or {}).get("currency") or base_ccy),
+                    before_json=entry if isinstance(entry, dict) else {},
+                    after_json={},
+                    message=msg,
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "Failed to audit PERIOD_LOCKED journal failure"
+                )
 
             return jsonify({
                 "ok": False,
+                "success": False,
                 "error": "Period is locked",
+                "message": (
+                    f"The journal cannot be posted because the accounting "
+                    f"period for {parts[2] if len(parts) > 2 else 'this date'} is locked."
+                ),
                 "code": "PERIOD_LOCKED",
                 "module": parts[1] if len(parts) > 1 else "gl",
                 "date": parts[2] if len(parts) > 2 else None,
             }), 409
 
-        return jsonify({"ok": False, "error": msg}), 400
+        # ============================================================
+        # DUPLICATE JOURNAL REF
+        # Covers duplicate detected inside db_service.post_journal()
+        # ============================================================
+        if msg.startswith("DUPLICATE_JOURNAL_REF|"):
+            parts = msg.split("|")
+
+            duplicate_ref = parts[1] if len(parts) > 1 else None
+            duplicate_journal_id = None
+
+            if len(parts) > 2 and "=" in parts[2]:
+                try:
+                    duplicate_journal_id = int(
+                        parts[2].split("=", 1)[1]
+                    )
+                except Exception:
+                    duplicate_journal_id = None
+
+            return jsonify({
+                "ok": False,
+                "success": False,
+                "error": (
+                    f"Duplicate journal reference: {duplicate_ref}"
+                    if duplicate_ref
+                    else "Duplicate journal reference"
+                ),
+                "message": (
+                    f'A journal with reference "{duplicate_ref}" has already been posted.'
+                    if duplicate_ref
+                    else "A journal with this reference has already been posted."
+                ),
+                "code": "DUPLICATE_JOURNAL_REF",
+                "ref": duplicate_ref,
+                "journal_id": duplicate_journal_id,
+            }), 409
+
+        # ============================================================
+        # UNBALANCED JOURNAL
+        # ============================================================
+        if msg.startswith("Unbalanced journal:"):
+            return jsonify({
+                "ok": False,
+                "success": False,
+                "error": "Unbalanced journal",
+                "message": msg,
+                "code": "UNBALANCED_JOURNAL",
+            }), 400
+
+        # ============================================================
+        # MISSING JOURNAL LINES
+        # ============================================================
+        if "at least one line" in msg.lower():
+            return jsonify({
+                "ok": False,
+                "success": False,
+                "error": "Journal has no lines",
+                "message": msg,
+                "code": "MISSING_JOURNAL_LINES",
+            }), 400
+
+        # ============================================================
+        # OTHER VALIDATION ERRORS
+        # ============================================================
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": msg,
+            "message": msg,
+            "code": "JOURNAL_VALIDATION_FAILED",
+        }), 400
+
+
+    # ================================================================
+    # DATABASE: REQUIRED VALUE MISSING
+    # e.g. currency NOT NULL
+    # ================================================================
+    except pg_errors.NotNullViolation as e:
+        column_name = None
+        table_name = None
+
+        try:
+            column_name = e.diag.column_name
+            table_name = e.diag.table_name
+        except Exception:
+            pass
+
+        current_app.logger.exception(
+            "Journal posting NOT NULL failure "
+            "company_id=%s table=%s column=%s",
+            company_id,
+            table_name,
+            column_name,
+        )
+
+        if column_name:
+            user_message = (
+                f'Journal could not be posted because the required field '
+                f'"{column_name}" has no value.'
+            )
+        else:
+            user_message = (
+                "Journal could not be posted because a required value is missing."
+            )
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Missing required journal value",
+            "message": user_message,
+            "code": "JOURNAL_REQUIRED_FIELD_MISSING",
+            "field": column_name,
+        }), 400
+
+
+    # ================================================================
+    # DATABASE: FOREIGN KEY VIOLATION
+    # ================================================================
+    except pg_errors.ForeignKeyViolation as e:
+        constraint_name = None
+
+        try:
+            constraint_name = e.diag.constraint_name
+        except Exception:
+            pass
+
+        current_app.logger.exception(
+            "Journal posting FK failure company_id=%s constraint=%s",
+            company_id,
+            constraint_name,
+        )
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Invalid journal reference",
+            "message": (
+                "Journal could not be posted because one of the selected "
+                "accounts or referenced records does not exist."
+            ),
+            "code": "JOURNAL_FOREIGN_KEY_ERROR",
+        }), 400
+
+
+    # ================================================================
+    # DATABASE: UNIQUE CONSTRAINT
+    # ================================================================
+    except pg_errors.UniqueViolation as e:
+        constraint_name = None
+
+        try:
+            constraint_name = e.diag.constraint_name
+        except Exception:
+            pass
+
+        current_app.logger.exception(
+            "Journal posting unique violation company_id=%s constraint=%s",
+            company_id,
+            constraint_name,
+        )
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Duplicate journal record",
+            "message": (
+                "Journal could not be posted because the transaction "
+                "conflicts with an existing journal record."
+            ),
+            "code": "JOURNAL_DUPLICATE_RECORD",
+        }), 409
+
+
+    # ================================================================
+    # DATABASE: CHECK CONSTRAINT
+    # ================================================================
+    except pg_errors.CheckViolation as e:
+        constraint_name = None
+
+        try:
+            constraint_name = e.diag.constraint_name
+        except Exception:
+            pass
+
+        current_app.logger.exception(
+            "Journal posting CHECK violation company_id=%s constraint=%s",
+            company_id,
+            constraint_name,
+        )
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Journal value not allowed",
+            "message": (
+                "Journal could not be posted because one of its values "
+                "does not satisfy the accounting rules."
+            ),
+            "code": "JOURNAL_CHECK_CONSTRAINT",
+        }), 400
+
+
+    # ================================================================
+    # DATABASE: OTHER POSTGRESQL ERRORS
+    # ================================================================
+    except psycopg2.Error as e:
+        pg_message = None
+
+        try:
+            pg_message = e.diag.message_primary
+        except Exception:
+            pass
+
+        current_app.logger.exception(
+            "PostgreSQL error while posting journal company_id=%s",
+            company_id,
+        )
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Journal database error",
+            "message": (
+                pg_message
+                or "The journal could not be posted because of a database error."
+            ),
+            "code": "JOURNAL_DATABASE_ERROR",
+        }), 500
+
+
+    # ================================================================
+    # EVERYTHING ELSE
+    # ================================================================
+    except Exception as e:
+        current_app.logger.exception(
+            "Unexpected journal posting failure company_id=%s",
+            company_id,
+        )
+
+        msg = str(e or "").strip()
+
+        return jsonify({
+            "ok": False,
+            "success": False,
+            "error": "Journal posting failed",
+            "message": (
+                msg
+                or "The journal could not be posted because of an unexpected error."
+            ),
+            "code": "JOURNAL_POST_FAILED",
+        }), 500
 
 @app.route("/api/companies/<int:company_id>/journal/<int:journal_id>", methods=["GET"])
 @require_auth
