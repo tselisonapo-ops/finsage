@@ -48020,7 +48020,7 @@ class DatabaseService:
                     ON %I.lessor_lease_modifications(
                         lessor_lease_id,
                         modification_date,
-                        change_type
+                        modification_type
                     )
                     WHERE status <> ''void''',
                     '{schema}'
