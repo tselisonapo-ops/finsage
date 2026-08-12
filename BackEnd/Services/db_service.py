@@ -53959,6 +53959,7 @@ class DatabaseService:
         """
         BOOTSTRAP_MIGRATION_VERSION=25
         AP_MIGRATION_VERSION=2
+        TENANT_SYNC_MIGRATION_VERSION = 1
 
         try:
             ddl_bootstrap_sql=ddl_bootstrap.format(schema=schema,company_id=int(company_id))
@@ -54029,11 +54030,12 @@ class DatabaseService:
                 print(f"CHECKING MIGRATION {schema}:operations v{self.OPS_MIGRATION_VERSION}")
                 self.ensure_company_ops(int(company_id),cur=cur)
 
-                print(f"RUNNING SAFE TENANT SYNC {schema}")
+                print(f"CHECKING MIGRATION {schema}:tenant_sync v{TENANT_SYNC_MIGRATION_VERSION}")
                 self.sync_existing_company_schema(
                     cur=cur,
                     schema=schema,
                     company_id=int(company_id),
+                    migration_version=TENANT_SYNC_MIGRATION_VERSION,
                 )
 
                 conn.commit()
@@ -54060,7 +54062,14 @@ class DatabaseService:
         # self.ensure_mandatory_company_accounts(company_id)
         self.apply_basic_cashflow_tags(company_id)
 
-    def sync_existing_company_schema(self, *, cur, schema: str, company_id: int) -> None:
+    TENANT_SYNC_MIGRATION_VERSION = 1
+    def sync_existing_company_schema(
+        self,
+        *,
+        cur,
+        schema: str,
+        company_id: int,
+    ) -> None:
         ddl_sync = f"""
         -- =========================
         -- SAFE SYNC: CUSTOMERS
@@ -54361,10 +54370,14 @@ class DatabaseService:
             default_priority = EXCLUDED.default_priority,
             is_active = EXCLUDED.is_active;
         """
-        self.execute_ddl(ddl_sync, cur=cur, migration_key=None, migration_version=None)
-
+        self.execute_ddl(
+            ddl_sync,
+            cur=cur,
+            migration_key=f"{schema}:tenant_sync",
+            migration_version=self.TENANT_SYNC_MIGRATION_VERSION,
+        )
     def sync_all_existing_company_schemas(self) -> None:
-        with self._conn_cursor() as (_conn, cur):
+        with self._conn_cursor() as (_, cur):
             cur.execute("""
                 SELECT schema_name
                 FROM information_schema.schemata
@@ -54375,6 +54388,7 @@ class DatabaseService:
 
         for row in rows:
             schema = row["schema_name"] if isinstance(row, dict) else row[0]
+
             try:
                 company_id = int(schema.split("_", 1)[1])
             except Exception:
@@ -54382,16 +54396,29 @@ class DatabaseService:
 
             try:
                 with self._conn_cursor() as (conn, cur):
-                    cur.execute("SELECT pg_advisory_xact_lock(%s);", (company_id,))
-                    print(f"RUNNING SAFE TENANT SYNC {schema}")
+                    cur.execute(
+                        "SELECT pg_advisory_xact_lock(%s);",
+                        (company_id,),
+                    )
+
+                    print(
+                        f"CHECKING MIGRATION {schema}:tenant_sync "
+                        f"v{self.TENANT_SYNC_MIGRATION_VERSION}"
+                    )
+
                     self.sync_existing_company_schema(
                         cur=cur,
                         schema=schema,
                         company_id=company_id,
                     )
+
                     conn.commit()
+
             except Exception as e:
-                print(f"[SAFE-TENANT-SYNC][WARN] {schema} failed: {e}")
+                print(
+                    f"[SAFE-TENANT-SYNC][WARN] "
+                    f"{schema} failed: {e}"
+                )
 
     def execute_ddl(
         self,
@@ -174008,14 +174035,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         cur=None,
     ) -> str:
         company_id = int(company_id)
-        schema = self.company_schema(company_id)
-
-        self.ensure_company_biological_assets(
-            company_id,
-            cur=cur,
-        )
-
-        return schema
+        return self.company_schema(company_id)
 
 
     def _ias41_required_text(
