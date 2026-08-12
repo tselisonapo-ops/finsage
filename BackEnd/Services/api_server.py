@@ -5674,8 +5674,6 @@ def api_dashboard_snapshot(company_id: int):
     if not current_user or int(current_user.get("company_id") or 0) != int(company_id):
         return jsonify({"error": "Not authorised for this company"}), 403
 
-    db_service.ensure_company_schema(company_id)
-
     # -----------------------------------------
     # 1) Resolve dashboard period from preset/from/to
     # -----------------------------------------
@@ -9032,14 +9030,6 @@ def api_journal(company_id: int):
                     "ref": ref,
                     "journal_id": existing.get("id"),
                 }), 409
-        # ✅ Ensure schema/table evolution ran BEFORE we select currency
-        # (use your real ensure function name here)
-        try:
-            db_service.ensure_company_schema(company_id)
-            db_service.ensure_company_journal(company_id)  # <-- the one that contains your CREATE/ALTER for journal
-        except Exception:
-            # don't fail posting just because ensure threw; posting may still succeed
-            pass
 
         journal_id = db_service.post_journal_with_overdraft(company_id, entry)
 
