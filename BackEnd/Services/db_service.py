@@ -38968,10 +38968,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS idx_assets_accounting_standard
         ON {schema}.assets(company_id, accounting_standard);
 
-        -- Add index for filtering
-        CREATE INDEX IF NOT EXISTS idx_assets_accounting_standard 
-        ON {schema}.assets (company_id, accounting_standard);
-
         -- IAS 38 specific: indefinite useful life flag
         ALTER TABLE {schema}.assets 
         ADD COLUMN IF NOT EXISTS indefinite_useful_life BOOLEAN NOT NULL DEFAULT FALSE;
@@ -39138,13 +39134,6 @@ class DatabaseService:
         RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
-
-        DROP TRIGGER IF EXISTS tr_asset_depreciation_assert_company ON {schema}.asset_depreciation;
-        CREATE TRIGGER tr_asset_depreciation_assert_company
-        BEFORE INSERT OR UPDATE OF company_id, asset_id
-        ON {schema}.asset_depreciation
-        FOR EACH ROW
-        EXECUTE PROCEDURE {schema}.fn_assert_asset_company();
 
         -- ==================================================
         -- ASSETS: Company consistency trigger function
@@ -39322,9 +39311,6 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_assets_acq_date_idx
         ON {schema}.assets(acquisition_date);
-
-        CREATE INDEX IF NOT EXISTS asset_usage_lookup_idx
-        ON {schema}.asset_usage (company_id, asset_id, status, period_end DESC, id DESC);
 
         CREATE INDEX IF NOT EXISTS {schema}_assets_company_class_group_idx
         ON {schema}.assets(company_id, asset_class_group);
@@ -41139,61 +41125,6 @@ class DatabaseService:
         END
         $fk_asset_reval_reserve_revaluation$;
 
-        CREATE TABLE IF NOT EXISTS {schema}.asset_usage (
-            id SERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            asset_id INT NOT NULL,
-
-            period_start DATE NOT NULL,
-            period_end   DATE NOT NULL,
-
-            units_used NUMERIC(18,4) NOT NULL DEFAULT 0,
-
-            notes TEXT NULL,
-            status TEXT NOT NULL DEFAULT 'posted', -- posted|void (keep simple)
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        -- FK (safe-add)
-        DO $fk_asset_usage_asset$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='fk_asset_usage_asset' AND n.nspname='{schema}'
-        ) THEN
-            EXECUTE format(
-            'ALTER TABLE %I.asset_usage
-            ADD CONSTRAINT fk_asset_usage_asset
-            FOREIGN KEY (asset_id) REFERENCES %I.assets(id)',
-            '{schema}','{schema}'
-            );
-        END IF;
-        END
-        $fk_asset_usage_asset$;
-
-        -- unique per asset per period (non-void)
-        DO $uq_asset_usage_asset_period$
-        BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_indexes
-            WHERE schemaname='{schema}' AND indexname='uq_asset_usage_asset_period'
-        ) THEN
-            EXECUTE format(
-            'CREATE UNIQUE INDEX uq_asset_usage_asset_period
-            ON %I.asset_usage(asset_id, period_start, period_end)
-            WHERE status <> ''void''',
-            '{schema}'
-            );
-        END IF;
-        END
-        $uq_asset_usage_asset_period$;
-
-        CREATE INDEX IF NOT EXISTS {schema}_asset_usage_asset_idx
-        ON {schema}.asset_usage(asset_id);
-
-        CREATE INDEX IF NOT EXISTS {schema}_asset_usage_period_end_idx
-        ON {schema}.asset_usage(period_end);
-
         -- ==================================================
         -- ASSET DOCUMENTS / ATTACHMENTS
         -- ==================================================
@@ -41457,6 +41388,15 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_asset_usage_period_end_idx
         ON {schema}.asset_usage(period_end);
+
+        CREATE INDEX IF NOT EXISTS asset_usage_lookup_idx
+        ON {schema}.asset_usage (
+            company_id,
+            asset_id,
+            status,
+            period_end DESC,
+            id DESC
+        );
 
         -- Optional: company consistency trigger (ONLY if you already have fn_assert_asset_company() in the tenant schema)
         DO $$
