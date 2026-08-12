@@ -1437,9 +1437,9 @@ class DatabaseService:
         elif isinstance(params, dict):
             exec_params = params
         elif isinstance(params, tuple):
-            exec_params = params if len(params) else None
+            exec_params = params if params else None
         elif isinstance(params, list):
-            exec_params = tuple(params) if len(params) else None
+            exec_params = tuple(params) if params else None
         else:
             exec_params = (params,)
 
@@ -1449,6 +1449,7 @@ class DatabaseService:
                     _cur.execute(sql)
                 else:
                     _cur.execute(sql, exec_params)
+
             except Exception as e:
                 try:
                     placeholders = sql.count("%s")
@@ -1475,14 +1476,31 @@ class DatabaseService:
             if _cur.description is None:
                 return []
 
-            rows = _cur.fetchall()
-            return [dict(r) for r in rows]
+            rows = _cur.fetchall() or []
+
+            if not rows:
+                return []
+
+            # RealDictCursor / mapping rows
+            if isinstance(rows[0], dict):
+                return [dict(row) for row in rows]
+
+            # Normal psycopg2 cursor / tuple rows
+            columns = [desc[0] for desc in _cur.description]
+
+            return [
+                {
+                    columns[i]: row[i]
+                    for i in range(min(len(columns), len(row)))
+                }
+                for row in rows
+            ]
 
         if cur is not None:
             return _run(cur)
 
-        with self._conn_cursor() as (_c, _cur):
-            return _run(_cur)
+        with self._conn_cursor() as (_, cur):
+            return _run(cur)
 
     def fetch_val(
         self,
@@ -60823,10 +60841,13 @@ class DatabaseService:
             )
             
     def get_lease_posting_accounts(self, company_id: int, cur=None) -> dict:
+        company_id = int(company_id)
+
         self.ensure_company_account_settings(company_id)
         self.ensure_company_lease_defaults(company_id)
 
-        row = self.fetch_one("""
+        row = self.fetch_one(
+            """
             SELECT
                 COALESCE(NULLIF(lease_rou_asset_code, ''), NULLIF(roa_code, '')) AS roa_code,
                 lease_liability_current_code,
@@ -60836,11 +60857,14 @@ class DatabaseService:
                 lease_accumulated_depreciation_code,
                 vat_input_code
             FROM public.company_account_settings
-            WHERE company_id=%s
+            WHERE company_id = %s
             LIMIT 1;
-        """, (int(company_id),), cur=cur) or {}
+            """,
+            (company_id,),
+            cur=cur,
+        ) or {}
 
-        return {
+        configured = {
             "roa": (row.get("roa_code") or "").strip() or None,
             "liability_current": (row.get("lease_liability_current_code") or "").strip() or None,
             "liability_noncurrent": (row.get("lease_liability_non_current_code") or "").strip() or None,
@@ -60849,6 +60873,44 @@ class DatabaseService:
             "accum_depr": (row.get("lease_accumulated_depreciation_code") or "").strip() or None,
             "vat_input": (row.get("vat_input_code") or "").strip() or None,
         }
+
+        role_map = {
+            "roa": "lease_rou_asset",
+            "liability_current": "lease_liability_current",
+            "liability_noncurrent": "lease_liability_noncurrent",
+            "interest_exp": "lease_interest_expense",
+            "depr_exp": "lease_rou_depreciation_expense",
+            "accum_depr": "lease_rou_accum_depr",
+            "vat_input": "vat_input",
+        }
+
+        resolved = {}
+
+        for key, role in role_map.items():
+            configured_code = configured.get(key)
+
+            if configured_code:
+                account = self.get_account_row_for_posting(company_id, configured_code)
+
+                if account:
+                    if isinstance(account, dict):
+                        code = account.get("code") or configured_code
+                    else:
+                        code = account[1] if len(account) > 1 else configured_code
+
+                    resolved[key] = str(code or "").strip() or None
+                    continue
+
+            account = self.ensure_coa_role_for_posting(
+                company_id,
+                role,
+                cur=cur,
+                required=False,
+            )
+
+            resolved[key] = str((account or {}).get("code") or "").strip() or None
+
+        return resolved
 
     def ensure_company_lease_defaults(self, company_id: int) -> None:
         self.ensure_company_account_settings(company_id)
