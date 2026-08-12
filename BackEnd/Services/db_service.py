@@ -366,6 +366,7 @@ def _resolve_role(row: Dict[str, Any]) -> str:
         row.get("category", ""),
         row.get("subcategory", ""),
         row.get("standard", ""),
+        row.get("description", ""),
     )
 
 def _money(x) -> Decimal:
@@ -54911,6 +54912,102 @@ class DatabaseService:
             WHERE template_code_scoped IS NOT NULL;
         """)
 
+    def repair_company_coa_roles(self, company_id: int) -> None:
+        schema = self.company_schema(company_id)
+
+        with self._conn_cursor() as (conn, cur):
+            try:
+                # --------------------------------------------------------
+                # Loan payable - current
+                # --------------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.coa
+                    SET role = 'loan_payable_current'
+                    WHERE LOWER(TRIM(name)) IN (
+                        'loan payable - current',
+                        'loan payable current'
+                    )
+                    AND COALESCE(role, '') IN (
+                        '',
+                        'ifrs9_financial_liability_amortised_cost'
+                    );
+                    """
+                )
+
+                # --------------------------------------------------------
+                # Loan payable - non-current
+                # --------------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.coa
+                    SET role = 'loan_payable_noncurrent'
+                    WHERE LOWER(TRIM(name)) IN (
+                        'loan payable - non-current',
+                        'loan payable - non current',
+                        'loan payable non-current',
+                        'loan payable non current'
+                    )
+                    AND COALESCE(role, '') IN (
+                        '',
+                        'ifrs9_financial_liability_amortised_cost'
+                    );
+                    """
+                )
+
+                # --------------------------------------------------------
+                # Loan interest expense
+                # --------------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.coa
+                    SET role = 'loan_interest_expense'
+                    WHERE (
+                        LOWER(TRIM(name)) IN (
+                            'loan interest expense',
+                            'interest expense - loans'
+                        )
+                        OR (
+                            LOWER(TRIM(name)) = 'interest expense'
+                            AND (
+                                LOWER(COALESCE(description, '')) LIKE '%loan%'
+                                OR LOWER(COALESCE(description, '')) LIKE '%overdraft%'
+                            )
+                        )
+                    )
+                    AND COALESCE(role, '') IN (
+                        '',
+                        'ifrs9_interest_expense_amortised_cost'
+                    );
+                    """
+                )
+
+                # --------------------------------------------------------
+                # Accrued loan interest
+                # --------------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.coa
+                    SET role = 'loan_accrued_interest'
+                    WHERE LOWER(TRIM(name)) IN (
+                        'accrued interest',
+                        'accrued interest payable',
+                        'loan interest payable',
+                        'interest payable'
+                    )
+                    AND COALESCE(role, '') IN (
+                        '',
+                        'accrued_expense'
+                    );
+                    """
+                )
+
+                conn.commit()
+
+            except Exception:
+                conn.rollback()
+                raise
+
     def insert_coa(
         self,
         company_id: int,
@@ -55351,7 +55448,12 @@ class DatabaseService:
             conn.commit()
 
         # ------------------------------------------------------------
-        # 6) Optional: dedupe after bulk seeding/sync
+        # 6) Repair known historical COA role misclassifications
+        # ------------------------------------------------------------
+        self.repair_company_coa_roles(company_id)
+
+        # ------------------------------------------------------------
+        # 7) Optional: dedupe after bulk seeding/sync
         # ------------------------------------------------------------
         if dedupe_after:
             try:
@@ -56351,6 +56453,325 @@ class DatabaseService:
 
         return (row.get("code") if row and row.get("code") else "BS_CA_9002")
 
+    def ensure_coa_role_for_posting(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        cur=None,
+        required: bool = False,
+    ) -> dict | None:
+        """
+        Resolve a posting account by COA role.
+
+        Behaviour:
+        1. Use an existing valid role assignment when present.
+        2. If the role is missing, re-evaluate posting COA rows using
+        accounting_classifiers._coa_role_from_text().
+        3. If exactly one account semantically matches the requested role,
+        repair that account's role and return it.
+        4. If multiple accounts match, never guess.
+        5. If no account matches, either return None or raise when required=True.
+
+        This is the generic posting-time safety net for all subledgers.
+        """
+        company_id = int(company_id)
+        schema = self.company_schema(company_id)
+
+        requested_role = str(role or "").strip()
+
+        if not requested_role:
+            if required:
+                raise ValueError("COA posting role is required")
+            return None
+
+        requested_norm = requested_role.lower()
+
+        def _run(cursor):
+            # ------------------------------------------------------------
+            # 1) Existing role assignment
+            # ------------------------------------------------------------
+            existing_rows = self.fetch_all(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    code,
+                    name,
+                    section,
+                    category,
+                    subcategory,
+                    description,
+                    reporting_description,
+                    standard,
+                    posting,
+                    role,
+                    template_code,
+                    template_code_scoped,
+                    template_code_base,
+                    code_family,
+                    code_numeric,
+                    cf_section,
+                    cf_bucket,
+                    is_working_capital,
+                    is_cash_equiv,
+                    is_non_cash_addback,
+                    is_contra
+                FROM {schema}.coa
+                WHERE company_id = %s
+                AND COALESCE(posting, TRUE) = TRUE
+                AND LOWER(TRIM(COALESCE(role, ''))) = %s
+                ORDER BY id
+                """,
+                (
+                    company_id,
+                    requested_norm,
+                ),
+                cur=cursor,
+            ) or []
+
+            if existing_rows:
+                return existing_rows[0]
+
+            # ------------------------------------------------------------
+            # 2) Role is missing.
+            #    Inspect posting COA metadata using the authoritative
+            #    role classifier.
+            # ------------------------------------------------------------
+            coa_rows = self.fetch_all(
+                f"""
+                SELECT
+                    id,
+                    company_id,
+                    code,
+                    name,
+                    section,
+                    category,
+                    subcategory,
+                    description,
+                    reporting_description,
+                    standard,
+                    posting,
+                    role,
+                    template_code,
+                    template_code_scoped,
+                    template_code_base,
+                    code_family,
+                    code_numeric,
+                    cf_section,
+                    cf_bucket,
+                    is_working_capital,
+                    is_cash_equiv,
+                    is_non_cash_addback,
+                    is_contra
+                FROM {schema}.coa
+                WHERE company_id = %s
+                AND COALESCE(posting, TRUE) = TRUE
+                ORDER BY id
+                """,
+                (company_id,),
+                cur=cursor,
+            ) or []
+
+            matches = []
+
+            for row in coa_rows:
+                detected_role = ac._coa_role_from_text(
+                    row.get("name", ""),
+                    row.get("section", ""),
+                    row.get("category", ""),
+                    row.get("subcategory", ""),
+                    row.get("standard", ""),
+                    row.get("description", ""),
+                )
+
+                detected_role = str(detected_role or "").strip()
+
+                if (
+                    detected_role
+                    and detected_role.lower() == requested_norm
+                ):
+                    matches.append({
+                        "row": row,
+                        "detected_role": detected_role,
+                    })
+
+            # ------------------------------------------------------------
+            # 3) No semantic candidate
+            # ------------------------------------------------------------
+            if not matches:
+                if required:
+                    raise ValueError(
+                        f"No posting account could be resolved for COA role "
+                        f"'{requested_role}'. Configure or create an appropriate "
+                        f"posting account in the Chart of Accounts."
+                    )
+
+                return None
+
+            # ------------------------------------------------------------
+            # 4) More than one candidate means classification is ambiguous.
+            #    Never silently select one for a subledger.
+            # ------------------------------------------------------------
+            if len(matches) > 1:
+                candidates = ", ".join(
+                    f"{item['row'].get('code')} - {item['row'].get('name')}"
+                    for item in matches
+                )
+
+                raise ValueError(
+                    f"Multiple posting accounts match COA role "
+                    f"'{requested_role}': {candidates}. "
+                    f"Assign the intended role explicitly in the Chart of Accounts."
+                )
+
+            # ------------------------------------------------------------
+            # 5) Exactly one semantic candidate.
+            #    Repair its persisted role.
+            # ------------------------------------------------------------
+            match = matches[0]
+            row = match["row"]
+            detected_role = match["detected_role"]
+
+            old_role = str(row.get("role") or "").strip()
+
+            cursor.execute(
+                f"""
+                UPDATE {schema}.coa
+                SET role = %s
+                WHERE company_id = %s
+                AND id = %s
+                """,
+                (
+                    detected_role,
+                    company_id,
+                    int(row["id"]),
+                ),
+            )
+
+            row["role"] = detected_role
+
+            try:
+                current_app.logger.warning(
+                    "[COA-ROLE-REPAIR] company=%s code=%s name=%s "
+                    "old_role=%s new_role=%s requested_role=%s",
+                    company_id,
+                    row.get("code"),
+                    row.get("name"),
+                    old_role or None,
+                    detected_role,
+                    requested_role,
+                )
+            except Exception:
+                print(
+                    "[COA-ROLE-REPAIR]",
+                    {
+                        "company_id": company_id,
+                        "code": row.get("code"),
+                        "name": row.get("name"),
+                        "old_role": old_role or None,
+                        "new_role": detected_role,
+                        "requested_role": requested_role,
+                    },
+                    flush=True,
+                )
+
+            return row
+
+        if cur is not None:
+            return _run(cur)
+
+        with self._conn_cursor() as (conn, cursor):
+            try:
+                result = _run(cursor)
+                conn.commit()
+                return result
+
+            except Exception:
+                conn.rollback()
+                raise
+
+
+    def ensure_coa_roles_for_posting(
+        self,
+        company_id: int,
+        roles,
+        *,
+        cur=None,
+    ) -> dict[str, dict]:
+        """
+        Batch wrapper around ensure_coa_role_for_posting().
+
+        Useful for modules that have a list of acceptable/preferred roles.
+        """
+        resolved = {}
+
+        seen = set()
+
+        for role in roles or []:
+            role = str(role or "").strip()
+
+            if not role:
+                continue
+
+            key = role.lower()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+
+            row = self.ensure_coa_role_for_posting(
+                company_id,
+                role,
+                cur=cur,
+                required=False,
+            )
+
+            if row:
+                resolved[key] = row
+
+        return resolved
+
+
+    def resolve_coa_account_by_roles_for_posting(
+        self,
+        company_id: int,
+        roles,
+        *,
+        cur=None,
+        required: bool = False,
+    ) -> dict | None:
+        """
+        Resolve one posting account from an ordered list of preferred roles.
+
+        Role order is respected.
+        """
+        roles = [
+            str(role or "").strip()
+            for role in (roles or [])
+            if str(role or "").strip()
+        ]
+
+        for role in roles:
+            row = self.ensure_coa_role_for_posting(
+                company_id,
+                role,
+                cur=cur,
+                required=False,
+            )
+
+            if row:
+                return row
+
+        if required:
+            raise ValueError(
+                "No posting account could be resolved for COA role(s): "
+                + ", ".join(roles)
+            )
+
+        return None
+
     def get_posting_account_by_role(
         self,
         company_id: int,
@@ -56358,25 +56779,12 @@ class DatabaseService:
         *,
         cur=None,
     ) -> dict:
-        schema=self.company_schema(company_id)
-
-        row=self.fetch_one(
-            f"""
-            SELECT code,name,role
-            FROM {schema}.coa
-            WHERE LOWER(COALESCE(role,''))=LOWER(%s)
-            AND COALESCE(posting,TRUE)=TRUE
-            ORDER BY code
-            LIMIT 1
-            """,
-            (str(role).strip(),),
+        row = self.ensure_coa_role_for_posting(
+            company_id,
+            role,
             cur=cur,
+            required=True,
         )
-
-        if not row:
-            raise ValueError(
-                f"No posting account is configured for COA role '{role}'"
-            )
 
         return row
 
@@ -69225,6 +69633,12 @@ class DatabaseService:
             ]
         )
 
+        self.ensure_coa_roles_for_posting(
+            company_id,
+            preferred_roles,
+            cur=cur,
+        )
+
         cur.execute(
             f"""
             SELECT code, name, role
@@ -73722,28 +74136,25 @@ class DatabaseService:
             LIMIT 1
         """, (int(company_id), barcode))
 
-    def _resolve_account_by_roles(self, company_id: int, roles: list[str], *, cur=None) -> str | None:
-        schema = self.company_schema(company_id)
-
-        row = self.fetch_one(f"""
-            SELECT code
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND COALESCE(role, '') = ANY(%s)
-            ORDER BY
-                CASE COALESCE(role, '')
-                    WHEN %s THEN 1
-                    ELSE 2
-                END,
-                code
-            LIMIT 1
-        """, (
-            int(company_id),
+    def _resolve_account_by_roles(
+        self,
+        company_id: int,
+        roles: list[str],
+        *,
+        cur=None,
+    ) -> str | None:
+        row = self.resolve_coa_account_by_roles_for_posting(
+            company_id,
             roles,
-            roles[0] if roles else "",
-        ), cur=cur)
+            cur=cur,
+            required=False,
+        )
 
-        return (row.get("code") or "").strip() if row else None
+        return (
+            str(row.get("code") or "").strip()
+            if row
+            else None
+        )
 
     def _pos_resolve_gl_accounts(
         self,
@@ -78616,24 +79027,19 @@ class DatabaseService:
             "cr_total": float(cr),
         }
 
-    def _get_coa_role_account(self, cur, schema: str, role: str):
-        cur.execute(f"""
-            SELECT code, name, role
-            FROM {schema}.coa
-            WHERE posting = TRUE
-            AND role = %s
-            ORDER BY id
-            LIMIT 1
-        """, (role,))
-        row = cur.fetchone()
-        if not row:
-            return None
-
-        if isinstance(row, dict):
-            return row
-
-        cols = [desc[0] for desc in cur.description]
-        return dict(zip(cols, row))
+    def _get_coa_role_account(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        cur=None,
+    ):
+        return self.ensure_coa_role_for_posting(
+            company_id,
+            role,
+            cur=cur,
+            required=False,
+        )
 
     def resolve_loan_gl_accounts(
         self,
@@ -78672,7 +79078,11 @@ class DatabaseService:
 
                 # 2. fallback to COA role mapping
                 if not code:
-                    coa = self._get_coa_role_account(cur, schema, role)
+                    coa = self._get_coa_role_account(
+                        company_id,
+                        role,
+                        cur=cur,
+                    )
                     code = ((coa or {}).get("code") or "").strip()
 
                 resolved[field_name] = code
@@ -90865,6 +91275,11 @@ class DatabaseService:
             "accumulated_depreciation_office_furniture",
             "accumulated_depreciation_tools",
             "accumulated_depreciation_ppe",
+        )
+        self.ensure_coa_roles_for_posting(
+            company_id,
+            ppe_roles,
+            cur=cur,
         )
 
         cur.execute(f"""
@@ -111192,6 +111607,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
     def resolve_ifrs15_accounts(self, company_id: int, cur=None, strict: bool = True) -> dict:
         schema = self.company_schema(company_id)
 
+        self.ensure_coa_roles_for_posting(
+            company_id,
+            [
+                "CONTRACT_ASSET",
+                "CONTRACT_LIABILITY",
+                "CONTRACT_REVENUE",
+            ],
+            cur=cur,
+        )
+
         rows = self.fetch_all(
             f"""
             SELECT code, role, name, section, category, standard, posting
@@ -121435,6 +121860,12 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         role = str(role or "").strip().lower()
 
+        self.ensure_coa_role_for_posting(
+            company_id,
+            role,
+            required=False,
+        )
+
         row = self.fetch_one(
             f"""
             SELECT
@@ -125137,23 +125568,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "movement_ecl": float(movement_ecl),
         }
 
-    def ifrs9_account_by_role(self, company_id: int, role: str, *, required=True):
-        schema = self.company_schema(company_id)
+    def ifrs9_account_by_role(
+        self,
+        company_id: int,
+        role: str,
+        *,
+        required=True,
+    ):
+        row = self.ensure_coa_role_for_posting(
+            company_id,
+            role,
+            required=required,
+        )
 
-        row = self.fetch_one(f"""
-            SELECT code, name, role
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND posting = TRUE
-            AND role = %s
-            ORDER BY id
-            LIMIT 1
-        """, (int(company_id), role))
-
-        if not row and required:
-            raise ValueError(f"IFRS 9 COA role missing: {role}")
-
-        return (row.get("code") if row else None)
+        return (
+            str(row.get("code") or "").strip()
+            if row
+            else None
+        )
 
 
     def build_ifrs9_ecl_journal_lines(self, company_id: int, *, movement_ecl):
@@ -152185,6 +152617,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         settings = self.get_company_account_settings(company_id) or {}
         schema = self.company_schema(company_id)
 
+        # ------------------------------------------------------------
+        # Self-heal known Deferred Tax COA roles before resolving them
+        # ------------------------------------------------------------
+        self.ensure_coa_roles_for_posting(
+            company_id,
+            [
+                "deferred_tax_asset",
+                "deferred_tax_liability",
+                "income_tax_expense_deferred",
+                "deferred_tax_expense",
+                "deferred_tax_income",
+                "income_tax_benefit_deferred",
+                "deferred_tax_oci",
+                "deferred_tax_oci_reserve",
+                "deferred_tax_equity",
+                "equity_retained_earnings",
+            ],
+        )
+
         rules = {
             "deferred_tax_asset": (
                 ["deferred_tax_asset"],
@@ -152197,13 +152648,25 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ["liability", "liabilities"],
             ),
             "deferred_tax_expense": (
-                ["income_tax_expense_deferred", "deferred_tax_expense"],
-                ["income tax expense - deferred", "deferred tax expense"],
+                [
+                    "income_tax_expense_deferred",
+                    "deferred_tax_expense",
+                ],
+                [
+                    "income tax expense - deferred",
+                    "deferred tax expense",
+                ],
                 ["expense", "expenses"],
             ),
             "deferred_tax_income": (
-                ["deferred_tax_income", "income_tax_benefit_deferred"],
-                ["deferred tax income", "deferred tax benefit"],
+                [
+                    "deferred_tax_income",
+                    "income_tax_benefit_deferred",
+                ],
+                [
+                    "deferred tax income",
+                    "deferred tax benefit",
+                ],
                 [],
             ),
             "deferred_tax_oci": (
@@ -152219,48 +152682,84 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 ["equity"],
             ),
             "deferred_tax_equity": (
-                ["deferred_tax_equity", "equity_retained_earnings"],
-                ["deferred tax equity", "retained earnings"],
+                [
+                    "deferred_tax_equity",
+                    "equity_retained_earnings",
+                ],
+                [
+                    "deferred tax equity",
+                    "retained earnings",
+                ],
                 ["equity"],
             ),
         }
 
         with self._conn_cursor() as (_, cur):
-            cur.execute(f"""
-                SELECT code, name, section, role
+            cur.execute(
+                f"""
+                SELECT
+                    code,
+                    name,
+                    section,
+                    role
                 FROM {schema}.coa
                 WHERE COALESCE(posting, TRUE) = TRUE
-            """)
+                """
+            )
+
             coa = cur.fetchall()
 
         def find(roles, names, sections):
             for row in coa:
-                role = str(row.get("role") or "").strip().lower()
-                name = str(row.get("name") or "").strip().lower()
-                section = str(row.get("section") or "").strip().lower()
+                role = str(
+                    row.get("role") or ""
+                ).strip().lower()
+
+                name = str(
+                    row.get("name") or ""
+                ).strip().lower()
+
+                section = str(
+                    row.get("section") or ""
+                ).strip().lower()
 
                 if role in roles or (
                     any(value in name for value in names)
-                    and (not sections or section in sections)
+                    and (
+                        not sections
+                        or section in sections
+                    )
                 ):
-                    return str(row["code"]).strip()
+                    return str(
+                        row["code"]
+                    ).strip()
 
             return None
 
         accounts = {
-            key: settings.get(key) or find(
-                [value.lower() for value in roles],
-                [value.lower() for value in names],
-                [value.lower() for value in sections],
+            key: (
+                settings.get(key)
+                or find(
+                    [value.lower() for value in roles],
+                    [value.lower() for value in names],
+                    [value.lower() for value in sections],
+                )
             )
             for key, (roles, names, sections) in rules.items()
         }
 
+        # ------------------------------------------------------------
+        # Deferred tax benefit may use the same P&L account as expense
+        # if a dedicated income account is not configured.
+        # ------------------------------------------------------------
         accounts["deferred_tax_income"] = (
             accounts["deferred_tax_income"]
             or accounts["deferred_tax_expense"]
         )
 
+        # ------------------------------------------------------------
+        # OCI can fall back to the configured equity destination.
+        # ------------------------------------------------------------
         accounts["deferred_tax_oci"] = (
             accounts["deferred_tax_oci"]
             or accounts["deferred_tax_equity"]
@@ -177330,22 +177829,15 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             )
             return account
 
-        account = self.fetch_one(
-            f"""
-            SELECT *
-            FROM {schema}.coa
-            WHERE company_id = %s
-            AND role = %s
-            AND COALESCE(posting, TRUE) = TRUE
-            AND COALESCE(is_active, TRUE) = TRUE
-            ORDER BY id
-            LIMIT 1
-            """,
-            (
-                company_id,
-                role_code,
-            ),
+        # ------------------------------------------------------------
+        # Final fallback:
+        # resolve / self-heal the company COA role
+        # ------------------------------------------------------------
+        account = self.ensure_coa_role_for_posting(
+            company_id,
+            role_code,
             cur=cur,
+            required=False,
         )
 
         if account:
@@ -177353,9 +177845,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 account
             ) or {}
 
-            out["resolution_source"] = (
-                "company_coa_role"
-            )
+            out["resolution_source"] = "company_coa_role"
+
             return out
 
         return None

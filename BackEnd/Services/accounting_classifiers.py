@@ -829,9 +829,11 @@ def _coa_role_from_text(
     category: str | None,
     subcategory: str | None,
     standard: str | None,
+    description: str | None = None,
 ) -> str:
     text = " ".join([
         (name or ""),
+        (description or ""),
         (section or ""),
         (category or ""),
         (subcategory or ""),
@@ -844,7 +846,6 @@ def _coa_role_from_text(
 
     def has_any(*terms: str) -> bool:
         return any(t in text for t in terms if t)
-
     # ----------------------------
     # helpers
     # ----------------------------
@@ -2145,7 +2146,154 @@ def _coa_role_from_text(
     # IFRS 9 / Financial Instruments
     # ----------------------------
 
+    # ============================================================
+    # LOAN / BORROWING SUBLEDGER ROLES
+    #
+    # IMPORTANT:
+    # These MUST run before generic IFRS 9 financial-liability and
+    # interest-expense rules.
+    #
+    # The loan subledger requires distinct posting roles for:
+    #   - current loan liability
+    #   - non-current loan liability
+    #   - accrued loan interest
+    #   - loan interest expense
+    #   - loan fees expense
+    #   - deferred loan fees / transaction costs
+    # ============================================================
+
+    if is_liability:
+        # --------------------------------------------------------
+        # Current loan liability
+        # --------------------------------------------------------
+        if has_any(
+            "loan payable - current",
+            "loan payable current",
+            "current loan payable",
+            "current portion of loan",
+            "current portion of loans",
+            "short-term portion of loans",
+            "short term portion of loans",
+            "short-term loan payable",
+            "short term loan payable",
+        ):
+            return "loan_payable_current"
+
+        # --------------------------------------------------------
+        # Non-current loan liability
+        # --------------------------------------------------------
+        if has_any(
+            "loan payable - non-current",
+            "loan payable - non current",
+            "loan payable non-current",
+            "loan payable non current",
+            "loan payable noncurrent",
+            "non-current loan payable",
+            "non current loan payable",
+            "noncurrent loan payable",
+            "long-term borrowings",
+            "long term borrowings",
+            "long-term loan payable",
+            "long term loan payable",
+        ):
+            return "loan_payable_noncurrent"
+
+        # --------------------------------------------------------
+        # Loan interest accrual
+        #
+        # Keep this separate from generic accrued expenses.
+        # --------------------------------------------------------
+        if has_any(
+            "accrued interest",
+            "interest payable",
+            "accrued interest payable",
+            "accrued loan interest",
+            "loan interest payable",
+            "loan interest accrued",
+            "interest accrued on loans",
+            "accrued borrowing interest",
+        ):
+            return "loan_accrued_interest"
+
+    if is_expense:
+        # --------------------------------------------------------
+        # Lease interest MUST remain separate from loan interest.
+        # --------------------------------------------------------
+        if has_any(
+            "lease interest",
+            "interest on lease",
+            "lease finance cost",
+            "finance cost on lease",
+        ):
+            return "lease_interest_expense"
+
+        # --------------------------------------------------------
+        # Loan / borrowing interest expense
+        # --------------------------------------------------------
+        if has_any(
+            "loan interest expense",
+            "interest expense - loans",
+            "interest expense - loan",
+            "interest expense - loans & overdraft",
+            "interest expense - loans and overdraft",
+            "interest expense - deposits & borrowings",
+            "interest expense - deposits and borrowings",
+            "interest paid on loans",
+            "interest paid on loans/overdrafts",
+            "loan interest",
+            "interest on loan",
+            "interest on loans",
+            "overdraft interest",
+        ):
+            if not has_any(
+                "lease",
+                "lease liability",
+            ):
+                return "loan_interest_expense"
+
+        # --------------------------------------------------------
+        # Loan fees
+        # --------------------------------------------------------
+        if has_any(
+            "loan fee expense",
+            "loan fees expense",
+            "facility fee",
+            "facility fees",
+            "arrangement fee",
+            "arrangement fees",
+            "bank facility fee",
+            "borrowing facility fee",
+            "loan transaction fee expense",
+        ):
+            return "loan_fees_expense"
+
+    if is_asset:
+        # --------------------------------------------------------
+        # Deferred loan transaction costs
+        # --------------------------------------------------------
+        if has_any(
+            "deferred loan cost",
+            "deferred loan costs",
+            "deferred finance cost",
+            "deferred finance costs",
+            "loan transaction cost",
+            "loan transaction costs",
+            "debt issue cost",
+            "debt issue costs",
+            "borrowing cost asset",
+            "deferred borrowing costs",
+        ):
+            return "loan_fees_asset"
+
+    # ============================================================
+    # GENERAL IFRS 9 RULES
+    #
+    # These intentionally come AFTER specialised loan roles.
+    # ============================================================
+
+    # ------------------------------------------------------------
     # ECL / impairment expense
+    # ------------------------------------------------------------
     if is_expense or "adjustment" in sec or "other adjustments" in sec:
         if has_any(
             "expected credit loss",
@@ -2204,7 +2352,9 @@ def _coa_role_from_text(
         ):
             return "ifrs9_derecognition_loss"
 
-    # ECL allowance / contra asset
+    # ------------------------------------------------------------
+    # ECL allowance / financial assets
+    # ------------------------------------------------------------
     if is_asset:
         if has_any(
             "allowance for doubtful debts",
@@ -2244,37 +2394,14 @@ def _coa_role_from_text(
         ):
             return "ifrs9_financial_asset_fvpl"
 
-    # ----------------------------
-    # IAS 12 / Deferred tax in OCI
-    # ----------------------------
-    if "equity" in sec:
-        if has_any(
-            "deferred tax on revaluation",
-            "deferred tax revaluation reserve",
-            "deferred tax - revaluation",
-        ):
-            return "deferred_tax_revaluation_reserve"
-
-        if has_any(
-            "deferred tax on fvoci",
-            "deferred tax fvoci reserve",
-            "deferred tax - fvoci",
-        ):
-            return "deferred_tax_fvoci_reserve"
-        
-    # IFRS 9 equity / OCI reserve
-    if "equity" in sec:
-        if has_any(
-            "fvoci reserve",
-            "fair value through oci reserve",
-            "fair value reserve",
-            "oci reserve",
-            "other comprehensive income reserve",
-        ):
-            return "ifrs9_fair_value_oci_reserve"
-
-    # IFRS 9 interest income / expense
-    if "income" in sec or "income" in cat or "other income" in sec:
+    # ------------------------------------------------------------
+    # IFRS 9 interest income
+    # ------------------------------------------------------------
+    if (
+        "income" in sec
+        or "income" in cat
+        or "other income" in sec
+    ):
         if has_any(
             "interest income",
             "interest income - loans",
@@ -2283,87 +2410,42 @@ def _coa_role_from_text(
         ):
             return "ifrs9_interest_income_amortised_cost"
 
+    # ------------------------------------------------------------
+    # Generic IFRS 9 interest expense
+    #
+    # Specialised loan and lease interest has already been caught
+    # above. This is only the generic fallback.
+    # ------------------------------------------------------------
     if is_expense:
         if has_any(
             "interest expense",
-            "interest expense - loans",
-            "interest expense - loans & overdraft",
-            "interest expense - deposits & borrowings",
+            "finance cost",
+            "finance costs",
+            "borrowing interest",
         ):
-            if not has_any("lease"):
+            if not has_any(
+                "lease",
+                "loan",
+                "loans",
+                "overdraft",
+            ):
                 return "ifrs9_interest_expense_amortised_cost"
 
-    # IFRS 9 financial liability
+    # ------------------------------------------------------------
+    # Generic IFRS 9 financial liability
+    #
+    # Current/non-current loan liabilities have already been caught
+    # above. This is only for other amortised-cost liabilities.
+    # ------------------------------------------------------------
     if is_liability:
         if has_any(
             "financial liability at amortised cost",
             "financial liabilities at amortised cost",
             "borrowings",
-            "loan payable",
-            "loans payable",
             "deposit liability",
             "financial liability",
         ):
             return "ifrs9_financial_liability_amortised_cost"
-        
-    # ----------------------------
-    # loan / borrowing roles
-    # ----------------------------
-    if is_liability:
-        if has_any("loan payable - current", "current portion of loan", "current loan payable"):
-            return "loan_payable_current"
-
-        if has_any(
-            "loan payable - non-current",
-            "loan payable - non current",
-            "non-current loan payable",
-            "non current loan payable",
-        ):
-            return "loan_payable_noncurrent"
-
-        # Loan interest accrual only — do not classify generic Accrued Expenses
-        if has_any(
-            "accrued interest",
-            "interest payable",
-            "accrued interest expense",
-            "loan interest payable",
-            "loan interest accrued",
-        ):
-            return "loan_accrued_interest"
-
-    if is_expense:
-        # --- Lease interest (must stay separate) ---
-        if has_any("lease interest", "interest on lease"):
-            return "lease_interest_expense"
-
-        # --- Loan interest ONLY ---
-        if has_any(
-            "interest expense",
-            "loan interest",
-            "interest on loan",
-            "overdraft interest",
-        ):
-            if not has_any("lease"):
-                return "loan_interest_expense"
-
-        # --- Loan fees ---
-        if has_any(
-            "loan fee expense",
-            "facility fee",
-            "arrangement fee",
-            "bank facility fee",
-        ):
-            return "loan_fees_expense"
-
-    if is_asset:
-        if has_any(
-            "deferred loan cost",
-            "deferred finance cost",
-            "loan transaction cost",
-            "debt issue cost",
-            "borrowing cost asset",
-        ):
-            return "loan_fees_asset"
 
     # ----------------------------
     # asset-class detection
