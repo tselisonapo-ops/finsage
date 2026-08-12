@@ -47968,23 +47968,44 @@ class DatabaseService:
         -- Checks
         DO $ck_lessor_mods_valid$
         BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-            WHERE c.conname='ck_lessor_mods_valid' AND n.nspname='{schema}'
-        ) THEN
+            IF EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'ck_lessor_mods_valid'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_modifications
+                    DROP CONSTRAINT ck_lessor_mods_valid',
+                    '{schema}'
+                );
+            END IF;
+
             EXECUTE format(
-            'ALTER TABLE %I.lessor_lease_modifications
-            ADD CONSTRAINT ck_lessor_mods_valid
-            CHECK (
-                modification_date IS NOT NULL
-                AND change_type IN (''amount'',''vat'',''frequency'',''term'',''mixed'')
-                AND status IN (''draft'',''posted'',''reversed'',''void'')
-                AND apply_to_unbilled_only IN (TRUE,FALSE)
-            )',
-            '{schema}'
+                'ALTER TABLE %I.lessor_lease_modifications
+                ADD CONSTRAINT ck_lessor_mods_valid
+                CHECK (
+                    modification_date IS NOT NULL
+                    AND modification_type IN (
+                        ''amount'',
+                        ''vat'',
+                        ''frequency'',
+                        ''term'',
+                        ''mixed''
+                    )
+                    AND status IN (
+                        ''draft'',
+                        ''posted'',
+                        ''reversed'',
+                        ''void''
+                    )
+                    AND apply_to_unbilled_only IN (TRUE,FALSE)
+                )',
+                '{schema}'
             );
-        END IF;
-        END $ck_lessor_mods_valid$;
+        END
+        $ck_lessor_mods_valid$;
 
         -- Anti-duplicate: same contract + same date + type (non-void)
         DO $uq_lessor_mods_contract_date_type$
