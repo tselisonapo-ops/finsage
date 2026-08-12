@@ -95422,49 +95422,45 @@ async function saveInvItemFromModal() {
   const cid = getActiveCompanyId?.() || window.CURRENT_COMPANY_ID;
   if (!cid) return;
 
+  const num = id => {
+    const raw = document.getElementById(id)?.value || "0";
+    return Number(String(raw).replace(/,/g, "").trim()) || 0;
+  };
+
   const sku = (document.getElementById("invItemSku")?.value || "").trim();
   const name = (document.getElementById("invItemName")?.value || "").trim();
 
   if (!sku) return showInvItemModalMsg("SKU is required.", "error");
   if (!name) return showInvItemModalMsg("Name is required.", "error");
 
-  const meta = (typeof collectInvItemMetaFromUI === "function")
-    ? (collectInvItemMetaFromUI() || {})
-    : {};
-
-  const salesPriceRaw = document.getElementById("invItemSalesPrice")?.value || "";
-  const reorderRaw    = document.getElementById("invItemReorder")?.value || "";
-
-  const barcode = document.getElementById("invItemBarcode")?.value?.trim() || "";
-  const autoBarcode = !!document.getElementById("invItemAutoBarcode")?.checked;
-
   const payload = {
-    sku: document.getElementById("invItemSku")?.value?.trim() || "",
-    name: document.getElementById("invItemName")?.value?.trim() || "",
-    barcode,
-    auto_generate_barcode: autoBarcode,
-    category: document.getElementById("invItemCategory")?.value?.trim() || "",
-    unit: document.getElementById("invItemUnit")?.value?.trim() || "",
-    vat_code: document.getElementById("invItemVatCode")?.value?.trim() || "",
-    sales_price: Number(document.getElementById("invItemSalesPrice")?.value || 0),
-    reorder_level: Number(document.getElementById("invItemReorder")?.value || 0),
+    sku,
+    name,
+    barcode: (document.getElementById("invItemBarcode")?.value || "").trim(),
+    auto_generate_barcode: !!document.getElementById("invItemAutoBarcode")?.checked,
+    category: (document.getElementById("invItemCategory")?.value || "").trim(),
+    unit: (document.getElementById("invItemUnit")?.value || "").trim(),
+    vat_code: (document.getElementById("invItemVatCode")?.value || "").trim(),
+    sales_price: num("invItemSalesPrice"),
+    reorder_level: num("invItemReorder"),
     track_stock: !!document.getElementById("invItemTrackStock")?.checked,
     is_taxable: !!document.getElementById("invItemTaxable")?.checked,
     is_active: !!document.getElementById("invItemActive")?.checked,
-    meta: collectInvItemMetaFromUI(),
+    meta: typeof collectInvItemMetaFromUI === "function"
+      ? (collectInvItemMetaFromUI() || {})
+      : {},
   };
 
   const btn = document.getElementById("invItemSaveBtn");
-  const oldText = btn?.textContent || "Save Item";
-
-  // Detect edit mode
+  const oldText = btn?.textContent || "Save Material";
   const editingId = Number(window._INV_EDITING_ITEM_ID || 0) || null;
 
-  // 🔎 DEBUG LOGS
-  console.log("=== INVENTORY SAVE DEBUG ===");
-  console.log("Sales price input:", salesPriceRaw);
-  console.log("Reorder input:", reorderRaw);
-  console.log("Payload being sent:", payload);
+  console.log("[INVENTORY SAVE]", {
+    company_id: cid,
+    editing_id: editingId,
+    mode: editingId ? "UPDATE" : "CREATE",
+    payload,
+  });
 
   try {
     showInvItemModalMsg(editingId ? "Updating…" : "Saving…");
@@ -95474,9 +95470,10 @@ async function saveInvItemFromModal() {
       btn.textContent = editingId ? "Updating…" : "Saving…";
     }
 
+    let saved;
+
     if (editingId) {
-      // ✅ UPDATE
-      await apiFetch(
+      saved = await apiFetch(
         ENDPOINTS.inventory.item(cid, editingId),
         {
           method: "PUT",
@@ -95484,8 +95481,7 @@ async function saveInvItemFromModal() {
         }
       );
     } else {
-      // ✅ CREATE
-      await apiFetch(
+      saved = await apiFetch(
         ENDPOINTS.inventory.createItem(cid),
         {
           method: "POST",
@@ -95494,13 +95490,21 @@ async function saveInvItemFromModal() {
       );
     }
 
-    showInvItemModalMsg("Saved ✔", "ok");
+    console.log("[INVENTORY SAVE RESPONSE]", saved);
+
+    showInvItemModalMsg(
+      editingId ? "Material updated ✔" : "Material created ✔",
+      "ok"
+    );
+
+    window._INV_EDITING_ITEM_ID = null;
+
+    await loadInventoryItems?.();
     closeInvItemModal();
 
-    window._INV_EDITING_ITEM_ID = null; // reset edit mode
-    await loadInventoryItems?.();
-
+    return saved;
   } catch (err) {
+    console.error("[INVENTORY SAVE FAILED]", err);
     showInvItemModalMsg(err?.message || "Save failed.", "error");
   } finally {
     if (btn) {
@@ -95509,6 +95513,7 @@ async function saveInvItemFromModal() {
     }
   }
 }
+
 window.saveInvItemFromModal = saveInvItemFromModal;
 
   /* ---------- SERVICES / ITEMS DATALISTS ---------- */
@@ -113393,66 +113398,83 @@ window.openReceiveModal = openReceiveModal;
 
   let _svcSaving = false;
 
-  async function saveSvcModal() {
-    const cid = getActiveCompanyId?.();
-    if (!cid) return;
+async function saveSvcModal() {
+  const cid = getActiveCompanyId?.();
+  if (!cid || _svcSaving) return;
 
-    if (_svcSaving) return;              // ✅ block double-submit
-    _svcSaving = true;
+  const btn = $("svcModalSave");
+  _svcSaving = true;
 
-    const btn = document.getElementById("svcModalSave"); // use your real save button id
-    if (btn) btn.disabled = true;
+  if (btn) btn.disabled = true;
 
-    try {
-      const payload = {
-        code: String($("svcFormCode").value || "").trim(),
-        name: String($("svcFormName").value || "").trim(),
-        description: String($("svcFormDesc").value || "").trim(),
-        unit: String($("svcFormUnit").value || "").trim(),
-        price: Number(String($("svcFormPrice").value || "0").replace(/,/g, "")) || 0,
-        vat_code: String($("svcFormVat").value || "").trim(),
-        is_taxable: !!$("svcFormTaxable").checked,
-        is_active: true,
-      };
+  try {
+    const payload = {
+      code: String($("svcFormCode")?.value || "").trim(),
+      name: String($("svcFormName")?.value || "").trim(),
+      description: String($("svcFormDesc")?.value || "").trim(),
+      unit: String($("svcFormUnit")?.value || "").trim(),
+      price: Number(String($("svcFormPrice")?.value || "0").replace(/,/g, "")) || 0,
+      vat_code: String($("svcFormVat")?.value || "").trim(),
+      is_taxable: !!$("svcFormTaxable")?.checked,
+      is_active: true,
+    };
 
-      if (!payload.code) return void ($("svcModalMsg").textContent = "Code is required.");
-      if (!payload.name) return void ($("svcModalMsg").textContent = "Name is required.");
+    if (!payload.code) {
+      $("svcModalMsg").textContent = "Code is required.";
+      return;
+    }
 
-      $("svcModalMsg").textContent = "Saving…";
+    if (!payload.name) {
+      $("svcModalMsg").textContent = "Name is required.";
+      return;
+    }
 
-      if (_svcEditId) {
-        await apiFetch(endpoints.services.updateItem(cid, _svcEditId), {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await apiFetch(endpoints.services.createItem(cid), {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
+    const editing = !!_svcEditId;
 
-      // ✅ keep modal open
-      $("svcModalMsg").textContent = "Saved ✅ Refreshing…";
-      await window.loadServiceItems?.();
+    $("svcModalMsg").textContent = editing ? "Updating…" : "Saving…";
 
-      resetSvcModal();
-      $("svcModalMsg").textContent = "Saved ✅";
-      $("svcFormCode")?.focus();
-    } catch (e) {
-      // ✅ show duplicate nicely
-      const msg = e?.message || String(e);
-      if ((e?.status === 400 || e?.status === 409) && /already exists|duplicate/i.test(msg)) {
-        $("svcModalMsg").textContent = "That code already exists. Use a new code (e.g., SVC-006).";
-      } else {
-        $("svcModalMsg").textContent = `Save failed: ${msg}`;
-      }
-      console.error(e);
-    } finally {
-      _svcSaving = false;
-      if (btn) btn.disabled = false;
+    if (editing) {
+      await apiFetch(endpoints.services.updateItem(cid, _svcEditId), {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await apiFetch(endpoints.services.createItem(cid), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+
+    await window.loadServiceItems?.();
+
+    resetSvcModal();
+
+    $("svcModalMsg").textContent = editing
+      ? "Updated ✅"
+      : "Saved ✅";
+
+    $("svcFormCode")?.focus();
+
+  } catch (e) {
+    const msg = e?.message || String(e);
+
+    if ((e?.status === 400 || e?.status === 409) && /already exists|duplicate/i.test(msg)) {
+      $("svcModalMsg").textContent = "That code already exists. Use a new code.";
+    } else {
+      $("svcModalMsg").textContent = `Save failed: ${msg}`;
+    }
+
+    console.error("[SERVICE SAVE FAILED]", e);
+
+  } finally {
+    _svcSaving = false;
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Save";
     }
   }
+}
 
   async function archiveSvcItem(id) {
     const cid = getActiveCompanyId?.();
@@ -113476,11 +113498,6 @@ window.openReceiveModal = openReceiveModal;
     const elQ       = $("svcSearch");
     const elStatus  = $("svcStatus");
     const tbody     = $("svcItemsTbody");
-
-    const mClose    = $("svcModalClose");
-    const mSave     = $("svcModalSave");
-    const mArchive  = $("svcModalArchive");
-
     // debounce loader (recreated on each render is fine)
     let t = null;
     const schedule = () => {
@@ -113513,25 +113530,6 @@ window.openReceiveModal = openReceiveModal;
 
     bindOnce(elStatus, () => {
       elStatus.addEventListener("change", () => window.loadServiceItems?.());
-    });
-
-    // modal buttons (modal persists, so bind-once is important)
-    bindOnce(mClose, () => {
-      mClose.addEventListener("click", () => showSvcModal(false));
-    });
-
-    bindOnce(mSave, () => {
-      mSave.addEventListener("click", () =>
-        saveSvcModal().catch(e => ($("svcModalMsg").textContent = e.message))
-      );
-    });
-
-    bindOnce(mArchive, () => {
-      mArchive.addEventListener("click", () => {
-        if (_svcEditId) {
-          archiveSvcItem(_svcEditId).catch(e => ($("svcModalMsg").textContent = e.message));
-        }
-      });
     });
 
     // table actions
