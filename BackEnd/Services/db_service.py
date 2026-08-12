@@ -54030,12 +54030,15 @@ class DatabaseService:
                 print(f"CHECKING MIGRATION {schema}:operations v{self.OPS_MIGRATION_VERSION}")
                 self.ensure_company_ops(int(company_id),cur=cur)
 
-                print(f"CHECKING MIGRATION {schema}:tenant_sync v{TENANT_SYNC_MIGRATION_VERSION}")
+                print(
+                    f"CHECKING MIGRATION {schema}:tenant_sync "
+                    f"v{self.TENANT_SYNC_MIGRATION_VERSION}"
+                )
+
                 self.sync_existing_company_schema(
                     cur=cur,
                     schema=schema,
                     company_id=int(company_id),
-                    migration_version=TENANT_SYNC_MIGRATION_VERSION,
                 )
 
                 conn.commit()
