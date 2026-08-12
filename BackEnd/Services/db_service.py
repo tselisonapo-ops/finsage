@@ -47044,73 +47044,6 @@ class DatabaseService:
         END
         $ck_lessor_lease_classification$;
 
-        DO $fk_lessor_bills_invoice$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_bills_invoice'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_bills
-                    ADD CONSTRAINT fk_lessor_bills_invoice
-                    FOREIGN KEY (invoice_id)
-                    REFERENCES %I.invoices(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_bills_invoice$;
-
-        DO $fk_lessor_bills_invoice_line$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_bills_invoice_line'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_bills
-                    ADD CONSTRAINT fk_lessor_bills_invoice_line
-                    FOREIGN KEY (invoice_line_id)
-                    REFERENCES %I.invoice_lines(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_bills_invoice_line$;
-
-        DO $fk_lessor_receipts_receipt$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_lessor_receipts_receipt'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.lessor_lease_receipts
-                    ADD CONSTRAINT fk_lessor_receipts_receipt
-                    FOREIGN KEY (receipt_id)
-                    REFERENCES %I.receipts(id)
-                    ON DELETE SET NULL',
-                    '{schema}',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $fk_lessor_receipts_receipt$;
-
-
         CREATE INDEX IF NOT EXISTS {schema}_lessor_leases_classification_idx
         ON {schema}.lessor_leases(company_id, lease_classification, status);
 
@@ -47595,6 +47528,50 @@ class DatabaseService:
         END IF;
         END $uq_lessor_lease_bills_unique$;
 
+        DO $fk_lessor_bills_invoice$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice
+                    FOREIGN KEY (invoice_id)
+                    REFERENCES %I.invoices(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice$;
+
+        DO $fk_lessor_bills_invoice_line$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_bills_invoice_line'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_bills
+                    ADD CONSTRAINT fk_lessor_bills_invoice_line
+                    FOREIGN KEY (invoice_line_id)
+                    REFERENCES %I.invoice_lines(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_bills_invoice_line$;
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_bills_company_idx
         ON {schema}.lessor_lease_bills(company_id);
@@ -47743,6 +47720,28 @@ class DatabaseService:
         END IF;
         END $uq_lessor_lease_receipts_unique$;
 
+        DO $fk_lessor_receipts_receipt$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessor_receipts_receipt'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessor_lease_receipts
+                    ADD CONSTRAINT fk_lessor_receipts_receipt
+                    FOREIGN KEY (receipt_id)
+                    REFERENCES %I.receipts(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessor_receipts_receipt$;
+        
         -- Indexes
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_contract_idx
         ON {schema}.lessor_lease_receipts(lessor_lease_id);
