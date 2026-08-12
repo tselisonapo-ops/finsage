@@ -113243,21 +113243,34 @@ window.openReceiveModal = openReceiveModal;
   function ensureSvcModalMounted() {
     if (!$("svcItemModal")) {
       const tpl = document.getElementById("tpl-service-item-modal");
-      if (!tpl || !tpl.content) return false;
-      const modalsMount = $("modalsMount") || document.body;
-      modalsMount.appendChild(tpl.content.cloneNode(true));
+      if (!tpl?.content) return false;
+
+      const mount = $("modalsMount") || document.body;
+      mount.appendChild(tpl.content.cloneNode(true));
     }
 
-    const m = $("svcItemModal");
-    if (m && m.dataset.bound !== "1") {
-      m.dataset.bound = "1";
+    const modal = $("svcItemModal");
+    if (!modal) return false;
+
+    if (modal.dataset.bound !== "1") {
+      modal.dataset.bound = "1";
 
       $("svcModalClose")?.addEventListener("click", () => showSvcModal(false));
-      $("svcModalSave")?.addEventListener("click", () =>
-        saveSvcModal().catch(e => ($("svcModalMsg").textContent = e.message))
-      );
+
+      $("svcModalSave")?.addEventListener("click", () => {
+        saveSvcModal().catch(e => {
+          const msg = $("svcModalMsg");
+          if (msg) msg.textContent = e?.message || String(e);
+        });
+      });
+
       $("svcModalArchive")?.addEventListener("click", () => {
-        if (_svcEditId) archiveSvcItem(_svcEditId).catch(e => ($("svcModalMsg").textContent = e.message));
+        if (!_svcEditId) return;
+
+        archiveSvcItem(_svcEditId).catch(e => {
+          const msg = $("svcModalMsg");
+          if (msg) msg.textContent = e?.message || String(e);
+        });
       });
     }
 
@@ -113265,15 +113278,11 @@ window.openReceiveModal = openReceiveModal;
   }
 
   function showSvcModal(open) {
-    const m = $("svcItemModal");
-    if (!m) return;
-    if (open) {
-      m.classList.remove("hidden");
-      m.classList.add("flex");
-    } else {
-      m.classList.add("hidden");
-      m.classList.remove("flex");
-    }
+    const modal = $("svcItemModal");
+    if (!modal) return;
+
+    modal.classList.toggle("hidden", !open);
+    modal.classList.toggle("flex", open);
   }
 
   function resetSvcModal() {
@@ -113391,7 +113400,7 @@ async function saveSvcModal() {
   if (_svcSaving) return;              // ✅ block double-submit
   _svcSaving = true;
 
-  const btn = document.getElementById("btnSvcSave"); // use your real save button id
+  const btn = document.getElementById("svcModalSave"); // use your real save button id
   if (btn) btn.disabled = true;
 
   try {
