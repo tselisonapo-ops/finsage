@@ -54723,29 +54723,16 @@ class DatabaseService:
                     cursor.execute(stmt)
 
                 except Exception as error:
-                    cursor.execute(
-                        f"ROLLBACK TO SAVEPOINT {sp};"
-                    )
+                    cursor.execute(f"ROLLBACK TO SAVEPOINT {sp};")
+                    cursor.execute(f"RELEASE SAVEPOINT {sp};")
 
-                    cursor.execute(
-                        f"RELEASE SAVEPOINT {sp};"
-                    )
+                    print("\n" + "="*120)
+                    print(f"[EXEC-DDL][ERROR] statement #{i}/{len(statements)}")
+                    print("ERROR:",repr(error))
+                    print("-"*120)
+                    print(stmt)
+                    print("="*120 + "\n")
 
-                    failed_statements.append(
-                        (
-                            i,
-                            str(error),
-                        )
-                    )
-
-                    print(
-                        f"[EXEC-DDL][ERROR] "
-                        f"stmt #{i} failed: {error}"
-                    )
-
-                    # IMPORTANT:
-                    # Do not silently continue and later mark
-                    # an incomplete migration as applied.
                     raise
 
                 else:
