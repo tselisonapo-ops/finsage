@@ -63395,6 +63395,7 @@ async function saveEditModal() {
       });
   }
 
+
   async function openPayrollLeavePolicyModal(policy=null){
     await loadPayrollBenefitCoa();
 
@@ -63466,34 +63467,6 @@ async function saveEditModal() {
           ${esc(x.name||x.code||`Leave type ${x.id}`)}
         </option>
       `).join("")}`;
-  }
-
-  function fillPayrollAccountSelect(id,kind,value=""){
-    const el=$(id);
-    if(!el)return;
-
-    const options=payrollAccountOptions(kind);
-
-    el.innerHTML=`
-      <option value="">Select account…</option>
-      ${options.map(([code,name])=>`
-        <option value="${esc(code)}"
-          title="${esc(code)}"
-          ${String(code)===String(value)?"selected":""}>
-          ${esc(name)}
-        </option>
-      `).join("")}`;
-
-    if(value&&!options.some(([code])=>String(code)===String(value))){
-      const account=(payrollState.employeeBenefits.coa||[])
-        .find(x=>String(x.code)===String(value));
-
-      el.insertAdjacentHTML("beforeend",`
-        <option value="${esc(value)}" selected>
-          ${esc(account?.name||value)}
-        </option>
-      `);
-    }
   }
 
   function closePayrollLeavePolicyModal(){
@@ -65752,6 +65725,15 @@ async function saveEditModal() {
 
     if (tab === "general") {
       await loadPayrollSettings();
+    }
+
+    if(
+      tab==="earnings"||
+      tab==="deductions"||
+      tab==="contributions"||
+      tab==="mappings"
+    ){
+      await loadPayrollSetupAccountDropdowns();
     }
 
     if (tab === "employee-pay") {
@@ -69623,64 +69605,56 @@ async function saveEditModal() {
   }
 
   function payrollPostingAccounts(kind="all"){
-    const rows=
-      payrollState.employeeBenefits?.coa?.length
-        ?payrollState.employeeBenefits.coa
-        :(window.COA_CACHE||
-          window.COMPANY_COA||
-          window.CHART_OF_ACCOUNTS||
-          []);
+    const rows=payrollState.employeeBenefits?.coa?.length
+      ?payrollState.employeeBenefits.coa
+      :(window.COA_CACHE||window.COMPANY_COA||window.CHART_OF_ACCOUNTS||[]);
 
     const accounts=(Array.isArray(rows)?rows:[])
-      .map(account=>({
-        ...account,
-        code:String(
-          account.code||
-          account.account_code||
-          account.template_code||
-          ""
-        ).trim(),
-        name:String(
-          account.name||
-          account.account_name||
-          account.description||
-          ""
-        ).trim(),
-        posting:account.posting===undefined
+      .map(account=>{
+        const code=String(account.code||account.account_code||account.template_code||"").trim();
+        const name=String(account.name||account.account_name||account.description||"").trim();
+        const posting=account.posting===undefined||account.posting===null
           ?true
-          :!["false","0","no"].includes(
-              String(account.posting).toLowerCase()
-            ),
-        active:account.is_active===undefined
+          :!["false","0","no"].includes(String(account.posting).toLowerCase());
+        const active=account.is_active===undefined||account.is_active===null
           ?true
-          :!["false","0","no"].includes(
-              String(account.is_active).toLowerCase()
-            ),
-      }))
-      .filter(account=>
-        account.code&&
-        account.name&&
-        account.posting&&
-        account.active
-      );
+          :!["false","0","no"].includes(String(account.is_active).toLowerCase());
+
+        return{...account,code,name,posting,active};
+      })
+      .filter(account=>account.code&&account.name&&account.posting&&account.active);
 
     const filtered=accounts.filter(account=>{
-      const text=[
-        account.section,
-        account.category,
-        account.role,
-        account.name,
-      ].join(" ").toLowerCase();
+      const section=String(account.section||account.account_section||"").toLowerCase();
+      const category=String(account.category||account.account_category||"").toLowerCase();
+      const type=String(account.account_type||account.type||"").toLowerCase();
+      const role=String(account.role||"").toLowerCase();
+      const name=String(account.name||"").toLowerCase();
+      const text=[section,category,type,role,name].join(" ");
 
       if(kind==="all")return true;
+
       if(kind==="expense")
-        return /expense|cost|salary|wage|employee benefit/.test(text);
+        return section.includes("expense")||
+          category.includes("expense")||
+          type.includes("expense")||
+          /expense|cost|salary|wage|payroll|employee benefit/.test(text);
+
       if(kind==="liability")
-        return /liabil|payable|provision|accrual|creditor/.test(text);
+        return section.includes("liabil")||
+          category.includes("liabil")||
+          type.includes("liabil")||
+          /liabil|payable|provision|accrual|creditor/.test(text);
+
       if(kind==="asset")
-        return /asset|receivable|debtor/.test(text);
+        return section.includes("asset")||
+          category.includes("asset")||
+          type.includes("asset")||
+          /asset|receivable|debtor/.test(text);
+
       if(kind==="cash")
         return /cash|bank|cash equivalent/.test(text);
+
       if(kind==="oci")
         return /other comprehensive|\boci\b|reserve|equity/.test(text);
 
@@ -69691,27 +69665,81 @@ async function saveEditModal() {
       .sort((a,b)=>a.name.localeCompare(b.name));
   }
 
+  async function loadPayrollSetupAccountDropdowns(){
+    await loadPayrollBenefitCoa();
+
+    fillPayrollAccountSelect(
+      "payrollEarningGlAccount",
+      "expense"
+    );
+
+    fillPayrollAccountSelect(
+      "payrollDeductionLiabilityAccount",
+      "liability"
+    );
+
+    fillPayrollAccountSelect(
+      "payrollContributionExpenseAccount",
+      "expense"
+    );
+
+    fillPayrollAccountSelect(
+      "payrollContributionLiabilityAccount",
+      "liability"
+    );
+  }
+
   function fillPayrollAccountSelect(
     selectId,
-    kind="all",
-    selectedCode="",
-  ){
-    const el=$(selectId);
-    if(!el)return;
+    kind = "all",
+    selectedCode = ""
+  ) {
+    const el = $(selectId);
+    if (!el) return;
 
-    const accounts=payrollPostingAccounts(kind);
+    const accounts = payrollPostingAccounts(kind);
 
-    el.innerHTML=`
+    el.innerHTML = `
       <option value="">Select account…</option>
-      ${accounts.map(account=>`
+
+      ${accounts.map(account => `
         <option
           value="${esc(account.code)}"
-          title="${esc(account.code)}"
-          ${String(account.code)===String(selectedCode)?"selected":""}>
+          ${String(account.code) === String(selectedCode) ? "selected" : ""}
+        >
           ${esc(account.name)}
         </option>
       `).join("")}
     `;
+
+    // Preserve an existing saved account even if it no longer
+    // matches the current account filter.
+    if (
+      selectedCode &&
+      !accounts.some(
+        account =>
+          String(account.code) === String(selectedCode)
+      )
+    ) {
+      const savedAccount =
+        (payrollState.employeeBenefits?.coa || [])
+          .find(
+            account =>
+              String(account.code) === String(selectedCode)
+          );
+
+      el.insertAdjacentHTML(
+        "beforeend",
+        `
+          <option
+            value="${esc(selectedCode)}"
+            selected
+          >
+            ${esc(savedAccount?.name || selectedCode)}
+          </option>
+        `
+      );
+    }
   }
 
   function setPayrollEditorFieldVisibility(type) {
@@ -69768,10 +69796,10 @@ async function saveEditModal() {
     return labels[type] || "Payroll Setup Item";
   }
 
-  function openPayrollSetupEditor(type, id) {
-    const item = findPayrollSetupItem(type, id);
+  async function openPayrollSetupEditor(type,id){
+    const item=findPayrollSetupItem(type,id);
 
-    if (!item) {
+    if(!item){
       showPayrollStatus(
         "The selected payroll setup item could not be found.",
         "error"
@@ -69779,44 +69807,38 @@ async function saveEditModal() {
       return;
     }
 
-    $("payrollSetupEditorType").value = type;
-    $("payrollSetupEditorId").value = String(item.id);
+    await loadPayrollBenefitCoa();
 
-    $("payrollSetupEditorTitle").textContent =
+    $("payrollSetupEditorType").value=type;
+    $("payrollSetupEditorId").value=String(item.id);
+
+    $("payrollSetupEditorTitle").textContent=
       `Edit ${payrollSetupTypeLabel(type)}`;
 
-    $("payrollSetupEditorSubtitle").textContent =
-      `${item.code || ""} — ${item.name || ""}`;
+    $("payrollSetupEditorSubtitle").textContent=
+      `${item.code||""} — ${item.name||""}`;
 
-    $("payrollSetupEditorCode").value =
-      item.code || "";
+    $("payrollSetupEditorCode").value=item.code||"";
+    $("payrollSetupEditorName").value=item.name||"";
 
-    $("payrollSetupEditorName").value =
-      item.name || "";
+    $("payrollSetupEditorTaxable").checked=!!item.taxable;
+    $("payrollSetupEditorPensionable").checked=!!item.pensionable;
+    $("payrollSetupEditorStatutory").checked=!!item.is_statutory;
+    $("payrollSetupEditorActive").checked=item.is_active!==false;
 
-    $("payrollSetupEditorTaxable").checked =
-      !!item.taxable;
-
-    $("payrollSetupEditorPensionable").checked =
-      !!item.pensionable;
-
-    $("payrollSetupEditorStatutory").checked =
-      !!item.is_statutory;
-
-    $("payrollSetupEditorActive").checked =
-      item.is_active !== false;
-
-    $("payrollSetupEditorCategory").value =
-      item.benefit_category || "allowance";
+    $("payrollSetupEditorCategory").value=
+      item.benefit_category||"allowance";
 
     fillPayrollAccountSelect(
       "payrollSetupEditorExpenseAccount",
-      item.expense_account_code || ""
+      "expense",
+      item.expense_account_code||""
     );
 
     fillPayrollAccountSelect(
       "payrollSetupEditorLiabilityAccount",
-      item.liability_account_code || ""
+      "liability",
+      item.liability_account_code||""
     );
 
     setPayrollEditorFieldVisibility(type);
@@ -69824,16 +69846,11 @@ async function saveEditModal() {
     $("payrollSetupEditorModal")
       ?.classList.remove("hidden");
 
-    requestAnimationFrame(() => {
-      const modal =
-        $("payrollSetupEditorModal");
+    requestAnimationFrame(()=>{
+      const modal=$("payrollSetupEditorModal");
+      const card=modal?.querySelector(".modal-card");
 
-      const card =
-        modal?.querySelector(".modal-card");
-
-      if (card) {
-        card.scrollTop = 0;
-      }
+      if(card)card.scrollTop=0;
 
       $("payrollSetupEditorName")?.focus();
     });
