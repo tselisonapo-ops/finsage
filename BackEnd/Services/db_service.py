@@ -79329,6 +79329,11 @@ class DatabaseService:
             company_id,
             loan_row=loan_row,
             bank_account_id=loan_row.get("bank_account_id"),
+            required_fields={
+                "bank_account_code",
+                "loan_payable_current_account_code",
+                "loan_payable_noncurrent_account_code",
+            },
         )
 
         if loan_id:
