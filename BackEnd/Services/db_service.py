@@ -47413,39 +47413,125 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-        UPDATE {schema}.lessor_lease_modifications
-        SET
-            effective_date = COALESCE(
-                effective_date,
-                effective_from,
-                modification_date
-            ),
+        DO $migrate_lessor_modification_legacy_fields$
+        BEGIN
+            -- effective_date
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'lessor_lease_modifications'
+                AND column_name = 'effective_from'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET effective_date = COALESCE(
+                        effective_date,
+                        effective_from,
+                        modification_date
+                    )
+                    WHERE effective_date IS NULL',
+                    '{schema}'
+                );
+            ELSE
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET effective_date = COALESCE(
+                        effective_date,
+                        modification_date
+                    )
+                    WHERE effective_date IS NULL',
+                    '{schema}'
+                );
+            END IF;
 
-            modification_type = COALESCE(
-                modification_type,
-                change_type
-            ),
+            -- modification_type
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'lessor_lease_modifications'
+                AND column_name = 'change_type'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET modification_type = COALESCE(
+                        modification_type,
+                        change_type
+                    )
+                    WHERE modification_type IS NULL',
+                    '{schema}'
+                );
+            END IF;
 
-            old_payment_amount = COALESCE(
-                old_payment_amount,
-                old_billing_amount,
-                0
-            ),
+            -- old_payment_amount
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'lessor_lease_modifications'
+                AND column_name = 'old_billing_amount'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET old_payment_amount = COALESCE(
+                        old_payment_amount,
+                        old_billing_amount,
+                        0
+                    )
+                    WHERE old_payment_amount IS NULL',
+                    '{schema}'
+                );
+            ELSE
+                UPDATE {schema}.lessor_lease_modifications
+                SET old_payment_amount = 0
+                WHERE old_payment_amount IS NULL;
+            END IF;
 
-            new_payment_amount = COALESCE(
-                new_payment_amount,
-                new_billing_amount,
-                0
-            ),
+            -- new_payment_amount
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'lessor_lease_modifications'
+                AND column_name = 'new_billing_amount'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET new_payment_amount = COALESCE(
+                        new_payment_amount,
+                        new_billing_amount,
+                        0
+                    )
+                    WHERE new_payment_amount IS NULL',
+                    '{schema}'
+                );
+            ELSE
+                UPDATE {schema}.lessor_lease_modifications
+                SET new_payment_amount = 0
+                WHERE new_payment_amount IS NULL;
+            END IF;
 
-            created_by_user_id = COALESCE(
-                created_by_user_id,
-                created_by
-            )
-        WHERE
-            effective_date IS NULL
-            OR modification_type IS NULL
-            OR created_by_user_id IS NULL;
+            -- created_by_user_id
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}'
+                AND table_name = 'lessor_lease_modifications'
+                AND column_name = 'created_by'
+            ) THEN
+                EXECUTE format(
+                    'UPDATE %I.lessor_lease_modifications
+                    SET created_by_user_id = COALESCE(
+                        created_by_user_id,
+                        created_by
+                    )
+                    WHERE created_by_user_id IS NULL',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $migrate_lessor_modification_legacy_fields$;
 
         ALTER TABLE {schema}.lessor_lease_modifications
         ALTER COLUMN effective_date SET NOT NULL,
@@ -47741,7 +47827,7 @@ class DatabaseService:
             END IF;
         END
         $fk_lessor_receipts_receipt$;
-        
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS {schema}_lessor_lease_receipts_contract_idx
         ON {schema}.lessor_lease_receipts(lessor_lease_id);
