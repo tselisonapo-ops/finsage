@@ -113355,102 +113355,104 @@ window.openReceiveModal = openReceiveModal;
     msg.textContent = `${rows.length} item(s)`;
   }
 
-window.loadServiceItems = async function loadServiceItems() {
-  const cid = getActiveCompanyId?.();
-  if (!cid) return;
+  window.loadServiceItems = async function loadServiceItems() {
+    const cid = getActiveCompanyId?.();
+    if (!cid) return;
 
-  const tbodyEl = $("svcItemsTbody");
-  const msgEl   = $("svcItemsMsg");
+    const tbodyEl = $("svcItemsTbody");
+    const msgEl   = $("svcItemsMsg");
 
-  // ✅ If template not mounted, don't run UI renderer
-  if (!tbodyEl || !msgEl) {
-    console.warn("[ServiceItems] UI not mounted; skipping loadServiceItems()");
-    return;
-  }
-
-  const q = String($("svcSearch")?.value || "").trim();
-  const status = String($("svcStatus")?.value || "active").toLowerCase();
-
-  msgEl.textContent = "Loading…";
-  tbodyEl.innerHTML = `<tr><td colspan="5" class="px-2 py-3 text-slate-500">Loading…</td></tr>`;
-
-  try {
-    const rows = await window.apiFetch(window.endpoints.services.listItems(cid, {
-      q,
-      active: activeParamForStatus(status),
-      limit: 200,
-      offset: 0,
-    }));
-
-    _svcRows = Array.isArray(rows) ? rows : [];
-    renderSvcRows();
-  } catch (e) {
-    console.warn("[ServiceItems] load failed", e);
-    tbodyEl.innerHTML = `<tr><td colspan="5" class="px-2 py-3 text-red-600">Failed: ${esc(e.message || "error")}</td></tr>`;
-    msgEl.textContent = "";
-  }
-};
-
-let _svcSaving = false;
-
-async function saveSvcModal() {
-  const cid = getActiveCompanyId?.();
-  if (!cid) return;
-
-  if (_svcSaving) return;              // ✅ block double-submit
-  _svcSaving = true;
-
-  const btn = document.getElementById("svcModalSave"); // use your real save button id
-  if (btn) btn.disabled = true;
-
-  try {
-    const payload = {
-      code: String($("svcFormCode").value || "").trim(),
-      name: String($("svcFormName").value || "").trim(),
-      description: String($("svcFormDesc").value || "").trim(),
-      unit: String($("svcFormUnit").value || "").trim(),
-      price: Number(String($("svcFormPrice").value || "0").replace(/,/g, "")) || 0,
-      vat_code: String($("svcFormVat").value || "").trim(),
-      is_taxable: !!$("svcFormTaxable").checked,
-      is_active: true,
-    };
-
-    if (!payload.code) return void ($("svcModalMsg").textContent = "Code is required.");
-    if (!payload.name) return void ($("svcModalMsg").textContent = "Name is required.");
-
-    $("svcModalMsg").textContent = "Saving…";
-
-    if (_svcEditId) {
-      await apiFetch(endpoints.services.updateItem(cid, _svcEditId), {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await apiFetch(endpoints.services.createItem(cid), {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+    // ✅ If template not mounted, don't run UI renderer
+    if (!tbodyEl || !msgEl) {
+      console.warn("[ServiceItems] UI not mounted; skipping loadServiceItems()");
+      return;
     }
 
-    // ✅ keep modal open
-    $("svcModalMsg").textContent = "Saved ✅ Refreshing…";
-    await window.loadServiceItems?.();   // refresh list on the services screen
-    $("svcModalMsg").textContent = "Saved ✅";
+    const q = String($("svcSearch")?.value || "").trim();
+    const status = String($("svcStatus")?.value || "active").toLowerCase();
 
-  } catch (e) {
-    // ✅ show duplicate nicely
-    const msg = e?.message || String(e);
-    if ((e?.status === 400 || e?.status === 409) && /already exists|duplicate/i.test(msg)) {
-      $("svcModalMsg").textContent = "That code already exists. Use a new code (e.g., SVC-006).";
-    } else {
-      $("svcModalMsg").textContent = `Save failed: ${msg}`;
+    msgEl.textContent = "Loading…";
+    tbodyEl.innerHTML = `<tr><td colspan="5" class="px-2 py-3 text-slate-500">Loading…</td></tr>`;
+
+    try {
+      const rows = await window.apiFetch(window.endpoints.services.listItems(cid, {
+        q,
+        active: activeParamForStatus(status),
+        limit: 200,
+        offset: 0,
+      }));
+
+      _svcRows = Array.isArray(rows) ? rows : [];
+      renderSvcRows();
+    } catch (e) {
+      console.warn("[ServiceItems] load failed", e);
+      tbodyEl.innerHTML = `<tr><td colspan="5" class="px-2 py-3 text-red-600">Failed: ${esc(e.message || "error")}</td></tr>`;
+      msgEl.textContent = "";
     }
-    console.error(e);
-  } finally {
-    _svcSaving = false;
-    if (btn) btn.disabled = false;
+  };
+
+  let _svcSaving = false;
+
+  async function saveSvcModal() {
+    const cid = getActiveCompanyId?.();
+    if (!cid) return;
+
+    if (_svcSaving) return;              // ✅ block double-submit
+    _svcSaving = true;
+
+    const btn = document.getElementById("svcModalSave"); // use your real save button id
+    if (btn) btn.disabled = true;
+
+    try {
+      const payload = {
+        code: String($("svcFormCode").value || "").trim(),
+        name: String($("svcFormName").value || "").trim(),
+        description: String($("svcFormDesc").value || "").trim(),
+        unit: String($("svcFormUnit").value || "").trim(),
+        price: Number(String($("svcFormPrice").value || "0").replace(/,/g, "")) || 0,
+        vat_code: String($("svcFormVat").value || "").trim(),
+        is_taxable: !!$("svcFormTaxable").checked,
+        is_active: true,
+      };
+
+      if (!payload.code) return void ($("svcModalMsg").textContent = "Code is required.");
+      if (!payload.name) return void ($("svcModalMsg").textContent = "Name is required.");
+
+      $("svcModalMsg").textContent = "Saving…";
+
+      if (_svcEditId) {
+        await apiFetch(endpoints.services.updateItem(cid, _svcEditId), {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await apiFetch(endpoints.services.createItem(cid), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+
+      // ✅ keep modal open
+      $("svcModalMsg").textContent = "Saved ✅ Refreshing…";
+      await window.loadServiceItems?.();
+
+      resetSvcModal();
+      $("svcModalMsg").textContent = "Saved ✅";
+      $("svcFormCode")?.focus();
+    } catch (e) {
+      // ✅ show duplicate nicely
+      const msg = e?.message || String(e);
+      if ((e?.status === 400 || e?.status === 409) && /already exists|duplicate/i.test(msg)) {
+        $("svcModalMsg").textContent = "That code already exists. Use a new code (e.g., SVC-006).";
+      } else {
+        $("svcModalMsg").textContent = `Save failed: ${msg}`;
+      }
+      console.error(e);
+    } finally {
+      _svcSaving = false;
+      if (btn) btn.disabled = false;
+    }
   }
-}
 
   async function archiveSvcItem(id) {
     const cid = getActiveCompanyId?.();
