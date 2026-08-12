@@ -37687,27 +37687,6 @@ class DatabaseService:
             tax_deduction_basis
         );
 
-        CREATE INDEX IF NOT EXISTS {schema}_leases_lessor_id_idx
-        ON {schema}.leases(lessor_id);
-
-        DO $fk_leases_lessor$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid = c.connamespace
-                WHERE c.conname = 'fk_leases_lessor'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.leases
-                    ADD CONSTRAINT fk_leases_lessor
-                    FOREIGN KEY (lessor_id) REFERENCES %I.lessors(id)',
-                    '{schema}', '{schema}'
-                );
-            END IF;
-        END $fk_leases_lessor$;
-
         -- ==================================================
         -- Checks (leases)
         -- ==================================================
