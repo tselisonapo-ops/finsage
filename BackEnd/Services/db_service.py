@@ -79110,35 +79110,41 @@ class DatabaseService:
         *,
         loan_row: dict,
         bank_account_id: int | None = None,
+        required_fields: set[str] | None = None,
     ):
-        schema = self.company_schema(company_id)
+        loan_row = loan_row or {}
+
+        role_map = {
+            "interest_expense_account_code": "loan_interest_expense",
+            "accrued_interest_account_code": "loan_accrued_interest",
+            "loan_payable_current_account_code": "loan_payable_current",
+            "loan_payable_noncurrent_account_code": "loan_payable_noncurrent",
+        }
+
+        required_fields = required_fields or set(role_map.keys()) | {"bank_account_code"}
 
         with conn.cursor() as cur:
             resolved = {}
-            missing_roles = []
+            missing = []
 
-            bank_row = self.get_company_bank_account(company_id, bank_account_id) if bank_account_id else None
-            bank_code = ((bank_row or {}).get("ledger_account_code") or "").strip()
+            bank_row = self.get_company_bank_account(
+                company_id,
+                bank_account_id,
+            ) if bank_account_id else None
 
-            # fallback from payload/loan row if bank row not available
-            bank_code = bank_code or ((loan_row or {}).get("bank_account_code") or "").strip()
+            bank_code = (
+                ((bank_row or {}).get("ledger_account_code") or "").strip()
+                or (loan_row.get("bank_account_code") or "").strip()
+            )
 
-            resolved["bank_account_code"] = bank_code
-            if not bank_code:
-                missing_roles.append("bank_account_code")
+            resolved["bank_account_code"] = bank_code or None
 
-            role_map = {
-                "interest_expense_account_code": "loan_interest_expense",
-                "accrued_interest_account_code": "loan_accrued_interest",
-                "loan_payable_current_account_code": "loan_payable_current",
-                "loan_payable_noncurrent_account_code": "loan_payable_noncurrent",
-            }
+            if "bank_account_code" in required_fields and not bank_code:
+                missing.append("bank_account_code")
 
             for field_name, role in role_map.items():
-                # 1. prefer explicit account selected/saved on loan
-                code = ((loan_row or {}).get(field_name) or "").strip()
+                code = (loan_row.get(field_name) or "").strip()
 
-                # 2. fallback to COA role mapping
                 if not code:
                     coa = self._get_coa_role_account(
                         company_id,
@@ -79147,14 +79153,15 @@ class DatabaseService:
                     )
                     code = ((coa or {}).get("code") or "").strip()
 
-                resolved[field_name] = code
+                resolved[field_name] = code or None
 
-                if not code:
-                    missing_roles.append(role)
+                if field_name in required_fields and not code:
+                    missing.append(role)
 
-        if missing_roles:
+        if missing:
             raise ValueError(
-                "Missing required loan posting accounts: " + ", ".join(missing_roles)
+                "Missing required loan posting accounts: "
+                + ", ".join(missing)
             )
 
         return resolved
@@ -79178,7 +79185,12 @@ class DatabaseService:
             conn,
             company_id,
             loan_row=loan_row,
-            bank_account_id=payment_row.get("bank_account_id") or loan_row.get("bank_account_id"),
+            bank_account_id=loan_row.get("bank_account_id"),
+            required_fields={
+                "bank_account_code",
+                "loan_payable_current_account_code",
+                "loan_payable_noncurrent_account_code",
+            },
         )
 
         lines = []
