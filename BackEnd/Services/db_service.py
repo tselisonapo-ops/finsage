@@ -48000,7 +48000,6 @@ class DatabaseService:
                         ''reversed'',
                         ''void''
                     )
-                    AND apply_to_unbilled_only IN (TRUE,FALSE)
                 )',
                 '{schema}'
             );
