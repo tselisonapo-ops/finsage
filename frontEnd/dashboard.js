@@ -63477,34 +63477,45 @@ async function saveEditModal() {
   async function savePayrollLeavePolicy(){
     const companyId=cid();
     const policyId=Number($("payrollLeavePolicyId")?.value||0);
-    const provisionRequired=
-      $("payrollLeavePolicyProvisionRequired")?.checked;
+    const provisionRequired=!!$("payrollLeavePolicyProvisionRequired")?.checked;
+    const method=$("payrollLeavePolicyMethod")?.value||"straight_line";
+
+    const tiers=
+      method==="service_tiered"
+        ?payrollLeavePolicyTiersPayload()
+        :[];
 
     const payload={
-      leave_type_id:Number(
-        $("payrollLeavePolicyTypeId")?.value||0
-      ),
+      leave_type_id:Number($("payrollLeavePolicyTypeId")?.value||0),
       name:$("payrollLeavePolicyName")?.value.trim()||"",
-      annual_entitlement_days:Number(
-        $("payrollLeavePolicyEntitlement")?.value||0
-      ),
-      accrual_method:
-        $("payrollLeavePolicyMethod")?.value||"straight_line",
+      annual_entitlement_days:Number($("payrollLeavePolicyEntitlement")?.value||0),
+      accrual_method:method,
+
       monthly_accrual_days:
-        $("payrollLeavePolicyMonthlyDays")?.value===""
+        method==="service_tiered"
           ?null
-          :Number($("payrollLeavePolicyMonthlyDays").value),
+          :$("payrollLeavePolicyMonthlyDays")?.value===""
+            ?null
+            :Number($("payrollLeavePolicyMonthlyDays").value),
+
+      tiers,
+
       daily_rate_basis:
         $("payrollLeavePolicyRateBasis")?.value||
         "monthly_div_21_67",
-      expense_account_code:provisionRequired
-        ?$("payrollLeavePolicyExpenseAccount")?.value||null
-        :null,
-      liability_account_code:provisionRequired
-        ?$("payrollLeavePolicyLiabilityAccount")?.value||null
-        :null,
+
+      expense_account_code:
+        provisionRequired
+          ?$("payrollLeavePolicyExpenseAccount")?.value||null
+          :null,
+
+      liability_account_code:
+        provisionRequired
+          ?$("payrollLeavePolicyLiabilityAccount")?.value||null
+          :null,
+
       vesting:!!$("payrollLeavePolicyVesting")?.checked,
-      provision_required:!!provisionRequired,
+      provision_required:provisionRequired,
       is_active:true,
     };
 
@@ -63516,6 +63527,32 @@ async function saveEditModal() {
     if(!payload.leave_type_id){
       showPayrollStatus("Select a leave type.","error");
       return;
+    }
+
+    if(method==="service_tiered"){
+      if(!tiers.length){
+        showPayrollStatus(
+          "Add at least one service-based accrual tier.",
+          "error"
+        );
+        return;
+      }
+
+      const invalid=tiers.some(t=>
+        t.monthly_accrual_days<=0||
+        (
+          t.max_service_months!==null&&
+          t.max_service_months<t.min_service_months
+        )
+      );
+
+      if(invalid){
+        showPayrollStatus(
+          "Check the service tier months and accrual rates.",
+          "error"
+        );
+        return;
+      }
     }
 
     if(
@@ -63542,7 +63579,11 @@ async function saveEditModal() {
 
     closePayrollLeavePolicyModal();
     await loadPayrollLeaveWorkspace();
-    showPayrollStatus("Leave policy saved.","success");
+
+    showPayrollStatus(
+      "Leave policy saved.",
+      "success"
+    );
   }
 
   async function createPayrollLeaveRun() {
@@ -77232,6 +77273,72 @@ async function saveEditModal() {
     );
   }
 
+  let payrollLeaveTierSeq=0;
+
+  function addPayrollLeaveTier(tier={}){
+    const wrap=$("payrollLeavePolicyTiers");
+    if(!wrap)return;
+
+    const key=++payrollLeaveTierSeq;
+
+    wrap.insertAdjacentHTML("beforeend",`
+      <div class="payroll-leave-tier-row" data-leave-tier="${key}">
+        <label>
+          From month
+          <input class="leave-tier-min" type="number" min="0"
+            value="${esc(tier.min_service_months??0)}">
+        </label>
+
+        <label>
+          To month
+          <input class="leave-tier-max" type="number" min="0"
+            value="${esc(tier.max_service_months??"")}">
+        </label>
+
+        <label>
+          Monthly accrual
+          <input class="leave-tier-monthly" type="number" min="0" step="0.0001"
+            value="${esc(tier.monthly_accrual_days??"")}">
+        </label>
+
+        <label>
+          Annual entitlement
+          <input class="leave-tier-annual" type="number" min="0" step="0.0001"
+            value="${esc(tier.annual_entitlement_days??"")}">
+        </label>
+
+        <button type="button"
+          class="payroll-secondary dark leave-tier-remove">
+          Remove
+        </button>
+      </div>
+    `);
+  }
+
+  function payrollLeavePolicyTiersPayload(){
+    return[
+      ...document.querySelectorAll(
+        "#payrollLeavePolicyTiers [data-leave-tier]"
+      )
+    ].map(row=>({
+      min_service_months:
+        Number(row.querySelector(".leave-tier-min")?.value||0),
+
+      max_service_months:
+        row.querySelector(".leave-tier-max")?.value
+          ?Number(row.querySelector(".leave-tier-max").value)
+          :null,
+
+      monthly_accrual_days:
+        Number(row.querySelector(".leave-tier-monthly")?.value||0),
+
+      annual_entitlement_days:
+        row.querySelector(".leave-tier-annual")?.value
+          ?Number(row.querySelector(".leave-tier-annual").value)
+          :null,
+    }));
+  }
+
   function openPayrollEmployeeModal(mode="create"){
     if(mode==="create"){
       payrollState.selectedEmployee=null;
@@ -78337,6 +78444,31 @@ async function saveEditModal() {
       $(id)?.addEventListener("click",()=>{
         switchPayrollEmpTab(tab);
       });
+    });
+
+    $("payrollAddLeaveTierBtn")?.addEventListener("click",()=>{
+      addPayrollLeaveTier();
+    });
+
+    $("payrollLeavePolicyTiers")?.addEventListener("click",e=>{
+      if(!e.target.closest(".leave-tier-remove"))return;
+
+      e.target
+        .closest("[data-leave-tier]")
+        ?.remove();
+    });
+
+    $("payrollLeavePolicyTiers")?.addEventListener("input",e=>{
+      if(!e.target.classList.contains("leave-tier-monthly"))return;
+
+      const row=e.target.closest("[data-leave-tier]");
+      const annual=row?.querySelector(".leave-tier-annual");
+
+      if(annual){
+        annual.value=(
+          Number(e.target.value||0)*12
+        ).toFixed(4);
+      }
     });
 
     document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
