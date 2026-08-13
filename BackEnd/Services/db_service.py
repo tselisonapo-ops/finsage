@@ -29248,6 +29248,9 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_emp_uniq
                 UNIQUE (company_id, employee_no),
 
+            CONSTRAINT {schema}_payroll_emp_id_number_uniq
+                UNIQUE (company_id, id_number),
+
             CONSTRAINT {schema}_payroll_emp_status_ck
                 CHECK (employment_status IN ('active','inactive','terminated','suspended')),
 
@@ -29263,6 +29266,19 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_emp_name_idx
             ON {schema}.payroll_employees(company_id, last_name, first_name);
+            
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = '{schema}_payroll_emp_id_number_uniq'
+            ) THEN
+                ALTER TABLE {schema}.payroll_employees
+                ADD CONSTRAINT {schema}_payroll_emp_id_number_uniq
+                UNIQUE (company_id, id_number);
+            END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_contracts (
             id SERIAL PRIMARY KEY,
@@ -136623,14 +136639,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         ))
 
 
-    def payroll_employees_list(self, company_id: int, status=None):
-        schema = self.company_schema(company_id)
-
-        params = [int(company_id)]
-        where = "WHERE e.company_id=%s"
+    def payroll_employees_list(self,company_id:int,status=None):
+        schema=self.company_schema(company_id)
+        params=[int(company_id)]
+        where="WHERE e.company_id=%s AND COALESCE(e.is_archived,FALSE)=FALSE"
 
         if status:
-            where += " AND e.employment_status=%s"
+            where+=" AND e.employment_status=%s"
             params.append(status)
 
         return self.fetch_all(f"""
@@ -136640,21 +136655,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 p.title AS position_title,
                 contract.employment_start_date
             FROM {schema}.payroll_employees e
-            LEFT JOIN {schema}.payroll_departments d
-            ON d.id=e.department_id
-            LEFT JOIN {schema}.payroll_positions p
-            ON p.id=e.position_id
+            LEFT JOIN {schema}.payroll_departments d ON d.id=e.department_id
+            LEFT JOIN {schema}.payroll_positions p ON p.id=e.position_id
             LEFT JOIN LATERAL(
-                SELECT MIN(c.effective_from)::date
-                    AS employment_start_date
+                SELECT MIN(c.effective_from)::date AS employment_start_date
                 FROM {schema}.payroll_employee_contracts c
-                WHERE c.company_id=e.company_id
-                AND c.employee_id=e.id
+                WHERE c.company_id=e.company_id AND c.employee_id=e.id
             ) contract ON TRUE
             {where}
             ORDER BY e.last_name,e.first_name,e.id;
         """,tuple(params))
-
 
     def payroll_employee_get(self, company_id: int, employee_id: int):
         schema = self.company_schema(company_id)
@@ -136705,11 +136715,32 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         company_id = int(company_id)
         schema = self.company_schema(company_id)
 
-        employee_no = self.payroll_generate_employee_no(
-            company_id
-        )
+        employee_no = self.payroll_generate_employee_no(company_id)
 
-        return self.fetch_one(f"""
+        id_number = (data.get("id_number") or "").strip() or None
+        passport_number = (data.get("passport_number") or "").strip() or None
+        tax_number = (data.get("tax_number") or "").strip() or None
+
+        if id_number:
+            existing = self.fetch_one(
+                f"""
+                SELECT id, employee_no, first_name, last_name
+                FROM {schema}.payroll_employees
+                WHERE company_id = %s
+                AND id_number = %s
+                LIMIT 1;
+                """,
+                (company_id, id_number),
+            )
+
+            if existing:
+                raise ValueError(
+                    f"An employee with ID number {id_number} already exists "
+                    f"({existing.get('employee_no')})."
+                )
+
+        return self.fetch_one(
+            f"""
             INSERT INTO {schema}.payroll_employees (
                 company_id,
                 employee_no,
@@ -136730,21 +136761,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 %s,%s,%s,%s,%s,%s
             )
             RETURNING *;
-        """, (
-            company_id,
-            employee_no,
-            data.get("first_name"),
-            data.get("last_name"),
-            data.get("email"),
-            data.get("phone"),
-            data.get("id_number"),
-            data.get("passport_number"),
-            data.get("tax_number"),
-            data.get("department_id"),
-            data.get("position_id"),
-            data.get("start_date"),
-            data.get("employment_status") or "active",
-        ))
+            """,
+            (
+                company_id,
+                employee_no,
+                data.get("first_name"),
+                data.get("last_name"),
+                data.get("email"),
+                data.get("phone"),
+                id_number,
+                passport_number,
+                tax_number,
+                data.get("department_id"),
+                data.get("position_id"),
+                data.get("start_date"),
+                data.get("employment_status") or "active",
+            ),
+        )
 
 
     def payroll_employee_update(self, company_id: int, employee_id: int, data: dict):
@@ -136770,8 +136803,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         for key in allowed:
             if key in data:
+                value = data.get(key)
+
+                if key in ("id_number", "passport_number", "tax_number"):
+                    value = (value or "").strip() or None
+
                 sets.append(f"{key}=%s")
-                params.append(data.get(key))
+                params.append(value)
 
         if not sets:
             return self.payroll_employee_get(company_id, employee_id)
@@ -136785,6 +136823,90 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             RETURNING *;
         """, tuple(params))
 
+    def payroll_employee_archive(
+        self,
+        company_id: int,
+        employee_id: int,
+        *,
+        archived_by: int = None,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+
+        schema = self.company_schema(company_id)
+
+        employee = self.fetch_one(
+            f"""
+            SELECT *
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s
+            AND id=%s
+            LIMIT 1;
+            """,
+            (
+                company_id,
+                employee_id,
+            ),
+        )
+
+        if not employee:
+            raise ValueError("Payroll employee not found.")
+
+        if employee.get("is_archived"):
+            return employee
+
+        return self.fetch_one(
+            f"""
+            UPDATE {schema}.payroll_employees
+            SET
+                is_archived=TRUE,
+                archived_at=NOW(),
+                archived_by=%s,
+                employment_status=CASE
+                    WHEN employment_status='active' THEN 'inactive'
+                    ELSE employment_status
+                END
+            WHERE company_id=%s
+            AND id=%s
+            RETURNING *;
+            """,
+            (
+                archived_by,
+                company_id,
+                employee_id,
+            ),
+        )
+
+    def payroll_employee_restore(
+        self,
+        company_id: int,
+        employee_id: int,
+    ):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
+        schema = self.company_schema(company_id)
+
+        employee = self.fetch_one(
+            f"""
+            UPDATE {schema}.payroll_employees
+            SET
+                is_archived = FALSE,
+                archived_at = NULL,
+                archived_by = NULL
+            WHERE company_id = %s
+            AND id = %s
+            RETURNING *;
+            """,
+            (
+                company_id,
+                employee_id,
+            ),
+        )
+
+        if not employee:
+            raise ValueError("Employee not found.")
+
+        return employee
 
     def payroll_contract_create(self, company_id: int, employee_id: int, data: dict):
         schema = self.company_schema(company_id)

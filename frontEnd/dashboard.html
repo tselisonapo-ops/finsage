@@ -23563,7 +23563,7 @@ tbody tr:hover {
 
           <input id="payrollEditingEmployeeId" type="hidden">
 
-          <div id="payrollEmpPanelBio" class="payroll-emp-panel">
+          <div id="payrollEmpPanelBio" class="payroll-emp-panel" data-payroll-emp-panel="bio">
             <div class="form-grid">
               <label>Employee Number <input id="payEmpNo" type="text" readonly placeholder="Generated after saving"></label>
               <label>First Name <input id="payFirstName"></label>
@@ -23583,10 +23583,10 @@ tbody tr:hover {
                 </select>
               </label>
             </div>
-            <button id="payrollSaveEmployeeBtn" class="btn primary">Save Employee</button>
+            <div class="payroll-run-actions"><button id="payrollSaveEmployeeBtn" class="btn primary">Save Employee</button><button id="payrollArchiveEmployeeBtn" class="payroll-danger hidden" type="button">Archive Employee</button></div>
           </div>
 
-          <div id="payrollEmpPanelContract" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelContract" class="payroll-emp-panel hidden" data-payroll-emp-panel="contract">
             <div class="form-grid">
               <label>Contract Type
                 <select id="payContractType">
@@ -23613,7 +23613,7 @@ tbody tr:hover {
             <button id="payrollSaveContractBtn" class="btn primary">Save Contract</button>
           </div>
 
-          <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden" data-payroll-emp-panel="earnings">
             <div class="payroll-section-head">
               <div>
                 <h3>Recurring Earnings</h3>
@@ -23673,7 +23673,7 @@ tbody tr:hover {
             <div id="payrollRecurringEarningsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelDeductions" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelDeductions" class="payroll-emp-panel hidden" data-payroll-emp-panel="deductions">
             <div class="payroll-section-head">
               <div>
                 <h3>Recurring Deductions</h3>
@@ -23723,7 +23723,7 @@ tbody tr:hover {
             <div id="payrollRecurringDeductionsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden" data-payroll-emp-panel="tax">
             <div class="form-grid">
               <label>Tax Authority<select id="payTaxProfileAuthorityId"></select></label>
               <label>Tax Number<input id="payTaxProfileNumber"></label>
@@ -23785,7 +23785,7 @@ tbody tr:hover {
             </button>
           </div>
 
-          <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden" data-payroll-emp-panel="bank">
             <div class="form-grid">
               <label>Bank Name <input id="payBankName"></label>
               <label>Account Name <input id="payBankAccountName"></label>
@@ -23805,7 +23805,7 @@ tbody tr:hover {
             <button id="payrollSaveBankBtn" class="btn primary">Save Bank Account</button>
           </div>
 
-          <div id="payrollEmpPanelBenefits" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelBenefits" class="payroll-emp-panel hidden" data-payroll-emp-panel="benefits">
             <div class="form-grid">
               <label>Benefit Type
                 <select id="payBenefitTypeId"></select>
@@ -23839,7 +23839,7 @@ tbody tr:hover {
             <div id="payrollBenefitsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelLeave" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelLeave" class="payroll-emp-panel hidden" data-payroll-emp-panel="leave">
             <div class="form-grid">
               <label>Leave Type
                 <select id="payLeaveTypeId"></select>
@@ -23861,7 +23861,7 @@ tbody tr:hover {
             <div id="payrollLeaveList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelLoans" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelLoans" class="payroll-emp-panel hidden" data-payroll-emp-panel="loans">
             <div class="form-grid">
               <label>Loan / Advance No <input id="payLoanNo"></label>
               <label>Principal Amount <input id="payLoanPrincipal" type="number" step="0.01"></label>

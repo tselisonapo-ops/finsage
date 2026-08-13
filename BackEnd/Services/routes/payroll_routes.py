@@ -238,7 +238,7 @@ def api_payroll_employees(company_id: int):
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
-@payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>", methods=["GET", "PATCH", "OPTIONS"])
+@payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
 @require_auth
 def api_payroll_employee(company_id: int, employee_id: int):
     if request.method == "OPTIONS":
@@ -246,31 +246,79 @@ def api_payroll_employee(company_id: int, employee_id: int):
 
     payload = request.jwt_payload or {}
     deny = _deny_if_wrong_company(payload, int(company_id), db_service=db_service)
+
     if deny:
         return deny
-
-   
 
     if request.method == "GET":
         try:
             out = db_service.payroll_employee_get(int(company_id), int(employee_id))
+
             if not out:
                 return jsonify({"ok": False, "error": "Payroll employee not found"}), 404
+
             return jsonify({"ok": True, "data": out}), 200
+
         except Exception as e:
             current_app.logger.exception("payroll_employee_get failed")
             return jsonify({"ok": False, "error": str(e)}), 400
 
     user_id = _jwt_user_id()
+
     if not user_id:
         return jsonify({"ok": False, "error": "AUTH|missing_user_id"}), 401
 
     try:
-        before = db_service.payroll_employee_get(int(company_id), int(employee_id))
-        if not before:
-            return jsonify({"ok": False, "error": "Payroll employee not found"}), 404
+        before = db_service.payroll_employee_get(
+            int(company_id),
+            int(employee_id),
+        )
 
-        out = db_service.payroll_employee_update(int(company_id), int(employee_id), _payroll_body())
+        if not before:
+            return jsonify({
+                "ok": False,
+                "error": "Payroll employee not found",
+            }), 404
+
+        if request.method == "DELETE":
+            out = db_service.payroll_employee_archive(
+                int(company_id),
+                int(employee_id),
+                archived_by=int(user_id),
+            )
+
+            try:
+                db_service.audit_log(
+                    company_id,
+                    actor_user_id=user_id,
+                    module="payroll",
+                    action="archive_payroll_employee",
+                    severity="info",
+                    entity_type="payroll_employee",
+                    entity_id=str(employee_id),
+                    entity_ref=out.get("employee_no"),
+                    before_json=before,
+                    after_json=out,
+                    message=f"Archived payroll employee {out.get('employee_no')}",
+                    source="api",
+                )
+            except Exception:
+                current_app.logger.exception(
+                    "audit_log failed in api_payroll_employee archive"
+                )
+
+            return jsonify({
+                "ok": True,
+                "data": out,
+                "before": before,
+                "message": "Employee archived.",
+            }), 200
+
+        out = db_service.payroll_employee_update(
+            int(company_id),
+            int(employee_id),
+            _payroll_body(),
+        )
 
         try:
             db_service.audit_log(
@@ -288,13 +336,19 @@ def api_payroll_employee(company_id: int, employee_id: int):
                 source="api",
             )
         except Exception:
-            current_app.logger.exception("audit_log failed in api_payroll_employee")
+            current_app.logger.exception(
+                "audit_log failed in api_payroll_employee"
+            )
 
-        return jsonify({"ok": True, "data": out, "before": before}), 200
+        return jsonify({
+            "ok": True,
+            "data": out,
+            "before": before,
+        }), 200
+
     except Exception as e:
-        current_app.logger.exception("payroll_employee_update failed")
+        current_app.logger.exception("api_payroll_employee failed")
         return jsonify({"ok": False, "error": str(e)}), 400
-
 
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/contracts", methods=["POST", "OPTIONS"])
 @require_auth

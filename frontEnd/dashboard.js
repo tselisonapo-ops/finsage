@@ -70044,6 +70044,25 @@ async function saveEditModal() {
     }
   }
 
+  async function archivePayrollEmployee(){
+      const companyId=cid();
+      const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+      if(!employeeId)throw new Error("No employee selected.");
+
+      const e=payrollState.selectedEmployee||{};
+      const name=`${e.first_name||""} ${e.last_name||""}`.trim()||e.employee_no||"this employee";
+
+      if(!confirm(`Archive ${name}? The employee will be removed from the active employee list but historical payroll records will remain.`))return;
+
+      await apiFetch(ENDPOINTS.payroll.employee(companyId,employeeId),{method:"DELETE"});
+
+      closePayrollEmployeeModal();
+      await payrollLoadAll();
+      switchPayrollTab("employees");
+
+      showPayrollStatus("Employee archived successfully.","success");
+  }
+
   async function savePayrollEmployeePaySetup(){
     const companyId=cid();
     const employeeId=Number(
@@ -77746,16 +77765,45 @@ async function saveEditModal() {
     console.log("Selected payroll report:", reportKey);
   }
 
-  function switchPayrollEmpTab(tab){
-    document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn=>{
-      btn.classList.toggle("active",btn.dataset.payrollEmpTab===tab);
-    });
+  function switchPayrollEmpTab(tab) {
+    const validTabs = [
+      "bio",
+      "contract",
+      "tax",
+      "bank",
+      "benefits",
+      "leave",
+      "loans",
+      "earnings",
+      "deductions",
+    ];
 
-    document.querySelectorAll("[data-payroll-emp-panel]").forEach(panel=>{
-      panel.classList.toggle("hidden",panel.dataset.payrollEmpPanel!==tab);
-    });
+    if (!validTabs.includes(tab)) {
+      tab = "bio";
+    }
 
-    if(tab==="benefits"&&!payrollEmployeeBenefitSetupReady()){
+    document
+      .querySelectorAll("[data-payroll-emp-tab]")
+      .forEach(btn => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.payrollEmpTab === tab
+        );
+      });
+
+    document
+      .querySelectorAll("[data-payroll-emp-panel]")
+      .forEach(panel => {
+        panel.classList.toggle(
+          "hidden",
+          panel.dataset.payrollEmpPanel !== tab
+        );
+      });
+
+    if (
+      tab === "benefits" &&
+      !payrollEmployeeBenefitSetupReady()
+    ) {
       showPayrollStatus(
         "Employee benefits are not configured. Define benefit plans before assigning benefits to this employee.",
         "warning"
@@ -77929,6 +77977,7 @@ async function saveEditModal() {
 
     if($("payrollSaveEmployeeBtn"))
       $("payrollSaveEmployeeBtn").textContent="Save Employee";
+      $("payrollArchiveEmployeeBtn")?.classList.add("hidden");
 
     [
       "payrollBenefitsList",
@@ -77954,6 +78003,7 @@ async function saveEditModal() {
     clearPayrollEmployeeForm();
 
     $("payrollEditingEmployeeId").value = e.id || "";
+    $("payrollArchiveEmployeeBtn")?.classList.remove("hidden");
     $("payEmpNo").value = e.employee_no || "";
     $("payFirstName").value = e.first_name || "";
     $("payLastName").value = e.last_name || "";
@@ -78273,6 +78323,7 @@ async function saveEditModal() {
 
     $("payrollEmployeeModalTitle").textContent="Employee Profile";
     $("payrollSaveEmployeeBtn").textContent="Save Changes";
+    $("payrollArchiveEmployeeBtn")?.classList.remove("hidden");
 
     $("payContractFrom").value=
       $("payContractFrom").value||
@@ -79138,6 +79189,11 @@ async function saveEditModal() {
     $("payrollSaveEmployeeBtn")?.addEventListener("click", async () => {
       try { await savePayrollEmployee(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollArchiveEmployeeBtn")?.addEventListener("click",async()=>{
+        try{await archivePayrollEmployee();}
+        catch(e){showPayrollStatus(e.message,"error");}
     });
 
     $("payrollSaveContractBtn")?.addEventListener("click", async () => {
