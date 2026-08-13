@@ -7,21 +7,41 @@
   <link rel="icon" type="image/png" href="./assets/favicon.png">
 
 
-  <!-- ✅ Redirect to signin if no token -->
-  <script>
+<!-- ✅ Redirect to signin if no token -->
+<script>
+(function(){
+  const token=
+    localStorage.getItem("fs_user_token")||
+    sessionStorage.getItem("fs_user_token");
 
-  (function () {
-    const token =
-      localStorage.getItem("fs_user_token") ||
-      sessionStorage.getItem("fs_user_token");
+  const path=window.location.pathname;
 
-    if (!token && window.location.pathname === "/") {
-      window.location.replace("/signin.html");
-    }
-  })();
-  </script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  const isLiveApp=
+    path==="/app"||
+    path.startsWith("/app/");
+
+  const base=isLiveApp?"/app":"";
+
+  const publicPages=[
+    `${base}/signin.html`,
+    `${base}/registration.html`,
+    `${base}/forgot-password.html`,
+    `${base}/reset-password.html`
+  ];
+
+  const isPublicPage=
+    publicPages.includes(path);
+
+  if(!token&&!isPublicPage){
+    window.location.replace(
+      `${base}/signin.html?reason=signed_out`
+    );
+  }
+})();
+</script>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
   :root{

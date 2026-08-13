@@ -62,6 +62,23 @@
   console.warn("[REDIRECT TRACE] installed");
 })();
 
+function getAppBasePath(){
+  const path=window.location.pathname;
+
+  return(
+    path==="/app"||
+    path.startsWith("/app/")
+  )?"/app":"";
+}
+
+function getSigninUrl(reason=""){
+  const url=`${getAppBasePath()}/signin.html`;
+
+  return reason
+    ?`${url}?reason=${encodeURIComponent(reason)}`
+    :url;
+}
+
 // ====== HARD BOOTSTRAP (must be outside the IIFE) ======
 (function hardBootstrapTokenHelpers() {
   const TOKEN_KEY = "fs_user_token";
@@ -152,46 +169,41 @@
     path: window.location.pathname,
   });
 
-  if (!window.getToken() && !window.location.pathname.includes("signin")) {
-    console.warn("[bootstrap] no token found, redirecting to /signin", {
-      path: window.location.pathname,
-      local: !!localStorage.getItem(TOKEN_KEY),
-      session: !!sessionStorage.getItem(TOKEN_KEY),
+  if(!window.getToken()&&!window.location.pathname.includes("signin")){
+    console.warn("[bootstrap] no token found, redirecting to signin",{
+      path:window.location.pathname,
+      local:!!localStorage.getItem(TOKEN_KEY),
+      session:!!sessionStorage.getItem(TOKEN_KEY),
     });
-    window.location.replace("signin.html");
+
+    window.location.replace(
+      getSigninUrl()
+    );
+
     return;
   }
 })();
 
 (function bindSessionLockModalEarly() {
-  document.addEventListener("click", (e) => {
-    const signOut = e.target.closest("#sessionLockSignOutBtn");
-    if (!signOut) return;
+  document.addEventListener("click",e=>{
+    const signOut=e.target.closest("#sessionLockSignOutBtn");
+    if(!signOut)return;
 
     e.preventDefault();
     e.stopPropagation();
 
-    window.clearToken?.();
+    if(typeof performFullLogout==="function"){
+      performFullLogout();
+      return;
+    }
 
+    window.clearToken?.();
     sessionStorage.clear();
 
-    [
-      "fs_user_token",
-      "authToken",
-      "userEmail",
-      "userRole",
-      "company_id",
-      "CURRENT_COMPANY_ID",
-      "companyName",
-      "fs_industry",
-      "fs_subindustry",
-      "fs_user",
-      "fs_session_locked",
-      "fs_session_lock_reason"
-    ].forEach((k) => localStorage.removeItem(k));
-
-    window.location.replace("signin.html?reason=signed_out");
-  }, true);
+    window.location.replace(
+      getSigninUrl("signed_out")
+    );
+  },true);
 
   document.addEventListener("submit", async (e) => {
     const form = e.target.closest("#sessionUnlockForm");
@@ -7431,7 +7443,9 @@ function performFullLogout() {
 
   window.FS_USER_ROLE = null;
 
-  window.location.replace("signin.html?reason=signed_out");
+  window.location.replace(
+  getSigninUrl("signed_out")
+);
 }
 window.performFullLogout = performFullLogout;
 
