@@ -4602,192 +4602,203 @@ def _get_company_controls(cur, company_id: int) -> dict:
 
     return controls
 
-def build_asset_acquisition_journal_preview(cur, company_id: int, acq_id: int) -> dict:
-    """
-    Returns:
-      {
-        ok: True,
-        ref, description,
-        lines: [{account_code,debit,credit,memo?}],
-        total_debit, total_credit
-      }
+def build_asset_acquisition_journal_preview(cur,company_id:int,acq_id:int)->dict:
+    schema=company_schema(company_id)
 
-    VAT rule:
-      - bank_cash & vendor_credit: amount assumed VAT-inclusive (invoice exists)
-      - grni: amount assumed NET (no VAT yet)
-      - other: default VAT-inclusive (you can later add a toggle)
-    """
-    schema = company_schema(company_id)
-
-    # 1) load acquisition
-    cur.execute(_q(schema, """
+    cur.execute(_q(schema,"""
         SELECT *
         FROM {schema}.asset_acquisitions
         WHERE company_id=%s AND id=%s
         LIMIT 1
-    """), (company_id, acq_id))
-    acq = fetchone(cur)
+    """),(company_id,acq_id))
+    acq=fetchone(cur)
+
     if not acq:
         raise Exception("Acquisition not found")
 
-    # 2) load asset
-    asset = get_asset(cur, schema, company_id, acq["asset_id"])
+    asset=get_asset(cur,schema,company_id,acq["asset_id"])
     if not asset:
         raise Exception("Asset not found for this acquisition")
-    asset_cost_code = (asset.get("asset_account_code") or "").strip()
+
+    asset_cost_code=(asset.get("asset_account_code") or "").strip()
     if not asset_cost_code:
         raise Exception("Asset missing asset_account_code (PPE cost account)")
 
-    funding = (acq.get("funding_source") or "").strip().lower()
-    amount = _D(acq.get("amount"))
-    vat_input_claimable = bool(acq.get("vat_input_claimable"))
+    funding=(acq.get("funding_source") or "").strip().lower()
+    amount=_D(acq.get("amount"))
+    vat_input_claimable=bool(acq.get("vat_input_claimable"))
 
-    stored_net = _D(acq.get("net_amount"))
-    stored_vat = _D(acq.get("vat_amount"))
-    stored_gross = _D(acq.get("gross_amount"))
-    if amount <= 0:
+    if amount<=0:
         raise Exception("Amount must be > 0")
 
-    ref = (acq.get("reference") or f"ASSET-{acq['asset_id']}").strip()
-    desc = f"Asset acquisition: {asset.get('asset_code','')} - {asset.get('asset_name','')}".strip(" -")
+    ref=(acq.get("reference") or f"ASSET-{acq['asset_id']}").strip()
+    desc=f"Asset acquisition: {asset.get('asset_code','')} - {asset.get('asset_name','')}".strip(" -")
 
-    controls = _get_company_controls(cur, company_id)
-    vat_input_code = controls["vat_input_code"]
-    ap_control_code = controls["ap_control_code"]
-    grni_control_code = controls["grni_control_code"]
+    controls=_get_company_controls(cur,company_id)
+    vat_input_code=controls["vat_input_code"]
+    ap_control_code=controls["ap_control_code"]
+    grni_control_code=controls["grni_control_code"]
 
-    lines = []
+    lines=[]
 
-    def _attach_account_names(cur, schema, lines):
-        for ln in lines:
-            code = ln.get("account_code")
-            if not code:
-                continue
+    def vat_amounts():
+        if not vat_input_claimable:
+            return amount,Decimal("0.00"),amount
 
-            cur.execute(_q(schema, """
-                SELECT COALESCE(NULLIF(name,''), code) AS account_name
-                FROM {schema}.coa
-                WHERE code=%s
-                LIMIT 1
-            """), (code,))
+        net,vat,gross=_vat_split(amount)
 
-            r = cur.fetchone()
-            ln["account_name"] = (
-                (r.get("account_name") if isinstance(r, dict) else r[0])
-                if r else code
-            )
+        stored_net=_D(acq.get("net_amount"))
+        stored_vat=_D(acq.get("vat_amount"))
+        stored_gross=_D(acq.get("gross_amount"))
 
-    # ---------------------------
-    # Funding logic
-    # ---------------------------
+        if stored_vat>0 and stored_net>0 and stored_gross>0:
+            if abs((stored_net+stored_vat)-stored_gross)<=Decimal("0.02"):
+                return stored_net,stored_vat,stored_gross
 
-    # ✅ BANK/CASH (your DB stores bank_cash, not bank/cash)
-    if funding in ("bank_cash", "bank", "cash"):
-        # Use bank_account_code already stored by create_acquisition (ledger code)
-        bank_code = (acq.get("bank_account_code") or "").strip()
+        return net,vat,gross
 
-        # If missing, try resolve from bank_account_id (your table: company_bank_accounts)
+    if funding in ("bank_cash","bank","cash"):
+        bank_code=(acq.get("bank_account_code") or "").strip()
+
         if not bank_code and acq.get("bank_account_id"):
-            cur.execute(_q(schema, """
+            cur.execute(_q(schema,"""
                 SELECT ledger_account_code
                 FROM {schema}.company_bank_accounts
                 WHERE company_id=%s AND id=%s
                 LIMIT 1
-            """), (company_id, int(acq["bank_account_id"])))
-            b = cur.fetchone() or {}
-            bank_code = (b.get("ledger_account_code") or "").strip()
+            """),(company_id,int(acq["bank_account_id"])))
+            b=fetchone(cur) or {}
+            bank_code=(b.get("ledger_account_code") or "").strip()
 
         if not bank_code:
             raise Exception("Bank account missing ledger_account_code (bank_account_code)")
 
-        # amount is VAT-inclusive (paid invoice)
-        net, vat, gross = _vat_split(amount)
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
+        net,vat,gross=vat_amounts()
 
-        lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
-        if vat > 0:
-            lines.append({"account_code": vat_input_code, "debit": _money(vat), "credit": 0.0, "memo": "VAT input"})
-        lines.append({"account_code": bank_code, "debit": 0.0, "credit": _money(gross), "memo": "Bank/Cash payment (gross)"})
+        lines.append({
+            "account_code":asset_cost_code,
+            "debit":_money(net),
+            "credit":0.0,
+            "memo":"Recognise asset (net)" if vat>0 else "Recognise asset"
+        })
 
-    # ✅ VENDOR CREDIT (AP)
-    elif funding == "vendor_credit":
-        # amount is VAT-inclusive (invoice exists -> liability recognised)
-        net, vat, gross = _vat_split(amount)
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
+        if vat>0:
+            if not vat_input_code:
+                raise Exception("Input VAT account is not configured")
 
-        lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
-        if vat > 0:
-            lines.append({"account_code": vat_input_code, "debit": _money(vat), "credit": 0.0, "memo": "VAT input"})
-        lines.append({"account_code": ap_control_code, "debit": 0.0, "credit": _money(gross), "memo": "Recognise AP liability (gross)"})
+            lines.append({
+                "account_code":vat_input_code,
+                "debit":_money(vat),
+                "credit":0.0,
+                "memo":"Input VAT claimable"
+            })
 
-    # ✅ GRNI (NO VAT YET)
-    elif funding == "grni":
+        lines.append({
+            "account_code":bank_code,
+            "debit":0.0,
+            "credit":_money(gross),
+            "memo":"Bank/Cash payment (gross)"
+        })
+
+    elif funding=="vendor_credit":
+        net,vat,gross=vat_amounts()
+
+        lines.append({
+            "account_code":asset_cost_code,
+            "debit":_money(net),
+            "credit":0.0,
+            "memo":"Recognise asset (net)" if vat>0 else "Recognise asset"
+        })
+
+        if vat>0:
+            if not vat_input_code:
+                raise Exception("Input VAT account is not configured")
+
+            lines.append({
+                "account_code":vat_input_code,
+                "debit":_money(vat),
+                "credit":0.0,
+                "memo":"Input VAT claimable"
+            })
+
+        lines.append({
+            "account_code":ap_control_code,
+            "debit":0.0,
+            "credit":_money(gross),
+            "memo":"Recognise AP liability (gross)"
+        })
+
+    elif funding=="grni":
         if not grni_control_code:
             raise Exception("GRNI control account not configured in company settings")
 
-        # amount is NET (no VAT until invoice)
-        net = amount
+        lines.append({
+            "account_code":asset_cost_code,
+            "debit":_money(amount),
+            "credit":0.0,
+            "memo":"Recognise asset on GRN (net)"
+        })
 
-        lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset on GRN (net)"})
-        lines.append({"account_code": grni_control_code, "debit": 0.0, "credit": _money(net), "memo": "Credit GRNI (net) - invoice pending"})
+        lines.append({
+            "account_code":grni_control_code,
+            "debit":0.0,
+            "credit":_money(amount),
+            "memo":"Credit GRNI (net) - invoice pending"
+        })
 
-    # ✅ OTHER (suspense/clearing)
-    elif funding == "other":
-        credit_code = (acq.get("credit_account_code") or "").strip()
+    elif funding=="other":
+        credit_code=(acq.get("credit_account_code") or "").strip()
+
         if not credit_code:
             raise Exception("Other funding requires credit_account_code")
 
-        # assume VAT-inclusive by default
-        net, vat, gross = _vat_split(amount)
-        if vat_input_claimable:
-            net = stored_net
-            vat = stored_vat
-            gross = stored_gross
-        else:
-            gross = amount
-            net = gross
-            vat = Decimal("0.00")
+        net,vat,gross=vat_amounts()
 
-        lines.append({"account_code": asset_cost_code, "debit": _money(net), "credit": 0.0, "memo": "Recognise asset (net)"})
-        if vat > 0:
-            lines.append({"account_code": vat_input_code, "debit": _money(vat), "credit": 0.0, "memo": "VAT input (assumed)"})
-        lines.append({"account_code": credit_code, "debit": 0.0, "credit": _money(gross), "memo": "Credit clearing/suspense (gross)"})
+        lines.append({
+            "account_code":asset_cost_code,
+            "debit":_money(net),
+            "credit":0.0,
+            "memo":"Recognise asset (net)" if vat>0 else "Recognise asset"
+        })
+
+        if vat>0:
+            if not vat_input_code:
+                raise Exception("Input VAT account is not configured")
+
+            lines.append({
+                "account_code":vat_input_code,
+                "debit":_money(vat),
+                "credit":0.0,
+                "memo":"Input VAT claimable"
+            })
+
+        lines.append({
+            "account_code":credit_code,
+            "debit":0.0,
+            "credit":_money(gross),
+            "memo":"Credit clearing/suspense (gross)"
+        })
 
     else:
         raise Exception(f"Unsupported funding_source: {funding}")
 
-    total_debit = sum(_D(x.get("debit")) for x in lines)
-    total_credit = sum(_D(x.get("credit")) for x in lines)
+    total_debit=sum(_D(x.get("debit")) for x in lines)
+    total_credit=sum(_D(x.get("credit")) for x in lines)
 
-    codes = [l["account_code"] for l in lines]
-    name_map = _coa_name_map(cur, schema, codes)
+    codes=[x["account_code"] for x in lines if x.get("account_code")]
+    name_map=_coa_name_map(cur,schema,codes)
 
-    for l in lines:
-        l["account_name"] = name_map.get(l["account_code"], l["account_code"])
+    for line in lines:
+        code=line.get("account_code")
+        line["account_name"]=name_map.get(code,code)
 
-    _attach_account_names(cur, schema, lines)
-
-    return {
-        "ok": True,
-        "ref": ref,
-        "description": desc,
-        "lines": lines,
-        "total_debit": _money(total_debit),
-        "total_credit": _money(total_credit),
+    return{
+        "ok":True,
+        "ref":ref,
+        "description":desc,
+        "lines":lines,
+        "total_debit":_money(total_debit),
+        "total_credit":_money(total_credit),
     }
 
 def _coa_name_map(cur, schema: str, codes: list[str]) -> dict[str, str]:

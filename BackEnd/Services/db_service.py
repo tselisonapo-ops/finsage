@@ -28917,6 +28917,34 @@ class DatabaseService:
         NO MAXVALUE
         CACHE 1;
 
+        CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_earning_code_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1
+        NO MAXVALUE
+        CACHE 1;
+
+        CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_deduction_code_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1
+        NO MAXVALUE
+        CACHE 1;
+
+        CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_contribution_code_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1
+        NO MAXVALUE
+        CACHE 1;
+
+        CREATE SEQUENCE IF NOT EXISTS {schema}.payroll_benefit_code_seq
+        START WITH 1
+        INCREMENT BY 1
+        MINVALUE 1
+        NO MAXVALUE
+        CACHE 1;
+
         CREATE TABLE IF NOT EXISTS {schema}.company_holidays (
             id SERIAL PRIMARY KEY,
             company_id INT NOT NULL DEFAULT {int(company_id)},
