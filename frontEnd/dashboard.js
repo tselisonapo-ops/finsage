@@ -77279,37 +77279,27 @@ async function saveEditModal() {
     const wrap=$("payrollLeavePolicyTiers");
     if(!wrap)return;
 
-    const key=++payrollLeaveTierSeq;
-
     wrap.insertAdjacentHTML("beforeend",`
-      <div class="payroll-leave-tier-row" data-leave-tier="${key}">
-        <label>
-          From month
-          <input class="leave-tier-min" type="number" min="0"
-            value="${esc(tier.min_service_months??0)}">
-        </label>
+      <div class="payroll-leave-tier-row" data-leave-tier="${++payrollLeaveTierSeq}">
+        <input class="leave-tier-min" type="number" min="0"
+          value="${esc(tier.min_service_months??0)}">
 
-        <label>
-          To month
-          <input class="leave-tier-max" type="number" min="0"
-            value="${esc(tier.max_service_months??"")}">
-        </label>
+        <input class="leave-tier-max" type="number" min="0"
+          placeholder="No limit"
+          value="${esc(tier.max_service_months??"")}">
 
-        <label>
-          Monthly accrual
-          <input class="leave-tier-monthly" type="number" min="0" step="0.0001"
-            value="${esc(tier.monthly_accrual_days??"")}">
-        </label>
+        <input class="leave-tier-monthly" type="number" min="0" step="0.0001"
+          placeholder="0.0000"
+          value="${esc(tier.monthly_accrual_days??"")}">
 
-        <label>
-          Annual entitlement
-          <input class="leave-tier-annual" type="number" min="0" step="0.0001"
-            value="${esc(tier.annual_entitlement_days??"")}">
-        </label>
+        <input class="leave-tier-annual" type="number" min="0" step="0.0001"
+          placeholder="0.0000"
+          value="${esc(tier.annual_entitlement_days??"")}">
 
         <button type="button"
-          class="payroll-secondary dark leave-tier-remove">
-          Remove
+          class="payroll-tier-remove leave-tier-remove"
+          title="Remove tier">
+          ×
         </button>
       </div>
     `);

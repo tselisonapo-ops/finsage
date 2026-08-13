@@ -3216,6 +3216,47 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+.payroll-leave-tier-table{
+  width:100%;
+  margin-top:10px;
+  overflow-x:auto;
+}
+
+.payroll-leave-tier-head,
+.payroll-leave-tier-row{
+  display:grid;
+  grid-template-columns:110px 110px 145px 155px 38px;
+  gap:8px;
+  align-items:center;
+}
+
+.payroll-leave-tier-head{
+  padding:0 2px 6px;
+  font-size:11px;
+  font-weight:700;
+  color:#52627a;
+}
+
+.payroll-leave-tier-row{
+  margin-bottom:8px;
+}
+
+.payroll-leave-tier-row input{
+  width:100%;
+  min-width:0;
+  height:36px;
+  padding:6px 9px;
+}
+
+.payroll-tier-remove{
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:18px;
+}
+
 .payroll-final-payslip{
   max-width:950px;
   margin:16px auto 0;
@@ -21919,7 +21960,17 @@ tbody tr:hover {
                     </button>
                   </div>
 
-                  <div id="payrollLeavePolicyTiers"></div>
+                  <div class="payroll-leave-tier-table">
+                    <div class="payroll-leave-tier-head">
+                      <span>From month</span>
+                      <span>To month</span>
+                      <span>Monthly accrual</span>
+                      <span>Annual entitlement</span>
+                      <span></span>
+                    </div>
+
+                    <div id="payrollLeavePolicyTiers"></div>
+                  </div>
                 </div>
 
                 <label>
