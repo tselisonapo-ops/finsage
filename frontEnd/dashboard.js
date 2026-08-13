@@ -77195,25 +77195,41 @@ async function saveEditModal() {
     console.log("Selected payroll report:", reportKey);
   }
 
-  function switchPayrollEmpTab(tab) {
-    document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.payrollEmpTab === tab);
+  function switchPayrollEmpTab(tab){
+    document.querySelectorAll("[data-payroll-emp-tab]").forEach(btn=>{
+      btn.classList.toggle("active",btn.dataset.payrollEmpTab===tab);
     });
 
-    [
-      "bio",
-      "contract",
-      "earnings",
-      "deductions",
-      "tax",
-      "bank",
-      "benefits",
-      "leave",
-      "loans"
-    ].forEach(name => {
-      $(`payrollEmpPanel${cap(name)}`)
-        ?.classList.toggle("hidden", name !== tab);
+    document.querySelectorAll("[data-payroll-emp-panel]").forEach(panel=>{
+      panel.classList.toggle("hidden",panel.dataset.payrollEmpPanel!==tab);
     });
+
+    if(tab==="benefits"&&!payrollEmployeeBenefitSetupReady()){
+      showPayrollStatus(
+        "Employee benefits are not configured. Define benefit plans before assigning benefits to this employee.",
+        "warning"
+      );
+    }
+  }
+
+  function payrollEmployeeBenefitSetupReady(){
+    const eb=payrollState.employeeBenefits||{};
+    const types=payrollState.setup?.benefit_types||[];
+
+    return(
+      (eb.benefitPlans||[]).some(x=>x.is_active!==false)||
+      types.some(x=>x.is_active!==false)
+    );
+  }
+
+  function updatePayrollEmployeeBenefitWarning(){
+    const el=$("payrollEmployeeBenefitWarning");
+    if(!el)return;
+
+    el.classList.toggle(
+      "hidden",
+      payrollEmployeeBenefitSetupReady()
+    );
   }
 
   function openPayrollEmployeeModal(mode="create"){
@@ -77227,6 +77243,7 @@ async function saveEditModal() {
     $("payrollEmployeeModalTitle").textContent=
       mode==="edit"?"Employee Profile":"Add Employee";
 
+    updatePayrollEmployeeBenefitWarning();
     switchPayrollEmpTab("bio");
   }
 
@@ -77644,30 +77661,39 @@ async function saveEditModal() {
 
     $("payrollEditingEmployeeId").value=String(savedId);
 
-    if(created.employee_no){
+    if(created.employee_no)
       $("payEmpNo").value=created.employee_no;
-    }
 
     $("payrollEmployeeModalTitle").textContent="Employee Profile";
     $("payrollSaveEmployeeBtn").textContent="Save Changes";
 
+    $("payContractFrom").value=
+      $("payContractFrom").value||
+      $("payStartDate").value||
+      "";
+
+    switchPayrollEmpTab("contract");
+
     await payrollLoadAll();
-
-    if(!employeeId){
-      $("payContractFrom").value=
-        $("payContractFrom").value||
-        $("payStartDate").value||
-        "";
-
-      switchPayrollEmpTab("contract");
-    }
 
     showPayrollStatus(
       employeeId
-        ?"Employee updated."
+        ?"Employee updated. Review the employment contract."
         :"Employee saved. Complete the employment contract.",
       "success"
     );
+  }
+
+  function updatePayrollLeavePolicyMethod(){
+    const tiered=
+      $("payrollLeavePolicyMethod")?.value==="service_tiered";
+
+    $("payrollLeavePolicyTierWrap")
+      ?.classList.toggle("hidden",!tiered);
+
+    $("payrollLeavePolicyMonthlyDays")
+      ?.closest("label")
+      ?.classList.toggle("hidden",tiered);
   }
 
   async function savePayrollContract(){
@@ -78389,6 +78415,12 @@ async function saveEditModal() {
       "click",
       () => $("payrollLeavePolicyModal")?.classList.add("hidden")
     );
+
+    $("payrollLeavePolicyMethod")
+      ?.addEventListener(
+        "change",
+        updatePayrollLeavePolicyMethod
+      );
 
     $("payrollBenefitSaveSettingsBtn")?.addEventListener(
       "click",

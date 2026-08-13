@@ -489,16 +489,37 @@ class PayrollEmployeeBenefitsService:
         }
     # ---------------- Leave policies / balances ----------------
 
-    def leave_policies_list(self, company_id: int) -> list[dict]:
-        schema = self.schema(company_id)
-        return self.db.fetch_all(f"""
-            SELECT p.*, lt.code AS leave_code, lt.name AS leave_type_name
+    def leave_policies_list(self,company_id:int)->list[dict]:
+        schema=self.schema(company_id)
+
+        rows=self.db.fetch_all(f"""
+            SELECT p.*,lt.code AS leave_code,lt.name AS leave_type_name
             FROM {schema}.payroll_leave_policies p
             JOIN {schema}.payroll_leave_types lt
-              ON lt.id=p.leave_type_id
+            ON lt.id=p.leave_type_id
             WHERE p.company_id=%s
-            ORDER BY p.is_active DESC, p.name;
-        """, (int(company_id),))
+            ORDER BY p.is_active DESC,p.name;
+        """,(int(company_id),))
+
+        if not rows:
+            return []
+
+        tiers=self.db.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_leave_policy_tiers
+            WHERE company_id=%s
+            AND is_active=TRUE
+            ORDER BY policy_id,min_service_months;
+        """,(int(company_id),))
+
+        by_policy={}
+        for tier in tiers:
+            by_policy.setdefault(int(tier["policy_id"]),[]).append(tier)
+
+        for row in rows:
+            row["tiers"]=by_policy.get(int(row["id"]),[])
+
+        return rows
 
     def leave_types_list(self,company_id:int)->list[dict]:
         self.ensure_ready(company_id)
@@ -520,12 +541,21 @@ class PayrollEmployeeBenefitsService:
             ORDER BY name;
         """,(int(company_id),))
 
-    def leave_policy_save(self, company_id: int, body: dict, policy_id=None, user_id=None) -> dict:
-        schema = self.schema(company_id)
-        required = ["leave_type_id", "name", "annual_entitlement_days"]
-        missing = [k for k in required if body.get(k) in (None, "")]
+    def leave_policy_save(self,company_id:int,body:dict,policy_id=None,user_id=None)->dict:
+        schema=self.schema(company_id)
+
+        required=["leave_type_id","name","annual_entitlement_days"]
+        missing=[k for k in required if body.get(k) in(None,"")]
         if missing:
-            raise ValueError("Missing required fields: " + ", ".join(missing))
+            raise ValueError("Missing required fields: "+", ".join(missing))
+
+        method=str(body.get("accrual_method") or "straight_line").strip().lower()
+        if method not in{"straight_line","monthly_fixed","service_tiered","manual"}:
+            raise ValueError("Invalid leave accrual method")
+
+        tiers=body.get("tiers") or []
+        if method=="service_tiered" and not tiers:
+            raise ValueError("Service-based leave requires at least one accrual tier")
 
         provision_required=bool(body.get("provision_required",True))
 
@@ -545,50 +575,56 @@ class PayrollEmployeeBenefitsService:
             label="Leave liability account",
         )
 
+        params=(
+            int(body["leave_type_id"]),
+            body["name"].strip(),
+            body["annual_entitlement_days"],
+            method,
+            body.get("monthly_accrual_days"),
+            body.get("maximum_balance_days"),
+            body.get("maximum_carry_forward_days"),
+            body.get("carry_forward_expiry_months"),
+            bool(body.get("vesting",False)),
+            bool(body.get("cash_settleable",False)),
+            bool(body.get("forfeitable",True)),
+            provision_required,
+            body.get("daily_rate_basis") or "monthly_div_21_67",
+            body.get("custom_daily_rate"),
+            bool(body.get("include_fixed_allowances",False)),
+            expense_account,
+            liability_account,
+            bool(body.get("is_active",True)),
+        )
+
         if policy_id:
-            out = self.db.fetch_one(f"""
+            out=self.db.fetch_one(f"""
                 UPDATE {schema}.payroll_leave_policies
-                SET leave_type_id=%s, name=%s, annual_entitlement_days=%s,
-                    accrual_method=%s, monthly_accrual_days=%s,
-                    maximum_balance_days=%s, maximum_carry_forward_days=%s,
-                    carry_forward_expiry_months=%s, vesting=%s,
-                    cash_settleable=%s, forfeitable=%s, provision_required=%s,
-                    daily_rate_basis=%s, custom_daily_rate=%s,
-                    include_fixed_allowances=%s, expense_account_code=%s,
-                    liability_account_code=%s, is_active=%s, updated_at=NOW()
+                SET leave_type_id=%s,name=%s,annual_entitlement_days=%s,
+                    accrual_method=%s,monthly_accrual_days=%s,
+                    maximum_balance_days=%s,maximum_carry_forward_days=%s,
+                    carry_forward_expiry_months=%s,vesting=%s,
+                    cash_settleable=%s,forfeitable=%s,provision_required=%s,
+                    daily_rate_basis=%s,custom_daily_rate=%s,
+                    include_fixed_allowances=%s,expense_account_code=%s,
+                    liability_account_code=%s,is_active=%s,updated_at=NOW()
                 WHERE company_id=%s AND id=%s
                 RETURNING *;
-            """, (
-                int(body["leave_type_id"]), body["name"], body["annual_entitlement_days"],
-                body.get("accrual_method") or "straight_line",
-                body.get("monthly_accrual_days"),
-                body.get("maximum_balance_days"),
-                body.get("maximum_carry_forward_days"),
-                body.get("carry_forward_expiry_months"),
-                bool(body.get("vesting", False)),
-                bool(body.get("cash_settleable", False)),
-                bool(body.get("forfeitable", True)),
-                provision_required,
-                body.get("daily_rate_basis") or "monthly_div_21_67",
-                body.get("custom_daily_rate"),
-                bool(body.get("include_fixed_allowances", False)),
-                expense_account,
-                liability_account,
-                bool(body.get("is_active", True)),
-                int(company_id), int(policy_id),
-            ))
+            """,params+(int(company_id),int(policy_id)))
         else:
-            out = self.db.fetch_one(f"""
-                INSERT INTO {schema}.payroll_leave_policies (
-                    company_id, leave_type_id, name, annual_entitlement_days,
-                    accrual_method, monthly_accrual_days, maximum_balance_days,
-                    maximum_carry_forward_days, carry_forward_expiry_months,
-                    vesting, cash_settleable, forfeitable, provision_required,
-                    daily_rate_basis, custom_daily_rate, include_fixed_allowances,
-                    expense_account_code, liability_account_code, is_active
+            out=self.db.fetch_one(f"""
+                INSERT INTO {schema}.payroll_leave_policies(
+                    company_id,leave_type_id,name,annual_entitlement_days,
+                    accrual_method,monthly_accrual_days,maximum_balance_days,
+                    maximum_carry_forward_days,carry_forward_expiry_months,
+                    vesting,cash_settleable,forfeitable,provision_required,
+                    daily_rate_basis,custom_daily_rate,include_fixed_allowances,
+                    expense_account_code,liability_account_code,is_active
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (company_id, leave_type_id)
+                VALUES(
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s
+                )
+                ON CONFLICT(company_id,leave_type_id)
                 DO UPDATE SET
                     name=EXCLUDED.name,
                     annual_entitlement_days=EXCLUDED.annual_entitlement_days,
@@ -609,24 +645,102 @@ class PayrollEmployeeBenefitsService:
                     is_active=EXCLUDED.is_active,
                     updated_at=NOW()
                 RETURNING *;
-            """, (
-                int(company_id), int(body["leave_type_id"]), body["name"],
-                body["annual_entitlement_days"], body.get("accrual_method") or "straight_line",
-                body.get("monthly_accrual_days"), body.get("maximum_balance_days"),
-                body.get("maximum_carry_forward_days"), body.get("carry_forward_expiry_months"),
-                bool(body.get("vesting", False)), bool(body.get("cash_settleable", False)),
-                bool(body.get("forfeitable", True)), bool(body.get("provision_required", True)),
-                body.get("daily_rate_basis") or "monthly_div_21_67",
-                body.get("custom_daily_rate"), bool(body.get("include_fixed_allowances", False)),
-                expense_account,
-                liability_account,
-                bool(body.get("is_active", True)),
-            ))
+            """,(int(company_id),)+params)
+
         if not out:
             raise ValueError("Leave policy not found")
-        self._audit(company_id, user_id, "save_leave_policy",
-                    "payroll_leave_policy", out["id"], out, "Saved leave policy")
+
+        policy_id=int(out["id"])
+
+        self.db.execute_sql(f"""
+            UPDATE {schema}.payroll_leave_policy_tiers
+            SET is_active=FALSE,updated_at=NOW()
+            WHERE company_id=%s AND policy_id=%s;
+        """,(int(company_id),policy_id))
+
+        if method=="service_tiered":
+            for tier in tiers:
+                min_months=int(tier.get("min_service_months") or 0)
+                max_months=(
+                    int(tier["max_service_months"])
+                    if tier.get("max_service_months") not in(None,"")
+                    else None
+                )
+
+                if max_months is not None and max_months<min_months:
+                    raise ValueError("Leave tier maximum service months cannot be below minimum")
+
+                self.db.fetch_one(f"""
+                    INSERT INTO {schema}.payroll_leave_policy_tiers(
+                        company_id,policy_id,min_service_months,
+                        max_service_months,annual_entitlement_days,
+                        monthly_accrual_days,is_active
+                    )
+                    VALUES(%s,%s,%s,%s,%s,%s,TRUE)
+                    ON CONFLICT(company_id,policy_id,min_service_months)
+                    DO UPDATE SET
+                        max_service_months=EXCLUDED.max_service_months,
+                        annual_entitlement_days=EXCLUDED.annual_entitlement_days,
+                        monthly_accrual_days=EXCLUDED.monthly_accrual_days,
+                        is_active=TRUE,
+                        updated_at=NOW()
+                    RETURNING *;
+                """,(
+                    int(company_id),
+                    policy_id,
+                    min_months,
+                    max_months,
+                    tier.get("annual_entitlement_days"),
+                    tier.get("monthly_accrual_days") or 0,
+                ))
+
+        out["tiers"]=self.db.fetch_all(f"""
+            SELECT *
+            FROM {schema}.payroll_leave_policy_tiers
+            WHERE company_id=%s
+            AND policy_id=%s
+            AND is_active=TRUE
+            ORDER BY min_service_months;
+        """,(int(company_id),policy_id))
+
+        self._audit(
+            company_id,user_id,
+            "save_leave_policy",
+            "payroll_leave_policy",
+            policy_id,out,
+            "Saved leave policy",
+        )
+
         return out
+
+    def _leave_service_months(self,start_date:date,as_of:date)->int:
+        months=(as_of.year-start_date.year)*12+(as_of.month-start_date.month)
+        if as_of.day<start_date.day:
+            months-=1
+        return max(months,0)
+
+    def _leave_policy_tier(self,company_id:int,policy_id:int,service_months:int)->dict|None:
+        schema=self.schema(company_id)
+
+        return self.db.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_leave_policy_tiers
+            WHERE company_id=%s
+            AND policy_id=%s
+            AND is_active=TRUE
+            AND min_service_months<=%s
+            AND(
+                max_service_months IS NULL
+                OR max_service_months>=%s
+            )
+            ORDER BY min_service_months DESC
+            LIMIT 1;
+        """,(
+            int(company_id),
+            int(policy_id),
+            int(service_months),
+            int(service_months),
+        ))
 
     def _daily_rate(self, monthly_salary: Decimal, policy: dict, settings: dict) -> Decimal:
         basis = policy.get("daily_rate_basis") or settings.get("default_daily_rate_basis")
@@ -686,8 +800,8 @@ class PayrollEmployeeBenefitsService:
         """, (int(company_id), int(run_id)))
 
         employees = self.db.fetch_all(f"""
-            SELECT e.id, e.employee_no, e.first_name, e.last_name,
-                   COALESCE(ps.fixed_basic_amount, c.basic_salary,0) AS monthly_salary
+        SELECT e.id,e.employee_no,e.first_name,e.last_name,e.start_date,
+            COALESCE(ps.fixed_basic_amount,c.basic_salary,0) AS monthly_salary
             FROM {schema}.payroll_employees e
             LEFT JOIN LATERAL (
               SELECT fixed_basic_amount
@@ -744,12 +858,39 @@ class PayrollEmployeeBenefitsService:
                 opening_days = dec(previous.get("closing_days"))
                 opening_provision = dec(previous.get("closing_provision"))
 
-                if policy.get("accrual_method") == "monthly_fixed":
-                    accrued_days = dec(policy.get("monthly_accrual_days"))
-                elif policy.get("accrual_method") == "manual":
-                    accrued_days = D0
+                method=policy.get("accrual_method")
+
+                if method=="monthly_fixed":
+                    accrued_days=dec(policy.get("monthly_accrual_days"))
+
+                elif method=="service_tiered":
+                    service_months=self._leave_service_months(
+                        emp["start_date"],
+                        period_end,
+                    )
+
+                    tier=self._leave_policy_tier(
+                        company_id,
+                        policy["id"],
+                        service_months,
+                    )
+
+                    if not tier:
+                        raise ValueError(
+                            f"No leave accrual tier configured for "
+                            f"{emp['employee_no']} at {service_months} service months"
+                        )
+
+                    accrued_days=dec(tier.get("monthly_accrual_days"))
+
+                elif method=="manual":
+                    accrued_days=D0
+
                 else:
-                    accrued_days = dec(policy.get("annual_entitlement_days")) * period_days / year_days
+                    accrued_days=(
+                        dec(policy.get("annual_entitlement_days"))
+                        *period_days/year_days
+                    )
 
                 movements = self.db.fetch_one(f"""
                     SELECT

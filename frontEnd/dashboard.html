@@ -3225,6 +3225,14 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
   background:#fff;
 }
 
+.payroll-employee-warning{
+  margin:12px 0;padding:12px 14px;border:1px solid #f0c36d;
+  border-radius:10px;background:#fff8e6;display:flex;
+  flex-direction:column;gap:3px;font-size:13px;
+}
+.payroll-employee-warning strong{font-size:13px}
+.payroll-employee-warning.hidden{display:none}
+
 .payroll-final-payslip-head{
   display:flex;
   justify-content:space-between;
@@ -20880,6 +20888,12 @@ tbody tr:hover {
             <button data-payroll-tab="settings">Settings</button>
           </div>
 
+          <div id="payrollEmployeeBenefitWarning"
+            class="notice warning hidden">
+            Employee benefits are not fully configured.
+            Define benefit plans and leave policies before completing employee benefit setup.
+          </div>
+
           <div id="payrollTabOverview" class="payroll-panel">
             <h3>Overview</h3>
 
@@ -21878,6 +21892,7 @@ tbody tr:hover {
                   <select id="payrollLeavePolicyMethod">
                     <option value="straight_line">Straight-line by service days</option>
                     <option value="monthly_fixed">Fixed monthly days</option>
+                    <option value="service_tiered">Service-based / anniversary tiers</option>
                     <option value="manual">Manual movements</option>
                   </select>
                 </label>
@@ -21887,6 +21902,25 @@ tbody tr:hover {
                   <input id="payrollLeavePolicyMonthlyDays"
                     type="number" min="0" step="0.0001">
                 </label>
+
+                <div id="payrollLeavePolicyTierWrap" class="hidden">
+                  <div class="payroll-section-head">
+                    <div>
+                      <h4>Service-based accrual tiers</h4>
+                      <p class="payroll-muted">
+                        Change leave entitlement automatically as service increases.
+                      </p>
+                    </div>
+
+                    <button id="payrollAddLeaveTierBtn"
+                      type="button"
+                      class="payroll-secondary dark">
+                      + Add Tier
+                    </button>
+                  </div>
+
+                  <div id="payrollLeavePolicyTiers"></div>
+                </div>
 
                 <label>
                   Daily-rate basis

@@ -30714,18 +30714,66 @@ class DatabaseService:
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_leave_policy UNIQUE (company_id, leave_type_id),
-            CONSTRAINT chk_payroll_leave_policy_method CHECK (
-                accrual_method IN ('straight_line','monthly_fixed','manual')
-            ),
-            CONSTRAINT chk_payroll_leave_policy_rate_basis CHECK (
-                daily_rate_basis IN (
-                    'annual_div_260',
-                    'monthly_div_21_67',
-                    'monthly_div_working_days',
-                    'custom'
+
+            CONSTRAINT uq_payroll_leave_policy
+                UNIQUE(company_id,leave_type_id),
+
+            CONSTRAINT chk_payroll_leave_policy_method
+                CHECK(
+                    accrual_method IN(
+                        'straight_line',
+                        'monthly_fixed',
+                        'service_tiered',
+                        'manual'
+                    )
+                ),
+
+            CONSTRAINT chk_payroll_leave_policy_rate_basis
+                CHECK(
+                    daily_rate_basis IN(
+                        'annual_div_260',
+                        'monthly_div_21_67',
+                        'monthly_div_working_days',
+                        'custom'
+                    )
                 )
-            )
+        );
+
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policy_tiers (
+            id BIGSERIAL PRIMARY KEY,
+            company_id INT NOT NULL,
+            policy_id BIGINT NOT NULL,
+            min_service_months INT NOT NULL DEFAULT 0,
+            max_service_months INT,
+            annual_entitlement_days NUMERIC(10,4),
+            monthly_accrual_days NUMERIC(10,4) NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            CONSTRAINT uq_payroll_leave_policy_tier
+                UNIQUE(company_id,policy_id,min_service_months),
+
+            CONSTRAINT fk_payroll_leave_policy_tier_policy
+                FOREIGN KEY(policy_id)
+                REFERENCES {schema}.payroll_leave_policies(id)
+                ON DELETE CASCADE,
+
+            CONSTRAINT chk_payroll_leave_tier_min
+                CHECK(min_service_months>=0),
+
+            CONSTRAINT chk_payroll_leave_tier_range
+                CHECK(
+                    max_service_months IS NULL
+                    OR max_service_months>=min_service_months
+                )
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_payroll_leave_policy_tiers_policy
+        ON {schema}.payroll_leave_policy_tiers(
+            company_id,
+            policy_id,
+            min_service_months
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_leave_movements (
