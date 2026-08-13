@@ -63404,80 +63404,94 @@ async function saveEditModal() {
     return rows.find(x=>Number(x.id)===id)||null;
   }
 
-  function payrollLeaveTypeKind(){
+  function payrollLeavePolicyMode(){
     const x=payrollSelectedLeaveType();
-    const text=`${x?.code||""} ${x?.name||""}`.toLowerCase();
 
-    if(/sick/.test(text))return"sick";
-    if(/maternity|parental|adoption/.test(text))return"parental";
-    if(/unpaid/.test(text))return"unpaid";
-    if(/family|special|bereavement|compassionate/.test(text))return"special";
-    if(/annual|vacation/.test(text))return"annual";
+    const text=[
+      x?.code,
+      x?.name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-    return"other";
+    if(!text)return"simple";
+    if(text.includes("annual"))return"annual";
+    if(text.includes("sick"))return"sick";
+    if(/maternity|parental|paternity|adoption/.test(text))return"parental";
+    if(/family responsibility|special|bereavement|compassionate/.test(text))return"special";
+    if(text.includes("unpaid"))return"unpaid";
+
+    return"simple";
   }
 
   function updatePayrollLeavePolicyFields(){
-    const kind=payrollLeaveTypeKind();
-    const method=$("payrollLeavePolicyMethod")?.value||"straight_line";
-
-    const annual=kind==="annual";
-    const sick=kind==="sick";
-    const parental=kind==="parental";
-    const special=kind==="special";
-    const unpaid=kind==="unpaid";
+    const mode=payrollLeavePolicyMode();
 
     [
-      ["payrollLeaveEntitlementWrap",!annual],
-      ["payrollLeaveMethodWrap",!annual],
-      ["payrollLeaveMonthlyWrap",!annual||method==="service_tiered"],
-      ["payrollLeavePolicyTierWrap",!annual||method!=="service_tiered"],
-      ["payrollLeaveSickWrap",!sick],
-      ["payrollLeaveParentalWrap",!parental],
-      ["payrollLeaveSpecialWrap",!special],
-      ["payrollLeaveUnpaidWrap",!unpaid],
-    ].forEach(([id,hide])=>{
-      $(id)?.classList.toggle("hidden",hide);
+      ["payrollLeaveSimpleWrap","simple"],
+      ["payrollLeaveAnnualWrap","annual"],
+      ["payrollLeaveSickWrap","sick"],
+      ["payrollLeaveParentalWrap","parental"],
+      ["payrollLeaveSpecialWrap","special"],
+      ["payrollLeaveUnpaidWrap","unpaid"],
+    ].forEach(([id,type])=>{
+      $(id)?.classList.toggle("hidden",mode!==type);
     });
 
-    const accumulating=annual;
+    if(mode==="annual"){
+      const method=
+        $("payrollLeavePolicyMethod")?.value||
+        "straight_line";
 
-    $("payrollLeaveRateWrap")
-      ?.classList.toggle("hidden",unpaid||sick);
+      $("payrollLeaveMonthlyWrap")
+        ?.classList.toggle(
+          "hidden",
+          method==="service_tiered"
+        );
 
-    $("payrollLeaveVestingWrap")
-      ?.classList.toggle("hidden",!accumulating);
+      $("payrollLeavePolicyTierWrap")
+        ?.classList.toggle(
+          "hidden",
+          method!=="service_tiered"
+        );
+    }
 
-    $("payrollLeaveProvisionWrap")
-      ?.classList.toggle("hidden",!accumulating);
-
-    if(!accumulating)
-      $("payrollLeavePolicyProvisionRequired").checked=false;
-
-    const subtitles={
-      annual:"Configure accumulating annual leave and IAS 19 provision.",
-      sick:"Configure sick-leave cycle and usage rules.",
-      parental:"Configure maternity, parental or adoption leave.",
-      special:"Configure family responsibility or special leave.",
-      unpaid:"Configure payroll treatment for unpaid absence.",
-      other:"Configure leave entitlement and payroll treatment.",
-    };
-
-    $("payrollLeavePolicySubtitle").textContent=
-      subtitles[kind]||subtitles.other;
+    if(mode!=="annual"){
+      if($("payrollLeavePolicyProvisionRequired"))
+        $("payrollLeavePolicyProvisionRequired").checked=false;
+    }
 
     togglePayrollLeaveProvisionAccounts();
+    updatePayrollLeavePolicySubtitle(mode);
     updatePayrollSickLeaveFields();
   }
 
-  function updatePayrollSickLeaveFields(){
-    const method=$("payrollLeaveSickInitialMethod")?.value||"none";
+  function updatePayrollLeavePolicySubtitle(mode){
+    const el=$("payrollLeavePolicySubtitle");
+    if(!el)return;
 
-    $("payrollLeaveSickDaysWorkedWrap")
-      ?.classList.toggle("hidden",method!=="days_worked");
+    const messages={
+      annual:
+        "Configure accumulating annual leave and the IAS 19 obligation.",
 
-    $("payrollLeaveSickInitialMonthsWrap")
-      ?.classList.toggle("hidden",method==="none");
+      sick:
+        "Configure sick leave cycle and initial service rules.",
+
+      parental:
+        "Configure maternity, parental or paternity leave entitlement.",
+
+      special:
+        "Configure family responsibility or special leave.",
+
+      unpaid:
+        "Configure unpaid leave payroll treatment.",
+
+      simple:
+        "This leave type does not require additional accrual configuration."
+    };
+
+    el.textContent=messages[mode]||messages.simple;
   }
 
   async function openPayrollLeavePolicyModal(policy=null){
@@ -63609,22 +63623,30 @@ async function saveEditModal() {
   }
 
   function togglePayrollLeaveProvisionAccounts(){
+    const mode=payrollLeavePolicyMode();
+    const allowed=
+      mode==="annual"||
+      mode==="parental";
+
     const required=
+      allowed &&
       !!$("payrollLeavePolicyProvisionRequired")?.checked;
 
     $("payrollLeaveProvisionAccountWrap")
       ?.classList.toggle("hidden",!required);
 
-    [
-      "payrollLeavePolicyExpenseAccount",
-      "payrollLeavePolicyLiabilityAccount",
-    ].forEach(id=>{
-      const el=$(id);
-      if(!el)return;
+    const expense=$("payrollLeavePolicyExpenseAccount");
+    const liability=$("payrollLeavePolicyLiabilityAccount");
 
-      el.disabled=!required;
-      el.required=required;
-    });
+    if(expense){
+      expense.disabled=!required;
+      expense.required=required;
+    }
+
+    if(liability){
+      liability.disabled=!required;
+      liability.required=required;
+    }
   }
 
   function fillPayrollLeaveTypeSelect(value=""){
@@ -63652,7 +63674,7 @@ async function saveEditModal() {
   async function savePayrollLeavePolicy(){
     const companyId=cid();
     const policyId=Number($("payrollLeavePolicyId")?.value||0);
-    const kind=payrollLeaveTypeKind();
+    const kind=payrollLeavePolicyMode();
     const method=$("payrollLeavePolicyMethod")?.value||"straight_line";
     const accumulating=kind==="annual";
     const provisionRequired=

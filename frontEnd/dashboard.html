@@ -21930,7 +21930,7 @@ tbody tr:hover {
               </div>
             </div>
           </div>
-          
+
           <div id="payrollLeavePolicyModal" class="payroll-modal hidden">
             <div class="payroll-modal-card" role="dialog" aria-modal="true"
               aria-labelledby="payrollLeavePolicyModalTitle">
@@ -21939,18 +21939,26 @@ tbody tr:hover {
                 <div>
                   <h3 id="payrollLeavePolicyModalTitle">Leave Policy</h3>
                   <p id="payrollLeavePolicySubtitle" class="payroll-muted">
-                    Configure leave entitlement and accounting treatment.
+                    Configure leave entitlement and payroll treatment.
                   </p>
                 </div>
 
                 <button id="payrollLeavePolicyCloseBtn"
-                  type="button" data-close-leave-policy
-                  aria-label="Close">×</button>
+                  type="button"
+                  data-close-leave-policy
+                  aria-label="Close">
+                  ×
+                </button>
               </div>
 
               <input id="payrollLeavePolicyId" type="hidden">
 
               <div class="payroll-form-grid">
+
+                <!-- ============================================== -->
+                <!-- COMMON -->
+                <!-- ============================================== -->
+
                 <label>
                   Policy name
                   <input id="payrollLeavePolicyName">
@@ -21963,64 +21971,151 @@ tbody tr:hover {
                   </select>
                 </label>
 
-                <!-- ================================================= -->
-                <!-- ANNUAL / ACCUMULATING LEAVE -->
-                <!-- ================================================= -->
+                <!-- ============================================== -->
+                <!-- SIMPLE / OTHER -->
+                <!-- ============================================== -->
 
-                <label id="payrollLeaveEntitlementWrap">
-                  Annual entitlement days
-                  <input id="payrollLeavePolicyEntitlement"
-                    type="number" min="0" step="0.01">
-                </label>
-
-                <label id="payrollLeaveMethodWrap">
-                  Accrual method
-                  <select id="payrollLeavePolicyMethod">
-                    <option value="straight_line">Straight-line by service days</option>
-                    <option value="monthly_fixed">Fixed monthly days</option>
-                    <option value="service_tiered">Service-based / anniversary tiers</option>
-                    <option value="manual">Manual movements</option>
-                  </select>
-                </label>
-
-                <label id="payrollLeaveMonthlyWrap">
-                  Monthly accrual days
-                  <input id="payrollLeavePolicyMonthlyDays"
-                    type="number" min="0" step="0.0001">
-                </label>
-
-                <div id="payrollLeavePolicyTierWrap" class="hidden">
-                  <div class="payroll-section-head">
-                    <div>
-                      <h4>Service-based accrual tiers</h4>
-                      <p class="payroll-muted">
-                        Change entitlement automatically as employee service increases.
-                      </p>
-                    </div>
-
-                    <button id="payrollAddLeaveTierBtn"
-                      type="button"
-                      class="payroll-secondary dark">
-                      + Add Tier
-                    </button>
-                  </div>
-
-                  <div class="payroll-leave-tier-table">
-                    <div class="payroll-leave-tier-head">
-                      <span>From month</span>
-                      <span>To month</span>
-                      <span>Monthly</span>
-                      <span>Annual</span>
-                      <span></span>
-                    </div>
-
-                    <div id="payrollLeavePolicyTiers"></div>
+                <div id="payrollLeaveSimpleWrap" class="hidden">
+                  <div class="payroll-info-box">
+                    No additional accrual configuration is required for this leave type.
                   </div>
                 </div>
 
-                <!-- ================================================= -->
+                <!-- ============================================== -->
+                <!-- ANNUAL LEAVE -->
+                <!-- ============================================== -->
+
+                <div id="payrollLeaveAnnualWrap"
+                  class="payroll-form-grid hidden">
+
+                  <label>
+                    Annual entitlement days
+                    <input id="payrollLeavePolicyEntitlement"
+                      type="number"
+                      min="0"
+                      step="0.01">
+                  </label>
+
+                  <label>
+                    Accrual method
+                    <select id="payrollLeavePolicyMethod">
+                      <option value="straight_line">
+                        Straight-line by service days
+                      </option>
+
+                      <option value="monthly_fixed">
+                        Fixed monthly days
+                      </option>
+
+                      <option value="service_tiered">
+                        Service-based / anniversary tiers
+                      </option>
+
+                      <option value="manual">
+                        Manual movements
+                      </option>
+                    </select>
+                  </label>
+
+                  <label id="payrollLeaveMonthlyWrap">
+                    Monthly accrual days
+                    <input id="payrollLeavePolicyMonthlyDays"
+                      type="number"
+                      min="0"
+                      step="0.0001">
+                  </label>
+
+                  <div id="payrollLeavePolicyTierWrap"
+                    class="hidden payroll-leave-tier-full">
+
+                    <div class="payroll-section-head">
+                      <div>
+                        <h4>Service-based accrual tiers</h4>
+                        <p class="payroll-muted">
+                          Change entitlement automatically as employee service increases.
+                        </p>
+                      </div>
+
+                      <button id="payrollAddLeaveTierBtn"
+                        type="button"
+                        class="payroll-secondary dark">
+                        + Add Tier
+                      </button>
+                    </div>
+
+                    <div class="payroll-leave-tier-table">
+                      <div class="payroll-leave-tier-head">
+                        <span>From month</span>
+                        <span>To month</span>
+                        <span>Monthly accrual</span>
+                        <span>Annual entitlement</span>
+                        <span></span>
+                      </div>
+
+                      <div id="payrollLeavePolicyTiers"></div>
+                    </div>
+                  </div>
+
+                  <label>
+                    Daily-rate basis
+                    <select id="payrollLeavePolicyRateBasis">
+                      <option value="annual_div_260">
+                        Annual salary ÷ working days
+                      </option>
+
+                      <option value="monthly_div_21_67">
+                        Monthly salary ÷ 21.67
+                      </option>
+
+                      <option value="monthly_div_working_days">
+                        Monthly working-day basis
+                      </option>
+
+                      <option value="custom">
+                        Custom rate
+                      </option>
+                    </select>
+                  </label>
+
+                  <label id="payrollLeaveVestingWrap"
+                    class="payroll-check">
+                    <input id="payrollLeavePolicyVesting"
+                      type="checkbox">
+
+                    <span>Vesting entitlement</span>
+                  </label>
+
+                  <label id="payrollLeaveProvisionWrap"
+                    class="payroll-check">
+                    <input id="payrollLeavePolicyProvisionRequired"
+                      type="checkbox"
+                      checked>
+
+                    <span>Recognise IAS 19 provision</span>
+                  </label>
+
+                  <div id="payrollLeaveProvisionAccountWrap"
+                    class="payroll-form-grid">
+
+                    <label>
+                      Expense account
+                      <select id="payrollLeavePolicyExpenseAccount">
+                        <option value="">Select expense account…</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Liability account
+                      <select id="payrollLeavePolicyLiabilityAccount">
+                        <option value="">Select liability account…</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- ============================================== -->
                 <!-- SICK LEAVE -->
-                <!-- ================================================= -->
+                <!-- ============================================== -->
 
                 <div id="payrollLeaveSickWrap"
                   class="payroll-form-grid hidden">
@@ -22028,40 +22123,59 @@ tbody tr:hover {
                   <label>
                     Cycle entitlement days
                     <input id="payrollLeaveSickCycleDays"
-                      type="number" min="0" step="0.01">
+                      type="number"
+                      min="0"
+                      step="0.01">
                   </label>
 
                   <label>
                     Cycle length months
                     <input id="payrollLeaveSickCycleMonths"
-                      type="number" min="1" step="1" value="36">
+                      type="number"
+                      min="1"
+                      step="1"
+                      value="36">
                   </label>
 
                   <label>
                     Initial accrual method
                     <select id="payrollLeaveSickInitialMethod">
-                      <option value="none">No special initial accrual</option>
-                      <option value="days_worked">Based on days worked</option>
-                      <option value="monthly">Monthly accrual</option>
+                      <option value="none">
+                        No special initial accrual
+                      </option>
+
+                      <option value="days_worked">
+                        Based on days worked
+                      </option>
+
+                      <option value="monthly">
+                        Monthly accrual
+                      </option>
                     </select>
                   </label>
 
                   <label id="payrollLeaveSickDaysWorkedWrap">
                     Days worked per sick day
                     <input id="payrollLeaveSickDaysWorked"
-                      type="number" min="1" step="1" value="26">
+                      type="number"
+                      min="1"
+                      step="1"
+                      value="26">
                   </label>
 
                   <label id="payrollLeaveSickInitialMonthsWrap">
                     Initial period months
                     <input id="payrollLeaveSickInitialMonths"
-                      type="number" min="0" step="1" value="6">
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="6">
                   </label>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- MATERNITY / PARENTAL -->
-                <!-- ================================================= -->
+                <!-- ============================================== -->
+                <!-- MATERNITY / PARENTAL / PATERNITY -->
+                <!-- ============================================== -->
 
                 <div id="payrollLeaveParentalWrap"
                   class="payroll-form-grid hidden">
@@ -22069,7 +22183,9 @@ tbody tr:hover {
                   <label>
                     Entitlement
                     <input id="payrollLeaveParentalEntitlement"
-                      type="number" min="0" step="0.01">
+                      type="number"
+                      min="0"
+                      step="0.01">
                   </label>
 
                   <label>
@@ -22094,19 +22210,26 @@ tbody tr:hover {
                   <label>
                     Employer pay %
                     <input id="payrollLeaveParentalPayPercent"
-                      type="number" min="0" max="100" step="0.01">
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value="100">
                   </label>
 
                   <label>
                     Minimum service months
                     <input id="payrollLeaveParentalServiceMonths"
-                      type="number" min="0" step="1">
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="0">
                   </label>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- SPECIAL / FAMILY RESPONSIBILITY -->
-                <!-- ================================================= -->
+                <!-- ============================================== -->
+                <!-- FAMILY RESPONSIBILITY / SPECIAL -->
+                <!-- ============================================== -->
 
                 <div id="payrollLeaveSpecialWrap"
                   class="payroll-form-grid hidden">
@@ -22114,16 +22237,29 @@ tbody tr:hover {
                   <label>
                     Entitlement days
                     <input id="payrollLeaveSpecialDays"
-                      type="number" min="0" step="0.01">
+                      type="number"
+                      min="0"
+                      step="0.01">
                   </label>
 
                   <label>
                     Entitlement period
                     <select id="payrollLeaveSpecialPeriod">
-                      <option value="annual">Per year</option>
-                      <option value="event">Per qualifying event</option>
-                      <option value="employment">During employment</option>
-                      <option value="manual">Manual allocation</option>
+                      <option value="annual">
+                        Per year
+                      </option>
+
+                      <option value="event">
+                        Per qualifying event
+                      </option>
+
+                      <option value="employment">
+                        During employment
+                      </option>
+
+                      <option value="manual">
+                        Manual allocation
+                      </option>
                     </select>
                   </label>
 
@@ -22139,19 +22275,26 @@ tbody tr:hover {
                   <label>
                     Employer pay %
                     <input id="payrollLeaveSpecialPayPercent"
-                      type="number" min="0" max="100" step="0.01">
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value="100">
                   </label>
 
                   <label>
                     Minimum service months
                     <input id="payrollLeaveSpecialServiceMonths"
-                      type="number" min="0" step="1">
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="0">
                   </label>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- UNPAID -->
-                <!-- ================================================= -->
+                <!-- ============================================== -->
+                <!-- UNPAID LEAVE -->
+                <!-- ============================================== -->
 
                 <div id="payrollLeaveUnpaidWrap"
                   class="payroll-form-grid hidden">
@@ -22159,62 +22302,35 @@ tbody tr:hover {
                   <label>
                     Payroll deduction basis
                     <select id="payrollLeaveUnpaidDeductionBasis">
-                      <option value="daily_rate">Daily salary rate</option>
-                      <option value="working_day_rate">Working-day rate</option>
-                      <option value="hourly_rate">Hourly rate</option>
-                      <option value="manual">Manual deduction</option>
+                      <option value="daily_rate">
+                        Daily salary rate
+                      </option>
+
+                      <option value="working_day_rate">
+                        Working-day rate
+                      </option>
+
+                      <option value="hourly_rate">
+                        Hourly rate
+                      </option>
+
+                      <option value="manual">
+                        Manual deduction
+                      </option>
                     </select>
                   </label>
 
                   <label class="payroll-check">
                     <input id="payrollLeaveUnpaidAffectsBenefits"
                       type="checkbox">
+
                     <span>Affects benefit accrual</span>
                   </label>
                 </div>
 
-                <!-- ================================================= -->
-                <!-- ACCOUNTING -->
-                <!-- ================================================= -->
-
-                <label id="payrollLeaveRateWrap">
-                  Daily-rate basis
-                  <select id="payrollLeavePolicyRateBasis">
-                    <option value="annual_div_260">Annual salary ÷ working days</option>
-                    <option value="monthly_div_21_67">Monthly salary ÷ 21.67</option>
-                    <option value="monthly_div_working_days">Monthly working-day basis</option>
-                    <option value="custom">Custom rate</option>
-                  </select>
-                </label>
-
-                <label id="payrollLeaveVestingWrap" class="payroll-check">
-                  <input id="payrollLeavePolicyVesting" type="checkbox">
-                  <span>Vesting entitlement</span>
-                </label>
-
-                <label id="payrollLeaveProvisionWrap" class="payroll-check">
-                  <input id="payrollLeavePolicyProvisionRequired"
-                    type="checkbox" checked>
-                  <span>Recognise IAS 19 provision</span>
-                </label>
-
-                <div id="payrollLeaveProvisionAccountWrap"
-                  class="payroll-form-grid">
-
-                  <label>
-                    Expense account
-                    <select id="payrollLeavePolicyExpenseAccount">
-                      <option value="">Select expense account…</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Liability account
-                    <select id="payrollLeavePolicyLiabilityAccount">
-                      <option value="">Select liability account…</option>
-                    </select>
-                  </label>
-                </div>
+                <!-- ============================================== -->
+                <!-- ACTIONS -->
+                <!-- ============================================== -->
 
                 <div class="payroll-modal-actions">
                   <button type="button"
