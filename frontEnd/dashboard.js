@@ -69742,47 +69742,32 @@ async function saveEditModal() {
     }
   }
 
-  function setPayrollEditorFieldVisibility(type) {
-    const isEarning = type === "earning";
-    const isDeduction = type === "deduction";
-    const isContribution = type === "contribution";
-    const isBenefit = type === "benefit";
+  function setPayrollEditorFieldVisibility(type){
+    const isEarning=type==="earning";
+    const isDeduction=type==="deduction";
+    const isContribution=type==="contribution";
+    const isBenefit=type==="benefit";
 
     $("payrollSetupEditorExpenseWrap")
-      ?.classList.toggle(
-        "hidden",
-        !(isEarning || isContribution)
-      );
+      ?.classList.toggle("hidden",!(isEarning||isContribution));
 
     $("payrollSetupEditorLiabilityWrap")
-      ?.classList.toggle(
-        "hidden",
-        !(isDeduction || isContribution)
-      );
+      ?.classList.toggle("hidden",!(isDeduction||isContribution));
+
+    $("payrollSetupEditorDeductionAccountTypeWrap")
+      ?.classList.toggle("hidden",!isDeduction);
 
     $("payrollSetupEditorCategoryWrap")
-      ?.classList.toggle(
-        "hidden",
-        !isBenefit
-      );
+      ?.classList.toggle("hidden",!isBenefit);
 
     $("payrollSetupEditorTaxableWrap")
-      ?.classList.toggle(
-        "hidden",
-        !(isEarning || isBenefit)
-      );
+      ?.classList.toggle("hidden",!(isEarning||isBenefit));
 
     $("payrollSetupEditorPensionableWrap")
-      ?.classList.toggle(
-        "hidden",
-        !isEarning
-      );
+      ?.classList.toggle("hidden",!isEarning);
 
     $("payrollSetupEditorStatutoryWrap")
-      ?.classList.toggle(
-        "hidden",
-        !isDeduction
-      );
+      ?.classList.toggle("hidden",!isDeduction);
   }
 
   function payrollSetupTypeLabel(type) {
@@ -69794,6 +69779,15 @@ async function saveEditModal() {
     };
 
     return labels[type] || "Payroll Setup Item";
+  }
+
+  function updatePayrollDeductionAccountOptions(){
+    const kind=$("payrollDeductionAccountType")?.value||"liability";
+
+    fillPayrollAccountSelect(
+      "payrollDeductionPostingAccount",
+      kind
+    );
   }
 
   async function openPayrollSetupEditor(type,id){
@@ -69829,6 +69823,12 @@ async function saveEditModal() {
     $("payrollSetupEditorCategory").value=
       item.benefit_category||"allowance";
 
+    $("payrollDeductionAccountType")
+      ?.addEventListener("change",updatePayrollDeductionAccountOptions);
+
+    $("payrollSetupEditorDeductionAccountType")
+      ?.addEventListener("change",updatePayrollSetupDeductionAccount);
+
     fillPayrollAccountSelect(
       "payrollSetupEditorExpenseAccount",
       "expense",
@@ -69841,6 +69841,24 @@ async function saveEditModal() {
       item.liability_account_code||""
     );
 
+    if(type==="deduction"){
+      $("payrollSetupEditorDeductionAccountType").value=
+        item.posting_account_type||"liability";
+
+      fillPayrollAccountSelect(
+        "payrollSetupEditorLiabilityAccount",
+        item.posting_account_type||"liability",
+        item.posting_account_code||
+          item.liability_account_code||
+          ""
+      );
+    }else{
+      fillPayrollAccountSelect(
+        "payrollSetupEditorLiabilityAccount",
+        "liability",
+        item.liability_account_code||""
+      );
+    }
     setPayrollEditorFieldVisibility(type);
 
     $("payrollSetupEditorModal")
@@ -69862,6 +69880,15 @@ async function saveEditModal() {
 
     $("payrollSetupEditorType").value = "";
     $("payrollSetupEditorId").value = "";
+  }
+
+  function payrollAccountName(code){
+    if(!code)return null;
+
+    const account=payrollPostingAccounts("all")
+      .find(x=>String(x.code)===String(code));
+
+    return account?.name||null;
   }
 
   function payrollSetupItemEndpoint(
@@ -69926,17 +69953,15 @@ async function saveEditModal() {
       };
     }
 
-    if (type === "deduction") {
-      return {
+    if(type==="deduction"){
+      return{
         ...common,
-
-        liability_account_code:
-          $("payrollSetupEditorLiabilityAccount")
-            ?.value || null,
-
+        posting_account_type:
+          $("payrollSetupEditorDeductionAccountType")?.value||"liability",
+        posting_account_code:
+          $("payrollSetupEditorLiabilityAccount")?.value||null,
         is_statutory:
-          !!$("payrollSetupEditorStatutory")
-            ?.checked,
+          !!$("payrollSetupEditorStatutory")?.checked,
       };
     }
 
@@ -70389,39 +70414,53 @@ async function saveEditModal() {
     });
   }
 
-  async function createPayrollDeductionType() {
-    const code =
-      $("payrollDeductionCode")?.value.trim().toUpperCase();
+  function updatePayrollSetupDeductionAccount(){
+    const kind=
+      $("payrollSetupEditorDeductionAccountType")?.value||"liability";
 
-    const name =
-      $("payrollDeductionName")?.value.trim();
+    const item=findPayrollSetupItem(
+      "deduction",
+      Number($("payrollSetupEditorId")?.value||0)
+    );
 
-    if (!code || !name) {
-      throw new Error("Enter the deduction code and name.");
+    fillPayrollAccountSelect(
+      "payrollSetupEditorLiabilityAccount",
+      kind,
+      item?.posting_account_code||
+      item?.liability_account_code||
+      ""
+    );
+  }
+
+  async function createPayrollDeductionType(){
+    const name=$("payrollDeductionName")?.value.trim();
+
+    if(!name){
+      throw new Error("Enter the deduction name.");
     }
 
     await createPayrollSetupRecord({
-      endpoint: ENDPOINTS.payroll.deductionTypes,
+      endpoint:ENDPOINTS.payroll.deductionTypes,
 
-      payload: {
-        code,
+      payload:{
         name,
-        liability_account_code:
-          $("payrollDeductionLiabilityAccount")?.value || null,
+        posting_account_type:
+          $("payrollDeductionAccountType")?.value||"liability",
+        posting_account_code:
+          $("payrollDeductionPostingAccount")?.value||null,
         is_statutory:
           !!$("payrollDeductionStatutory")?.checked,
-        is_active: true,
+        is_active:true,
       },
 
-      clearIds: [
-        "payrollDeductionCode",
+      clearIds:[
         "payrollDeductionName",
-        "payrollDeductionLiabilityAccount",
+        "payrollDeductionPostingAccount",
         "payrollDeductionStatutory",
       ],
 
-      successMessage: "Deduction type added.",
-      returnTab: "deductions",
+      successMessage:"Deduction type added.",
+      returnTab:"deductions",
     });
   }
 
@@ -71694,8 +71733,8 @@ async function saveEditModal() {
     );
   }
 
-  function renderPayrollMasterSetup() {
-    const setup = payrollState.setup || {};
+  function renderPayrollMasterSetup(){
+    const setup=payrollState.setup||{};
 
     renderPayrollDepartments();
     renderPayrollPositions();
@@ -71703,22 +71742,10 @@ async function saveEditModal() {
     renderPayrollSetupRows(
       "payrollEarningTypesList",
       setup.earning_types,
-      item => `
-        <strong>
-          ${esc(item.code)} — ${esc(item.name)}
-        </strong>
-
-        <span>
-          ${item.taxable ? "Taxable" : "Non-taxable"}
-        </span>
-
-        <span>
-          ${
-            item.pensionable
-              ? "Pensionable"
-              : "Not pensionable"
-          }
-        </span>
+      item=>`
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${item.taxable?"Taxable":"Non-taxable"}</span>
+        <span>${item.pensionable?"Pensionable":"Not pensionable"}</span>
       `,
       "earning"
     );
@@ -71726,25 +71753,16 @@ async function saveEditModal() {
     renderPayrollSetupRows(
       "payrollDeductionTypesList",
       setup.deduction_types,
-      item => `
-        <strong>
-          ${esc(item.code)} — ${esc(item.name)}
-        </strong>
-
-        <span>
-          ${
-            item.is_statutory
-              ? "Statutory"
-              : "Voluntary"
-          }
-        </span>
-
-        <span>
-          ${esc(
-            item.liability_account_code ||
-            "No GL mapping"
-          )}
-        </span>
+      item=>`
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${item.is_statutory?"Statutory":"Voluntary"}</span>
+        <span>${esc(
+          payrollAccountName(
+            item.posting_account_code||
+            item.liability_account_code
+          )||
+          "No GL mapping"
+        )}</span>
       `,
       "deduction"
     );
@@ -71752,24 +71770,16 @@ async function saveEditModal() {
     renderPayrollSetupRows(
       "payrollContributionTypesList",
       setup.contribution_types,
-      item => `
-        <strong>
-          ${esc(item.code)} — ${esc(item.name)}
-        </strong>
-
-        <span>
-          ${esc(
-            item.expense_account_code ||
-            "No expense account"
-          )}
-        </span>
-
-        <span>
-          ${esc(
-            item.liability_account_code ||
-            "No liability account"
-          )}
-        </span>
+      item=>`
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${esc(
+          payrollAccountName(item.expense_account_code)||
+          "No expense account"
+        )}</span>
+        <span>${esc(
+          payrollAccountName(item.liability_account_code)||
+          "No liability account"
+        )}</span>
       `,
       "contribution"
     );
@@ -71777,18 +71787,10 @@ async function saveEditModal() {
     renderPayrollSetupRows(
       "payrollBenefitTypesList",
       setup.benefit_types,
-      item => `
-        <strong>
-          ${esc(item.code)} — ${esc(item.name)}
-        </strong>
-
-        <span>
-          ${esc(cap(item.benefit_category || ""))}
-        </span>
-
-        <span>
-          ${item.taxable ? "Taxable" : "Non-taxable"}
-        </span>
+      item=>`
+        <strong>${esc(item.code)} — ${esc(item.name)}</strong>
+        <span>${esc(cap(item.benefit_category||""))}</span>
+        <span>${item.taxable?"Taxable":"Non-taxable"}</span>
       `,
       "benefit"
     );

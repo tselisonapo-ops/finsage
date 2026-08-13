@@ -22514,8 +22514,16 @@ tbody tr:hover {
                   </label>
 
                   <label>
-                    Liability Account
-                    <select id="payrollDeductionLiabilityAccount"></select>
+                    Posting Account Type
+                    <select id="payrollDeductionAccountType">
+                      <option value="liability">Liability / Payable</option>
+                      <option value="asset">Asset / Receivable</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Posting Account
+                    <select id="payrollDeductionPostingAccount"></select>
                   </label>
 
                   <label class="payroll-check-label">
@@ -23000,13 +23008,17 @@ tbody tr:hover {
               </select>
             </label>
 
-            <label
-              id="payrollSetupEditorLiabilityWrap"
-              class="hidden"
-            >
-              Liability Account
-              <select id="payrollSetupEditorLiabilityAccount">
+            <label id="payrollSetupEditorDeductionAccountTypeWrap" class="hidden">
+              Posting Account Type
+              <select id="payrollSetupEditorDeductionAccountType">
+                <option value="liability">Liability / Payable</option>
+                <option value="asset">Asset / Receivable</option>
               </select>
+            </label>
+
+            <label id="payrollSetupEditorLiabilityWrap" class="hidden">
+              <span id="payrollSetupEditorPostingAccountLabel">Posting Account</span>
+              <select id="payrollSetupEditorLiabilityAccount"></select>
             </label>
 
             <label

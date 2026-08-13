@@ -29117,6 +29117,22 @@ class DatabaseService:
         );
 
         ALTER TABLE {schema}.payroll_deduction_types
+        ADD COLUMN IF NOT EXISTS posting_account_code TEXT,
+        ADD COLUMN IF NOT EXISTS posting_account_type TEXT NOT NULL DEFAULT 'liability';
+
+        UPDATE {schema}.payroll_deduction_types
+        SET posting_account_code=liability_account_code
+        WHERE posting_account_code IS NULL
+        AND liability_account_code IS NOT NULL;
+
+        ALTER TABLE {schema}.payroll_deduction_types
+        DROP CONSTRAINT IF EXISTS chk_payroll_deduction_posting_account_type;
+
+        ALTER TABLE {schema}.payroll_deduction_types
+        ADD CONSTRAINT chk_payroll_deduction_posting_account_type
+        CHECK(posting_account_type IN('liability','asset'));
+
+        ALTER TABLE {schema}.payroll_deduction_types
         ADD COLUMN IF NOT EXISTS liability_account_code TEXT;
 
         CREATE INDEX IF NOT EXISTS {schema}_payroll_ded_company_idx
@@ -39475,6 +39491,9 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS approval_id INT NULL,
         ADD COLUMN IF NOT EXISTS created_by_user_id INT NULL,
         ADD COLUMN IF NOT EXISTS updated_by_user_id INT NULL;
+
+        ALTER TABLE {schema}.asset_acquisitions
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
         ALTER TABLE {schema}.asset_acquisitions
         DROP CONSTRAINT IF EXISTS ck_asset_acq_vat_treatment;
@@ -138839,11 +138858,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         }
 
 
-    def _payroll_setup_lines(
-        self,
-        setup:dict,
-        basic,
-    )->dict:
+    def _payroll_setup_lines(self,setup:dict,basic)->dict:
         earnings=[]
         deductions=[]
         benefits=[]
@@ -138854,13 +138869,11 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         if basic>0:
             earnings.append({
                 "item_type":"earning",
-                "item_id":
-                    setup.get("basic_earning_type_id"),
+                "item_id":setup.get("basic_earning_type_id"),
                 "code":"BASIC",
                 "name":"Basic Salary",
                 "amount":basic,
-                "quantity":
-                    setup.get("standard_quantity"),
+                "quantity":setup.get("standard_quantity"),
                 "rate":setup.get("rate"),
                 "percentage":None,
                 "taxable":True,
@@ -138873,35 +138886,62 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             })
 
         for item in setup.get("items") or []:
-            if(
-                item.get("item_type")=="earning"
-                and item.get("code")=="BASIC"
-            ):
+            if item.get("item_type")=="earning" and item.get("code")=="BASIC":
                 continue
 
             if item.get("calculation_method")=="manual":
                 continue
 
-            amount=self.payroll_setup_item_amount(
-                item,
-                basic,
-            )
+            amount=self.payroll_setup_item_amount(item,basic)
 
             if amount<=0:
                 continue
 
+            item_type=item.get("item_type")
+
+            gl_account_code=item.get("gl_account_code")
+            offset_account_code=item.get("offset_account_code")
+
+            if item_type=="earning":
+                gl_account_code=(
+                    item.get("expense_account_code")
+                    or item.get("gl_account_code")
+                )
+
+            elif item_type=="deduction":
+                gl_account_code=(
+                    item.get("posting_account_code")
+                    or item.get("liability_account_code")
+                    or item.get("gl_account_code")
+                )
+
+            elif item_type=="contribution":
+                gl_account_code=(
+                    item.get("liability_account_code")
+                    or item.get("gl_account_code")
+                )
+
+                offset_account_code=(
+                    item.get("expense_account_code")
+                    or item.get("offset_account_code")
+                )
+
             line={
                 **item,
-                "name":
-                    item.get("name")
-                    or item.get("description"),
+                "name":item.get("name") or item.get("description"),
                 "amount":amount,
                 "source_type":"pay_setup_item",
                 "source_id":item["id"],
-                "metadata":{},
+                "gl_account_code":gl_account_code,
+                "offset_account_code":offset_account_code,
+                "metadata":{
+                    **(item.get("metadata") or {}),
+                    "posting_account_type":
+                        item.get("posting_account_type")
+                        if item_type=="deduction"
+                        else None,
+                },
             }
-
-            item_type=item.get("item_type")
 
             if item_type=="earning":
                 earnings.append(line)
@@ -138922,7 +138962,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "benefits":benefits,
             "contributions":contributions,
         }
-
 
     def _payroll_period_input_lines(
         self,
@@ -144213,106 +144252,100 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             payroll_run_id,
         )
 
-    def payroll_run_journal_preview(self, company_id: int, payroll_run_id: int) -> dict:
-        company_id = int(company_id)
-        payroll_run_id = int(payroll_run_id)
+    def payroll_run_journal_preview(self,company_id:int,payroll_run_id:int)->dict:
+        company_id=int(company_id)
+        payroll_run_id=int(payroll_run_id)
+        schema=self.company_schema(company_id)
 
-        schema = self.company_schema(company_id)
-
-        run = self.payroll_run_get(company_id, payroll_run_id)
+        run=self.payroll_run_get(company_id,payroll_run_id)
         if not run:
             raise ValueError("Payroll run not found")
 
-        if run.get("status") not in ("calculated", "approved", "posted"):
-            return {
-                "ok": True,
-                "ready_to_post": False,
-                "reason": "Payroll run must be calculated before journal preview.",
-                "run": run,
-                "lines": [],
-                "debits": 0,
-                "credits": 0,
-                "difference": 0,
-                "missing_mappings": [],
+        if run.get("status") not in("calculated","approved","posted"):
+            return{
+                "ok":True,
+                "ready_to_post":False,
+                "reason":"Payroll run must be calculated before journal preview.",
+                "run":run,
+                "lines":[],
+                "debits":0,
+                "credits":0,
+                "difference":0,
+                "missing_mappings":[],
             }
 
-        mappings = self.payroll_mapping(company_id)
+        mappings=self.payroll_mapping(company_id)
 
-        required = {
-            "salary_expense": mappings.get("salary_expense"),
-            "net_salary_payable": mappings.get("net_salary_payable"),
-            "paye_payable": mappings.get("paye_payable"),
-            "other_deductions_payable": mappings.get("other_deductions_payable"),
+        required={
+            "salary_expense":mappings.get("salary_expense"),
+            "net_salary_payable":mappings.get("net_salary_payable"),
+            "paye_payable":mappings.get("paye_payable"),
         }
 
-        missing = [k for k, v in required.items() if not v]
+        missing=[k for k,v in required.items() if not v]
 
         if missing:
-            return {
-                "ok": True,
-                "ready_to_post": False,
-                "reason": "Missing payroll GL mappings.",
-                "run": run,
-                "lines": [],
-                "debits": 0,
-                "credits": 0,
-                "difference": 0,
-                "missing_mappings": missing,
+            return{
+                "ok":True,
+                "ready_to_post":False,
+                "reason":"Missing payroll GL mappings.",
+                "run":run,
+                "lines":[],
+                "debits":0,
+                "credits":0,
+                "difference":0,
+                "missing_mappings":missing,
             }
 
-        gross = round(float(run.get("gross_pay") or 0), 2)
-        net = round(float(run.get("net_pay") or 0), 2)
+        run_lines=run.get("lines") or []
 
-        tax_total = round(sum(
-            float(x.get("amount") or 0)
-            for x in run.get("lines", [])
-            if x.get("line_type") == "tax"
-        ), 2)
+        gross=round(float(run.get("gross_pay") or 0),2)
+        net=round(float(run.get("net_pay") or 0),2)
 
-        deduction_total=round(sum(
+        tax_total=round(sum(
             float(x.get("amount") or 0)
-            for x in run.get("lines",[])
-            if x.get("line_type")=="deduction"
-            and x.get("source_type")!="defined_contribution_plan"
+            for x in run_lines
+            if x.get("line_type")=="tax"
         ),2)
 
         employer_total=round(sum(
             float(x.get("amount") or 0)
-            for x in run.get("lines",[])
+            for x in run_lines
             if x.get("line_type")=="employer_contribution"
             and x.get("source_type")!="defined_contribution_plan"
         ),2)
 
-        lines = []
+        lines=[]
 
-        def add_line(account_code, description, debit=0, credit=0, bucket=None):
-            debit = round(float(debit or 0), 2)
-            credit = round(float(credit or 0), 2)
+        def add_line(account_code,description,debit=0,credit=0,bucket=None):
+            debit=round(float(debit or 0),2)
+            credit=round(float(credit or 0),2)
 
-            if debit <= 0 and credit <= 0:
+            if debit<=0 and credit<=0:
                 return
 
             lines.append({
-                "account_code": account_code,
-                "description": description,
-                "debit": debit,
-                "credit": credit,
-                "bucket": bucket,
+                "account_code":account_code,
+                "description":description,
+                "debit":debit,
+                "credit":credit,
+                "bucket":bucket,
             })
 
         add_line(
             required["salary_expense"],
             "Payroll gross salaries and wages",
             debit=gross,
-            bucket="gross_pay"
+            bucket="gross_pay",
         )
 
-        if employer_total > 0:
-            employer_expense = mappings.get("employer_contribution_expense")
-            employer_payable = mappings.get("other_deductions_payable")
+        if employer_total>0:
+            employer_expense=mappings.get("employer_contribution_expense")
+            employer_payable=mappings.get("other_deductions_payable")
 
             if not employer_expense:
                 missing.append("employer_contribution_expense")
+
             if not employer_payable:
                 missing.append("other_deductions_payable")
 
@@ -144321,47 +144354,91 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     employer_expense,
                     "Employer payroll contributions expense",
                     debit=employer_total,
-                    bucket="employer_contribution_expense"
+                    bucket="employer_contribution_expense",
                 )
+
                 add_line(
                     employer_payable,
                     "Employer payroll contributions payable",
                     credit=employer_total,
-                    bucket="employer_contribution_payable"
+                    bucket="employer_contribution_payable",
                 )
 
         add_line(
             required["paye_payable"],
             "PAYE / withholding tax payable",
             credit=tax_total,
-            bucket="tax"
+            bucket="tax",
         )
 
-        add_line(
-            required["other_deductions_payable"],
-            "Other payroll deductions payable",
-            credit=deduction_total,
-            bucket="deductions"
-        )
+        deduction_groups={}
+
+        for x in run_lines:
+            if x.get("line_type")!="deduction":
+                continue
+
+            if x.get("source_type")=="defined_contribution_plan":
+                continue
+
+            amount=round(float(x.get("amount") or 0),2)
+            if amount<=0:
+                continue
+
+            account_code=(x.get("gl_account_code") or "").strip()
+
+            if not account_code:
+                account_code=(
+                    mappings.get("other_deductions_payable")
+                    or ""
+                ).strip()
+
+            if not account_code:
+                missing.append(
+                    f"deduction_account:{x.get('code') or x.get('description') or x.get('id')}"
+                )
+                continue
+
+            key=(
+                account_code,
+                x.get("code") or "",
+                x.get("description") or "",
+            )
+
+            deduction_groups[key]=round(
+                deduction_groups.get(key,0)+amount,
+                2,
+            )
+
+        for (account_code,code,description),amount in deduction_groups.items():
+            label=description or code or "Payroll deduction"
+
+            add_line(
+                account_code,
+                label,
+                credit=amount,
+                bucket="deduction",
+            )
 
         add_line(
             required["net_salary_payable"],
             "Net salaries payable",
             credit=net,
-            bucket="net_pay"
+            bucket="net_pay",
         )
 
         plan_groups={}
 
-        for x in run.get("lines",[]):
+        for x in run_lines:
             if x.get("source_type")!="defined_contribution_plan":
                 continue
 
-            payable=x.get("gl_account_code")
-            expense=x.get("offset_account_code")
+            payable=(x.get("gl_account_code") or "").strip()
+            expense=(x.get("offset_account_code") or "").strip()
             key=(x.get("line_type"),expense,payable)
+
             plan_groups[key]=round(
-                plan_groups.get(key,0)+float(x.get("amount") or 0),2
+                plan_groups.get(key,0)+float(x.get("amount") or 0),
+                2,
             )
 
         for (line_type,expense,payable),amount in plan_groups.items():
@@ -144379,9 +144456,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
             elif line_type=="employer_contribution":
                 if not expense:
-                    missing.append(
-                        "defined_contribution_expense_account"
-                    )
+                    missing.append("defined_contribution_expense_account")
                     continue
 
                 add_line(
@@ -144398,69 +144473,95 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     bucket="defined_contribution_employer_payable",
                 )
 
-        debits = round(sum(float(x.get("debit") or 0) for x in lines), 2)
-        credits = round(sum(float(x.get("credit") or 0) for x in lines), 2)
-        difference = round(debits - credits, 2)
+        debits=round(sum(
+            float(x.get("debit") or 0)
+            for x in lines
+        ),2)
 
-        account_codes = [x["account_code"] for x in lines if x.get("account_code")]
+        credits=round(sum(
+            float(x.get("credit") or 0)
+            for x in lines
+        ),2)
 
-        account_rows = self.fetch_all(f"""
-            SELECT code, name, section, category, role, posting
+        difference=round(debits-credits,2)
+
+        account_codes=list({
+            x["account_code"]
+            for x in lines
+            if x.get("account_code")
+        })
+
+        account_rows=self.fetch_all(f"""
+            SELECT code,name,section,category,role,posting
             FROM {schema}.coa
-            WHERE code = ANY(%s)
+            WHERE code=ANY(%s)
             ORDER BY code;
-        """, (account_codes,)) if account_codes else []
+        """,(account_codes,)) if account_codes else []
 
-        account_by_code = {r["code"]: r for r in account_rows}
+        account_by_code={
+            r["code"]:r
+            for r in account_rows
+        }
 
-        enriched_lines = []
-        invalid_accounts = []
+        enriched_lines=[]
+        invalid_accounts=[]
 
         for ln in lines:
-            acct = account_by_code.get(ln["account_code"])
+            acct=account_by_code.get(ln["account_code"])
+
             if not acct or not acct.get("posting"):
                 invalid_accounts.append(ln["account_code"])
 
             enriched_lines.append({
                 **ln,
-                "account_name": acct.get("name") if acct else None,
-                "section": acct.get("section") if acct else None,
-                "category": acct.get("category") if acct else None,
-                "role": acct.get("role") if acct else None,
+                "account_name":acct.get("name") if acct else None,
+                "section":acct.get("section") if acct else None,
+                "category":acct.get("category") if acct else None,
+                "role":acct.get("role") if acct else None,
             })
 
-        missing = sorted(set(missing))
-        invalid_accounts = sorted(set(invalid_accounts))
+        missing=sorted(set(missing))
+        invalid_accounts=sorted(set(invalid_accounts))
 
-        return {
-            "ok": True,
-            "ready_to_post": (
+        return{
+            "ok":True,
+            "ready_to_post":(
                 not missing
                 and not invalid_accounts
-                and debits > 0
-                and credits > 0
-                and difference == 0
+                and debits>0
+                and credits>0
+                and difference==0
             ),
-            "reason": None if difference == 0 and not missing and not invalid_accounts else "Payroll journal preview has issues.",
-            "run": {
-                "id": run.get("id"),
-                "run_no": run.get("run_no"),
-                "status": run.get("status"),
-                "period_start": run.get("period_start"),
-                "period_end": run.get("period_end"),
-                "payment_date": run.get("payment_date"),
-                "gross_pay": gross,
-                "total_deductions": round(float(run.get("total_deductions") or 0), 2),
-                "total_employer_contributions": round(float(run.get("total_employer_contributions") or 0), 2),
-                "net_pay": net,
-                "posted_journal_id": run.get("posted_journal_id"),
+            "reason":(
+                None
+                if difference==0 and not missing and not invalid_accounts
+                else "Payroll journal preview has issues."
+            ),
+            "run":{
+                "id":run.get("id"),
+                "run_no":run.get("run_no"),
+                "status":run.get("status"),
+                "period_start":run.get("period_start"),
+                "period_end":run.get("period_end"),
+                "payment_date":run.get("payment_date"),
+                "gross_pay":gross,
+                "total_deductions":round(
+                    float(run.get("total_deductions") or 0),
+                    2,
+                ),
+                "total_employer_contributions":round(
+                    float(run.get("total_employer_contributions") or 0),
+                    2,
+                ),
+                "net_pay":net,
+                "posted_journal_id":run.get("posted_journal_id"),
             },
-            "lines": enriched_lines,
-            "debits": debits,
-            "credits": credits,
-            "difference": difference,
-            "missing_mappings": missing,
-            "invalid_accounts": invalid_accounts,
+            "lines":enriched_lines,
+            "debits":debits,
+            "credits":credits,
+            "difference":difference,
+            "missing_mappings":missing,
+            "invalid_accounts":invalid_accounts,
         }
 
     def payroll_run_reconcile(
@@ -145146,44 +145247,51 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             data.get("expense_account_code"),
         ))
 
-    def payroll_deduction_type_create(
-        self,
-        company_id: int,
-        data: dict,
-    ):
-        schema = self.company_schema(company_id)
+    def payroll_deduction_type_create(self,company_id:int,data:dict):
+        schema=self.company_schema(company_id)
 
-        code = self.payroll_generate_setup_code(
+        code=self.payroll_generate_setup_code(
             company_id,
             "deduction",
         )
-        name = str(data.get("name") or "").strip()
 
-        if not code or not name:
-            raise ValueError(
-                "Deduction code and name are required"
-            )
+        name=str(data.get("name") or "").strip()
+        account_type=str(
+            data.get("posting_account_type") or "liability"
+        ).strip().lower()
+
+        if not name:
+            raise ValueError("Deduction name is required")
+
+        if account_type not in("liability","asset"):
+            raise ValueError("Invalid deduction posting account type")
 
         return self.fetch_one(f"""
-            INSERT INTO {schema}.payroll_deduction_types (
+            INSERT INTO {schema}.payroll_deduction_types(
                 company_id,
                 code,
                 name,
                 is_statutory,
+                posting_account_type,
+                posting_account_code,
                 liability_account_code
             )
-            VALUES (
+            VALUES(
                 %s,%s,%s,
                 COALESCE(%s,FALSE),
-                %s
+                %s,%s,
+                CASE WHEN %s='liability' THEN %s ELSE NULL END
             )
             RETURNING *;
-        """, (
+        """,(
             int(company_id),
             code,
             name,
             data.get("is_statutory"),
-            data.get("liability_account_code"),
+            account_type,
+            data.get("posting_account_code"),
+            account_type,
+            data.get("posting_account_code"),
         ))
 
     def payroll_contribution_type_create(
@@ -145644,9 +145752,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
     def payroll_deduction_type_update(
         self,
-        company_id: int,
-        item_id: int,
-        data: dict,
+        company_id:int,
+        item_id:int,
+        data:dict,
     ):
         return self._payroll_setup_update(
             company_id,
@@ -145655,7 +145763,8 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             data,
             [
                 "name",
-                "liability_account_code",
+                "posting_account_type",
+                "posting_account_code",
                 "is_statutory",
                 "is_active",
             ],
