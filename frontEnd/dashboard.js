@@ -61437,6 +61437,7 @@ async function saveEditModal() {
     reportingDate: new Date().toISOString().slice(0, 10),
     dashboard: null,
     settings: null,
+    leaveTypes:[],
     leavePolicies: [],
     leaveRuns: [],
     selectedLeaveRun: null,
@@ -63562,24 +63563,26 @@ async function saveEditModal() {
   }
 
   function payrollLeavePolicyMode(){
-    const x=payrollSelectedLeaveType();
+      const x=payrollSelectedLeaveType();
+      if(!x)return"simple";
 
-    const text=[
-      x?.code,
-      x?.name,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+      const code=String(x.code||"").trim().toUpperCase();
 
-    if(!text)return"simple";
-    if(text.includes("annual"))return"annual";
-    if(text.includes("sick"))return"sick";
-    if(/maternity|parental|paternity|adoption/.test(text))return"parental";
-    if(/family responsibility|special|bereavement|compassionate/.test(text))return"special";
-    if(text.includes("unpaid"))return"unpaid";
+      if(code==="ANNUAL")return"annual";
+      if(code==="SICK")return"sick";
+      if(["MATERNITY","PATERNITY","PARENTAL","ADOPTION"].includes(code))return"parental";
+      if(["FAMILY_RESP","BEREAVEMENT","STUDY","SPECIAL"].includes(code))return"special";
+      if(code==="UNPAID")return"unpaid";
 
-    return"simple";
+      const text=`${x.code||""} ${x.name||""}`.toLowerCase();
+
+      if(text.includes("sick"))return"sick";
+      if(/maternity|paternity|parental|adoption/.test(text))return"parental";
+      if(text.includes("unpaid"))return"unpaid";
+      if(/family|special|bereavement|compassionate|study/.test(text))return"special";
+      if(/annual|vacation/.test(text))return"annual";
+
+      return"simple";
   }
 
   function updatePayrollSickLeaveFields(){
@@ -63635,30 +63638,29 @@ async function saveEditModal() {
   }
 
   function updatePayrollLeavePolicySubtitle(mode){
-    const el=$("payrollLeavePolicySubtitle");
-    if(!el)return;
+      const el=$("payrollLeavePolicySubtitle");
+      if(!el)return;
 
-    const messages={
-      annual:
-        "Configure accumulating annual leave and the IAS 19 obligation.",
+      const type=payrollSelectedLeaveType();
+      const code=String(type?.code||"").toUpperCase();
 
-      sick:
-        "Configure sick leave cycle and initial service rules.",
+      const messages={
+          annual:"Configure accumulating annual leave entitlement, accrual and IAS 19 provision.",
+          sick:"Configure sick-leave cycle entitlement and initial service rules.",
+          parental:"Configure maternity, paternity or parental leave entitlement and pay treatment.",
+          special:"Configure entitlement, qualifying period and pay treatment.",
+          unpaid:"Configure unpaid leave deduction and benefit-accrual treatment.",
+          simple:"Configure this leave type.",
+      };
 
-      parental:
-        "Configure maternity, parental or paternity leave entitlement.",
-
-      special:
-        "Configure family responsibility or special leave.",
-
-      unpaid:
-        "Configure unpaid leave payroll treatment.",
-
-      simple:
-        "This leave type does not require additional accrual configuration."
-    };
-
-    el.textContent=messages[mode]||messages.simple;
+      if(code==="STUDY")
+          el.textContent="Configure study leave entitlement and pay treatment.";
+      else if(code==="BEREAVEMENT")
+          el.textContent="Configure compassionate / bereavement leave entitlement and pay treatment.";
+      else if(code==="FAMILY_RESP")
+          el.textContent="Configure family responsibility leave entitlement and pay treatment.";
+      else
+          el.textContent=messages[mode]||messages.simple;
   }
 
   async function openPayrollLeavePolicyModal(policy=null){
@@ -63790,47 +63792,62 @@ async function saveEditModal() {
   }
 
   function togglePayrollLeaveProvisionAccounts(){
-    const mode=payrollLeavePolicyMode();
-    const allowed=
-      mode==="annual"||
-      mode==="parental";
+      const required=
+          payrollLeavePolicyMode()==="annual"&&
+          !!$("payrollLeavePolicyProvisionRequired")?.checked;
 
-    const required=
-      allowed &&
-      !!$("payrollLeavePolicyProvisionRequired")?.checked;
+      $("payrollLeaveProvisionAccountWrap")
+          ?.classList.toggle("hidden",!required);
 
-    $("payrollLeaveProvisionAccountWrap")
-      ?.classList.toggle("hidden",!required);
+      const expense=$("payrollLeavePolicyExpenseAccount");
+      const liability=$("payrollLeavePolicyLiabilityAccount");
 
-    const expense=$("payrollLeavePolicyExpenseAccount");
-    const liability=$("payrollLeavePolicyLiabilityAccount");
+      if(expense){
+          expense.disabled=!required;
+          expense.required=required;
+      }
 
-    if(expense){
-      expense.disabled=!required;
-      expense.required=required;
-    }
-
-    if(liability){
-      liability.disabled=!required;
-      liability.required=required;
-    }
+      if(liability){
+          liability.disabled=!required;
+          liability.required=required;
+      }
   }
 
   function fillPayrollLeaveTypeSelect(value=""){
-    const el=$("payrollLeavePolicyTypeId");
-    if(!el)return;
+      const el=$("payrollLeavePolicyTypeId");
+      if(!el)return;
 
-    const items=payrollState.employeeBenefits.leaveTypes||
-      payrollState.leaveTypes||[];
+      const order=[
+          "ANNUAL",
+          "SICK",
+          "MATERNITY",
+          "PATERNITY",
+          "PARENTAL",
+          "FAMILY_RESP",
+          "BEREAVEMENT",
+          "STUDY",
+          "UNPAID",
+          "SPECIAL",
+      ];
 
-    el.innerHTML=`
-      <option value="">Select leave type…</option>
-      ${items.map(x=>`
-        <option value="${esc(x.id)}"
-          ${String(x.id)===String(value)?"selected":""}>
-          ${esc(x.name||x.code||`Leave type ${x.id}`)}
-        </option>
-      `).join("")}`;
+      const items=[
+          ...(payrollState.employeeBenefits.leaveTypes||
+          payrollState.leaveTypes||[])
+      ].sort((a,b)=>{
+          const ai=order.indexOf(String(a.code||"").toUpperCase());
+          const bi=order.indexOf(String(b.code||"").toUpperCase());
+          return(ai<0?999:ai)-(bi<0?999:bi)||
+              String(a.name||"").localeCompare(String(b.name||""));
+      });
+
+      el.innerHTML=`
+          <option value="">Select leave type…</option>
+          ${items.map(x=>`
+              <option value="${esc(x.id)}"
+                  ${String(x.id)===String(value)?"selected":""}>
+                  ${esc(x.name||x.code||`Leave type ${x.id}`)}
+              </option>
+          `).join("")}`;
   }
 
   function closePayrollLeavePolicyModal(){
@@ -64006,11 +64023,11 @@ async function saveEditModal() {
     }
 
     if(kind==="special"&&payload.entitlement_amount<=0){
-      showPayrollStatus(
-        "Enter the special leave entitlement.",
-        "error"
-      );
-      return;
+        showPayrollStatus(
+            "Enter the leave entitlement.",
+            "error"
+        );
+        return;
     }
 
     if(accumulating&&method==="service_tiered"){
@@ -78871,8 +78888,15 @@ async function saveEditModal() {
         )
       );
 
-    $("payrollLeavePolicyTypeId")
-      ?.addEventListener("change",updatePayrollLeavePolicyFields);
+    $("payrollLeavePolicyTypeId")?.addEventListener("change",()=>{
+        const type=payrollSelectedLeaveType();
+        const policyId=Number($("payrollLeavePolicyId")?.value||0);
+
+        if(!policyId&&type&&$("payrollLeavePolicyName"))
+            $("payrollLeavePolicyName").value=type.name||"";
+
+        updatePayrollLeavePolicyFields();
+    });
 
     $("payrollLeavePolicyMethod")
       ?.addEventListener("change",updatePayrollLeavePolicyFields);

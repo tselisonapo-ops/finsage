@@ -2291,6 +2291,30 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS companies_company_reg_no_idx
             ON public.companies (company_reg_no);
 
+        INSERT INTO {schema}.payroll_leave_types (
+            company_id,
+            code,
+            name,
+            paid,
+            accrues,
+            annual_entitlement_days,
+            is_active
+        )
+        VALUES
+            ({company_id}, 'ANNUAL',      'Annual Leave',                       TRUE,  TRUE,  0, TRUE),
+            ({company_id}, 'SICK',        'Sick Leave',                         TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'MATERNITY',   'Maternity Leave',                    FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'PATERNITY',   'Paternity Leave',                    FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'PARENTAL',    'Parental Leave',                     FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'FAMILY_RESP', 'Family Responsibility Leave',       TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'BEREAVEMENT', 'Compassionate / Bereavement Leave', TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'STUDY',       'Study Leave',                        TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'UNPAID',      'Unpaid Leave',                       FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'SPECIAL',     'Special / Other Leave',              TRUE,  FALSE, 0, TRUE)
+        ON CONFLICT (company_id, code)
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            is_active = TRUE;
 
         CREATE TABLE IF NOT EXISTS public.group_reporting_profiles (
             id SERIAL PRIMARY KEY,
@@ -30719,7 +30743,7 @@ class DatabaseService:
         CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policies (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
-            leave_type_id BIGINT NOT NULL,
+            leave_type_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             annual_entitlement_days NUMERIC(9,2) NOT NULL DEFAULT 0,
             accrual_method TEXT NOT NULL DEFAULT 'straight_line',
@@ -30846,6 +30870,11 @@ class DatabaseService:
             )
         );
 
+        CONSTRAINT fk_payroll_leave_policy_type
+            FOREIGN KEY (leave_type_id)
+            REFERENCES {schema}.payroll_leave_types(id)
+            ON DELETE RESTRICT,
+            
         CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policy_tiers (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,
@@ -30977,6 +31006,11 @@ class DatabaseService:
                 company_id, run_id, employee_id, leave_type_id
             )
         );
+
+        CONSTRAINT fk_payroll_leave_accrual_line_type
+            FOREIGN KEY (leave_type_id)
+            REFERENCES {schema}.payroll_leave_types(id)
+            ON DELETE RESTRICT,
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_schemes (
             id BIGSERIAL PRIMARY KEY,

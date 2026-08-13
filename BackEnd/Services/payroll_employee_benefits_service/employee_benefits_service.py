@@ -551,20 +551,32 @@ class PayrollEmployeeBenefitsService:
             LIMIT 1;
         """,(int(company_id),int(leave_type_id))) or {}
 
-        text=f"{row.get('code') or ''} {row.get('name') or ''}".lower()
+        if not row:
+            raise ValueError("Leave type not found")
 
-        if "sick" in text:return "sick"
-        if any(x in text for x in("maternity","parental","adoption")):return "parental"
-        if "unpaid" in text:return "unpaid"
-        if any(x in text for x in("family","special","bereavement","compassionate")):return "special"
-        if any(x in text for x in("annual","vacation")):return "annual"
+        code=str(row.get("code") or "").strip().upper()
+        name=str(row.get("name") or "").strip().lower()
+
+        if code=="ANNUAL": return "annual"
+        if code=="SICK": return "sick"
+        if code in{"MATERNITY","PATERNITY","PARENTAL","ADOPTION"}: return "parental"
+        if code in{"FAMILY_RESP","BEREAVEMENT","STUDY","SPECIAL"}: return "special"
+        if code=="UNPAID": return "unpaid"
+
+        text=f"{code} {name}".lower()
+
+        if "sick" in text: return "sick"
+        if any(x in text for x in("maternity","paternity","parental","adoption")): return "parental"
+        if "unpaid" in text: return "unpaid"
+        if any(x in text for x in("family","special","bereavement","compassionate","study")): return "special"
+        if any(x in text for x in("annual","vacation")): return "annual"
 
         return "other"
 
     def leave_policy_save(self,company_id:int,body:dict,policy_id=None,user_id=None)->dict:
         schema=self.schema(company_id)
 
-        required=["leave_type_id","name","annual_entitlement_days"]
+        required=["leave_type_id","name"]
         missing=[k for k in required if body.get(k) in(None,"")]
         if missing:
             raise ValueError("Missing required fields: "+", ".join(missing))
@@ -578,6 +590,16 @@ class PayrollEmployeeBenefitsService:
             int(body["leave_type_id"]),
         )
 
+        annual_entitlement = dec(
+            body.get("annual_entitlement_days")
+        )
+
+        if kind == "annual":
+            if annual_entitlement <= 0:
+                raise ValueError(
+                    "Annual leave entitlement must be greater than zero"
+                )
+    
         absence_treatment={
             "annual":"accumulating",
             "sick":"non_accumulating",
