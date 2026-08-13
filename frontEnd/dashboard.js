@@ -77216,77 +77216,108 @@ async function saveEditModal() {
     });
   }
 
-  function openPayrollEmployeeModal(mode = "create") {
+  function openPayrollEmployeeModal(mode="create"){
+    if(mode==="create"){
+      payrollState.selectedEmployee=null;
+      clearPayrollEmployeeForm();
+    }
+
     $("payrollEmployeeModal")?.classList.remove("hidden");
-    $("payrollEmployeeModalTitle").textContent = mode === "edit" ? "Employee Profile" : "Add Employee";
+
+    $("payrollEmployeeModalTitle").textContent=
+      mode==="edit"?"Employee Profile":"Add Employee";
+
     switchPayrollEmpTab("bio");
   }
 
-  function closePayrollEmployeeModal() {
+  function closePayrollEmployeeModal(){
     $("payrollEmployeeModal")?.classList.add("hidden");
+    payrollState.selectedEmployee=null;
+    clearPayrollEmployeeForm();
+    switchPayrollEmpTab("bio");
   }
 
-  function clearPayrollEmployeeForm() {
+  function clearPayrollEmployeeForm(){
     [
       "payrollEditingEmployeeId",
-      "payFirstName",
-      "payLastName",
-      "payEmail",
-      "payPhone",
-      "payIdNumber",
-      "payPassportNumber",
-      "payTaxNumber",
-      "payStartDate",
-      "payBasicSalary",
-      "payHourlyRate",
-      "payNormalHours",
-      "payContractFrom",
-      "payTaxProfileAuthorityId",
-      "payTaxProfileNumber",
-      "payTaxEffectiveFrom",
-      "payTaxDateOfBirth",
-      "payTaxDirectiveNumber",
-      "payTaxDirectiveRate",
-      "payTaxAdditionalAmount",
-      "payTaxEffectiveTo",
-      "payBankName",
-      "payBankAccountName",
-      "payBankAccountNumber",
-      "payBankBranchCode",
-    ].forEach(id => {
-      if ($(id)) {
-        $(id).value = "";
-      }
+      "payFirstName","payLastName","payEmail","payPhone",
+      "payIdNumber","payPassportNumber","payTaxNumber","payStartDate",
+      "payBasicSalary","payHourlyRate","payNormalHours","payContractFrom",
+      "payTaxProfileAuthorityId","payTaxProfileNumber","payTaxEffectiveFrom",
+      "payTaxDateOfBirth","payTaxDirectiveNumber","payTaxDirectiveRate",
+      "payTaxAdditionalAmount","payTaxEffectiveTo",
+      "payBankName","payBankAccountName","payBankAccountNumber","payBankBranchCode",
+      "payBenefitEmployeeAmount","payBenefitEmployerAmount",
+      "payBenefitEmployeePercent","payBenefitEmployerPercent",
+      "payBenefitTaxableAmount","payBenefitProvider","payBenefitPolicy",
+      "payBenefitEffectiveFrom","payBenefitNotes",
+      "payLeaveFrom","payLeaveTo","payLeaveDays","payLeaveReason",
+      "payLoanNo","payLoanPrincipal","payLoanRepayment","payLoanStartDate","payLoanNotes",
+      "payRecurringEarningAmount","payRecurringEarningRate",
+      "payRecurringEarningFrom","payRecurringEarningTo","payRecurringEarningNotes",
+      "payRecurringDeductionAmount","payRecurringDeductionFrom",
+      "payRecurringDeductionTo","payRecurringDeductionNotes",
+    ].forEach(id=>{
+      if($(id))$(id).value="";
     });
 
-    if ($("payEmpNo")) {
-      $("payEmpNo").value =
-        "Generated after saving";
-    }
+    if($("payEmpNo"))
+      $("payEmpNo").value="Generated after saving";
 
-    $("payEmploymentStatus").value = "active";
-    $("payContractType").value = "permanent";
-    $("paySalaryType").value = "monthly";
-    $("payBankAccountType").value = "";
-    $("payPayeExempt").checked = false;
-    if ($("payTaxResidencyStatus")) {
-      $("payTaxResidencyStatus").value = "resident";
-    }
+    if($("payEmploymentStatus"))
+      $("payEmploymentStatus").value="active";
 
-    if ($("payTaxMedicalMembers")) {
-      $("payTaxMedicalMembers").value = "0";
-    }
+    if($("payContractType"))
+      $("payContractType").value="permanent";
 
-    if ($("payTaxCalculationMethod")) {
-      $("payTaxCalculationMethod").value = "standard";
-    }
+    if($("paySalaryType"))
+      $("paySalaryType").value="monthly";
 
-    if ($("payTaxAdditionalAmount")) {
-      $("payTaxAdditionalAmount").value = "0";
-    }
+    if($("payBankAccountType"))
+      $("payBankAccountType").value="";
+
+    if($("payBankPrimary"))
+      $("payBankPrimary").checked=true;
+
+    if($("payPayeExempt"))
+      $("payPayeExempt").checked=false;
+
+    if($("payTaxResidencyStatus"))
+      $("payTaxResidencyStatus").value="resident";
+
+    if($("payTaxMedicalMembers"))
+      $("payTaxMedicalMembers").value="0";
+
+    if($("payTaxCalculationMethod"))
+      $("payTaxCalculationMethod").value="standard";
+
+    if($("payTaxAdditionalAmount"))
+      $("payTaxAdditionalAmount").value="0";
+
+    if($("payBenefitCalcMethod"))
+      $("payBenefitCalcMethod").value="fixed_amount";
+
+    if($("payRecurringEarningQuantity"))
+      $("payRecurringEarningQuantity").value="1";
+
+    if($("payrollEmployeeModalTitle"))
+      $("payrollEmployeeModalTitle").textContent="Add Employee";
+
+    if($("payrollSaveEmployeeBtn"))
+      $("payrollSaveEmployeeBtn").textContent="Save Employee";
+
+    [
+      "payrollBenefitsList",
+      "payrollLeaveList",
+      "payrollLoansList",
+      "payrollRecurringEarningsList",
+      "payrollRecurringDeductionsList",
+    ].forEach(id=>{
+      if($(id))$(id).innerHTML="";
+    });
 
     updatePayrollCountryTaxFields();
-    $("payBankPrimary").checked = true;
+    updatePayrollTaxMethodFields();
   }
 
   async function openPayrollEmployee(employeeId) {
@@ -77519,47 +77550,68 @@ async function saveEditModal() {
   }
 
 
-  async function savePayrollEmployee() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
+  async function savePayrollEmployee(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
 
-    const payload = {
-      first_name: $("payFirstName").value.trim(),
-      last_name: $("payLastName").value.trim(),
-      email: $("payEmail").value.trim() || null,
-      phone: $("payPhone").value.trim() || null,
-      id_number: $("payIdNumber").value.trim() || null,
-      passport_number: $("payPassportNumber").value.trim() || null,
-      tax_number: $("payTaxNumber").value.trim() || null,
-      start_date: $("payStartDate").value,
-      employment_status: $("payEmploymentStatus").value,
+    const payload={
+      first_name:$("payFirstName").value.trim(),
+      last_name:$("payLastName").value.trim(),
+      email:$("payEmail").value.trim()||null,
+      phone:$("payPhone").value.trim()||null,
+      id_number:$("payIdNumber").value.trim()||null,
+      passport_number:$("payPassportNumber").value.trim()||null,
+      tax_number:$("payTaxNumber").value.trim()||null,
+      start_date:$("payStartDate").value,
+      employment_status:$("payEmploymentStatus").value,
     };
 
-    let res;
-    if (employeeId) {
-      res = await apiFetch(ENDPOINTS.payroll.employee(companyId, employeeId), {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-    } else {
-      res = await apiFetch(ENDPOINTS.payroll.employees(companyId), {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      $("payrollEditingEmployeeId").value = res?.data?.id || "";
+    const res=await apiFetch(
+      employeeId
+        ?ENDPOINTS.payroll.employee(companyId,employeeId)
+        :ENDPOINTS.payroll.employees(companyId),
+      {
+        method:employeeId?"PATCH":"POST",
+        body:JSON.stringify(payload),
+      }
+    );
+
+    const created=
+      res?.data?.employee||
+      res?.employee||
+      res?.data||
+      res||
+      {};
+
+    const savedId=Number(
+      created.id||
+      created.employee_id||
+      res?.data?.id||
+      res?.data?.employee_id||
+      0
+    );
+
+    if(!savedId){
+      throw new Error("Employee saved but no employee ID was returned.");
     }
 
-    const created = res?.data || {};
+    $("payrollEditingEmployeeId").value=String(savedId);
 
-    $("payrollEditingEmployeeId").value =
-      created.id || "";
+    if(created.employee_no){
+      $("payEmpNo").value=created.employee_no;
+    }
 
-    $("payEmpNo").value =
-      created.employee_no || "";
+    $("payrollEmployeeModalTitle").textContent="Employee Profile";
+    $("payrollSaveEmployeeBtn").textContent="Save Changes";
 
     await payrollLoadAll();
-    switchPayrollTab("employees");
-    showPayrollStatus("Employee saved. Continue with contract, tax and bank details.", "success");
+
+    showPayrollStatus(
+      employeeId
+        ?"Employee updated."
+        :"Employee saved. Continue with contract, tax and bank details.",
+      "success"
+    );
   }
 
   async function savePayrollContract() {
