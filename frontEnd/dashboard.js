@@ -63100,165 +63100,163 @@ async function saveEditModal() {
   }
 
   async function editPayrollBenefitPlan(plan={}){
-    const x=await payrollForm("Benefit plan",[
-      payrollGeneratedCodeField(
-        "code","Plan code",plan.code
-      ),
-      {
-        name:"name",
-        label:"Name",
-        required:true,
-        value:plan.name||"",
-      },
-      {
-        name:"plan_type",
-        label:"Plan type",
-        type:"select",
-        required:true,
-        value:plan.plan_type||"defined_contribution",
-        options:[
-          ["defined_contribution","Defined contribution"],
-          ["defined_benefit","Defined benefit"],
-          ["medical_post_employment","Post-employment medical"],
-          ["other_post_employment","Other post-employment"],
-        ],
-      },
-      {
-        name:"provider_name",
-        label:"Provider",
-        value:plan.provider_name||"",
-      },
-      {
-        name:"registration_number",
-        label:"Provider registration number",
-        value:plan.registration_number||"",
-      },
-      {
-        name:"calculation_source",
-        label:"Contribution source",
-        type:"select",
-        value:p.calculation_source||"payroll_actual",
-        options:[
-          ["payroll_actual","Actual payroll amounts"],
-          ["setup_estimate","Employee pay setup amounts"],
-          ["percentage","Plan percentages"],
-        ],
-      },
-      {
-        name:"employee_deduction_type_id",
-        label:"Employee contribution deduction",
-        type:"select",
-        required:true,
-        value:p.employee_deduction_type_id||"",
-        options:(payrollState.deductionTypes||[]).map(x=>[
-          x.id,
-          x.name,
-        ]),
-      },
-      {
-        name:"employer_contribution_type_id",
-        label:"Employer contribution item",
-        type:"select",
-        required:true,
-        value:p.employer_contribution_type_id||"",
-        options:(payrollState.employerContributionTypes||[]).map(x=>[
-          x.id,
-          x.name,
-        ]),
-      },
-      {
-        name:"employee_contribution_percentage",
-        label:"Employee %",
-        type:"number",
-        step:"0.0001",
-        min:0,
-        max:100,
-        value:plan.employee_contribution_percentage||0,
-      },
-      {
-        name:"employer_contribution_percentage",
-        label:"Employer %",
-        type:"number",
-        step:"0.0001",
-        min:0,
-        max:100,
-        value:plan.employer_contribution_percentage||0,
-      },
-      {
-        name:"effective_from",
-        label:"Effective from",
-        type:"date",
-        value:plan.effective_from||"",
-      },
-      {
-        name:"effective_to",
-        label:"Effective to",
-        type:"date",
-        value:plan.effective_to||"",
-      },
-      {
-        name:"expense_account_code",
-        label:"Expense account",
-        type:"account",
-        accountKind:"expense",
-        value:plan.expense_account_code||"",
-      },
-      {
-        name:"payable_account_code",
-        label:"Contribution payable account",
-        type:"account",
-        accountKind:"liability",
-        value:plan.payable_account_code||"",
-      },
-      {
-        name:"liability_account_code",
-        label:"Benefit liability account",
-        type:"account",
-        accountKind:"liability",
-        value:plan.liability_account_code||"",
-      },
-      {
-        name:"asset_account_code",
-        label:"Plan asset account",
-        type:"account",
-        accountKind:"asset",
-        value:plan.asset_account_code||"",
-      },
-      {
-        name:"oci_account_code",
-        label:"OCI reserve account",
-        type:"account",
-        accountKind:"oci",
-        value:plan.oci_account_code||"",
-      },
-      {
-        name:"funded",
-        label:"Funded plan",
-        type:"checkbox",
-        value:!!plan.funded,
-      },
-      {
-        name:"is_active",
-        label:"Active",
-        type:"checkbox",
-        value:plan.is_active!==false,
-      },
-    ],plan);
+      const x=await payrollForm("Benefit plan",[
+          payrollGeneratedCodeField("code","Plan code",plan.code),
+          {
+              name:"name",
+              label:"Name",
+              required:true,
+              value:plan.name||"",
+          },
+          {
+              name:"plan_type",
+              label:"Plan type",
+              type:"select",
+              required:true,
+              value:plan.plan_type||"defined_contribution",
+              options:[
+                  ["defined_contribution","Defined contribution"],
+                  ["defined_benefit","Defined benefit"],
+                  ["medical_post_employment","Post-employment medical"],
+                  ["other_post_employment","Other post-employment"],
+              ],
+          },
+          {
+              name:"provider_name",
+              label:"Provider",
+              value:plan.provider_name||"",
+          },
+          {
+              name:"registration_number",
+              label:"Provider registration number",
+              value:plan.registration_number||"",
+          },
+          {
+              name:"calculation_source",
+              label:"Contribution source",
+              type:"select",
+              value:plan.calculation_source||"payroll_actual",
+              options:[
+                  ["payroll_actual","Actual payroll amounts"],
+                  ["setup_estimate","Employee pay setup amounts"],
+                  ["percentage","Plan percentages"],
+              ],
+          },
+          {
+              name:"employee_deduction_type_id",
+              label:"Employee contribution deduction",
+              type:"select",
+              required:true,
+              value:plan.employee_deduction_type_id||"",
+              options:(payrollState.deductionTypes||[]).map(x=>[
+                  x.id,
+                  x.name,
+              ]),
+          },
+          {
+              name:"employer_contribution_type_id",
+              label:"Employer contribution item",
+              type:"select",
+              required:true,
+              value:plan.employer_contribution_type_id||"",
+              options:(payrollState.employerContributionTypes||[]).map(x=>[
+                  x.id,
+                  x.name,
+              ]),
+          },
+          {
+              name:"employee_contribution_percentage",
+              label:"Employee %",
+              type:"number",
+              step:"0.0001",
+              min:0,
+              max:100,
+              value:plan.employee_contribution_percentage||0,
+          },
+          {
+              name:"employer_contribution_percentage",
+              label:"Employer %",
+              type:"number",
+              step:"0.0001",
+              min:0,
+              max:100,
+              value:plan.employer_contribution_percentage||0,
+          },
+          {
+              name:"effective_from",
+              label:"Effective from",
+              type:"date",
+              value:plan.effective_from||"",
+          },
+          {
+              name:"effective_to",
+              label:"Effective to",
+              type:"date",
+              value:plan.effective_to||"",
+          },
+          {
+              name:"expense_account_code",
+              label:"Expense account",
+              type:"account",
+              accountKind:"expense",
+              value:plan.expense_account_code||"",
+          },
+          {
+              name:"payable_account_code",
+              label:"Contribution payable account",
+              type:"account",
+              accountKind:"liability",
+              value:plan.payable_account_code||"",
+          },
+          {
+              name:"liability_account_code",
+              label:"Benefit liability account",
+              type:"account",
+              accountKind:"liability",
+              value:plan.liability_account_code||"",
+          },
+          {
+              name:"asset_account_code",
+              label:"Plan asset account",
+              type:"account",
+              accountKind:"asset",
+              value:plan.asset_account_code||"",
+          },
+          {
+              name:"oci_account_code",
+              label:"OCI reserve account",
+              type:"account",
+              accountKind:"oci",
+              value:plan.oci_account_code||"",
+          },
+          {
+              name:"funded",
+              label:"Funded plan",
+              type:"checkbox",
+              value:!!plan.funded,
+          },
+          {
+              name:"is_active",
+              label:"Active",
+              type:"checkbox",
+              value:plan.is_active!==false,
+          },
+      ],plan);
 
-    if(!x)return;
+      if(!x)return;
 
-    await apiFetch(
-      plan.id
-        ?ENDPOINTS.payroll.benefitPlan(cid(),plan.id)
-        :ENDPOINTS.payroll.benefitPlans(cid()),
-      {
-        method:plan.id?"PATCH":"POST",
-        body:JSON.stringify(x),
-      }
-    );
+      await apiFetch(
+          plan.id
+              ?ENDPOINTS.payroll.benefitPlan(cid(),plan.id)
+              :ENDPOINTS.payroll.benefitPlans(cid()),
+          {
+              method:plan.id?"PATCH":"POST",
+              body:JSON.stringify(x),
+          }
+      );
 
-    await loadPayrollBenefitPlans();
-    showPayrollStatus("Benefit plan saved.","success");
+      await loadPayrollBenefitPlans();
+      showPayrollStatus("Benefit plan saved.","success");
   }
 
   async function openPayrollBenefitPlan(planId){
