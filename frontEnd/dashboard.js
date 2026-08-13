@@ -63582,22 +63582,14 @@ async function saveEditModal() {
     return"simple";
   }
 
-  function updatePayrollLeavePolicySubtitle(mode){
-    const el=$("payrollLeavePolicySubtitle");
-    if(!el)return;
+  function updatePayrollSickLeaveFields(){
+    const method=$("payrollLeaveSickInitialMethod")?.value||"none";
 
-    const text={
-      annual:"Configure accumulating annual leave and IAS 19 provision.",
-      sick:"Configure sick leave cycle and usage rules.",
-      parental:"Configure maternity, parental or adoption leave.",
-      special:"Configure family responsibility or special leave.",
-      unpaid:"Configure payroll treatment for unpaid absence.",
-      simple:"No additional accrual configuration is required for this leave type.",
-    };
+    $("payrollLeaveSickDaysWorkedWrap")
+      ?.classList.toggle("hidden",method!=="days_worked");
 
-    el.textContent=
-      text[mode]||
-      text.simple;
+    $("payrollLeaveSickInitialMonthsWrap")
+      ?.classList.toggle("hidden",method==="none");
   }
 
   function updatePayrollLeavePolicyFields(){
