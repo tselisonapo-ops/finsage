@@ -30739,6 +30739,88 @@ class DatabaseService:
                 )
         );
 
+        ALTER TABLE {schema}.payroll_leave_policies
+        ADD COLUMN IF NOT EXISTS absence_treatment TEXT NOT NULL DEFAULT 'accumulating',
+        ADD COLUMN IF NOT EXISTS cycle_entitlement_days NUMERIC(9,2),
+        ADD COLUMN IF NOT EXISTS cycle_months INT,
+        ADD COLUMN IF NOT EXISTS initial_accrual_method TEXT,
+        ADD COLUMN IF NOT EXISTS days_worked_per_accrual_day INT,
+        ADD COLUMN IF NOT EXISTS initial_accrual_months INT,
+        ADD COLUMN IF NOT EXISTS entitlement_amount NUMERIC(9,2),
+        ADD COLUMN IF NOT EXISTS entitlement_unit TEXT,
+        ADD COLUMN IF NOT EXISTS entitlement_period TEXT,
+        ADD COLUMN IF NOT EXISTS pay_treatment TEXT,
+        ADD COLUMN IF NOT EXISTS employer_pay_percent NUMERIC(6,2),
+        ADD COLUMN IF NOT EXISTS minimum_service_months INT,
+        ADD COLUMN IF NOT EXISTS unpaid_deduction_basis TEXT,
+        ADD COLUMN IF NOT EXISTS unpaid_affects_benefits BOOLEAN NOT NULL DEFAULT FALSE;
+
+        ALTER TABLE {schema}.payroll_leave_policies
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_absence_treatment,
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_initial_accrual,
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_entitlement_unit,
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_entitlement_period,
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_pay_treatment,
+        DROP CONSTRAINT IF EXISTS chk_payroll_leave_unpaid_basis;
+
+        ALTER TABLE {schema}.payroll_leave_policies
+        ADD CONSTRAINT chk_payroll_leave_absence_treatment
+        CHECK(
+            absence_treatment IN(
+                'accumulating',
+                'non_accumulating',
+                'unpaid'
+            )
+        ),
+        ADD CONSTRAINT chk_payroll_leave_initial_accrual
+        CHECK(
+            initial_accrual_method IS NULL
+            OR initial_accrual_method IN(
+                'none',
+                'days_worked',
+                'monthly'
+            )
+        ),
+        ADD CONSTRAINT chk_payroll_leave_entitlement_unit
+        CHECK(
+            entitlement_unit IS NULL
+            OR entitlement_unit IN(
+                'days',
+                'weeks',
+                'months'
+            )
+        ),
+        ADD CONSTRAINT chk_payroll_leave_entitlement_period
+        CHECK(
+            entitlement_period IS NULL
+            OR entitlement_period IN(
+                'annual',
+                'event',
+                'employment',
+                'manual'
+            )
+        ),
+        ADD CONSTRAINT chk_payroll_leave_pay_treatment
+        CHECK(
+            pay_treatment IS NULL
+            OR pay_treatment IN(
+                'paid',
+                'part_paid',
+                'unpaid',
+                'statutory'
+            )
+        ),
+        ADD CONSTRAINT chk_payroll_leave_unpaid_basis
+        CHECK(
+            unpaid_deduction_basis IS NULL
+            OR unpaid_deduction_basis IN(
+                'daily_rate',
+                'working_day_rate',
+                'hourly_rate',
+                'manual'
+            )
+        );
+
         CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policy_tiers (
             id BIGSERIAL PRIMARY KEY,
             company_id INT NOT NULL,

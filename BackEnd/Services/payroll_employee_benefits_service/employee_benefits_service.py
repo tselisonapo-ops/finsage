@@ -541,6 +541,26 @@ class PayrollEmployeeBenefitsService:
             ORDER BY name;
         """,(int(company_id),))
 
+    def _leave_policy_kind(self,company_id:int,leave_type_id:int)->str:
+        schema=self.schema(company_id)
+
+        row=self.db.fetch_one(f"""
+            SELECT code,name
+            FROM {schema}.payroll_leave_types
+            WHERE company_id=%s AND id=%s
+            LIMIT 1;
+        """,(int(company_id),int(leave_type_id))) or {}
+
+        text=f"{row.get('code') or ''} {row.get('name') or ''}".lower()
+
+        if "sick" in text:return "sick"
+        if any(x in text for x in("maternity","parental","adoption")):return "parental"
+        if "unpaid" in text:return "unpaid"
+        if any(x in text for x in("family","special","bereavement","compassionate")):return "special"
+        if any(x in text for x in("annual","vacation")):return "annual"
+
+        return "other"
+
     def leave_policy_save(self,company_id:int,body:dict,policy_id=None,user_id=None)->dict:
         schema=self.schema(company_id)
 
@@ -552,6 +572,22 @@ class PayrollEmployeeBenefitsService:
         method=str(body.get("accrual_method") or "straight_line").strip().lower()
         if method not in{"straight_line","monthly_fixed","service_tiered","manual"}:
             raise ValueError("Invalid leave accrual method")
+
+        kind=self._leave_policy_kind(
+            company_id,
+            int(body["leave_type_id"]),
+        )
+
+        absence_treatment={
+            "annual":"accumulating",
+            "sick":"non_accumulating",
+            "parental":"non_accumulating",
+            "special":"non_accumulating",
+            "unpaid":"unpaid",
+        }.get(
+            kind,
+            str(body.get("absence_treatment") or "non_accumulating")
+        )
 
         tiers=body.get("tiers") or []
 
@@ -616,8 +652,11 @@ class PayrollEmployeeBenefitsService:
             else body.get("monthly_accrual_days")
         )
 
-        provision_required=bool(body.get("provision_required",True))
-
+        provision_required=(
+            bool(body.get("provision_required",True))
+            if absence_treatment=="accumulating"
+            else False
+        )
         expense_account=self._mapped_posting_account(
             company_id,
             body.get("expense_account_code"),
@@ -653,35 +692,104 @@ class PayrollEmployeeBenefitsService:
             expense_account,
             liability_account,
             bool(body.get("is_active",True)),
+
+            absence_treatment,
+            body.get("cycle_entitlement_days"),
+            body.get("cycle_months"),
+            body.get("initial_accrual_method"),
+            body.get("days_worked_per_accrual_day"),
+            body.get("initial_accrual_months"),
+            body.get("entitlement_amount"),
+            body.get("entitlement_unit"),
+            body.get("entitlement_period"),
+            body.get("pay_treatment"),
+            body.get("employer_pay_percent"),
+            body.get("minimum_service_months"),
+            body.get("unpaid_deduction_basis"),
+            bool(body.get("unpaid_affects_benefits",False)),
         )
 
         if policy_id:
             out=self.db.fetch_one(f"""
                 UPDATE {schema}.payroll_leave_policies
-                SET leave_type_id=%s,name=%s,annual_entitlement_days=%s,
-                    accrual_method=%s,monthly_accrual_days=%s,
-                    maximum_balance_days=%s,maximum_carry_forward_days=%s,
-                    carry_forward_expiry_months=%s,vesting=%s,
-                    cash_settleable=%s,forfeitable=%s,provision_required=%s,
-                    daily_rate_basis=%s,custom_daily_rate=%s,
-                    include_fixed_allowances=%s,expense_account_code=%s,
-                    liability_account_code=%s,is_active=%s,updated_at=NOW()
+                SET leave_type_id=%s,
+                    name=%s,
+                    annual_entitlement_days=%s,
+                    accrual_method=%s,
+                    monthly_accrual_days=%s,
+                    maximum_balance_days=%s,
+                    maximum_carry_forward_days=%s,
+                    carry_forward_expiry_months=%s,
+                    vesting=%s,
+                    cash_settleable=%s,
+                    forfeitable=%s,
+                    provision_required=%s,
+                    daily_rate_basis=%s,
+                    custom_daily_rate=%s,
+                    include_fixed_allowances=%s,
+                    expense_account_code=%s,
+                    liability_account_code=%s,
+                    is_active=%s,
+                    absence_treatment=%s,
+                    cycle_entitlement_days=%s,
+                    cycle_months=%s,
+                    initial_accrual_method=%s,
+                    days_worked_per_accrual_day=%s,
+                    initial_accrual_months=%s,
+                    entitlement_amount=%s,
+                    entitlement_unit=%s,
+                    entitlement_period=%s,
+                    pay_treatment=%s,
+                    employer_pay_percent=%s,
+                    minimum_service_months=%s,
+                    unpaid_deduction_basis=%s,
+                    unpaid_affects_benefits=%s,
+                    updated_at=NOW()
                 WHERE company_id=%s AND id=%s
                 RETURNING *;
             """,params+(int(company_id),int(policy_id)))
         else:
             out=self.db.fetch_one(f"""
                 INSERT INTO {schema}.payroll_leave_policies(
-                    company_id,leave_type_id,name,annual_entitlement_days,
-                    accrual_method,monthly_accrual_days,maximum_balance_days,
-                    maximum_carry_forward_days,carry_forward_expiry_months,
-                    vesting,cash_settleable,forfeitable,provision_required,
-                    daily_rate_basis,custom_daily_rate,include_fixed_allowances,
-                    expense_account_code,liability_account_code,is_active
+                    company_id,
+                    leave_type_id,
+                    name,
+                    annual_entitlement_days,
+                    accrual_method,
+                    monthly_accrual_days,
+                    maximum_balance_days,
+                    maximum_carry_forward_days,
+                    carry_forward_expiry_months,
+                    vesting,
+                    cash_settleable,
+                    forfeitable,
+                    provision_required,
+                    daily_rate_basis,
+                    custom_daily_rate,
+                    include_fixed_allowances,
+                    expense_account_code,
+                    liability_account_code,
+                    is_active,
+                    absence_treatment,
+                    cycle_entitlement_days,
+                    cycle_months,
+                    initial_accrual_method,
+                    days_worked_per_accrual_day,
+                    initial_accrual_months,
+                    entitlement_amount,
+                    entitlement_unit,
+                    entitlement_period,
+                    pay_treatment,
+                    employer_pay_percent,
+                    minimum_service_months,
+                    unpaid_deduction_basis,
+                    unpaid_affects_benefits
                 )
                 VALUES(
                     %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                    %s,%s,%s
                 )
                 ON CONFLICT(company_id,leave_type_id)
                 DO UPDATE SET
@@ -702,6 +810,20 @@ class PayrollEmployeeBenefitsService:
                     expense_account_code=EXCLUDED.expense_account_code,
                     liability_account_code=EXCLUDED.liability_account_code,
                     is_active=EXCLUDED.is_active,
+                    absence_treatment=EXCLUDED.absence_treatment,
+                    cycle_entitlement_days=EXCLUDED.cycle_entitlement_days,
+                    cycle_months=EXCLUDED.cycle_months,
+                    initial_accrual_method=EXCLUDED.initial_accrual_method,
+                    days_worked_per_accrual_day=EXCLUDED.days_worked_per_accrual_day,
+                    initial_accrual_months=EXCLUDED.initial_accrual_months,
+                    entitlement_amount=EXCLUDED.entitlement_amount,
+                    entitlement_unit=EXCLUDED.entitlement_unit,
+                    entitlement_period=EXCLUDED.entitlement_period,
+                    pay_treatment=EXCLUDED.pay_treatment,
+                    employer_pay_percent=EXCLUDED.employer_pay_percent,
+                    minimum_service_months=EXCLUDED.minimum_service_months,
+                    unpaid_deduction_basis=EXCLUDED.unpaid_deduction_basis,
+                    unpaid_affects_benefits=EXCLUDED.unpaid_affects_benefits,
                     updated_at=NOW()
                 RETURNING *;
             """,(int(company_id),)+params)
@@ -890,7 +1012,13 @@ class PayrollEmployeeBenefitsService:
         for emp in employees:
             monthly_salary = dec(emp.get("monthly_salary"))
             for policy in policies:
-                if not policy.get("is_active") or not policy.get("provision_required"):
+                if not policy.get("is_active"):
+                    continue
+
+                if policy.get("absence_treatment")!="accumulating":
+                    continue
+
+                if not policy.get("provision_required"):
                     continue
 
                 previous = self.db.fetch_one(f"""

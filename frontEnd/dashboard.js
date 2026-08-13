@@ -63395,6 +63395,90 @@ async function saveEditModal() {
       });
   }
 
+  function payrollSelectedLeaveType(){
+    const id=Number($("payrollLeavePolicyTypeId")?.value||0);
+    const rows=
+      payrollState.employeeBenefits.leaveTypes||
+      payrollState.leaveTypes||[];
+
+    return rows.find(x=>Number(x.id)===id)||null;
+  }
+
+  function payrollLeaveTypeKind(){
+    const x=payrollSelectedLeaveType();
+    const text=`${x?.code||""} ${x?.name||""}`.toLowerCase();
+
+    if(/sick/.test(text))return"sick";
+    if(/maternity|parental|adoption/.test(text))return"parental";
+    if(/unpaid/.test(text))return"unpaid";
+    if(/family|special|bereavement|compassionate/.test(text))return"special";
+    if(/annual|vacation/.test(text))return"annual";
+
+    return"other";
+  }
+
+  function updatePayrollLeavePolicyFields(){
+    const kind=payrollLeaveTypeKind();
+    const method=$("payrollLeavePolicyMethod")?.value||"straight_line";
+
+    const annual=kind==="annual";
+    const sick=kind==="sick";
+    const parental=kind==="parental";
+    const special=kind==="special";
+    const unpaid=kind==="unpaid";
+
+    [
+      ["payrollLeaveEntitlementWrap",!annual],
+      ["payrollLeaveMethodWrap",!annual],
+      ["payrollLeaveMonthlyWrap",!annual||method==="service_tiered"],
+      ["payrollLeavePolicyTierWrap",!annual||method!=="service_tiered"],
+      ["payrollLeaveSickWrap",!sick],
+      ["payrollLeaveParentalWrap",!parental],
+      ["payrollLeaveSpecialWrap",!special],
+      ["payrollLeaveUnpaidWrap",!unpaid],
+    ].forEach(([id,hide])=>{
+      $(id)?.classList.toggle("hidden",hide);
+    });
+
+    const accumulating=annual;
+
+    $("payrollLeaveRateWrap")
+      ?.classList.toggle("hidden",unpaid||sick);
+
+    $("payrollLeaveVestingWrap")
+      ?.classList.toggle("hidden",!accumulating);
+
+    $("payrollLeaveProvisionWrap")
+      ?.classList.toggle("hidden",!accumulating);
+
+    if(!accumulating)
+      $("payrollLeavePolicyProvisionRequired").checked=false;
+
+    const subtitles={
+      annual:"Configure accumulating annual leave and IAS 19 provision.",
+      sick:"Configure sick-leave cycle and usage rules.",
+      parental:"Configure maternity, parental or adoption leave.",
+      special:"Configure family responsibility or special leave.",
+      unpaid:"Configure payroll treatment for unpaid absence.",
+      other:"Configure leave entitlement and payroll treatment.",
+    };
+
+    $("payrollLeavePolicySubtitle").textContent=
+      subtitles[kind]||subtitles.other;
+
+    togglePayrollLeaveProvisionAccounts();
+    updatePayrollSickLeaveFields();
+  }
+
+  function updatePayrollSickLeaveFields(){
+    const method=$("payrollLeaveSickInitialMethod")?.value||"none";
+
+    $("payrollLeaveSickDaysWorkedWrap")
+      ?.classList.toggle("hidden",method!=="days_worked");
+
+    $("payrollLeaveSickInitialMonthsWrap")
+      ?.classList.toggle("hidden",method==="none");
+  }
 
   async function openPayrollLeavePolicyModal(policy=null){
     await loadPayrollBenefitCoa();
@@ -63403,53 +63487,144 @@ async function saveEditModal() {
     $("payrollLeavePolicyName").value=policy?.name||"";
     $("payrollLeavePolicyEntitlement").value=
       policy?.annual_entitlement_days??0;
+
     $("payrollLeavePolicyMethod").value=
       policy?.accrual_method||"straight_line";
+
     $("payrollLeavePolicyMonthlyDays").value=
       policy?.monthly_accrual_days??"";
+
     $("payrollLeavePolicyRateBasis").value=
       policy?.daily_rate_basis||"monthly_div_21_67";
-    $("payrollLeavePolicyVesting").checked=!!policy?.vesting;
+
+    $("payrollLeavePolicyVesting").checked=
+      !!policy?.vesting;
+
     $("payrollLeavePolicyProvisionRequired").checked=
       policy?.provision_required!==false;
+
+    if($("payrollLeaveSickCycleDays"))
+      $("payrollLeaveSickCycleDays").value=
+        policy?.cycle_entitlement_days??"";
+
+    if($("payrollLeaveSickCycleMonths"))
+      $("payrollLeaveSickCycleMonths").value=
+        policy?.cycle_months??36;
+
+    if($("payrollLeaveSickInitialMethod"))
+      $("payrollLeaveSickInitialMethod").value=
+        policy?.initial_accrual_method||"none";
+
+    if($("payrollLeaveSickDaysWorked"))
+      $("payrollLeaveSickDaysWorked").value=
+        policy?.days_worked_per_accrual_day??26;
+
+    if($("payrollLeaveSickInitialMonths"))
+      $("payrollLeaveSickInitialMonths").value=
+        policy?.initial_accrual_months??6;
+
+    if($("payrollLeaveParentalEntitlement"))
+      $("payrollLeaveParentalEntitlement").value=
+        policy?.entitlement_amount??"";
+
+    if($("payrollLeaveParentalUnit"))
+      $("payrollLeaveParentalUnit").value=
+        policy?.entitlement_unit||"days";
+
+    if($("payrollLeaveParentalPayTreatment"))
+      $("payrollLeaveParentalPayTreatment").value=
+        policy?.pay_treatment||"paid";
+
+    if($("payrollLeaveParentalPayPercent"))
+      $("payrollLeaveParentalPayPercent").value=
+        policy?.employer_pay_percent??100;
+
+    if($("payrollLeaveParentalServiceMonths"))
+      $("payrollLeaveParentalServiceMonths").value=
+        policy?.minimum_service_months??0;
+
+    if($("payrollLeaveSpecialDays"))
+      $("payrollLeaveSpecialDays").value=
+        policy?.entitlement_amount??"";
+
+    if($("payrollLeaveSpecialPeriod"))
+      $("payrollLeaveSpecialPeriod").value=
+        policy?.entitlement_period||"annual";
+
+    if($("payrollLeaveSpecialPayTreatment"))
+      $("payrollLeaveSpecialPayTreatment").value=
+        policy?.pay_treatment||"paid";
+
+    if($("payrollLeaveSpecialPayPercent"))
+      $("payrollLeaveSpecialPayPercent").value=
+        policy?.employer_pay_percent??100;
+
+    if($("payrollLeaveSpecialServiceMonths"))
+      $("payrollLeaveSpecialServiceMonths").value=
+        policy?.minimum_service_months??0;
+
+    if($("payrollLeaveUnpaidDeductionBasis"))
+      $("payrollLeaveUnpaidDeductionBasis").value=
+        policy?.unpaid_deduction_basis||"daily_rate";
+
+    if($("payrollLeaveUnpaidAffectsBenefits"))
+      $("payrollLeaveUnpaidAffectsBenefits").checked=
+        !!policy?.unpaid_affects_benefits;
 
     fillPayrollLeaveTypeSelect(policy?.leave_type_id);
 
     fillPayrollAccountSelect(
-        "payrollLeavePolicyExpenseAccount",
-        "expense",
-        policy?.expense_account_code
+      "payrollLeavePolicyExpenseAccount",
+      "expense",
+      policy?.expense_account_code
     );
 
     fillPayrollAccountSelect(
-        "payrollLeavePolicyLiabilityAccount",
-        "liability",
-        policy?.liability_account_code
+      "payrollLeavePolicyLiabilityAccount",
+      "liability",
+      policy?.liability_account_code
     );
 
-    togglePayrollLeaveProvisionAccounts();
+    const tiers=$("payrollLeavePolicyTiers");
+
+    if(tiers){
+      tiers.innerHTML="";
+      payrollLeaveTierSeq=0;
+
+      (policy?.tiers||[]).forEach(
+        tier=>addPayrollLeaveTier(tier)
+      );
+    }
+
+    updatePayrollLeavePolicyFields();
 
     const modal=$("payrollLeavePolicyModal");
     modal?.classList.remove("hidden");
     document.body.classList.add("payroll-modal-open");
 
-    setTimeout(()=>$("payrollLeavePolicyName")?.focus(),0);
+    setTimeout(
+      ()=>$("payrollLeavePolicyName")?.focus(),
+      0
+    );
   }
 
   function togglePayrollLeaveProvisionAccounts(){
-    const required=$("payrollLeavePolicyProvisionRequired")?.checked;
-    const expense=$("payrollLeavePolicyExpenseAccount");
-    const liability=$("payrollLeavePolicyLiabilityAccount");
+    const required=
+      !!$("payrollLeavePolicyProvisionRequired")?.checked;
 
-    if(expense){
-      expense.disabled=!required;
-      expense.required=!!required;
-    }
+    $("payrollLeaveProvisionAccountWrap")
+      ?.classList.toggle("hidden",!required);
 
-    if(liability){
-      liability.disabled=!required;
-      liability.required=!!required;
-    }
+    [
+      "payrollLeavePolicyExpenseAccount",
+      "payrollLeavePolicyLiabilityAccount",
+    ].forEach(id=>{
+      const el=$(id);
+      if(!el)return;
+
+      el.disabled=!required;
+      el.required=required;
+    });
   }
 
   function fillPayrollLeaveTypeSelect(value=""){
@@ -63477,8 +63652,11 @@ async function saveEditModal() {
   async function savePayrollLeavePolicy(){
     const companyId=cid();
     const policyId=Number($("payrollLeavePolicyId")?.value||0);
-    const provisionRequired=!!$("payrollLeavePolicyProvisionRequired")?.checked;
+    const kind=payrollLeaveTypeKind();
     const method=$("payrollLeavePolicyMethod")?.value||"straight_line";
+    const accumulating=kind==="annual";
+    const provisionRequired=
+      accumulating&&!!$("payrollLeavePolicyProvisionRequired")?.checked;
 
     const tiers=
       method==="service_tiered"
@@ -63488,17 +63666,105 @@ async function saveEditModal() {
     const payload={
       leave_type_id:Number($("payrollLeavePolicyTypeId")?.value||0),
       name:$("payrollLeavePolicyName")?.value.trim()||"",
-      annual_entitlement_days:Number($("payrollLeavePolicyEntitlement")?.value||0),
-      accrual_method:method,
+
+      annual_entitlement_days:
+        accumulating
+          ?Number($("payrollLeavePolicyEntitlement")?.value||0)
+          :0,
+
+      accrual_method:
+        accumulating?method:"manual",
 
       monthly_accrual_days:
-        method==="service_tiered"
-          ?null
-          :$("payrollLeavePolicyMonthlyDays")?.value===""
+        accumulating&&method!=="service_tiered"
+          ?$("payrollLeavePolicyMonthlyDays")?.value===""
             ?null
-            :Number($("payrollLeavePolicyMonthlyDays").value),
+            :Number($("payrollLeavePolicyMonthlyDays").value)
+          :null,
 
-      tiers,
+      tiers:accumulating?tiers:[],
+
+      absence_treatment:
+        kind==="annual"
+          ?"accumulating"
+          :kind==="unpaid"
+            ?"unpaid"
+            :"non_accumulating",
+
+      cycle_entitlement_days:
+        kind==="sick"
+          ?Number($("payrollLeaveSickCycleDays")?.value||0)
+          :null,
+
+      cycle_months:
+        kind==="sick"
+          ?Number($("payrollLeaveSickCycleMonths")?.value||0)
+          :null,
+
+      initial_accrual_method:
+        kind==="sick"
+          ?$("payrollLeaveSickInitialMethod")?.value||"none"
+          :null,
+
+      days_worked_per_accrual_day:
+        kind==="sick"&&
+        $("payrollLeaveSickInitialMethod")?.value==="days_worked"
+          ?Number($("payrollLeaveSickDaysWorked")?.value||0)
+          :null,
+
+      initial_accrual_months:
+        kind==="sick"
+          ?Number($("payrollLeaveSickInitialMonths")?.value||0)
+          :null,
+
+      entitlement_amount:
+        kind==="parental"
+          ?Number($("payrollLeaveParentalEntitlement")?.value||0)
+          :kind==="special"
+            ?Number($("payrollLeaveSpecialDays")?.value||0)
+            :null,
+
+      entitlement_unit:
+        kind==="parental"
+          ?$("payrollLeaveParentalUnit")?.value||"days"
+          :null,
+
+      entitlement_period:
+        kind==="special"
+          ?$("payrollLeaveSpecialPeriod")?.value||"annual"
+          :null,
+
+      pay_treatment:
+        kind==="parental"
+          ?$("payrollLeaveParentalPayTreatment")?.value||"paid"
+          :kind==="special"
+            ?$("payrollLeaveSpecialPayTreatment")?.value||"paid"
+            :kind==="unpaid"
+              ?"unpaid"
+              :null,
+
+      employer_pay_percent:
+        kind==="parental"
+          ?Number($("payrollLeaveParentalPayPercent")?.value||0)
+          :kind==="special"
+            ?Number($("payrollLeaveSpecialPayPercent")?.value||0)
+            :null,
+
+      minimum_service_months:
+        kind==="parental"
+          ?Number($("payrollLeaveParentalServiceMonths")?.value||0)
+          :kind==="special"
+            ?Number($("payrollLeaveSpecialServiceMonths")?.value||0)
+            :null,
+
+      unpaid_deduction_basis:
+        kind==="unpaid"
+          ?$("payrollLeaveUnpaidDeductionBasis")?.value||"daily_rate"
+          :null,
+
+      unpaid_affects_benefits:
+        kind==="unpaid"&&
+        !!$("payrollLeaveUnpaidAffectsBenefits")?.checked,
 
       daily_rate_basis:
         $("payrollLeavePolicyRateBasis")?.value||
@@ -63514,7 +63780,10 @@ async function saveEditModal() {
           ?$("payrollLeavePolicyLiabilityAccount")?.value||null
           :null,
 
-      vesting:!!$("payrollLeavePolicyVesting")?.checked,
+      vesting:
+        accumulating&&
+        !!$("payrollLeavePolicyVesting")?.checked,
+
       provision_required:provisionRequired,
       is_active:true,
     };
@@ -63529,7 +63798,33 @@ async function saveEditModal() {
       return;
     }
 
-    if(method==="service_tiered"){
+    if(kind==="sick"){
+      if(payload.cycle_entitlement_days<=0||payload.cycle_months<=0){
+        showPayrollStatus(
+          "Enter the sick-leave cycle entitlement and cycle length.",
+          "error"
+        );
+        return;
+      }
+    }
+
+    if(kind==="parental"&&payload.entitlement_amount<=0){
+      showPayrollStatus(
+        "Enter the maternity / parental leave entitlement.",
+        "error"
+      );
+      return;
+    }
+
+    if(kind==="special"&&payload.entitlement_amount<=0){
+      showPayrollStatus(
+        "Enter the special leave entitlement.",
+        "error"
+      );
+      return;
+    }
+
+    if(accumulating&&method==="service_tiered"){
       if(!tiers.length){
         showPayrollStatus(
           "Add at least one service-based accrual tier.",
@@ -63580,10 +63875,7 @@ async function saveEditModal() {
     closePayrollLeavePolicyModal();
     await loadPayrollLeaveWorkspace();
 
-    showPayrollStatus(
-      "Leave policy saved.",
-      "success"
-    );
+    showPayrollStatus("Leave policy saved.","success");
   }
 
   async function createPayrollLeaveRun() {
@@ -78389,6 +78681,19 @@ async function saveEditModal() {
           loadPayrollRunPeriodInputs
         )
       );
+
+    $("payrollLeavePolicyTypeId")
+      ?.addEventListener("change",updatePayrollLeavePolicyFields);
+
+    $("payrollLeavePolicyMethod")
+      ?.addEventListener("change",updatePayrollLeavePolicyFields);
+
+    $("payrollLeavePolicyProvisionRequired")
+      ?.addEventListener("change",togglePayrollLeaveProvisionAccounts);
+
+    $("payrollLeaveSickInitialMethod")
+      ?.addEventListener("change",updatePayrollSickLeaveFields);
+
 
     $("payrollPeriodInputStatusFilter")
       ?.addEventListener(
