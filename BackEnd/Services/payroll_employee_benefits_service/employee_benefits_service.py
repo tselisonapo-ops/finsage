@@ -554,8 +554,67 @@ class PayrollEmployeeBenefitsService:
             raise ValueError("Invalid leave accrual method")
 
         tiers=body.get("tiers") or []
-        if method=="service_tiered" and not tiers:
-            raise ValueError("Service-based leave requires at least one accrual tier")
+
+        if method=="service_tiered":
+            if not tiers:
+                raise ValueError("Service-based leave requires at least one accrual tier")
+
+            normalised=[]
+
+            for tier in tiers:
+                min_months=int(tier.get("min_service_months") or 0)
+                max_months=(
+                    int(tier["max_service_months"])
+                    if tier.get("max_service_months") not in(None,"")
+                    else None
+                )
+
+                monthly=dec(tier.get("monthly_accrual_days"))
+                annual=dec(
+                    tier.get("annual_entitlement_days")
+                    or monthly*Decimal("12")
+                )
+
+                if monthly<=0:
+                    raise ValueError("Each service tier requires monthly accrual days")
+
+                if max_months is not None and max_months<min_months:
+                    raise ValueError("Leave tier maximum service months cannot be below minimum")
+
+                normalised.append({
+                    "min_service_months":min_months,
+                    "max_service_months":max_months,
+                    "monthly_accrual_days":monthly,
+                    "annual_entitlement_days":annual,
+                })
+
+            normalised.sort(key=lambda x:x["min_service_months"])
+
+            if normalised[0]["min_service_months"]!=0:
+                raise ValueError("The first service tier must start at month 0")
+
+            for i,tier in enumerate(normalised[:-1]):
+                nxt=normalised[i+1]
+
+                if tier["max_service_months"] is None:
+                    raise ValueError("Only the final service tier may have no maximum month")
+
+                if nxt["min_service_months"]!=tier["max_service_months"]+1:
+                    raise ValueError("Service tiers must be continuous with no gaps or overlaps")
+
+            tiers=normalised
+
+        annual_entitlement=(
+            tiers[0]["annual_entitlement_days"]
+            if method=="service_tiered"
+            else dec(body.get("annual_entitlement_days"))
+        )
+
+        monthly_accrual=(
+            None
+            if method=="service_tiered"
+            else body.get("monthly_accrual_days")
+        )
 
         provision_required=bool(body.get("provision_required",True))
 
@@ -578,9 +637,9 @@ class PayrollEmployeeBenefitsService:
         params=(
             int(body["leave_type_id"]),
             body["name"].strip(),
-            body["annual_entitlement_days"],
+            annual_entitlement,
             method,
-            body.get("monthly_accrual_days"),
+            monthly_accrual,
             body.get("maximum_balance_days"),
             body.get("maximum_carry_forward_days"),
             body.get("carry_forward_expiry_months"),
@@ -660,16 +719,6 @@ class PayrollEmployeeBenefitsService:
 
         if method=="service_tiered":
             for tier in tiers:
-                min_months=int(tier.get("min_service_months") or 0)
-                max_months=(
-                    int(tier["max_service_months"])
-                    if tier.get("max_service_months") not in(None,"")
-                    else None
-                )
-
-                if max_months is not None and max_months<min_months:
-                    raise ValueError("Leave tier maximum service months cannot be below minimum")
-
                 self.db.fetch_one(f"""
                     INSERT INTO {schema}.payroll_leave_policy_tiers(
                         company_id,policy_id,min_service_months,
@@ -688,10 +737,10 @@ class PayrollEmployeeBenefitsService:
                 """,(
                     int(company_id),
                     policy_id,
-                    min_months,
-                    max_months,
-                    tier.get("annual_entitlement_days"),
-                    tier.get("monthly_accrual_days") or 0,
+                    tier["min_service_months"],
+                    tier["max_service_months"],
+                    tier["annual_entitlement_days"],
+                    tier["monthly_accrual_days"],
                 ))
 
         out["tiers"]=self.db.fetch_all(f"""

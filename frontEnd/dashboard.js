@@ -78453,12 +78453,19 @@ async function saveEditModal() {
 
       const row=e.target.closest("[data-leave-tier]");
       const annual=row?.querySelector(".leave-tier-annual");
+      const monthly=Number(e.target.value||0);
+      const annualDays=monthly*12;
 
-      if(annual){
-        annual.value=(
-          Number(e.target.value||0)*12
-        ).toFixed(4);
-      }
+      if(annual)
+        annual.value=annualDays.toFixed(4);
+
+      const firstRow=$(
+        "#payrollLeavePolicyTiers [data-leave-tier]"
+      );
+
+      if(row===firstRow&&$("payrollLeavePolicyEntitlement"))
+        $("payrollLeavePolicyEntitlement").value=
+          annualDays.toFixed(2);
     });
 
     document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
