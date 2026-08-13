@@ -30542,87 +30542,95 @@ class DatabaseService:
                     )
                 );
 
-        CREATE TABLE IF NOT EXISTS
-            {schema}.payroll_employee_pay_setup_items (
-                id BIGSERIAL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_pay_setup_items (
+            id BIGSERIAL PRIMARY KEY,
 
-                company_id INT NOT NULL,
-                pay_setup_id BIGINT NOT NULL,
-                employee_id BIGINT NOT NULL,
+            company_id INT NOT NULL,
+            pay_setup_id BIGINT NOT NULL,
+            employee_id BIGINT NOT NULL,
 
-                item_type TEXT NOT NULL,
-                item_id BIGINT NOT NULL,
+            item_type TEXT NOT NULL,
+            item_id BIGINT NOT NULL,
 
-                calculation_method TEXT
-                    NOT NULL DEFAULT 'fixed_amount',
+            calculation_method TEXT NOT NULL DEFAULT 'fixed_amount',
 
-                amount NUMERIC(18,2)
-                    NOT NULL DEFAULT 0,
+            amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+            percentage NUMERIC(18,4),
+            quantity NUMERIC(18,4),
+            rate NUMERIC(18,4),
+            calculated_amount NUMERIC(18,2),
 
-                percentage NUMERIC(18,4),
-                quantity NUMERIC(18,4),
-                rate NUMERIC(18,4),
-                calculated_amount NUMERIC(18,2),
+            effective_from DATE,
+            effective_to DATE,
+            notes TEXT,
 
-                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            source_type TEXT,
+            source_id BIGINT,
 
-                created_at TIMESTAMPTZ
-                    NOT NULL DEFAULT NOW(),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
-                updated_at TIMESTAMPTZ
-                    NOT NULL DEFAULT NOW(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-                CONSTRAINT uq_payroll_pay_setup_item
-                    UNIQUE (
-                        company_id,
-                        pay_setup_id,
-                        item_type,
-                        item_id
-                    ),
+            CONSTRAINT uq_payroll_pay_setup_item
+                UNIQUE (
+                    company_id,
+                    pay_setup_id,
+                    item_type,
+                    item_id
+                ),
 
-                CONSTRAINT chk_payroll_pay_setup_item_type
-                    CHECK (
-                        item_type IN (
-                            'earning',
-                            'deduction',
-                            'benefit',
-                            'contribution'
-                        )
-                    ),
-
-                CONSTRAINT chk_payroll_pay_setup_calc_method
-                    CHECK (
-                        calculation_method IN (
-                            'fixed_amount',
-                            'percentage',
-                            'quantity_rate',
-                            'manual'
-                        )
+            CONSTRAINT chk_payroll_pay_setup_item_type
+                CHECK (
+                    item_type IN (
+                        'earning',
+                        'deduction',
+                        'benefit',
+                        'contribution'
                     )
-            );
+                ),
+
+            CONSTRAINT chk_payroll_pay_setup_calc_method
+                CHECK (
+                    calculation_method IN (
+                        'fixed_amount',
+                        'percentage',
+                        'quantity_rate',
+                        'manual'
+                    )
+                )
+        );
+
+        -- =========================================================
+        -- Compatibility migration for existing company schemas
+        -- =========================================================
 
         ALTER TABLE {schema}.payroll_employee_pay_setup_items
+            ADD COLUMN IF NOT EXISTS effective_from DATE,
+            ADD COLUMN IF NOT EXISTS effective_to DATE,
+            ADD COLUMN IF NOT EXISTS notes TEXT,
             ADD COLUMN IF NOT EXISTS source_type TEXT,
             ADD COLUMN IF NOT EXISTS source_id BIGINT;
 
-        CREATE INDEX IF NOT EXISTS
-            idx_pay_setup_items_source
-        ON {schema}.payroll_employee_pay_setup_items(
+        -- =========================================================
+        -- Indexes
+        -- =========================================================
+
+        CREATE INDEX IF NOT EXISTS idx_pay_setup_items_source
+        ON {schema}.payroll_employee_pay_setup_items (
             company_id,
             source_type,
             source_id
         );
 
-        CREATE INDEX IF NOT EXISTS
-            idx_payroll_employee_pay_setups_employee
+        CREATE INDEX IF NOT EXISTS idx_payroll_employee_pay_setups_employee
         ON {schema}.payroll_employee_pay_setups (
             company_id,
             employee_id,
             effective_from DESC
         );
 
-        CREATE INDEX IF NOT EXISTS
-            idx_payroll_employee_pay_setup_items_setup
+        CREATE INDEX IF NOT EXISTS idx_payroll_employee_pay_setup_items_setup
         ON {schema}.payroll_employee_pay_setup_items (
             company_id,
             pay_setup_id
@@ -146070,25 +146078,23 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 else None
             )
 
-            row = self.fetch_one(f"""
+            effective_from=item.get("effective_from") or effective_from
+            effective_to=item.get("effective_to") or None
+            notes=(item.get("notes") or "").strip() or None
+
+            row=self.fetch_one(f"""
                 INSERT INTO
                     {schema}.payroll_employee_pay_setup_items (
-                        company_id,
-                        pay_setup_id,
-                        employee_id,
-                        item_type,
-                        item_id,
-                        calculation_method,
-                        amount,
-                        percentage,
-                        quantity,
-                        rate,
-                        calculated_amount,
-                        is_active
+                        company_id,pay_setup_id,employee_id,
+                        item_type,item_id,calculation_method,
+                        amount,percentage,quantity,rate,
+                        calculated_amount,effective_from,
+                        effective_to,notes,is_active
                     )
                 VALUES (
                     %s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,TRUE
+                    %s,%s,%s,%s,%s,%s,
+                    %s,%s,TRUE
                 )
                 ON CONFLICT (
                     company_id,
@@ -146097,39 +146103,24 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     item_id
                 )
                 DO UPDATE SET
-                    calculation_method =
-                        EXCLUDED.calculation_method,
-
-                    amount =
-                        EXCLUDED.amount,
-
-                    percentage =
-                        EXCLUDED.percentage,
-
-                    quantity =
-                        EXCLUDED.quantity,
-
-                    rate =
-                        EXCLUDED.rate,
-
-                    calculated_amount =
-                        EXCLUDED.calculated_amount,
-
-                    is_active = TRUE,
-                    updated_at = NOW()
+                    calculation_method=EXCLUDED.calculation_method,
+                    amount=EXCLUDED.amount,
+                    percentage=EXCLUDED.percentage,
+                    quantity=EXCLUDED.quantity,
+                    rate=EXCLUDED.rate,
+                    calculated_amount=EXCLUDED.calculated_amount,
+                    effective_from=EXCLUDED.effective_from,
+                    effective_to=EXCLUDED.effective_to,
+                    notes=EXCLUDED.notes,
+                    is_active=TRUE,
+                    updated_at=NOW()
                 RETURNING *;
-            """, (
-                company_id,
-                pay_setup_id,
-                employee_id,
-                item_type,
-                item_id,
-                calculation_method,
-                amount,
-                percentage,
-                quantity,
-                item_rate,
-                calculated_amount,
+            """,(
+                company_id,pay_setup_id,employee_id,
+                item_type,item_id,calculation_method,
+                amount,percentage,quantity,item_rate,
+                calculated_amount,effective_from,
+                effective_to,notes,
             ))
 
             saved_items.append(row)

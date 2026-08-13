@@ -23230,9 +23230,15 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveRecurringEarningBtn" class="payroll-primary">
-              Add Recurring Earning
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveRecurringEarningBtn" class="payroll-primary">
+                Add Recurring Earning
+              </button>
+
+              <button id="payrollNextFromEarningsBtn" class="payroll-secondary dark" type="button">
+                Next: Deductions →
+              </button>
+            </div>
 
             <div id="payrollRecurringEarningsList" class="payroll-sublist"></div>
           </div>
@@ -23274,9 +23280,15 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveRecurringDeductionBtn" class="payroll-primary">
-              Add Recurring Deduction
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveRecurringDeductionBtn" class="payroll-primary">
+                Add Recurring Deduction
+              </button>
+
+              <button id="payrollFinishEmployeeSetupBtn" class="payroll-primary" type="button">
+                Finish Employee Setup ✓
+              </button>
+            </div>
 
             <div id="payrollRecurringDeductionsList" class="payroll-sublist"></div>
           </div>
@@ -23384,8 +23396,16 @@ tbody tr:hover {
               <label>Policy Number <input id="payBenefitPolicy"></label>
               <label>Effective From <input id="payBenefitEffectiveFrom" type="date"></label>
               <label>Notes <input id="payBenefitNotes"></label>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <button id="payrollSaveBenefitBtn" class="payroll-primary">
+                Save Benefit
+              </button>
+
+              <button id="payrollNextFromBenefitsBtn" class="btn secondary" type="button">
+                Next: Leave →
+              </button>
             </div>
-            <button id="payrollSaveBenefitBtn" class="payroll-primary">Save Benefit</button>
+
             <div id="payrollBenefitsList" class="payroll-sublist"></div>
           </div>
 
@@ -23398,8 +23418,16 @@ tbody tr:hover {
               <label>Date To <input id="payLeaveTo" type="date"></label>
               <label>Days <input id="payLeaveDays" type="number" step="0.01"></label>
               <label>Reason <input id="payLeaveReason"></label>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveLeaveBtn" class="payroll-primary">
+                Save Leave
+              </button>
+
+              <button id="payrollNextFromLeaveBtn" class="payroll-secondary dark" type="button">
+                Next: Loans & Advances →
+              </button>
             </div>
-            <button id="payrollSaveLeaveBtn" class="payroll-primary">Save Leave</button>
+
             <div id="payrollLeaveList" class="payroll-sublist"></div>
           </div>
 
@@ -23413,8 +23441,16 @@ tbody tr:hover {
                 <select id="payLoanDeductionTypeId"></select>
               </label>
               <label>Notes <input id="payLoanNotes"></label>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveLoanBtn" class="payroll-primary">
+                Save Loan / Advance
+              </button>
+
+              <button id="payrollNextFromLoansBtn" class="payroll-secondary dark" type="button">
+                Next: Earnings →
+              </button>
             </div>
-            <button id="payrollSaveLoanBtn" class="payroll-primary">Save Loan / Advance</button>
+
             <div id="payrollLoansList" class="payroll-sublist"></div>
           </div>
         </div>

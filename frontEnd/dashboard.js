@@ -77549,6 +77549,53 @@ async function saveEditModal() {
     await generatePayrollPeriods();
   }
 
+  async function savePayrollRecurringSetupItem(item){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+
+    if(!employeeId)throw new Error("Save employee first.");
+
+    const res=await apiFetch(
+      ENDPOINTS.payroll.employeePaySetup(companyId,employeeId)
+    );
+
+    const setup=res?.data||{};
+    const items=Array.isArray(setup.items)?[...setup.items]:[];
+
+    const index=items.findIndex(x=>
+      x.item_type===item.item_type&&
+      Number(x.item_id)===Number(item.item_id)
+    );
+
+    if(index>=0)items[index]={...items[index],...item};
+    else items.push(item);
+
+    const payload={
+      pay_basis:setup.pay_basis||"monthly",
+      basic_earning_type_id:setup.basic_earning_type_id||null,
+      fixed_basic_amount:Number(setup.fixed_basic_amount||0),
+      standard_quantity:setup.standard_quantity??null,
+      rate:setup.rate??null,
+      tax_treatment:setup.tax_treatment||"standard",
+      manual_paye_amount:setup.manual_paye_amount??null,
+      proration_method:setup.proration_method||"working_days",
+      hours_per_day:Number(setup.hours_per_day||8),
+      attendance_required:!!setup.attendance_required,
+      effective_from:
+        setup.effective_from||
+        $("payStartDate")?.value||
+        new Date().toISOString().slice(0,10),
+      items,
+    };
+
+    await apiFetch(
+      ENDPOINTS.payroll.employeePaySetup(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify(payload),
+      }
+    );
+  }
 
   async function savePayrollEmployee(){
     const companyId=cid();
@@ -77606,81 +77653,139 @@ async function saveEditModal() {
 
     await payrollLoadAll();
 
+    if(!employeeId){
+      $("payContractFrom").value=
+        $("payContractFrom").value||
+        $("payStartDate").value||
+        "";
+
+      switchPayrollEmpTab("contract");
+    }
+
     showPayrollStatus(
       employeeId
         ?"Employee updated."
-        :"Employee saved. Continue with contract, tax and bank details.",
+        :"Employee saved. Complete the employment contract.",
       "success"
     );
   }
 
-  async function savePayrollContract() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
+  async function savePayrollContract(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
 
-    const payload = {
-      contract_type: $("payContractType").value,
-      salary_type: $("paySalaryType").value,
-      basic_salary: Number($("payBasicSalary").value || 0),
-      hourly_rate: Number($("payHourlyRate").value || 0),
-      normal_hours_per_month: $("payNormalHours").value ? Number($("payNormalHours").value) : null,
-      effective_from: $("payContractFrom").value,
-      is_active: true,
-    };
-
-    await apiFetch(ENDPOINTS.payroll.contracts(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-
-    showPayrollStatus("Contract saved.", "success");
-  }
-
-  async function savePayrollTaxProfile() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId")?.value || 0);
-
-    if (!employeeId) {
+    if(!employeeId){
       throw new Error("Save employee first.");
     }
 
-    const method = $("payTaxCalculationMethod")?.value || "standard";
-
-    const payload = {
-      tax_authority_id: Number($("payTaxProfileAuthorityId")?.value || 0) || null,
-      tax_number: $("payTaxProfileNumber")?.value.trim() || null,
-      paye_exempt: $("payPayeExempt")?.checked || method === "exempt",
-      residency_status: $("payTaxResidencyStatus")?.value || "resident",
-      date_of_birth: $("payTaxDateOfBirth")?.value || null,
-      medical_scheme_members: Number($("payTaxMedicalMembers")?.value || 0),
-      tax_calculation_method: method,
-      directive_number: method === "directive"
-        ? $("payTaxDirectiveNumber")?.value.trim() || null
-        : null,
-      directive_rate: method === "directive" && $("payTaxDirectiveRate")?.value
-        ? Number($("payTaxDirectiveRate").value)
-        : null,
-      additional_tax_amount: Number($("payTaxAdditionalAmount")?.value || 0),
-      effective_from: $("payTaxEffectiveFrom")?.value || null,
-      effective_to: $("payTaxEffectiveTo")?.value || null,
+    const payload={
+      contract_type:$("payContractType").value,
+      salary_type:$("paySalaryType").value,
+      basic_salary:Number($("payBasicSalary").value||0),
+      hourly_rate:Number($("payHourlyRate").value||0),
+      normal_hours_per_month:
+        $("payNormalHours").value
+          ?Number($("payNormalHours").value)
+          :null,
+      effective_from:$("payContractFrom").value,
+      is_active:true,
     };
 
-    if (!payload.effective_from) {
+    await apiFetch(
+      ENDPOINTS.payroll.contracts(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify(payload),
+      }
+    );
+
+    if(!$("payTaxEffectiveFrom").value){
+      $("payTaxEffectiveFrom").value=
+        $("payContractFrom").value||
+        $("payStartDate").value||
+        "";
+    }
+
+    switchPayrollEmpTab("tax");
+
+    showPayrollStatus(
+      "Contract saved. Complete the employee tax profile.",
+      "success"
+    );
+  }
+
+  async function savePayrollTaxProfile(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+
+    if(!employeeId){
+      throw new Error("Save employee first.");
+    }
+
+    const method=$("payTaxCalculationMethod")?.value||"standard";
+
+    const payload={
+      tax_authority_id:
+        Number($("payTaxProfileAuthorityId")?.value||0)||null,
+
+      tax_number:
+        $("payTaxProfileNumber")?.value.trim()||null,
+
+      paye_exempt:
+        $("payPayeExempt")?.checked||
+        method==="exempt",
+
+      residency_status:
+        $("payTaxResidencyStatus")?.value||"resident",
+
+      date_of_birth:
+        $("payTaxDateOfBirth")?.value||null,
+
+      medical_scheme_members:
+        Number($("payTaxMedicalMembers")?.value||0),
+
+      tax_calculation_method:method,
+
+      directive_number:
+        method==="directive"
+          ?$("payTaxDirectiveNumber")?.value.trim()||null
+          :null,
+
+      directive_rate:
+        method==="directive"&&$("payTaxDirectiveRate")?.value
+          ?Number($("payTaxDirectiveRate").value)
+          :null,
+
+      additional_tax_amount:
+        Number($("payTaxAdditionalAmount")?.value||0),
+
+      effective_from:
+        $("payTaxEffectiveFrom")?.value||null,
+
+      effective_to:
+        $("payTaxEffectiveTo")?.value||null,
+    };
+
+    if(!payload.effective_from){
       throw new Error("Tax profile effective date is required.");
     }
 
     await apiFetch(
-      ENDPOINTS.payroll.taxProfiles(companyId, employeeId),
+      ENDPOINTS.payroll.taxProfiles(companyId,employeeId),
       {
-        method: "POST",
-        body: JSON.stringify(payload),
+        method:"POST",
+        body:JSON.stringify(payload),
       }
     );
 
     await openPayrollEmployee(employeeId);
 
-    showPayrollStatus("Tax profile saved.", "success");
+    switchPayrollEmpTab("bank");
+
+    showPayrollStatus(
+      "Tax profile saved. Complete the employee bank details.",
+      "success"
+    );
   }
 
   function updatePayrollTaxMethodFields() {
@@ -77725,96 +77830,210 @@ async function saveEditModal() {
     updatePayrollTaxMethodFields();
   }
 
-  async function savePayrollBankAccount() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
+  async function savePayrollBankAccount(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
 
-    const payload = {
-      bank_name: $("payBankName").value.trim(),
-      account_name: $("payBankAccountName").value.trim(),
-      account_number: $("payBankAccountNumber").value.trim(),
-      branch_code: $("payBankBranchCode").value.trim() || null,
-      account_type: $("payBankAccountType").value || null,
-      is_primary: $("payBankPrimary").checked,
+    if(!employeeId){
+      throw new Error("Save employee first.");
+    }
+
+    const payload={
+      bank_name:$("payBankName").value.trim(),
+      account_name:$("payBankAccountName").value.trim(),
+      account_number:$("payBankAccountNumber").value.trim(),
+      branch_code:$("payBankBranchCode").value.trim()||null,
+      account_type:$("payBankAccountType").value||null,
+      is_primary:!!$("payBankPrimary").checked,
     };
 
-    await apiFetch(ENDPOINTS.payroll.bankAccounts(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    await apiFetch(
+      ENDPOINTS.payroll.bankAccounts(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify(payload),
+      }
+    );
 
-    await payrollLoadAll();
-    showPayrollStatus("Bank account saved.", "success");
+    await openPayrollEmployee(employeeId);
+
+    switchPayrollEmpTab("benefits");
+
+    showPayrollStatus(
+      "Bank account saved. Add employee benefits if applicable.",
+      "success"
+    );
   }
 
-  async function savePayrollBenefit() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
+  async function savePayrollBenefit(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
 
-    await apiFetch(ENDPOINTS.payroll.benefits(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify({
-        benefit_type_id: Number($("payBenefitTypeId").value || 0),
-        calc_method: $("payBenefitCalcMethod").value,
-        employee_amount: Number($("payBenefitEmployeeAmount").value || 0),
-        employer_amount: Number($("payBenefitEmployerAmount").value || 0),
-        employee_percent: Number($("payBenefitEmployeePercent").value || 0),
-        employer_percent: Number($("payBenefitEmployerPercent").value || 0),
-        taxable_amount: Number($("payBenefitTaxableAmount").value || 0),
-        provider_name: $("payBenefitProvider").value.trim() || null,
-        policy_number: $("payBenefitPolicy").value.trim() || null,
-        effective_from: $("payBenefitEffectiveFrom").value,
-        notes: $("payBenefitNotes").value.trim() || null,
-        is_active: true,
-      }),
+    if(!employeeId){
+      throw new Error("Save employee first.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.benefits(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          benefit_type_id:Number($("payBenefitTypeId").value||0),
+          calc_method:$("payBenefitCalcMethod").value,
+          employee_amount:Number($("payBenefitEmployeeAmount").value||0),
+          employer_amount:Number($("payBenefitEmployerAmount").value||0),
+          employee_percent:Number($("payBenefitEmployeePercent").value||0),
+          employer_percent:Number($("payBenefitEmployerPercent").value||0),
+          taxable_amount:Number($("payBenefitTaxableAmount").value||0),
+          provider_name:$("payBenefitProvider").value.trim()||null,
+          policy_number:$("payBenefitPolicy").value.trim()||null,
+          effective_from:$("payBenefitEffectiveFrom").value,
+          notes:$("payBenefitNotes").value.trim()||null,
+          is_active:true,
+        }),
+      }
+    );
+
+    await openPayrollEmployee(employeeId);
+
+    switchPayrollEmpTab("benefits");
+
+    showPayrollStatus(
+      "Benefit saved. Add another benefit or continue to Leave.",
+      "success"
+    );
+  }
+
+  async function savePayrollLeave(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+
+    if(!employeeId){
+      throw new Error("Save employee first.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.leave(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          leave_type_id:Number($("payLeaveTypeId").value||0),
+          date_from:$("payLeaveFrom").value,
+          date_to:$("payLeaveTo").value,
+          days:Number($("payLeaveDays").value||0),
+          reason:$("payLeaveReason").value.trim()||null,
+          status:"draft",
+        }),
+      }
+    );
+
+    await openPayrollEmployee(employeeId);
+    switchPayrollEmpTab("leave");
+
+    showPayrollStatus(
+      "Leave saved. Add another leave record or continue.",
+      "success"
+    );
+  }
+
+  async function savePayrollLoan(){
+    const companyId=cid();
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+
+    if(!employeeId){
+      throw new Error("Save employee first.");
+    }
+
+    await apiFetch(
+      ENDPOINTS.payroll.loans(companyId,employeeId),
+      {
+        method:"POST",
+        body:JSON.stringify({
+          loan_no:$("payLoanNo").value.trim(),
+          principal_amount:Number($("payLoanPrincipal").value||0),
+          repayment_amount:Number($("payLoanRepayment").value||0),
+          start_date:$("payLoanStartDate").value,
+          deduction_type_id:
+            $("payLoanDeductionTypeId").value
+              ?Number($("payLoanDeductionTypeId").value)
+              :null,
+          notes:$("payLoanNotes").value.trim()||null,
+        }),
+      }
+    );
+
+    await openPayrollEmployee(employeeId);
+    switchPayrollEmpTab("loans");
+
+    showPayrollStatus(
+      "Loan / advance saved. Add another or continue.",
+      "success"
+    );
+  }
+
+  async function savePayrollRecurringEarning(){
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+    const itemId=Number($("payRecurringEarningTypeId")?.value||0);
+
+    if(!employeeId)throw new Error("Save employee first.");
+    if(!itemId)throw new Error("Select an earning type.");
+
+    await savePayrollRecurringSetupItem({
+      item_type:"earning",
+      item_id:itemId,
+      calculation_method:
+        $("payRecurringEarningRate")?.value
+          ?"quantity_rate"
+          :"fixed_amount",
+      amount:Number($("payRecurringEarningAmount")?.value||0),
+      quantity:Number($("payRecurringEarningQuantity")?.value||1),
+      rate:$("payRecurringEarningRate")?.value
+        ?Number($("payRecurringEarningRate").value)
+        :null,
+      percentage:null,
+      calculated_amount:null,
+      effective_from:$("payRecurringEarningFrom")?.value||null,
+      effective_to:$("payRecurringEarningTo")?.value||null,
+      notes:$("payRecurringEarningNotes")?.value.trim()||null,
     });
 
     await openPayrollEmployee(employeeId);
-    showPayrollStatus("Benefit saved.", "success");
+    switchPayrollEmpTab("earnings");
+
+    showPayrollStatus(
+      "Recurring earning saved. Add another or continue.",
+      "success"
+    );
   }
 
-  async function savePayrollLeave() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
+  async function savePayrollRecurringDeduction(){
+    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+    const itemId=Number($("payRecurringDeductionTypeId")?.value||0);
 
-    await apiFetch(ENDPOINTS.payroll.leave(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify({
-        leave_type_id: Number($("payLeaveTypeId").value || 0),
-        date_from: $("payLeaveFrom").value,
-        date_to: $("payLeaveTo").value,
-        days: Number($("payLeaveDays").value || 0),
-        reason: $("payLeaveReason").value.trim() || null,
-        status: "draft",
-      }),
+    if(!employeeId)throw new Error("Save employee first.");
+    if(!itemId)throw new Error("Select a deduction type.");
+
+    await savePayrollRecurringSetupItem({
+      item_type:"deduction",
+      item_id:itemId,
+      calculation_method:"fixed_amount",
+      amount:Number($("payRecurringDeductionAmount")?.value||0),
+      percentage:null,
+      quantity:null,
+      rate:null,
+      calculated_amount:null,
+      effective_from:$("payRecurringDeductionFrom")?.value||null,
+      effective_to:$("payRecurringDeductionTo")?.value||null,
+      notes:$("payRecurringDeductionNotes")?.value.trim()||null,
     });
 
     await openPayrollEmployee(employeeId);
-    showPayrollStatus("Leave saved.", "success");
-  }
+    switchPayrollEmpTab("deductions");
 
-  async function savePayrollLoan() {
-    const companyId = cid();
-    const employeeId = Number($("payrollEditingEmployeeId").value || 0);
-    if (!employeeId) throw new Error("Save employee first.");
-
-    await apiFetch(ENDPOINTS.payroll.loans(companyId, employeeId), {
-      method: "POST",
-      body: JSON.stringify({
-        loan_no: $("payLoanNo").value.trim(),
-        principal_amount: Number($("payLoanPrincipal").value || 0),
-        repayment_amount: Number($("payLoanRepayment").value || 0),
-        start_date: $("payLoanStartDate").value,
-        deduction_type_id: $("payLoanDeductionTypeId").value ? Number($("payLoanDeductionTypeId").value) : null,
-        notes: $("payLoanNotes").value.trim() || null,
-      }),
-    });
-
-    await openPayrollEmployee(employeeId);
-    showPayrollStatus("Loan / advance saved.", "success");
+    showPayrollStatus(
+      "Recurring deduction saved. Add another or finish employee setup.",
+      "success"
+    );
   }
 
   function runPayrollAction(handler) {
@@ -78083,6 +78302,17 @@ async function saveEditModal() {
       );
     });
 
+    [
+      ["payrollNextFromBenefitsBtn","leave"],
+      ["payrollNextFromLeaveBtn","loans"],
+      ["payrollNextFromLoansBtn","earnings"],
+      ["payrollNextFromEarningsBtn","deductions"],
+    ].forEach(([id,tab])=>{
+      $(id)?.addEventListener("click",()=>{
+        switchPayrollEmpTab(tab);
+      });
+    });
+
     document.querySelectorAll("[data-close-leave-policy]").forEach(btn=>
       btn.addEventListener("click",closePayrollLeavePolicyModal)
     );
@@ -78265,6 +78495,11 @@ async function saveEditModal() {
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
+    /* NEW */
+    $("payrollNextFromBenefitsBtn")?.addEventListener("click", () => {
+      switchPayrollEmpTab("leave");
+    });
+
     $("payrollSaveLeaveBtn")?.addEventListener("click", async () => {
       try { await savePayrollLeave(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
@@ -78278,6 +78513,42 @@ async function saveEditModal() {
     $("payrollNewEmployeeBtn")?.addEventListener("click", () => {
       clearPayrollEmployeeForm();
       openPayrollEmployeeModal("create");
+    });
+
+    $("payrollSaveRecurringEarningBtn")?.addEventListener("click",async()=>{
+      try{
+        await savePayrollRecurringEarning();
+      }catch(e){
+        showPayrollStatus(e.message,"error");
+      }
+    });
+
+    $("payrollSaveRecurringDeductionBtn")?.addEventListener("click",async()=>{
+      try{
+        await savePayrollRecurringDeduction();
+      }catch(e){
+        showPayrollStatus(e.message,"error");
+      }
+    });
+
+    $("payrollFinishEmployeeSetupBtn")?.addEventListener("click",async()=>{
+      const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+
+      if(!employeeId){
+        showPayrollStatus("Save the employee first.","error");
+        return;
+      }
+
+      await payrollLoadAll();
+
+      closePayrollEmployeeModal();
+
+      switchPayrollTab("employees");
+
+      showPayrollStatus(
+        "Employee setup completed.",
+        "success"
+      );
     });
 
     document.querySelectorAll("[data-payroll-goto]").forEach(btn => {
