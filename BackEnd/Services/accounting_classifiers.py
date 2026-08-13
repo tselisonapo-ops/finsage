@@ -1551,6 +1551,24 @@ def _coa_role_from_text(
         ):
             return "payroll_commission_expense"
 
+    if is_asset and has_any(
+        "employee salary advances receivable",
+        "salary advances receivable",
+        "salary advance receivable",
+        "employee advances receivable",
+        "employee advance receivable",
+    ):
+        return "employee_salary_advance_receivable"
+
+    if is_asset and has_any(
+        "employee salary advances receivable",
+        "salary advances receivable",
+        "salary advance receivable",
+        "employee advances receivable",
+        "employee advance receivable",
+    ):
+        return "employee_salary_advance_receivable"
+
     if is_liability:
         if has_any(
             "leave pay provision",
@@ -1637,14 +1655,13 @@ def _coa_role_from_text(
         ):
             return "payroll_medical_aid_payable"
 
-        if has_any(
-            "payroll deductions payable",
-            "employee deductions payable",
-            "union fees payable",
-            "salary advance recovery",
-            "employee loan deduction payable",
-        ):
-            return "payroll_other_deductions_payable"
+    if has_any(
+        "payroll deductions payable",
+        "employee deductions payable",
+        "union fees payable",
+        "employee loan deduction payable",
+    ):
+        return "payroll_other_deductions_payable"
 
     if is_asset and has_any(
         "defined benefit plan asset",

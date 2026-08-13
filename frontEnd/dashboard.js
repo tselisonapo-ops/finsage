@@ -65132,35 +65132,49 @@ async function saveEditModal() {
     el.classList.toggle("hidden", !msg);
   }
 
-  async function payrollLoadAll() {
-    const companyId = cid();
-    if (!companyId) return;
+  async function payrollLoadAll(){
+    const companyId=cid();
+    if(!companyId)return;
 
     showPayrollStatus("Loading payroll…");
 
-    const res = await apiFetch(ENDPOINTS.payroll.bootstrap(companyId));
-    const data = res?.data || {};
+    const res=await apiFetch(
+      ENDPOINTS.payroll.bootstrap(companyId)
+    );
 
-    payrollState.settings = data.settings || {};
-    payrollState.calendars = data.calendars || [];
-    payrollState.employees = data.employees || [];
-    payrollState.taxAuthorities =
-      data.tax_authorities ||
-      data.authorities ||
-      data.setup?.tax_authorities ||
+    const data=res?.data||{};
+
+    payrollState.settings=data.settings||{};
+    payrollState.calendars=data.calendars||[];
+    payrollState.employees=data.employees||[];
+
+    payrollState.taxAuthorities=
+      data.tax_authorities||
+      data.authorities||
+      data.setup?.tax_authorities||
       [];
-    payrollState.setup = data.setup || payrollState.setup || {};
+
+    payrollState.setup=
+      data.setup||
+      payrollState.setup||
+      {};
+
+    await loadPayrollSetupAccountDropdowns();
 
     renderPayrollSetupSelects();
     renderPayrollMasterSetup();
     renderPayrollRunCalendarSelect();
+
     await loadPayrollRuns();
+
     renderPayrollSettings();
     renderPayrollCalendars();
     renderPayrollEmployees();
     renderPayrollOverview();
+
     updatePayrollCountryTaxFields();
     updatePayrollTaxMethodFields();
+
     showPayrollStatus("");
   }
 
@@ -69675,7 +69689,7 @@ async function saveEditModal() {
 
     fillPayrollAccountSelect(
       "payrollDeductionLiabilityAccount",
-      "liability"
+      "all"
     );
 
     fillPayrollAccountSelect(
@@ -69687,6 +69701,8 @@ async function saveEditModal() {
       "payrollContributionLiabilityAccount",
       "liability"
     );
+
+    renderPayrollMasterSetup();
   }
 
   function fillPayrollAccountSelect(
