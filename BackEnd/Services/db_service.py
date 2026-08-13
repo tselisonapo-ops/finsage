@@ -1161,6 +1161,9 @@ def _decimal(value: Any, default: str = "0") -> Decimal:
     except (InvalidOperation, TypeError, ValueError):
         return Decimal(default)
 
+def _company_slug(value:str)->str:
+    slug=re.sub(r"[^a-z0-9]+","-",str(value or "").strip().lower())
+    return slug.strip("-") or "company"
 
 def _json_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -4763,6 +4766,13 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS income_tax_rate NUMERIC(8,4) NULL,
         ADD COLUMN IF NOT EXISTS deferred_tax_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS deferred_tax_settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        ALTER TABLE public.companies
+        ADD COLUMN IF NOT EXISTS slug TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_companies_slug
+        ON public.companies(slug)
+        WHERE slug IS NOT NULL;
 
         DO $$
             BEGIN
@@ -8694,12 +8704,27 @@ class DatabaseService:
         provisioning_context = (provisioning_context or "").strip() or None
         organization_type = (organization_type or "private_company").strip().lower()
 
+        base_slug=_company_slug(name)
+
+        existing=self.fetch_one("""
+            SELECT id
+            FROM public.companies
+            WHERE slug=%s
+            LIMIT 1;
+        """,(base_slug,))
+
+        company_slug=(
+            f"{base_slug}-{uuid.uuid4().hex[:6]}"
+            if existing
+            else base_slug
+        )
+
         with self._conn_cursor() as (conn, cur):
             cur.execute(
                 """
                 INSERT INTO public.companies
                 (
-                    name, client_code, industry, sub_industry, organization_type,
+                    name, slug, client_code, industry, sub_industry, organization_type,
                     industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
                     currency, fin_year_start, company_reg_date,
                     country, company_reg_no, tin, vat,
@@ -8713,7 +8738,7 @@ class DatabaseService:
                 )
                 VALUES
                 (
-                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
@@ -8728,7 +8753,7 @@ class DatabaseService:
                 RETURNING id;
                 """,
                 (
-                    name, client_code, industry, sub_industry, organization_type,
+                    name, company_slug, client_code, industry, sub_industry, organization_type,
                     industry_slug, sub_industry_slug, inventory_mode, inventory_valuation,
                     currency, fin_year_start, company_reg_date,
                     country, company_reg_no, tin, vat,

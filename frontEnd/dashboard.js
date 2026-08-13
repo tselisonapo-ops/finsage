@@ -8364,6 +8364,150 @@ async function getDashboardData(periodKey = "this_month", { force = false } = {}
     },
   ];
 
+
+  const APP_SCREEN_ROUTES={
+    dashboard:"",
+    journal:"workflows/journal",
+
+    "lease-register":"workflows/leases/register",
+    "lease-payments":"workflows/leases/payments",
+    "lease-monthly":"workflows/leases/monthly-posting",
+    "lessor-subsequent":"workflows/lessor-leases",
+
+    "ar-invoices":"invoices",
+    "ar-quotes":"quotations",
+    revenue:"revenue",
+    ap:"bills",
+
+    "accrual-deferrals":"accruals-deferrals",
+    payroll:"payroll",
+
+    projects:"projects",
+    "project-profitability":"projects/profitability",
+
+    "inventory-items":"inventory/items",
+    "service-items":"services",
+    "inventory-movements":"inventory/movements",
+    stocktake:"inventory/stocktake",
+    reorder:"inventory/reorder-alerts",
+    "inventory-valuation":"inventory/valuation",
+    "pos-launch":"pos",
+    pos:"pos/summaries",
+
+    "bank-setup":"banking/setup",
+    banking:"banking/cashbook",
+    "bank-recon":"banking/reconciliation",
+
+    loans:"loans",
+    budgeting:"planning/budgeting",
+
+    customers:"customers",
+    vendors:"vendors",
+    lessors:"lessors",
+
+    trial:"reports/trial-balance",
+    ledger:"reports/general-ledger",
+    vat:"reports/vat",
+    "tax-recon":"reports/tax-reconciliation",
+    reports:"reports/financial-statements",
+    "group-reporting":"reports/group",
+
+    coa:"standards/chart-of-accounts",
+    fixedassets:"fixed-assets",
+    "revenue-setup":"standards/revenue",
+    ifrs9:"standards/ifrs9",
+    "deferred-tax":"standards/deferred-tax",
+    ias41:"standards/ias41",
+
+    "ar-recon":"control-room/ar/reconciliation",
+    "ar-statements":"control-room/ar/statements",
+    "ar-aging":"control-room/ar/aging",
+    "ap-recon":"control-room/ap/reconciliation",
+    "ap-statements":"control-room/ap/statements",
+    "ap-aging":"control-room/ap/aging",
+    "cust-approvals":"control-room/credit-control",
+    "period-locks":"control-room/period-locking",
+    "audit-trail":"control-room/audit-trail",
+    approvals:"control-room/approvals",
+
+    "account-settings":"settings/account",
+    "company-my":"settings/company",
+    "company-update":"settings/company/update",
+    "company-vat":"settings/company/vat",
+    "company-income-tax":"settings/company/income-tax",
+    "company-structure":"settings/company/structure",
+    "company-reporting":"settings/company/reporting-periods",
+    "company-mgmt-packs":"settings/company/management-packs",
+    "data-migration":"settings/company/data-migration",
+    users:"settings/users",
+    help:"help",
+  };
+
+const APP_ROUTE_SCREENS=Object.fromEntries(
+  Object.entries(APP_SCREEN_ROUTES)
+    .map(([screen,route])=>[route,screen])
+);
+
+let ACTIVE_COMPANY_SLUG="";
+
+function setActiveCompanySlug(company){
+  ACTIVE_COMPANY_SLUG=String(
+    company?.slug||""
+  ).trim();
+}
+
+function appRouteForScreen(screen){
+  return APP_SCREEN_ROUTES[screen]??screen??"";
+}
+
+function appUrlForScreen(screen){
+  if(!ACTIVE_COMPANY_SLUG)return"/app";
+
+  const route=appRouteForScreen(screen);
+
+  return route
+    ?`/app/${encodeURIComponent(ACTIVE_COMPANY_SLUG)}/${route}`
+    :`/app/${encodeURIComponent(ACTIVE_COMPANY_SLUG)}`;
+}
+
+function updateAppUrl(screen,{replace=false}={}){
+  if(!ACTIVE_COMPANY_SLUG)return;
+
+  const url=appUrlForScreen(screen);
+
+  if(location.pathname===url)return;
+
+  history[
+    replace
+      ?"replaceState"
+      :"pushState"
+  ](
+    {screen},
+    "",
+    url
+  );
+}
+
+function readAppRoute(){
+  const parts=location.pathname
+    .replace(/^\/app\/?/,"")
+    .split("/")
+    .filter(Boolean)
+    .map(decodeURIComponent);
+
+  return{
+    slug:parts.shift()||"",
+    route:parts.join("/"),
+  };
+}
+
+function screenFromAppUrl(){
+  const {route}=readAppRoute();
+
+  return APP_ROUTE_SCREENS[route]||
+    (route===""?"dashboard":null);
+}
+
   function showInviteMessage(msg, type = "success") {
     const el = document.getElementById("inviteMessage");
     if (!el) return;
@@ -11388,7 +11532,13 @@ window.esc = window.esc || function esc(s) {
 // =======================================================
 // NAV: switchScreen (FULL SAFE VERSION)
 // =======================================================
-async function switchScreen(name) {
+async function switchScreen(
+  name,
+  {
+    updateUrl=true,
+    replaceUrl=false,
+  }={}
+){
   console.log("[switchScreen] ->", name);
 
   // ─────────────────────────────
@@ -11574,6 +11724,13 @@ async function switchScreen(name) {
 
   // Remember current screen
   store.set(K.CURRENT_SCREEN, name);
+
+  if(updateUrl){
+    updateAppUrl(
+      name,
+      {replace:replaceUrl}
+    );
+  }
 
   // Highlight nav
   $$(".nav-item-link").forEach((a) => a.classList.remove("active"));
@@ -13079,7 +13236,7 @@ async function ensureCompanyDataLoaded() {
 
   await loadCompanyProfile(cid);
   await loadVatSettings(cid);
-
+  await restoreAppRoute();
   return window.CURRENT_COMPANY || null;
 }
 window.ensureCompanyDataLoaded = ensureCompanyDataLoaded;
@@ -13173,7 +13330,7 @@ async function loadCompanyProfile(companyId) {
     // -----------------------------
     window.CURRENT_COMPANY = { ...(window.CURRENT_COMPANY || {}), ...data };
     window.COMPANY_PROFILE = { ...(window.COMPANY_PROFILE || {}), ...data };
-
+    setActiveCompanySlug(data);
     // ✅ also expose for non-window code (if you still use these globals)
     if (typeof CURRENT_COMPANY !== "undefined") CURRENT_COMPANY = window.CURRENT_COMPANY;
     if (typeof CURRENT_COMPANY_ID !== "undefined" && data?.id) CURRENT_COMPANY_ID = Number(data.id);
@@ -124837,6 +124994,16 @@ document.addEventListener("input", (e) => {
   }
 });
 
+window.addEventListener("popstate",async()=>{
+  const screen=screenFromAppUrl();
+  if(!screen)return;
+
+  await switchScreen(
+    screen,
+    {updateUrl:false}
+  );
+});
+
 window.addEventListener("DOMContentLoaded", () => {
   init().catch((e) => console.error("🔥 init crashed", e));
    bindSmartHeader();
@@ -124868,8 +125035,33 @@ window.addEventListener("DOMContentLoaded", () => {
       console.log("[TRACE] click on quoteViewerModal target=", e.target?.id || e.target?.className);
     }, true);
   })();
-});
 
+  let APP_INITIAL_ROUTE_RESTORED=false;
+
+  let APP_RESTORING_ROUTE=false;
+
+  async function restoreAppRoute(){
+    if(
+      APP_INITIAL_ROUTE_RESTORED||
+      APP_RESTORING_ROUTE
+    )return;
+
+    const screen=screenFromAppUrl();
+    if(!screen)return;
+
+    APP_INITIAL_ROUTE_RESTORED=true;
+    APP_RESTORING_ROUTE=true;
+
+    try{
+      await switchScreen(
+        screen,
+        {updateUrl:false}
+      );
+    }finally{
+      APP_RESTORING_ROUTE=false;
+    }
+  }
+});
 })(); // ✅ ONLY THIS ONE closing for the main IIFE
 
 

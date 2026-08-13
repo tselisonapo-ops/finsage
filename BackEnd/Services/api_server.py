@@ -4052,6 +4052,7 @@ def api_get_company(company_id: int):
                 c.id,
                 c.system_company_code,
                 c.name,
+                c.slug,
                 c.client_code,
 
                 c.industry,
