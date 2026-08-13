@@ -64711,131 +64711,131 @@ async function saveEditModal() {
   }
 
   async function openPayrollBonusScheme(item={}){
-    const payload=await payrollForm(
-      item.id?"Edit bonus scheme":"New bonus scheme",
-      [
-        payrollGeneratedCodeField(
-          "code","Scheme code",item.code
-        ),
-        {
-          name:"name",
-          label:"Scheme name",
-          required:true,
-          value:item.name||"",
-        },
-        {
-          name:"scheme_type",
-          label:"Scheme type",
-          type:"select",
-          required:true,
-          value:item.scheme_type||"performance_bonus",
-          options:[
-            ["performance_bonus","Performance bonus"],
-            ["profit_sharing","Profit sharing"],
-            ["thirteenth_cheque","Thirteenth cheque"],
-            ["retention_bonus","Retention bonus"],
-            ["commission_accrual","Commission accrual"],
-            ["other","Other"],
+      const payload=await payrollForm(
+          item.id?"Edit bonus scheme":"New bonus scheme",
+          [
+              payrollGeneratedCodeField(
+                  "code","Scheme code",item.code
+              ),
+              {
+                  name:"name",
+                  label:"Scheme name",
+                  required:true,
+                  value:item.name||"",
+              },
+              {
+                  name:"scheme_type",
+                  label:"Scheme type",
+                  type:"select",
+                  required:true,
+                  value:item.scheme_type||"performance_bonus",
+                  options:[
+                      ["performance_bonus","Performance bonus"],
+                      ["profit_sharing","Profit sharing"],
+                      ["thirteenth_cheque","Thirteenth cheque"],
+                      ["retention_bonus","Retention bonus"],
+                      ["commission_accrual","Commission accrual"],
+                      ["other","Other"],
+                  ],
+              },
+              {
+                  name:"measurement_basis",
+                  label:"Remuneration basis",
+                  type:"select",
+                  required:true,
+                  value:item.measurement_basis||"basic_salary",
+                  options:[
+                      ["basic_salary","Basic salary"],
+                      ["gross_salary","Gross payroll earnings"],
+                      ["pensionable_salary","Pensionable payroll earnings"],
+                      ["taxable_salary","Taxable payroll earnings"],
+                  ],
+              },
+              {
+                  name:"target_percentage",
+                  label:"Target %",
+                  type:"number",
+                  step:"0.01",
+                  min:0,
+                  value:item.target_percentage||0,
+              },
+              {
+                  name:"probability_percentage",
+                  label:"Probability %",
+                  type:"number",
+                  step:"0.01",
+                  min:0,
+                  max:100,
+                  value:item.probability_percentage??100,
+              },
+              {
+                  name:"performance_percentage",
+                  label:"Performance %",
+                  type:"number",
+                  step:"0.01",
+                  min:0,
+                  value:item.performance_percentage??100,
+              },
+              {
+                  name:"required_service_months",
+                  label:"Required service months",
+                  type:"number",
+                  step:"1",
+                  min:0,
+                  value:item.required_service_months||0,
+              },
+              {
+                  name:"payment_due_date",
+                  label:"Payment due date",
+                  type:"date",
+                  value:item.payment_due_date||"",
+              },
+              {
+                  name:"expense_account_code",
+                  label:"Bonus expense account",
+                  type:"account",
+                  accountKind:"expense",
+                  required:true,
+                  value:item.expense_account_code||"",
+              },
+              {
+                  name:"liability_account_code",
+                  label:"Bonus liability account",
+                  type:"account",
+                  accountKind:"liability",
+                  required:true,
+                  value:item.liability_account_code||"",
+              },
+              {
+                  name:"is_short_term",
+                  label:"Short-term benefit",
+                  type:"checkbox",
+                  value:item.is_short_term!==false,
+              },
+              {
+                  name:"is_active",
+                  label:"Active",
+                  type:"checkbox",
+                  value:item.is_active!==false,
+              },
           ],
-        },
-        {
-          name:"measurement_basis",
-          label:"Remuneration basis",
-          type:"select",
-          required:true,
-          value:s.measurement_basis||"basic_salary",
-          options:[
-            ["basic_salary","Basic salary"],
-            ["gross_salary","Gross payroll earnings"],
-            ["pensionable_salary","Pensionable payroll earnings"],
-            ["taxable_salary","Taxable payroll earnings"],
-          ],
-        },
-        {
-          name:"target_percentage",
-          label:"Target %",
-          type:"number",
-          step:"0.01",
-          min:0,
-          value:item.target_percentage||0,
-        },
-        {
-          name:"probability_percentage",
-          label:"Probability %",
-          type:"number",
-          step:"0.01",
-          min:0,
-          max:100,
-          value:item.probability_percentage??100,
-        },
-        {
-          name:"performance_percentage",
-          label:"Performance %",
-          type:"number",
-          step:"0.01",
-          min:0,
-          value:item.performance_percentage??100,
-        },
-        {
-          name:"required_service_months",
-          label:"Required service months",
-          type:"number",
-          step:"1",
-          min:0,
-          value:item.required_service_months||0,
-        },
-        {
-          name:"payment_due_date",
-          label:"Payment due date",
-          type:"date",
-          value:item.payment_due_date||"",
-        },
-        {
-          name:"expense_account_code",
-          label:"Bonus expense account",
-          type:"account",
-          accountKind:"expense",
-          required:true,
-          value:item.expense_account_code||"",
-        },
-        {
-          name:"liability_account_code",
-          label:"Bonus liability account",
-          type:"account",
-          accountKind:"liability",
-          required:true,
-          value:item.liability_account_code||"",
-        },
-        {
-          name:"is_short_term",
-          label:"Short-term benefit",
-          type:"checkbox",
-          value:item.is_short_term!==false,
-        },
-        {
-          name:"is_active",
-          label:"Active",
-          type:"checkbox",
-          value:item.is_active!==false,
-        },
-      ],
-      item
-    );
+          item
+      );
 
-    if(!payload)return;
+      if(!payload)return;
 
-    await apiFetch(
-      item.id
-        ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
-        :ENDPOINTS.payroll.bonusSchemes(cid()),
-      {
-        method:item.id?"PATCH":"POST",
-        body:JSON.stringify(payload),
-      }
-    );
+      await apiFetch(
+          item.id
+              ?ENDPOINTS.payroll.bonusScheme(cid(),item.id)
+              :ENDPOINTS.payroll.bonusSchemes(cid()),
+          {
+              method:item.id?"PATCH":"POST",
+              body:JSON.stringify(payload),
+          }
+      );
 
-    await loadPayrollBonusWorkspace();
-    showPayrollStatus("Bonus scheme saved.","success");
+      await loadPayrollBonusWorkspace();
+      showPayrollStatus("Bonus scheme saved.","success");
   }
 
   async function openPayrollBonusAssignment(item = {}) {
