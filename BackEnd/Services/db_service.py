@@ -39049,25 +39049,18 @@ class DatabaseService:
         END
         $add_leases_status_and_termination$;
 
-        -- status check
-        DO $ck_leases_status$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM pg_constraint c
-                JOIN pg_namespace n ON n.oid=c.connamespace
-                WHERE c.conname = 'ck_leases_status'
-                AND n.nspname = '{schema}'
-            ) THEN
-                EXECUTE format(
-                    'ALTER TABLE %I.leases
-                    ADD CONSTRAINT ck_leases_status
-                    CHECK (status IN (''active'',''terminated''))',
-                    '{schema}'
-                );
-            END IF;
-        END
-        $ck_leases_status$;
+        ALTER TABLE {schema}.leases
+        DROP CONSTRAINT IF EXISTS ck_leases_status;
+
+        ALTER TABLE {schema}.leases
+        ADD CONSTRAINT ck_leases_status
+        CHECK (
+            status IN (
+                'active',
+                'terminated',
+                'reversed'
+            )
+        );
 
         -- FK leases.termination_id -> lease_terminations.id
         DO $fk_leases_termination$
@@ -47425,16 +47418,17 @@ class DatabaseService:
         ALTER TABLE {schema}.lessor_leases
         ADD CONSTRAINT ck_lessor_leases_amounts
         CHECK (
-            billing_amount>=0
-            AND vat_rate>=0
-            AND billing_basis IN ('gross','net')
-            AND billing_timing IN ('arrears','advance')
+            billing_amount >= 0
+            AND vat_rate >= 0
+            AND billing_basis IN ('gross', 'net')
+            AND billing_timing IN ('arrears', 'advance')
             AND status IN (
                 'draft',
                 'active',
                 'commenced',
                 'suspended',
-                'terminated'
+                'terminated',
+                'reversed'
             )
         );
         -- Uniqueness (avoid duplicates per company)
@@ -57903,7 +57897,8 @@ class DatabaseService:
                         status = 'reversed',
                         is_active = FALSE,
                         reversal_journal_id = %s,
-                        reversed_at = NOW()
+                        reversed_at = NOW(),
+                        updated_at = NOW()
                     WHERE company_id = %s
                     AND id = %s
                     """,
