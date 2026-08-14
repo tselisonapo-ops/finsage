@@ -136347,35 +136347,85 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
 
     def payroll_employee_benefit_create(self, company_id: int, employee_id: int, data: dict):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
         schema = self.company_schema(company_id)
 
-        return self.fetch_one(f"""
-            INSERT INTO {schema}.payroll_employee_benefits (
-                company_id, employee_id, benefit_type_id, calc_method,
-                employee_amount, employer_amount, employee_percent, employer_percent,
-                taxable_amount, provider_name, policy_number,
-                effective_from, effective_to, is_active, notes
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,TRUE),%s)
-            RETURNING *;
+        benefit_type_id = int(data.get("benefit_type_id") or 0)
+
+        if not benefit_type_id:
+            raise ValueError("Benefit type is required.")
+
+        current = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_employee_benefits
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND benefit_type_id=%s
+            AND is_active=TRUE
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
         """, (
-            int(company_id),
-            int(employee_id),
-            data.get("benefit_type_id"),
+            company_id,
+            employee_id,
+            benefit_type_id,
+        ))
+
+        values = (
+            benefit_type_id,
             data.get("calc_method") or "fixed_amount",
             data.get("employee_amount") or 0,
             data.get("employer_amount") or 0,
             data.get("employee_percent") or 0,
             data.get("employer_percent") or 0,
             data.get("taxable_amount") or 0,
-            data.get("provider_name"),
-            data.get("policy_number"),
+            (data.get("provider_name") or "").strip() or None,
+            (data.get("policy_number") or "").strip() or None,
             data.get("effective_from"),
-            data.get("effective_to"),
-            data.get("is_active"),
-            data.get("notes"),
-        ))
+            data.get("effective_to") or None,
+            bool(data.get("is_active", True)),
+            (data.get("notes") or "").strip() or None,
+        )
 
+        if current:
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_employee_benefits
+                SET benefit_type_id=%s,
+                    calc_method=%s,
+                    employee_amount=%s,
+                    employer_amount=%s,
+                    employee_percent=%s,
+                    employer_percent=%s,
+                    taxable_amount=%s,
+                    provider_name=%s,
+                    policy_number=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    is_active=%s,
+                    notes=%s
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND id=%s
+                RETURNING *;
+            """, values + (
+                company_id,
+                employee_id,
+                int(current["id"]),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_benefits (
+                company_id,employee_id,benefit_type_id,calc_method,
+                employee_amount,employer_amount,employee_percent,
+                employer_percent,taxable_amount,provider_name,
+                policy_number,effective_from,effective_to,is_active,notes
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            company_id,
+            employee_id,
+        ) + values)
 
     def payroll_employee_benefits_list(self, company_id: int, employee_id: int):
         schema = self.company_schema(company_id)
@@ -136909,92 +136959,189 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         return employee
 
     def payroll_contract_create(self, company_id: int, employee_id: int, data: dict):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
         schema = self.company_schema(company_id)
 
-        if data.get("is_active", True):
-            self.execute_sql(f"""
-                UPDATE {schema}.payroll_employee_contracts
-                SET is_active = FALSE,
-                    effective_to = COALESCE(effective_to, %s::date - INTERVAL '1 day')
-                WHERE company_id=%s
-                AND employee_id=%s
-                AND is_active = TRUE;
-            """, (
-                data.get("effective_from"),
-                int(company_id),
-                int(employee_id),
-            ))
+        current = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_employee_contracts
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND is_active=TRUE
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """, (company_id, employee_id))
 
-        return self.fetch_one(f"""
-            INSERT INTO {schema}.payroll_employee_contracts (
-                company_id, employee_id, contract_type, salary_type,
-                basic_salary, hourly_rate, normal_hours_per_month,
-                effective_from, effective_to, is_active
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, TRUE))
-            RETURNING *;
-        """, (
-            int(company_id),
-            int(employee_id),
+        values = (
             data.get("contract_type") or "permanent",
             data.get("salary_type") or "monthly",
             data.get("basic_salary") or 0,
             data.get("hourly_rate") or 0,
             data.get("normal_hours_per_month"),
             data.get("effective_from"),
-            data.get("effective_to"),
-            data.get("is_active"),
-        ))
+            data.get("effective_to") or None,
+            bool(data.get("is_active", True)),
+        )
+
+        if current:
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_employee_contracts
+                SET contract_type=%s,
+                    salary_type=%s,
+                    basic_salary=%s,
+                    hourly_rate=%s,
+                    normal_hours_per_month=%s,
+                    effective_from=%s,
+                    effective_to=%s,
+                    is_active=%s
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND id=%s
+                RETURNING *;
+            """, values + (
+                company_id,
+                employee_id,
+                int(current["id"]),
+            ))
+
+        return self.fetch_one(f"""
+            INSERT INTO {schema}.payroll_employee_contracts (
+                company_id,employee_id,contract_type,salary_type,
+                basic_salary,hourly_rate,normal_hours_per_month,
+                effective_from,effective_to,is_active
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING *;
+        """, (
+            company_id,
+            employee_id,
+        ) + values)
 
 
     def payroll_tax_profile_create(self, company_id: int, employee_id: int, data: dict):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
         schema = self.company_schema(company_id)
+
+        current = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_employee_tax_profiles
+            WHERE company_id=%s
+            AND employee_id=%s
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """, (company_id, employee_id))
+
+        values = (
+            data.get("tax_authority_id"),
+            (data.get("tax_number") or "").strip() or None,
+            bool(data.get("paye_exempt", False)),
+            data.get("residency_status") or "resident",
+            data.get("date_of_birth") or None,
+            data.get("medical_scheme_members") or 0,
+            data.get("tax_calculation_method") or "standard",
+            (data.get("directive_number") or "").strip() or None,
+            data.get("directive_rate"),
+            data.get("additional_tax_amount") or 0,
+            data.get("effective_from"),
+            data.get("effective_to") or None,
+        )
+
+        if current:
+            return self.fetch_one(f"""
+                UPDATE {schema}.payroll_employee_tax_profiles
+                SET tax_authority_id=%s,
+                    tax_number=%s,
+                    paye_exempt=%s,
+                    residency_status=%s,
+                    date_of_birth=%s,
+                    medical_scheme_members=%s,
+                    tax_calculation_method=%s,
+                    directive_number=%s,
+                    directive_rate=%s,
+                    additional_tax_amount=%s,
+                    effective_from=%s,
+                    effective_to=%s
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND id=%s
+                RETURNING *;
+            """, values + (
+                company_id,
+                employee_id,
+                int(current["id"]),
+            ))
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_employee_tax_profiles (
-                company_id, employee_id, tax_authority_id, tax_number,
-                paye_exempt, effective_from, effective_to
+                company_id,employee_id,tax_authority_id,tax_number,
+                paye_exempt,residency_status,date_of_birth,
+                medical_scheme_members,tax_calculation_method,
+                directive_number,directive_rate,additional_tax_amount,
+                effective_from,effective_to
             )
-            VALUES (%s,%s,%s,%s,COALESCE(%s,FALSE),%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING *;
         """, (
-            int(company_id),
-            int(employee_id),
-            data.get("tax_authority_id"),
-            data.get("tax_number"),
-            data.get("paye_exempt"),
-            data.get("effective_from"),
-            data.get("effective_to"),
-        ))
-
+            company_id,
+            employee_id,
+        ) + values)
 
     def payroll_bank_account_create(self, company_id: int, employee_id: int, data: dict):
+        company_id = int(company_id)
+        employee_id = int(employee_id)
         schema = self.company_schema(company_id)
 
-        if data.get("is_primary", True):
-            self.execute_sql(f"""
+        current = self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_employee_bank_accounts
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND is_primary=TRUE
+            ORDER BY id DESC
+            LIMIT 1;
+        """, (company_id, employee_id))
+
+        values = (
+            (data.get("bank_name") or "").strip(),
+            (data.get("account_name") or "").strip(),
+            (data.get("account_number") or "").strip(),
+            (data.get("branch_code") or "").strip() or None,
+            data.get("account_type") or None,
+            bool(data.get("is_primary", True)),
+        )
+
+        if current:
+            return self.fetch_one(f"""
                 UPDATE {schema}.payroll_employee_bank_accounts
-                SET is_primary = FALSE
-                WHERE company_id=%s AND employee_id=%s;
-            """, (int(company_id), int(employee_id)))
+                SET bank_name=%s,
+                    account_name=%s,
+                    account_number=%s,
+                    branch_code=%s,
+                    account_type=%s,
+                    is_primary=%s
+                WHERE company_id=%s
+                AND employee_id=%s
+                AND id=%s
+                RETURNING *;
+            """, values + (
+                company_id,
+                employee_id,
+                int(current["id"]),
+            ))
 
         return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_employee_bank_accounts (
-                company_id, employee_id, bank_name, account_name,
-                account_number, branch_code, account_type, is_primary
+                company_id,employee_id,bank_name,account_name,
+                account_number,branch_code,account_type,is_primary
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,COALESCE(%s,TRUE))
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING *;
         """, (
-            int(company_id),
-            int(employee_id),
-            data.get("bank_name"),
-            data.get("account_name"),
-            data.get("account_number"),
-            data.get("branch_code"),
-            data.get("account_type"),
-            data.get("is_primary"),
-        ))
+            company_id,
+            employee_id,
+        ) + values)
 
     def payroll_mapping(self, company_id: int) -> dict:
         schema = self.company_schema(company_id)

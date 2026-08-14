@@ -392,7 +392,7 @@ def api_payroll_contract_create(company_id: int, employee_id: int):
         except Exception:
             current_app.logger.exception("audit_log failed in api_payroll_contract_create")
 
-        return jsonify({"ok": True, "data": out}), 201
+        return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("payroll_contract_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -422,7 +422,7 @@ def api_payroll_tax_profile_create(company_id: int, employee_id: int):
 
         out = db_service.payroll_tax_profile_create(int(company_id), int(employee_id), body)
 
-        return jsonify({"ok": True, "data": out}), 201
+        return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("payroll_tax_profile_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -453,7 +453,7 @@ def api_payroll_bank_account_create(company_id: int, employee_id: int):
 
         out = db_service.payroll_bank_account_create(int(company_id), int(employee_id), body)
 
-        return jsonify({"ok": True, "data": out}), 201
+        return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("payroll_bank_account_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400
@@ -521,7 +521,7 @@ def api_payroll_employee_benefits(company_id: int, employee_id: int):
             return jsonify({"ok": False, "error": "benefit_type_id and effective_from are required"}), 400
 
         out = db_service.payroll_employee_benefit_create(int(company_id), int(employee_id), body)
-        return jsonify({"ok": True, "data": out}), 201
+        return jsonify({"ok": True, "data": out}), 200
     except Exception as e:
         current_app.logger.exception("payroll_employee_benefit_create failed")
         return jsonify({"ok": False, "error": str(e)}), 400

@@ -23610,7 +23610,10 @@ tbody tr:hover {
               <label>Normal Hours / Month <input id="payNormalHours" type="number" step="0.01"></label>
               <label>Effective From <input id="payContractFrom" type="date"></label>
             </div>
-            <button id="payrollSaveContractBtn" class="btn primary">Save Contract</button>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveContractBtn" class="btn primary">Save & Continue</button>
+              <button id="payrollSkipContractBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
           <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden" data-payroll-emp-panel="earnings">
@@ -23780,9 +23783,10 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveTaxProfileBtn" class="payroll-primary">
-              Save Tax Profile
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveTaxProfileBtn" class="payroll-primary">Save & Continue</button>
+              <button id="payrollSkipTaxBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
           <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden" data-payroll-emp-panel="bank">
@@ -23802,7 +23806,10 @@ tbody tr:hover {
               </label>
               <label><input id="payBankPrimary" type="checkbox" checked> Primary Account</label>
             </div>
-            <button id="payrollSaveBankBtn" class="btn primary">Save Bank Account</button>
+            <div class="payroll-run-actions">
+              <button id="payrollSaveBankBtn" class="btn primary">Save & Continue</button>
+              <button id="payrollSkipBankBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
           <div id="payrollEmpPanelBenefits" class="payroll-emp-panel hidden" data-payroll-emp-panel="benefits">
@@ -23827,9 +23834,7 @@ tbody tr:hover {
               <label>Effective From <input id="payBenefitEffectiveFrom" type="date"></label>
               <label>Notes <input id="payBenefitNotes"></label>
             <div style="display:flex;gap:10px;align-items:center;">
-              <button id="payrollSaveBenefitBtn" class="payroll-primary">
-                Save Benefit
-              </button>
+              <button id="payrollSaveBenefitBtn" class="payroll-primary">Add / Update Benefit</button>
 
               <button id="payrollNextFromBenefitsBtn" class="btn secondary" type="button">
                 Next: Leave →

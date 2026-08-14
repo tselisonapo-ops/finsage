@@ -77976,6 +77976,10 @@ async function saveEditModal() {
       $("payrollSaveEmployeeBtn").textContent="Save Employee";
       $("payrollArchiveEmployeeBtn")?.classList.add("hidden");
 
+    if ($("payrollSaveContractBtn")) $("payrollSaveContractBtn").textContent = "Save & Continue";
+    if ($("payrollSaveTaxProfileBtn")) $("payrollSaveTaxProfileBtn").textContent = "Save & Continue";
+    if ($("payrollSaveBankBtn")) $("payrollSaveBankBtn").textContent = "Save & Continue";
+
     [
       "payrollBenefitsList",
       "payrollLeaveList",
@@ -78048,6 +78052,7 @@ async function saveEditModal() {
     $("payBankPrimary").checked = bank.is_primary !== false;
 
     renderEmployeeSubrecords(e);
+    updatePayrollEmployeeStageButtons();
     openPayrollEmployeeModal("edit");
   }
 
@@ -78268,6 +78273,41 @@ async function saveEditModal() {
     );
   }
 
+  function payrollEmployeeStageExists(stage) {
+      const e = payrollState.selectedEmployee || {};
+
+      if (stage === "contract") return !!(e.contracts || []).length;
+      if (stage === "tax") return !!(e.tax_profiles || []).length;
+      if (stage === "bank") return !!(e.bank_accounts || []).length;
+
+      return false;
+  }
+
+  function updatePayrollEmployeeStageButtons() {
+      const e = payrollState.selectedEmployee || {};
+
+      if ($("payrollSaveContractBtn")) {
+          $("payrollSaveContractBtn").textContent =
+              (e.contracts || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
+
+      if ($("payrollSaveTaxProfileBtn")) {
+          $("payrollSaveTaxProfileBtn").textContent =
+              (e.tax_profiles || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
+
+      if ($("payrollSaveBankBtn")) {
+          $("payrollSaveBankBtn").textContent =
+              (e.bank_accounts || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
+  }
+
   async function savePayrollEmployee(){
     const companyId=cid();
     const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
@@ -78337,6 +78377,31 @@ async function saveEditModal() {
         :"Employee saved. Complete the employment contract.",
       "success"
     );
+  }
+
+  function updatePayrollEmployeeStageButtons() {
+      const e = payrollState.selectedEmployee || {};
+
+      if ($("payrollSaveContractBtn")) {
+          $("payrollSaveContractBtn").textContent =
+              (e.contracts || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
+
+      if ($("payrollSaveTaxProfileBtn")) {
+          $("payrollSaveTaxProfileBtn").textContent =
+              (e.tax_profiles || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
+
+      if ($("payrollSaveBankBtn")) {
+          $("payrollSaveBankBtn").textContent =
+              (e.bank_accounts || []).length
+                  ? "Update & Continue"
+                  : "Save & Continue";
+      }
   }
 
   function updatePayrollLeavePolicyMethod(){
@@ -79198,10 +79263,25 @@ async function saveEditModal() {
       catch (e) { showPayrollStatus(e.message, "error"); }
     });
 
+    $("payrollSkipContractBtn")?.addEventListener("click", () => {
+        if (!$("payTaxEffectiveFrom")?.value) {
+            $("payTaxEffectiveFrom").value =
+                $("payContractFrom")?.value ||
+                $("payStartDate")?.value ||
+                "";
+        }
+
+        switchPayrollEmpTab("tax");
+    });
+
     $("payrollSaveTaxProfileBtn")?.addEventListener(
       "click",
       runPayrollAction(savePayrollTaxProfile)
     );
+
+    $("payrollSkipTaxBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("bank");
+    });
 
     $("payTaxCalculationMethod")?.addEventListener(
       "change",
@@ -79232,6 +79312,10 @@ async function saveEditModal() {
     $("payrollSaveBankBtn")?.addEventListener("click", async () => {
       try { await savePayrollBankAccount(); }
       catch (e) { showPayrollStatus(e.message, "error"); }
+    });
+
+    $("payrollSkipBankBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("benefits");
     });
 
     $("payrollSaveBenefitBtn")?.addEventListener("click", async () => {
