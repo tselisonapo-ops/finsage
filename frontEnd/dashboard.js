@@ -117812,6 +117812,7 @@ function bindAP() {
     let vendorName = String(prefill.vendor_name || "").trim();
 
     // Resolve vendor from lessor master.
+    // Resolve vendor from lessor master.
     if (!vendorId && lessorId > 0) {
       try {
         const res = await apiFetch(
@@ -117827,8 +117828,26 @@ function bindAP() {
         vendorName = String(
           lessor.vendor_name || vendorName || ""
         ).trim();
+
+        // No AP vendor linked yet: create/link one now.
+        if (!vendorId) {
+          const linked = await apiFetch(
+            `/api/companies/${cid}/lessors/${lessorId}/ensure-vendor`,
+            { method: "POST" }
+          );
+
+          const data = linked?.data || linked || {};
+
+          vendorId = Number(data.vendor_id || 0);
+          vendorName = String(
+            data.vendor_name || lessor.name || ""
+          ).trim();
+
+          console.log("[LEASE AP] vendor created/linked:", data);
+        }
+
       } catch (err) {
-        console.warn("[LEASE AP] lessor lookup failed:", err);
+        console.warn("[LEASE AP] lessor/vendor lookup failed:", err);
       }
     }
 

@@ -61498,6 +61498,118 @@ class DatabaseService:
             cur=cur,
         )
 
+    def ensure_lessor_vendor(
+        self,
+        company_id: int,
+        lessor_id: int,
+        cur=None,
+    ) -> dict:
+        schema = f"company_{company_id}"
+
+        own_cursor = cur is None
+
+        if own_cursor:
+            ctx = self._conn_cursor()
+            conn, cur = ctx.__enter__()
+
+        try:
+            lessor = self.get_lessor(
+                company_id,
+                lessor_id,
+                cur=cur,
+            )
+
+            if not lessor:
+                raise ValueError("Lessor not found")
+
+            existing_vendor_id = lessor.get("vendor_id")
+
+            if existing_vendor_id:
+                return {
+                    "lessor_id": int(lessor_id),
+                    "vendor_id": int(existing_vendor_id),
+                    "vendor_name": lessor.get("vendor_name"),
+                    "created": False,
+                }
+
+            cur.execute(
+                f"""
+                INSERT INTO {schema}.vendors (
+                    company_id,
+                    name,
+                    email,
+                    phone,
+                    remit_address,
+                    registration_no,
+                    vat_number,
+                    vendor_status,
+                    is_active,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    %s,%s,%s,%s,%s,%s,%s,
+                    'active',
+                    TRUE,
+                    NOW(),
+                    NOW()
+                )
+                RETURNING id
+                """,
+                (
+                    int(company_id),
+                    lessor.get("name"),
+                    lessor.get("email"),
+                    lessor.get("phone"),
+                    lessor.get("address"),
+                    lessor.get("reg_no"),
+                    lessor.get("vat_no"),
+                ),
+            )
+
+            row = cur.fetchone()
+
+            vendor_id = int(
+                row.get("id")
+                if isinstance(row, dict)
+                else row[0]
+            )
+
+            cur.execute(
+                f"""
+                UPDATE {schema}.lessors
+                SET
+                    vendor_id=%s,
+                    updated_at=NOW()
+                WHERE company_id=%s
+                AND id=%s
+                """,
+                (
+                    vendor_id,
+                    int(company_id),
+                    int(lessor_id),
+                ),
+            )
+
+            if own_cursor:
+                conn.commit()
+
+            return {
+                "lessor_id": int(lessor_id),
+                "vendor_id": vendor_id,
+                "vendor_name": lessor.get("name"),
+                "created": True,
+            }
+
+        except Exception:
+            if own_cursor:
+                conn.rollback()
+            raise
+
+        finally:
+            if own_cursor:
+                ctx.__exit__(None, None, None)
+                
     def insert_lessor(self, company_id: int, payload: dict, cur=None) -> int:
         schema = f"company_{company_id}"
 

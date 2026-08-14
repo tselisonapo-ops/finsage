@@ -1631,6 +1631,54 @@ def api_bill_detail(company_id: int, bill_id: int):
         return jsonify({"ok": False, "error": str(ex)}), 400
 
 @ap_bp.route(
+    "/api/companies/<int:company_id>/lessors/<int:lessor_id>/ensure-vendor",
+    methods=["POST", "OPTIONS"],
+)
+@require_auth
+def ensure_lessor_vendor(company_id: int, lessor_id: int):
+    if request.method == "OPTIONS":
+        return _corsify(make_response("", 204))
+
+    payload = getattr(request, "jwt_payload", {}) or {}
+
+    deny = _deny_if_wrong_company(
+        payload,
+        int(company_id),
+        db_service=db_service,
+    )
+
+    if deny:
+        return deny
+
+    try:
+        result = db_service.ensure_lessor_vendor(
+            int(company_id),
+            int(lessor_id),
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": result,
+        }), 200
+
+    except ValueError as ex:
+        return jsonify({
+            "ok": False,
+            "error": str(ex),
+        }), 400
+
+    except Exception as ex:
+        current_app.logger.exception(
+            "ensure_lessor_vendor failed"
+        )
+
+        return jsonify({
+            "ok": False,
+            "error": "Failed to create/link AP vendor",
+            "detail": str(ex),
+        }), 500
+    
+@ap_bp.route(
     "/api/companies/<int:company_id>/ap/bills/<int:bill_id>/allocate_payment",
     methods=["POST", "OPTIONS"],
 )
