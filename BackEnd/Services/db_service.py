@@ -57884,33 +57884,32 @@ class DatabaseService:
             source = (j.get("source") or "").strip().lower()
             source_id = j.get("source_id")
 
+            # ==================================================
+            # IFRS 16 LESSEE — INCEPTION REVERSAL
+            # ==================================================
             if source == "lease_inception" and source_id:
                 lease_id = int(source_id)
 
                 # --------------------------------------------------
-                # 1. Mark the lease itself as reversed/inactive
+                # 1. Mark lessee lease master as reversed
                 # --------------------------------------------------
                 cur.execute(
                     f"""
                     UPDATE {schema}.leases
                     SET
                         status = 'reversed',
-                        is_active = FALSE,
-                        reversal_journal_id = %s,
-                        reversed_at = NOW(),
                         updated_at = NOW()
                     WHERE company_id = %s
                     AND id = %s
                     """,
                     (
-                        int(reversal_journal_id),
                         int(company_id),
                         lease_id,
                     ),
                 )
 
                 # --------------------------------------------------
-                # 2. Deactivate all active schedule versions
+                # 2. Deactivate all lease schedule versions
                 # --------------------------------------------------
                 cur.execute(
                     f"""
