@@ -63473,7 +63473,13 @@ async function saveEditModal() {
                       ${esc(p.leave_type_name || p.leave_code || "")}
                     </div>
                   </td>
-                  <td>${money(p.annual_entitlement_days)} days</td>
+                    <td>
+                      ${
+                        Number(p.cycle_entitlement_days||0)>0
+                          ?`${money(p.cycle_entitlement_days)} days / ${Number(p.cycle_months||0)} months`
+                          :`${money(p.annual_entitlement_days)} days / year`
+                      }
+                    </td>
                   <td>${p.vesting ? "Vesting" : "Non-vesting"}</td>
                   <td>${p.provision_required ? "Required" : "Not required"}</td>
                   <td>
@@ -70672,6 +70678,66 @@ async function saveEditModal() {
     }
   }
 
+  function renderEmployeeLeavePolicySelect() {
+    const select=$("payLeaveTypeId");
+    if(!select)return;
+
+    const current=select.value;
+    const policies=(payrollState.employeeBenefits?.leavePolicies||[])
+      .filter(x=>x.is_active!==false);
+
+    select.innerHTML=
+      `<option value="">Select leave policy…</option>`+
+      policies.map(x=>`
+        <option value="${esc(x.leave_type_id)}"
+          data-policy-id="${esc(x.id)}">
+          ${esc(x.name)} — ${esc(x.leave_type_name||x.leave_code||"")}
+        </option>
+      `).join("");
+
+    if(current&&[...select.options].some(x=>x.value===current)){
+      select.value=current;
+    }
+
+    renderSelectedEmployeeLeavePolicy();
+  }
+
+  function selectedEmployeeLeavePolicy() {
+    const select=$("payLeaveTypeId");
+    const option=select?.selectedOptions?.[0];
+
+    const policyId=Number(
+      option?.dataset?.policyId||0
+    );
+
+    return (payrollState.employeeBenefits?.leavePolicies||[])
+      .find(x=>Number(x.id)===policyId)||null;
+  }
+
+  function renderSelectedEmployeeLeavePolicy() {
+    const policy=selectedEmployeeLeavePolicy();
+    const el=$("payEmployeeLeavePolicySummary");
+
+    if(!el)return;
+
+    if(!policy){
+      el.innerHTML="";
+      return;
+    }
+
+    const entitlement=
+      Number(policy.cycle_entitlement_days||0)>0
+        ?`${money(policy.cycle_entitlement_days)} days / ${Number(policy.cycle_months||0)} months`
+        :`${money(policy.annual_entitlement_days)} days / year`;
+
+    el.innerHTML=`
+      <strong>${esc(policy.name||"")}</strong>
+      · ${entitlement}
+      · ${policy.vesting?"Vesting":"Non-vesting"}
+      · ${policy.provision_required?"Provision required":"No provision"}
+    `;
+  }
+
   function renderPayrollSetupSelects() {
     const setup = payrollState.setup || {};
 
@@ -70697,11 +70763,7 @@ async function saveEditModal() {
       item => `${item.code} — ${item.name}`
     );
 
-    fillSelect(
-      "payLeaveTypeId",
-      setup.leave_types,
-      x => `${x.code} — ${x.name}`
-    );
+    renderEmployeeLeavePolicySelect();
 
     fillSelect(
       "payLoanDeductionTypeId",
@@ -74114,6 +74176,15 @@ async function saveEditModal() {
     }else if(tab==="runs"){
       loadPayrollRuns().catch(error=>
         showPayrollStatus(error?.message||"Payroll runs could not be loaded.","error")
+      );
+    }else if(tab==="employee-benefits"){
+      switchPayrollBenefitTab(
+        payrollState.employeeBenefits?.activeTab||"overview"
+      ).catch(error=>
+        showPayrollStatus(
+          error?.message||"Employee benefits could not be loaded.",
+          "error"
+        )
       );
     }else if(tab==="employee-benefits"){
       switchPayrollBenefitTab(
@@ -78035,7 +78106,7 @@ async function saveEditModal() {
   }
 
   async function switchPayrollEmpTab(tab) {
-    const validTabs = [
+    const validTabs=[
       "bio",
       "contract",
       "tax",
@@ -78047,30 +78118,30 @@ async function saveEditModal() {
       "deductions",
     ];
 
-    if (!validTabs.includes(tab)) {
-      tab = "bio";
+    if(!validTabs.includes(tab)){
+      tab="bio";
     }
 
     document
       .querySelectorAll("[data-payroll-emp-tab]")
-      .forEach(btn => {
+      .forEach(btn=>{
         btn.classList.toggle(
           "active",
-          btn.dataset.payrollEmpTab === tab
+          btn.dataset.payrollEmpTab===tab
         );
       });
 
     document
       .querySelectorAll("[data-payroll-emp-panel]")
-      .forEach(panel => {
+      .forEach(panel=>{
         panel.classList.toggle(
           "hidden",
-          panel.dataset.payrollEmpPanel !== tab
+          panel.dataset.payrollEmpPanel!==tab
         );
       });
 
-    if (tab === "benefits") {
-      if (!(payrollState.employeeBenefits?.benefitPlans || []).length) {
+    if(tab==="benefits"){
+      if(!(payrollState.employeeBenefits?.benefitPlans||[]).length){
         await loadPayrollBenefitPlans();
       }
 
@@ -78078,9 +78149,25 @@ async function saveEditModal() {
       renderSelectedEmployeeBenefitPlan();
       await loadEmployeeBenefitMembership();
 
-      if (!payrollEmployeeBenefitSetupReady()) {
+      if(!payrollEmployeeBenefitSetupReady()){
         showPayrollStatus(
           "Employee benefits are not configured. Define benefit plans before assigning benefits to this employee.",
+          "warning"
+        );
+      }
+    }
+
+    if(tab==="leave"){
+      if(!(payrollState.employeeBenefits?.leavePolicies||[]).length){
+        await loadPayrollLeaveWorkspace();
+      }
+
+      renderEmployeeLeavePolicySelect();
+
+      if(!(payrollState.employeeBenefits?.leavePolicies||[])
+        .some(x=>x.is_active!==false)){
+        showPayrollStatus(
+          "No active leave policies are configured. Define leave policies in Employee Benefits first.",
           "warning"
         );
       }
@@ -79404,6 +79491,10 @@ async function saveEditModal() {
             $("payrollLeavePolicyName").value=type.name||"";
 
         updatePayrollLeavePolicyFields();
+    });
+
+    $("payLeaveTypeId")?.addEventListener("change",()=>{
+      renderSelectedEmployeeLeavePolicy();
     });
 
     $("payrollLeavePolicyMethod")
