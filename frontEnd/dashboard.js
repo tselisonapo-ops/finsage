@@ -117795,78 +117795,82 @@ function bindAP() {
     const vatRate = Number(prefill.vat_rate || 0);
     const lessorId = Number(prefill.lessor_id || 0);
     const leaseId = Number(prefill.lease_id || 0);
+    const cid = window.getActiveCompanyId?.() || CURRENT_COMPANY_ID;
+    const root = typeof getBillRoot === "function" ? getBillRoot() : document;
 
-    const root =
-      typeof getBillRoot === "function"
-        ? getBillRoot()
-        : document;
+    window.clearBillForm?.({ keepCurrency: true });
 
-    if (typeof window.clearBillForm === "function") {
-      window.clearBillForm({ keepCurrency: true });
-    }
-
-    // Preserve lease source metadata for bill save.
     window._CURRENT_LEASE_BILL_PREFILL = {
       source: "lease_direct_cost",
       source_id: leaseId || null,
       lease_id: leaseId || null,
       lessor_id: lessorId || null,
+      vendor_id: null,
     };
 
     let vendorId = Number(prefill.vendor_id || 0);
     let vendorName = String(prefill.vendor_name || "").trim();
 
-    const vendors = Array.isArray(window.VENDORS_CACHE)
-      ? window.VENDORS_CACHE
-      : [];
+    // Resolve vendor from lessor master.
+    if (!vendorId && lessorId > 0) {
+      try {
+        const res = await apiFetch(
+          `/api/companies/${cid}/lessors/${lessorId}`,
+          { method: "GET" }
+        );
 
-    // Prefer vendor_id supplied by the lease/lessor API.
+        const lessor = res?.data || res?.lessor || res || {};
+
+        console.log("[LEASE AP] lessor response:", lessor);
+
+        vendorId = Number(lessor.vendor_id || 0);
+        vendorName = String(
+          lessor.vendor_name || vendorName || ""
+        ).trim();
+      } catch (err) {
+        console.warn("[LEASE AP] lessor lookup failed:", err);
+      }
+    }
+
+    // Resolve vendor name.
     if (vendorId > 0) {
+      let vendors = Array.isArray(window.VENDORS_CACHE)
+        ? window.VENDORS_CACHE
+        : [];
+
+      if (!vendors.length) {
+        try {
+          const res = await apiFetch(
+            `/api/companies/${cid}/vendors?include_inactive=1`,
+            { method: "GET" }
+          );
+
+          vendors = Array.isArray(res)
+            ? res
+            : (res?.data || res?.rows || res?.vendors || []);
+
+          window.VENDORS_CACHE = vendors;
+        } catch (err) {
+          console.warn("[LEASE AP] vendor lookup failed:", err);
+        }
+      }
+
       const hit = vendors.find(
         (v) => Number(v.id) === vendorId
       );
 
-      if (hit && !vendorName) {
+      if (hit) {
         vendorName = String(
-          hit.name || hit.vendor_name || ""
+          hit.name || hit.vendor_name || vendorName || ""
         ).trim();
       }
     }
 
-    // If prefill did not contain vendor_id, fetch the lessor.
-    if (!vendorId && lessorId > 0) {
-      try {
-        const lessor = await apiFetch(
-          `/api/companies/${CURRENT_COMPANY_ID}/lessors/${lessorId}`,
-          { method: "GET" }
-        );
-
-        const row = lessor?.lessor || lessor?.data || lessor;
-
-        vendorId = Number(row?.vendor_id || 0);
-
-        if (!vendorName) {
-          vendorName = String(
-            row?.vendor_name || ""
-          ).trim();
-        }
-
-        if (vendorId > 0 && !vendorName) {
-          const hit = vendors.find(
-            (v) => Number(v.id) === vendorId
-          );
-
-          vendorName = String(
-            hit?.name || hit?.vendor_name || ""
-          ).trim();
-        }
-      } catch (err) {
-        console.warn(
-          "[LEASE AP] Could not resolve lessor vendor:",
-          err
-        );
-      }
-    }
+    console.log("[LEASE AP] vendor resolution:", {
+      lessor_id: lessorId || null,
+      vendor_id: vendorId || null,
+      vendor_name: vendorName || null,
+    });
 
     const today = new Date().toISOString().slice(0, 10);
 
@@ -117878,48 +117882,34 @@ function bindAP() {
       number: prefill.reference || "",
       notes:
         "Lease direct cost capture" +
-        (prefill.reference
-          ? ` | Ref: ${prefill.reference}`
-          : ""),
+        (prefill.reference ? ` | Ref: ${prefill.reference}` : ""),
     });
 
     const vendorIdEl = root.querySelector("#billVendorId");
     const vendorEl = root.querySelector("#billVendor");
 
     if (vendorIdEl) {
-      vendorIdEl.value = vendorId > 0
-        ? String(vendorId)
-        : "";
+      vendorIdEl.value = vendorId > 0 ? String(vendorId) : "";
     }
 
     if (vendorEl && vendorName) {
-      vendorEl.value =
-        vendorEl.tagName === "SELECT"
-          ? String(vendorId || "")
-          : vendorName;
+      vendorEl.value = vendorEl.tagName === "SELECT"
+        ? String(vendorId || "")
+        : vendorName;
     }
 
     const memoEl = root.querySelector("#billMemo");
-
     if (memoEl) {
       memoEl.value =
         prefill.description ||
         `Initial direct cost - ${prefill.lease_name || "Lease"}`;
     }
 
-    const vatEnabledEl =
-      root.querySelector("#apBillVatEnabled");
+    const vatEnabledEl = root.querySelector("#apBillVatEnabled");
+    const vatModeEl = root.querySelector("#apBillVatMode");
 
-    if (vatEnabledEl) {
-      vatEnabledEl.checked = vatRate > 0;
-    }
-
-    const vatModeEl =
-      root.querySelector("#apBillVatMode");
-
-    if (vatModeEl) {
-      vatModeEl.value = "exclusive";
-    }
+    if (vatEnabledEl) vatEnabledEl.checked = vatRate > 0;
+    if (vatModeEl) vatModeEl.value = "exclusive";
 
     if (
       !Array.isArray(window.BILL_ACCOUNTS_CACHE) ||
@@ -117931,12 +117921,9 @@ function bindAP() {
     window.refreshBillAccountDropdowns?.();
 
     const linesBody = root.querySelector("#billLines");
+    if (linesBody) linesBody.innerHTML = "";
 
-    if (linesBody) {
-      linesBody.innerHTML = "";
-    }
-
-    const directCostAccount = String(
+    const account = String(
       prefill.asset_account || "BS_NCA_1610"
     ).trim();
 
@@ -117947,45 +117934,35 @@ function bindAP() {
         `Initial direct cost - ${prefill.lease_name || "Lease"}`,
       quantity: 1,
       unit_price: amount,
-      account_code: directCostAccount,
+      account_code: account,
       vat_code:
         vatRate > 0
-          ? vatRate === 15
-            ? "STANDARD"
-            : "CUSTOM"
+          ? (vatRate === 15 ? "STANDARD" : "CUSTOM")
           : "ZERO",
       vat_rate: vatRate,
     });
 
     const acctSel = row?.querySelector?.(".bill-acct");
 
-    if (acctSel && directCostAccount) {
-      const exists = Array.from(
-        acctSel.options || []
-      ).some(
-        (opt) =>
-          String(opt.value).trim() === directCostAccount
-      );
+    if (acctSel && account) {
+      const exists = Array.from(acctSel.options || [])
+        .some((opt) => String(opt.value).trim() === account);
 
       if (exists) {
-        acctSel.value = directCostAccount;
+        acctSel.value = account;
       } else {
-        console.warn(
-          "[LEASE AP] Account not found:",
-          directCostAccount
-        );
+        console.warn("[LEASE AP] Account not found:", account);
       }
     }
 
     if (vendorEl) {
-      for (const type of ["input", "change", "blur"]) {
+      ["input", "change", "blur"].forEach((type) => {
         vendorEl.dispatchEvent(
           new Event(type, { bubbles: true })
         );
-      }
+      });
     }
 
-    // Update stored metadata with resolved vendor.
     window._CURRENT_LEASE_BILL_PREFILL.vendor_id =
       vendorId || null;
 
@@ -117997,7 +117974,7 @@ function bindAP() {
       lessor_id: lessorId || null,
       vendor_id: vendorId || null,
       vendor_name: vendorName || null,
-      account_code: directCostAccount,
+      account_code: account,
       amount,
       vat_rate: vatRate,
     });
