@@ -1088,6 +1088,11 @@ def api_bills(company_id: int):
     else:
         header = {
             "vendor_id": data.get("vendor_id"),
+            "lessor_id": data.get("lessor_id"),
+            "lease_id": data.get("lease_id"),
+            "source": data.get("source"),
+            "source_id": data.get("source_id"),
+
             "bill_date": data.get("bill_date"),
             "due_date": data.get("due_date"),
             "currency": data.get("currency"),
@@ -1213,6 +1218,35 @@ def api_bills(company_id: int):
                 "ok": False,
                 "error": "Invalid posting_mode for asset-linked bill"
             }), 400
+
+    try:
+        header["vendor_id"] = int(vendor_id)
+
+        if header.get("lessor_id") not in (None, "", 0, "0"):
+            header["lessor_id"] = int(header["lessor_id"])
+        else:
+            header["lessor_id"] = None
+
+        if header.get("lease_id") not in (None, "", 0, "0"):
+            header["lease_id"] = int(header["lease_id"])
+        else:
+            header["lease_id"] = None
+
+        if header.get("source_id") not in (None, "", 0, "0"):
+            header["source_id"] = int(header["source_id"])
+        else:
+            header["source_id"] = None
+
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "error": "vendor_id, lessor_id, lease_id and source_id must be integers when provided"
+        }), 400
+
+    header["source"] = (
+        str(header.get("source") or "").strip()
+        or None
+    )
     try:
         bid = db_service.insert_bill_with_lines(company_id, header, lines)
         db_service.ensure_bill_grni_link_table(company_id)
@@ -1527,6 +1561,41 @@ def api_bill_detail(company_id: int, bill_id: int):
         and posting_mode in {"asset_acquisition", "grni_clearing", "post_via_acquisition", "document_only"}
     )
 
+    try:
+        header["vendor_id"] = int(header["vendor_id"])
+
+        if header.get("lessor_id") not in (None, "", 0, "0"):
+            header["lessor_id"] = int(header["lessor_id"])
+        else:
+            header["lessor_id"] = bill.get("lessor_id")
+
+        if header.get("lease_id") not in (None, "", 0, "0"):
+            header["lease_id"] = int(header["lease_id"])
+        else:
+            header["lease_id"] = bill.get("lease_id")
+
+        if header.get("source_id") not in (None, "", 0, "0"):
+            header["source_id"] = int(header["source_id"])
+        else:
+            header["source_id"] = bill.get("source_id")
+
+        header["source"] = (
+            str(
+                header.get("source")
+                or bill.get("source")
+                or ""
+            ).strip()
+            or None
+        )
+
+    except Exception:
+        return jsonify({
+            "ok": False,
+            "error": (
+                "vendor_id, lessor_id, lease_id and "
+                "source_id must be integers when provided"
+            ),
+        }), 400
     try:
         ok = db_service.update_bill_with_lines(company_id, bill_id, header, lines)
         db_service.ensure_bill_grni_link_table(company_id)

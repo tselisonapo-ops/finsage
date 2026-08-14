@@ -159,13 +159,43 @@ button:hover:not(:disabled) {
   flex-wrap: wrap;
 }
 
+/* ==========================================
+   LESSEE PREVIEW KPI CARDS
+   ========================================== */
+
+.summary-cards {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
 .summary-cards .card {
-  flex: 1 1 120px;
-  min-width: 140px;
-  background: rgba(15, 23, 42, 0.9);
+  flex: 1 1 180px;
+  min-width: 180px;
+  padding: 14px 16px;
   border-radius: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  border: 1px solid #d8e1eb;
+  background: #ffffff;
+  color: #1e293b;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.summary-cards .label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 1;
+}
+
+.summary-cards .value {
+  margin-top: 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary-cards .label {

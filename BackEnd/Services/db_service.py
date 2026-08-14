@@ -49122,6 +49122,39 @@ class DatabaseService:
         ALTER TABLE {schema}.lessors
         ALTER COLUMN created_at SET DEFAULT NOW();
 
+        ALTER TABLE {schema}.lessors
+        ADD COLUMN IF NOT EXISTS vendor_id INT NULL;
+
+        ALTER TABLE {schema}.lessors
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;
+
+        UPDATE {schema}.lessors
+        SET updated_at = COALESCE(updated_at, created_at, NOW())
+        WHERE updated_at IS NULL;
+
+        DO $fk_lessors_vendor$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint c
+                JOIN pg_namespace n
+                    ON n.oid = c.connamespace
+                WHERE c.conname = 'fk_lessors_vendor'
+                AND n.nspname = '{schema}'
+            ) THEN
+                EXECUTE format(
+                    'ALTER TABLE %I.lessors
+                    ADD CONSTRAINT fk_lessors_vendor
+                    FOREIGN KEY (vendor_id)
+                    REFERENCES %I.vendors(id)
+                    ON DELETE SET NULL',
+                    '{schema}',
+                    '{schema}'
+                );
+            END IF;
+        END
+        $fk_lessors_vendor$;
+
         -- ==================================================
         -- Uniqueness / constraints
         -- ==================================================
@@ -49168,6 +49201,13 @@ class DatabaseService:
 
         CREATE INDEX IF NOT EXISTS {schema}_lessors_related_party_idx
         ON {schema}.lessors(company_id, is_related_party);
+
+        CREATE INDEX IF NOT EXISTS {schema}_lessors_vendor_idx
+        ON {schema}.lessors(company_id, vendor_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS {schema}_lessors_vendor_unique_idx
+        ON {schema}.lessors(company_id, vendor_id)
+        WHERE vendor_id IS NOT NULL;
 
         -- ==================================================
         -- LESSOR CONTACTS
@@ -53674,6 +53714,18 @@ class DatabaseService:
 
         ALTER TABLE {schema}.bills
         ADD COLUMN IF NOT EXISTS asset_acquisition_id INT NULL;
+
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS source TEXT NULL;
+
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS source_id INT NULL;
+
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS lease_id INT NULL;
+
+        ALTER TABLE {schema}.bills
+        ADD COLUMN IF NOT EXISTS lessor_id INT NULL;
 
         DO $$
         BEGIN
@@ -61358,41 +61410,62 @@ class DatabaseService:
         self,
         company_id: int,
         *,
-        active: bool | None = True,   # True = only active, False = only inactive, None = all
+        active: bool | None = True,
         q: str | None = None,
         limit: int = 500,
         offset: int = 0,
-        cur=None
+        cur=None,
     ):
         schema = f"company_{company_id}"
 
         sql = f"""
-        SELECT id, company_id, name, reg_no, vat_no, email, phone, address,
-            is_related_party, active, created_at
-        FROM {schema}.lessors
-        WHERE company_id=%s
+        SELECT
+            l.id,
+            l.company_id,
+            l.name,
+            l.reg_no,
+            l.vat_no,
+            l.email,
+            l.phone,
+            l.address,
+            l.is_related_party,
+            l.active,
+            l.vendor_id,
+            v.name AS vendor_name,
+            l.created_at,
+            l.updated_at
+        FROM {schema}.lessors l
+        LEFT JOIN {schema}.vendors v
+        ON v.company_id = l.company_id
+        AND v.id = l.vendor_id
+        WHERE l.company_id=%s
         """
+
         params = [company_id]
 
-        # active filter
         if active is True:
-            sql += " AND active = TRUE"
+            sql += " AND l.active = TRUE"
         elif active is False:
-            sql += " AND active = FALSE"
-        # if active is None -> no filter
+            sql += " AND l.active = FALSE"
 
-        # search
         if q:
-            sql += " AND lower(trim(name)) LIKE %s"
-            params.append(f"%{q.strip().lower()}%")
+            sql += """
+            AND (
+                LOWER(TRIM(l.name)) LIKE %s
+                OR LOWER(TRIM(COALESCE(v.name, ''))) LIKE %s
+            )
+            """
+            term = f"%{q.strip().lower()}%"
+            params.extend([term, term])
 
-        sql += " ORDER BY lower(trim(name)) ASC, id ASC"
+        sql += " ORDER BY LOWER(TRIM(l.name)) ASC, l.id ASC"
 
-        # pagination
         limit = int(limit or 500)
         offset = int(offset or 0)
+
         if limit < 1:
             limit = 500
+
         if offset < 0:
             offset = 0
 
@@ -61403,21 +61476,78 @@ class DatabaseService:
 
     def get_lessor(self, company_id: int, lessor_id: int, cur=None):
         schema = f"company_{company_id}"
-        sql = f"SELECT * FROM {schema}.lessors WHERE company_id=%s AND id=%s"
-        return self.fetch_one(sql, (company_id, lessor_id), cur=cur)
 
+        sql = f"""
+        SELECT
+            l.*,
+            v.name AS vendor_name,
+            v.vendor_status,
+            v.is_active AS vendor_is_active
+        FROM {schema}.lessors l
+        LEFT JOIN {schema}.vendors v
+        ON v.company_id = l.company_id
+        AND v.id = l.vendor_id
+        WHERE l.company_id=%s
+        AND l.id=%s
+        LIMIT 1
+        """
+
+        return self.fetch_one(
+            sql,
+            (int(company_id), int(lessor_id)),
+            cur=cur,
+        )
 
     def insert_lessor(self, company_id: int, payload: dict, cur=None) -> int:
         schema = f"company_{company_id}"
+
+        vendor_id = payload.get("vendor_id")
+
+        try:
+            vendor_id = int(vendor_id) if vendor_id not in (None, "") else None
+        except Exception:
+            vendor_id = None
+
+        if vendor_id is not None:
+            vendor = self.fetch_one(
+                f"""
+                SELECT id
+                FROM {schema}.vendors
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                LIMIT 1
+                """,
+                (int(company_id), int(vendor_id)),
+                cur=cur,
+            )
+
+            if not vendor:
+                raise ValueError("Invalid or inactive vendor_id for lessor")
+
         sql = f"""
-        INSERT INTO {schema}.lessors
-            (company_id, name, reg_no, vat_no, email, phone, address, is_related_party, active)
-        VALUES
-            (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO {schema}.lessors (
+            company_id,
+            name,
+            reg_no,
+            vat_no,
+            email,
+            phone,
+            address,
+            is_related_party,
+            active,
+            vendor_id,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW()
+        )
         RETURNING id
         """
+
         params = (
-            company_id,
+            int(company_id),
             (payload.get("name") or "").strip(),
             payload.get("reg_no"),
             payload.get("vat_no"),
@@ -61425,45 +61555,102 @@ class DatabaseService:
             payload.get("phone"),
             payload.get("address"),
             bool(payload.get("is_related_party") or False),
-            bool(payload.get("active") if payload.get("active") is not None else True),
+            bool(
+                payload.get("active")
+                if payload.get("active") is not None
+                else True
+            ),
+            vendor_id,
         )
+
         if cur is not None:
             cur.execute(sql, params)
             row = cur.fetchone()
-            return int((row.get("id") if isinstance(row, dict) else row[0]) or 0)
+
+            return int(
+                (
+                    row.get("id")
+                    if isinstance(row, dict)
+                    else row[0]
+                ) or 0
+            )
+
         return int(self.execute_sql(sql, params) or 0)
 
-
-    def update_lessor(self, company_id: int, lessor_id: int, **fields) -> bool:
+    def update_lessor(
+        self,
+        company_id: int,
+        lessor_id: int,
+        **fields,
+    ) -> bool:
         schema = f"company_{company_id}"
+
         allowed = {
-            "name", "reg_no", "vat_no", "email", "phone", "address",
-            "is_related_party", "active"
+            "name",
+            "reg_no",
+            "vat_no",
+            "email",
+            "phone",
+            "address",
+            "is_related_party",
+            "active",
+            "vendor_id",
         }
+
         sets = []
         params = []
 
-        for k, v in fields.items():
-            if k not in allowed:
+        for key, value in fields.items():
+            if key not in allowed:
                 continue
-            if k == "name":
-                v = (v or "").strip()
-            sets.append(f"{k}=%s")
-            params.append(v)
+
+            if key == "name":
+                value = (value or "").strip()
+
+            if key == "vendor_id":
+                try:
+                    value = int(value) if value not in (None, "") else None
+                except Exception:
+                    raise ValueError("vendor_id must be a valid integer")
+
+                if value is not None:
+                    vendor = self.fetch_one(
+                        f"""
+                        SELECT id
+                        FROM {schema}.vendors
+                        WHERE company_id=%s
+                        AND id=%s
+                        AND is_active=TRUE
+                        LIMIT 1
+                        """,
+                        (int(company_id), int(value)),
+                    )
+
+                    if not vendor:
+                        raise ValueError("Invalid or inactive vendor_id for lessor")
+
+            sets.append(f"{key}=%s")
+            params.append(value)
 
         if not sets:
             return False
 
-        sets.append("updated_at = NOW()")  # only if you added updated_at, otherwise remove
+        sets.append("updated_at=NOW()")
+
         sql = f"""
         UPDATE {schema}.lessors
         SET {", ".join(sets)}
-        WHERE company_id=%s AND id=%s
+        WHERE company_id=%s
+        AND id=%s
         """
-        params.extend([company_id, lessor_id])
+
+        params.extend([
+            int(company_id),
+            int(lessor_id),
+        ])
+
         self.execute_sql(sql, tuple(params))
         return True
-
 
     def lessor_is_used(self, company_id: int, lessor_id: int) -> bool:
         schema = f"company_{company_id}"
@@ -81827,6 +82014,29 @@ class DatabaseService:
 
         schema = self.company_schema(company_id)
 
+        lessor_id = (
+            int(header["lessor_id"])
+            if header.get("lessor_id") not in (None, "", 0, "0")
+            else None
+        )
+
+        lease_id = (
+            int(header["lease_id"])
+            if header.get("lease_id") not in (None, "", 0, "0")
+            else None
+        )
+
+        source = (
+            str(header.get("source") or "").strip()
+            or None
+        )
+
+        source_id = (
+            int(header["source_id"])
+            if header.get("source_id") not in (None, "", 0, "0")
+            else None
+        )
+
         status = (header.get("status") or "draft").strip().lower()
         vat_mode = (header.get("vat_mode") or "exclusive").strip().lower()
         if vat_mode not in ("inclusive", "exclusive"):
@@ -81952,10 +82162,23 @@ class DatabaseService:
             cur.execute(
                 f"""
                 UPDATE {schema}.bills
-                SET vendor_id=%s, number=%s, bill_date=%s, due_date=%s, currency=%s,
-                    subtotal_amount=%s, discount_amount=%s, discount_rate=%s,
-                    vat_amount=%s, total_amount=%s, other_amount=%s,
-                    status=%s, notes=%s,
+                SET vendor_id=%s,
+                    lessor_id=%s,
+                    lease_id=%s,
+                    source=%s,
+                    source_id=%s,
+                    number=%s,
+                    bill_date=%s,
+                    due_date=%s,
+                    currency=%s,
+                    subtotal_amount=%s,
+                    discount_amount=%s,
+                    discount_rate=%s,
+                    vat_amount=%s,
+                    total_amount=%s,
+                    other_amount=%s,
+                    status=%s,
+                    notes=%s,
                     asset_id=%s,
                     asset_acquisition_id=%s,
                     updated_at=NOW()
@@ -81963,6 +82186,10 @@ class DatabaseService:
                 """,
                 (
                     int(header["vendor_id"]),
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
                     header.get("number"),
                     header["bill_date"],
                     header.get("due_date"),
@@ -81984,7 +82211,15 @@ class DatabaseService:
 
             cur.execute(
                 f"""
-                SELECT id, asset_id, asset_acquisition_id
+                SELECT
+                    id,
+                    vendor_id,
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
+                    asset_id,
+                    asset_acquisition_id
                 FROM {schema}.bills
                 WHERE company_id=%s AND id=%s
                 """,
@@ -82001,17 +82236,42 @@ class DatabaseService:
             cur.execute(
                 f"""
                 INSERT INTO {schema}.bills (
-                    company_id, vendor_id, number, bill_date, due_date, currency,
-                    subtotal_amount, discount_amount, discount_rate, vat_amount, total_amount,
-                    other_amount, status, notes,
-                    asset_id, asset_acquisition_id
+                    company_id,
+                    vendor_id,
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
+                    number,
+                    bill_date,
+                    due_date,
+                    currency,
+                    subtotal_amount,
+                    discount_amount,
+                    discount_rate,
+                    vat_amount,
+                    total_amount,
+                    other_amount,
+                    status,
+                    notes,
+                    asset_id,
+                    asset_acquisition_id
                 )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                VALUES (
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s
+                )
                 RETURNING id;
                 """,
                 (
                     int(company_id),
                     int(header["vendor_id"]),
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
                     header.get("number"),
                     header["bill_date"],
                     header.get("due_date"),
@@ -82037,7 +82297,15 @@ class DatabaseService:
 
             cur.execute(
                 f"""
-                SELECT id, asset_id, asset_acquisition_id
+                SELECT
+                    id,
+                    vendor_id,
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
+                    asset_id,
+                    asset_acquisition_id
                 FROM {schema}.bills
                 WHERE company_id=%s AND id=%s
                 """,
@@ -82115,6 +82383,29 @@ class DatabaseService:
             return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
         schema = self.company_schema(company_id)
+
+        lessor_id = (
+            int(header["lessor_id"])
+            if header.get("lessor_id") not in (None, "", 0, "0")
+            else None
+        )
+
+        lease_id = (
+            int(header["lease_id"])
+            if header.get("lease_id") not in (None, "", 0, "0")
+            else None
+        )
+
+        source = (
+            str(header.get("source") or "").strip()
+            or None
+        )
+
+        source_id = (
+            int(header["source_id"])
+            if header.get("source_id") not in (None, "", 0, "0")
+            else None
+        )
 
         vat_mode = (header.get("vat_mode") or "exclusive").strip().lower()
         if vat_mode not in ("inclusive", "exclusive"):
@@ -82306,17 +82597,35 @@ class DatabaseService:
             cur.execute(
                 f"""
                 UPDATE {schema}.bills
-                SET vendor_id=%s, number=%s, bill_date=%s, due_date=%s, currency=%s,
-                    subtotal_amount=%s, discount_amount=%s, discount_rate=%s,
-                    vat_amount=%s, total_amount=%s, status=%s, notes=%s,
+                SET vendor_id=%s,
+                    lessor_id=%s,
+                    lease_id=%s,
+                    source=%s,
+                    source_id=%s,
+                    number=%s,
+                    bill_date=%s,
+                    due_date=%s,
+                    currency=%s,
+                    subtotal_amount=%s,
+                    discount_amount=%s,
+                    discount_rate=%s,
+                    vat_amount=%s,
+                    total_amount=%s,
+                    status=%s,
+                    notes=%s,
                     other_amount=%s,
                     asset_id=%s,
                     asset_acquisition_id=%s,
                     updated_at=NOW()
-                WHERE company_id=%s AND id=%s;
+                WHERE company_id=%s
+                AND id=%s;
                 """,
                 (
                     int(header["vendor_id"]),
+                    lessor_id,
+                    lease_id,
+                    source,
+                    source_id,
                     header.get("number"),
                     header["bill_date"],
                     header.get("due_date"),
@@ -82330,7 +82639,7 @@ class DatabaseService:
                     header.get("notes"),
                     other,
                     header.get("asset_id"),
-                    header.get("asset_acquisition_id"),                    
+                    header.get("asset_acquisition_id"),
                     int(company_id),
                     int(bill_id),
                 ),
@@ -82905,7 +83214,11 @@ class DatabaseService:
 
 
 
-    def get_bill_with_relations(self, company_id: int, bill_id: int) -> Optional[Dict[str, Any]]:
+    def get_bill_with_relations(
+        self,
+        company_id: int,
+        bill_id: int,
+    ) -> Optional[Dict[str, Any]]:
         schema = self.company_schema(company_id)
 
         sql = f"""
@@ -82913,6 +83226,10 @@ class DatabaseService:
             b.id,
             b.company_id,
             b.vendor_id,
+            b.lessor_id,
+            b.lease_id,
+            b.source,
+            b.source_id,
             b.number,
             b.bill_date,
             b.due_date,
@@ -82921,10 +83238,8 @@ class DatabaseService:
             b.discount_amount,
             b.discount_rate,
             b.vat_amount,
-
-            b.total_amount AS total_amount,
+            b.total_amount,
             b.total_amount AS total,
-
             b.status,
             b.notes,
             b.posted_journal_id,
@@ -82933,50 +83248,96 @@ class DatabaseService:
             b.reversed_journal_id,
             b.reversed_at,
             b.reversal_reason,
+            b.writeoff_journal_id,
+            b.written_off_at,
+            b.writeoff_reason,
 
-            COALESCE(pay.paid_amount, 0)::numeric(18,2) AS paid_amount,
-            GREATEST(b.total_amount - COALESCE(pay.paid_amount, 0), 0)::numeric(18,2) AS outstanding_amount,
+            COALESCE(
+                pay.paid_amount,
+                0
+            )::numeric(18,2) AS paid_amount,
+
+            GREATEST(
+                b.total_amount -
+                COALESCE(pay.paid_amount, 0),
+                0
+            )::numeric(18,2) AS outstanding_amount,
 
             CASE
-                WHEN LOWER(COALESCE(b.status,'')) IN ('void','written_off') THEN LOWER(b.status)
-                WHEN GREATEST(b.total_amount - COALESCE(pay.paid_amount, 0), 0) <= 0 THEN 'paid'
-                WHEN COALESCE(pay.paid_amount, 0) > 0 THEN 'partial'
+                WHEN LOWER(COALESCE(b.status, '')) IN (
+                    'void',
+                    'written_off'
+                )
+                THEN LOWER(b.status)
+
+                WHEN GREATEST(
+                    b.total_amount -
+                    COALESCE(pay.paid_amount, 0),
+                    0
+                ) <= 0
+                THEN 'paid'
+
+                WHEN COALESCE(pay.paid_amount, 0) > 0
+                THEN 'partial'
+
                 ELSE 'unpaid'
             END AS payment_status,
 
-            -- vendor (LEFT JOIN so bill still loads even if vendor missing)
-            v.name           AS vendor_name,
-            v.email          AS vendor_email,
-            v.phone          AS vendor_phone,
-            v.remit_address  AS vendor_address,
-            v.country        AS vendor_country,
-            v.tax_number     AS vendor_tax_number,
-            v.vat_number     AS vendor_vat_number,
-            v.payment_terms  AS vendor_payment_terms,
+            -- AP vendor
+            v.name AS vendor_name,
+            v.email AS vendor_email,
+            v.phone AS vendor_phone,
+            v.remit_address AS vendor_address,
+            v.country AS vendor_country,
+            v.tax_number AS vendor_tax_number,
+            v.vat_number AS vendor_vat_number,
+            v.payment_terms AS vendor_payment_terms,
 
-            -- company (join directly to b.company_id)
-            co.name            AS company_name,
-            co.company_email   AS company_email,
-            co.company_reg_no  AS company_reg_no,
-            co.tin             AS company_tin,
-            co.vat             AS company_vat,
-            co.country         AS company_country,
-            co.currency        AS company_currency,
+            -- IFRS 16 lessor
+            ls.name AS lessor_name,
+            ls.reg_no AS lessor_reg_no,
+            ls.vat_no AS lessor_vat_no,
+            ls.email AS lessor_email,
+            ls.phone AS lessor_phone,
+            ls.address AS lessor_address,
+            ls.vendor_id AS lessor_vendor_id,
 
-            cb.company_id      AS branding_company_id,
-            cb.logo_url        AS branding_logo_url,
-            cb.footer_text     AS branding_footer_text,
-            cb.contact_phone   AS branding_contact_phone,
-            cb.contact_email   AS branding_contact_email,
-            cb.website         AS branding_website,
-            cb.address         AS branding_address,
-            cb.vat_no          AS branding_vat_no
+            -- IFRS 16 lease
+            le.lease_name AS lease_name,
+            le.role AS lease_role,
+            le.start_date AS lease_start_date,
+
+            -- Company
+            co.name AS company_name,
+            co.company_email AS company_email,
+            co.company_reg_no AS company_reg_no,
+            co.tin AS company_tin,
+            co.vat AS company_vat,
+            co.country AS company_country,
+            co.currency AS company_currency,
+
+            cb.company_id AS branding_company_id,
+            cb.logo_url AS branding_logo_url,
+            cb.footer_text AS branding_footer_text,
+            cb.contact_phone AS branding_contact_phone,
+            cb.contact_email AS branding_contact_email,
+            cb.website AS branding_website,
+            cb.address AS branding_address,
+            cb.vat_no AS branding_vat_no
 
         FROM {schema}.bills b
 
         LEFT JOIN {schema}.vendors v
-        ON v.id = b.vendor_id
-        AND v.company_id = b.company_id
+        ON v.company_id = b.company_id
+        AND v.id = b.vendor_id
+
+        LEFT JOIN {schema}.lessors ls
+        ON ls.company_id = b.company_id
+        AND ls.id = b.lessor_id
+
+        LEFT JOIN {schema}.leases le
+        ON le.company_id = b.company_id
+        AND le.id = b.lease_id
 
         JOIN public.companies co
         ON co.id = b.company_id
@@ -82999,9 +83360,15 @@ class DatabaseService:
         LIMIT 1;
         """
 
-        row = self.fetch_one(sql, (int(company_id), int(bill_id), int(company_id)))
-        return row or None
-
+        return self.fetch_one(
+            sql,
+            (
+                int(company_id),
+                int(bill_id),
+                int(company_id),
+            ),
+        ) or None
+        
     def bill_number_exists(self, company_id, vendor_id, number, exclude_bill_id=None):
         schema = self.company_schema(company_id)
 
@@ -83087,6 +83454,10 @@ class DatabaseService:
         for k in (
             "asset_id",
             "asset_acquisition_id",
+            "lessor_id",
+            "lease_id",
+            "source",
+            "source_id",
             "reversed_journal_id",
             "reversed_at",
             "reversal_reason",

@@ -117793,34 +117793,34 @@ function bindAP() {
 
     const amount = Number(prefill.amount || 0);
     const vatRate = Number(prefill.vat_rate || 0);
+    const lessorId = Number(prefill.lessor_id || 0);
+    const leaseId = Number(prefill.lease_id || 0);
 
     const root =
       typeof getBillRoot === "function"
         ? getBillRoot()
         : document;
 
-    // --------------------------------------------------
-    // 1. Clear existing AP bill
-    // --------------------------------------------------
     if (typeof window.clearBillForm === "function") {
       window.clearBillForm({ keepCurrency: true });
     }
 
-    // --------------------------------------------------
-    // 2. Resolve lessor -> AP vendor
-    // --------------------------------------------------
-    const lessorId = Number(prefill.lessor_id || 0);
+    // Preserve lease source metadata for bill save.
+    window._CURRENT_LEASE_BILL_PREFILL = {
+      source: "lease_direct_cost",
+      source_id: leaseId || null,
+      lease_id: leaseId || null,
+      lessor_id: lessorId || null,
+    };
 
     let vendorId = Number(prefill.vendor_id || 0);
-    let vendorName = String(
-      prefill.vendor_name || ""
-    ).trim();
+    let vendorName = String(prefill.vendor_name || "").trim();
 
     const vendors = Array.isArray(window.VENDORS_CACHE)
       ? window.VENDORS_CACHE
       : [];
 
-    // First try an explicit vendor id
+    // Prefer vendor_id supplied by the lease/lessor API.
     if (vendorId > 0) {
       const hit = vendors.find(
         (v) => Number(v.id) === vendorId
@@ -117833,89 +117833,80 @@ function bindAP() {
       }
     }
 
-    // If no vendor was supplied, try to resolve from lessor
+    // If prefill did not contain vendor_id, fetch the lessor.
     if (!vendorId && lessorId > 0) {
-      const hit = vendors.find((v) => {
-        return (
-          Number(v.lessor_id || 0) === lessorId ||
-          Number(v.linked_lessor_id || 0) === lessorId
+      try {
+        const lessor = await apiFetch(
+          `/api/companies/${CURRENT_COMPANY_ID}/lessors/${lessorId}`,
+          { method: "GET" }
         );
-      });
 
-      if (hit) {
-        vendorId = Number(hit.id || 0);
-        vendorName = String(
-          hit.name || hit.vendor_name || ""
-        ).trim();
+        const row = lessor?.lessor || lessor?.data || lessor;
+
+        vendorId = Number(row?.vendor_id || 0);
+
+        if (!vendorName) {
+          vendorName = String(
+            row?.vendor_name || ""
+          ).trim();
+        }
+
+        if (vendorId > 0 && !vendorName) {
+          const hit = vendors.find(
+            (v) => Number(v.id) === vendorId
+          );
+
+          vendorName = String(
+            hit?.name || hit?.vendor_name || ""
+          ).trim();
+        }
+      } catch (err) {
+        console.warn(
+          "[LEASE AP] Could not resolve lessor vendor:",
+          err
+        );
       }
     }
 
-    const today = new Date()
-      .toISOString()
-      .slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
-    // --------------------------------------------------
-    // 3. Prefill AP header
-    // --------------------------------------------------
     window.writeBillForm?.({
-      vendor_id: vendorId > 0 ? vendorId : null,
+      vendor_id: vendorId || null,
       vendorName,
       bill_date: today,
-      currency:
-        window.CURRENT_COMPANY?.currency ||
-        "USD",
+      currency: window.CURRENT_COMPANY?.currency || "USD",
       number: prefill.reference || "",
       notes:
-        `Lease direct cost capture` +
-        (
-          prefill.reference
-            ? ` | Ref: ${prefill.reference}`
-            : ""
-        ),
+        "Lease direct cost capture" +
+        (prefill.reference
+          ? ` | Ref: ${prefill.reference}`
+          : ""),
     });
 
-    // --------------------------------------------------
-    // 4. Force vendor fields where we resolved one
-    // --------------------------------------------------
-    const vendorIdEl =
-      root.querySelector("#billVendorId");
+    const vendorIdEl = root.querySelector("#billVendorId");
+    const vendorEl = root.querySelector("#billVendor");
 
-    const vendorEl =
-      root.querySelector("#billVendor");
-
-    if (vendorIdEl && vendorId > 0) {
-      vendorIdEl.value = String(vendorId);
-      vendorIdEl.setAttribute(
-        "value",
-        String(vendorId)
-      );
+    if (vendorIdEl) {
+      vendorIdEl.value = vendorId > 0
+        ? String(vendorId)
+        : "";
     }
 
     if (vendorEl && vendorName) {
-      if (vendorEl.tagName === "SELECT") {
-        vendorEl.value = String(vendorId || "");
-      } else {
-        vendorEl.value = vendorName;
-      }
+      vendorEl.value =
+        vendorEl.tagName === "SELECT"
+          ? String(vendorId || "")
+          : vendorName;
     }
 
-    // --------------------------------------------------
-    // 5. Description / memo
-    // --------------------------------------------------
-    const memoEl =
-      root.querySelector("#billMemo");
+    const memoEl = root.querySelector("#billMemo");
 
     if (memoEl) {
       memoEl.value =
         prefill.description ||
-        `Initial direct cost - ${
-          prefill.lease_name || "Lease"
-        }`;
+        `Initial direct cost - ${prefill.lease_name || "Lease"}`;
     }
 
-    // --------------------------------------------------
-    // 6. VAT
-    // --------------------------------------------------
     const vatEnabledEl =
       root.querySelector("#apBillVatEnabled");
 
@@ -117930,10 +117921,6 @@ function bindAP() {
       vatModeEl.value = "exclusive";
     }
 
-    // --------------------------------------------------
-    // 7. Ensure AP GL accounts are loaded BEFORE
-    //    creating the direct-cost line
-    // --------------------------------------------------
     if (
       !Array.isArray(window.BILL_ACCOUNTS_CACHE) ||
       !window.BILL_ACCOUNTS_CACHE.length
@@ -117943,115 +117930,82 @@ function bindAP() {
 
     window.refreshBillAccountDropdowns?.();
 
-    // --------------------------------------------------
-    // 8. Replace blank line with lease direct-cost line
-    // --------------------------------------------------
-    const linesBody =
-      root.querySelector("#billLines");
+    const linesBody = root.querySelector("#billLines");
 
     if (linesBody) {
       linesBody.innerHTML = "";
     }
 
-    const directCostAccount =
-      String(
-        prefill.asset_account ||
-        "BS_NCA_1610"
-      ).trim();
+    const directCostAccount = String(
+      prefill.asset_account || "BS_NCA_1610"
+    ).trim();
 
     const row = window.addBillLine?.({
       item_name: "Lease Direct Cost",
       description:
         prefill.description ||
-        `Initial direct cost - ${
-          prefill.lease_name || "Lease"
-        }`,
+        `Initial direct cost - ${prefill.lease_name || "Lease"}`,
       quantity: 1,
       unit_price: amount,
       account_code: directCostAccount,
       vat_code:
         vatRate > 0
-          ? (
-              vatRate === 15
-                ? "STANDARD"
-                : "CUSTOM"
-            )
+          ? vatRate === 15
+            ? "STANDARD"
+            : "CUSTOM"
           : "ZERO",
       vat_rate: vatRate,
     });
 
-    // --------------------------------------------------
-    // 9. Force account selection after row/options exist
-    // --------------------------------------------------
-    const acctSel =
-      row?.querySelector?.(".bill-acct");
+    const acctSel = row?.querySelector?.(".bill-acct");
 
     if (acctSel && directCostAccount) {
-      const optionExists = Array.from(
+      const exists = Array.from(
         acctSel.options || []
       ).some(
         (opt) =>
-          String(opt.value).trim() ===
-          directCostAccount
+          String(opt.value).trim() === directCostAccount
       );
 
-      if (optionExists) {
+      if (exists) {
         acctSel.value = directCostAccount;
       } else {
         console.warn(
-          "[LEASE AP] Direct cost account not found in AP account list:",
+          "[LEASE AP] Account not found:",
           directCostAccount
         );
       }
     }
 
-    // --------------------------------------------------
-    // 10. Trigger vendor sync after everything mounted
-    // --------------------------------------------------
     if (vendorEl) {
-      vendorEl.dispatchEvent(
-        new Event("input", {
-          bubbles: true,
-        })
-      );
-
-      vendorEl.dispatchEvent(
-        new Event("change", {
-          bubbles: true,
-        })
-      );
-
-      vendorEl.dispatchEvent(
-        new Event("blur", {
-          bubbles: true,
-        })
-      );
+      for (const type of ["input", "change", "blur"]) {
+        vendorEl.dispatchEvent(
+          new Event(type, { bubbles: true })
+        );
+      }
     }
 
-    window.recalcBill?.({
-      force: true,
-    });
+    // Update stored metadata with resolved vendor.
+    window._CURRENT_LEASE_BILL_PREFILL.vendor_id =
+      vendorId || null;
 
+    window.recalcBill?.({ force: true });
     window.saveBillDraftToLocal?.();
 
-    console.log(
-      "[LEASE AP] prefill applied",
-      {
-        lease_id: prefill.lease_id,
-        lessor_id: lessorId,
-        vendor_id: vendorId || null,
-        vendor_name: vendorName || null,
-        account_code: directCostAccount,
-        amount,
-        vat_rate: vatRate,
-      }
-    );
+    console.log("[LEASE AP] prefill applied", {
+      lease_id: leaseId || null,
+      lessor_id: lessorId || null,
+      vendor_id: vendorId || null,
+      vendor_name: vendorName || null,
+      account_code: directCostAccount,
+      amount,
+      vat_rate: vatRate,
+    });
 
     return true;
   }
 
-  window.applyLeaseApPrefill =
-    applyLeaseApPrefill;
+  window.applyLeaseApPrefill = applyLeaseApPrefill;
 
   function findMatchingAssetGrniForBill(form) {
     const vendorId = Number(form.vendor_id || 0);
@@ -120217,10 +120171,6 @@ async function loadBillAccountsForLines() {
 
     window.refreshBillAccountDropdowns?.();
 
-    console.log("[AP] bill account mode:", {
-      rawMode,
-      isAssetMode,
-    });
     console.log("[AP] bill accounts loaded:", window.BILL_ACCOUNTS_CACHE);
 
   } catch (e) {
@@ -120228,6 +120178,7 @@ async function loadBillAccountsForLines() {
     window.BILL_ACCOUNTS_CACHE = [];
   }
 }
+
 window.loadBillAccountsForLines = loadBillAccountsForLines;
 
 async function loadAPPostingAccounts() {

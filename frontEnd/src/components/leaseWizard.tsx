@@ -602,14 +602,18 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     setDirectCostAction(action);
     setShowDirectCostPrompt(false);
 
+    const selectedLessor = lessors.find(
+      (l) => Number(l.id) === Number(form.lessor_id)
+    );
+
     const payload = {
       source: "lease",
       action,
       lease_id: result?.lease_id || null,
       lease_name: form.lease_name || "",
-      lessor_id: result?.lessor_id || form.lessor_id || null,
-      vendor_id: result?.vendor_id || null,
-      vendor_name: result?.vendor_name || "",
+      lessor_id: form.lessor_id || null,
+      vendor_id: selectedLessor?.vendor_id || null,
+      vendor_name: selectedLessor?.name || "",
       amount: Number(form.initial_direct_costs || 0),
       vat_rate: Number(form.vat_rate || 0),
       asset_account: form.rou_asset_account || "BS_NCA_1610",
@@ -618,8 +622,6 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       company_id: companyId,
     };
 
-    console.log("[LEASE] Posting AP bill redirect message", payload);
-
     window.parent?.postMessage(
       {
         type: "lease_create_ap_bill",
@@ -627,8 +629,6 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       },
       "*"
     );
-
-    console.log("[LEASE] postMessage dispatched");
   }
 
   async function handleDirectCostPaidNow() {
