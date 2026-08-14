@@ -34640,40 +34640,27 @@ function showLeaseMsg(el, msg, type="error") {
   // ===============================
   // List + render
   // ===============================
-  async function fetchLessors(companyId: number): Promise<LessorRow[]> {
-    const params = new URLSearchParams({
-      active: "1",
-      limit: "500",
-      offset: "0",
-    });
+  async function fetchLessors() {
+    const cid = cidOrThrow();
 
-    const data = (await apiFetch(
-      `/api/companies/${companyId}/lessors?${params.toString()}`,
-      { method: "GET" }
-    )) as LessorsApiResponse;
+    const q = (els.search?.value || "").trim();
+    const url = ENDPOINTS.lessors.list(cid, { q, limit: 200, offset: 0 });
 
-    const rows = normalizeLessorsResponse(data);
+    const res = await window.apiFetch(url, { method: "GET" });
 
-    return rows
-      .map((r: any) => ({
-        id: Number(r.id),
-        name: String(r.name || ""),
-        vendor_id:
-          r.vendor_id != null && Number(r.vendor_id) > 0
-            ? Number(r.vendor_id)
-            : null,
-        vendor_name:
-          String(
-            r.vendor_name ||
-            r.name ||
-            ""
-          ).trim() || null,
-      }))
-      .filter(
-        (r) =>
-          Number.isFinite(r.id) &&
-          r.id > 0
-      );
+    // handle common API shapes:
+    // 1) { rows: [...] }
+    // 2) { lessors: [...] }
+    // 3) [...] (raw array)
+    const rows = Array.isArray(res) ? res : (res?.rows || res?.lessors || []);
+
+    // Preserve all backend fields, including vendor_id if returned.
+    return rows.map((r) => ({
+      ...r,
+      active: (r?.active !== undefined)
+        ? r.active
+        : (r?.is_active !== undefined ? r.is_active : true),
+    }));
   }
 
   function matchesSearch(row, q) {
