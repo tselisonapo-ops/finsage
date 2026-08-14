@@ -63474,12 +63474,7 @@ async function saveEditModal() {
                     </div>
                   </td>
                     <td>
-                      ${
-                        Number(p.cycle_entitlement_days||0)>0
-                          ?`${money(p.cycle_entitlement_days)} days / ${Number(p.cycle_months||0)} months`
-                          :`${money(p.annual_entitlement_days)} days / year`
-                      }
-                    </td>
+                  <td>${esc(payrollLeavePolicyEntitlement(p))}</td>
                   <td>${p.vesting ? "Vesting" : "Non-vesting"}</td>
                   <td>${p.provision_required ? "Required" : "Not required"}</td>
                   <td>
@@ -63676,6 +63671,35 @@ async function saveEditModal() {
           el.textContent="Configure family responsibility leave entitlement and pay treatment.";
       else
           el.textContent=messages[mode]||messages.simple;
+  }
+
+  function payrollLeavePolicyEntitlement(p) {
+    if (!p) return "—";
+
+    if (Number(p.entitlement_amount || 0) > 0) {
+      const amount = money(p.entitlement_amount);
+      const unit = String(p.entitlement_unit || "days").toLowerCase();
+
+      return `${amount} ${unit}`;
+    }
+
+    if (Number(p.cycle_entitlement_days || 0) > 0) {
+      return `${money(p.cycle_entitlement_days)} days / ${Number(p.cycle_months || 0)} months`;
+    }
+
+    if (Number(p.annual_entitlement_days || 0) > 0) {
+      return `${money(p.annual_entitlement_days)} days / year`;
+    }
+
+    if (Number(p.monthly_accrual_days || 0) > 0) {
+      return `${money(p.monthly_accrual_days)} days / month`;
+    }
+
+    if (Number(p.days_worked_per_accrual_day || 0) > 0) {
+      return `1 day per ${money(p.days_worked_per_accrual_day)} days worked`;
+    }
+
+    return "No fixed entitlement";
   }
 
   async function openPayrollLeavePolicyModal(policy=null){
@@ -70715,26 +70739,21 @@ async function saveEditModal() {
   }
 
   function renderSelectedEmployeeLeavePolicy() {
-    const policy=selectedEmployeeLeavePolicy();
-    const el=$("payEmployeeLeavePolicySummary");
+    const policy = selectedEmployeeLeavePolicy();
+    const el = $("payEmployeeLeavePolicySummary");
 
-    if(!el)return;
+    if (!el) return;
 
-    if(!policy){
-      el.innerHTML="";
+    if (!policy) {
+      el.innerHTML = "";
       return;
     }
 
-    const entitlement=
-      Number(policy.cycle_entitlement_days||0)>0
-        ?`${money(policy.cycle_entitlement_days)} days / ${Number(policy.cycle_months||0)} months`
-        :`${money(policy.annual_entitlement_days)} days / year`;
-
-    el.innerHTML=`
-      <strong>${esc(policy.name||"")}</strong>
-      · ${entitlement}
-      · ${policy.vesting?"Vesting":"Non-vesting"}
-      · ${policy.provision_required?"Provision required":"No provision"}
+    el.innerHTML = `
+      <strong>${esc(policy.name || "")}</strong>
+      · ${esc(payrollLeavePolicyEntitlement(policy))}
+      · ${policy.vesting ? "Vesting" : "Non-vesting"}
+      · ${policy.provision_required ? "Provision required" : "No provision"}
     `;
   }
 
