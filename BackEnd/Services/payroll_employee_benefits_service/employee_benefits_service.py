@@ -2117,28 +2117,39 @@ class PayrollEmployeeBenefitsService:
                     updated_at=NOW()
                 WHERE company_id=%s AND id=%s
                 RETURNING *;
-            """,values+(int(company_id),int(plan_id)))
+            """, values+(int(company_id),int(plan_id)))
         else:
             out=self.db.fetch_one(f"""
                 INSERT INTO {schema}.payroll_benefit_plans(
-                    company_id,code,name,plan_type,
-                    provider_name,registration_number,funded,
+                    company_id,
+                    code,
+                    name,
+                    plan_type,
+                    provider_name,
+                    registration_number,
+                    funded,
                     employee_contribution_percentage,
                     employer_contribution_percentage,
-                    expense_account_code,payable_account_code,
-                    liability_account_code,asset_account_code,
-                    oci_account_code,effective_from,
+                    expense_account_code,
+                    payable_account_code,
+                    liability_account_code,
+                    asset_account_code,
+                    oci_account_code,
+                    effective_from,
                     effective_to,
-                    calculation_source=%s,
-                    employee_deduction_type_id=%s,
-                    employer_contribution_type_id=%s,
+                    calculation_source,
+                    employee_deduction_type_id,
+                    employer_contribution_type_id,
                     is_active
-                ) VALUES(
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s 
+                )
+                VALUES(
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s,
+                    %s,%s,%s,%s,%s
                 )
                 RETURNING *;
-            """,(int(company_id),)+values)
+            """, (int(company_id),)+values)
 
         if not out:
             raise ValueError("Benefit plan not found")
