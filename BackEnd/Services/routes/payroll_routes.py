@@ -540,25 +540,60 @@ def api_payroll_employee_leave(company_id: int, employee_id: int):
 
     if request.method == "GET":
         try:
-            items = db_service.payroll_employee_leave_list(int(company_id), int(employee_id))
+            items = db_service.payroll_employee_leave_list(
+                int(company_id),
+                int(employee_id)
+            )
             return jsonify({"ok": True, "items": items}), 200
+
         except Exception as e:
-            current_app.logger.exception("payroll_employee_leave_list failed")
-            return jsonify({"ok": False, "error": str(e)}), 400
+            current_app.logger.exception(
+                "payroll_employee_leave_list failed"
+            )
+            return jsonify({
+                "ok": False,
+                "error": str(e)
+            }), 400
 
     try:
         body = _payroll_body()
-        required = ["leave_type_id", "date_from", "date_to"]
-        missing = [k for k in required if not body.get(k)]
+
+        required = [
+            "leave_type_id",
+            "date_from",
+        ]
+
+        missing = [
+            k for k in required
+            if not body.get(k)
+        ]
+
         if missing:
-            return jsonify({"ok": False, "error": f"Missing required fields: {', '.join(missing)}"}), 400
+            return jsonify({
+                "ok": False,
+                "error": f"Missing required fields: {', '.join(missing)}"
+            }), 400
 
-        out = db_service.payroll_leave_request_create(int(company_id), int(employee_id), body)
-        return jsonify({"ok": True, "data": out}), 201
+        out = db_service.payroll_leave_request_create(
+            int(company_id),
+            int(employee_id),
+            body
+        )
+
+        return jsonify({
+            "ok": True,
+            "data": out
+        }), 201
+
     except Exception as e:
-        current_app.logger.exception("payroll_leave_request_create failed")
-        return jsonify({"ok": False, "error": str(e)}), 400
+        current_app.logger.exception(
+            "payroll_leave_request_create failed"
+        )
 
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 400
 
 @payroll_bp.route("/api/companies/<int:company_id>/payroll/employees/<int:employee_id>/loans", methods=["GET", "POST", "OPTIONS"])
 @require_auth

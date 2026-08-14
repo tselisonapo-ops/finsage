@@ -136454,7 +136454,7 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             int(employee_id),
             data.get("leave_type_id"),
             data.get("date_from"),
-            data.get("date_to"),
+            data.get("date_to") or None,
             data.get("days") or 0,
             data.get("status") or "draft",
             data.get("reason"),
