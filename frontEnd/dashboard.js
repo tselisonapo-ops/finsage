@@ -63148,10 +63148,7 @@ async function saveEditModal() {
               type:"select",
               required:true,
               value:plan.employee_deduction_type_id||"",
-              options:(payrollState.deductionTypes||[]).map(x=>[
-                  x.id,
-                  x.name,
-              ]),
+              options:(payrollState.setup?.deduction_types||[]).filter(x=>x.is_active!==false).map(x=>[x.id,`${x.code||""}${x.code?" — ":""}${x.name||""}`]),
           },
           {
               name:"employer_contribution_type_id",
@@ -63159,10 +63156,7 @@ async function saveEditModal() {
               type:"select",
               required:true,
               value:plan.employer_contribution_type_id||"",
-              options:(payrollState.employerContributionTypes||[]).map(x=>[
-                  x.id,
-                  x.name,
-              ]),
+              options:(payrollState.setup?.contribution_types||[]).filter(x=>x.is_active!==false).map(x=>[x.id,`${x.code||""}${x.code?" — ":""}${x.name||""}`]),
           },
           {
               name:"employee_contribution_percentage",
