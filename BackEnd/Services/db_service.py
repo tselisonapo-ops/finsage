@@ -57890,7 +57890,106 @@ class DatabaseService:
             source = (j.get("source") or "").strip().lower()
             source_id = j.get("source_id")
 
-            if source == "lease_payment":
+            if source == "lease_inception" and source_id:
+                lease_id = int(source_id)
+
+                # --------------------------------------------------
+                # 1. Mark the lease itself as reversed/inactive
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.leases
+                    SET
+                        status = 'reversed',
+                        is_active = FALSE,
+                        reversal_journal_id = %s,
+                        reversed_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (
+                        int(reversal_journal_id),
+                        int(company_id),
+                        lease_id,
+                    ),
+                )
+
+                # --------------------------------------------------
+                # 2. Deactivate all active schedule versions
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lease_schedule
+                    SET
+                        is_active = FALSE
+                    WHERE company_id = %s
+                    AND lease_id = %s
+                    AND is_active = TRUE
+                    """,
+                    (
+                        int(company_id),
+                        lease_id,
+                    ),
+                )
+
+            elif source == "lessor_lease_commencement" and source_id:
+                lessor_lease_id = int(source_id)
+
+                # --------------------------------------------------
+                # 1. Reverse lessor lease master state
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lessor_leases
+                    SET
+                        status = 'reversed',
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND id = %s
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+                # --------------------------------------------------
+                # 2. Deactivate accounting schedule
+                # --------------------------------------------------
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lessor_lease_schedule
+                    SET
+                        is_active = FALSE,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND lessor_lease_id = %s
+                    AND is_active = TRUE
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+                # 3. Deactivate future billing schedule
+                cur.execute(
+                    f"""
+                    UPDATE {schema}.lessor_lease_billing_schedule
+                    SET
+                        is_active = FALSE,
+                        updated_at = NOW()
+                    WHERE company_id = %s
+                    AND lessor_lease_id = %s
+                    AND is_active = TRUE
+                    """,
+                    (
+                        int(company_id),
+                        lessor_lease_id,
+                    ),
+                )
+
+            elif source == "lease_payment":
                 # ---- 1. Find original lease payment ----
                 cur.execute(f"""
                     SELECT
@@ -63734,9 +63833,18 @@ class DatabaseService:
         if from_date > to_date:
             raise ValueError("from_date must be <= to_date")
 
-        # NOTE: lease_status_sql is injected into queries with alias `l`
-        lease_status_sql = "" if include_terminated else "AND COALESCE(l.status,'active')='active'"
-
+        # NOTE:
+        # - active leases always participate
+        # - terminated leases participate only when requested
+        # - reversed/cancelled leases NEVER participate in IFRS 16 balances/disclosures
+        if include_terminated:
+            lease_status_sql = """
+            AND COALESCE(l.status, 'active') IN ('active', 'terminated')
+            """
+        else:
+            lease_status_sql = """
+            AND COALESCE(l.status, 'active') = 'active'
+            """
         # ------------------------------------------------------------
         # A) P/L amounts (STRICTLY posted schedule rows in period)
         # ------------------------------------------------------------
@@ -64138,17 +64246,18 @@ class DatabaseService:
         leases_rows = self.fetch_all(
             f"""
             SELECT
-            id,
-            lease_name,
-            start_date,
-            end_date,
-            payment_amount,
-            payment_frequency,
-            vat_rate,
-            COALESCE(status,'active') AS status
-            FROM {schema}.leases
-            WHERE company_id=%s
-            ORDER BY start_date NULLS LAST, id
+                id,
+                lease_name,
+                start_date,
+                end_date,
+                payment_amount,
+                payment_frequency,
+                vat_rate,
+                COALESCE(status, 'active') AS status
+            FROM {schema}.leases l
+            WHERE l.company_id = %s
+            {lease_status_sql}
+            ORDER BY l.start_date NULLS LAST, l.id
             """,
             (int(company_id),),
             cur=cur,
@@ -64478,7 +64587,21 @@ class DatabaseService:
         if from_date > to_date:
             raise ValueError("from_date must be <= to_date")
 
-        status_sql = "" if include_terminated else "AND COALESCE(l.status,'active') NOT IN ('terminated','cancelled')"
+        if include_terminated:
+            status_sql = """
+            AND COALESCE(l.status, 'active') IN (
+                'active',
+                'commenced',
+                'terminated'
+            )
+            """
+        else:
+            status_sql = """
+            AND COALESCE(l.status, 'active') IN (
+                'active',
+                'commenced'
+            )
+            """
 
         def one(sql, params):
             return self.fetch_one(sql, params, cur=cur) or {}
