@@ -70640,6 +70640,38 @@ async function saveEditModal() {
     );
   }
 
+  function renderEmployeeBenefitPlanSelect() {
+    const select=$("payEmployeeBenefitPlanId");
+    if(!select)return;
+
+    const current=select.value;
+
+    const plans=(
+      payrollState.employeeBenefits?.benefitPlans||[]
+    ).filter(x=>x.is_active!==false);
+
+    select.innerHTML=
+      `<option value="">Select benefit plan…</option>`+
+      plans.map(x=>`
+        <option value="${esc(x.id)}">
+          ${esc(x.code)} — ${esc(x.name)}
+          (${esc(
+            cap(
+              String(x.plan_type||"")
+                .replaceAll("_"," ")
+            )
+          )})
+        </option>
+      `).join("");
+
+    if(
+      current &&
+      plans.some(x=>String(x.id)===String(current))
+    ){
+      select.value=current;
+    }
+  }
+
   function renderPayrollSetupSelects() {
     const setup = payrollState.setup || {};
 
@@ -70663,12 +70695,6 @@ async function saveEditModal() {
       "payrollBasicEarningTypeId",
       setup.earning_types,
       item => `${item.code} — ${item.name}`
-    );
-
-    fillSelect(
-      "payBenefitTypeId",
-      setup.benefit_types,
-      x => `${x.code} — ${x.name}`
     );
 
     fillSelect(
@@ -70714,6 +70740,7 @@ async function saveEditModal() {
     );
 
     renderPayrollTaxAuthoritySelects();
+    renderEmployeeBenefitPlanSelect();
     renderEmployeePaySetupChoices();
   }
 
@@ -72379,42 +72406,165 @@ async function saveEditModal() {
     );
   }
 
-  function renderEmployeeSubrecords(e) {
-    const benefits = e?.benefits || [];
-    const leave = e?.leave_requests || [];
-    const loans = e?.loans || [];
+  async function renderEmployeeSubrecords(e) {
+    const employeeId=Number(e?.id||$("payrollEditingEmployeeId")?.value||0);
+    const leave=e?.leave_requests||[];
+    const loans=e?.loans||[];
 
-    const bEl = $("payrollBenefitsList");
-    if (bEl) {
-      bEl.innerHTML = benefits.length ? benefits.map(x => `
-        <div class="payroll-mini-row">
-          <strong>${esc(x.benefit_name || x.benefit_code || "")}</strong>
-          <span>Employee: ${money(x.employee_amount)}</span>
-          <span>Employer: ${money(x.employer_amount)}</span>
-        </div>
-      `).join("") : `<p class="payroll-muted">No benefits captured.</p>`;
+    const bEl=$("payrollBenefitsList");
+
+    if(bEl){
+      let plans=payrollState.employeeBenefits?.benefitPlans||[];
+
+      if(!plans.length){
+        const res=await apiFetch(
+          ENDPOINTS.payroll.benefitPlans(cid())
+        );
+
+        plans=res?.items||[];
+        payrollState.employeeBenefits.benefitPlans=plans;
+      }
+
+      const activePlans=plans.filter(
+        x=>x.is_active!==false
+      );
+
+      const details=await Promise.all(
+        activePlans.map(async plan=>{
+          try{
+            const res=await apiFetch(
+              ENDPOINTS.payroll.benefitPlan(cid(),plan.id)
+            );
+
+            return{
+              plan:res?.data?.plan||plan,
+              members:res?.data?.members||[],
+            };
+          }catch(e){
+            console.warn(
+              "Could not load benefit plan",
+              plan.id,
+              e
+            );
+
+            return{
+              plan,
+              members:[],
+            };
+          }
+        })
+      );
+
+      const memberships=[];
+
+      details.forEach(({plan,members})=>{
+        const member=members.find(
+          x=>Number(x.employee_id)===employeeId
+        );
+
+        if(member){
+          memberships.push({
+            ...member,
+            plan,
+          });
+        }
+      });
+
+      bEl.innerHTML=memberships.length
+        ?memberships.map(x=>`
+          <div class="payroll-mini-row">
+            <strong>
+              ${esc(x.plan.code||"")} — ${esc(x.plan.name||"")}
+            </strong>
+
+            <span>
+              ${esc(
+                cap(
+                  String(x.plan.plan_type||"")
+                    .replaceAll("_"," ")
+                )
+              )}
+            </span>
+
+            <span>
+              Employee:
+              ${money(
+                x.employee_percentage ??
+                x.plan.employee_contribution_percentage
+              )}%
+            </span>
+
+            <span>
+              Employer:
+              ${money(
+                x.employer_percentage ??
+                x.plan.employer_contribution_percentage
+              )}%
+            </span>
+
+            <span>
+              ${x.is_active!==false?"Active":"Inactive"}
+            </span>
+
+            <button
+              type="button"
+              class="payroll-link"
+              data-employee-benefit-plan="${x.plan.id}">
+              Edit
+            </button>
+          </div>
+        `).join("")
+        :`<p class="payroll-muted">No benefit plans assigned.</p>`;
+
+      bEl
+        .querySelectorAll("[data-employee-benefit-plan]")
+        .forEach(btn=>{
+          btn.addEventListener("click",async()=>{
+            const planId=Number(
+              btn.dataset.employeeBenefitPlan||0
+            );
+
+            $("payEmployeeBenefitPlanId").value=
+              String(planId);
+
+            renderSelectedEmployeeBenefitPlan();
+            await loadEmployeeBenefitMembership();
+          });
+        });
     }
 
-    const lEl = $("payrollLeaveList");
-    if (lEl) {
-      lEl.innerHTML = leave.length ? leave.map(x => `
-        <div class="payroll-mini-row">
-          <strong>${esc(x.leave_name || x.leave_code || "")}</strong>
-          <span>${esc(x.date_from)} → ${esc(x.date_to)}</span>
-          <span>${esc(x.status || "")}</span>
-        </div>
-      `).join("") : `<p class="payroll-muted">No leave captured.</p>`;
+    const lEl=$("payrollLeaveList");
+
+    if(lEl){
+      lEl.innerHTML=leave.length
+        ?leave.map(x=>`
+          <div class="payroll-mini-row">
+            <strong>
+              ${esc(x.leave_name||x.leave_code||"")}
+            </strong>
+
+            <span>
+              ${esc(x.date_from)} → ${esc(x.date_to)}
+            </span>
+
+            <span>${esc(x.status||"")}</span>
+          </div>
+        `).join("")
+        :`<p class="payroll-muted">No leave captured.</p>`;
     }
 
-    const loanEl = $("payrollLoansList");
-    if (loanEl) {
-      loanEl.innerHTML = loans.length ? loans.map(x => `
-        <div class="payroll-mini-row">
-          <strong>${esc(x.loan_no || "")}</strong>
-          <span>Balance: ${money(x.balance_amount)}</span>
-          <span>${esc(x.status || "")}</span>
-        </div>
-      `).join("") : `<p class="payroll-muted">No loans or advances captured.</p>`;
+    const loanEl=$("payrollLoansList");
+
+    if(loanEl){
+      loanEl.innerHTML=loans.length
+        ?loans.map(x=>`
+          <div class="payroll-mini-row">
+            <strong>${esc(x.loan_no||"")}</strong>
+            <span>Balance: ${money(x.balance_amount)}</span>
+            <span>${esc(x.status||"")}</span>
+          </div>
+        `).join("")
+        :`<p class="payroll-muted">No loans or advances captured.</p>`;
     }
   }
 
@@ -77762,7 +77912,129 @@ async function saveEditModal() {
     console.log("Selected payroll report:", reportKey);
   }
 
-  function switchPayrollEmpTab(tab) {
+  function selectedEmployeeBenefitPlan() {
+      const planId = Number(
+          $("payEmployeeBenefitPlanId")?.value || 0
+      );
+
+      return (payrollState.employeeBenefits?.benefitPlans || [])
+          .find(x => Number(x.id) === planId) || null;
+  }
+
+  function renderSelectedEmployeeBenefitPlan() {
+      const plan = selectedEmployeeBenefitPlan();
+
+      if ($("payEmployeeBenefitPlanType")) {
+          $("payEmployeeBenefitPlanType").value =
+              plan
+                  ? String(plan.plan_type || "")
+                      .replaceAll("_", " ")
+                  : "";
+      }
+
+      if ($("payEmployeeBenefitProvider")) {
+          $("payEmployeeBenefitProvider").value =
+              plan?.provider_name || "";
+      }
+
+      if ($("payEmployeeBenefitDefaultEmployeePercent")) {
+          $("payEmployeeBenefitDefaultEmployeePercent").value =
+              plan?.employee_contribution_percentage ?? "";
+      }
+
+      if ($("payEmployeeBenefitDefaultEmployerPercent")) {
+          $("payEmployeeBenefitDefaultEmployerPercent").value =
+              plan?.employer_contribution_percentage ?? "";
+      }
+  }
+
+  async function loadEmployeeBenefitMembership() {
+      const employeeId = Number(
+          $("payrollEditingEmployeeId")?.value || 0
+      );
+
+      const plan = selectedEmployeeBenefitPlan();
+
+      if (!employeeId || !plan) {
+          clearEmployeeBenefitMembershipFields();
+          return;
+      }
+
+      const res = await apiFetch(
+          ENDPOINTS.payroll.benefitPlan(cid(), plan.id)
+      );
+
+      const members = res?.data?.members || [];
+
+      const member = members.find(
+          x => Number(x.employee_id) === employeeId
+      );
+
+      payrollState.employeeBenefits.selectedEmployeePlanMember =
+          member || null;
+
+      $("payEmployeeBenefitMembershipNumber").value =
+          member?.membership_number || "";
+
+      $("payEmployeeBenefitEmployeePercent").value =
+          member?.employee_percentage ?? "";
+
+      $("payEmployeeBenefitEmployerPercent").value =
+          member?.employer_percentage ?? "";
+
+      $("payEmployeeBenefitPensionablePercent").value =
+          member?.pensionable_percentage ?? 100;
+
+      $("payEmployeeBenefitEffectiveFrom").value =
+          member?.effective_from ||
+          $("payStartDate")?.value ||
+          "";
+
+      $("payEmployeeBenefitEffectiveTo").value =
+          member?.effective_to || "";
+
+      $("payEmployeeBenefitNotes").value =
+          member?.notes || "";
+
+      $("payEmployeeBenefitActive").checked =
+          member?.is_active !== false;
+
+      if ($("payrollSaveBenefitBtn")) {
+          $("payrollSaveBenefitBtn").textContent =
+              member
+                  ? "Update Benefit Plan"
+                  : "Assign Benefit Plan";
+      }
+
+      renderSelectedEmployeeBenefitPlan();
+  }
+
+  function clearEmployeeBenefitMembershipFields() {
+      [
+          "payEmployeeBenefitMembershipNumber",
+          "payEmployeeBenefitEmployeePercent",
+          "payEmployeeBenefitEmployerPercent",
+          "payEmployeeBenefitEffectiveTo",
+          "payEmployeeBenefitNotes",
+      ].forEach(id => {
+          if ($(id)) $(id).value = "";
+      });
+
+      if ($("payEmployeeBenefitPensionablePercent")) {
+          $("payEmployeeBenefitPensionablePercent").value = "100";
+      }
+
+      if ($("payEmployeeBenefitEffectiveFrom")) {
+          $("payEmployeeBenefitEffectiveFrom").value =
+              $("payStartDate")?.value || "";
+      }
+
+      if ($("payEmployeeBenefitActive")) {
+          $("payEmployeeBenefitActive").checked = true;
+      }
+  }
+
+  async function switchPayrollEmpTab(tab) {
     const validTabs = [
       "bio",
       "contract",
@@ -77797,14 +78069,21 @@ async function saveEditModal() {
         );
       });
 
-    if (
-      tab === "benefits" &&
-      !payrollEmployeeBenefitSetupReady()
-    ) {
-      showPayrollStatus(
-        "Employee benefits are not configured. Define benefit plans before assigning benefits to this employee.",
-        "warning"
-      );
+    if (tab === "benefits") {
+      if (!(payrollState.employeeBenefits?.benefitPlans || []).length) {
+        await loadPayrollBenefitPlans();
+      }
+
+      renderEmployeeBenefitPlanSelect();
+      renderSelectedEmployeeBenefitPlan();
+      await loadEmployeeBenefitMembership();
+
+      if (!payrollEmployeeBenefitSetupReady()) {
+        showPayrollStatus(
+          "Employee benefits are not configured. Define benefit plans before assigning benefits to this employee.",
+          "warning"
+        );
+      }
     }
   }
 
@@ -77916,10 +78195,19 @@ async function saveEditModal() {
       "payTaxDateOfBirth","payTaxDirectiveNumber","payTaxDirectiveRate",
       "payTaxAdditionalAmount","payTaxEffectiveTo",
       "payBankName","payBankAccountName","payBankAccountNumber","payBankBranchCode",
-      "payBenefitEmployeeAmount","payBenefitEmployerAmount",
-      "payBenefitEmployeePercent","payBenefitEmployerPercent",
-      "payBenefitTaxableAmount","payBenefitProvider","payBenefitPolicy",
-      "payBenefitEffectiveFrom","payBenefitNotes",
+
+      "payEmployeeBenefitPlanId",
+      "payEmployeeBenefitPlanType",
+      "payEmployeeBenefitProvider",
+      "payEmployeeBenefitDefaultEmployeePercent",
+      "payEmployeeBenefitDefaultEmployerPercent",
+      "payEmployeeBenefitEmployeePercent",
+      "payEmployeeBenefitEmployerPercent",
+      "payEmployeeBenefitMembershipNumber",
+      "payEmployeeBenefitEffectiveFrom",
+      "payEmployeeBenefitEffectiveTo",
+      "payEmployeeBenefitNotes",
+
       "payLeaveFrom","payLeaveTo","payLeaveDays","payLeaveReason",
       "payLoanNo","payLoanPrincipal","payLoanRepayment","payLoanStartDate","payLoanNotes",
       "payRecurringEarningAmount","payRecurringEarningRate",
@@ -77929,6 +78217,8 @@ async function saveEditModal() {
     ].forEach(id=>{
       if($(id))$(id).value="";
     });
+
+    payrollState.employeeBenefits.selectedEmployeePlanMember=null;
 
     if($("payEmpNo"))
       $("payEmpNo").value="Generated after saving";
@@ -77963,8 +78253,14 @@ async function saveEditModal() {
     if($("payTaxAdditionalAmount"))
       $("payTaxAdditionalAmount").value="0";
 
-    if($("payBenefitCalcMethod"))
-      $("payBenefitCalcMethod").value="fixed_amount";
+    if($("payEmployeeBenefitPensionablePercent"))
+      $("payEmployeeBenefitPensionablePercent").value="100";
+
+    if($("payEmployeeBenefitActive"))
+      $("payEmployeeBenefitActive").checked=true;
+
+    if($("payrollSaveBenefitBtn"))
+      $("payrollSaveBenefitBtn").textContent="Assign Benefit Plan";
 
     if($("payRecurringEarningQuantity"))
       $("payRecurringEarningQuantity").value="1";
@@ -77974,11 +78270,17 @@ async function saveEditModal() {
 
     if($("payrollSaveEmployeeBtn"))
       $("payrollSaveEmployeeBtn").textContent="Save Employee";
-      $("payrollArchiveEmployeeBtn")?.classList.add("hidden");
 
-    if ($("payrollSaveContractBtn")) $("payrollSaveContractBtn").textContent = "Save & Continue";
-    if ($("payrollSaveTaxProfileBtn")) $("payrollSaveTaxProfileBtn").textContent = "Save & Continue";
-    if ($("payrollSaveBankBtn")) $("payrollSaveBankBtn").textContent = "Save & Continue";
+    $("payrollArchiveEmployeeBtn")?.classList.add("hidden");
+
+    if($("payrollSaveContractBtn"))
+      $("payrollSaveContractBtn").textContent="Save & Continue";
+
+    if($("payrollSaveTaxProfileBtn"))
+      $("payrollSaveTaxProfileBtn").textContent="Save & Continue";
+
+    if($("payrollSaveBankBtn"))
+      $("payrollSaveBankBtn").textContent="Save & Continue";
 
     [
       "payrollBenefitsList",
@@ -78051,7 +78353,7 @@ async function saveEditModal() {
     $("payBankAccountType").value = bank.account_type || "";
     $("payBankPrimary").checked = bank.is_primary !== false;
 
-    renderEmployeeSubrecords(e);
+    await renderEmployeeSubrecords(e);
     updatePayrollEmployeeStageButtons();
     openPayrollEmployeeModal("edit");
   }
@@ -78611,43 +78913,119 @@ async function saveEditModal() {
     );
   }
 
-  async function savePayrollBenefit(){
-    const companyId=cid();
-    const employeeId=Number($("payrollEditingEmployeeId")?.value||0);
+  async function savePayrollBenefit() {
+      const companyId = cid();
 
-    if(!employeeId){
-      throw new Error("Save employee first.");
-    }
+      const employeeId = Number(
+          $("payrollEditingEmployeeId")?.value || 0
+      );
 
-    await apiFetch(
-      ENDPOINTS.payroll.benefits(companyId,employeeId),
-      {
-        method:"POST",
-        body:JSON.stringify({
-          benefit_type_id:Number($("payBenefitTypeId").value||0),
-          calc_method:$("payBenefitCalcMethod").value,
-          employee_amount:Number($("payBenefitEmployeeAmount").value||0),
-          employer_amount:Number($("payBenefitEmployerAmount").value||0),
-          employee_percent:Number($("payBenefitEmployeePercent").value||0),
-          employer_percent:Number($("payBenefitEmployerPercent").value||0),
-          taxable_amount:Number($("payBenefitTaxableAmount").value||0),
-          provider_name:$("payBenefitProvider").value.trim()||null,
-          policy_number:$("payBenefitPolicy").value.trim()||null,
-          effective_from:$("payBenefitEffectiveFrom").value,
-          notes:$("payBenefitNotes").value.trim()||null,
-          is_active:true,
-        }),
+      const planId = Number(
+          $("payEmployeeBenefitPlanId")?.value || 0
+      );
+
+      if (!employeeId) {
+          throw new Error("Save employee first.");
       }
-    );
 
-    await openPayrollEmployee(employeeId);
+      if (!planId) {
+          throw new Error("Select a benefit plan.");
+      }
 
-    switchPayrollEmpTab("benefits");
+      const member =
+          payrollState.employeeBenefits
+              ?.selectedEmployeePlanMember || null;
 
-    showPayrollStatus(
-      "Benefit saved. Add another benefit or continue to Leave.",
-      "success"
-    );
+      const payload = {
+          employee_id: employeeId,
+
+          membership_number:
+              $("payEmployeeBenefitMembershipNumber")
+                  ?.value.trim() || null,
+
+          employee_percentage:
+              $("payEmployeeBenefitEmployeePercent")?.value !== ""
+                  ? Number(
+                      $("payEmployeeBenefitEmployeePercent").value
+                  )
+                  : null,
+
+          employer_percentage:
+              $("payEmployeeBenefitEmployerPercent")?.value !== ""
+                  ? Number(
+                      $("payEmployeeBenefitEmployerPercent").value
+                  )
+                  : null,
+
+          pensionable_percentage:
+              $("payEmployeeBenefitPensionablePercent")?.value !== ""
+                  ? Number(
+                      $("payEmployeeBenefitPensionablePercent").value
+                  )
+                  : 100,
+
+          effective_from:
+              $("payEmployeeBenefitEffectiveFrom")?.value ||
+              $("payStartDate")?.value ||
+              null,
+
+          effective_to:
+              $("payEmployeeBenefitEffectiveTo")?.value ||
+              null,
+
+          notes:
+              $("payEmployeeBenefitNotes")?.value.trim() ||
+              null,
+
+          is_active:
+              !!$("payEmployeeBenefitActive")?.checked,
+      };
+
+      if (!payload.effective_from) {
+          throw new Error(
+              "Benefit plan effective date is required."
+          );
+      }
+
+      await apiFetch(
+          member?.id
+              ? ENDPOINTS.payroll.planMember(
+                  companyId,
+                  planId,
+                  member.id
+              )
+              : ENDPOINTS.payroll.planMembers(
+                  companyId,
+                  planId
+              ),
+          {
+              method: member?.id ? "PATCH" : "POST",
+              body: JSON.stringify(payload),
+          }
+      );
+
+      await loadPayrollBenefitPlans();
+      renderEmployeeBenefitPlanSelect();
+
+      if ($("payEmployeeBenefitPlanId")) {
+          $("payEmployeeBenefitPlanId").value =
+              String(planId);
+      }
+
+      await loadEmployeeBenefitMembership();
+
+      await renderEmployeeSubrecords(
+        payrollState.selectedEmployee||{
+          id:employeeId,
+        }
+      );
+
+      showPayrollStatus(
+          member?.id
+              ? "Employee benefit-plan membership updated."
+              : "Employee assigned to benefit plan.",
+          "success"
+      );
   }
 
   async function savePayrollLeave(){
@@ -78969,6 +79347,11 @@ async function saveEditModal() {
           });
         });
       });
+
+    $("payEmployeeBenefitPlanId")?.addEventListener("change", async () => {
+        renderSelectedEmployeeBenefitPlan();
+        await loadEmployeeBenefitMembership();
+    });
 
     $("payrollBenefitReportingDate")?.addEventListener(
       "change",
@@ -79317,6 +79700,38 @@ async function saveEditModal() {
     $("payrollSkipBankBtn")?.addEventListener("click", () => {
         switchPayrollEmpTab("benefits");
     });
+
+    $("payrollPrevContractBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("bio");
+    });
+
+    $("payrollPrevTaxBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("contract");
+    });
+
+    $("payrollPrevBankBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("tax");
+    });
+
+    $("payrollPrevBenefitsBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("bank");
+    });
+
+    $("payrollPrevLeaveBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("benefits");
+    });
+
+    $("payrollPrevLoansBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("leave");
+    });
+
+    $("payrollPrevEarningsBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("loans");
+    });
+
+    $("payrollPrevDeductionsBtn")?.addEventListener("click", () => {
+        switchPayrollEmpTab("earnings");
+    }); 
 
     $("payrollSaveBenefitBtn")?.addEventListener("click", async () => {
       try { await savePayrollBenefit(); }
