@@ -12576,10 +12576,14 @@ function openLeaseWizard(ctx = {}) {
   }
 
   const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
+
   const url = isLocal
     ? "http://localhost:5173/lease-wizard.html"
-    : `${location.origin}/lease-wizard.html?v=20260805b`;
-  const origin = isLocal ? "http://localhost:5173" : location.origin;
+    : `${location.origin}/app/dist/lease-wizard.html?v=20260814b`;
+
+  const origin = isLocal
+    ? "http://localhost:5173"
+    : location.origin;
 
   const accountCode = String(
     ctx.accountCode ||
