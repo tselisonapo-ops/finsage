@@ -29603,7 +29603,7 @@ class DatabaseService:
             employee_id INTEGER NOT NULL,
             leave_type_id INTEGER NOT NULL,
             date_from DATE NOT NULL,
-            date_to DATE NOT NULL,
+            date_to DATE,
             days NUMERIC(9,2) NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'draft',
             reason TEXT,
@@ -29622,7 +29622,7 @@ class DatabaseService:
                 CHECK (status IN ('draft','submitted','approved','rejected','cancelled')),
 
             CONSTRAINT {schema}_payroll_leave_req_dates_ck
-                CHECK (date_to >= date_from)
+                CHECK (date_to IS NULL OR date_to >= date_from)
         );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_employee_loans (
@@ -146587,43 +146587,247 @@ Intangible assets are derecognised on disposal or when no future economic benefi
 
         return setup
 
-    def payroll_employee_pay_setup_get(
-        self,
-        company_id: int,
-        employee_id: int,
-    ):
-        company_id = int(company_id)
-        employee_id = int(employee_id)
+    def payroll_employee_pay_setup_get(self, company_id: int, employee_id: int):
+        company_id=int(company_id)
+        employee_id=int(employee_id)
+        schema=self.company_schema(company_id)
 
-        schema = self.company_schema(company_id)
-
-        setup = self.fetch_one(f"""
+        employee=self.fetch_one(f"""
             SELECT *
-            FROM {schema}.payroll_employee_pay_setups
-            WHERE company_id = %s
-            AND employee_id = %s
-            AND is_active = TRUE
-            ORDER BY effective_from DESC, id DESC
-            LIMIT 1;
-        """, (
-            company_id,
-            employee_id,
-        ))
+            FROM {schema}.payroll_employees
+            WHERE company_id=%s AND id=%s;
+        """,(company_id,employee_id))
 
-        if not setup:
+        if not employee:
             return None
 
-        setup["items"] = self.fetch_all(f"""
+        contract=self.fetch_one(f"""
             SELECT *
-            FROM {schema}.payroll_employee_pay_setup_items
-            WHERE company_id = %s
-            AND pay_setup_id = %s
-            AND is_active = TRUE
-            ORDER BY item_type, id;
-        """, (
-            company_id,
-            int(setup["id"]),
-        ))
+            FROM {schema}.payroll_employee_contracts
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND is_active=TRUE
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """,(company_id,employee_id)) or {}
+
+        tax=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_tax_profiles
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND effective_from<=CURRENT_DATE
+            AND(effective_to IS NULL OR effective_to>=CURRENT_DATE)
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """,(company_id,employee_id)) or {}
+
+        setup=self.fetch_one(f"""
+            SELECT *
+            FROM {schema}.payroll_employee_pay_setups
+            WHERE company_id=%s
+            AND employee_id=%s
+            AND is_active=TRUE
+            ORDER BY effective_from DESC,id DESC
+            LIMIT 1;
+        """,(company_id,employee_id))
+
+        salary_type=str(contract.get("salary_type") or "monthly").lower()
+
+        pay_basis={
+            "monthly":"monthly",
+            "hourly":"hourly",
+            "daily":"daily",
+            "quantity":"quantity",
+            "commission_only":"commission_only",
+        }.get(salary_type,"monthly")
+
+        basic_earning=self.fetch_one(f"""
+            SELECT id
+            FROM {schema}.payroll_earning_types
+            WHERE company_id=%s
+            AND is_active=TRUE
+            AND(
+                UPPER(COALESCE(code,''))='BASIC'
+                OR LOWER(COALESCE(name,''))='basic salary'
+            )
+            ORDER BY
+                CASE WHEN UPPER(COALESCE(code,''))='BASIC' THEN 0 ELSE 1 END,
+                id
+            LIMIT 1;
+        """,(company_id,)) or {}
+
+        if setup:
+            items=self.fetch_all(f"""
+                SELECT *
+                FROM {schema}.payroll_employee_pay_setup_items
+                WHERE company_id=%s
+                AND pay_setup_id=%s
+                AND is_active=TRUE
+                ORDER BY item_type,id;
+            """,(company_id,int(setup["id"])))
+        else:
+            setup={
+                "id":None,
+                "company_id":company_id,
+                "employee_id":employee_id,
+                "is_active":True,
+            }
+            items=[]
+
+        setup["pay_basis"]=setup.get("pay_basis") or pay_basis
+        setup["basic_earning_type_id"]=setup.get("basic_earning_type_id") or basic_earning.get("id")
+
+        if setup["pay_basis"]=="monthly" and not float(setup.get("fixed_basic_amount") or 0):
+            setup["fixed_basic_amount"]=contract.get("basic_salary") or 0
+
+        if setup["pay_basis"]=="hourly" and not float(setup.get("rate") or 0):
+            setup["rate"]=contract.get("hourly_rate") or 0
+
+        if setup["pay_basis"]=="hourly" and not float(setup.get("standard_quantity") or 0):
+            setup["standard_quantity"]=contract.get("normal_hours_per_month") or None
+
+        setup["effective_from"]=(
+            setup.get("effective_from")
+            or contract.get("effective_from")
+            or employee.get("start_date")
+        )
+
+        setup["tax_treatment"]=(
+            setup.get("tax_treatment")
+            or (
+                "exempt"
+                if tax.get("paye_exempt")
+                else tax.get("tax_calculation_method")
+                or "standard"
+            )
+        )
+
+        setup["manual_paye_amount"]=(
+            setup.get("manual_paye_amount")
+            if setup.get("manual_paye_amount") is not None
+            else tax.get("additional_tax_amount")
+        )
+
+        setup["proration_method"]=setup.get("proration_method") or "working_days"
+        setup["hours_per_day"]=setup.get("hours_per_day") or 8
+        setup["attendance_required"]=bool(setup.get("attendance_required",False))
+
+        memberships=self.fetch_all(f"""
+            SELECT
+                m.id AS membership_id,
+                m.plan_id,
+                m.employee_id,
+                m.membership_number,
+                m.employee_percentage,
+                m.employer_percentage,
+                m.pensionable_percentage,
+                m.effective_from AS membership_effective_from,
+                m.effective_to AS membership_effective_to,
+
+                p.code AS plan_code,
+                p.name AS plan_name,
+                p.plan_type,
+                p.employee_deduction_type_id,
+                p.employer_contribution_type_id,
+                p.employee_contribution_percentage,
+                p.employer_contribution_percentage,
+                p.calculation_source
+
+            FROM {schema}.payroll_benefit_plan_members m
+            JOIN {schema}.payroll_benefit_plans p
+            ON p.id=m.plan_id
+            AND p.company_id=m.company_id
+
+            WHERE m.company_id=%s
+            AND m.employee_id=%s
+            AND m.is_active=TRUE
+            AND p.is_active=TRUE
+            AND m.effective_from<=CURRENT_DATE
+            AND(m.effective_to IS NULL OR m.effective_to>=CURRENT_DATE)
+            AND(p.effective_from IS NULL OR p.effective_from<=CURRENT_DATE)
+            AND(p.effective_to IS NULL OR p.effective_to>=CURRENT_DATE)
+
+            ORDER BY m.effective_from,m.id;
+        """,(company_id,employee_id))
+
+        item_map={}
+
+        for item in items:
+            item["source"]="pay_setup"
+            item_map[(str(item.get("item_type")),int(item.get("item_id") or 0))]=item
+
+        for member in memberships:
+            deduction_id=int(member.get("employee_deduction_type_id") or 0)
+            contribution_id=int(member.get("employer_contribution_type_id") or 0)
+
+            employee_pct=(
+                member.get("employee_percentage")
+                if member.get("employee_percentage") is not None
+                else member.get("employee_contribution_percentage")
+            )
+
+            employer_pct=(
+                member.get("employer_percentage")
+                if member.get("employer_percentage") is not None
+                else member.get("employer_contribution_percentage")
+            )
+
+            if deduction_id:
+                key=("deduction",deduction_id)
+
+                item_map[key]={
+                    "id":item_map.get(key,{}).get("id"),
+                    "company_id":company_id,
+                    "pay_setup_id":setup.get("id"),
+                    "employee_id":employee_id,
+                    "item_type":"deduction",
+                    "item_id":deduction_id,
+                    "calculation_method":"percentage",
+                    "amount":0,
+                    "percentage":employee_pct or 0,
+                    "quantity":None,
+                    "rate":None,
+                    "calculated_amount":None,
+                    "effective_from":member.get("membership_effective_from"),
+                    "effective_to":member.get("membership_effective_to"),
+                    "is_active":True,
+                    "source":"benefit_plan",
+                    "source_plan_id":member.get("plan_id"),
+                    "source_plan_code":member.get("plan_code"),
+                    "source_plan_name":member.get("plan_name"),
+                }
+
+            if contribution_id:
+                key=("contribution",contribution_id)
+
+                item_map[key]={
+                    "id":item_map.get(key,{}).get("id"),
+                    "company_id":company_id,
+                    "pay_setup_id":setup.get("id"),
+                    "employee_id":employee_id,
+                    "item_type":"contribution",
+                    "item_id":contribution_id,
+                    "calculation_method":"percentage",
+                    "amount":0,
+                    "percentage":employer_pct or 0,
+                    "quantity":None,
+                    "rate":None,
+                    "calculated_amount":None,
+                    "effective_from":member.get("membership_effective_from"),
+                    "effective_to":member.get("membership_effective_to"),
+                    "is_active":True,
+                    "source":"benefit_plan",
+                    "source_plan_id":member.get("plan_id"),
+                    "source_plan_code":member.get("plan_code"),
+                    "source_plan_name":member.get("plan_name"),
+                }
+
+        setup["items"]=list(item_map.values())
+        setup["benefit_plan_memberships"]=memberships
+        setup["contract"]=contract
+        setup["tax_profile"]=tax
+        setup["inherited_from_contract"]=bool(contract)
 
         return setup
 
