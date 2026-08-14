@@ -659,61 +659,168 @@ function initIndustryDropdowns() {
 
   // ------- Countries + Currency + Phone codes -------------------
   function populateCountryAndCurrency(metaList) {
-    COUNTRY_META = metaList || [];
+    COUNTRY_META = Array.isArray(metaList) ? metaList : [];
 
     const countrySel  = document.getElementById("country");
     const currencySel = document.getElementById("currency");
+
     if (!countrySel || !currencySel) return;
 
-    countrySel.innerHTML  = '<option value="">Select country...</option>';
-    currencySel.innerHTML = '<option value="">Select base currency</option>';
+    // Rebuild country + currency dropdowns
+    countrySel.innerHTML =
+      '<option value="">Select country...</option>';
 
-    const seenCurrencies = {};
+    currencySel.innerHTML =
+      '<option value="">Select base currency</option>';
 
-    metaList.forEach(function (c) {
-      // Country option (value = ISO code used in validation.py)
-      const cOpt = document.createElement("option");
-      cOpt.value = c.code;
-      cOpt.textContent = c.name + " (" + c.code + ")";
-      countrySel.appendChild(cOpt);
+    const seenCurrencies = new Set();
 
-      if (c.currency && !seenCurrencies[c.currency]) {
+    COUNTRY_META.forEach(function (c) {
+      // -----------------------------
+      // Country option
+      // -----------------------------
+      const countryCode = String(c.code || "").toUpperCase().trim();
+      const countryName = String(c.name || "").trim();
+      const currency    = String(c.currency || "").toUpperCase().trim();
+
+      if (countryCode) {
+        const cOpt = document.createElement("option");
+        cOpt.value = countryCode;
+        cOpt.textContent = countryName
+          ? `${countryName} (${countryCode})`
+          : countryCode;
+
+        countrySel.appendChild(cOpt);
+      }
+
+      // -----------------------------
+      // Currency option
+      // -----------------------------
+      if (currency && !seenCurrencies.has(currency)) {
         const curOpt = document.createElement("option");
-        curOpt.value = c.currency;
-        curOpt.textContent = c.currency;
+        curOpt.value = currency;
+        curOpt.textContent = currency;
+
         currencySel.appendChild(curOpt);
-        seenCurrencies[c.currency] = true;
+        seenCurrencies.add(currency);
       }
     });
 
-countrySel.addEventListener("change", function () {
-  const code = countrySel.value;
-  const selected = COUNTRY_META.find(c => c.code === code);
-  const phoneInput = document.getElementById("phone");
+    // =========================================================
+    // Country -> automatic base currency
+    // =========================================================
+    function applyCountryDefaults(countryCode, persist = true) {
+      const code = String(countryCode || "").toUpperCase().trim();
 
-  if (selected) {
-    // Auto-set currency only if empty
-    if (selected.currency && !currencySel.value) {
-      currencySel.value = selected.currency;
+      const selected = COUNTRY_META.find(function (c) {
+        return String(c.code || "").toUpperCase().trim() === code;
+      });
+
+      const phoneInput = document.getElementById("phone");
+
+      if (selected) {
+        const currency = String(selected.currency || "")
+          .toUpperCase()
+          .trim();
+
+        // ALWAYS set country's currency.
+        // Do not only set it when the dropdown is empty.
+        if (currency) {
+          // Safety: add currency if API returned one not already
+          // present in the dropdown.
+          if (
+            !Array.from(currencySel.options).some(
+              option => option.value === currency
+            )
+          ) {
+            const option = document.createElement("option");
+            option.value = currency;
+            option.textContent = currency;
+            currencySel.appendChild(option);
+          }
+
+          currencySel.value = currency;
+        } else {
+          currencySel.value = "";
+        }
+
+        // Update registration / TIN / VAT hints
+        updateCountryFieldHints(code);
+
+        if (phoneInput) {
+          phoneInput.placeholder = "82 123 4567";
+        }
+
+        if (persist) {
+          const s2 = JSON.parse(
+            sessionStorage.getItem("fs_reg_step2_data") || "{}"
+          );
+
+          s2.country = code;
+          s2.currency = currency || "";
+
+          sessionStorage.setItem(
+            "fs_reg_step2_data",
+            JSON.stringify(s2)
+          );
+        }
+      } else {
+        currencySel.value = "";
+
+        updateCountryFieldHints("");
+
+        if (phoneInput) {
+          phoneInput.placeholder = "82 123 4567";
+        }
+
+        if (persist) {
+          const s2 = JSON.parse(
+            sessionStorage.getItem("fs_reg_step2_data") || "{}"
+          );
+
+          s2.country = "";
+          s2.currency = "";
+
+          sessionStorage.setItem(
+            "fs_reg_step2_data",
+            JSON.stringify(s2)
+          );
+        }
+      }
     }
 
-    if (phoneInput) {
-      // Clear the phone field (do not insert +27)
-      phoneInput.value = "";
-
-      // Placeholder should NOT repeat +27
-      phoneInput.placeholder = "82 123 4567";
-    }
-  } else if (phoneInput) {
-    // Default fallback placeholder
-    phoneInput.placeholder = "82 123 4567";
-  }
-
-      // Persist selection
-      const s2 = JSON.parse(sessionStorage.getItem("fs_reg_step2_data") || "{}");
-      s2.country = code;
-      sessionStorage.setItem("fs_reg_step2_data", JSON.stringify(s2));
+    // =========================================================
+    // User changes country
+    // =========================================================
+    countrySel.addEventListener("change", function () {
+      applyCountryDefaults(countrySel.value, true);
     });
+
+    // =========================================================
+    // Restore previously selected country
+    // =========================================================
+    const saved = JSON.parse(
+      sessionStorage.getItem("fs_reg_step2_data") || "{}"
+    );
+
+    if (saved.country) {
+      const savedCountry = String(saved.country)
+        .toUpperCase()
+        .trim();
+
+      const exists = Array.from(countrySel.options).some(
+        option => option.value === savedCountry
+      );
+
+      if (exists) {
+        countrySel.value = savedCountry;
+
+        // IMPORTANT:
+        // derive currency from country again rather than trusting
+        // an old saved currency.
+        applyCountryDefaults(savedCountry, false);
+      }
+    }
   }
 
   // Convert ISO country code ("ZA") to flag emoji
@@ -845,155 +952,159 @@ countrySel.addEventListener("change", function () {
     });
   }
 
-function fetchCountryMeta() {
-  const fallback = [
-    { code: "ZA", name: "South Africa", currency: "USD", phone: "+27" },
-    { code: "LS", name: "Lesotho",      currency: "LSL", phone: "+266" },
-    { code: "BW", name: "Botswana",     currency: "BWP", phone: "+267" },
-    { code: "NA", name: "Namibia",      currency: "NAD", phone: "+264" },
-    { code: "ZW", name: "Zimbabwe",     currency: "ZWL", phone: "+263" },
-  ];
+  function fetchCountryMeta() {
+    const fallback = [
+      { code: "ZA", name: "South Africa", currency: "ZAR", phone: "+27" },
+      { code: "LS", name: "Lesotho",      currency: "LSL", phone: "+266" },
+      { code: "BW", name: "Botswana",     currency: "BWP", phone: "+267" },
+      { code: "NA", name: "Namibia",      currency: "NAD", phone: "+264" },
+      { code: "ZW", name: "Zimbabwe",     currency: "ZWL", phone: "+263" },
+    ];
 
-  return fetch(COUNTRY_META_URL)
-    .then(function (res) {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    })
-    .then(function (data) {
-      const list = (data && data.countries) || [];
-      if (!Array.isArray(list) || !list.length) throw new Error("Empty list");
+    return fetch(COUNTRY_META_URL)
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (data) {
+        const list = (data && data.countries) || [];
 
-      populateCountryAndCurrency(list);
-      initPhoneCountrySelector(list);   // ✅ add this
-    })
-    .catch(function (err) {
-      console.error("Error fetching countries:", err);
-      populateCountryAndCurrency(fallback);
-      initPhoneCountrySelector(fallback);
-    });
-}
+        if (!Array.isArray(list) || !list.length) {
+          throw new Error("Empty country list");
+        }
+
+        populateCountryAndCurrency(list);
+        initPhoneCountrySelector(list);
+      })
+      .catch(function (err) {
+        console.error("Error fetching countries:", err);
+
+        populateCountryAndCurrency(fallback);
+        initPhoneCountrySelector(fallback);
+      });
+  }
   // =========================================================
   // Google Places Autocomplete for Registered Address
   // =========================================================
-function initRegAddressAutocomplete() {
-  const input = document.getElementById("addressSearch");
-  if (!input || !window.google || !google.maps || !google.maps.places) return;
+  function initRegAddressAutocomplete() {
+    const input = document.getElementById("addressSearch");
+    if (!input || !window.google || !google.maps || !google.maps.places) return;
 
-  const autocomplete = new google.maps.places.Autocomplete(input, {
-    types: ["geocode"]
-    // ✅ global: no componentRestrictions
-  });
+    const autocomplete = new google.maps.places.Autocomplete(input, {
+      types: ["geocode"]
+      // ✅ global: no componentRestrictions
+    });
 
-  const byId = (id) => document.getElementById(id);
+    const byId = (id) => document.getElementById(id);
 
-  function setVal(id, v) {
-    const el = byId(id);
-    if (el) el.value = v || "";
-  }
-
-  function getComponent(components, type) {
-    const c = components.find(x => (x.types || []).includes(type));
-    return c ? c.long_name : "";
-  }
-
-  autocomplete.addListener("place_changed", function () {
-    const place = autocomplete.getPlace();
-    if (!place || !place.address_components) return;
-
-    const comps = place.address_components;
-
-    const streetNo = getComponent(comps, "street_number");
-    const route    = getComponent(comps, "route");
-    const line1    = [streetNo, route].filter(Boolean).join(" ");
-
-    // locality handling differs by country:
-    const locality =
-      getComponent(comps, "sublocality") ||
-      getComponent(comps, "sublocality_level_1") ||
-      getComponent(comps, "neighborhood");
-
-    const city =
-      getComponent(comps, "locality") ||
-      getComponent(comps, "postal_town") ||                 // UK
-      getComponent(comps, "administrative_area_level_2");   // fallback
-
-    const region =
-      getComponent(comps, "administrative_area_level_1") || // state/province
-      getComponent(comps, "administrative_area_level_2");
-
-    const postal = getComponent(comps, "postal_code");
-
-    setVal("regAddressLine1", line1);
-    // regAddressLine2 left for user (unit/suite often not reliable)
-    setVal("regLocality", locality);
-    setVal("regCity", city);
-    setVal("regRegion", region);
-    setVal("regPostalCode", postal);
-
-    // Optional metadata
-    setVal("regPlaceId", place.place_id || "");
-    setVal("regFormatted", place.formatted_address || "");
-
-    const loc = place.geometry && place.geometry.location;
-    setVal("regLat", loc ? String(loc.lat()) : "");
-    setVal("regLng", loc ? String(loc.lng()) : "");
-
-    // Persist to sessionStorage via your existing change listeners
-    // (they will fire only if user changes; so trigger manual change events)
-    ["regAddressLine1","regLocality","regCity","regRegion","regPostalCode"]
-      .forEach(id => {
-        const el = byId(id);
-        if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-  });
-}
-
-  /* =========================================================
-   * Step 2 — Validation + Persistence
-   * =======================================================*/
-function validateStep2() {
-    const fin = document.getElementById("finYearStart");
-    let finOK = true;
-
-    const requiredInputs = document.querySelectorAll("#step-2 [required]");
-    let ok = true;
-
-    for (let i = 0; i < requiredInputs.length; i++) {
-      const el = requiredInputs[i];
-
-      // Skip disabled fields (e.g. subIndustry when "Not applicable")
-      if (!el || el.disabled) continue;
-
-      const v = !!el.value;
-      setValidationStyle(el, v);
-      if (!v) ok = false;
+    function setVal(id, v) {
+      const el = byId(id);
+      if (el) el.value = v || "";
     }
 
-    if (fin && fin.value) {
-      const re = /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])$/; // DD/MM
-      const fmtOK = re.test(fin.value);
-      if (fmtOK) {
-        const parts = fin.value.split("/");
-        const day   = parseInt(parts[0], 10);
-        const month = parseInt(parts[1], 10);
-        if (day > 30 && [2,4,6,9,11].indexOf(month) !== -1) finOK = false;
-        else if (month === 2 && day > 29) finOK = false;
-      } else finOK = false;
-    } else if (fin && fin.hasAttribute("required")) {
-      finOK = false;
+    function getComponent(components, type) {
+      const c = components.find(x => (x.types || []).includes(type));
+      return c ? c.long_name : "";
     }
 
-    setValidationStyle(fin, finOK);
-    if (!finOK) ok = false;
+    autocomplete.addListener("place_changed", function () {
+      const place = autocomplete.getPlace();
+      if (!place || !place.address_components) return;
 
-    if (!ok) {
-      const firstInvalid = document.querySelector('#step-2 [style*="border: 2px solid"]');
-      if (firstInvalid && firstInvalid.scrollIntoView) {
-        firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+      const comps = place.address_components;
+
+      const streetNo = getComponent(comps, "street_number");
+      const route    = getComponent(comps, "route");
+      const line1    = [streetNo, route].filter(Boolean).join(" ");
+
+      // locality handling differs by country:
+      const locality =
+        getComponent(comps, "sublocality") ||
+        getComponent(comps, "sublocality_level_1") ||
+        getComponent(comps, "neighborhood");
+
+      const city =
+        getComponent(comps, "locality") ||
+        getComponent(comps, "postal_town") ||                 // UK
+        getComponent(comps, "administrative_area_level_2");   // fallback
+
+      const region =
+        getComponent(comps, "administrative_area_level_1") || // state/province
+        getComponent(comps, "administrative_area_level_2");
+
+      const postal = getComponent(comps, "postal_code");
+
+      setVal("regAddressLine1", line1);
+      // regAddressLine2 left for user (unit/suite often not reliable)
+      setVal("regLocality", locality);
+      setVal("regCity", city);
+      setVal("regRegion", region);
+      setVal("regPostalCode", postal);
+
+      // Optional metadata
+      setVal("regPlaceId", place.place_id || "");
+      setVal("regFormatted", place.formatted_address || "");
+
+      const loc = place.geometry && place.geometry.location;
+      setVal("regLat", loc ? String(loc.lat()) : "");
+      setVal("regLng", loc ? String(loc.lng()) : "");
+
+      // Persist to sessionStorage via your existing change listeners
+      // (they will fire only if user changes; so trigger manual change events)
+      ["regAddressLine1","regLocality","regCity","regRegion","regPostalCode"]
+        .forEach(id => {
+          const el = byId(id);
+          if (el) el.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+    });
+  }
+
+    /* =========================================================
+    * Step 2 — Validation + Persistence
+    * =======================================================*/
+  function validateStep2() {
+      const fin = document.getElementById("finYearStart");
+      let finOK = true;
+
+      const requiredInputs = document.querySelectorAll("#step-2 [required]");
+      let ok = true;
+
+      for (let i = 0; i < requiredInputs.length; i++) {
+        const el = requiredInputs[i];
+
+        // Skip disabled fields (e.g. subIndustry when "Not applicable")
+        if (!el || el.disabled) continue;
+
+        const v = !!el.value;
+        setValidationStyle(el, v);
+        if (!v) ok = false;
       }
+
+      if (fin && fin.value) {
+        const re = /^(0[1-9]|[12]\d|3[01])\/(0[1-9]|1[0-2])$/; // DD/MM
+        const fmtOK = re.test(fin.value);
+        if (fmtOK) {
+          const parts = fin.value.split("/");
+          const day   = parseInt(parts[0], 10);
+          const month = parseInt(parts[1], 10);
+          if (day > 30 && [2,4,6,9,11].indexOf(month) !== -1) finOK = false;
+          else if (month === 2 && day > 29) finOK = false;
+        } else finOK = false;
+      } else if (fin && fin.hasAttribute("required")) {
+        finOK = false;
+      }
+
+      setValidationStyle(fin, finOK);
+      if (!finOK) ok = false;
+
+      if (!ok) {
+        const firstInvalid = document.querySelector('#step-2 [style*="border: 2px solid"]');
+        if (firstInvalid && firstInvalid.scrollIntoView) {
+          firstInvalid.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+      return ok;
     }
-    return ok;
-  }
 
   function loadStep2Data() {
     const saved = sessionStorage.getItem("fs_reg_step2_data");

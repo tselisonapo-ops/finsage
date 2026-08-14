@@ -665,6 +665,23 @@ def create_lease(company_id: int):
         base_json["journal_id"] = int(journal_id)
         base_json["opening_journal"] = opening_lines
 
+        # --------------------------------------------------
+        # Lessor -> AP vendor metadata
+        # --------------------------------------------------
+        base_json["lessor_id"] = int(lessor_id)
+
+        base_json["vendor_id"] = (
+            int(lessor.get("vendor_id"))
+            if lessor.get("vendor_id") is not None
+            else None
+        )
+
+        base_json["vendor_name"] = (
+            lessor.get("vendor_name")
+            or lessor.get("name")
+            or ""
+        )
+
         if mode == "existing" and go_live is not None:
             current, non_current = _liability_split_current_noncurrent(result, go_live)
             base_json["opening_lease_liability"] = base_amount

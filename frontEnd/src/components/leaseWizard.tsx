@@ -35,7 +35,17 @@ interface LeaseWizardProps {
   defaultDirectCostOffsetAccount?: string;
 }
 
-type LessorRow = { id: number; name: string };
+type LessorRow = {
+  id: number;
+  name: string;
+  vendor_id?: number | null;
+};
+
+type LeaseCreateResponseWithVendor = LeaseCreateResponse & {
+  lessor_id?: number | null;
+  vendor_id?: number | null;
+  vendor_name?: string | null;
+};
 
 type LessorsApiResponse =
   | LessorRow[]
@@ -57,7 +67,14 @@ async function fetchLessors(companyId: number): Promise<LessorRow[]> {
   const rows = normalizeLessorsResponse(data);
 
   return rows
-    .map((r) => ({ id: Number(r.id), name: String(r.name || "") }))
+    .map((r) => ({
+      id: Number(r.id),
+      name: String(r.name || ""),
+      vendor_id:
+        r.vendor_id != null && Number(r.vendor_id) > 0
+          ? Number(r.vendor_id)
+          : null,
+    }))
     .filter((r) => Number.isFinite(r.id) && r.id > 0);
 }
 
@@ -94,7 +111,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   );
 
   const [preview, setPreview] = useState<LeasePreviewResponse | null>(null);
-  const [result, setResult] = useState<LeaseCreateResponse | null>(null);
+  const [result, setResult] = useState<LeaseCreateResponseWithVendor | null>(null);
   const [showDirectCostPrompt, setShowDirectCostPrompt] = useState(false);
   const [directCostAction, setDirectCostAction] = useState<"ap_bill" | "paid" | "skip" | null>(null);
   const isExisting = mode === "existing";
@@ -388,6 +405,15 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
             : f.go_live_date,
         reference: defaults.reference || f.reference || "",
       }));
+
+      const contextPostingDate =
+        defaults.postingDate ||
+        defaults.goLiveDate ||
+        null;
+
+      if (contextPostingDate) {
+        setDirectCostPaidDate(String(contextPostingDate).slice(0, 10));
+      }
     }
 
     window.addEventListener("message", onMsg);
@@ -581,7 +607,9 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       action,
       lease_id: result?.lease_id || null,
       lease_name: form.lease_name || "",
-      lessor_id: form.lessor_id || null,
+      lessor_id: result?.lessor_id || form.lessor_id || null,
+      vendor_id: result?.vendor_id || null,
+      vendor_name: result?.vendor_name || "",
       amount: Number(form.initial_direct_costs || 0),
       vat_rate: Number(form.vat_rate || 0),
       asset_account: form.rou_asset_account || "BS_NCA_1610",

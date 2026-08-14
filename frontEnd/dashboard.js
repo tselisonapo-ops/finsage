@@ -34640,27 +34640,41 @@ function showLeaseMsg(el, msg, type="error") {
   // ===============================
   // List + render
   // ===============================
-async function fetchLessors() {
-  const cid = cidOrThrow();
+  async function fetchLessors(companyId: number): Promise<LessorRow[]> {
+    const params = new URLSearchParams({
+      active: "1",
+      limit: "500",
+      offset: "0",
+    });
 
-  const q = (els.search?.value || "").trim();
-  const url = ENDPOINTS.lessors.list(cid, { q, limit: 200, offset: 0 });
+    const data = (await apiFetch(
+      `/api/companies/${companyId}/lessors?${params.toString()}`,
+      { method: "GET" }
+    )) as LessorsApiResponse;
 
-  const res = await window.apiFetch(url, { method: "GET" });
+    const rows = normalizeLessorsResponse(data);
 
-  // handle common API shapes:
-  // 1) { rows: [...] }
-  // 2) { lessors: [...] }
-  // 3) [...] (raw array)
-  const rows = Array.isArray(res) ? res : (res?.rows || res?.lessors || []);
-
-  // normalize a bit so UI doesn't break if backend returns different key names
-  return rows.map((r) => ({
-    ...r,
-    // tolerate active/is_active
-    active: (r?.active !== undefined) ? r.active : (r?.is_active !== undefined ? r.is_active : true),
-  }));
-}
+    return rows
+      .map((r: any) => ({
+        id: Number(r.id),
+        name: String(r.name || ""),
+        vendor_id:
+          r.vendor_id != null && Number(r.vendor_id) > 0
+            ? Number(r.vendor_id)
+            : null,
+        vendor_name:
+          String(
+            r.vendor_name ||
+            r.name ||
+            ""
+          ).trim() || null,
+      }))
+      .filter(
+        (r) =>
+          Number.isFinite(r.id) &&
+          r.id > 0
+      );
+  }
 
   function matchesSearch(row, q) {
     if (!q) return true;
@@ -117787,79 +117801,270 @@ function bindAP() {
 
   window.getLeaseApPrefillFromUrl = getLeaseApPrefillFromUrl;
 
-  function applyLeaseApPrefill(prefill) {
+  async function applyLeaseApPrefill(prefill) {
     if (!prefill) return false;
 
     const amount = Number(prefill.amount || 0);
     const vatRate = Number(prefill.vat_rate || 0);
 
-    const root = typeof getBillRoot === "function" ? getBillRoot() : document;
+    const root =
+      typeof getBillRoot === "function"
+        ? getBillRoot()
+        : document;
 
-    // Clear existing bill first
+    // --------------------------------------------------
+    // 1. Clear existing AP bill
+    // --------------------------------------------------
     if (typeof window.clearBillForm === "function") {
       window.clearBillForm({ keepCurrency: true });
     }
 
-    const vendorId = String(prefill.vendor_id || "").trim();
+    // --------------------------------------------------
+    // 2. Resolve lessor -> AP vendor
+    // --------------------------------------------------
+    const lessorId = Number(prefill.lessor_id || 0);
 
-    // Try to resolve vendor name from cache if only id was passed
-    let vendorName = String(prefill.vendor_name || "").trim();
-    if (!vendorName && vendorId) {
-      const list = Array.isArray(window.VENDORS_CACHE) ? window.VENDORS_CACHE : [];
-      const hit = list.find(v => String(v.id) === vendorId);
-      if (hit) vendorName = String(hit.name || "").trim();
+    let vendorId = Number(prefill.vendor_id || 0);
+    let vendorName = String(
+      prefill.vendor_name || ""
+    ).trim();
+
+    const vendors = Array.isArray(window.VENDORS_CACHE)
+      ? window.VENDORS_CACHE
+      : [];
+
+    // First try an explicit vendor id
+    if (vendorId > 0) {
+      const hit = vendors.find(
+        (v) => Number(v.id) === vendorId
+      );
+
+      if (hit && !vendorName) {
+        vendorName = String(
+          hit.name || hit.vendor_name || ""
+        ).trim();
+      }
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    // If no vendor was supplied, try to resolve from lessor
+    if (!vendorId && lessorId > 0) {
+      const hit = vendors.find((v) => {
+        return (
+          Number(v.lessor_id || 0) === lessorId ||
+          Number(v.linked_lessor_id || 0) === lessorId
+        );
+      });
 
+      if (hit) {
+        vendorId = Number(hit.id || 0);
+        vendorName = String(
+          hit.name || hit.vendor_name || ""
+        ).trim();
+      }
+    }
+
+    const today = new Date()
+      .toISOString()
+      .slice(0, 10);
+
+    // --------------------------------------------------
+    // 3. Prefill AP header
+    // --------------------------------------------------
     window.writeBillForm?.({
-      vendor_id: /^\d+$/.test(vendorId) ? parseInt(vendorId, 10) : null,
+      vendor_id: vendorId > 0 ? vendorId : null,
       vendorName,
       bill_date: today,
-      currency: window.CURRENT_COMPANY?.currency || "USD",
-      number: "",
-      notes: `Lease direct cost capture${prefill.reference ? " | Ref: " + prefill.reference : ""}`,
+      currency:
+        window.CURRENT_COMPANY?.currency ||
+        "USD",
+      number: prefill.reference || "",
+      notes:
+        `Lease direct cost capture` +
+        (
+          prefill.reference
+            ? ` | Ref: ${prefill.reference}`
+            : ""
+        ),
     });
 
-    const memoEl = root.querySelector("#billMemo");
-    if (memoEl) {
-      memoEl.value = prefill.description || `Initial direct cost - ${prefill.lease_name || "Lease"}`;
+    // --------------------------------------------------
+    // 4. Force vendor fields where we resolved one
+    // --------------------------------------------------
+    const vendorIdEl =
+      root.querySelector("#billVendorId");
+
+    const vendorEl =
+      root.querySelector("#billVendor");
+
+    if (vendorIdEl && vendorId > 0) {
+      vendorIdEl.value = String(vendorId);
+      vendorIdEl.setAttribute(
+        "value",
+        String(vendorId)
+      );
     }
 
-    const vatEnabledEl = root.querySelector("#apBillVatEnabled");
-    if (vatEnabledEl) vatEnabledEl.checked = vatRate > 0;
+    if (vendorEl && vendorName) {
+      if (vendorEl.tagName === "SELECT") {
+        vendorEl.value = String(vendorId || "");
+      } else {
+        vendorEl.value = vendorName;
+      }
+    }
 
-    const vatModeEl = root.querySelector("#apBillVatMode");
-    if (vatModeEl && !vatModeEl.value) vatModeEl.value = "exclusive";
+    // --------------------------------------------------
+    // 5. Description / memo
+    // --------------------------------------------------
+    const memoEl =
+      root.querySelector("#billMemo");
 
-    const linesBody = root.querySelector("#billLines");
-    if (linesBody) linesBody.innerHTML = "";
+    if (memoEl) {
+      memoEl.value =
+        prefill.description ||
+        `Initial direct cost - ${
+          prefill.lease_name || "Lease"
+        }`;
+    }
 
-    window.addBillLine?.({
+    // --------------------------------------------------
+    // 6. VAT
+    // --------------------------------------------------
+    const vatEnabledEl =
+      root.querySelector("#apBillVatEnabled");
+
+    if (vatEnabledEl) {
+      vatEnabledEl.checked = vatRate > 0;
+    }
+
+    const vatModeEl =
+      root.querySelector("#apBillVatMode");
+
+    if (vatModeEl) {
+      vatModeEl.value = "exclusive";
+    }
+
+    // --------------------------------------------------
+    // 7. Ensure AP GL accounts are loaded BEFORE
+    //    creating the direct-cost line
+    // --------------------------------------------------
+    if (
+      !Array.isArray(window.BILL_ACCOUNTS_CACHE) ||
+      !window.BILL_ACCOUNTS_CACHE.length
+    ) {
+      await window.loadBillAccountsForLines?.();
+    }
+
+    window.refreshBillAccountDropdowns?.();
+
+    // --------------------------------------------------
+    // 8. Replace blank line with lease direct-cost line
+    // --------------------------------------------------
+    const linesBody =
+      root.querySelector("#billLines");
+
+    if (linesBody) {
+      linesBody.innerHTML = "";
+    }
+
+    const directCostAccount =
+      String(
+        prefill.asset_account ||
+        "BS_NCA_1610"
+      ).trim();
+
+    const row = window.addBillLine?.({
       item_name: "Lease Direct Cost",
-      description: prefill.description || `Initial direct cost - ${prefill.lease_name || "Lease"}`,
+      description:
+        prefill.description ||
+        `Initial direct cost - ${
+          prefill.lease_name || "Lease"
+        }`,
       quantity: 1,
       unit_price: amount,
-      account_code: prefill.asset_account || "BS_NCA_1610",
-      vat_code: vatRate > 0 ? (vatRate === 15 ? "STANDARD" : "CUSTOM") : "ZERO",
+      account_code: directCostAccount,
+      vat_code:
+        vatRate > 0
+          ? (
+              vatRate === 15
+                ? "STANDARD"
+                : "CUSTOM"
+            )
+          : "ZERO",
       vat_rate: vatRate,
     });
 
-    // Force vendor hidden id sync if needed
-    const vendorInput = root.querySelector("#billVendor");
-    if (vendorInput) {
-      vendorInput.dispatchEvent(new Event("input", { bubbles: true }));
-      vendorInput.dispatchEvent(new Event("change", { bubbles: true }));
-      vendorInput.dispatchEvent(new Event("blur", { bubbles: true }));
+    // --------------------------------------------------
+    // 9. Force account selection after row/options exist
+    // --------------------------------------------------
+    const acctSel =
+      row?.querySelector?.(".bill-acct");
+
+    if (acctSel && directCostAccount) {
+      const optionExists = Array.from(
+        acctSel.options || []
+      ).some(
+        (opt) =>
+          String(opt.value).trim() ===
+          directCostAccount
+      );
+
+      if (optionExists) {
+        acctSel.value = directCostAccount;
+      } else {
+        console.warn(
+          "[LEASE AP] Direct cost account not found in AP account list:",
+          directCostAccount
+        );
+      }
     }
 
-    window.recalcBill?.({ force: true });
+    // --------------------------------------------------
+    // 10. Trigger vendor sync after everything mounted
+    // --------------------------------------------------
+    if (vendorEl) {
+      vendorEl.dispatchEvent(
+        new Event("input", {
+          bubbles: true,
+        })
+      );
+
+      vendorEl.dispatchEvent(
+        new Event("change", {
+          bubbles: true,
+        })
+      );
+
+      vendorEl.dispatchEvent(
+        new Event("blur", {
+          bubbles: true,
+        })
+      );
+    }
+
+    window.recalcBill?.({
+      force: true,
+    });
+
     window.saveBillDraftToLocal?.();
+
+    console.log(
+      "[LEASE AP] prefill applied",
+      {
+        lease_id: prefill.lease_id,
+        lessor_id: lessorId,
+        vendor_id: vendorId || null,
+        vendor_name: vendorName || null,
+        account_code: directCostAccount,
+        amount,
+        vat_rate: vatRate,
+      }
+    );
 
     return true;
   }
 
-  window.applyLeaseApPrefill = applyLeaseApPrefill;
+  window.applyLeaseApPrefill =
+    applyLeaseApPrefill;
 
   function findMatchingAssetGrniForBill(form) {
     const vendorId = Number(form.vendor_id || 0);

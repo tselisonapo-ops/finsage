@@ -7,21 +7,41 @@
   <link rel="icon" type="image/png" href="./assets/favicon.png">
 
 
-  <!-- ✅ Redirect to signin if no token -->
-  <script>
+<!-- ✅ Redirect to signin if no token -->
+<script>
+(function(){
+  const token=
+    localStorage.getItem("fs_user_token")||
+    sessionStorage.getItem("fs_user_token");
 
-  (function () {
-    const token =
-      localStorage.getItem("fs_user_token") ||
-      sessionStorage.getItem("fs_user_token");
+  const path=window.location.pathname;
 
-    if (!token && window.location.pathname === "/") {
-      window.location.replace("/signin.html");
-    }
-  })();
-  </script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  const isLiveApp=
+    path==="/app"||
+    path.startsWith("/app/");
+
+  const base=isLiveApp?"/app":"";
+
+  const publicPages=[
+    `${base}/signin.html`,
+    `${base}/registration.html`,
+    `${base}/forgot-password.html`,
+    `${base}/reset-password.html`
+  ];
+
+  const isPublicPage=
+    publicPages.includes(path);
+
+  if(!token&&!isPublicPage){
+    window.location.replace(
+      `${base}/signin.html?reason=signed_out`
+    );
+  }
+})();
+</script>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
   :root{
@@ -3216,6 +3236,106 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
 /* ==========================================================
    PAYROLL MODULE
 ========================================================== */
+#payrollEmployeeModal .payroll-emp-panel {
+    padding-top: 18px;
+}
+
+#payrollEmployeeModal .payroll-section-head {
+    margin-top: 0;
+    margin-bottom: 18px;
+}
+#payrollEmployeeModal .payroll-section-head h3 {
+    margin: 0 0 6px;
+    line-height: 1.3;
+}
+
+#payrollEmployeeModal .payroll-run-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.payroll-leave-tier-table{
+  width:100%;
+  margin-top:10px;
+  overflow-x:auto;
+}
+
+.payroll-leave-tier-head,
+.payroll-leave-tier-row{
+  display:grid;
+  grid-template-columns:110px 110px 145px 155px 38px;
+  gap:8px;
+  align-items:center;
+}
+
+.payroll-leave-tier-head{
+  padding:0 2px 6px;
+  font-size:11px;
+  font-weight:700;
+  color:#52627a;
+}
+
+.payroll-leave-tier-row{
+  margin-bottom:8px;
+}
+
+.payroll-leave-tier-row input{
+  width:100%;
+  min-width:0;
+  height:36px;
+  padding:6px 9px;
+}
+
+.payroll-tier-remove{
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:8px;
+  cursor:pointer;
+  font-size:18px;
+}
+
+#payrollLeavePolicyModal .payroll-modal-card{
+  width:min(980px,94vw);
+  max-width:980px;
+}
+
+.payroll-leave-tier-table{
+  width:100%;
+  margin-top:10px;
+  overflow:visible;
+}
+
+.payroll-leave-tier-head,
+.payroll-leave-tier-row{
+  display:grid;
+  grid-template-columns:
+    minmax(72px,.75fr)
+    minmax(72px,.75fr)
+    minmax(105px,1fr)
+    minmax(115px,1.1fr)
+    34px;
+  gap:7px;
+  align-items:center;
+}
+
+.payroll-leave-tier-row input{
+  width:100%;
+  min-width:0;
+  height:34px;
+  padding:5px 8px;
+  font-size:12px;
+}
+
+.payroll-leave-tier-head{
+  padding:0 1px 5px;
+  font-size:10px;
+  font-weight:700;
+  white-space:nowrap;
+}
+
 .payroll-final-payslip{
   max-width:950px;
   margin:16px auto 0;
@@ -3224,6 +3344,14 @@ table.bf-variance-table thead.bf-variance-head tr th:nth-child(6) {
   border-radius:14px;
   background:#fff;
 }
+
+.payroll-employee-warning{
+  margin:12px 0;padding:12px 14px;border:1px solid #f0c36d;
+  border-radius:10px;background:#fff8e6;display:flex;
+  flex-direction:column;gap:3px;font-size:13px;
+}
+.payroll-employee-warning strong{font-size:13px}
+.payroll-employee-warning.hidden{display:none}
 
 .payroll-final-payslip-head{
   display:flex;
@@ -9616,6 +9744,113 @@ tbody tr:hover {
   white-space:normal;
   word-break:break-word;
 }
+
+/* =========================================================
+   Revenue Contract - Billing Milestones
+   Allow milestone table to use full two-column workspace
+   ========================================================= */
+
+@media (min-width: 1280px) {
+  #revBillingConfigWrap:has(#revMilestoneFields:not(.hidden)) {
+    width: calc(200% + 1rem);
+    max-width: calc(200% + 1rem);
+    position: relative;
+    z-index: 2;
+  }
+
+  #revMilestoneFields,
+  #revMilestoneTableWrap {
+    width: 100%;
+    max-width: none;
+  }
+}
+@media (max-width: 1279px) {
+  .rev-milestone-table-container {
+    overflow-x: auto;
+  }
+
+  .rev-milestone-table {
+    min-width: 900px;
+    table-layout: auto;
+  }
+}
+.rev-milestone-table-container {
+  width: 100%;
+  overflow: visible;
+}
+
+.rev-milestone-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.rev-milestone-table th,
+.rev-milestone-table td {
+  vertical-align: middle;
+}
+
+/* Code */
+.rev-milestone-table th:nth-child(1),
+.rev-milestone-table td:nth-child(1) {
+  width: 9%;
+}
+
+/* Description */
+.rev-milestone-table th:nth-child(2),
+.rev-milestone-table td:nth-child(2) {
+  width: 17%;
+}
+
+/* Trigger */
+.rev-milestone-table th:nth-child(3),
+.rev-milestone-table td:nth-child(3) {
+  width: 12%;
+}
+
+/* Amount */
+.rev-milestone-table th:nth-child(4),
+.rev-milestone-table td:nth-child(4) {
+  width: 10%;
+}
+
+/* Percent */
+.rev-milestone-table th:nth-child(5),
+.rev-milestone-table td:nth-child(5) {
+  width: 8%;
+}
+
+/* Certificate */
+.rev-milestone-table th:nth-child(6),
+.rev-milestone-table td:nth-child(6) {
+  width: 11%;
+}
+
+/* Approval */
+.rev-milestone-table th:nth-child(7),
+.rev-milestone-table td:nth-child(7) {
+  width: 11%;
+}
+
+/* Expected date */
+.rev-milestone-table th:nth-child(8),
+.rev-milestone-table td:nth-child(8) {
+  width: 13%;
+}
+
+/* Action */
+.rev-milestone-table th:nth-child(9),
+.rev-milestone-table td:nth-child(9) {
+  width: 9%;
+}
+
+.rev-milestone-table input,
+.rev-milestone-table select,
+.rev-milestone-table textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
   </style>
 
 </head>
@@ -14350,21 +14585,17 @@ tbody tr:hover {
 
                           <!-- ADD THIS BELOW -->
                           <div id="revMilestoneTableWrap" class="mt-4 border rounded-lg bg-white p-3">
-                            <div class="flex items-center justify-between gap-3 mb-2">
+                            <div class="flex items-center justify-between gap-3 mb-3">
                               <div>
                                 <div class="text-sm font-semibold text-slate-700">Billing Milestones</div>
-                                <div class="text-[11px] text-slate-500">
-                                  Define contract billing milestones before progress or invoicing happens.
-                                </div>
+                                <div class="text-[11px] text-slate-500">Define contract billing milestones before progress or invoicing happens.</div>
                               </div>
 
-                              <button id="revAddMilestoneRow" type="button" class="btn">
-                                Add Milestone
-                              </button>
+                              <button id="revAddMilestoneRow" type="button" class="btn">Add Milestone</button>
                             </div>
 
-                            <div class="overflow-auto border rounded-lg">
-                              <table class="min-w-[900px] w-full text-sm">
+                            <div class="rev-milestone-table-container border rounded-lg">
+                              <table class="rev-milestone-table w-full text-sm">
                                 <thead class="bg-slate-50 text-xs text-slate-500">
                                   <tr>
                                     <th class="px-3 py-2 text-left">Code</th>
@@ -20777,6 +21008,12 @@ tbody tr:hover {
             <button data-payroll-tab="settings">Settings</button>
           </div>
 
+          <div id="payrollEmployeeBenefitWarning"
+            class="notice warning hidden">
+            Employee benefits are not fully configured.
+            Define benefit plans and leave policies before completing employee benefit setup.
+          </div>
+
           <div id="payrollTabOverview" class="payroll-panel">
             <h3>Overview</h3>
 
@@ -21736,22 +21973,32 @@ tbody tr:hover {
 
           <div id="payrollLeavePolicyModal" class="payroll-modal hidden">
             <div class="payroll-modal-card" role="dialog" aria-modal="true"
-                aria-labelledby="payrollLeavePolicyModalTitle">
+              aria-labelledby="payrollLeavePolicyModalTitle">
 
               <div class="payroll-card-head">
                 <div>
-                  <h3 id="payrollLeavePolicyModalTitle">Leave Accrual Policy</h3>
-                  <p class="payroll-muted">Configure the IAS 19 leave obligation.</p>
+                  <h3 id="payrollLeavePolicyModalTitle">Leave Policy</h3>
+                  <p id="payrollLeavePolicySubtitle" class="payroll-muted">
+                    Configure leave entitlement and payroll treatment.
+                  </p>
                 </div>
 
                 <button id="payrollLeavePolicyCloseBtn"
-                  type="button" data-close-leave-policy
-                  aria-label="Close">×</button>
+                  type="button"
+                  data-close-leave-policy
+                  aria-label="Close">
+                  ×
+                </button>
               </div>
 
               <input id="payrollLeavePolicyId" type="hidden">
 
               <div class="payroll-form-grid">
+
+                <!-- ============================================== -->
+                <!-- COMMON -->
+                <!-- ============================================== -->
+
                 <label>
                   Policy name
                   <input id="payrollLeavePolicyName">
@@ -21764,61 +22011,366 @@ tbody tr:hover {
                   </select>
                 </label>
 
-                <label>
-                  Annual entitlement days
-                  <input id="payrollLeavePolicyEntitlement"
-                    type="number" min="0" step="0.01">
-                </label>
+                <!-- ============================================== -->
+                <!-- SIMPLE / OTHER -->
+                <!-- ============================================== -->
 
-                <label>
-                  Accrual method
-                  <select id="payrollLeavePolicyMethod">
-                    <option value="straight_line">Straight-line by service days</option>
-                    <option value="monthly_fixed">Fixed monthly days</option>
-                    <option value="manual">Manual movements</option>
-                  </select>
-                </label>
+                <div id="payrollLeaveSimpleWrap" class="hidden">
+                  <div class="payroll-info-box">
+                    No additional accrual configuration is required for this leave type.
+                  </div>
+                </div>
 
-                <label>
-                  Monthly accrual days
-                  <input id="payrollLeavePolicyMonthlyDays"
-                    type="number" min="0" step="0.0001">
-                </label>
+                <!-- ============================================== -->
+                <!-- ANNUAL LEAVE -->
+                <!-- ============================================== -->
 
-                <label>
-                  Daily-rate basis
-                  <select id="payrollLeavePolicyRateBasis">
-                    <option value="annual_div_260">Annual salary ÷ working days</option>
-                    <option value="monthly_div_21_67">Monthly salary ÷ 21.67</option>
-                    <option value="monthly_div_working_days">Monthly working-day basis</option>
-                    <option value="custom">Custom rate</option>
-                  </select>
-                </label>
+                <div id="payrollLeaveAnnualWrap"
+                  class="payroll-form-grid hidden">
 
-                <label>
-                  Expense account
-                  <select id="payrollLeavePolicyExpenseAccount">
-                    <option value="">Select expense account…</option>
-                  </select>
-                </label>
+                  <label>
+                    Annual entitlement days
+                    <input id="payrollLeavePolicyEntitlement"
+                      type="number"
+                      min="0"
+                      step="0.01">
+                  </label>
 
-                <label>
-                  Liability account
-                  <select id="payrollLeavePolicyLiabilityAccount">
-                    <option value="">Select liability account…</option>
-                  </select>
-                </label>
+                  <label>
+                    Accrual method
+                    <select id="payrollLeavePolicyMethod">
+                      <option value="straight_line">
+                        Straight-line by service days
+                      </option>
 
-                <label class="payroll-check">
-                  <input id="payrollLeavePolicyVesting" type="checkbox">
-                  <span>Vesting entitlement</span>
-                </label>
+                      <option value="monthly_fixed">
+                        Fixed monthly days
+                      </option>
 
-                <label class="payroll-check">
-                  <input id="payrollLeavePolicyProvisionRequired"
-                    type="checkbox" checked>
-                  <span>Recognise provision</span>
-                </label>
+                      <option value="service_tiered">
+                        Service-based / anniversary tiers
+                      </option>
+
+                      <option value="manual">
+                        Manual movements
+                      </option>
+                    </select>
+                  </label>
+
+                  <label id="payrollLeaveMonthlyWrap">
+                    Monthly accrual days
+                    <input id="payrollLeavePolicyMonthlyDays"
+                      type="number"
+                      min="0"
+                      step="0.0001">
+                  </label>
+
+                  <div id="payrollLeavePolicyTierWrap"
+                    class="hidden payroll-leave-tier-full">
+
+                    <div class="payroll-section-head">
+                      <div>
+                        <h4>Service-based accrual tiers</h4>
+                        <p class="payroll-muted">
+                          Change entitlement automatically as employee service increases.
+                        </p>
+                      </div>
+
+                      <button id="payrollAddLeaveTierBtn"
+                        type="button"
+                        class="payroll-secondary dark">
+                        + Add Tier
+                      </button>
+                    </div>
+
+                    <div class="payroll-leave-tier-table">
+                      <div class="payroll-leave-tier-head">
+                        <span>From month</span>
+                        <span>To month</span>
+                        <span>Monthly accrual</span>
+                        <span>Annual entitlement</span>
+                        <span></span>
+                      </div>
+
+                      <div id="payrollLeavePolicyTiers"></div>
+                    </div>
+                  </div>
+
+                  <label>
+                    Daily-rate basis
+                    <select id="payrollLeavePolicyRateBasis">
+                      <option value="annual_div_260">
+                        Annual salary ÷ working days
+                      </option>
+
+                      <option value="monthly_div_21_67">
+                        Monthly salary ÷ 21.67
+                      </option>
+
+                      <option value="monthly_div_working_days">
+                        Monthly working-day basis
+                      </option>
+
+                      <option value="custom">
+                        Custom rate
+                      </option>
+                    </select>
+                  </label>
+
+                  <label id="payrollLeaveVestingWrap"
+                    class="payroll-check">
+                    <input id="payrollLeavePolicyVesting"
+                      type="checkbox">
+
+                    <span>Vesting entitlement</span>
+                  </label>
+
+                  <label id="payrollLeaveProvisionWrap"
+                    class="payroll-check">
+                    <input id="payrollLeavePolicyProvisionRequired"
+                      type="checkbox"
+                      checked>
+
+                    <span>Recognise IAS 19 provision</span>
+                  </label>
+
+                  <div id="payrollLeaveProvisionAccountWrap"
+                    class="payroll-form-grid">
+
+                    <label>
+                      Expense account
+                      <select id="payrollLeavePolicyExpenseAccount">
+                        <option value="">Select expense account…</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      Liability account
+                      <select id="payrollLeavePolicyLiabilityAccount">
+                        <option value="">Select liability account…</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- SICK LEAVE -->
+                <!-- ============================================== -->
+
+                <div id="payrollLeaveSickWrap"
+                  class="payroll-form-grid hidden">
+
+                  <label>
+                    Cycle entitlement days
+                    <input id="payrollLeaveSickCycleDays"
+                      type="number"
+                      min="0"
+                      step="0.01">
+                  </label>
+
+                  <label>
+                    Cycle length months
+                    <input id="payrollLeaveSickCycleMonths"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value="36">
+                  </label>
+
+                  <label>
+                    Initial accrual method
+                    <select id="payrollLeaveSickInitialMethod">
+                      <option value="none">
+                        No special initial accrual
+                      </option>
+
+                      <option value="days_worked">
+                        Based on days worked
+                      </option>
+
+                      <option value="monthly">
+                        Monthly accrual
+                      </option>
+                    </select>
+                  </label>
+
+                  <label id="payrollLeaveSickDaysWorkedWrap">
+                    Days worked per sick day
+                    <input id="payrollLeaveSickDaysWorked"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value="26">
+                  </label>
+
+                  <label id="payrollLeaveSickInitialMonthsWrap">
+                    Initial period months
+                    <input id="payrollLeaveSickInitialMonths"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="6">
+                  </label>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- MATERNITY / PARENTAL / PATERNITY -->
+                <!-- ============================================== -->
+
+                <div id="payrollLeaveParentalWrap"
+                  class="payroll-form-grid hidden">
+
+                  <label>
+                    Entitlement
+                    <input id="payrollLeaveParentalEntitlement"
+                      type="number"
+                      min="0"
+                      step="0.01">
+                  </label>
+
+                  <label>
+                    Entitlement unit
+                    <select id="payrollLeaveParentalUnit">
+                      <option value="days">Days</option>
+                      <option value="weeks">Weeks</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Pay treatment
+                    <select id="payrollLeaveParentalPayTreatment">
+                      <option value="paid">Employer paid</option>
+                      <option value="part_paid">Partially paid</option>
+                      <option value="unpaid">Unpaid</option>
+                      <option value="statutory">Statutory benefit / fund</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Employer pay %
+                    <input id="payrollLeaveParentalPayPercent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value="100">
+                  </label>
+
+                  <label>
+                    Minimum service months
+                    <input id="payrollLeaveParentalServiceMonths"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="0">
+                  </label>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- FAMILY RESPONSIBILITY / SPECIAL -->
+                <!-- ============================================== -->
+
+                <div id="payrollLeaveSpecialWrap"
+                  class="payroll-form-grid hidden">
+
+                  <label>
+                    Entitlement days
+                    <input id="payrollLeaveSpecialDays"
+                      type="number"
+                      min="0"
+                      step="0.01">
+                  </label>
+
+                  <label>
+                    Entitlement period
+                    <select id="payrollLeaveSpecialPeriod">
+                      <option value="annual">
+                        Per year
+                      </option>
+
+                      <option value="event">
+                        Per qualifying event
+                      </option>
+
+                      <option value="employment">
+                        During employment
+                      </option>
+
+                      <option value="manual">
+                        Manual allocation
+                      </option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Pay treatment
+                    <select id="payrollLeaveSpecialPayTreatment">
+                      <option value="paid">Paid</option>
+                      <option value="part_paid">Partially paid</option>
+                      <option value="unpaid">Unpaid</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Employer pay %
+                    <input id="payrollLeaveSpecialPayPercent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value="100">
+                  </label>
+
+                  <label>
+                    Minimum service months
+                    <input id="payrollLeaveSpecialServiceMonths"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="0">
+                  </label>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- UNPAID LEAVE -->
+                <!-- ============================================== -->
+
+                <div id="payrollLeaveUnpaidWrap"
+                  class="payroll-form-grid hidden">
+
+                  <label>
+                    Payroll deduction basis
+                    <select id="payrollLeaveUnpaidDeductionBasis">
+                      <option value="daily_rate">
+                        Daily salary rate
+                      </option>
+
+                      <option value="working_day_rate">
+                        Working-day rate
+                      </option>
+
+                      <option value="hourly_rate">
+                        Hourly rate
+                      </option>
+
+                      <option value="manual">
+                        Manual deduction
+                      </option>
+                    </select>
+                  </label>
+
+                  <label class="payroll-check">
+                    <input id="payrollLeaveUnpaidAffectsBenefits"
+                      type="checkbox">
+
+                    <span>Affects benefit accrual</span>
+                  </label>
+                </div>
+
+                <!-- ============================================== -->
+                <!-- ACTIONS -->
+                <!-- ============================================== -->
 
                 <div class="payroll-modal-actions">
                   <button type="button"
@@ -21828,7 +22380,8 @@ tbody tr:hover {
                   </button>
 
                   <button id="payrollLeavePolicySaveBtn"
-                    type="button" class="payroll-primary">
+                    type="button"
+                    class="payroll-primary">
                     Save Policy
                   </button>
                 </div>
@@ -22411,8 +22964,16 @@ tbody tr:hover {
                   </label>
 
                   <label>
-                    Liability Account
-                    <select id="payrollDeductionLiabilityAccount"></select>
+                    Posting Account Type
+                    <select id="payrollDeductionAccountType">
+                      <option value="liability">Liability / Payable</option>
+                      <option value="asset">Asset / Receivable</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Posting Account
+                    <select id="payrollDeductionPostingAccount"></select>
                   </label>
 
                   <label class="payroll-check-label">
@@ -22897,13 +23458,17 @@ tbody tr:hover {
               </select>
             </label>
 
-            <label
-              id="payrollSetupEditorLiabilityWrap"
-              class="hidden"
-            >
-              Liability Account
-              <select id="payrollSetupEditorLiabilityAccount">
+            <label id="payrollSetupEditorDeductionAccountTypeWrap" class="hidden">
+              Posting Account Type
+              <select id="payrollSetupEditorDeductionAccountType">
+                <option value="liability">Liability / Payable</option>
+                <option value="asset">Asset / Receivable</option>
               </select>
+            </label>
+
+            <label id="payrollSetupEditorLiabilityWrap" class="hidden">
+              <span id="payrollSetupEditorPostingAccountLabel">Posting Account</span>
+              <select id="payrollSetupEditorLiabilityAccount"></select>
             </label>
 
             <label
@@ -23018,7 +23583,7 @@ tbody tr:hover {
 
           <input id="payrollEditingEmployeeId" type="hidden">
 
-          <div id="payrollEmpPanelBio" class="payroll-emp-panel">
+          <div id="payrollEmpPanelBio" class="payroll-emp-panel" data-payroll-emp-panel="bio">
             <div class="form-grid">
               <label>Employee Number <input id="payEmpNo" type="text" readonly placeholder="Generated after saving"></label>
               <label>First Name <input id="payFirstName"></label>
@@ -23027,8 +23592,26 @@ tbody tr:hover {
               <label>Phone <input id="payPhone"></label>
               <label>ID Number <input id="payIdNumber"></label>
               <label>Passport Number <input id="payPassportNumber"></label>
-              <label>Tax Number <input id="payTaxNumber"></label>
-              <label>Start Date <input id="payStartDate" type="date"></label>
+              <label>Tax Number
+                <input id="payTaxNumber">
+              </label>
+
+              <label>Department
+                <select id="payDepartmentId">
+                  <option value="">Select department…</option>
+                </select>
+              </label>
+
+              <label>Position
+                <select id="payPositionId">
+                  <option value="">Select position…</option>
+                </select>
+              </label>
+
+              <label>Start Date
+                <input id="payStartDate" type="date">
+              </label>
+
               <label>Status
                 <select id="payEmploymentStatus">
                   <option value="active">Active</option>
@@ -23038,10 +23621,10 @@ tbody tr:hover {
                 </select>
               </label>
             </div>
-            <button id="payrollSaveEmployeeBtn" class="btn primary">Save Employee</button>
+            <div class="payroll-run-actions"><button id="payrollSaveEmployeeBtn" class="btn primary">Save Employee</button><button id="payrollArchiveEmployeeBtn" class="payroll-danger hidden" type="button">Archive Employee</button></div>
           </div>
 
-          <div id="payrollEmpPanelContract" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelContract" class="payroll-emp-panel hidden" data-payroll-emp-panel="contract">
             <div class="form-grid">
               <label>Contract Type
                 <select id="payContractType">
@@ -23065,10 +23648,14 @@ tbody tr:hover {
               <label>Normal Hours / Month <input id="payNormalHours" type="number" step="0.01"></label>
               <label>Effective From <input id="payContractFrom" type="date"></label>
             </div>
-            <button id="payrollSaveContractBtn" class="btn primary">Save Contract</button>
+            <div class="payroll-run-actions">
+              <button id="payrollPrevContractBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveContractBtn" class="btn primary">Save & Continue</button>
+              <button id="payrollSkipContractBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
-          <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelEarnings" class="payroll-emp-panel hidden" data-payroll-emp-panel="earnings">
             <div class="payroll-section-head">
               <div>
                 <h3>Recurring Earnings</h3>
@@ -23115,14 +23702,16 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveRecurringEarningBtn" class="payroll-primary">
-              Add Recurring Earning
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollPrevEarningsBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveRecurringEarningBtn" class="payroll-primary">Add Recurring Earning</button>
+              <button id="payrollNextFromEarningsBtn" class="payroll-secondary dark" type="button">Next: Deductions →</button>
+            </div>
 
             <div id="payrollRecurringEarningsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelDeductions" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelDeductions" class="payroll-emp-panel hidden" data-payroll-emp-panel="deductions">
             <div class="payroll-section-head">
               <div>
                 <h3>Recurring Deductions</h3>
@@ -23159,14 +23748,16 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveRecurringDeductionBtn" class="payroll-primary">
-              Add Recurring Deduction
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollPrevDeductionsBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveRecurringDeductionBtn" class="payroll-primary">Add Recurring Deduction</button>
+              <button id="payrollFinishEmployeeSetupBtn" class="payroll-primary" type="button">Finish Employee Setup ✓</button>
+            </div>
 
             <div id="payrollRecurringDeductionsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelTax" class="payroll-emp-panel hidden" data-payroll-emp-panel="tax">
             <div class="form-grid">
               <label>Tax Authority<select id="payTaxProfileAuthorityId"></select></label>
               <label>Tax Number<input id="payTaxProfileNumber"></label>
@@ -23223,12 +23814,14 @@ tbody tr:hover {
               </label>
             </div>
 
-            <button id="payrollSaveTaxProfileBtn" class="payroll-primary">
-              Save Tax Profile
-            </button>
+            <div class="payroll-run-actions">
+              <button id="payrollPrevTaxBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveTaxProfileBtn" class="payroll-primary">Save & Continue</button>
+              <button id="payrollSkipTaxBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
-          <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelBank" class="payroll-emp-panel hidden" data-payroll-emp-panel="bank">
             <div class="form-grid">
               <label>Bank Name <input id="payBankName"></label>
               <label>Account Name <input id="payBankAccountName"></label>
@@ -23245,50 +23838,109 @@ tbody tr:hover {
               </label>
               <label><input id="payBankPrimary" type="checkbox" checked> Primary Account</label>
             </div>
-            <button id="payrollSaveBankBtn" class="btn primary">Save Bank Account</button>
+            <div class="payroll-run-actions">
+              <button id="payrollPrevBankBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveBankBtn" class="btn primary">Save & Continue</button>
+              <button id="payrollSkipBankBtn" class="payroll-secondary dark" type="button">Skip →</button>
+            </div>
           </div>
 
-          <div id="payrollEmpPanelBenefits" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelBenefits" class="payroll-emp-panel hidden" data-payroll-emp-panel="benefits">
             <div class="form-grid">
-              <label>Benefit Type
-                <select id="payBenefitTypeId"></select>
+              <label>
+                Benefit Plan
+                <select id="payEmployeeBenefitPlanId"></select>
               </label>
-              <label>Calculation Method
-                <select id="payBenefitCalcMethod">
-                  <option value="fixed_amount">Fixed Amount</option>
-                  <option value="percentage">Percentage</option>
-                  <option value="manual">Manual</option>
-                </select>
+
+              <label>
+                Plan Type
+                <input id="payEmployeeBenefitPlanType" readonly>
               </label>
-              <label>Employee Amount <input id="payBenefitEmployeeAmount" type="number" step="0.01"></label>
-              <label>Employer Amount <input id="payBenefitEmployerAmount" type="number" step="0.01"></label>
-              <label>Employee % <input id="payBenefitEmployeePercent" type="number" step="0.0001"></label>
-              <label>Employer % <input id="payBenefitEmployerPercent" type="number" step="0.0001"></label>
-              <label>Taxable Amount <input id="payBenefitTaxableAmount" type="number" step="0.01"></label>
-              <label>Provider <input id="payBenefitProvider"></label>
-              <label>Policy Number <input id="payBenefitPolicy"></label>
-              <label>Effective From <input id="payBenefitEffectiveFrom" type="date"></label>
-              <label>Notes <input id="payBenefitNotes"></label>
+
+              <label>
+                Provider
+                <input id="payEmployeeBenefitProvider" readonly>
+              </label>
+
+              <label>
+                Default Employee %
+                <input id="payEmployeeBenefitDefaultEmployeePercent" readonly>
+              </label>
+
+              <label>
+                Default Employer %
+                <input id="payEmployeeBenefitDefaultEmployerPercent" readonly>
+              </label>
+
+              <label>
+                Employee % Override
+                <input id="payEmployeeBenefitEmployeePercent" type="number" step="0.0001">
+              </label>
+
+              <label>
+                Employer % Override
+                <input id="payEmployeeBenefitEmployerPercent" type="number" step="0.0001">
+              </label>
+
+              <label>
+                Pensionable Remuneration %
+                <input id="payEmployeeBenefitPensionablePercent" type="number" step="0.0001" value="100">
+              </label>
+
+              <label>
+                Membership Number
+                <input id="payEmployeeBenefitMembershipNumber">
+              </label>
+
+              <label>
+                Effective From
+                <input id="payEmployeeBenefitEffectiveFrom" type="date">
+              </label>
+
+              <label>
+                Effective To
+                <input id="payEmployeeBenefitEffectiveTo" type="date">
+              </label>
+
+              <label>
+                Notes
+                <input id="payEmployeeBenefitNotes">
+              </label>
+
+              <label>
+                <input id="payEmployeeBenefitActive" type="checkbox" checked>
+                Active
+              </label>
             </div>
-            <button id="payrollSaveBenefitBtn" class="payroll-primary">Save Benefit</button>
+
+            <div class="payroll-run-actions">
+              <button id="payrollPrevBenefitsBtn" class="payroll-secondary dark" type="button">← Previous</button>
+              <button id="payrollSaveBenefitBtn" class="payroll-primary" type="button">Assign Benefit Plan</button>
+              <button id="payrollNextFromBenefitsBtn" class="payroll-secondary dark" type="button">Next: Leave →</button>
+            </div>
+
             <div id="payrollBenefitsList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelLeave" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelLeave" class="payroll-emp-panel hidden" data-payroll-emp-panel="leave">
             <div class="form-grid">
-              <label>Leave Type
+              <label>Leave Policy
                 <select id="payLeaveTypeId"></select>
               </label>
               <label>Date From <input id="payLeaveFrom" type="date"></label>
               <label>Date To <input id="payLeaveTo" type="date"></label>
               <label>Days <input id="payLeaveDays" type="number" step="0.01"></label>
               <label>Reason <input id="payLeaveReason"></label>
-            </div>
-            <button id="payrollSaveLeaveBtn" class="payroll-primary">Save Leave</button>
+              <div class="payroll-run-actions">
+                <button id="payrollPrevLeaveBtn" class="payroll-secondary dark" type="button">← Previous</button>
+                <button id="payrollSaveLeaveBtn" class="payroll-primary">Save Leave</button>
+                <button id="payrollNextFromLeaveBtn" class="payroll-secondary dark" type="button">Next: Loans & Advances →</button>
+              </div>
+              <div id="payEmployeeLeavePolicySummary" class="payroll-muted"></div>
             <div id="payrollLeaveList" class="payroll-sublist"></div>
           </div>
 
-          <div id="payrollEmpPanelLoans" class="payroll-emp-panel hidden">
+          <div id="payrollEmpPanelLoans" class="payroll-emp-panel hidden" data-payroll-emp-panel="loans">
             <div class="form-grid">
               <label>Loan / Advance No <input id="payLoanNo"></label>
               <label>Principal Amount <input id="payLoanPrincipal" type="number" step="0.01"></label>
@@ -23298,8 +23950,12 @@ tbody tr:hover {
                 <select id="payLoanDeductionTypeId"></select>
               </label>
               <label>Notes <input id="payLoanNotes"></label>
-            </div>
-            <button id="payrollSaveLoanBtn" class="payroll-primary">Save Loan / Advance</button>
+              <div class="payroll-run-actions">
+                <button id="payrollPrevLoansBtn" class="payroll-secondary dark" type="button">← Previous</button>
+                <button id="payrollSaveLoanBtn" class="payroll-primary">Save Loan / Advance</button>
+                <button id="payrollNextFromLoansBtn" class="payroll-secondary dark" type="button">Next: Earnings →</button>
+              </div>
+
             <div id="payrollLoansList" class="payroll-sublist"></div>
           </div>
         </div>
@@ -26168,61 +26824,6 @@ tbody tr:hover {
   </div>
 </div>
 
-<div id="svcItemModal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/40">
-  <div class="w-[92vw] max-w-xl rounded-xl bg-white p-4 shadow">
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <div id="svcModalTitle" class="font-bold text-base">New Service</div>
-        <div class="text-xs text-slate-500">Create / update a service item</div>
-      </div>
-      <button id="svcModalClose" class="px-2 py-1 text-xs border rounded">Close</button>
-    </div>
-
-    <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label class="block text-[11px] text-slate-500 mb-1">Code *</label>
-        <input id="svcFormCode" class="w-full border rounded px-2 py-1 text-xs" placeholder="e.g. SVC-001">
-      </div>
-
-      <div>
-        <label class="block text-[11px] text-slate-500 mb-1">Name *</label>
-        <input id="svcFormName" class="w-full border rounded px-2 py-1 text-xs" placeholder="e.g. Labour">
-      </div>
-
-      <div class="md:col-span-2">
-        <label class="block text-[11px] text-slate-500 mb-1">Description</label>
-        <input id="svcFormDesc" class="w-full border rounded px-2 py-1 text-xs" placeholder="Optional">
-      </div>
-
-      <div>
-        <label class="block text-[11px] text-slate-500 mb-1">Unit</label>
-        <input id="svcFormUnit" class="w-full border rounded px-2 py-1 text-xs" placeholder="e.g. hour">
-      </div>
-
-      <div>
-        <label class="block text-[11px] text-slate-500 mb-1">Rate</label>
-        <input id="svcFormPrice" class="w-full border rounded px-2 py-1 text-xs" placeholder="0.00">
-      </div>
-
-      <div>
-        <label class="block text-[11px] text-slate-500 mb-1">VAT Code</label>
-        <input id="svcFormVat" class="w-full border rounded px-2 py-1 text-xs" placeholder="e.g. STANDARD">
-      </div>
-
-      <div class="flex items-center gap-2 mt-4">
-        <input id="svcFormTaxable" type="checkbox" class="h-4 w-4" checked>
-        <label class="text-xs">Taxable</label>
-      </div>
-    </div>
-
-    <div id="svcModalMsg" class="mt-2 text-xs text-slate-500"></div>
-
-    <div class="mt-4 flex items-center justify-end gap-2 border-t pt-3">
-      <button id="svcModalArchive" class="hidden px-3 py-1 text-xs border rounded">Archive</button>
-      <button id="svcModalSave" class="px-3 py-1 text-xs bg-[var(--fs-navy)] text-white rounded">Save</button>
-    </div>
-  </div>
-</div>
 
 <!-- Reverse Journal Modal -->
 <div id="reverseJournalModal"
@@ -26318,16 +26919,16 @@ tbody tr:hover {
   </div>
 </div>
 <div id="fs-react-drawer-root"></div>
-<script src="config.js"></script>
+<script src="/app/config.js"></script>
 
-<link rel="stylesheet" href="./dist/assets/hostMount.css?v=20260811b" />
-<script type="module" src="./dist/assets/hostMount.js?v=20260811b"></script>
+<link rel="stylesheet" href="/app/dist/assets/hostMount.css?v=20260811b" />
+<script type="module" src="/app/dist/assets/hostMount.js?v=20260811b"></script>
 
-<script src="/dashboard.js?v=20260811a" defer></script>
-<script src="/js/corporate-structure.js?v=20260807a" defer></script>
-<script src="/js/consolidation.js?v=20260807a" defer></script>
-<script src="/ias41.js"></script>
-<script src="/js/data-migration.js"></script>
+<script src="/app/dashboard.js?v=20260812a" defer></script>
+<script src="/app/js/corporate-structure.js?v=20260807a" defer></script>
+<script src="/app/js/consolidation.js?v=20260807a" defer></script>
+<script src="/app/ias41.js"></script>
+<script src="/app/js/data-migration.js"></script>
 
 <script>
   document.addEventListener("DOMContentLoaded", () => {
