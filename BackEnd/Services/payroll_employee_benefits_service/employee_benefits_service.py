@@ -2062,13 +2062,11 @@ class PayrollEmployeeBenefitsService:
             )
 
             payable=None
-        start=body.get("effective_from")
-        end=body.get("effective_to")
+        start=(body.get("effective_from") or "").strip() or None
+        end=(body.get("effective_to") or "").strip() or None
 
         if start and end and str(end)<str(start):
-            raise ValueError(
-                "Effective-to date cannot precede effective-from date"
-            )
+            raise ValueError("Effective-to date cannot precede effective-from date")
 
         values=(
             code,

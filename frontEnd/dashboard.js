@@ -63239,6 +63239,9 @@ async function saveEditModal() {
 
       if(!x)return;
 
+      x.effective_from=x.effective_from||null;
+      x.effective_to=x.effective_to||null;
+
       await apiFetch(
           plan.id
               ?ENDPOINTS.payroll.benefitPlan(cid(),plan.id)
