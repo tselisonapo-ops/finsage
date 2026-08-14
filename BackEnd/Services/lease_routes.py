@@ -610,9 +610,15 @@ def create_lease(company_id: int):
             journal_date = lease_input.start_date
             description = f"Initial recognition of lease - {lease_input.lease_name}"
 
+        document_ref = (
+            payload2.get("reference")
+            or raw_data.get("reference")
+            or ""
+        ).strip()
+
         journal_entry = {
             "date": journal_date,
-            "ref": f"LEASE-{lease_id}-COMM",
+            "ref": document_ref or f"LEASE-{lease_id}-COMM",
             "description": description,
             "gross_amount": base_amount,
             "net_amount": base_amount,

@@ -78,18 +78,20 @@ async function fetchLessors(companyId: number): Promise<LessorRow[]> {
     .filter((r) => Number.isFinite(r.id) && r.id > 0);
 }
 
-const LeaseWizard: React.FC<LeaseWizardProps> = ({
-  companyId,
-  mode = "inception",
-  defaultLeaseLiabilityAccount,
-  defaultRouAssetAccount,
-  defaultInterestExpenseAccount,
-  defaultDepreciationExpenseAccount,
-  defaultDirectCostOffsetAccount,
-}) => {
+  const LeaseWizard: React.FC<LeaseWizardProps> = ({
+    companyId,
+    mode = "inception",
+    defaultLeaseLiabilityAccount,
+    defaultRouAssetAccount,
+    defaultInterestExpenseAccount,
+    defaultDepreciationExpenseAccount,
+    defaultDirectCostOffsetAccount,
+  }) => {
+
   type LeaseWizardPayloadWithLessor = LeaseWizardPayload & {
     lessor_id: number | null;
-    reference?: string | null; // ✅ ADD THIS
+    reference?: string | null;
+    contract_number?: string | null;
   };
 
   const [step, setStep] = useState<Step>(1);
@@ -116,14 +118,35 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
   const [directCostAction, setDirectCostAction] = useState<"ap_bill" | "paid" | "skip" | null>(null);
   const isExisting = mode === "existing";
 
-  const [bankAccounts, setBankAccounts] = useState<Array<{ id: number; bank_name?: string; account_name?: string; account_number_masked?: string; ledger_account_code?: string }>>([]);
-  const [loadingBankAccounts, setLoadingBankAccounts] = useState(false);
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("");
-  const [directCostPaidDate, setDirectCostPaidDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [showPaidCapture, setShowPaidCapture] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState<Array<{
+    id: number;
+    bank_name?: string;
+    account_name?: string;
+    account_number_masked?: string;
+    ledger_account_code?: string;
+  }>>([]);
 
+  const [loadingBankAccounts, setLoadingBankAccounts] =
+    useState(false);
+
+  const [selectedBankAccountId, setSelectedBankAccountId] =
+    useState<string>("");
+
+  const [directCostPaidDate, setDirectCostPaidDate] =
+    useState<string>(new Date().toISOString().slice(0, 10));
+
+  const [directCostPaidReference, setDirectCostPaidReference] =
+    useState<string>("");
+
+  const [directCostInvoiceNumber, setDirectCostInvoiceNumber] =
+    useState<string>("");
+
+  const [showPaidCapture, setShowPaidCapture] =
+    useState(false);
+    
   const [form, setForm] = useState<LeaseWizardPayloadWithLessor>({
     lease_name: "",
+    contract_number: "",
     lessor_id: null,
     role: "lessee",
     wizard_mode: mode,
@@ -591,6 +614,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
     setShowDirectCostPrompt(false);
     setShowPaidCapture(false);
     setSelectedBankAccountId("");
+    setDirectCostPaidReference("");
     setDirectCostAction(null);
   }
 
@@ -618,7 +642,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       vat_rate: Number(form.vat_rate || 0),
       asset_account: form.rou_asset_account || "BS_NCA_1610",
       description: `Initial direct cost - ${form.lease_name || "Lease"}`,
-      reference: form.reference || "",
+      reference: directCostInvoiceNumber.trim() || "",
       company_id: companyId,
     };
 
@@ -665,7 +689,7 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
         amount: Number(form.initial_direct_costs || 0),
         vat_rate: Number(form.vat_rate || 0),
         rou_asset_account: form.rou_asset_account || "BS_NCA_1610",
-        reference: form.reference || null,
+        reference: directCostPaidReference.trim() || null,
         description: `Initial direct cost - ${form.lease_name || "Lease"}`,
       };
 
@@ -709,9 +733,25 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
       )}
 
       <div className="lease-grid-3">
-        <div className="field-row field-span-2">
+        <div className="field-row">
           <label>Lease name</label>
-          <input type="text" name="lease_name" value={form.lease_name} onChange={handleChange} />
+          <input
+            type="text"
+            name="lease_name"
+            value={form.lease_name}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="field-row">
+          <label>Lease contract number</label>
+          <input
+            type="text"
+            name="contract_number"
+            value={form.contract_number || ""}
+            onChange={handleChange}
+            placeholder="e.g. LEASE-2025-001"
+          />
         </div>
 
         <div className="field-row">
@@ -720,11 +760,18 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
             name="lessor_id"
             value={String(form.lessor_id ?? "")}
             onChange={(e) => {
-              const v = e.target.value ? Number(e.target.value) : null;
-              setForm((f) => ({ ...f, lessor_id: v }));
+              const v = e.target.value
+                ? Number(e.target.value)
+                : null;
+
+              setForm((f) => ({
+                ...f,
+                lessor_id: v,
+              }));
             }}
           >
             <option value="">Select lessor...</option>
+
             {lessors.map((l) => (
               <option key={l.id} value={String(l.id)}>
                 {l.name}
@@ -1250,6 +1297,20 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
                 </p>
               )}
 
+              <div className="dc-form">
+                <div>
+                  <label>Lessor invoice number</label>
+                  <input
+                    type="text"
+                    value={directCostInvoiceNumber}
+                    onChange={(e) =>
+                      setDirectCostInvoiceNumber(e.target.value)
+                    }
+                    placeholder="Invoice / document reference"
+                  />
+                </div>
+              </div>
+
               <div className="dc-actions">
                 <button className="btn-primary" onClick={handleDirectCostCreateApBill}>
                   📄 Create AP Bill
@@ -1285,14 +1346,21 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
                   <label>Bank account</label>
                   <select
                     value={selectedBankAccountId}
-                    onChange={(e) => setSelectedBankAccountId(e.target.value)}
+                    onChange={(e) =>
+                      setSelectedBankAccountId(e.target.value)
+                    }
                   >
                     <option value="">Select bank account...</option>
+
                     {bankAccounts.map((b) => (
                       <option key={b.id} value={String(b.id)}>
                         {b.bank_name || "Bank"} - {b.account_name || "Account"}
-                        {b.account_number_masked ? ` (${b.account_number_masked})` : ""}
-                        {b.ledger_account_code ? ` - ${b.ledger_account_code}` : ""}
+                        {b.account_number_masked
+                          ? ` (${b.account_number_masked})`
+                          : ""}
+                        {b.ledger_account_code
+                          ? ` - ${b.ledger_account_code}`
+                          : ""}
                       </option>
                     ))}
                   </select>
@@ -1303,13 +1371,23 @@ const LeaseWizard: React.FC<LeaseWizardProps> = ({
                   <input
                     type="date"
                     value={directCostPaidDate}
-                    onChange={(e) => setDirectCostPaidDate(e.target.value)}
+                    onChange={(e) =>
+                      setDirectCostPaidDate(e.target.value)
+                    }
                   />
                 </div>
 
-                {loadingBankAccounts && (
-                  <p className="dc-loading">Loading bank accounts...</p>
-                )}
+                <div>
+                  <label>Payment reference</label>
+                  <input
+                    type="text"
+                    value={directCostPaidReference}
+                    onChange={(e) =>
+                      setDirectCostPaidReference(e.target.value)
+                    }
+                    placeholder="Bank / payment reference"
+                  />
+                </div>
               </div>
 
               <div className="dc-actions">

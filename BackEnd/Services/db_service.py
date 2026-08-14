@@ -37859,6 +37859,9 @@ class DatabaseService:
         ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_at TIMESTAMPTZ NULL,
         ADD COLUMN IF NOT EXISTS lease_tax_treatment_updated_by INT NULL;
 
+        ALTER TABLE {schema}.leases
+        ADD COLUMN IF NOT EXISTS contract_number TEXT NULL;
+
         DO $fk_leases_tax_treatment_rule$
         BEGIN
             IF NOT EXISTS (
