@@ -596,6 +596,7 @@ def create_lease(company_id: int):
             source_company_id=raw_data.get("source_company_id"),
             engagement_company_id=raw_data.get("engagement_company_id"),
             engagement_id=raw_data.get("engagement_id"),
+            created_by_user_id=user_id,
         )
 
         step = "after_insert_lease"

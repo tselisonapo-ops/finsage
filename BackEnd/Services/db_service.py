@@ -60577,19 +60577,31 @@ class DatabaseService:
         result: "LeaseScheduleResult",
         *,
         lessor_id: int,
+        source_company_id: int | None = None,
         engagement_company_id: int | None = None,
         engagement_id: int | None = None,
         created_by_user_id: int | None = None,
     ) -> int:
         """
-        Persist lease master + schedule into company_{id}.leases and company_{id}.lease_schedule.
+        Persist lease master + schedule into
+        company_{id}.leases and company_{id}.lease_schedule.
+
+        company_id:
+            Company that owns the lease.
+
+        source_company_id:
+            Practitioner/source company that created the lease
+            during delegated access.
+
+        engagement_company_id / engagement_id:
+            Engagement context used for practitioner activity tracking.
+
         Returns lease_id.
         """
         schema = f"company_{company_id}"
         lease = result.lease_input
 
         with self._conn_cursor() as (conn, cur):
-            # Insert master lease row
             cur.execute(
                 f"""
                 INSERT INTO {schema}.leases (
@@ -60648,9 +60660,14 @@ class DatabaseService:
             )
 
             lease_id_row = cur.fetchone()
-            lease_id = lease_id_row["id"] if isinstance(lease_id_row, dict) else lease_id_row[0]
+            lease_id = (
+                lease_id_row["id"]
+                if isinstance(lease_id_row, dict)
+                else lease_id_row[0]
+            )
 
             version_no = 1
+
             for p in result.periods:
                 cur.execute(
                     f"""
@@ -60731,13 +60748,19 @@ class DatabaseService:
                     currency_code="USD",
                     source_table="leases",
                     source_id=int(lease_id),
-                    notes="Lease master and initial schedule created",
+                    notes=(
+                        "Lease master and initial schedule created"
+                        + (
+                            f" from source company {int(source_company_id)}"
+                            if source_company_id
+                            else ""
+                        )
+                    ),
                     created_by_user_id=created_by_user_id,
                     updated_by_user_id=created_by_user_id,
                 )
-                
-            return lease_id
 
+            return int(lease_id)
 
     def post_lease_direct_cost_paid(
         self,
