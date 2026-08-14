@@ -136772,16 +136772,16 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         tax_number = (data.get("tax_number") or "").strip() or None
 
         if id_number:
-            existing = self.fetch_one(
-                f"""
+            existing = self.fetch_one(f"""
                 SELECT id, employee_no, first_name, last_name
                 FROM {schema}.payroll_employees
-                WHERE company_id = %s
-                AND id_number = %s
+                WHERE company_id=%s
+                AND id_number=%s
                 LIMIT 1;
-                """,
-                (company_id, id_number),
-            )
+            """, (
+                company_id,
+                id_number,
+            ))
 
             if existing:
                 raise ValueError(
@@ -136789,8 +136789,40 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                     f"({existing.get('employee_no')})."
                 )
 
-        return self.fetch_one(
-            f"""
+        department_id = data.get("department_id")
+        position_id = data.get("position_id")
+
+        if position_id:
+            position = self.fetch_one(f"""
+                SELECT id, department_id
+                FROM {schema}.payroll_positions
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                LIMIT 1;
+            """, (
+                company_id,
+                int(position_id),
+            ))
+
+            if not position:
+                raise ValueError(
+                    "Selected position was not found."
+                )
+
+            if (
+                department_id
+                and position.get("department_id")
+                and int(position["department_id"]) != int(department_id)
+            ):
+                raise ValueError(
+                    "Selected position does not belong to the selected department."
+                )
+
+            if not department_id and position.get("department_id"):
+                department_id = position.get("department_id")
+
+        return self.fetch_one(f"""
             INSERT INTO {schema}.payroll_employees (
                 company_id,
                 employee_no,
@@ -136811,29 +136843,78 @@ Intangible assets are derecognised on disposal or when no future economic benefi
                 %s,%s,%s,%s,%s,%s
             )
             RETURNING *;
-            """,
-            (
-                company_id,
-                employee_no,
-                data.get("first_name"),
-                data.get("last_name"),
-                data.get("email"),
-                data.get("phone"),
-                id_number,
-                passport_number,
-                tax_number,
-                data.get("department_id"),
-                data.get("position_id"),
-                data.get("start_date"),
-                data.get("employment_status") or "active",
-            ),
-        )
-
+        """, (
+            company_id,
+            employee_no,
+            data.get("first_name"),
+            data.get("last_name"),
+            data.get("email"),
+            data.get("phone"),
+            id_number,
+            passport_number,
+            tax_number,
+            department_id,
+            position_id,
+            data.get("start_date"),
+            data.get("employment_status") or "active",
+        ))
 
     def payroll_employee_update(self, company_id: int, employee_id: int, data: dict):
-        schema = self.company_schema(company_id)
+        company_id=int(company_id)
+        employee_id=int(employee_id)
+        schema=self.company_schema(company_id)
 
-        allowed = [
+        current=self.payroll_employee_get(
+            company_id,
+            employee_id,
+        )
+
+        if not current:
+            raise ValueError("Payroll employee not found")
+
+        department_id=(
+            data.get("department_id")
+            if "department_id" in data
+            else current.get("department_id")
+        )
+
+        position_id=(
+            data.get("position_id")
+            if "position_id" in data
+            else current.get("position_id")
+        )
+
+        if position_id:
+            position=self.fetch_one(f"""
+                SELECT id,department_id
+                FROM {schema}.payroll_positions
+                WHERE company_id=%s
+                AND id=%s
+                AND is_active=TRUE
+                LIMIT 1;
+            """,(
+                company_id,
+                int(position_id),
+            ))
+
+            if not position:
+                raise ValueError(
+                    "Selected position was not found."
+                )
+
+            if (
+                department_id
+                and position.get("department_id")
+                and int(position["department_id"])!=int(department_id)
+            ):
+                raise ValueError(
+                    "Selected position does not belong to the selected department."
+                )
+
+            if not department_id and position.get("department_id"):
+                department_id=position.get("department_id")
+
+        allowed=[
             "first_name",
             "last_name",
             "email",
@@ -136848,30 +136929,46 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "employment_status",
         ]
 
-        sets = []
-        params = []
+        sets=[]
+        params=[]
 
         for key in allowed:
-            if key in data:
-                value = data.get(key)
+            if key not in data:
+                continue
 
-                if key in ("id_number", "passport_number", "tax_number"):
-                    value = (value or "").strip() or None
+            value=data.get(key)
 
-                sets.append(f"{key}=%s")
-                params.append(value)
+            if key in (
+                "id_number",
+                "passport_number",
+                "tax_number",
+            ):
+                value=(value or "").strip() or None
+
+            if key=="department_id":
+                value=department_id
+
+            if key=="position_id":
+                value=position_id
+
+            sets.append(f"{key}=%s")
+            params.append(value)
 
         if not sets:
-            return self.payroll_employee_get(company_id, employee_id)
+            return current
 
-        params.extend([int(company_id), int(employee_id)])
+        params.extend([
+            company_id,
+            employee_id,
+        ])
 
         return self.fetch_one(f"""
             UPDATE {schema}.payroll_employees
             SET {", ".join(sets)}
-            WHERE company_id=%s AND id=%s
+            WHERE company_id=%s
+            AND id=%s
             RETURNING *;
-        """, tuple(params))
+        """,tuple(params))
 
     def payroll_employee_archive(
         self,

@@ -23592,8 +23592,26 @@ tbody tr:hover {
               <label>Phone <input id="payPhone"></label>
               <label>ID Number <input id="payIdNumber"></label>
               <label>Passport Number <input id="payPassportNumber"></label>
-              <label>Tax Number <input id="payTaxNumber"></label>
-              <label>Start Date <input id="payStartDate" type="date"></label>
+              <label>Tax Number
+                <input id="payTaxNumber">
+              </label>
+
+              <label>Department
+                <select id="payDepartmentId">
+                  <option value="">Select department…</option>
+                </select>
+              </label>
+
+              <label>Position
+                <select id="payPositionId">
+                  <option value="">Select position…</option>
+                </select>
+              </label>
+
+              <label>Start Date
+                <input id="payStartDate" type="date">
+              </label>
+
               <label>Status
                 <select id="payEmploymentStatus">
                   <option value="active">Active</option>

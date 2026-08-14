@@ -70757,6 +70757,70 @@ async function saveEditModal() {
     `;
   }
 
+  function renderPayrollEmployeeDepartments() {
+    const select=$("payDepartmentId");
+    if(!select)return;
+
+    const current=select.value;
+
+    const departments=(
+      payrollState.setup?.departments||[]
+    ).filter(x=>x.is_active!==false);
+
+    select.innerHTML=
+      `<option value="">Select department…</option>`+
+      departments.map(x=>`
+        <option value="${esc(x.id)}">
+          ${esc(x.name)}
+        </option>
+      `).join("");
+
+    if(
+      current&&
+      departments.some(x=>String(x.id)===String(current))
+    ){
+      select.value=String(current);
+    }
+  }
+
+  function renderPayrollEmployeePositions(selectedPositionId=null) {
+    const select=$("payPositionId");
+    if(!select)return;
+
+    const departmentId=Number(
+      $("payDepartmentId")?.value||0
+    );
+
+    const current=
+      selectedPositionId??
+      select.value;
+
+    const positions=(
+      payrollState.setup?.positions||[]
+    ).filter(x=>
+      x.is_active!==false&&
+      (
+        !departmentId||
+        Number(x.department_id)===departmentId
+      )
+    );
+
+    select.innerHTML=
+      `<option value="">Select position…</option>`+
+      positions.map(x=>`
+        <option value="${esc(x.id)}">
+          ${esc(x.title)}
+        </option>
+      `).join("");
+
+    if(
+      current&&
+      positions.some(x=>String(x.id)===String(current))
+    ){
+      select.value=String(current);
+    }
+  }
+
   function renderPayrollSetupSelects() {
     const setup = payrollState.setup || {};
 
@@ -70820,6 +70884,8 @@ async function saveEditModal() {
       x => `${x.code} — ${x.name}`
     );
 
+    renderPayrollEmployeeDepartments();
+    renderPayrollEmployeePositions();
     renderPayrollTaxAuthoritySelects();
     renderEmployeeBenefitPlanSelect();
     renderEmployeePaySetupChoices();
@@ -71818,32 +71884,46 @@ async function saveEditModal() {
       document.querySelectorAll(
         `[data-pay-choice-type="${type}"]:checked`
       )
-    ).map(checkbox => {
-      const itemId = Number(checkbox.dataset.payChoiceId);
-      const key = `${type}-${itemId}`;
+    ).map(checkbox=>{
+      const itemId=Number(checkbox.dataset.payChoiceId);
+      const key=`${type}-${itemId}`;
 
-      const method =
+      const method=
         document.querySelector(
           `[data-pay-choice-method="${key}"]`
-        )?.value || "fixed_amount";
+        )?.value||"fixed_amount";
 
-      const setupListMap = {
-        earning: payrollState.setup?.earning_types || [],
-        deduction: payrollState.setup?.deduction_types || [],
-        benefit: payrollState.setup?.benefit_types || [],
-        contribution: payrollState.setup?.contribution_types || [],
+      const setupListMap={
+        earning:payrollState.setup?.earning_types||[],
+        deduction:payrollState.setup?.deduction_types||[],
+        benefit:payrollState.setup?.benefit_types||[],
+        contribution:payrollState.setup?.contribution_types||[],
       };
 
-      const item = setupListMap[type].find(
-        row => Number(row.id) === itemId
-      ) || {};
+      const item=setupListMap[type].find(
+        row=>Number(row.id)===itemId
+      )||{};
 
-      return {
-        id: itemId,
-        code: item.code || "",
-        name: item.name || "Payroll Item",
+      const assignedItem=(
+        payrollState.selectedPaySetupEmployee?.items||[]
+      ).find(
+        row=>
+          String(row.item_type)===String(type)&&
+          Number(row.item_id)===itemId
+      )||{};
+
+      return{
+        id:itemId,
+        code:item.code||"",
+        name:item.name||"Payroll Item",
         method,
-        amount: payrollPreviewItemAmount(key, method),
+        amount:payrollPreviewItemAmount(key,method),
+        taxable:item.taxable!==false,
+        source:assignedItem.source||null,
+        source_plan_id:assignedItem.source_plan_id||null,
+        source_plan_code:assignedItem.source_plan_code||null,
+        source_plan_name:assignedItem.source_plan_name||null,
+        source_plan_type:assignedItem.source_plan_type||null,
       };
     });
   }
@@ -72194,213 +72274,295 @@ async function saveEditModal() {
   }
 
   function renderPayrollPayslipPreview() {
-    const employee = payrollPreviewSelectedEmployee();
+    const employee=payrollPreviewSelectedEmployee();
 
-    const employeeName = employee
-      ? [employee.first_name, employee.last_name]
-          .filter(Boolean)
-          .join(" ")
-      : "Select employee";
+    const employeeName=employee
+      ?[employee.first_name,employee.last_name]
+        .filter(Boolean)
+        .join(" ")
+      :"Select employee";
 
-    setTxt("payrollPreviewEmployeeName", employeeName || "Select employee");
-    setTxt("payrollPreviewEmployeeNo", employee?.employee_no || "—");
+    setTxt(
+      "payrollPreviewEmployeeName",
+      employeeName||"Select employee"
+    );
 
-    const payBasisLabels = {
-      monthly: "Monthly Salary",
-      hourly: "Hours × Rate",
-      daily: "Days × Rate",
-      quantity: "Quantity × Rate",
-      commission_only: "Commission Only",
+    setTxt(
+      "payrollPreviewEmployeeNo",
+      employee?.employee_no||"—"
+    );
+
+    const payBasisLabels={
+      monthly:"Monthly Salary",
+      hourly:"Hours × Rate",
+      daily:"Days × Rate",
+      quantity:"Quantity × Rate",
+      commission_only:"Commission Only",
     };
 
     setTxt(
       "payrollPreviewPayBasis",
-      payBasisLabels[$("payrollPayBasis")?.value] || "Monthly Salary"
+      payBasisLabels[$("payrollPayBasis")?.value]||
+        "Monthly Salary"
     );
 
     setTxt(
       "payrollPreviewEffectiveFrom",
       $("payrollPaySetupEffectiveFrom")?.value
-        ? formatPayrollDate($("payrollPaySetupEffectiveFrom").value)
-        : "—"
+        ?formatPayrollDate(
+          $("payrollPaySetupEffectiveFrom").value
+        )
+        :"—"
     );
 
-    const company = window.CURRENT_COMPANY || {};
+    const company=window.CURRENT_COMPANY||{};
 
     setTxt(
       "payrollPreviewCompanyName",
-      company.name || "Company"
+      company.name||"Company"
     );
 
     setTxt(
       "payrollPreviewCompanyDetails",
       [
         company.company_reg_no
-          ? `Reg No: ${company.company_reg_no}`
-          : "",
+          ?`Reg No: ${company.company_reg_no}`
+          :"",
         company.vat
-          ? `VAT No: ${company.vat}`
-          : "",
-      ].filter(Boolean).join(" | ") || "Payroll preview"
+          ?`VAT No: ${company.vat}`
+          :"",
+      ].filter(Boolean).join(" | ")||
+        "Payroll preview"
     );
 
-    const companyLogo = $("payrollPreviewCompanyLogo");
-    const logoFallback = $("payrollPreviewLogoFallback");
-    const companyName = company.name || "Company";
+    const companyLogo=$("payrollPreviewCompanyLogo");
+    const logoFallback=$("payrollPreviewLogoFallback");
+    const companyName=company.name||"Company";
 
-    // Build initials from company name (e.g. "FinSage Inc" → "FSI")
-    const initials = companyName
-      .replace(/[^A-Za-z\s]/g, "")
+    const initials=companyName
+      .replace(/[^A-Za-z\s]/g,"")
       .split(/\s+/)
       .filter(Boolean)
-      .map(w => w[0].toUpperCase())
-      .slice(0, 3)
+      .map(w=>w[0].toUpperCase())
+      .slice(0,3)
       .join("");
 
-    if (companyLogo && company.logo_url) {
-      // Logo URL is available — show it
-      companyLogo.src = company.logo_url;
+    if(companyLogo&&company.logo_url){
+      companyLogo.src=company.logo_url;
       companyLogo.classList.remove("hidden");
       logoFallback?.classList.add("hidden");
-    } else {
-      // No logo URL — show dynamic initials as fallback
+    }else{
       companyLogo?.classList.add("hidden");
-      if (logoFallback) {
-        logoFallback.textContent = initials || "F";
+
+      if(logoFallback){
+        logoFallback.textContent=initials||"F";
         logoFallback.classList.remove("hidden");
       }
 
-      // Try to fetch the company record to get the logo
-      if (!company.logo_url && cid()) {
+      if(!company.logo_url&&cid()){
         apiFetch(`/api/companies/${cid()}`)
-          .then(c => {
-            if (c && c.logo_url) {
-              companyLogo.src = c.logo_url;
+          .then(c=>{
+            if(c?.logo_url){
+              companyLogo.src=c.logo_url;
               companyLogo.classList.remove("hidden");
               logoFallback?.classList.add("hidden");
-              // Cache it so we don't fetch again
-              if (window.CURRENT_COMPANY) {
-                window.CURRENT_COMPANY.logo_url = c.logo_url;
+
+              if(window.CURRENT_COMPANY){
+                window.CURRENT_COMPANY.logo_url=
+                  c.logo_url;
               }
             }
           })
-          .catch(() => {});
+          .catch(()=>{});
       }
     }
-    const earnings = collectPayrollPreviewLines("earning")
-      .filter(line => line.code !== "BASIC");
 
-    const deductions = collectPayrollPreviewLines("deduction");
-    const benefits = collectPayrollPreviewLines("benefit");
-    const contributions = collectPayrollPreviewLines("contribution");
+    const earnings=
+      collectPayrollPreviewLines("earning")
+        .filter(line=>line.code!=="BASIC");
 
-    const basicPay = payrollPreviewBasicPay();
+    const deductions=
+      collectPayrollPreviewLines("deduction");
 
-    const basicEarning = {
-      code: "BASIC",
-      name: $("payrollBasicEarningTypeId")
-        ?.selectedOptions?.[0]?.textContent?.trim() || "Basic Salary",
-      amount: basicPay,
+    const benefits=
+      collectPayrollPreviewLines("benefit");
+
+    const contributions=
+      collectPayrollPreviewLines("contribution");
+
+    const basicPay=payrollPreviewBasicPay();
+
+    const basicEarning={
+      code:"BASIC",
+      name:
+        $("payrollBasicEarningTypeId")
+          ?.selectedOptions?.[0]
+          ?.textContent?.trim()||
+        "Basic Salary",
+      amount:basicPay,
     };
 
-    const earningLines = basicPay > 0
-      ? [basicEarning, ...earnings]
-      : earnings;
+    const earningLines=
+      basicPay>0
+        ?[basicEarning,...earnings]
+        :earnings;
 
-    const taxableBenefits = benefits.reduce(
-      (total, line) => total + Number(line.amount || 0),
+    const cashGross=earningLines.reduce(
+      (total,line)=>
+        total+Number(line.amount||0),
       0
     );
 
-    const grossPay =
-      earningLines.reduce(
-        (total, line) => total + Number(line.amount || 0),
+    const taxableBenefits=benefits
+      .filter(line=>line.taxable!==false)
+      .reduce(
+        (total,line)=>
+          total+Number(line.amount||0),
         0
-      ) + taxableBenefits;
-
-    const payeTreatment =
-      $("payrollPayTaxTreatment")?.value || "standard";
-
-    let calculatedPaye = 0;
-
-    if (payeTreatment === "manual") {
-      calculatedPaye = Number(
-        $("payrollManualPayeAmount")?.value || 0
       );
 
-    } else if (payeTreatment === "exempt") {
-      calculatedPaye = 0;
+    const taxableEmployerContributions=
+      contributions
+        .filter(line=>
+          line.source==="benefit_plan"
+        )
+        .reduce(
+          (total,line)=>
+            total+Number(line.amount||0),
+          0
+        );
 
-    } else {
-      // Standard PAYE — calculate from tax brackets
+    const grossPay=
+      cashGross+
+      taxableBenefits;
 
-      let taxableIncome = grossPay;
+    const taxableRemuneration=
+      grossPay+
+      taxableEmployerContributions;
 
-      // Subtract pension/retirement employee deductions from taxable income
-      // (SA SARS section 11F — pension fund contributions are tax-deductible)
-      const pensionDeductions = deductions.filter(d =>
-        /PENSION|RETIREMENT|RA_/i.test(d.code || "")
+    const payeTreatment=
+      $("payrollPayTaxTreatment")?.value||
+      "standard";
+
+    let calculatedPaye=0;
+
+    if(payeTreatment==="manual"){
+      calculatedPaye=Number(
+        $("payrollManualPayeAmount")?.value||0
       );
 
-      const totalPensionDeduction = pensionDeductions.reduce(
-        (sum, d) => sum + Number(d.amount || 0), 0
-      );
+    }else if(payeTreatment==="exempt"){
+      calculatedPaye=0;
 
-      taxableIncome -= totalPensionDeduction;
-      if (taxableIncome < 0) taxableIncome = 0;
+    }else{
+      let taxableIncome=taxableRemuneration;
 
-      calculatedPaye = calculatePreviewPaye(taxableIncome);
+      const pensionDeductions=
+        deductions.filter(d=>
+          /PENSION|RETIREMENT|RA_/i.test(
+            `${d.code||""} ${d.name||""}`
+          )
+        );
+
+      const employeeRetirementContribution=
+        pensionDeductions.reduce(
+          (sum,d)=>
+            sum+Number(d.amount||0),
+          0
+        );
+
+      const employerRetirementContribution=
+        contributions
+          .filter(c=>
+            c.source==="benefit_plan"&&
+            [
+              "defined_contribution",
+              "defined_benefit",
+            ].includes(
+              String(c.source_plan_type||"")
+            )
+          )
+          .reduce(
+            (sum,c)=>
+              sum+Number(c.amount||0),
+            0
+          );
+
+      const retirementDeduction=
+        employeeRetirementContribution+
+        employerRetirementContribution;
+
+      taxableIncome-=retirementDeduction;
+
+      if(taxableIncome<0){
+        taxableIncome=0;
+      }
+
+      calculatedPaye=
+        calculatePreviewPaye(taxableIncome);
     }
 
-    // Build deduction lines:
-    // Include all deductions EXCEPT any user-added "PAYE" line
-    // (the calculated PAYE is added separately below)
-    const deductionLines = deductions.filter(d => d.code !== "PAYE");
+    const deductionLines=
+      deductions.filter(
+        d=>d.code!=="PAYE"
+      );
 
-    if (calculatedPaye > 0) {
+    if(calculatedPaye>0){
       deductionLines.push({
-        code: "PAYE",
-        name: "PAYE",
-        amount: calculatedPaye,
+        code:"PAYE",
+        name:"PAYE",
+        amount:calculatedPaye,
       });
     }
 
-    /* ── END PAYE replacement ── */
+    const payeNoteEl=
+      $("payrollPreviewPayeNote");
 
+    if(payeNoteEl){
+      if(
+        payeTreatment==="standard"&&
+        calculatedPaye>0
+      ){
+        const ctx=payrollState.taxContext;
+        const authorityName=
+          ctx?.authority_code||"Tax Authority";
+        const yearLabel=
+          ctx?.tax_year_label||"current year";
 
-    /* ── Optional: show which tax method was used in the preview ── */
+        payeNoteEl.textContent=
+          `Bracket-based (${authorityName}, ${yearLabel})`;
 
-    const payeNoteEl = $("payrollPreviewPayeNote");
-    if (payeNoteEl) {
-      if (payeTreatment === "standard" && calculatedPaye > 0) {
-        const ctx = payrollState.taxContext;
-        const authorityName = ctx?.authority_code || "Tax Authority";
-        const yearLabel = ctx?.tax_year_label || "current year";
-        payeNoteEl.textContent =
-          "Bracket-based (" + authorityName + ", " + yearLabel + ")";
         payeNoteEl.classList.remove("hidden");
-      } else if (payeTreatment === "exempt") {
-        payeNoteEl.textContent = "PAYE exempt";
+
+      }else if(payeTreatment==="exempt"){
+        payeNoteEl.textContent="PAYE exempt";
         payeNoteEl.classList.remove("hidden");
-      } else if (payeTreatment === "manual") {
-        payeNoteEl.textContent = "Manually entered";
+
+      }else if(payeTreatment==="manual"){
+        payeNoteEl.textContent="Manually entered";
         payeNoteEl.classList.remove("hidden");
-      } else {
+
+      }else{
         payeNoteEl.classList.add("hidden");
       }
     }
 
-    const totalDeductions = deductionLines.reduce(
-      (total, line) => total + Number(line.amount || 0),
-      0
-    );
+    const totalDeductions=
+      deductionLines.reduce(
+        (total,line)=>
+          total+Number(line.amount||0),
+        0
+      );
 
-    const employerTotal = contributions.reduce(
-      (total, line) => total + Number(line.amount || 0),
-      0
-    );
+    const employerTotal=
+      contributions.reduce(
+        (total,line)=>
+          total+Number(line.amount||0),
+        0
+      );
 
-    const netPay = grossPay - totalDeductions;
+    const netPay=
+      grossPay-totalDeductions;
 
     renderPayrollPreviewLines(
       "payrollPreviewEarnings",
@@ -72412,12 +72574,21 @@ async function saveEditModal() {
       deductionLines
     );
 
-    setTxt("payrollPreviewGross", payrollPreviewMoney(grossPay));
+    setTxt(
+      "payrollPreviewGross",
+      payrollPreviewMoney(grossPay)
+    );
+
     setTxt(
       "payrollPreviewDeductionsTotal",
       payrollPreviewMoney(totalDeductions)
     );
-    setTxt("payrollPreviewNet", payrollPreviewMoney(netPay));
+
+    setTxt(
+      "payrollPreviewNet",
+      payrollPreviewMoney(netPay)
+    );
+
     setTxt(
       "payrollPreviewEmployerTotal",
       payrollPreviewMoney(employerTotal)
@@ -78295,7 +78466,8 @@ async function saveEditModal() {
     [
       "payrollEditingEmployeeId",
       "payFirstName","payLastName","payEmail","payPhone",
-      "payIdNumber","payPassportNumber","payTaxNumber","payStartDate",
+      "payIdNumber","payPassportNumber","payTaxNumber",
+      "payDepartmentId","payPositionId","payStartDate",
       "payBasicSalary","payHourlyRate","payNormalHours","payContractFrom",
       "payTaxProfileAuthorityId","payTaxProfileNumber","payTaxEffectiveFrom",
       "payTaxDateOfBirth","payTaxDirectiveNumber","payTaxDirectiveRate",
@@ -78398,6 +78570,7 @@ async function saveEditModal() {
       if($(id))$(id).innerHTML="";
     });
 
+    renderPayrollEmployeePositions();
     updatePayrollCountryTaxFields();
     updatePayrollTaxMethodFields();
   }
@@ -78420,9 +78593,18 @@ async function saveEditModal() {
     $("payPhone").value = e.phone || "";
     $("payIdNumber").value = e.id_number || "";
     $("payPassportNumber").value = e.passport_number || "";
-    $("payTaxNumber").value = e.tax_number || "";
-    $("payStartDate").value = e.start_date || "";
-    $("payEmploymentStatus").value = e.employment_status || "active";
+    $("payTaxNumber").value = e.tax_number||"";
+
+    $("payDepartmentId").value =
+      e.department_id||"";
+
+    renderPayrollEmployeePositions(
+      e.position_id||null
+    );
+
+    $("payStartDate").value = e.start_date||"";
+    $("payEmploymentStatus").value =
+      e.employment_status||"active";
 
     const contract = (e.contracts || [])[0] || {};
     $("payContractType").value = contract.contract_type || "permanent";
@@ -78728,9 +78910,37 @@ async function saveEditModal() {
       id_number:$("payIdNumber").value.trim()||null,
       passport_number:$("payPassportNumber").value.trim()||null,
       tax_number:$("payTaxNumber").value.trim()||null,
+
+      department_id:
+        $("payDepartmentId")?.value
+          ?Number($("payDepartmentId").value)
+          :null,
+
+      position_id:
+        $("payPositionId")?.value
+          ?Number($("payPositionId").value)
+          :null,
+
       start_date:$("payStartDate").value,
       employment_status:$("payEmploymentStatus").value,
     };
+
+    const selectedPosition=(
+      payrollState.setup?.positions||[]
+    ).find(
+      x=>Number(x.id)===Number(payload.position_id||0)
+    );
+
+    if(
+      selectedPosition&&
+      payload.department_id&&
+      Number(selectedPosition.department_id)!==
+        Number(payload.department_id)
+    ){
+      throw new Error(
+        "Selected position does not belong to the selected department."
+      );
+    }
 
     const res=await apiFetch(
       employeeId
@@ -80141,6 +80351,10 @@ async function saveEditModal() {
           );
         })
       );
+
+    $("payDepartmentId")?.addEventListener("change",()=>{
+      renderPayrollEmployeePositions();
+    });
 
     $("payrollBackToRunsBtn")?.addEventListener("click", () => {
       payrollState.selectedRun = null;
