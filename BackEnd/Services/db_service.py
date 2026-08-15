@@ -28823,7 +28823,7 @@ class DatabaseService:
             migration_version=self.OPS_MIGRATION_VERSION,
         )
 
-    PAYROLL_MIGRATION_VERSION=4
+    PAYROLL_MIGRATION_VERSION=5
     def ensure_company_payroll(
         self,
         company_id:int,
@@ -29248,10 +29248,24 @@ class DatabaseService:
                 SELECT 1
                 FROM pg_constraint
                 WHERE conname = '{schema}_payroll_emp_id_number_uniq'
+                AND conrelid = '{schema}.payroll_employees'::regclass
             ) THEN
-                ALTER TABLE {schema}.payroll_employees
-                ADD CONSTRAINT {schema}_payroll_emp_id_number_uniq
-                UNIQUE (company_id, id_number);
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM {schema}.payroll_employees
+                    WHERE id_number IS NOT NULL
+                    AND BTRIM(id_number) <> ''
+                    GROUP BY company_id, id_number
+                    HAVING COUNT(*) > 1
+                ) THEN
+
+                    ALTER TABLE {schema}.payroll_employees
+                    ADD CONSTRAINT {schema}_payroll_emp_id_number_uniq
+                    UNIQUE (company_id, id_number);
+
+                END IF;
+
             END IF;
         END $$;
 
@@ -30886,10 +30900,14 @@ class DatabaseService:
             )
         );
 
-        CONSTRAINT fk_payroll_leave_policy_type
-            FOREIGN KEY (leave_type_id)
-            REFERENCES {schema}.payroll_leave_types(id)
-            ON DELETE RESTRICT,
+        ALTER TABLE {schema}.payroll_leave_policies
+        DROP CONSTRAINT IF EXISTS fk_payroll_leave_policy_type;
+
+        ALTER TABLE {schema}.payroll_leave_policies
+        ADD CONSTRAINT fk_payroll_leave_policy_type
+        FOREIGN KEY (leave_type_id)
+        REFERENCES {schema}.payroll_leave_types(id)
+        ON DELETE RESTRICT;
             
         CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_policy_tiers (
             id BIGSERIAL PRIMARY KEY,
@@ -31023,10 +31041,14 @@ class DatabaseService:
             )
         );
 
-        CONSTRAINT fk_payroll_leave_accrual_line_type
-            FOREIGN KEY (leave_type_id)
-            REFERENCES {schema}.payroll_leave_types(id)
-            ON DELETE RESTRICT,
+        ALTER TABLE {schema}.payroll_leave_accrual_run_lines
+        DROP CONSTRAINT IF EXISTS fk_payroll_leave_accrual_line_type;
+
+        ALTER TABLE {schema}.payroll_leave_accrual_run_lines
+        ADD CONSTRAINT fk_payroll_leave_accrual_line_type
+        FOREIGN KEY (leave_type_id)
+        REFERENCES {schema}.payroll_leave_types(id)
+        ON DELETE RESTRICT;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_schemes (
             id BIGSERIAL PRIMARY KEY,
@@ -31079,58 +31101,59 @@ class DatabaseService:
                 TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
         ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            DROP CONSTRAINT IF EXISTS
-                fk_payroll_bonus_assignment_scheme;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            ADD CONSTRAINT fk_payroll_bonus_assignment_scheme
-            FOREIGN KEY(scheme_id)
-            REFERENCES {schema}.payroll_bonus_schemes(id)
-            ON DELETE CASCADE;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
             DROP CONSTRAINT IF EXISTS fk_payroll_bonus_assignment_scheme,
-            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_assignment_employee;
+            DROP CONSTRAINT IF EXISTS fk_payroll_bonus_assignment_employee,
+            DROP CONSTRAINT IF EXISTS chk_payroll_bonus_assignment_dates;
 
         ALTER TABLE {schema}.payroll_employee_bonus_assignments
             ADD CONSTRAINT fk_payroll_bonus_assignment_scheme
                 FOREIGN KEY(scheme_id)
                 REFERENCES {schema}.payroll_bonus_schemes(id)
                 ON DELETE CASCADE,
+
             ADD CONSTRAINT fk_payroll_bonus_assignment_employee
                 FOREIGN KEY(employee_id)
                 REFERENCES {schema}.payroll_employees(id)
-                ON DELETE CASCADE;
+                ON DELETE CASCADE,
 
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            DROP CONSTRAINT IF EXISTS
-                fk_payroll_bonus_assignment_employee;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            ADD CONSTRAINT fk_payroll_bonus_assignment_employee
-            FOREIGN KEY(employee_id)
-            REFERENCES {schema}.payroll_employees(id)
-            ON DELETE CASCADE;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
-            DROP CONSTRAINT IF EXISTS
-                chk_payroll_bonus_assignment_dates;
-
-        ALTER TABLE {schema}.payroll_employee_bonus_assignments
             ADD CONSTRAINT chk_payroll_bonus_assignment_dates
-            CHECK(
-                effective_to IS NULL
-                OR effective_to>=effective_from
-            );
+                CHECK(
+                    effective_to IS NULL
+                    OR effective_to >= effective_from
+                );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS
-            uq_payroll_bonus_assignment
-        ON {schema}.payroll_employee_bonus_assignments(
-            company_id,
-            scheme_id,
-            employee_id,
-            effective_from
-        );
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = '{schema}'
+                AND indexname = 'uq_payroll_bonus_assignment'
+            ) THEN
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM {schema}.payroll_employee_bonus_assignments
+                    GROUP BY
+                        company_id,
+                        scheme_id,
+                        employee_id,
+                        effective_from
+                    HAVING COUNT(*) > 1
+                ) THEN
+
+                    CREATE UNIQUE INDEX uq_payroll_bonus_assignment
+                    ON {schema}.payroll_employee_bonus_assignments(
+                        company_id,
+                        scheme_id,
+                        employee_id,
+                        effective_from
+                    );
+
+                END IF;
+
+            END IF;
+        END $$;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_bonus_accrual_runs (
             id BIGSERIAL PRIMARY KEY,
@@ -31390,31 +31413,27 @@ class DatabaseService:
             source_reference TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
             CONSTRAINT uq_payroll_actuarial_assumption
-                UNIQUE(company_id,valuation_id,assumption_key),
+                UNIQUE(company_id, valuation_id, assumption_key),
+
             CONSTRAINT fk_payroll_actuarial_assumption_valuation
                 FOREIGN KEY(valuation_id)
                 REFERENCES {schema}.payroll_actuarial_valuations(id)
                 ON DELETE CASCADE
         );
 
+        ALTER TABLE {schema}.payroll_actuarial_assumptions
+            ADD COLUMN IF NOT EXISTS assumption_label TEXT,
+            ADD COLUMN IF NOT EXISTS unit TEXT,
+            ADD COLUMN IF NOT EXISTS source_reference TEXT,
+            ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
         CREATE INDEX IF NOT EXISTS idx_payroll_actuarial_assumptions
             ON {schema}.payroll_actuarial_assumptions(
-                company_id,valuation_id
+                company_id,
+                valuation_id
             );
-
-        CREATE TABLE IF NOT EXISTS {schema}.payroll_actuarial_assumptions (
-            id BIGSERIAL PRIMARY KEY,
-            company_id INT NOT NULL,
-            valuation_id BIGINT NOT NULL,
-            assumption_key TEXT NOT NULL,
-            numeric_value NUMERIC(18,6),
-            text_value TEXT,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT uq_payroll_actuarial_assumption UNIQUE (
-                company_id, valuation_id, assumption_key
-            )
-        );
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_defined_contribution_runs(
             id BIGSERIAL PRIMARY KEY,
