@@ -120961,6 +120961,62 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tuple(params),
         )
 
+    def get_project_cost_summary(self, company_id: int, project_id: int) -> dict:
+        schema = self.company_schema(company_id)
+
+        expenses = self.list_project_expenses(company_id, project_id)
+        commitments = self.list_project_commitments(company_id, project_id)
+        time_entries = self.list_project_time_entries(company_id, project_id)
+
+        material = self.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(COALESCE(extended_cost, 0)), 0) AS material_cost
+            FROM {schema}.inventory_tx_lines
+            WHERE company_id = %s
+            AND project_id = %s
+            AND COALESCE(usage_type, '') = 'consumed'
+            """,
+            (int(company_id), int(project_id)),
+        ) or {}
+
+        expense_cost = sum(
+            float(x.get("amount") or 0)
+            for x in expenses
+            if x.get("status") in {"approved", "posted"}
+        )
+
+        labour_cost = sum(
+            float(x.get("labour_cost") or 0)
+            for x in time_entries
+            if x.get("status") == "approved"
+        )
+
+        committed_cost = sum(
+            float(x.get("ordered_amount") or 0)
+            for x in commitments
+            if str(x.get("po_status") or "").lower()
+            not in {"cancelled", "closed"}
+        )
+
+        material_cost = float(
+            material.get("material_cost") or 0
+        )
+
+        actual_cost = (
+            material_cost +
+            labour_cost +
+            expense_cost
+        )
+
+        return {
+            "material_cost": material_cost,
+            "labour_cost": labour_cost,
+            "expense_cost": expense_cost,
+            "actual_cost": actual_cost,
+            "committed_cost": committed_cost,
+            "cost_exposure": actual_cost + committed_cost,
+        }
 
     def get_project(self, company_id: int, project_id: int) -> dict | None:
         schema = self.company_schema(company_id)
