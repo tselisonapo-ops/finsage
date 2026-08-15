@@ -120961,29 +120961,56 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             tuple(params),
         )
 
-    def get_project_cost_summary(self, company_id: int, project_id: int) -> dict:
+    def get_project_cost_summary(
+        self,
+        company_id: int,
+        project_id: int,
+    ) -> dict:
         schema = self.company_schema(company_id)
 
-        expenses = self.list_project_expenses(company_id, project_id)
-        commitments = self.list_project_commitments(company_id, project_id)
-        time_entries = self.list_project_time_entries(company_id, project_id)
+        expenses = self.list_project_expenses(
+            company_id,
+            project_id,
+        )
+
+        commitments = self.list_project_commitments(
+            company_id,
+            project_id,
+        )
+
+        time_entries = self.list_project_time_entries(
+            company_id,
+            project_id,
+        )
 
         material = self.fetch_one(
             f"""
             SELECT
-                COALESCE(SUM(COALESCE(extended_cost, 0)), 0) AS material_cost
+                COALESCE(
+                    SUM(
+                        COALESCE(qty, 0)
+                        * COALESCE(unit_cost, 0)
+                    ),
+                    0
+                ) AS material_cost
             FROM {schema}.inventory_tx_lines
             WHERE company_id = %s
             AND project_id = %s
             AND COALESCE(usage_type, '') = 'consumed'
             """,
-            (int(company_id), int(project_id)),
+            (
+                int(company_id),
+                int(project_id),
+            ),
         ) or {}
 
         expense_cost = sum(
             float(x.get("amount") or 0)
             for x in expenses
-            if x.get("status") in {"approved", "posted"}
+            if x.get("status") in {
+                "approved",
+                "posted",
+            }
         )
 
         labour_cost = sum(
@@ -120995,8 +121022,13 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         committed_cost = sum(
             float(x.get("ordered_amount") or 0)
             for x in commitments
-            if str(x.get("po_status") or "").lower()
-            not in {"cancelled", "closed"}
+            if str(
+                x.get("po_status") or ""
+            ).lower()
+            not in {
+                "cancelled",
+                "closed",
+            }
         )
 
         material_cost = float(
@@ -121004,9 +121036,9 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         actual_cost = (
-            material_cost +
-            labour_cost +
-            expense_cost
+            material_cost
+            + labour_cost
+            + expense_cost
         )
 
         return {
@@ -121015,7 +121047,10 @@ Intangible assets are derecognised on disposal or when no future economic benefi
             "expense_cost": expense_cost,
             "actual_cost": actual_cost,
             "committed_cost": committed_cost,
-            "cost_exposure": actual_cost + committed_cost,
+            "cost_exposure": (
+                actual_cost
+                + committed_cost
+            ),
         }
 
     def get_project(self, company_id: int, project_id: int) -> dict | None:
@@ -122572,75 +122607,6 @@ Intangible assets are derecognised on disposal or when no future economic benefi
         )
 
         return bool(row)
-
-    def list_project_commitments(
-        self,
-        company_id: int,
-        project_id: int,
-    ) -> list[dict]:
-        schema = self.company_schema(company_id)
-
-        return self.fetch_all(
-            f"""
-            SELECT
-                po.id AS purchase_order_id,
-                po.po_number,
-                po.status AS po_status,
-
-                pol.id AS line_id,
-                pol.project_id,
-                pol.task_id,
-                pol.cost_code_id,
-
-                t.task_name,
-                cc.code AS cost_code,
-
-                pol.description,
-                pol.quantity,
-                pol.unit_price,
-
-                COALESCE(
-                    pol.quantity,
-                    0
-                ) * COALESCE(
-                    pol.unit_price,
-                    0
-                ) AS ordered_amount
-
-            FROM {schema}.purchase_order_lines pol
-
-            JOIN {schema}.purchase_orders po
-                ON po.company_id = pol.company_id
-            AND po.id = pol.purchase_order_id
-
-            LEFT JOIN {schema}.project_tasks t
-                ON t.company_id = pol.company_id
-            AND t.id = pol.task_id
-
-            LEFT JOIN {schema}.project_cost_codes cc
-                ON cc.company_id = pol.company_id
-            AND cc.id = pol.cost_code_id
-
-            WHERE pol.company_id = %s
-            AND COALESCE(
-                pol.project_id,
-                po.project_id
-            ) = %s
-
-            AND COALESCE(
-                pol.line_status,
-                'open'
-            ) <> 'cancelled'
-
-            ORDER BY
-                po.id DESC,
-                pol.id ASC
-            """,
-            (
-                int(company_id),
-                int(project_id),
-            ),
-        )
 
     def list_project_commitments(
         self,
