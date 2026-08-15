@@ -9851,6 +9851,35 @@ tbody tr:hover {
   min-width: 0;
   box-sizing: border-box;
 }
+
+.project-detail-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0 10px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid #dbe5ec;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.project-detail-tab {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.project-detail-tab.active {
+  background: #fff;
+  color: #0f2742;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .10);
+}
   </style>
 
 </head>

@@ -124668,7 +124668,36 @@ function renderProjectDetail(p) {
         </div>
       ` : ""}
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div
+        class="grid grid-cols-1 lg:grid-cols-2 gap-3"
+        data-project-panel="planning"
+      >
+
+        <div class="project-detail-tabs">
+          <button class="project-detail-tab active" data-project-tab="planning">
+            Planning
+          </button>
+
+          <button class="project-detail-tab" data-project-tab="costs">
+            Costs & Time
+          </button>
+
+          <button class="project-detail-tab" data-project-tab="revenue">
+            Revenue
+          </button>
+
+          <button class="project-detail-tab" data-project-tab="forecast">
+            Forecasts
+          </button>
+
+          <button class="project-detail-tab" data-project-tab="controls">
+            Risks & Controls
+          </button>
+
+          <button class="project-detail-tab" data-project-tab="closeout">
+            Documents & Closeout
+          </button>
+        </div>
 
         <div class="border rounded p-2">
           <div class="flex items-center justify-between mb-2">
@@ -124690,7 +124719,10 @@ function renderProjectDetail(p) {
 
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+      <div
+        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
+        data-project-panel="planning"
+      >
 
       <div class="border rounded p-2">
         <div class="flex items-center justify-between mb-2">
@@ -124723,8 +124755,10 @@ function renderProjectDetail(p) {
     </div>
 
     ${p.allow_time_entries !== false ? `
-      <div class="border rounded p-2 mt-3">
-
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="costs"
+      >
         <div class="flex items-center justify-between mb-2">
           <div>
             <div class="font-semibold">Time & Labour</div>
@@ -124746,8 +124780,10 @@ function renderProjectDetail(p) {
       </div>
     ` : ""}
 
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
-
+      <div
+        class="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3"
+        data-project-panel="costs"
+      >
         <div class="border rounded p-2">
           <div class="text-slate-500">Materials</div>
           <div class="font-semibold">
@@ -124785,8 +124821,10 @@ function renderProjectDetail(p) {
 
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
-
+      <div
+        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
+        data-project-panel="costs"
+      >
         ${p.allow_expenses !== false ? `
           <div class="border rounded p-2">
 
@@ -124819,8 +124857,10 @@ function renderProjectDetail(p) {
 
       </div>
 
-      <div class="border rounded p-2 mt-3">
-
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="controls"
+      >
         <div class="flex items-center justify-between mb-2">
           <div>
             <div class="font-semibold">Change Control</div>
@@ -124843,8 +124883,10 @@ function renderProjectDetail(p) {
       ${p.revenue_enabled !== false &&
       p.accounting_mode === "contract" ? `
 
-        <div class="border rounded p-2 mt-3">
-
+        <div
+          class="border rounded p-2 mt-3"
+          data-project-panel="revenue"
+        >
           <div class="flex items-center justify-between mb-3">
             <div>
               <div class="font-semibold">
@@ -124978,8 +125020,10 @@ function renderProjectDetail(p) {
 
       ` : ""}
 
-      <div class="border rounded p-2 mt-3">
-
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="forecast"
+      >
         <div class="flex items-center justify-between mb-2">
           <div>
             <div class="font-semibold">Forecast & Performance</div>
@@ -125034,8 +125078,10 @@ function renderProjectDetail(p) {
       </div>
 
       ${p.accounting_mode === "capital" ? `
-        <div class="border rounded p-2 mt-3">
-
+        <div
+          class="border rounded p-2 mt-3"
+          data-project-panel="forecast"
+        >
           <div class="flex items-center justify-between mb-2">
             <div>
               <div class="font-semibold">Capital Project</div>
@@ -125083,8 +125129,10 @@ function renderProjectDetail(p) {
         </div>
       ` : ""}
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
-
+      <div
+        class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3"
+        data-project-panel="controls"
+      >
         <div class="border rounded p-2">
           <div class="flex items-center justify-between mb-2">
             <div>
@@ -125125,10 +125173,14 @@ function renderProjectDetail(p) {
 
       </div>
 
-      <div class="border rounded p-2 mt-3">
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="closeout"
+      >
         <div class="flex items-center justify-between mb-2">
           <div>
             <div class="font-semibold">Project Documents</div>
+
             <div class="text-slate-500">
               ${documents.length} document${documents.length === 1 ? "" : "s"}
             </div>
@@ -125144,8 +125196,10 @@ function renderProjectDetail(p) {
         ${renderProjectDocumentsMini(documents)}
       </div>
 
-      <div class="border rounded p-2 mt-3">
-
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="closeout"
+      >
         <div class="flex items-center justify-between">
           <div>
             <div class="font-semibold">Project Closeout</div>
@@ -125163,7 +125217,6 @@ function renderProjectDetail(p) {
           </div>
 
           <div class="flex gap-2">
-
             ${p.accounting_mode === "capital" &&
               !closeout.commissioning_journal_id &&
               !projectClosed ? `
@@ -125187,14 +125240,14 @@ function renderProjectDetail(p) {
                 Reopen
               </button>
             `}
-
           </div>
         </div>
-
       </div>
 
-      <div class="border rounded p-2 mt-3">
-
+      <div
+        class="border rounded p-2 mt-3"
+        data-project-panel="closeout"
+      >
         <div class="flex items-center justify-between mb-2">
           <div class="font-semibold">Project Activity</div>
 
@@ -125207,6 +125260,33 @@ function renderProjectDetail(p) {
       </div>
     </div>
   `;
+
+  const tabs = mount.querySelectorAll("[data-project-tab]");
+  const panels = mount.querySelectorAll("[data-project-panel]");
+
+  function showProjectTab(key) {
+    tabs.forEach(tab => {
+      tab.classList.toggle(
+        "active",
+        tab.dataset.projectTab === key
+      );
+    });
+
+    panels.forEach(panel => {
+      panel.style.display =
+        panel.dataset.projectPanel === key
+          ? ""
+          : "none";
+    });
+  }
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      showProjectTab(tab.dataset.projectTab);
+    });
+  });
+
+  showProjectTab("planning");
 
   if (p.accounting_mode === "capital") {
     loadProjectCapitalPosition(p.id)
