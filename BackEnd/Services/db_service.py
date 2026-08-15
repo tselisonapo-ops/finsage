@@ -2291,31 +2291,6 @@ class DatabaseService:
         CREATE INDEX IF NOT EXISTS companies_company_reg_no_idx
             ON public.companies (company_reg_no);
 
-        INSERT INTO {schema}.payroll_leave_types (
-            company_id,
-            code,
-            name,
-            paid,
-            accrues,
-            annual_entitlement_days,
-            is_active
-        )
-        VALUES
-            ({company_id}, 'ANNUAL',      'Annual Leave',                       TRUE,  TRUE,  0, TRUE),
-            ({company_id}, 'SICK',        'Sick Leave',                         TRUE,  FALSE, 0, TRUE),
-            ({company_id}, 'MATERNITY',   'Maternity Leave',                    FALSE, FALSE, 0, TRUE),
-            ({company_id}, 'PATERNITY',   'Paternity Leave',                    FALSE, FALSE, 0, TRUE),
-            ({company_id}, 'PARENTAL',    'Parental Leave',                     FALSE, FALSE, 0, TRUE),
-            ({company_id}, 'FAMILY_RESP', 'Family Responsibility Leave',       TRUE,  FALSE, 0, TRUE),
-            ({company_id}, 'BEREAVEMENT', 'Compassionate / Bereavement Leave', TRUE,  FALSE, 0, TRUE),
-            ({company_id}, 'STUDY',       'Study Leave',                        TRUE,  FALSE, 0, TRUE),
-            ({company_id}, 'UNPAID',      'Unpaid Leave',                       FALSE, FALSE, 0, TRUE),
-            ({company_id}, 'SPECIAL',     'Special / Other Leave',              TRUE,  FALSE, 0, TRUE)
-        ON CONFLICT (company_id, code)
-        DO UPDATE SET
-            name = EXCLUDED.name,
-            is_active = TRUE;
-
         CREATE TABLE IF NOT EXISTS public.group_reporting_profiles (
             id SERIAL PRIMARY KEY,
 
@@ -28848,7 +28823,7 @@ class DatabaseService:
             migration_version=self.OPS_MIGRATION_VERSION,
         )
 
-    PAYROLL_MIGRATION_VERSION=3
+    PAYROLL_MIGRATION_VERSION=4
     def ensure_company_payroll(
         self,
         company_id:int,
@@ -29596,6 +29571,31 @@ class DatabaseService:
             CONSTRAINT {schema}_payroll_leave_type_uniq
                 UNIQUE(company_id, code)
         );
+
+        INSERT INTO {schema}.payroll_leave_types (
+            company_id,
+            code,
+            name,
+            paid,
+            accrues,
+            annual_entitlement_days,
+            is_active
+        )
+        VALUES
+            ({company_id}, 'ANNUAL',      'Annual Leave',                       TRUE,  TRUE,  0, TRUE),
+            ({company_id}, 'SICK',        'Sick Leave',                         TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'MATERNITY',   'Maternity Leave',                    FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'PATERNITY',   'Paternity Leave',                    FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'PARENTAL',    'Parental Leave',                     FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'FAMILY_RESP', 'Family Responsibility Leave',       TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'BEREAVEMENT', 'Compassionate / Bereavement Leave', TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'STUDY',       'Study Leave',                        TRUE,  FALSE, 0, TRUE),
+            ({company_id}, 'UNPAID',      'Unpaid Leave',                       FALSE, FALSE, 0, TRUE),
+            ({company_id}, 'SPECIAL',     'Special / Other Leave',              TRUE,  FALSE, 0, TRUE)
+        ON CONFLICT (company_id, code)
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            is_active = TRUE;
 
         CREATE TABLE IF NOT EXISTS {schema}.payroll_leave_requests (
             id SERIAL PRIMARY KEY,
